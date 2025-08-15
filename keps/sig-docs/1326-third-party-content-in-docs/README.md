@@ -19,7 +19,6 @@
     - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Risks and Mitigations](#risks-and-mitigations)
   - [Design Details](#design-details)
-    - [Graduation Criteria](#graduation-criteria)
 - [Drawbacks](#drawbacks)
   - [Alternatives](#alternatives)
 <!-- /toc -->
@@ -29,20 +28,21 @@ release process for website content.
 
 ## Summary
 
-This KEP seeks consensus on how Kubernetes docs handle two types of content:
+This KEP defines the Kubernetes project consensus on in-project documentation
+should handle two types of content:
 
 1. Content from or about third-party providers ("third-party content")
 
-Minimize and eliminate third-party content except when necessary for Kubernetes 
-to function in-project.
+   Minimize and eliminate third-party content except when necessary for Kubernetes
+   to function in-project.
 
 2. Content hosted on multiple sites ("dual-sourced content")
 
-Minimize and eliminate dual-sourced content except when necessary for Kubernetes
-to function in-project.
+   Minimize and eliminate dual-sourced content except when necessary for Kubernetes
+   to function in-project.
 
-**Note:** This KEP defines "in project" to mean projects in the Kubernetes org, 
-which includes the [kubernetes](https://github.com/kubernetes) and 
+**Note:** This KEP defines "in project" to mean projects in the Kubernetes organization;
+on GitHub, this covers all [kubernetes](https://github.com/kubernetes) and
 [kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
 
 ## Introduction
@@ -51,40 +51,47 @@ Kubernetes documentation teaches Kubernetes users about how
 Kubernetes works, how to use in-project Kubernetes features, and how to
 build on top of Kubernetes infrastucture.
 
-Feature docs are not a place for vendor pitches. Nonetheless, SIG Docs sometimes
-receives pull requests to place advertising-like content on the Kubernetes
-website. Some PRs clearly do not belong in feature docs, but other
-instances are less clear.
+Feature docs also contain _dual-sourced content_: explanations about how to use thing
+1 from project A with thing 2 from project or vendor B.
 
-Feature docs also contain dual-sourced content. A good practice for code
-project docs is to host single-sourced content only, and to provide
-links to other providers’ single-sourced content. This simplifies
-version management and reduces the work required to maintain content.
+A good practice for code project docs is to host single-sourced content only, and to provide
+links to other providers’ single-sourced content. This simplifies version management and
+reduces the work required to maintain content.
 
-This KEP defines how to handle third-party and dual-sourced content in 
-documentation, so that authors can
-judge what is appropriate to propose and so that PR approvers can make
-consistent, fair decisions during the review process.
+This KEP defines how to handle third-party and dual-sourced content in
+documentation, so that authors can judge what is appropriate to propose and so that PR
+approvers can make consistent, fair decisions during the review process.
 
 ## Motivation
 
-SIG Docs publishes Kubernetes
-documentation on kubernetes.io in line with its
+SIG Docs publishes Kubernetes documentation on kubernetes.io in line with its
 [charter](https://github.com/kubernetes/community/blob/master/sig-docs/charter.md#scope)
-and sets standards for website content. Prior to this KEP, there are no
+and sets standards for website content. Prior to this KEP, there were no
 clear guidelines or standards for third-party and dual-sourced content.
 
-The Kubernetes documentation is currently a mix of both 1) documentation
+Feature docs are not a place for vendor pitches. Nonetheless, SIG Docs (along with 
+other teams) sometimes receives pull requests to place advertising-like content on
+the Kubernetes website. Some changes proposed in those PRs clearly do not belong in
+feature docs, but other instances are less clear; this PR sets a policy to provide
+that clarity.
+
+The Kubernetes documentation is a mix of both 1) documentation
 describing the Kubernetes open source project; and 2) content describing
-how to install or use Kubernetes on several third party Kubernetes
+how to install or use Kubernetes whilst relying on several third party Kubernetes
 offerings.
 
 Some third party content is necessary in order for Kubernetes to
-function. For example: container runtimes (containerd, CRI-o, Docker), 
-networking policy (CNI plugins), Ingress controllers, and logging all require 
-third party components. Pages like [Logging Using Stackdriver](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-stackdriver/) 
-are highly specific to a third party offering and seem more like third party 
-product documentation than Kubernetes open source documentation.
+function. For example: you need an operating system. You also typically
+need or want: container runtimes (such as containerd or CRI-O),
+NetworkPolicy (CNI plugins), Ingress or Gateway controllers, and logging.
+Those listed outcomes all require third party components.
+
+Before this KEP, the docs had several pages that explained how to do a relevant task,
+but in a way that was too narrow in scope and too tied to details outside of Kubernetes
+(such as explaining how to ship logs to a particular vendor solution). Contributors
+struggled to maintain these pages and vendors hoping to add explanations of integration
+with rival offerings may have felt there was an advantage to the docs that happened to
+have landed first.
 
 ### Goals
 
@@ -92,117 +99,60 @@ The goal of Kubernetes documentation is to accurately document in-project
 functionality for Kubernetes, and to eliminate barriers to effective
 contribution and understanding.
 
-The goal of this KEP is to reach and document a consensus on what
-types of third-party content are appropriate for inclusion in Kubernetes
-documentation; standards for including third-party content; and to create
-consistent policies for docs handle third-party and dual-sourced content.
+The goals of this KEP are to:
 
-To address its goal, this KEP focuses on the following issues:
+* formally document a consensus on what types of third-party
+  content are appropriate for inclusion in Kubernetes documentation
+* define consistent policies for how Kubernetes
+  and its subprojects should handle third-party and dual-sourced content.
+* ensure that there are published standards for including third-party content
 
-<del>
-
-1. What third party content is appropriate for inclusion in the Kubernetes
-documentation?
-
-Proposed: Third-party content is permitted if it is required for Kubernetes to
-function in-project.
-
-1. Does third party content in sections such as [Getting Started](https://kubernetes.io/docs/setup/)
-in the docs provide sufficient value to the reader that they should remain?
-
-Casual consensus says yes, with one modification:
-- Eliminate the [production environment table](https://kubernetes.io/docs/setup/#production-environment)
-with a link to [certified conformance partners](https://kubernetes.io/partners/#conformance).
-
-1. Is there a list of content pages that are so focused on third party product
-usage that they should be removed or updated from the Kubernetes documentation?
-
-See https://github.com/kubernetes/website/issues/15748.
-
-1. When should the Kubernetes documentation host third party content that isn't
-maintained by a Kubernetes SIG?
-
-As infrequently as possible, with linking preferred to hosting. 
-
-1. How does the Kubernetes project handle third party content that is not kept
-up to date or hosts?
-
-If content isn't refreshed within 180 days, notify stakeholders of 90 days to 
-update content or migrate it elsewhere before removing it. Notification
-specifically includes:
-
-- Mailing an initial list of affected pages to kubernetes-dev@googlegroups.com
-- Announcing the policy change in two Kubernetes community meetings in a row
-- Posting a notification of the policy change on the Kubernetes blog
-- Notifying SIG PR review aliases on GitHub in PRs that remove affected content
-
-1. Can feature owners flag when third party content is *required*, as opposed to
-preferable or common?
-
-Is this capability required for KEP approval?
-
-1. Who decides when to include third-party content?
-
-SIGs responsible for particular features can include third-party content at
-their discretion, preferably by linking to the third party's own documentation.
-
-1. What standard of quality and review must be met before docs include
-third-party content?
-
-Third-party content must be necessary for Kubernetes to function in-project.
-
-1. To what extent should SIG Docs advocate for third-party content providers to 
-host their own content, or decline to host third-party content altogether?
-
-Kubernetes docs publish third-party content only if:
-
-- It's necessary for Kubernetes to function. For example: container runtimes 
-(containerd, CRI-o, Docker), networking policy (CNI plugins), Ingress 
-controllers, and logging.
-
-- It's an applied example of another project in the Kubernetes GitHub org. This
-includes the [kubernetes](https://github.com/kubernetes) and 
-[kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
-
-Third-party content should be linked instead of hosted whenever possible. 
-
-</del>
-
-1. Clearly define what documentation is required so that readers understand
-   how to deploy, operate and consume Kubernetes clusters using features from
-   in-project code and its mandatory dependencies.
 
 ### Non-Goals
 
-1. Outright removal of all content relating to vendors and projects outside the 
-   Kubernetes project.
+* Outright removal of all content relating to vendors and projects outside the
+  Kubernetes project.
 
 ## Proposal
 
-1. Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to achieve the KEP goal:
+Clearly define what documentation is required so that readers understand
+how to deploy, operate and consume Kubernetes clusters using features from
+in-project code and its mandatory dependencies.
+
+1. Revise the [content guide](https://kubernetes.io/docs/contribute/style/content-guide/) to achieve the KEP goal:
 
 - Specify that Kubernetes docs are limited to content required for Kubernetes to
-function in-project. Docs may include third-party OSS content for components that 
-require a third-party solution to function. Docs may include content for 
+function in-project. Docs may include third-party OSS content for components that
+require a third-party solution to function. Docs may include content for
 other projects in the Kubernetes org, and content from other OSS projects that
-are necessary for Kubernetes to function. Third-party content must be linked 
+are necessary for Kubernetes to function. Third-party content must be linked
 whenever possible, rather than duplicated or hosted in k/website.
+
+- capture equivalent policies for subprojects, with the aim of ensuring that
+  Kubernetes components have maintainable docs that avoid vendor pitches and
+  that are relevant to end users. Third party content must be linked whenever
+  possible.
+
+  For integration components, such as in-project code for integrating with a
+  specific cloud provider, each component **SHOULD** decide on one canonical location
+  for the documentation (either within the Kubernetes project, or hosted with that
+  provider, but not both).
 
 2. Revise the documentation when the KEP is approved:
 
-- **Third-party content:** Notify stakeholders of all affected content via 
+- **Third-party content:** Notify stakeholders of all affected content via
 GitHub issues and via a single message containing a summary of all affected
-content to kubernetes-dev@googlegroups.com that non-conforming content will be 
+content to kubernetes-dev@googlegroups.com that non-conforming content will be
 removed after 90 days.
 
-This limits the impact to out-of-project content and gives current stakeholders 
-approximately one Kubernetes release cycle to migrate 
-third-party content to an alternate platform before removing content from 
+This limits the impact to out-of-project content and gives current stakeholders
+approximately one Kubernetes release cycle to migrate
+third-party content to an alternate platform before removing content from
 Kubernetes docs.
 
 - **Dual-sourced content:** Where sourcing is obvious, replace dual-sourced
 content with links to an authoritative single source. Where sourcing is unclear,
-notify stakeholders via GitHub issues in k/website and via a single message 
+notify stakeholders via GitHub issues in k/website and via a single message
 containing a summary of all affected content to kubernetes-dev@googlegroups.com
 that non-conforming content will be removed after 90 days.
 
@@ -268,10 +218,10 @@ As [hyperkube transitions to third-party maintenance](https://github.com/kuberne
 
 ### Implementation Details/Notes/Constraints
 
-This KEP originally included language around considering intent of contributors.
+_This KEP originally included language around considering intent of contributors.
 Because intent is effectively impossible to judge (and because contributions
-are nearly always made with the best intent), this KEP now specifies that 
-third-party content is limited to what's required for in-project functionality.
+are nearly always made with the best intent), this KEP now specifies that
+third-party content is limited to what's required for in-project functionality._
 
 SIG Docs may add its own guidelines for writing and reviewing ambiguous content.
 
@@ -290,25 +240,11 @@ Pages that fit with that example guideline:
  - Persistent Volumes
    - https://kubernetes.io/docs/concepts/storage/persistent-volumes/#expanding-persistent-volumes-claims
 
-Pages to review and possibly revise, if that guideline were in place:
- - [Install a Network Policy Provider](https://kubernetes.io/docs/tasks/administer-cluster/network-policy-provider/) and child pages: how to use Calico, Cilium, Kube-router, Romana, and Weave Net for NetworkPolicy
- - [Audit](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/)
- - [Use fluentd to collect and distribute audit events from log file](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#use-fluentd-to-collect-and-distribute-audit-events-from-log-file) (dual-sourced)
- - [Use logstash to collect and distribute audit events from webhook backend](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#use-logstash-to-collect-and-distribute-audit-events-from-webhook-backend) (vendor-specific content)
- - [Auditing with Falco](https://kubernetes.io/docs/tasks/debug-application-cluster/falco/) (dual-sourced)
- - [Events in Stackdriver](https://kubernetes.io/docs/tasks/debug-application-cluster/events-stackdriver/) (vendor-specific content)
- - [Logging Using Elasticsearch and Kibana](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-elasticsearch-kibana/) (vendor-specific content)
- - [Logging using Stackdriver](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-stackdriver/) (vendor-specific content)
-
 ### Risks and Mitigations
 
 None known
 
 ## Design Details
-
-### Graduation Criteria
-
-**Note:** *this KEP does not target any release*
 
 Once the community have reached consensus, prepare a PR to update the
 existing [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content).
