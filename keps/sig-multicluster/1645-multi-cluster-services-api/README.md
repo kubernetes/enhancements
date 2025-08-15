@@ -437,22 +437,8 @@ type ServiceExportStatus struct {
         // +listMapKey=type
         Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
-
-const (
-        // ServiceExportValid means that the service referenced by this
-        // service export has been recognized as valid by an mcs-controller.
-        // This will be false if the service is found to be unexportable
-        // (ExternalName, not found).
-        ServiceExportValid = "Valid"
-        // ServiceExportConflict means that there is a conflict between two
-        // exports for the same Service. When "True", the condition message
-        // should contain enough information to diagnose the conflict:
-        // field(s) under contention, which cluster won, and why.
-        // Users should not expect detailed per-cluster information in the
-        // conflict message.
-        ServiceExportConflict = "Conflict"
-)
 ```
+
 ```yaml
 apiVersion: multicluster.k8s.io/v1alpha1
 kind: ServiceExport
@@ -461,17 +447,20 @@ metadata:
   namespace: my-ns
 status:
   conditions:
-  - type: Ready
-    status: "True"
-    message: "Service export is ready"
-    lastTransitionTime: "2020-03-30T01:33:51Z"
   - type: Valid
     status: "True"
-    message: "Service export is valid"
+    lastTransitionTime: "2020-03-30T01:33:51Z"
+    reason: Valid
+    message: "The ServiceExport and its Service is exportable."
+  - type: Ready
+    status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
+    reason: Exported
+    message: "The service has been exported"
   - type: Conflict
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
+    reason: TypeConflict
     message: "Conflicting type. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
 ```
 
@@ -702,8 +691,8 @@ this cluster.
   complicate deployments by even attempting to stretch them across clusters.
   Instead, regular `ExternalName` type `Services` should be created in each
   cluster individually. If a `ServiceExport` is created for an `ExternalName`
-  service, a condition type `Valid` with a `false` status will be set on the
-  `ServiceExport`.
+  service, a condition type `Valid` with reason `InvalidServiceType` and
+  status `false` will be set on the `ServiceExport`.
 
 #### ClusterSetIP
 
@@ -1002,8 +991,8 @@ services. If these properties are out of sync for a subset of exported services,
 there is no clear way to determine how a service should be accessed.
 
 Conflict resolution policy: **If any properties have conflicting values that can
-not simply be merged, a `ServiceExportConflict` condition will be set on all
-`ServiceExport`s for the conflicted service with a description of the conflict.
+not simply be merged, a `Conflict` condition with a `true` status will be set
+on all `ServiceExport`s for the conflicted service with a description of the conflict.
 The conflict will be resolved by assigning precedence based on each
 `ServiceExport`'s `creationTimestamp`, from oldest to newest.**
 
