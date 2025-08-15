@@ -88,6 +88,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2](#story-2)
     - [Story 3](#story-3)
     - [Story 4](#story-4)
+    - [Story 5](#story-5)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Open Questions](#open-questions)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -261,6 +262,10 @@ As a user I would like to be able to opt out of deprecation warnings.
 
 https://github.com/kubernetes/kubectl/issues/1317
 
+#### Story 5
+
+As a user I would like to be able to prevent the execution of untrusted binaries by the client-go credential plugin system.
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -319,6 +324,7 @@ fields (`apiVersion`, `kind`):
 
 * `aliases` Allows users to declare their own command aliases, including options and values.
 * `defaults` Enables users to set default options to be applied to commands.
+* `credentialPluginAllowList` Enables users to specify criteria for trusting binaries to be executed by the client-go credential plugin system.
 
 `aliases` will not be permitted to override built-in commands but will take
 precedence over plugins (builtins -> aliases -> plugins). Any additional options
@@ -330,6 +336,31 @@ initially implemented as options. This design decision was made after analyzing 
 intended behavior and realizing that targeting options effectively addresses the
 use cases. During command execution, a merge will be occur, with inline overrides
 taking precedence over the defaults.
+
+`credentialPluginAllowlist` allows the end-user to provide an array of objects
+describing required conditions for executing a credential plugin binary. The
+overall result of a check against the allowlist will be the logical OR of the
+individual checks against the allowlist's entries. Each allowlist entry MUST
+have at least one nonempty field describing the conditions required for the
+plugin's execution. If multiple fields are specified within an entry, the
+binary in question must meet all of the required conditions in that entry in
+order to be executed. At the outset, the entry object will have only one field,
+`name`. The path of the binary specified in the kubeconfig will be compared
+against that named in the `name` field. This field may contain a basename, or
+the full path of a plugin. To ensure an exact match, `os.LookPath` will be
+called on both the `name` field and the binary named in the `kubeconfig`. The
+resulting absolute paths must match. That is to say, each element in the
+allowlist is a set of criteria; if the binary in question meets all of the
+criteria in at least one **set** of criteria, the plugin will be allowed to
+execute.  If no criteria set succeeds after comparing the binary to all sets of
+criteria, the operation will be immediately aborted and an error returned. If
+`credentialPluginAllowlist` is not provided, or is explicitly made `nil`, all
+binaries will be allowed. If `credentialPluginAllowlist`'s value is set to the
+empty list `[]`, *all binaries will be prohibited*.
+
+In future updates, other allowlist entry fields MAY be added. Specifically,
+fields allowing for verification by digest or public key have been discussed.
+The initial design MUST accommodate such future additions.
 
 ```
 apiVersion: kubectl.config.k8s.io/v1beta1
@@ -356,6 +387,9 @@ defaults:
       - name: interactive
         default: "true"
 
+credentialPluginsAllowlist:
+    - name: cloudplatform-credential-helper
+    - name: custom-credential-script
 ```
 
 ### Test Plan
