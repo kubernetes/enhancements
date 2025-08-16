@@ -34,7 +34,8 @@
     - [Create PVC and Create Volume](#create-pvc-and-create-volume)
     - [Delete PVC](#delete-pvc)
     - [Modify PVC](#modify-pvc)
-  - [Implementation &amp; Handling Failure](#implementation--handling-failure)
+      - [Handle failures](#handle-failures)
+      - [Implementation](#implementation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -62,17 +63,15 @@
   - [Other Solutions:](#other-solutions)
   - [Option 1: First class only Iops and throughput](#option-1-first-class-only-iops-and-throughput)
     - [Kubernetes API](#kubernetes-api-1)
-      - [CSI API](#csi-api-1)
-      - [Pros:](#pros)
-      - [Cons:](#cons)
-    - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
-      - [Pros:](#pros-1)
-      - [Cons:](#cons-1)
-    - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
-    - [CreateVolume](#createvolume)
-    - [ModifyVolume](#modifyvolume)
-      - [Pros:](#pros-2)
-      - [Cons:](#cons-2)
+    - [CSI API](#csi-api-1)
+    - [Pros:](#pros)
+    - [Cons:](#cons)
+  - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
+    - [Pros:](#pros-1)
+    - [Cons:](#cons-1)
+  - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
+    - [Pros:](#pros-2)
+    - [Cons:](#cons-2)
   - [Appendix - Current SPs Case Study](#appendix---current-sps-case-study)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -129,7 +128,7 @@ Currently after CreateVolume with provider specific parameters pass in storage c
 ## Proposal
 
 ### Kubernetes API
-We need to add a new resource object VolumeAttributesClass to Kubernetes API, also a new admission controller and vac protection controller. Please see more in [Design Details](#bookmark=id.wtvwymf8202g).
+We need to add a new resource object VolumeAttributesClass to Kubernetes API, also a new admission controller and vac protection controller. Please see more in [Design Details](#design-details).
 
 The reason why we cannot use StorageClass.parameters is because StorageClass is immutable today. The design is to introduce a VolumeAttributesClass with parameters. Although these parameters are still immutable within a VolumeAttributesClass, the name of VolumeAttributesClass in a PVC can be modified. This allows the parameters representing volume attributes to be updated after a volume is created.
 
@@ -402,9 +401,41 @@ Note:
 
 The parameters in VolumeAttributesClass are opaque and immutable. This gives different cloud providers flexibility but at the same time it is up to the specific driver to verify the values set in the parameters. The parameters from VolumeAttributesClass associated with a volume are mutable because they are coming from different VolumeAttributesClasses.
 
+**Deal with Volume Reverted to nil VAC**
+
+After reverting VAC name to nil, it will not be fully reverted to the previous state, because Kubernetes does not actually know the previous state of the volume. The volume will keep occupying the quota of previously specified VAC. Now user can:
+* If there is no quota, user may not care about this, and just leave it there
+* User can set a (potentially different) VAC name to try again
+* Admin can check the volume status manually and reset PVC.status.modifyStatus to nil to fully revert the change.
+
+This may also confuse the higher level controller (e.g. [KEP-4650](https://github.com/kubernetes/enhancements/issues/4650)) when reconciling PVC. Higher level controllers can also special casing nil VAC names to skip waiting for the modification.
+
 ### Risks and Mitigations
 
+**Parameter Conflicts**
+
 Users may configure both parameters in StorageClass and parameters in VolumeAttributesClass differently. The mitigation here is to provide a guideline of solving conflicts. Drivers should return an error if they are conflicting. If the MODIFY_VOLUME capability is present, VolumeAttributesClass should be honored.
+
+**Quota Abuse**
+
+For administrators who want to set up quota on the VACs to control the expense, he should set up each VAC to fully specify the state of the volume. That is to say, each VAC should fully overwrite changes to every other VAC.
+
+Consider this bad setup that violates the previous requirement.
+* VAC A: `{"bandwidth": "100Mbps"}`
+* VAC B: `{"bandwidth": "200Mbps", "iops": "2000"}`
+
+Users can switch from A to B then back to A to get 2000 iops without using his quota on VAC B.
+
+If this requirement is met, Kubernetes promises to administrators: every PVC with `Status.ModifyVolumeStatus == nil` is properly covered by quota.
+
+While Kubernetes will work with storage providers to prevent quota abuse at best effort, the state of volumes with non-nil ModifyVolumeStatus is undefined.
+Consider when a volume is modified from VAC A to B, C, D, E in sequence, all failed with Internal error, the actual state of the volume can be any combination of the 5 VACs, but we cannot charge the quota of all 5 VACs for this volume.
+
+To mitigate this, admin should properly setup to VACs and actively monitor the number of volumes with non-nil ModifyVolumeStatus, and driving them to the final state.
+
+CSI drivers should try to avoid making volume stuck at partially modified states to improve user experience and avoid quota abuse.
+
+CSI drivers should try their best to verify all the parameters before applying any modifications. It should make light-weight and reversible changes first and non-reversible changes last, so that if something still goes wrong in the middle, users can revert the volume to the previous state.
 
 ## Proposed Changes
 
@@ -431,7 +462,7 @@ A. Count of bound/unbound PVCs per VolumeAttributesClass similar to [existing PV
 
 Prior to this enhancement, we loop through all PVCs, check if `pvc.Status.Phase == v1.VolumeBound` and increment the relevant metric only on `namespace` dimension. When the feature flag is enabled, new metrics will take into account `namespace`, `storage_class`, and `volume_attribute_class`. 
 
-With these additional labels, cluster operators can alarm on these new metrics to detect PVCs that are not able to bind. With the additional StorageClass and VolumeAttributesClass name labels, cluster operators can more easily check whether VolumeAttributeClass or StorageClass object misconfiguration is the cause of these binding issues.
+With these additional labels, cluster operators can alarm on these new metrics to detect PVCs that are not able to bind. With the additional StorageClass and VolumeAttributesClass name labels, cluster operators can more easily check whether VolumeAttributesClass or StorageClass object misconfiguration is the cause of these binding issues.
 
 ```
 boundPVCCountWithVACDesc = metrics.NewDesc(
@@ -685,11 +716,78 @@ spec:
 
 ModifyVolume is only allowed on bound PVCs. Under the ModifyVolume call, it will pass in the mutable parameters and do the update operation based on the `VolumeAttributesClass` parameters.
 
-![ModifyVolume Flow Diagram](./VolumeAttributesClass-ModifyVolume-Flow-v3.png)
+##### Handle failures
 
-### Implementation & Handling Failure
+The design principle of failure handling:
+**Acurate state sync**:
+when `pvc.Status.CurrentVolumeAttributesClassName == pvc.Spec.VolumeAttributesClassName && pvc.Status.ModifyVolumeStatus == nil`,
+the PVC reaches the specified state, the volume is guaranteed to have user specified parameters applied. More formally: `ControllerModifyVolume` has been called with parameters in the specified VAC, returned OK, and no other `ControllerModifyVolume` has been called after that.
 
-VolumeAttributesClass parameters can be considered as best-effort parameters, the CSI driver should report the status of bad parameters as INVALID_ARGUMENT and the volume would fall back to a workable default configuration.
+This is important for user to ensure proper function of workload.
+This also helps to ensure the volumes are properly covered by quota when they reaches the stable state.
+
+To balance the predictable system behavior with the quota abuse possibility,
+we classify the errors returned by `ControllerModifyVolume` into 3 categories and handle them differently:
+- Non-final errors (such as `DeadlineExceeded`), indicating volume modification is likely still in-progress.
+  In this case, We will always retry the request with the same parameters to allow the operation to complete.
+  This policy safeguards against potential quota abuse that can occur if users time their requests strategically.
+- Final errors (such as `Internal`), indicating storage provider failed to modify the volume and likely no longer processing the request. 
+  In this case, We allow changing the parameters to recover from the error.
+  - Infeasible Errors (e.g., `InvalidArgument`): This is a subset of final errors indicating the request itself is invalid and is not likely to succeed when retried.
+    We will retry at lower frequency.
+    If the `Spec.VolumeAttributesClassName` is set to nil, we will not retry the request.
+
+For details, please refer to the flow chart above.
+
+##### Implementation
+
+Flow diagram describes how external-resizer modifies the volume:
+![ModifyVolume Flow Diagram](./VolumeAttributesClass-Modify-Flow.jpg)
+where
+* `spec`: `pvc.spec.volumeAttributesClassName`
+* `cur`: `pvc.status.currentVolumeAttributesClassName`
+* `target`: `pvc.status.modifyVolumeState.targetVolumeAttributesClassName`
+* `status`: `pvc.status.modifyVolumeState.status`. resetting status to nil also implies resetting `target` to nil.
+
+To further verify the correctness, this tables lists all possible states and the corresponding actions:
+
+| \# | spec | cur | status | target | uncertain | action | OK | final | infeasible | non-final |
+| -: | --- | --- | ------ | --- | ----- | -: | -: | -: | -: | -: |
+|  1 | nil | nil | nil    | N/A | false |  1 |    |    |    |    |
+|  2 | nil | nil | InProg | A   | \*    |  A |  4 |  2 |  3 |  2 |
+|  3 | nil | A   | Infeas | A   | \*    |  3 |    |    |    |    |
+|  4 | nil | A   | nil    | N/A | false |  4 |    |    |    |    |
+|  5 | A   | nil | nil    | N/A | false |  6 |    |    |    |    |
+|  6 | A   | nil | InProg | A   | false |  A |  9 |  6 |  8 |  7 |
+|  7 | A   | nil | InProg | A   | true  |  A |  9 |  6 |  8 |  7 |
+|  8 | A   | nil | Infeas | A   | false |  A |  9 |  6 |  8 |  7 |
+|  9 | A   | A   | nil    | N/A | false |  9 |    |    |    |    |
+| 10 | B   | nil | InProg | A   | false |  6 |    |    |    |    |
+| 11 | B   | nil | InProg | A   | true  |  A | 13 | 10 | 12 | 11 |
+| 12 | B   | nil | Infeas | A   | false |  6 |    |    |    |    |
+| 13 | B   | A   | nil    | N/A | false | 14 |    |    |    |    |
+| 14 | B   | A   | InProg | B   | false |  B |  9 | 14 | 16 | 15 |
+| 15 | B   | A   | InProg | B   | true  |  B |  9 | 14 | 16 | 15 |
+| 16 | B   | A   | Infeas | B   | false |  B |  9 | 14 | 16 | 15 |
+| 17 | C   | A   | InProg | B   | false | 14 |    |    |    |    |
+| 18 | C   | A   | InProg | B   | true  |  B | 13 | 17 | 19 | 18 |
+| 19 | C   | A   | Infeas | B   | false | 14 |    |    |    |    |
+| 20 | A   | A   | InProg | B   | false | 23 |    |    |    |    |
+| 21 | A   | A   | InProg | B   | true  |  B | 13 | 20 | 22 | 21 |
+| 22 | A   | A   | Infeas | B   | false | 23 |    |    |    |    |
+| 23 | A   | A   | InProg | A   | false |  A |  9 | 23 | 25 | 24 |
+| 24 | A   | A   | InProg | A   | true  |  A |  9 | 23 | 25 | 24 |
+| 25 | A   | A   | Infeas | A   | false |  A |  9 | 23 | 25 | 24 |
+| 26 | B   | A   | InProg | A   | false | 14 |    |    |    |    |
+| 27 | B   | A   | InProg | A   | true  |  A | 13 | 26 | 28 | 27 |
+| 28 | B   | A   | Infeas | A   | false | 14 |    |    |    |    |
+
+Letter A in the action column means call ControllerModifyVolume with parameters of VAC A.
+
+Number 1 in the last five columns means we should transit to state 1 in this case.
+If action equals to self, we have reached the final state (1, 3, 4, 9) and should stop reconcile until user modifies the spec again.
+
+One can verify this contains all states by arbitrarily changing the spec and verify it will still hit a listed state.
 
 ### Test Plan
 
@@ -1122,7 +1220,7 @@ requests:
 Add PVC Status field; change ResizeStatus alpha field to AllocatedResourceStatus map.
 
 
-##### CSI API
+#### CSI API
 
 The CSI create request will be extended to add provisioned IO parameters. For volume creation, cloud providers can add iops and throughput field in parameters and process in the csi driver, an example:
 
@@ -1255,18 +1353,18 @@ IO provisioning should have similar issues to resize (except that we have to sol
 For ResourceQuota, we will verify that sum of spec.resources[iops] and spec.resources[throughput] for all PVCs in the Namespace from DSW don't exceed quota, for LimitRanger we check that a modify request does not violate the min and max limits specified in LimitRange for the pvc's namespace.
 
 
-##### Pros:
+#### Pros:
 
 *   Simplify user experience by giving only restricted, well defined controls
 
-##### Cons:
+#### Cons:
 
 
 *   Difficult to get consensus of what is iops/throughput among different storage providers
 *   Not all the storage providers support independently configurable iops/throughput
 
 
-#### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
+### Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users
 
 The users will set the volume performance parameters directly in the PVC:
 
@@ -1305,19 +1403,19 @@ message ModifyVolumeRequest {
 
 
 
-##### Pros:
+#### Pros:
 
 *   Flexible to fit into all the cloud providers
 *   More flexibility to end users and no cluster administrator needs to be involved(also a con)
 
 
-##### Cons:
+#### Cons:
 
 *   More unpredictable behaviors because it is an opaque map. Compared to the recommended approach that the cluster administrator actually has the control over the values.
 * Not portable across different cloud providers.
 
 
-#### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
+### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
 
 ![VolumeAttributesClass Batch Update](./VolumeAttributesClass-BatchUpdate.png)
 
@@ -1341,113 +1439,14 @@ If there is a change in parameters, an event will trigger the following func in 
 func (ctrl *resizeController) updateVolumeAttributesClass(vqc *v1.VolumeAttributesClass) (error, bool) {...}
 ```
 
-Under this operation, it will get all the pvcs consuming the volume Performance class and call expandAndRecover to update the volume Performance parameters. The update the volume Performance parameters will overlap with the following path “**Watching changes in the PVC object**”
+Under this operation, it will get all the pvcs consuming the volume Performance class and call expandAndRecover to update the volume Performance parameters.
 
-
-
-
-
-#### CreateVolume
-
-For creating volume, there are two different ways to configure the related parameters. Only **cluster administrators** should be able to create StorageClass and/or VolumeAttributesClass.
-
-
-
-*   From storage class parameters(existing today):
-
-```
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: csi-sc-example
-provisioner: pd.csi.storage.gke.io
-parameters:
-  ...
-  provisioned-iops-on-create: '10000'
-  provisioned-throughput-on-create: '100MiB/s'
-volumeBindingMode: WaitForFirstConsumer
-```
-
-*   From VolumeAttributesClass(from this KEP)
-
-```
-apiVersion: storage.k8s.io/v1alpha1
-kind: VolumeAttributesClass
-driverName: pd.csi.storage.gke.io
-metadata:
-  name: silver
-parameters:
-  iops: "500"
-  throughput: "50MiB/s"
-```
-
-```
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: csi-gcepd
-provisioner: pd.csi.storage.gke.io
-volumeBindingMode: WaitForFirstConsumer
-```
-
-The driver is responsible for parsing and validating these parameters and making sure duplicate configuration is not allowed. End users will specify  the VolumeAttributesClass in the PVC object:
-
-```
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: test-pv-claim
-spec:
-  storageClassName: csi-sc-example
-  VolumeAttributesClassName: silver
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 64Gi
-```
-
-#### ModifyVolume
-
-![VolumeAttributesClass Batch Update](./VolumeAttributesClass-BatchUpdate.png)
-
-Since VolumeAttributesClass is **immutable**, to update the performance parameters, the end user can modify the PVC object to set a different VolumeAttributesClass. If the existing VolumeAttributesClass cannot satisfy the end user’s use case, the end user needs to contact the cluster administrator to create a new VolumeAttributesClass.
-
-**Watching changes in the PVC object**, if the VolumeAttributesClass changes, it will trigger a ModifyVolume call.
-
-```
-apiVersion: storage.k8s.io/v1alpha1
-kind: VolumeAttributesClass
-metadata:
-  name: gold
-parameters:
-  iops: "1000"
-  throughput: "100MiB/s"
-```
-
-```
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: test-pv-claim
-spec:
-  storageClassName: csi-sc-example
-  VolumeAttributesClassName: gold
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 64Gi
-```
-
-Under the modify volume call, it will pass in the `VolumeAttributesClass `object and do the update operation based on the `VolumeAttributesClass` parameters.
-
-##### Pros:
+#### Pros:
 
 *   Provide an automation of updating all PVCs with the new set of performance related parameters 
 
 
-##### Cons:
+#### Cons:
 
 *   Unknown scaling problems for clusters with large numbers of volumes
 *   Partial update failures are difficult to communicate with the overall system
