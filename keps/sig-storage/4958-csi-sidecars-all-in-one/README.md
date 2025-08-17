@@ -1041,13 +1041,11 @@ question.
 <!--
 Pick one more of these and delete the rest.
 -->
+The SLI for the CSI AIO project is based on individual sidecars' SLIs, with metrics exposed by [csi-lib-utils](https://github.com/kubernetes-csi/csi-lib-utils/blob/master/metrics/metrics.go)
 
-- [ ] Metrics
-  - Metric name: `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}`
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: operationsLatencyMetricName
+  - Components exposing the metric: Monorepo component
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
