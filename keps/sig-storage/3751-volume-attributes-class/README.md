@@ -437,6 +437,8 @@ CSI drivers should try to avoid making volume stuck at partially modified states
 
 CSI drivers should try their best to verify all the parameters before applying any modifications. It should make light-weight and reversible changes first and non-reversible changes last, so that if something still goes wrong in the middle, users can revert the volume to the previous state.
 
+[strict mode](#strict-mode) can avoid the risk described above, at the expense of flexibility.
+
 ## Proposed Changes
 
 As part of this proposal, we are proposing:
@@ -739,6 +741,19 @@ we classify the errors returned by `ControllerModifyVolume` into 3 categories an
 
 For details, please refer to the flow chart below.
 
+###### Strict Mode
+
+Strict mode aims at making sure the quota set by admin is effective at any situation.
+It would help admin to better control the budget and defense malicious users in the situations where SP somehow made partial modification to the volume and failed, user switched target to another VAC which also failed.
+
+It employs a different reconcile logic to handle errors.
+Assuming we are modifying from VAC A to B. The main difference includes:
+* When there is an error, we will only retry with parameters of A or B, not allowing any other target.
+  User can only change the target after either the modify or the rollback succeeded.
+* if the `currentVolumeAttributesClass` is nil, we don't allow rollback.
+  Instead, we allow change target if the error is infeasible in this case, to allow user to correct some typos easily.
+* We don't differentiate non-final errors, since the strict-mode itself can ensure the integrity of the quota system.
+
 ##### Implementation
 
 Flow diagram describes how external-resizer modifies the volume:
@@ -788,6 +803,26 @@ Number 1 in the last five columns means we should transit to state 1 in this cas
 If action equals to self, we have reached the final state (1, 3, 4, 9) and should stop reconcile until user modifies the spec again.
 
 One can verify this contains all states by arbitrarily changing the spec and verify it will still hit a listed state.
+
+For [strict mode](#strict-mode), the implementation is different:
+* We only leave the state `cur == A && target == B` when either modify to A or modify to B success.
+* We don't differentiate the infeasible error with other final error here.
+  For the "nil to A" case, we still allow change target at Infeasible state, because we don't have rollback for this case.
+* If the spec is C, we may automatically rollback to A, if that succeeded, automatically modify again to C.
+* We abandon the uncertain cache. The strict mode itself should already be able to avoid quota abuse.
+* We don't update rollback failed status to PVC, to avoid confusing it with normal operation.
+
+Flow diagram:
+![ModifyVolume Flow Diagram-strict mode](./VolumeAttributesClass-Modify-strict.jpg)
+```go
+func goForward(spec, target, cur, status string) bool {
+    switch spec {
+        case target, "": return true
+        case cur: return false
+        default: return status != "Infeasible"
+    }
+}
+```
 
 ### Test Plan
 
