@@ -6,7 +6,7 @@ owning-sig: sig-node
 #participating-sigs:
 #  - sig-aaa
 #  - sig-bbb
-status: implementable
+status: implemented
 creation-date: 2023-02-09
 reviewers:
   - "@thockin"
