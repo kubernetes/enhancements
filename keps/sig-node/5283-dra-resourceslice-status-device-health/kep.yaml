@@ -13,6 +13,7 @@ approvers:
   - TBD
 
 see-also:
+  - "/keps/sig-scheduling/4680-add-resource-health-to-pod-status/README.md"
   - "/keps/sig-scheduling/5055-dra-device-taints-and-tolerations/kep.yaml"
 
 # The target maturity stage in the current dev cycle for this KEP.
