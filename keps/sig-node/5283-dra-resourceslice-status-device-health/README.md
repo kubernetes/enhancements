@@ -1035,7 +1035,7 @@ in a way that works best for their own environments, instead of needing to infer
 actual device condition from the driver "Healthy" or "Unhealthy" status.
 
 The main cost of that flexibility is the lack of standardization, where cluster
-administrators have to track down from each vendor how to determine if a given
+administrators have to track down from each vendor or define for themselves how to determine if a given
 device is in a healthy state as opposed to inspecting a well-defined area of a
 vendor-agnostic API like ResourceSlice. This lack of standardization also makes
 integrations like generic controllers that automatically taint unhealthy devices
