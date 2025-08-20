@@ -204,10 +204,12 @@ and restore unhealthy devices back to their full functionality.
 
 When unhealthy devices are no longer able to support new or existing workloads,
 DRA drivers and cluster administrators already have the option to
-[taint](https://kep.k8s.io/5055) the devices. A standard representation of
-device health in the ResourceSlice API is needed to express the state of the
-devices in cases where the side effects (`NoSchedule`/`NoExecute`) of taints are
-not desired.
+[taint](https://kep.k8s.io/5055) the devices, which always carries a
+`NoSchedule` or `NoExecute` side effect. A standard representation of device
+health in the ResourceSlice API that is strictly informational enables the
+widest variety of potential integrations (e.g. Node Problem Detector, custom
+controllers, dashboards) which may implement custom mitigation strategies that
+conflict with other side effects.
 
 ### Goals
 
