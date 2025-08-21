@@ -58,9 +58,9 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -864,8 +864,6 @@ The existing e2e tests will be extended to cover the new comparison operators in
 
 - **Taints e2e Tests:** (test/e2e/node/taints.go)
 - **ValidatingAdmissionPolicy e2e Tests:** (test/e2e/apimachinery/validating_admission_policy.go)
-- **CRD e2e Tests:** (test/e2e/apimachinery/crd_validation.go)
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
 
@@ -1398,9 +1396,7 @@ There are many different alternatives were considered:
 
 1. **New Dedicated SLA API Resource:**  Create `SLAPolicy` CRD
    - **Pros:** Clean separation, rich policy definitions.
-   - **Cons:** New API surface, additional complexity, breaks unified taint/toleration model.
-2. **Custom Scheduler Plugin:** Use scheduling plugin with SLA-aware logic, [placement-policy-scheduler-plugins](https://github.com/Azure/placement-policy-scheduler-plugins)
-   - **Pros:** Full scheduling control, rich logic possible
+
    - **Cons:**
      - Out-of-tree scheduler plugin to maintain and manage
      - Doesn't leverage existing taint/toleration infrastructure.
@@ -1427,3 +1423,8 @@ SIG to get the process for these resources started right away.
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/website]: https://git.k8s.io/website
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/website]: https://git.k8s.io/website
+[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
