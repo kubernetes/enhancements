@@ -15,14 +15,17 @@
     - [Story 3 — AI training workload balancing cost and reliability](#story-3--ai-training-workload-balancing-cost-and-reliability)
     - [Story 4 — DRA GPU claim management](#story-4--dra-gpu-claim-management)
     - [Story 5 — DRA device-level error budget management](#story-5--dra-device-level-error-budget-management)
+    - [Story 6 — Kubernetes version compatibility for critical workloads](#story-6--kubernetes-version-compatibility-for-critical-workloads)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Scheduler Performance Regression](#scheduler-performance-regression)
     - [API Compatibility and Version Skew](#api-compatibility-and-version-skew)
-    - [Edge Cases in Numeric Parsing](#edge-cases-in-numeric-parsing)
+    - [Edge Cases in Value Parsing](#edge-cases-in-value-parsing)
     - [Cross-SIG Impact](#cross-sig-impact)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
+    - [Toleration Operator Extensions](#toleration-operator-extensions)
+    - [CEL Semver Library Extensions](#cel-semver-library-extensions)
   - [Semantics](#semantics)
   - [Implementation](#implementation)
     - [Feature Gate Definition](#feature-gate-definition)
@@ -71,13 +74,21 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Extend **core/v1 Toleration** to support **numeric comparison operators** when matching **Node Taints**:
+Extend **Node/Device Toleration** to support **numeric comparison operators** when matching **Node/Device Taints**:
 
-- New operators: `Lt`, `Gt` (in addition to existing `Equal`/`Exists`).
-- Primary motivation: allow pods to opt‑in to nodes by `SLA/failure‑probability` values published as taints (e.g., `node.kubernetes.io/sla=950`).
-- Scheduler impact is limited to the existing TaintToleration Filter; no new stages or algorithms.
+**Toleration Enhancements:**
 
-This preserves the well‑understood safety model of taints/tolerations (eviction via`NoExecute`) while enabling threshold‑based placement similar to numeric NodeAffinity, but with better operational semantics.
+- New operators: `Lt`, `Gt` (in addition to existing `Equal`/`Exists`)
+- Automatic type detection: integer comparison for numeric values, semantic version comparison for semver values
+- Primary motivation: allow pods to opt‑in to nodes by `SLA/failure‑probability` values or version requirements
+
+**CEL Enhancements:**
+
+- Extended semver library with additional comparison and utility functions
+- Enhanced integration with Kubernetes version parsing standards
+- Consistent semantic version handling across validation policies
+
+This creates a unified approach to threshold-based and version-based placement/validation across Kubernetes, preserving the well‑understood safety model of taints/tolerations while enabling sophisticated policy enforcement through CEL expressions.
 
 ## Motivation
 
@@ -97,14 +108,19 @@ From a scheduling perspective, adding numeric operators to tolerations only adju
 ### Goals
 
 - Add comparison operators to tolerations so pods can match taints like `node.kubernetes.io/sla=<int>` using thresholds.
+- Enable automatic type detection for integer and semantic version comparisons in tolerations.
+- Enhance CEL semver library with additional comparison functions for consistent version handling.
 - Keep behavior consistent with existing effects (`NoSchedule`, `PreferNoSchedule`, `NoExecute`).
-- Backward compatible and opt‑in via a feature gate.
+- Provide unified semantic version handling across scheduling and admission control.
+- Backward compatible and opt‑in via feature gates.
 
 ### Non-Goals
 
 - Standardizing an SLA key or unit (clusters may choose any integer scale, e.g., 950 for 95.0%).
 - Implementing workload‑level "70/30" mix semantics.
 - Changing NodeAffinity behavior.
+- Replacing existing CEL semver functions (maintaining backward compatibility).
+- Adding new taint/toleration keys (focusing on operator extensions only).
 
 ### Benefits for implementing this feature for DRA and AI Workloads
 
@@ -334,31 +350,98 @@ spec:
       effect: NoSchedule
 ```
 
+#### Story 6 — Kubernetes version compatibility for critical workloads
+
+As a cluster operator managing a mixed-version Kubernetes cluster during rolling upgrades, I want to ensure critical workloads only run on nodes with Kubernetes version >= 1.20.0 due to specific API features they require, while allowing development workloads to tolerate older versions.
+
+Semantic version tolerations provide precise version-based placement without hardcoding specific versions in NodeAffinity rules.
+
+**Example Configuration:**
+
+```yaml
+# Older node running Kubernetes 1.19.5
+apiVersion: v1
+kind: Node
+metadata:
+  name: old-node-1
+spec:
+  taints:
+  - key: node.kubernetes.io/version
+    value: "1.19.5"
+    effect: NoSchedule
+---
+# Production workload requires Kubernetes >= 1.20.0
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: production-api
+spec:
+  template:
+    spec:
+      tolerations:
+      - key: node.kubernetes.io/version
+        operator: SemverGt
+        value: "1.20.0"
+        effect: NoSchedule
+      containers:
+      - name: api
+        image: myapp:latest
+---
+# Development workload tolerates older versions
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dev-workload
+spec:
+  template:
+    spec:
+      tolerations:
+      - key: node.kubernetes.io/version
+        operator: SemverGt
+        value: "1.33.0"  # Can run on 1.33+ nodes
+        effect: NoSchedule
+```
+
 ### Notes/Constraints/Caveats (Optional)
 
-- **Integer-Only Support**: The implementation supports signed 64-bit integers only. Pod specs containing toleration values with decimal numbers (e.g., `"95.5"`) will be rejected by the API server during validation when using numeric comparison operators.
+**Value Format and Type Detection:**
 
-- **Parsing Requirements**: The toleration value must be parseable as integers for numeric operators (`Lt`, `Gt`). If fails parsing, the toleration does not match.
+- **Automatic Type Detection**: The system automatically determines whether to use integer or semantic version comparison based on value format. Both toleration and taint values must be parseable as the same type for comparison to occur.
 
-  > Note: A taint like `foo=95.5:NoSchedule` is valid since taint values follow label values syntax, which allows. The numeric parsing/validation is enforced on toleration **only**.
+- **Integer Comparison Requirements**:
+  - Values must be parseable as signed 64-bit integers
+  - Decimal numbers (e.g., `"95.5"`) are not supported to honor Kubernetes' avoidance of floating-point precision issues
+  - Leading zeros are preserved in parsing (`"0950"` vs `"950"` are numerically equal)
+
+- **Semantic Version Requirements**:
+  - Values must conform to [Semantic Versioning 2.0.0](https://semver.org/) specification requiring exactly 3 components (major.minor.patch)
+  - Supports both prefixed (`"v1.20.1"`) and non-prefixed (`"1.20.1"`) formats following Kubernetes conventions  
+  - Invalid semver strings (e.g., `"1.20"`, `"1.20.1.1"`, `"1"`) cause validation errors
+  - Pre-release versions (e.g., `1.20.0-alpha.1`) have lower precedence than release versions (`1.20.0`)
+  - Build metadata (`+build.123`) is ignored in comparisons per semver specification
+
+- **Type Mismatch Handling**: If toleration and taint values cannot be parsed as the same type (integer vs semver), the toleration does not match. This prevents unexpected behavior and ensures type safety.
+
+**General Constraints:**
 
 - **Alpha Restrictions**: When `TaintTolerationComparisonOperators=false`, the API server rejects pods using the new operators.
 
-- **Strict Validation**: Unlike existing `Equal`/`Exists` operators which accept any string values, numeric operators require valid integer strings. This may catch existing invalid configurations.
+- **Strict Validation**: Unlike existing `Equal`/`Exists` operators which accept any string values, comparison operators require properly formatted values. This may catch existing invalid configurations.
 
-- **No Implicit Conversion**: Values like `"0950"` vs `"950"` are numerically equal but may confuse users expecting string matching behavior.
+- **Parsing Overhead**: Each taint/toleration match with comparison operators requires parsing attempts (integer first, then semver), adding computational cost.
 
-- **Parsing Overhead**: Each taint/toleration match with numeric operators requires integer parsing.
+  > Note: A taint like `foo=95.5:NoSchedule` or `foo=v1.20.1:NoSchedule` is valid since taint values follow label values syntax. The type detection and parsing occurs during toleration matching, not validation.
 
 ### Risks and Mitigations
 
 #### Scheduler Performance Regression
 
-**Risk**: Integer parsing during taint/toleration matching could degrade scheduler performance, especially in clusters with thousands of taints.
+**Risk**: Value parsing (integer and semantic version) during taint/toleration matching could degrade scheduler performance, especially in clusters with thousands of taints.
 
 **Mitigation**:
 
-- Parse integers only when new operators are used (no impact on existing workloads)
+- Parsing only occurs when comparison operators are used (no impact on existing workloads)
+- Integer parsing is attempted first (fast path) before trying semver parsing
 - Consider caching parsed values in scheduler data structures if performance issues arise
 - Feature gate allows disabling if performance problems occur
 
@@ -373,16 +456,17 @@ spec:
 - Backward compatibility testing ensures existing workloads continue functioning
 - Gradual rollout recommendations for production clusters
 
-#### Edge Cases in Numeric Parsing
+#### Edge Cases in Value Parsing
 
-**Risk**: Unexpected behavior with edge cases like integer overflow, leading zeros, or malformed input could cause scheduling failures.
+**Risk**: Unexpected behavior with edge cases like integer overflow, leading zeros, malformed semver, or type mismatches could cause scheduling failures.
 
 **Mitigation**:
 
-- Use Go's standard `strconv.ParseInt()` with well-defined error handling
-- Comprehensive unit tests covering edge cases (overflow, underflow, malformed strings)
-- API validation rejects pods with unparseable values rather than silently failing
+- Use Go's standard `strconv.ParseInt()` and Kubernetes' `utilversion.ParseSemantic()` with well-defined error handling
+- Comprehensive unit tests covering edge cases (overflow, underflow, malformed strings, type mismatches)
+- API validation accepts values that are parseable as either integer or semver
 - Clear error messages help users identify and fix configuration issues
+- Type mismatch handling prevents unexpected cross-type comparisons
 
 #### Cross-SIG Impact
 
@@ -396,13 +480,22 @@ spec:
 
 ### API Changes
 
+#### Toleration Operator Extensions
+
 **File**: `staging/src/k8s.io/api/core/v1/types.go`
 
 Extend `core/v1.Toleration.Operator` to accept, in addition to `Equal` and `Exists`:
 
-- `Lt`: match if toleration.value < taint.value
-- `Gt`: match if toleration.value > taint.value
+- `Lt`: match if toleration.value < taint.value (supports both integer and semantic version comparison)
+- `Gt`: match if toleration.value > taint.value (supports both integer and semantic version comparison)
 - `Equal`/`Exists`: Remain unchanged
+
+**Comparison Type Detection:**
+The system automatically determines comparison type based on value format:
+
+1. **Integer comparison**: If both toleration and taint values can be parsed as integers
+2. **Semantic version comparison**: If both values can be parsed as semantic versions but not as integers
+3. **No match**: If values cannot be parsed consistently or there's a type mismatch
 
 ```go
 // TolerationOperator is the set of operators that can be used in a toleration.
@@ -412,22 +505,88 @@ const (
     TolerationOpEqual  TolerationOperator = "Equal"
     TolerationOpExists TolerationOperator = "Exists"
     
-    // New numeric comparison operators (feature-gated)
+    // Numeric operators (feature-gated)
+    // Support both integer and semantic version comparison based on value format
     TolerationOpLt TolerationOperator = "Lt"    // Less than
     TolerationOpGt TolerationOperator = "Gt"    // Greater than
 )
 ```
 
+#### CEL Semver Library Extensions
+
+**File**: `staging/src/k8s.io/apiserver/pkg/cel/library/semverlib.go`
+
+Extend the existing CEL semver library with additional comparison functions that align with toleration operators:
+
+```go
+// New CEL semver functions to add:
+
+// isGreaterThanOrEqual: Returns true if the receiver is greater than or equal to the operand
+// isLessThanOrEqual: Returns true if the receiver is less than or equal to the operand
+
+// Usage in CEL expressions:
+//   semver("1.20.1").isGreaterThanOrEqual(semver("1.20.0"))    // true
+//   semver("1.19.5").isLessThanOrEqual(semver("1.20.0"))       // true
+
+// Enhanced parsing with Kubernetes conventions:
+//   isSemverK8s(string): Validates using Kubernetes semantic version requirements
+//   semverK8s(string): Parses using Kubernetes version parsing logic
+```
+
+**File**: `staging/src/k8s.io/apiserver/pkg/cel/library/library.go`
+
+```go
+// Register enhanced semver library by default
+func ExtensionLibs(env *cel.Env) cel.EnvOption {
+    return cel.Lib(&ExtensionLibs{
+        Version: math.MaxUint32,
+        SemverExtensions: true, // Enable enhanced semver functions
+    })
+}
+```
+
 ### Semantics
 
-- To honor Kubernetes APIs that avoids floating-point numbers where possible due to precision and parsing issues, The new toleration operators will be introduced as integers (i.e.; 950 = 95.0%, 999 = 99.9%, 800 = 80.0%).
-- For `PreferNoSchedule` taints, numeric operators only determine whether the taint is considered as tolerated for scoring:
+**Comparison Operators (`Lt`, `Gt`) with Automatic Type Detection:**
+
+The operators automatically determine comparison type based on value format:
+
+**Integer Comparison Mode:**
+
+- Triggered when both toleration and taint values can be parsed as signed 64-bit integers
+- To honor Kubernetes APIs that avoid floating-point numbers, uses integers (i.e.; 950 = 95.0%, 999 = 99.9%, 800 = 80.0%)
+- Uses Go's `strconv.ParseInt()` for parsing
+- Follows standard integer ordering rules
+
+**Semantic Version Comparison Mode:**
+
+- Triggered when both values can be parsed as semantic versions but not as integers
+- Values must follow [Semantic Versioning 2.0.0](https://semver.org/) specification (e.g., `1.20.1`, `1.19.0-alpha.1`, `2.0.0-beta.1+build.123`)
+- Comparison follows semver precedence rules:
+  - Major version takes highest precedence
+  - Minor version takes second precedence  
+  - Patch version takes third precedence
+  - Pre-release versions have lower precedence than release versions
+  - Build metadata is ignored in precedence comparisons
+- Uses Kubernetes' own semantic version parsing (`k8s.io/apimachinery/pkg/util/version.ParseSemantic`) which supports the "v" prefix
+
+**Type Mismatch Handling:**
+
+- If toleration value is integer but taint value is semver (or vice versa): no match
+- If either value cannot be parsed as integer or semver: no match
+- This ensures type safety and prevents unexpected behavior
+
+**PreferNoSchedule Behavior:**
+For `PreferNoSchedule` taints, comparison operators determine whether the taint is considered tolerated for scoring:
 
 - **Tolerated taints**: Do not count against the node's score.
 - **Intolerated taints**: Count against the node's score.
 - **Scoring**: Unchanged - nodes with fewer intolerable `PreferNoSchedule` taints receive higher scores.
 
-This maintains consistent soft-preference behavior while enabling threshold-based SLA matching. For example, A pod requiring SLA > 95% will prefer nodes with SLA ≥ 950 over nodes with SLA < 950, but won't be blocked from scheduling on lower-SLA nodes if higher-SLA capacity is unavailable.
+This maintains consistent soft-preference behavior while enabling both threshold-based SLA matching and version-based placement. For example:
+
+- A pod with `operator: Gt, value: "950"` will prefer nodes with SLA ≥ 950 over nodes with SLA < 950 (integer comparison)
+- A pod with `operator: Gt, value: "1.20.0"` will prefer nodes running 1.20.x or higher over nodes running 1.19.x (semver comparison)
 
 ### Implementation
 
@@ -437,12 +596,16 @@ This maintains consistent soft-preference behavior while enabling threshold-base
 
 ```go
 const (
-    // TaintTolerationComparisonOperators enables numeric comparison operators (Lt, Gt) for tolerations
+    // TaintTolerationComparisonOperators enables numeric and semantic version comparison operators for tolerations
     TaintTolerationComparisonOperators featuregate.Feature = "TaintTolerationComparisonOperators"
+    
+    // CELSemverExtensions enables enhanced semantic version functions in CEL expressions
+    CELSemverExtensions featuregate.Feature = "CELSemverExtensions"
 )
 
 var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
     TaintTolerationComparisonOperators: {Default: false, PreRelease: featuregate.Alpha},
+    CELSemverExtensions: {Default: false, PreRelease: featuregate.Alpha},
 }
 ```
 
@@ -457,19 +620,30 @@ func validateTolerations(tolerations []core.Toleration, fldPath *field.Path) fie
         
         // Existing validation...
         
-        // New: Validate numeric operators (feature-gated)
+        // Validate comparison operators (feature-gated)
         switch toleration.Operator {
         case core.TolerationOpLt, core.TolerationOpGt:
             if !utilfeature.DefaultFeatureGate.Enabled(features.TaintTolerationComparisonOperators) {
                 allErrors = append(allErrors, field.Invalid(idxPath.Child("operator"), 
-                    toleration.Operator, "numeric operators require TaintTolerationComparisonOperators feature gate"))
+                    toleration.Operator, "comparison operators require TaintTolerationComparisonOperators feature gate"))
                 continue
             }
             
-            // Validate value is parseable as int64
-            if _, err := strconv.ParseInt(toleration.Value, 10, 64); err != nil {
+            // Validate value is parseable as either int64 or semantic version
+            isValidInt := false
+            isValidSemver := false
+            
+            if _, err := strconv.ParseInt(toleration.Value, 10, 64); err == nil {
+                isValidInt = true
+            }
+            
+            if _, err := utilversion.ParseSemantic(toleration.Value); err == nil {
+                isValidSemver = true
+            }
+            
+            if !isValidInt && !isValidSemver {
                 allErrors = append(allErrors, field.Invalid(idxPath.Child("value"),
-                    toleration.Value, "value must be a valid integer for numeric operators"))
+                    toleration.Value, "value must be a valid integer or semantic version for comparison operators"))
             }
         }
     }
@@ -488,31 +662,106 @@ func (t *Toleration) ToleratesTaint(taint *Taint) bool {
     // ...
     case TolerationOpLt, TolerationOpGt:
         // Feature gate check is not needed here as validation already handles it
-        return compareNumericValues(t.Value, taint.Value, t.Operator)
+        return compareValues(t.Value, taint.Value, t.Operator)
     default:
         return false
     }
 }
 
-func compareNumericValues(tolerationVal, taintVal string, op TolerationOperator) bool {
-    tVal, tErr := strconv.ParseInt(tolerationVal, 10, 64)
-    if tErr != nil {
-        return false // Invalid toleration value
+func compareValues(tolerationVal, taintVal string, op TolerationOperator) bool {
+    // Try integer comparison first
+    if tVal, tErr := strconv.ParseInt(tolerationVal, 10, 64); tErr == nil {
+        if nVal, nErr := strconv.ParseInt(taintVal, 10, 64); nErr == nil {
+            return compareIntegers(tVal, nVal, op)
+        }
+        // Toleration is int but taint is not - type mismatch
+        return false
     }
     
-    nVal, nErr := strconv.ParseInt(taintVal, 10, 64)  
-    if nErr != nil {
-        return false // Invalid taint value
+    // Try semantic version comparison
+    if tVer, tErr := utilversion.ParseSemantic(tolerationVal); tErr == nil {
+        if nVer, nErr := utilversion.ParseSemantic(taintVal); nErr == nil {
+            return compareSemvers(tVer, nVer, op)
+        }
+        // Toleration is semver but taint is not - type mismatch
+        return false
     }
     
+    // Neither integer nor semver
+    return false
+}
+
+func compareIntegers(tolerationVal, taintVal int64, op TolerationOperator) bool {
     switch op {
     case TolerationOpLt:
-        return tVal < nVal
+        return tolerationVal < taintVal
     case TolerationOpGt:
-        return tVal > nVal
+        return tolerationVal > taintVal
     default:
         return false
     }
+}
+
+func compareSemvers(tolerationVer, taintVer *utilversion.Version, op TolerationOperator) bool {
+    switch op {
+    case TolerationOpLt:
+        return tolerationVer.LessThan(taintVer)
+    case TolerationOpGt:
+        return tolerationVer.GreaterThan(taintVer)
+    default:
+        return false
+    }
+}
+```
+
+**3. CEL Semver Library Extensions** - `staging/src/k8s.io/apiserver/pkg/cel/library/semverlib.go`
+
+```go
+// Enhanced semver comparison functions
+func registerSemverExtensions(registry *cel.Registry) {
+    // Add isGreaterThanOrEqual function
+    registry.Register(
+        "isGreaterThanOrEqual",
+        cel.MemberOverload("semver_is_greater_than_or_equal_semver", 
+            []*cel.Type{semverType, semverType}, cel.BoolType,
+            cel.BinaryBinding(func(lhs, rhs ref.Val) ref.Val {
+                left := lhs.(*SemverObject)
+                right := rhs.(*SemverObject) 
+                return types.Bool(left.version.GTE(right.version))
+            })),
+    )
+    
+    // Add isLessThanOrEqual function  
+    registry.Register(
+        "isLessThanOrEqual",
+        cel.MemberOverload("semver_is_less_than_or_equal_semver",
+            []*cel.Type{semverType, semverType}, cel.BoolType,
+            cel.BinaryBinding(func(lhs, rhs ref.Val) ref.Val {
+                left := lhs.(*SemverObject)
+                right := rhs.(*SemverObject)
+                return types.Bool(left.version.LTE(right.version))
+            })),
+    )
+    
+
+}
+
+// Kubernetes-compatible semver parsing
+func semverK8s(str string) (*SemverObject, error) {
+    // Use Kubernetes' own version parser for consistency
+    version, err := utilversion.ParseSemantic(str)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Convert to blang/semver for CEL compatibility
+    semverStr := version.String()
+    blangVersion, err := semver.Parse(semverStr)
+    if err != nil {
+        return nil, err
+    }
+    
+    return &SemverObject{version: blangVersion}, nil
 }
 ```
 
@@ -551,11 +800,15 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-All core changes must be covered by unit tests, in both Taint API, validation, and scheduler sides:
+All core changes must be covered by unit tests, covering both integer and semantic version comparison in tolerations and CEL:
+
+**Toleration Tests:**
 
 - **API Validation Tests:** (staging/src/k8s.io/api/core/v1/toleration_test.go)
 - **Scheduler Helper Tests:** (staging/src/k8s.io/component-helpers/scheduling/corev1/helpers_test.go)
-- **Validation Tests:** ( pkg/apis/core/validation/validation_test.go)
+- **Validation Tests:** (pkg/apis/core/validation/validation_test.go)
+- **CEL Semver Library Tests:** (staging/src/k8s.io/apiserver/pkg/cel/library/semverlib_test.go)
+- **CEL Integration Tests:** (staging/src/k8s.io/apiserver/pkg/admission/plugin/cel/cel_test.go)
 - `<package>`: `<date>` - `<test coverage>`
 
 ##### Integration tests
@@ -584,9 +837,11 @@ This can be done with:
 
 The following scenarios need to be covered in integration tests:
 
-- Feature gate's enabling/disabling
-- **Scheduler Integration Tests:** will be extended to cover the new taints cases introduced in this KEP:(pkg/scheduler/framework/plugins/tainttoleration/taint_toleration_test.go)
+**Toleration Integration Tests:**
 
+- **Scheduler Integration Tests:** will be extended to cover the new comparison operators:(pkg/scheduler/framework/plugins/tainttoleration/taint_toleration_test.go)
+- **ValidatingAdmissionPolicy Integration Tests:** (test/integration/admissionregistration/validating_admission_policy_test.go)
+- **CRD Validation Integration Tests:** (test/integration/apiserver/openapi_test.go)
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ##### e2e tests
@@ -605,10 +860,11 @@ This can be done with:
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 If e2e tests are not necessary or useful, explain why.
 -->
-The existing e2e tests will be extended to cover the new taints cases introduced in this KEP:
+The existing e2e tests will be extended to cover the new comparison operators introduced in this KEP:
 
 - **Taints e2e Tests:** (test/e2e/node/taints.go)
-
+- **ValidatingAdmissionPolicy e2e Tests:** (test/e2e/apimachinery/validating_admission_policy.go)
+- **CRD e2e Tests:** (test/e2e/apimachinery/crd_validation.go)
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
@@ -689,44 +945,50 @@ in back-to-back releases.
 #### Alpha
 
 - Feature implemented behind `TaintTolerationComparisonOperators` feature gate (disabled by default)
-- API validation for numeric operators in place
-- Taint/toleration matching logic supports `Lt`, `Gt` operators  
+- API validation for comparison operators with automatic type detection
+- Taint/toleration matching logic supports `Lt`, `Gt` operators for both integer and semver values
+- Feature implemented behind `CELSemverExtensions` feature gate (disabled by default)
+- Enhanced semver library with additional comparison functions
+- Integration with Kubernetes version parsing standards  
 
 #### Beta
 
-- Feature enabled by default
-- Feedback collected from early adopters in SIG-Scheduling
-- Performance testing shows that there is no significant scheduler latency increase nor memory usage increase.
-- Implement feature for DRA APIs
-- Stress testing with:
-  - 1000+ nodes with numeric taints
-  - 10,000+ pods with numeric tolerations  
-  - Mixed numeric/string operator usage
+- `TaintTolerationComparisonOperators` feature gate enabled by default
+- Feedback collected from early adopters in SIG-Scheduling and SIG-Node
+- Performance testing shows no significant scheduler latency increase
+- DRA integration tested and validated
+- `CELSemverExtensions` feature gate enabled by default
+- Feedback collected from SIG-API-Machinery and admission control users
+- Performance impact on CEL expression evaluation measured and optimized
+- Integration testing with ValidatingAdmissionPolicies and CRD validation
 
 #### GA
 
-- Evidence of real-world adoption.
-- Complete scalability validation:
-  - 5000-node clusters with mixed taint/toleration workloads
-  - No performance regressions under sustained load
+- No performance regressions in scheduler throughput under sustained load
+- DRA integration proven stable in production environments
+- No performance impact on admission control latency
+- Demonstrated value in complex version constraint scenarios
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+**Toleration Operators:**
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-- Upgrade
-  - Enable the feature gate in both API Server and Scheduler.
-- Downgrade
-  - Disable the feature gate in both API Server and Scheduler
+- **Upgrade**: Enable `TaintTolerationComparisonOperators` feature gate in both API Server and Scheduler components
+- **Downgrade**: Disable the feature gate; existing workloads with comparison operators will be rejected during validation
+- **Migration**: No automatic migration required; new operators are opt-in
+
+**CEL Semver Extensions:**
+
+- **Upgrade**: Enable `CELSemverExtensions` feature gate in API Server components  
+- **Downgrade**: Disable the feature gate; ValidatingAdmissionPolicies and CRDs using enhanced functions will fail validation
+- **Migration**: Enhanced semver functions are additive; existing CEL expressions continue to work
+
+**Compatibility Considerations:**
+
+- Both feature gates can be enabled independently
+- Existing toleration operators (`Equal`, `Exists`) remain unchanged
+- Existing CEL semver functions maintain full backward compatibility
+- Cross-feature integration (toleration + CEL validation) provides additional value but is not required
 
 ### Version Skew Strategy
 
