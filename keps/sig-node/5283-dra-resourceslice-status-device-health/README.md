@@ -220,8 +220,8 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Expose well-formed data in the ResourceSlice API representing the real-time
-  health of the devices a ResourceSlice describes.
+- Expose well-formed data in the Kubernetes API representing the real-time
+  health of the devices that the ResourceSlices describe.
 
 ### Non-Goals
 
