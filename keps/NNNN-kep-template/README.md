@@ -91,8 +91,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Story 1 (Optional)](#story-1-optional)
+    - [Story 2 (Optional)](#story-2-optional)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -218,9 +218,9 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Story 1 (Optional)
 
-#### Story 2
+#### Story 2 (Optional)
 
 ### Notes/Constraints/Caveats (Optional)
 
