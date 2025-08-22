@@ -184,7 +184,9 @@ properties like identifiers, capacity, and firmware or kernel driver versions.
 
 Sometimes devices fail and an automated agent or cluster administrator must take
 some action to restore the device to a healthy state. This KEP defines a
-standard way to determine whether or not a device is considered healthy.
+standard way to determine whether or not a device is considered healthy by way
+of a new `status` object in the ResourceSlice API containing fields describing
+device health.
 
 ## Motivation
 
