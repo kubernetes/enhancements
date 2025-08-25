@@ -260,7 +260,8 @@ To support deferred ResourceQuota enforcement, we will introduce a new `resource
 
 * The plugin will be **feature-gated** and only active when the `ResourceQuotaDeferredEnforcement` feature is enabled.
 
-* It will only apply to **previously schedule-gated pods**, which are identified by the following `PodScheduled` status condition:
+* It will only apply to **previously schedule-gated pods**, which are identified by the following `PodScheduled` status condition, or
+  * `PodScheduled` condition type and `ResourceQuotaValidated` reason.
  
 * Upon successful scheduling quota will be updated reflecting scheduled pod resources after deferred validation.
 
@@ -326,7 +327,7 @@ proposal will be implemented, this is the place to discuss them.
 
 This KEP does not introduce new API types or fields. Instead, it reuses the existing `PodSchedulingReadiness` mechanism and interprets its presence as an indication that the pod is not yet eligible for scheduling.
 
-This KEP introduces new value for the existing field: pod status condition reason `DeferredQuotaValidationFailed` 
+This KEP introduces new value for the existing field: pod status condition reason `ResourceQuotaValidated` 
 
 ### Feature Gate
 
@@ -355,7 +356,7 @@ ResourceQuotaDeferredEnforcement: true
 
 * This adjustment applies **only** to previously schedule-gated pods.
 * Before scheduling, simulate pod admission against the current namespace `ResourceQuota` usage.
-* If scheduling the pod would exceed quota, do **not** proceed with scheduling.
+* If scheduling the pod would exceed quota, do **not** proceed with scheduling, by updating `PodScheduled` condition with `ResourceQuotaValidated` reason.
 * Allow the scheduler to retry later as other pods complete or quota becomes available.
 
 #### Scheduler Behavior
@@ -376,7 +377,9 @@ To support deferred ResourceQuota enforcement, we will introduce a new `resource
         reason: SchedulingGated
   ```
 
-* If deferred quota validation fails, the plugin will return a `PreFilter` result of `UnschedulableAndUnresolvable`.
+* If deferred quota validation fails, the plugin will:
+  * update `PosdScheduled` condition with new Reason `ResourceQuotaValidated`
+  * return a `PreEnqueue` result of `UnschedulableAndUnresolvable`.
 
 * The scheduler will then mark the pod’s `PodScheduled` condition with:
 
@@ -385,16 +388,16 @@ To support deferred ResourceQuota enforcement, we will introduce a new `resource
     conditions:
       - type: PodScheduled
         status: "False"
-        reason: Unschedulable
-        message: '0/1 nodes are available: deferred quota validation failure, quota exceeded:
+        reason: ResourceQuotaValidated
+        message: '0/1 nodes are available: quota exceeded:
           p1, requested: cpu=1, used: cpu=2, limited: cpu=2. preemption: 0/1 nodes are
           available: 1 Preemption is not helpful for scheduling.'
   ```
 
 * Since the plugin relies on the `SchedulingGated` condition to identify eligible pods, we must avoid losing track of pods that fail deferred validation. To that end:
 
-  * A new `PodScheduled` condition reason will be introduced: `DeferredQuotaValidationFailed`.
-  * Pods failing deferred quota checks will retain `status: "False"` for `PodScheduled` but with the updated reason `DeferredQuotaValidationFailed`.
+  * A new `PodScheduled` condition reason will be introduced: `ResourceQuotaValidated`.
+  * Pods failing deferred quota checks will retain `status: "False"` for `PodScheduled` but with the updated reason `ResourceQuotaValidated`.
 
 * Upon successful scheduling, the pod’s `PodScheduled` condition is updated to reflect success:
 
@@ -404,9 +407,9 @@ To support deferred ResourceQuota enforcement, we will introduce a new `resource
     lastTransitionTime: "2025-08-01T06:43:37Z"
   ```
 
-##### PreFilter Context
+##### PreEnqueue Context
 
-The deferred quota validation will be implemented in the `PreFilter` extension point of the scheduling cycle. The logic is as follows:
+The deferred quota validation will be implemented in the `PreEnqueeu` extension point of the scheduling cycle. The logic is as follows:
 
 * **For `SchedulingGated` pods**:
 
@@ -423,12 +426,12 @@ The deferred quota validation will be implemented in the `PreFilter` extension p
 
     * **If quota is exceeded**:
 
-      * Retain `status: "False"` for `PodScheduled`, but update the reason to `DeferredQuotaValidationFailed`.
+      * Retain `status: "False"` for `PodScheduled`, but update the reason to `ResourceQuotaValidated`.
     * **If quota check passes**:
 
       * Continue with the scheduling flow (see PostBind section below).
 
-* **For `DeferredQuotaValidationFailed` pods**:
+* **For `ResourceQuotaValidated` pods**:
 
   * Detect by presence of:
 
@@ -437,14 +440,14 @@ The deferred quota validation will be implemented in the `PreFilter` extension p
       conditions:
         - type: PodScheduled
           status: "False"
-          reason: DeferredQuotaValidationFailed
+          reason: ResourceQuotaValidated
           message: '...'
     ```
   * Retry quota validation:
 
     * **If quota is still exceeded**:
 
-      * Keep `status: "False"` and reason as `DeferredQuotaValidationFailed`.
+      * Keep `status: "False"` and reason as `ResourceQuotaValidated`.
     * **If quota check passes**:
 
       * Continue with the scheduling flow (see PostBind section).
