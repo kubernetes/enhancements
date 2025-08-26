@@ -316,7 +316,7 @@ for health information for each device listed in the ResourceSlice:
 type ResourceSlice struct {
 	...
 
-	// Contains the status observed by the driver.
+	// Contains the observed status.
 	// +optional
 	Status ResourceSliceStatus `json:"status,omitempty"`
 }
@@ -335,13 +335,13 @@ type DeviceStatus struct {
 	// +required
 	Name string `json:"name"`
 
-	// Health contains the health of a device as observed by the driver.
+	// Health contains the observed health of a device.
 	//
 	// +optional
 	Health *DeviceHealthStatus `json:"health,omitempty"`
 }
 
-// DeviceHealthStatus represents the health of a device as observed by the driver.
+// DeviceHealthStatus represents the observed health of a device.
 type DeviceHealthStatus struct {
 	// TODO
 	// This could contain fields representing the overall "Healthy" or "Unhealthy"
@@ -945,7 +945,7 @@ type DeviceStatus struct {
 
 // These are valid conditions of a device.
 const (
-	// Available means the device is available, as determined by the driver.
+	// Available means the device is available.
 	DeviceAvailable = "Available"
 )
 ```
