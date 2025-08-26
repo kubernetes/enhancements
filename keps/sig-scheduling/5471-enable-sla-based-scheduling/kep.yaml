@@ -4,8 +4,8 @@ authors:
   - "@jane.doe"
 owning-sig: sig-scheduling
 participating-sigs:
-  - sig-node
-status: provisional
+  - sig-apps
+status: implementable
 creation-date: 2025-08-08
 reviewers:
   - "@SergeyKanzhelev"
