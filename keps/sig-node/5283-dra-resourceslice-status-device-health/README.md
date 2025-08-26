@@ -981,11 +981,11 @@ spec:
   driver: cards.dra.example.com
   devices:
   - name: card-1
-  attributes:
-    manufacturer: # a vendor-specific attribute, automatically qualified as cards.dra.example.com/manufacturer
-      string: Cards-are-us Inc.
-    resource.kubernetes.io/health: # a standard attribute expressing overall health status
-      string: Unhealthy
+    attributes:
+      manufacturer: # a vendor-specific attribute, automatically qualified as cards.dra.example.com/manufacturer
+        string: Cards-are-us Inc.
+      resource.kubernetes.io/health: # a standard attribute expressing overall health status
+        string: Unhealthy
 ```
 
 This approach requires no new API structure and DRA drivers already assume
