@@ -29,6 +29,7 @@
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
+      - [Performance tests](#performance-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
@@ -99,6 +100,7 @@ From a scheduling perspective, adding numeric operators to tolerations only adju
 - Add comparison operators to tolerations so pods can match taints like `node.kubernetes.io/sla=<int>` using thresholds.
 - Keep behavior consistent with existing effects (`NoSchedule`, `PreferNoSchedule`, `NoExecute`).
 - Backward compatible and opt‑in via a feature gate.
+- Zero operational performance impact on existing pod scheduling using `Equal` and `Exists` operators.
 
 ### Non-Goals
 
@@ -110,13 +112,13 @@ From a scheduling perspective, adding numeric operators to tolerations only adju
 
 In addition to general scheduling improvements, SLA‑aware opt‑in via tolerations has specific advantages for `Dynamic Resource Allocation (DRA)` and `AI/ML`:
 
-- DRA steers GPUs/accelerators resource claims by node reliability: critical workloads get high‑SLA capacity while batch workloads use cheaper pools. Taints block risky pools and evict when capacity degrades.
+- DRA steers GPUs/accelerators resource claims by node reliability: critical workloads get high‑SLA capacity while interruptible batch workloads use cheaper pools. Taints block risky pools and evict when capacity degrades.
 
-- AI/ML pipelines can place latency‑sensitive inference on high‑SLA nodes while directing batch to run on spot nodes. When spot nodes are reclaimed, taints trigger graceful drain and controlled failover.
+- AI/ML pipelines can place latency‑sensitive inference on high‑SLA nodes while directing checkpoint-able batch workloads to run on spot nodes. When spot nodes are reclaimed, taints trigger graceful drain and controlled failover.
 
 | Benefit                        | Impact on DRA                                             | Impact on AI/ML workloads                               |
 | ------------------------------ | --------------------------------------------------------- | ------------------------------------------------------- |
-| **Cost–reliability trade-off** | Critical workloads stay on premium nodes; batch uses spot | Inference on reliable nodes; training on cheaper pools  |
+| **Cost–reliability trade-off** | Critical workloads stay on premium nodes; interruptible batch uses spot | Inference on reliable nodes; checkpoint-able training on cheaper pools  |
 | **Workload-aware placement**   | Different claim types target appropriate node tiers       | Pipeline stages match their reliability requirements    |
 | **Graceful preemption**        | `NoExecute` provides controlled eviction timing           | Predictable failover for training and serving workloads |
 | **Resource fairness**          | Prevents monopolization of premium capacity               | Teams share reliable accelerators fairly                |
@@ -155,6 +157,18 @@ spec:
   - key: node.kubernetes.io/sla
     operator: Gt
     value: "750"
+    effect: NoSchedule
+---
+# Critical workload will not be scheduled until a suitable high reliability node has capacity
+apiVersion: v1
+kind: Pod
+metadata:
+  name: critical-workload
+spec:
+  tolerations:
+  - key: node.kubernetes.io/sla
+    operator: Gt
+    value: "950"
     effect: NoSchedule
 ```
 
@@ -247,7 +261,31 @@ This ensures DRA allocations are both resource-correct and reliability-compliant
 **Example Configuration:**
 
 ```yaml
-# DRA claim with SLA constraints
+# High-SLA GPU device published by DRA driver
+apiVersion: resource.k8s.io/v1alpha4
+kind: ResourceSlice
+metadata:
+  name: gpu-node-01-slice
+spec:
+  driver: nvidia.com/gpu
+  pool:
+    name: gpu-node-01
+    generation: 1
+  devices:
+  - name: gpu-node-01-device-0
+    basic:
+      attributes:
+        memory: "32Gi"
+        compute-capability: "8.6"
+      capacity:
+        count: 1
+    # Driver applies SLA taint based on node reliability metrics
+    taints:
+    - key: node.kubernetes.io/sla
+      value: "980"  # 98% SLA
+      effect: NoSchedule
+---
+# DRA claim with SLA constraints  
 apiVersion: resource.k8s.io/v1alpha4
 kind: ResourceClaim
 metadata:
@@ -257,6 +295,12 @@ spec:
     requests:
     - name: gpu
       deviceClassName: nvidia-a100
+      tolerations:
+      # Only accept GPUs with SLA >= 950 (95%)
+      - key: node.kubernetes.io/sla
+        operator: Gt
+        value: "950"
+        effect: NoSchedule
 ---
 # Pod using DRA claim with SLA requirements
 apiVersion: v1
@@ -318,7 +362,7 @@ spec:
       value: "24"
       effect: NoSchedule
 ---
-# Batch training workload tolerates degraded devices
+# Batch Short-lived batch training workload tolerates degraded devices
 kind: ResourceClaim
 metadata:
   name: training-gpu-claim
@@ -340,7 +384,7 @@ spec:
 
 - **Parsing Requirements**: The toleration value must be parseable as integers for numeric operators (`Lt`, `Gt`). If fails parsing, the toleration does not match.
 
-  > Note: A taint like `foo=95.5:NoSchedule` is valid since taint values follow label values syntax, which allows. The numeric parsing/validation is enforced on toleration **only**.
+  > Note: A taint like `foo=95.5:NoSchedule` is valid since taint values follow label values syntax, which allows. The numeric parsing/validation is enforced on toleration *only*.
 
 - **Alpha Restrictions**: When `TaintTolerationComparisonOperators=false`, the API server rejects pods using the new operators.
 
@@ -350,6 +394,8 @@ spec:
 
 - **Parsing Overhead**: Each taint/toleration match with numeric operators requires integer parsing.
 
+- Invalid taints meant to be used with the new comparison operators (e.g., `node.kubernetes.io/sla=95.5` and `node.kubernetes.io/version=1`) are not detected at admission time.
+
 ### Risks and Mitigations
 
 #### Scheduler Performance Regression
@@ -358,7 +404,8 @@ spec:
 
 **Mitigation**:
 
-- Parse integers only when new operators are used (no impact on existing workloads)
+- Parse integers only when new operators are used.
+- Existing `Equal`/`Exists` operators execute identical code paths with no additional overhead.
 - Consider caching parsed values in scheduler data structures if performance issues arise
 - Feature gate allows disabling if performance problems occur
 
@@ -482,19 +529,21 @@ func validateTolerations(tolerations []core.Toleration, fldPath *field.Path) fie
 ```go
 // ToleratesTaint checks if the toleration tolerates the taint.
 func (t *Toleration) ToleratesTaint(taint *Taint) bool {
+     switch t.Operator {
     // Existing key and effect matching logic...
     
-    switch t.Operator {
-    // ...
+    // Handle existing operators first. This ensures
+    // zero performance impact for existing Equal/Exists scenarios.
     case TolerationOpLt, TolerationOpGt:
         // Feature gate check is not needed here as validation already handles it
-        return compareNumericValues(t.Value, taint.Value, t.Operator)
+        // Only parse values when comparison operators are actually used
+        return compareValues(t.Value, taint.Value, t.Operator)
     default:
         return false
     }
 }
 
-func compareNumericValues(tolerationVal, taintVal string, op TolerationOperator) bool {
+func compareValues(tolerationVal, taintVal string, op TolerationOperator) bool {
     tVal, tErr := strconv.ParseInt(tolerationVal, 10, 64)
     if tErr != nil {
         return false // Invalid toleration value
@@ -557,6 +606,11 @@ All core changes must be covered by unit tests, in both Taint API, validation, a
 - **Scheduler Helper Tests:** (staging/src/k8s.io/component-helpers/scheduling/corev1/helpers_test.go)
 - **Validation Tests:** ( pkg/apis/core/validation/validation_test.go)
 - `<package>`: `<date>` - `<test coverage>`
+
+##### Performance tests
+
+- Establish current scheduling latency for workloads using only `Equal`/`Exists` operators
+- Verify that enabling the feature gate with no comparison operators used shows no measurable performance difference.
 
 ##### Integration tests
 
@@ -698,17 +752,12 @@ in back-to-back releases.
 - Feedback collected from early adopters in SIG-Scheduling
 - Performance testing shows that there is no significant scheduler latency increase nor memory usage increase.
 - Implement feature for DRA APIs
-- Stress testing with:
-  - 1000+ nodes with numeric taints
-  - 10,000+ pods with numeric tolerations  
-  - Mixed numeric/string operator usage
+- Stress testing.
 
 #### GA
 
 - Evidence of real-world adoption.
-- Complete scalability validation:
-  - 5000-node clusters with mixed taint/toleration workloads
-  - No performance regressions under sustained load
+- Complete scalability validation.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1155,13 +1204,3 @@ information to express the idea and why it was not acceptable.
 -->
 
 ## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/website]: https://git.k8s.io/website
