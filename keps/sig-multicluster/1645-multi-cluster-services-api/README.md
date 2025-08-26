@@ -1007,6 +1007,8 @@ not simply be merged, a `ServiceExportConflict` condition will be set on all
 The conflict will be resolved by assigning precedence based on each
 `ServiceExport`'s `creationTimestamp`, from oldest to newest.**
 
+**Note:** When a `ServiceExport`'s conflict condition changes from `False` to `True` due to this resolution policy, runtime traffic remains unaffected. The oldest cluster will win the conflict and continue to be referenced in the `ServiceImport`, maintaining service continuity. Conversely, when the conflict condition transitions from `True` to `False` (for example, when the oldest cluster's service is unexported), the `ServiceImport` may remain unchanged to avoid potentially disruptive changes to active traffic patterns.  
+
 #### Service Port
 
 A derived service will be accessible with the clusterset IP at the ports
