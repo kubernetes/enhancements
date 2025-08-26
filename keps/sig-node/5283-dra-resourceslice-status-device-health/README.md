@@ -110,6 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Device Conditions](#device-conditions)
   - [Standardized Attributes](#standardized-attributes)
+  - [New DeviceHealth Resource](#new-devicehealth-resource)
   - [Standardized Events](#standardized-events)
   - [Vendor-Provided Metrics](#vendor-provided-metrics)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -999,6 +1000,41 @@ labeled `health`. Other related information like the particular failure mode or
 remediation strategy of an unhealthy device also becomes mixed in with all of
 the other attributes of a device, making their relationship less clear even if
 the attributes have similar names.
+
+### New DeviceHealth Resource
+
+Instead of encoding new health information in a ResourceSlice, the same
+information could be represented in a new API type named DeviceHealth. A
+device's health could then be represented as:
+
+```yaml
+apiVersion: resource.k8s.io/v1alpha3
+kind: DeviceHealth
+metadata:
+  name: my-device-health
+spec:
+  # source defines from where this health is derived.
+  # A driver, custom controller, manual update, etc.
+  source: {}
+  deviceRef:
+    driver: gpu.example.com
+    pool: node-1
+    device: gpu-1
+  health: Unhealthy
+```
+
+Encoding health for devices separately from ResourceSlices more clearly
+communicates that any actor, not only DRA drivers, may assume the responsibility
+of managing the health information. This approach also involves no changes to
+the ResourceSlice API versus adding health information to a new `status` field
+in a ResourceSlice which adds another way for ResourceSlices to become too large
+for backend storage.
+
+Being separate from its ResourceSlice though means that a device might be
+referred to by multiple DeviceHealth resources which could show different or
+even conflicting status for that same device. Consumers should take care to
+consider all referring DeviceHealth resources to get an overall view of the
+health of a device and use the `spec.source` to distinguish between them.
 
 ### Standardized Events
 
