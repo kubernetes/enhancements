@@ -685,7 +685,7 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No, enabling the feature does **not** change any default behavior unless the feature gate `ResourceQuotaDeferredEnforcement` is explicitly set to `true`.
+Yes, enabling the feature **does** change the default `ResourceQuota` validation behavior.
 
 By default, (with the feature gate disabled) the `ResourceQuota` admission controller continues to reject pods whose compute resource requests exceed quota, regardless of whether they include `PodSchedulingReadiness` gates.
 
@@ -695,8 +695,6 @@ When the feature gate is enabled, the behavior changes **only** for pods with on
 * Their resource requests are temporarily excluded from quota usage until the gates are removed.
 
 All other pods, including those without gates or those affecting `resource.count/*` quotas, continue to follow existing behavior.
-
-In summary: **default behavior is preserved unless the feature gate is enabled.**
 
 #### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
