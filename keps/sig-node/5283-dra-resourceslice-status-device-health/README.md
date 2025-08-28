@@ -110,6 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Device Conditions](#device-conditions)
   - [Standardized Attributes](#standardized-attributes)
+  - [Standardized Taints with New &quot;NoEffect&quot; effect](#standardized-taints-with-new-noeffect-effect)
   - [New DeviceHealth Resource](#new-devicehealth-resource)
   - [Standardized Events](#standardized-events)
   - [Vendor-Provided Metrics](#vendor-provided-metrics)
@@ -1000,6 +1001,40 @@ labeled `health`. Other related information like the particular failure mode or
 remediation strategy of an unhealthy device also becomes mixed in with all of
 the other attributes of a device, making their relationship less clear even if
 the attributes have similar names.
+
+### Standardized Taints and New "NoEffect" Effect
+
+A taint with a standardized key such as `resource.kubernetes.io/unhealthy` could
+be defined to represent device health. A `NoEffect` effect is also introduced as
+a way to declare that the taint is purely informational and therefore does not
+affect scheduling or execution. The `NoSchedule` or `NoExecute` effects may also
+be used with the standard taint.
+
+e.g.
+```yaml
+kind: ResourceSlice
+apiVersion: resource.k8s.io/v1
+...
+spec:
+  driver: cards.dra.example.com
+  devices:
+  - name: card-1
+    taints:
+    - effect: NoEffect
+      key: resource.kubernetes.io/unhealthy
+```
+
+Like [standardized attributes](#standardized-attributes), this approach requires
+no new API structure. Over attributes, taints have the advantage of also being
+defined by DeviceTaintRule resources as described by
+[KEP-5055](https://kep.k8s.io/5055), which are designed to allow other
+components, not only DRA drivers, to manage device taints.
+
+This approach also shares some drawbacks with standardized attributes, such as
+low discoverability and lack of structure to tie other contextual information
+with the overall health status. While up to 32 attributes may be added to each
+device in a ResourceSlice, only 4 taints are allowed, though that limit doesn't
+apply to taints defined in DeviceTaintRules.
 
 ### New DeviceHealth Resource
 
