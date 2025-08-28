@@ -110,7 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Device Conditions](#device-conditions)
   - [Standardized Attributes](#standardized-attributes)
-  - [Standardized Taints with New &quot;NoEffect&quot; effect](#standardized-taints-with-new-noeffect-effect)
+  - [Standardized Taints and New &quot;NoEffect&quot; Effect](#standardized-taints-and-new-noeffect-effect)
   - [New DeviceHealth Resource](#new-devicehealth-resource)
   - [Standardized Events](#standardized-events)
   - [Vendor-Provided Metrics](#vendor-provided-metrics)
