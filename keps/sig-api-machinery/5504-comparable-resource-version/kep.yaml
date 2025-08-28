@@ -3,6 +3,8 @@ kep-number: 5504
 authors:
   - "@michaelasp"
 owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-architecture
 status: provisional
 creation-date: 2025-08-28
 reviewers:
