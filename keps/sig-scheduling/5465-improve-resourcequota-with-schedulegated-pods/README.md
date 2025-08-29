@@ -460,7 +460,7 @@ To support deferred ResourceQuota enforcement, we will introduce a new `resource
 
 ##### PreEnqueue Context
 
-The deferred quota validation will be implemented in the `PreEnqueeu` extension point of the scheduling cycle. The logic is as follows:
+The deferred quota validation will be implemented in the `PreEnqueue` extension point of the scheduling cycle. The logic is as follows:
 
 * **For `SchedulingGated` pods**:
 
