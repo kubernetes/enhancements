@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
+  - sig-apimachinery
 status: provisional
 creation-date: 2025-08-20
 reviewers:
