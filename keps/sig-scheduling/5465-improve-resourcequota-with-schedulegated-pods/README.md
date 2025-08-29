@@ -574,6 +574,7 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 * Proven stability via soak testing
 * Widespread usage in deferred scheduling systems (e.g., Kueue)
+* Evaluation of whether to preserve the original resource quota validation, in order to support both modes of operation: “Original” and “Deferred”
 
 #### GA
 
