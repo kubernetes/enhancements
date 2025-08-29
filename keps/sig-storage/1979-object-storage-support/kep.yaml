@@ -3,6 +3,8 @@ kep-number: 1979
 authors:
   - "@jeffvance"
   - "@wlan0"
+  - "@BlaineEXE"
+  - "@shanduur"
 owning-sig: "sig-storage"
 participating-sigs:
   - sig-storage
@@ -22,6 +24,6 @@ creation-date: 2019-11-25
 last-updated: 2022-04-06
 status: alpha
 stage: alpha
-latest-milestone: v1.25
+latest-milestone: v1.35
 milestone:
-  alpha: "v1.25"
+  alpha: "v1.25" # v1alpha2 in v1.35
