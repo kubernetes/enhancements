@@ -445,7 +445,9 @@ New proposed implementation: https://github.com/kubernetes/kubernetes/pull/13090
 
 #### Metrics
 
-We'll add a new metric named `statefulset_unavailability_violation`, it tracks how many violations are detected while processing StatefulSets with maxUnavailable > 1, (counter goes up if processed StatefulSet has spec.replicas - status.readyReplicas > maxUnavailable)
+We'll add two new metrics:
+- **statefulset_max_unavailable**: tracks the current `.spec.updateStrategy.rollingUpdate.maxUnavailable` value. This gauge reflects the configured maximum number of pods that can be unavailable during rolling updates, providing visibility into the availability constraints.
+- **statefulset_unavailable_replicas**: tracks the current number of unavailable pods in a StatefulSet. This gauge reflects the real-time count of pods that are either missing or unavailable (i.e., not ready for `.spec.minReadySeconds`).
 
 ### Test Plan
 
@@ -545,6 +547,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   - test that rolling updates are working correctly for both PodManagementPolicy types when the MaxUnavailable is used. 
   - include a test that fails currently but passes when https://github.com/kubernetes/kubernetes/issues/112307 is fixed, with a 
     StatefulSet setting `minReadySeconds` and `updateStrategy.rollingUpdate.maxUnavailable` and checking for a correct rollout specially when scaling down during a rollout.
+  - https://github.com/kubernetes/kubernetes/pull/133717
 
 ## Graduation Criteria
 
@@ -566,7 +569,7 @@ Clearly define what graduation means by either linking to the [API doc
 definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
 or by redefining what graduation means.
 
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
+In general, we try to use the same stages (alpha, beta, GA), regardless of how the
 functionality is accessed.
 
 [feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
@@ -617,11 +620,11 @@ in back-to-back releases.
 #### Beta
 
 - Enabled by default with default value of 1 with upgrade/downgrade tested at least manually.
-- Added `statefulset_unavailability_violation` metric in-tree
-- It is necessary to update the firstUnhealthyPod calculation to correctly call processCondemned. New tests should cover this and take into consideration that the controller should first wait for the predecessor condemned pods to become available before deleting them and delete the pod with the highest ordinal number
+- Added `statefulset_max_unavailable` and `statefulset_unavailable_replicas` metrics to in-tree.
+- It is necessary to update the `firstUnhealthyPod` calculation to correctly call processCondemned. New tests should cover this and take into consideration that the controller should first wait for the predecessor condemned pods to become available before deleting them and delete the pod with the highest ordinal number
 - minReadySeconds and maxUnavailable bugs https://github.com/kubernetes/kubernetes/issues/123911, https://github.com/kubernetes/kubernetes/issues/112307, https://github.com/kubernetes/kubernetes/issues/119234 and https://github.com/kubernetes/kubernetes/issues/123918 should be fixed before promotion of maxUnavailable.
 - Additional unit/e2e/integration tests listed in the test plan should be added covering the newly found bugs.
-- Users should be warned that maxUnavailable works differently for each podManagementPolicy (E.g for OrderedReady it is not applied until the StatefulSet had a chance to fully scale up). This can result in slower rollouts. For parallel this can skip ordering. This should be both mentioned in the API doc and website as a requirements for beta graduation.
+- Users should be warned that maxUnavailable works differently for each podManagementPolicy (e.g. for `OrderedReady` it is not applied until the StatefulSet had a chance to fully scale up). This can result in slower rollouts. For parallel this can skip ordering. This should be both mentioned in the API doc and website as a requirements for beta graduation.
 
 #### GA
 
@@ -743,7 +746,7 @@ mid-rollout?
 Be sure to consider highly-available clusters, where, for example,
 feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
+will roll out across nodes.
 -->
 
 The rollout or rollback of the `maxUnavailable` feature for StatefulSets primarily affects how updates are managed, aiming to minimize disruptions. However, several scenarios could lead to potential issues:
@@ -789,13 +792,13 @@ Multiple violations of maxUnavailable might indicate issues with feature behavio
 A manual test was performed, as follows:
 
 1. Create a cluster in 1.33.
-2. Upgrade to 1.34.
+2. Upgrade to 1.35.
 3. Create StatefulSet A with spec.updateStrategy.rollingUpdate.maxUnavailable set to 3, with 6 replicas
 4. Verify a rollout and check if only 3 pods are unavailable at a time ([currently with a bug if podManagementPolicy is set to Parallel](https://github.com/kubernetes/kubernetes/issues/112307))
 5. Downgrade to 1.33.
 6. Verify that the rollout only has 1 pod unavailable at a time, similar to setting maxUnavailable to 1
 7. Create another StatefulSet B not setting maxUnavailable (leaving it nil)
-8. Upgrade to 1.34.
+8. Upgrade to 1.35.
 9. Verify that the rollout has default behavior of only having one pod unavailable at a time
    Verify that the `maxUnavailable` can be set again to StatefulSet A and test the rollout behavior
 
@@ -803,14 +806,14 @@ TODO:
 A manual test will be performed, as follows:
 
 1. Create a cluster in 1.33.
-2. Upgrade to 1.34.
+2. Upgrade to 1.35.
 3. Create StatefulSet A with spec.updateStrategy.rollingUpdate.maxUnavailable set to 3, with 6 replicas
 4. Verify a rollout and check if only 3 pods are unavailable at a time
 5. Check if rollout is also fine with podManagementPolicy set to Parallel
 6. Downgrade to 1.33.
 7. Verify that the rollout only has 1 pod unavailable at a time, similar to setting maxUnavailable to 1 (MaxUnavailableStatefulSet feature gate disabled by default).
 8. Create another StatefulSet B not setting maxUnavailable (leaving it nil)
-9. Upgrade to 1.34.
+9. Upgrade to 1.35.
 10. Verify that the rollout has default behavior of only having one pod unavailable at a time
     Verify that the `maxUnavailable` can be set again to StatefulSet A and test the rollout behavior
 
@@ -822,8 +825,8 @@ No
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-If their StatefulSet rollingUpdate section has the field maxUnavailable specified with
-a value different than 1. While in alpha and beta, the feature-gate needs to be enabled.
+If their StatefulSet rollingUpdate section has the field `maxUnavailabl`e specified with
+a value different from 1. While in alpha and beta, the feature-gate needs to be enabled.
 
 The command bellow should show the maxUnavailable value:
 
@@ -839,7 +842,7 @@ kubectl get statefulsets -o yaml | grep maxUnavailable
   - Condition name: 
   - Other field: .spec.updateStrategy.rollingUpdate.maxUnavailable
 - [X] Other (treat as last resort)
-  - Details: Users can view the `statefulset_unavailability_violation` metric to see if there have been instances
+  - Details: Users can view the `statefulset_unavailable_replicas` or `statefulset_max_unavailable` metrics to see if there have been instances
 where the feature is not working as intended.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -861,7 +864,7 @@ question.
 
 Startup latency of schedulable stateful pods should follow the [existing latency SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#steady-state-slisslos).
 
-The total number of `statefulset_unavailability_violation` increments across all StatefulSets must not exceed 5 over a 28-day rolling window.
+`statefulset_unavailable_replicas` > `statefulset_max_unavailable` must not exceed the limit.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -883,13 +886,12 @@ Pick one more of these and delete the rest.
   - Metric name: `workqueue_work_duration_seconds`
     - Scope: Observes the time taken to process StatefulSet operations from the work queue.
     - Components exposing the metric: `kube-controller-manager`
-  - Metric name: `workqueue_retries_total`
-
-        - Scope: Counts the total number of retries for StatefulSet update operations within the work queue. This metric provides insight into the stability and reliability of the StatefulSet update process, indicating potential issues when high.
-        - Components Exposing the Metric: `kube-controller-manager`
+- Metric name: `workqueue_retries_total`
+    - Scope: Counts the total number of retries for StatefulSet update operations within the work queue. This metric provides insight into the stability and reliability of the StatefulSet update process, indicating potential issues when high.
+    - Components Exposing the Metric: `kube-controller-manager`
 
   - Metric name: `statefulset_unavailability_violation`
-    - Scope: Counts the number of times maxUnavailable has been violated (i.e spec.replicas - availableReplicas > maxUnavailable).
+    - Scope: Counts the number of times maxUnavailable has been violated (i.e. `.spec.replicas` - availableReplicas > maxUnavailable).
     - Components Exposing the Metric: `kube-controller-manager`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -938,7 +940,7 @@ No.
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 The RollingUpdate will fail or will not be able to proceed if etcd or API server is unavailable and
-hence this feature will also be not be able to be used.
+hence this feature will also not be able to be used.
 
 ###### What are other known failure modes?
 
@@ -957,7 +959,7 @@ For each of them, fill in the following information by copying the below templat
 
 - Incorrect Handling of minReadySeconds During StatefulSet Updates with Parallel Pod Management
   - Detection:
-    - Monitor the `statefulset_unavailability_violation` metric of the StatefulSet during rolling updates. A large value of this metric could indicate the issue.
+    - Monitor the `statefulset_unavailable_replicas` and `statefulset_max_unavailable` metrics of the StatefulSet during rolling updates. A large value of this metric could indicate the issue.
     - Review StatefulSet events or controller logs for rapid succession of pod updates without adherence to minReadySeconds, which could confirm that the delay is not being respected.
   - Mitigations:
     - Temporarily adjust the podManagementPolicy to OrderedReady as a workaround to ensure minReadySeconds is respected during updates, though this may slow down the rollout process.
@@ -975,10 +977,10 @@ For each of them, fill in the following information by copying the below templat
 
 - 2019-01-01: KEP created.
 - 2019-08-30: PR Implemented with tests covered.
-- <<[UNRESOLVED bugs found in alpha and blockers to promotion @knelasevero @atiratree @bersalazar @leomichalski]>>
-  Open PRs: https://github.com/kubernetes/kubernetes/pull/130909, https://github.com/kubernetes/kubernetes/pull/130951
-  <<[/UNRESOLVED]>>
-- 2025-XX-XX: Bump to Beta.
+- bugs found in alpha and blockers to promotion @knelasevero @atiratree @bersalazar @leomichalski
+  - 2025-07-07: https://github.com/kubernetes/kubernetes/pull/130909
+  - 2025-09-01: https://github.com/kubernetes/kubernetes/pull/130951
+- 2025-09-30: Bump to Beta.
 
 ## Drawbacks
 

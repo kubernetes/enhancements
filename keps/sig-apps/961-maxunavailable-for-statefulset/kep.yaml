@@ -5,6 +5,7 @@ authors:
   - "@kerthcet"
   - "@knelasevero"
   - "@edwinhr716"
+  - "@helayoty"
 owning-sig: sig-apps
 participating-sigs: []
 status: implementable
@@ -27,12 +28,12 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.24"
-  beta: "v1.34"
+  beta: "v1.35"
   stable: TBD
 
 # The following PRR answers are required at alpha release
@@ -46,4 +47,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - statefulset_unavailability_violation
+  - statefulset_max_unavailable
+  - statefulset_unavailable_replicas
