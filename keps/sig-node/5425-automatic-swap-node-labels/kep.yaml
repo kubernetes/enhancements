@@ -1,0 +1,28 @@
+ititle: AutomaticSwapLabels
+kep-number: 5425
+authors:
+  - "@ajaysundark"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+creation-date: "2025-06-19"
+reviewers: 
+  - '@tallclair'
+  - '@SergeyKanzhelev'
+  - TBD
+approvers:
+- TBD
+
+status: provisional
+stage: alpha
+latest-milestone: "v1.34"
+milestone:
+  alpha: "v1.34"
+
+feature-gates:
+  - name: AutomaticSwapLabels
+    components:
+      - kubelet
+disable-supported: true
+
+metrics: []
