@@ -509,12 +509,12 @@ In the `PostBind` extension point, we will update the namespace’s `ResourceQuo
 
 ### Schedule Behavior Summary
 
-| Event                            | Pod Counted in Quota | Resource Counted in Quota? | Admitted?  | Eligible for Scheduling?                                                               |
-|----------------------------------|----------------------|-------------------------| ---------- |----------------------------------------------------------------------------------------|
-| Normal pod created               | ✅ Yes                | ✅ Yes                   | ✅ If fits | ✅ If fits quota and node                                                               |
-| Gated pod created (new behavior) | ✅ Yes  | ❌ No                    | ✅ Always                   | ❌ - No, all scheduling gates must be removed first.                                    |
-| Gate removed (not scheduled)     | ✅ Yes | ❌ No                    | Already in                 | ❌ - If fails deferred quota validation <br/> ✅ - If succeeds deferred quota validation |
-| Gate removed (scheduled)     | ✅ Yes | ✅ Yes                       | Already in                 | Already scheduled                                                                      |
+| Event                            | Pod Counted in Quota  | Resource Counted in Quota? | Admitted?    | Eligible for Scheduling?                                                               |
+|----------------------------------|-----------------------|----------------------------|--------------|----------------------------------------------------------------------------------------|
+| Normal pod created               | ✅ Yes                | ✅ Yes                     | ✅ If fits  | ✅ If fits quota and node                                                               |
+| Gated pod created (new behavior) | ✅ Yes                | ❌ No                      | ✅ Always    | ❌ - No, all scheduling gates must be removed first.                                    |
+| Gate removed (not scheduled)     | ✅ Yes                | ❌ No                      | Already in   | ❌ - If fails deferred quota validation <br/> ✅ - If succeeds deferred quota validation |
+| Gate removed (scheduled)         | ✅ Yes                | ✅ Yes                     | Already in   | Already scheduled                                                                      |
 
 
 ### Test Plan
@@ -1146,46 +1146,56 @@ Enabling and using the `ResourceQuotaDeferredEnforcement` feature does **not int
 * **No change** in API call type, admission control remains part of the API server request path (`POST /api/v1/namespaces/{ns}/pods`).
 * **Behavioral change**: Admission controller may allow pods that would otherwise be rejected.
 
-✅ 2. **Scheduler – Simulated Quota Admission**
+✅ 2. **Scheduler**
 
 * Before binding a pod that was previously gated, the **scheduler will simulate a quota check** by querying:
 
   * **ResourceQuota objects** in the pod’s namespace via:
 
+    ```golang
+    ResourceQuotas(namespace).List(...)
     ```
-    GET /api/v1/namespaces/{ns}/resourcequotas
+
+* After pod is bound the resource quota affected by this pod will be updated to reflect new usage.
+
+  * **ResourceQuota objects** update via:
+  
+    ```golang
+    ResourceQuotas(namespace).UpdateStatus(...)
     ```
+
 * This is done **per previously gated pod at scheduling time**, introducing additional **read** traffic, especially under high pod churn.
 
-✅ 3. **Quota Controller – Usage Recalculation**
+* Pending: Pod Status condition update
 
-* The quota controller may:
-
-  * Skip usage accounting for gated pods.
-  * Recalculate usage when gates are removed.
-* This affects **internal quota accounting logic**, not external API traffic.
+  * Reflect resource quota validation failures
+  * This functionality is already request as part of [this issue](https://github.com/kubernetes/kubernetes/issues/130668), so it may be not needed. 
 
 ---
 
 ##### Summary:
 
-| API Call             | Type  | Originating Component  | Behavior Change                               |
-| -------------------- | ----- | ---------------------- | --------------------------------------------- |
-| `GET resourcequotas` | READ  | kube-scheduler         | Used before scheduling gated pods             |
-| `POST pods`          | WRITE | API server (admission) | Admission allowed if gated even if over quota |
-| `LIST/GET pods`      | READ  | quota controller       | Filters out gated pods for usage accounting   |
+| API Call                    | Type  | Originating Component | Behavior Change                          |
+|-----------------------------|-------|-----------------------|------------------------------------------|
+| `GET resourcequotas`        | READ  | kube-scheduler        | Used before scheduling gated pods        |
+| `POST resourcequota status` | WRITE | kube-scheduler        | Update quota usage in post binding phase |
+| `POST pod status`           | WRITE | kube-scheduler        | Update pod status condition              |
 
 ---
 
 ##### Impact:
 
-* The increase in API traffic is minor and proportional to:
-
-  * The number of schedule-gated pods
-  * The scheduler’s binding rate
+* The increase in API traffic is minor and proportional to: 
+  * the number of schedule-gated pods,
+  * the number of namespaces that define ResourceQuota, and the number of quota objects per namespace.
+* 
 * No periodic polling or high-frequency API calls are introduced.
 
 This ensures the feature is scalable and in line with existing control plane patterns.
+
+Net effect: the distribution of calls shifts from admission to the scheduler’s late phases, but the aggregate volume should be approximately the same.
+
+In summary additional load on the API server (the total number of API calls) should be roughly equivalent to today’s ResourceQuota path.
 
 
 #### Will enabling / using this feature result in introducing new API types?
@@ -1218,36 +1228,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Enabling or using the `ResourceQuotaDeferredEnforcement` feature will **not significantly increase the size or count** of existing API objects.
-
-📌 Details:
-
-1. **No new fields or annotations are added**
-
-* The feature **does not modify** the schema of `Pod`, `ResourceQuota`, or any other existing object.
-* It uses the existing `schedulingGates` field in the `Pod.spec` and existing quota tracking mechanisms.
-
-2. **Pod objects**
-
-* **Size**: Slight increase in size **only if users include `schedulingGates`**, typically a few bytes (e.g., one or two short strings).
-* **Count**: The number of Pods admitted might increase slightly if previously-rejected over-quota pods are now allowed due to deferred enforcement. This is bounded by existing `resource.count/pods` quotas.
-
-3. **ResourceQuota objects**
-
-* No size or structural changes. Internals of usage accounting logic are updated, but this does not reflect in object size or frequency.
-
----
-
-##### 🔍 Summary:
-
-| Resource        | Size Increase               | Count Increase                      | Notes                                     |
-| --------------- | --------------------------- | ----------------------------------- | ----------------------------------------- |
-| `Pod`           | Minimal (if gates are used) | Possible (more gated pods admitted) | Only if workloads were previously blocked |
-| `ResourceQuota` | ❌ No                        | ❌ No                                | No new fields or tracking logic exposed   |
-| Other objects   | ❌ No                        | ❌ No                                | No new object types introduced            |
-
-The increase in pod count is **bounded by existing resource.count quotas** and is not unbounded. Overall, the impact on API object size and count is negligible.
-
+Enabling or using the `ResourceQuotaDeferredEnforcement` feature will **not increase the size or count** of existing API objects.
 
 #### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1267,28 +1248,30 @@ Enabling or using the `ResourceQuotaDeferredEnforcement` feature may result in *
 1. **Pod Admission (`POST /pods`)**
 
    * **Change**: Slightly more logic in the `ResourceQuota` admission controller to check for `schedulingGates` and conditionally exclude resource usage.
-   * **Impact**: Negligible latency increase (sub-millisecond), no full quota recalculation.
+   * **Impact**: Potential decrease in admission latency, since ResourceQuota validation is offloaded from admission to the scheduling phase.
 
-2. **Scheduler Binding Decision**
+2. **Scheduler PreEnqueue Decision**
 
-   * **Change**: When scheduling a previously schedule-gated pod, the scheduler must simulate quota usage before binding.
-   * **Impact**: One additional **`GET resourcequotas`** per such pod.
+    * **Change**: When scheduling a previously schedule-gated pod, the scheduler must simulate quota usage. 
+    * **Impact**: List resource quotas per pod in pod's namespace.
+    * **Expected latency**: A few milliseconds per pod, measurable at high pod churn but still within typical scheduler SLOs.
+
+3. **Scheduler Binding Decision**
+
+   * **Change**: When binding a previously schedule-gated pod, the scheduler must update quota usage.
+   * **Impact**: Update resource quotas matching scheduled pod.
    * **Expected latency**: A few milliseconds per pod, measurable at high pod churn but still within typical scheduler SLOs.
-
-3. **Quota Controller Reconciliation**
-
-   * **Change**: Filtering out gated pods from usage calculations.
-   * **Impact**: Slightly more filtering logic per reconciliation loop; unlikely to exceed existing thresholds for controller latency.
 
 ---
 
 ##### 🔍 Summary Table:
 
-| Operation               | Latency Increase  | Likely to Violate SLOs? |
-| ----------------------- | ----------------- | ----------------------- |
-| Pod admission           | Negligible (<1ms) | ❌ No                    |
-| Scheduler bind decision | Minor (1–5ms)     | ❌ No (bounded rate)     |
-| Quota controller sync   | Negligible        | ❌ No                    |
+| Operation                  | Latency Increase | Likely to Violate SLOs? |
+|----------------------------|------------------| ----------------------- |
+| Pod admission              | Negligible       | ❌ No                    |
+| Scheduler enqueue decision | Minor (1–5ms)    | ❌ No (bounded rate)     |
+| Scheduler bind decision    | Minor (TOD ms)   | ❌ No (bounded rate)     |
+| Quota controller sync      | Negligible       | ❌ No                    |
 
 ---
 
@@ -1321,7 +1304,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-Enabling and using the `ResourceQuotaDeferredEnforcement` feature will result in **only minimal and localized increases** in resource usage (CPU, memory, I/O) within core control plane components. These increases are **not expected to be significant** or exceed existing resource allocation assumptions for those components.
+Enabling and using the `ResourceQuotaDeferredEnforcement` feature will result in **only minimal and localized increases** in resource usage (CPU, memory, I/O) within core control plane components. 
+These increases are **not expected to be significant** or exceed existing resource allocation assumptions for those components.
 
 ---
 
@@ -1329,20 +1313,22 @@ Enabling and using the `ResourceQuotaDeferredEnforcement` feature will result in
 
 1. **API Server**
 
-   * **CPU/RAM**: Minimal increase in admission controller logic to check for `schedulingGates`.
+   * **CPU/RAM**: Unchanged: no additional usage amplification.
    * **Disk/IO**: No additional write or read amplification.
    * **Impact**: Negligible. The logic is simple and constant-time.
 
 2. **kube-controller-manager (ResourceQuota controller)**
 
-   * **CPU**: Slight increase due to filtering out schedule-gated pods during quota usage reconciliation.
+   * **CPU**: Unchanged; no additional load is added.
    * **RAM**: Unchanged; no new state is stored.
    * **Impact**: Low. The additional logic is simple and scales linearly with pod count, bounded by existing informer caches.
 
 3. **kube-scheduler**
 
-   * **CPU/RAM**: Small increase when evaluating previously gated pods, it performs a simulated admission by reading `ResourceQuota` objects.
-   * **IO**: Additional `GET` requests to the API server for `ResourceQuota` objects.
+   * **CPU/RAM**: Small increase when evaluating previously gated pods, it performs a simulated admission by reading `ResourceQuota` objects as well as update `ResourceQuota` status reflecting new usage.
+   * **IO**: 
+     * Additional `LIST` requests to the API server for `ResourceQuota` objects.
+     * Additional `Update/Patch` requests to the API server for `ResourceQuota` objects.
    * **Impact**: Moderate in clusters with very high volumes of gated pods being scheduled concurrently, but still within typical scheduler resource envelopes.
 
 ---
@@ -1356,9 +1342,9 @@ There is **no increase in long-lived memory**, background goroutines, or persist
 ##### 📊 Summary:
 
 | Component               | Resource | Impact Level | Notes                                                                   |
-| ----------------------- | -------- | ------------ | ----------------------------------------------------------------------- |
-| API Server              | CPU/RAM  | Low          | Lightweight gate check at admission time                                |
-| kube-controller-manager | CPU      | Low          | Filters out gated pods from usage loop                                  |
+| ----------------------- | -------- |--------------| ----------------------------------------------------------------------- |
+| API Server              | CPU/RAM  | None-Low     | Lightweight gate check at admission time                                |
+| kube-controller-manager | CPU      | None         | Filters out gated pods from usage loop                                  |
 | kube-scheduler          | CPU/IO   | Low–Moderate | Performs per-pod quota simulation when scheduling previously gated pods |
 | Nodes (kubelet)         | None     | None         | Feature is control-plane only                                           |
 
@@ -1405,31 +1391,6 @@ No, enabling or using the `ResourceQuotaDeferredEnforcement` feature **will not 
 * Pod-level limits (e.g., `maxPods` per node) continue to constrain resource usage even if this feature is enabled.
 
 ---
-
-⚠️ Theoretical risk:
-
-If an operator misconfigures quotas or removes `resource.count/*` constraints entirely:
-
-* It’s possible to admit a **large number of gated pods**, which could eventually all become schedulable.
-* If those pods land on nodes in large bursts, resource exhaustion (e.g., PIDs, CPU) is possible, but this risk exists independently of this feature and is mitigated by:
-
-  * Normal scheduling limits
-  * Kubelet pod density limits
-  * PodDisruptionBudgets and priority policies
-
----
-
-##### Final Verdict:
-
-| Resource Type | Risk Introduced by Feature? | Mitigation                       |
-| ------------- | --------------------------- | -------------------------------- |
-| PIDs          | ❌ No                        | Pods not started until scheduled |
-| Inodes        | ❌ No                        | No file creation on nodes        |
-| Sockets       | ❌ No                        | No node-level workloads launched |
-| Network Ports | ❌ No                        | No containers created            |
-
-This feature introduces **no new node-level resource consumption paths**, and therefore does **not pose a resource exhaustion risk** on nodes when used as intended.
-
 
 ### Troubleshooting
 
