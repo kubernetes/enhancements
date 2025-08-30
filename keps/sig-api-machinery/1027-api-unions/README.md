@@ -247,7 +247,7 @@ kubebuilder types):
   discriminator values). This field MUST be required if there is no default
   option, omitempty if the default option is the empty string, or optional and
   omitempty if a default value is specified with the `// +default` marker.
-- `// +unionMember[=<memberName>][,optional] before a field means that this
+- `// +unionMember[=<memberName>][,optional]` before a field means that this
   field is a member of a union. The `<memberName>` is the name of the field that will be set as the discriminator value.
   It MUST correspond to one of the valid enum values of the discriminator's enum
   type. It defaults to the go (i.e `CamelCase`) representation of the field name if not specified.
