@@ -358,6 +358,9 @@ criteria, the operation will be immediately aborted and an error returned. If
 binaries will be allowed. If `credentialPluginAllowlist`'s value is set to the
 empty list `[]`, *all binaries will be prohibited*.
 
+Commands that don't create a client, such as `kubectl config view` will not be
+affected by the allowlist.
+
 In future updates, other allowlist entry fields MAY be added. Specifically,
 fields allowing for verification by digest or public key have been discussed.
 The initial design MUST accommodate such future additions.
