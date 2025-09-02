@@ -390,7 +390,7 @@ defaults:
       - name: interactive
         default: "true"
 
-credentialPluginsAllowlist:
+credentialPluginAllowlist:
     - name: cloudplatform-credential-helper
     - name: custom-credential-script
 ```
