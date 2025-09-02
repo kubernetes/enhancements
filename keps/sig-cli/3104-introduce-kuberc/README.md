@@ -370,7 +370,7 @@ If `credentialPluginPolicy` is set to `Allowlist`, but a `credentialPluginAllowl
 is not provided, it will be considered an error and the operation will fail.
 This is because the allowlist is a security control, and it is likely the user
 has made a mistake. Since the output may be long, it would be easy for a
-security warning to be lost at the beginning of the output. An explictly empty
+security warning to be lost at the beginning of the output. An explicitly empty
 allowlist (i.e. `credentialPluginAllowlist: []`), in combination with
 `credentialPluginPolicy: Allowlist` will be considered an error for the same
 reason. The user should instead use `credentialPluginPolicy: DisableAll` in
