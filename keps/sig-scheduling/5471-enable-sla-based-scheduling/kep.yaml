@@ -39,5 +39,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - scheduler_numeric_taint_evaluations_total
   - scheduler_numeric_tolerations_total{operator="Gt|Lt"}
-  - scheduler_numeric_taint_mismatches_total
