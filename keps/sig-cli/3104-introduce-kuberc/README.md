@@ -347,7 +347,7 @@ binary in question must meet all of the required conditions in that entry in
 order to be executed. At the outset, the entry object will have only one field,
 `name`. The path of the binary specified in the kubeconfig will be compared
 against that named in the `name` field. This field may contain a basename, or
-the full path of a plugin. To ensure an exact match, `os.LookPath` will be
+the full path of a plugin. To ensure an exact match, `exec.LookPath` will be
 called on both the `name` field and the binary named in the `kubeconfig`. The
 resulting absolute paths must match. That is to say, each element in the
 allowlist is a set of criteria; if the binary in question meets all of the
