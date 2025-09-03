@@ -83,6 +83,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Helper Function](#helper-function)
+  - [Conformance Tests](#conformance-tests)
+  - [Documentation Changes](#documentation-changes)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
@@ -148,46 +151,131 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Resource version is currently defined as an opaque string from the view of a client, with the only operation that is supported being equality comparisons. This differs from the internal apiserver implementation, where it is clearly defined as a monotonically incrementing integer. There are increasing requirements being required from clients consuming object metadata, where stronger comparisons than just equality are required.
+Resource version is currently defined as an opaque string from the view of a
+client, with the only operation that is supported being equality comparisons.
+This differs from the internal apiserver implementation, where it is clearly
+defined as a monotonically incrementing integer. There are increasing
+requirements being required from clients consuming object metadata, where
+stronger comparisons than just equality are required.
 
-We propose to extend some of the guarantees that the apiserver uses to the client as well, particularly the ability to consume the resource version as an integer, and the ability to compare resource versions to each other for more than equality. Clients can use the new semantics in order to view the "age" of a resource compared to another.
+We propose to extend some of the guarantees that the apiserver uses to the
+client as well, particularly the ability to consume the resource version as an
+integer, and the ability to compare resource versions to each other for more
+than equality. Clients can use the new semantics in order to determine the
+relative order of two different resource versions for the same type.
 
 ## Motivation
 
-The motivation for this feature comes from the need for certain features to compare resources of the same kind to each other. One strong use case is [storage version migration](https://github.com/kubernetes/enhancements/issues/4192), where in order to tell whether a resource is fully migrated we check the resource version of the last migrated resource until we are sure all resources prior to migration have been migrated. This requires us to do comparisons besides equality on the resource. Since this requires us to "know" what place we are in time to perform the operation it would not be possible with pure equality comparisons. If we had to otherwise, we would likely have to iterate over the entire list of resources, leading to unbounded operation time, especially with objects that are frequently modified.
+The motivation for this feature comes from the need for certain features to
+compare resources of the same kind to each other. One strong use case is
+[storage version
+migration](https://github.com/kubernetes/enhancements/issues/4192), where in
+order to tell whether a resource is fully migrated we check the resource version
+of the last migrated resource until we are sure all resources prior to migration
+have been migrated. This requires us to do comparisons besides equality on the
+resource. Since this requires us to "know" what place we are in time to perform
+the operation it would not be possible with pure equality comparisons. If we had
+to otherwise, we would likely have to iterate over the entire list of resources,
+leading to unbounded operation time, especially with objects that are frequently
+modified.
 
-Another important reason for this is to improve client side informers. Much of the improvements inside of the apiserver internals has been based upon the ability for the apiserver to compare resource version. It is trivial for the apiserver to check cache freshness and order watch and list operations, none of which can currently be done client side, leaving many performance improvements locked to the internal apiserver implementation. With these improvements, libraries that use client-go can take advantage of the ordering properties and implement similar performance improvements so that external controllers can perform just as well as internal apiserver code. See [kubernetes/kubernetes#127693](https://github.com/kubernetes/kubernetes/issues/127693), and (kubernetes/kubernetes#130767)[https://github.com/kubernetes/kubernetes/issues/130767] for motivation here. There is currently no good way for a client to be able to tell whether or not it is far behind the apiserver due to the fact we only have equality comparisons. Implementing something similar to [KEP-2340](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache/README.md#monitoring) in client would give us large performance improvements in this aspect.
+Another important reason for this is to improve client side informers. Much of
+the improvements inside of the apiserver internals has been based upon the
+ability for the apiserver to compare resource version. It is trivial for the
+apiserver to check cache freshness and order watch and list operations, none of
+which can currently be done client side, leaving many performance improvements
+locked to the internal apiserver implementation. With these improvements,
+libraries that use client-go can take advantage of the ordering properties and
+implement similar performance improvements so that external controllers can
+perform just as well as internal apiserver code. See
+[kubernetes/kubernetes#127693](https://github.com/kubernetes/kubernetes/issues/127693),
+and
+(kubernetes/kubernetes#130767)[https://github.com/kubernetes/kubernetes/issues/130767]
+for motivation here. There is currently no good way for a client to be able to
+tell whether or not it is far behind the apiserver due to the fact we only have
+equality comparisons. Implementing something similar to
+[KEP-2340](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/2340-Consistent-reads-from-cache/README.md#monitoring)
+in client would give us large performance improvements in this aspect.
 
-Lastly, an example of needing to compare resources is a controller that controls deployments. By being able to check the resource version before and after deployment updates, it has the ability to see whether or not a new pod has been created yet. While equality checks are used for that currently, this opens up the floor for subtle correctness bugs and issues when churn is happening in the cluster. Current controllers work most of the time but can run into issues where staleness of the cache and other issues can affect what the controller sees as the current state. By having comparison based RV handling, controllers can directly check whether the objects are actually newer than before. 
+Lastly, an example of needing to compare resources is a controller that controls
+deployments. By being able to check the resource version before and after
+deployment updates, it has the ability to see whether or not a new pod has been
+created yet. While equality checks are used for that currently, this opens up
+the floor for subtle correctness bugs and issues when churn is happening in the
+cluster. Current controllers work most of the time but can run into issues where
+staleness of the cache and other issues can affect what the controller sees as
+the current state. By having comparison based RV handling, controllers can
+directly check whether the objects are actually newer than before. 
 
 ### Goals
 
-The goals for this KEP are fairly straightforward, firstly we will expose a utility function that clients can use on the resource version to check comparisons between resource versions. This will take the opaque resource version string and return a boolean and an error if it occurs. Along with that we will update the documentation to specify that a ResourceVersion must be a monotonically increasing integer. 
+The goals for this KEP are fairly straightforward, firstly we will expose a
+utility function that clients can use on the resource version to check
+comparisons between resource versions. This will take two resource version
+strings and return an integer indicating the ordering relationship between them,
+or an error if the resource version strings were malformed. Along with that we
+will update the documentation to specify that a ResourceVersion must be a
+monotonically increasing integer. 
 
-Second, we will create conformance tests to ensure that a conformant cluster abides by the new constraints to the resource version. This should be essentially every cluster in production but will give us the guarantee that users will be unaffected by the new constraints.
+Second, we will create conformance tests to ensure that a conformant cluster
+abides by the new constraints to the resource version. This should be
+essentially every cluster in production but will give us the guarantee that
+users will be unaffected by the new constraints.
 
 ### Non-Goals
 
-Non goals for the KEP are constraining size of the resource version from a client perspective, or adding opinionated ideas of the structure of a resource version besides comparability from a client perspective.
+Non goals for the KEP are constraining size of the resource version from a
+client perspective, or adding opinionated ideas of the structure of a resource
+version besides comparability from a client perspective.
 
 ## Proposal
 
-We will expose a helper function in client-go that will compare resource versions. It will have the type definition as follows
+There are 3 parts to the proposal:
+
+### Helper Function
+
+We will expose a helper function in client-go that will compare resource
+versions. It will have the type definition as follows:
 
 ```
 func CompareResourceVersion(x, y string) int error
 ```
 
-We expose an error in case the strings are non comparable and return either (-1, 0, 1), following the cmp definition where we return -1 if x is less than y, 0 if they are equal, and 1 if x is greater than y. 
+We expose an error in case the strings are non comparable and return either (-1,
+0, 1), following the cmp definition where we return -1 if x is less than y, 0 if
+they are equal, and 1 if x is greater than y. 
 
-The internal implementation of this is important to ensure compatibility and efficiency:
-  - Loop through the string to ensure all characters are 0-9 with no leading 0's
-  - Compare length of strings, if they are not equal then the one with larger length is greater
-  - If they are equal, perform a lexical comparison per character left to right until we hit a different character, at that point comparison between the characters will give us the larger integer
+The internal implementation of this is important to ensure maximum compatibility
+and efficiency, defined as follows:
+  1) Loop through both strings, ensuring they are at least one character long,
+    have no leading 0's, and all characters are 0-9, and return an error
+    otherwise
+  2) Compare length of strings, if they are not equal then the one with larger length is greater
+  3) If they are equal, perform a lexical comparison per character left to right until we hit a different character, at that point comparison between the characters will give us the larger integer
 
-By doing it via lexical comparison we do not impose a restriction on resource version sizing and is more efficient than [bigint libraries](https://github.com/liggitt/kubernetes/commits/compare-rv-benchmark/) 
+By doing it via lexical comparison we do not impose a restriction on resource
+version sizing and is more efficient than [bigint
+libraries](https://github.com/liggitt/kubernetes/commits/compare-rv-benchmark/) 
 
-Along with this, we will also add a conformance test to kubernetes for all builtin types to ensure they are conformant. On this end we will enforce a 128 bit integer limitation on resource version 
+### Conformance Tests
+
+Along with this, we will also add a conformance test to kubernetes for every built-in GA type, and for an example CRD-based type:
+1. Gather `beforeRV` and `afterRV` as resourceVersions returned by the server for a given type before and after a write to that type
+2. `CompareResourceVersion(beforeRV, afterRV)` must return `-1` and no error (beforeRV comes before afterRV, both are well-formed comparable integers)
+3. `beforeRV` and `afterRV` must be <= the maximum unsigned 128-bit integer (340282366920938463463374607431768211455)
+
+This will ensure that all conformant clusters will automatically be assured that
+the comparability works for all supported API objects.
+
+### Documentation Changes
+
+Lastly, we will have to update the documentation that defines a resource version
+as an opaque string and change it to the new definition of a comparable integer.
+For instance the
+[website](https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)
+documents the resource version only as an opaque string. We will have to find
+all references, in code and in documentation and update them to the new
+definition.
 
 ### User Stories (Optional)
 
@@ -200,15 +288,35 @@ bogged down.
 
 #### Story 1
 
-I am a controller creator and want to see if my actions have been done to all objects created before a certain object. I use the helper function along with a streamed list to do my work until I hit a greater than or equal object and stop work. Without this I would have to run my work on all objects.
+I am a controller creator and want to see if my actions have been done to all
+objects created before a certain object. I use the helper function along with a
+streamed list to do my work until I hit a greater than or equal object and stop
+work. Without this I would have to run my work on all objects.
 
 #### Story 2
 
-I am a controller creator and want to see whether my cache has caught up to my actions done on my previous reconcile. I use the helper function to compare the resource version and use it to more efficiently reconcile my objects.
+I am a controller creator and want to see whether my cache has caught up to my
+actions done on my previous reconcile. I use the helper function to compare the
+resource version and use it to more efficiently reconcile my objects.
 
 #### Story 3
 
-I am the creator of an extended apiserver, I can decide whether to use a numerical increasing integer as my resource version or not. If I decide to use a numerical resource version, either by using the k8s.io/apiserver or my own, I get the ability for clients to compare resource versions, improving performance and feature richness of my api objects from the client side. If I decide to use a different resource version encoding, clients will have to fall back and not be able to use certain features like storage version migration and possibly have less performant operations with more api calls. 
+I am the creator of an extended apiserver, I can decide whether to use a
+numerical increasing integer as my resource version or not.
+
+I have several options to choose from:
+  1)  Use k8s.io/apiserver directly, getting resource version semantics for free
+  2)  Use my own apiserver technology, but still provide the same semantics
+  3)  Return objects that are not comparable, formatted as something besides an
+      integer
+
+If I decide to use a numerical resource version, either by using the
+k8s.io/apiserver or my own, I get the ability for clients to compare resource
+versions, improving performance and feature richness of my api objects from the
+client side. If I decide to use a different resource version encoding, clients
+will have to fall back and not be able to use certain features like storage
+version migration and possibly have less performant operations with more api
+calls. 
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -221,15 +329,26 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-There are certain API objects that may not conform to this specification. Controllers must gracefully handle these objects, which is why we provide an error type to the function signature. These cases will only occur on non conformant clusters and certain aggregated apiservers however, since we will be adding conformance tests to ensure compatibility. 
+There are certain API objects that may not conform to this specification.
+Controllers must gracefully handle these objects, which is why we provide an
+error type to the function signature. These cases will only occur on non
+conformant clusters and certain aggregated apiservers however, since we will be
+adding conformance tests to ensure compatibility. 
 
-Some examples of api objects which aren't versioned on a monotonically increasing int are
+Some examples of api objects which aren't versioned on a monotonically
+increasing int are
 
-* (metrics-server)[https://github.com/kubernetes-sigs/prometheus-adapter/blob/c2ae4cdaf160363151f746e253789af89f8b6c49/pkg/resourceprovider/provider.go#L244-L254]
-* (calico)[https://github.com/projectcalico/calico/blob/09c0b753c91474e72157818a480165028f620999/libcalico-go/lib/backend/k8s/resources/profile.go#L138]
-* (Porch)[https://github.com/nephio-project/porch/blob/4c066b6986533445fb15143507e7ce6470b66c72/pkg/cache/dbcache/dbpackage.go#L97C22-L97C31]
+* [metrics-server](https://github.com/kubernetes-sigs/prometheus-adapter/blob/c2ae4cdaf160363151f746e253789af89f8b6c49/pkg/resourceprovider/provider.go#L244-L254)
+* [calico](https://github.com/projectcalico/calico/blob/09c0b753c91474e72157818a480165028f620999/libcalico-go/lib/backend/k8s/resources/profile.go#L138)
+* [Porch](https://github.com/nephio-project/porch/blob/4c066b6986533445fb15143507e7ce6470b66c72/pkg/cache/dbcache/dbpackage.go#L97C22-L97C31)
 
-All of these however are non numerical in nature or do not support complex operations which may require listing. Our helper function will just error on these objects and will not support certain features that having a versioned object would have.
+All of these however are non numerical in nature or do not support complex
+operations which may require listing. Our helper function will just error on
+these objects and will not support certain features that having a versioned
+object would have. These type of objects are the main reason to provide an error
+type as part of the return value of the helper. Since we define that as part of
+the spec, the caller will have to error or fallback to a less efficient
+implementation if the underlying resource versions are not compatible.
 
 ## Design Details
 
@@ -242,11 +361,14 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Test Plan
 
-We will add unit tests for the actual helper function. However the more involved piece of work will be adding conformance tests for every built in api type to ensure that the cluster is conforming with the new requirements. This will ensure that a client working on a conformant cluster will not encounter errors.
+We will add unit tests for the actual helper function. However the more involved
+piece of work will be adding conformance tests for every built in api type to
+ensure that the cluster is conforming with the new requirements. This will
+ensure that a client working on a conformant cluster will not encounter errors.
 
 [x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+existing tests to make this code solid enough prior to committing the changes
+necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
@@ -265,11 +387,14 @@ N/A
 
 ##### e2e tests
 
-N/A
+The E2E tests for this will be the conformance tests that will be added in order
+to ensure that a cluster is conformant with the new resource version constraints. The conformance tests themselves will use the helper function as an example of a client that runs the 
 
 ### Graduation Criteria
 
-This is not a normal feature, rather an additional helper function. There will not be a graduation process function will be able to be used by clients once added to the client-go library. There will not be externally visible changes.
+This is not a normal feature, rather an additional helper function. There will
+not be a graduation process function will be able to be used by clients once
+added to the client-go library. There will not be externally visible changes.
 
 ### Upgrade / Downgrade Strategy
 
@@ -299,8 +424,15 @@ Major milestones might include:
 
 ## Drawbacks
 
-This constrains the possible values of a resource version to a comparable integer, however this is already used in the apiserver code. This just extends the same ability to the client code with what the apiserver and other internal binaries use. 
+This constrains the possible values of a resource version to a comparable
+integer, however this is already used in the apiserver code. This just extends
+the same ability to the client code with what the apiserver and other internal
+binaries use. 
 
 ## Alternatives
 
-Some alternatives may include the use of something akin to Rust traits. We can mark any comparable api object with the comparable trait and use it in order to tell whether it can use the comparability functions. However this adds an opt in approach to comparability when currently effectively every api object already adheres to this constrain besides certain aggregated api objects.
+Some alternatives may include the use of something akin to Rust traits. We can
+mark any comparable api object with the comparable trait and use it in order to
+tell whether it can use the comparability functions. However this adds an opt in
+approach to comparability when currently effectively every api object already
+adheres to this constrain besides certain aggregated api objects.
