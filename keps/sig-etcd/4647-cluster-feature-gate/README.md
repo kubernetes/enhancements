@@ -12,7 +12,7 @@
     - [Story 2](#story-2)
     - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Should we allow users to change feature gate value from etcd endpoints?](#should-we-allow-users-to-change-feature-gate-value-from-etcd-endpoints)
+    - [Should we allow users to dynamically change feature gate values at runtime via etcd endpoints?](#should-we-allow-users-to-dynamically-change-feature-gate-values-at-runtime-via-etcd-endpoints)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Data Compatibility Risks During Feature Value Change](#data-compatibility-risks-during-feature-value-change)
     - [Feature Implementation Change Risks](#feature-implementation-change-risks)
@@ -21,8 +21,9 @@
   - [Register New Feature Gates](#register-new-feature-gates)
   - [Set the Feature Gates](#set-the-feature-gates)
   - [Bootstrap Cluster Feature Gates](#bootstrap-cluster-feature-gates)
-  - [Consensus Algorithm](#consensus-algorithm)
     - [Alternative](#alternative)
+  - [Consensus Algorithm](#consensus-algorithm)
+    - [Alternative](#alternative-1)
     - [New Raft Proto Changes](#new-raft-proto-changes)
     - [New Backend Schema Changes](#new-backend-schema-changes)
   - [Cluster Member Changes](#cluster-member-changes)
@@ -265,6 +266,14 @@ Here is how we guarantee no mixed-version new clusters:
    * setting the values for params not explicitly set based on the defaults at `ClusterParams.Version`.
 
 If a server restarts for an existing cluster, it bootstraps its `ClusterParams` and `ClusterVersion` from existing value from the backend or WAL.
+
+#### Alternative
+
+Instead of killing existing members due to inconsistent version of a new member, another option to ensure consistent cluster features is to make sure the cluster is not serving any traffic before a consensus of the cluster features has been reached. This is a clean and less hacky way of handling the bootstrap. The downsides include:
+
+1. this is a big change to etcd bootstrap logic: the cluster is only ready to serve client traffic after additional rounds of raft communications instead of right after the leader is elected. 
+
+1. new clusters with mixed versions of with and without this ready logic change would still be problematic and need to be prohibited in the documentation. 
 
 ### Consensus Algorithm
 
