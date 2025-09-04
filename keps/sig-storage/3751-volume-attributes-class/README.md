@@ -69,7 +69,7 @@
   - [Option 2: Opaque map in CreateVolume and ModifyVolume requests by end users](#option-2-opaque-map-in-createvolume-and-modifyvolume-requests-by-end-users)
     - [Pros:](#pros-1)
     - [Cons:](#cons-1)
-  - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-performance-class-to-be-updated)
+  - [Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that attributes class to be updated.](#option-3-a-cluster-administrator-modifies-the-volumeattributesclass-parameters-which-will-cause-all-pvcs-using-that-attributes-class-to-be-updated)
     - [Pros:](#pros-2)
     - [Cons:](#cons-2)
   - [Appendix - Current SPs Case Study](#appendix---current-sps-case-study)
@@ -1430,7 +1430,7 @@ message ModifyVolumeRequest {
 * Not portable across different cloud providers.
 
 
-### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that performance class to be updated.
+### Option 3: A cluster administrator modifies the VolumeAttributesClass parameters which will cause all PVCs using that attributes class to be updated.
 
 ![VolumeAttributesClass Batch Update](./VolumeAttributesClass-BatchUpdate.png)
 
@@ -1454,7 +1454,7 @@ If there is a change in parameters, an event will trigger the following func in 
 func (ctrl *resizeController) updateVolumeAttributesClass(vqc *v1.VolumeAttributesClass) (error, bool) {...}
 ```
 
-Under this operation, it will get all the pvcs consuming the volume Performance class and call expandAndRecover to update the volume Performance parameters.
+Under this operation, it will get all the PVCs consuming the volume attributes class and call ControllerModifyVolume to update the volume parameters.
 
 #### Pros:
 
