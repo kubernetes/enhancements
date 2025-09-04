@@ -150,7 +150,7 @@ and skip the patch if the rejection reason has not changed.
 
 **Note:** This entire feature will be controlled by a new feature gate, `SchedulerPreEnqueuePodStatus`.
 The enablement of this feature will be dependent on the `SchedulerAsyncAPICalls` feature gate being enabled,
-as the asynchronous patching mechanism is critical to protecting scheduler throughput.
+as the asynchronous patching mechanism is critical to protect scheduler throughput.
 
 ### 1. How should plugins provide the status message?
 
@@ -215,7 +215,7 @@ to avoid any disruption to existing behavior.
     as the Pod has not failed a scheduling attempt (i.e., it was never evaluated against nodes).
     This could confuse users and break tooling that expects an `Unschedulable` status to be accompanied
     by scheduling failure events.
-  - PodReasonSchedulingGated (`SchedulingGated`): This reason isexplicitly tied to the Scheduling Gates feature.
+  - PodReasonSchedulingGated (`SchedulingGated`): This reason is explicitly tied to the Scheduling Gates feature.
     Reusing it would overload its meaning and break clients that rely on its specific semantic link to the spec.
 
 ### 4. How should outdated messages be handled?
@@ -253,7 +253,7 @@ either the `PodScheduled` condition becoming True or the `Unschedulable` conditi
 
 #### Diagnosing the Pods using DRA
 
-As a cluster administrator, a user has deployed a Pod that requires a device managed by Dynamic Resource Allocation.
+As a DRA user, I deployed a Pod that requires a device managed by Dynamic Resource Allocation.
 The corresponding resource claim is still pending (not being detected).
 Instead of the Pod sitting in a generic `Pending` state, I want to immediately see a condition on the Pod with a message like
 "Waiting for resource claim 'my-claim' to be present". This allows me to quickly diagnose
@@ -276,7 +276,7 @@ This tells me exactly why my Pod isn't running and that I need to either wait fo
 As a data scientist running a distributed training job, I submit a batch of Pods that must be scheduled together (a "gang").
 The custom gang scheduling logic, using a `PreEnqueue` plugin, blocks all these Pods from entering
 the queue until there are enough resources for all of them to pass the scheduling.
-Currently, all the Pods would just show as `Pending`. With this feature, each Pod's status would be
+Currently, all the Pods would just be displayed as `Pending`. With this feature, each Pod's status would be
 updated with some message indicating it is waiting on other members of the gang, providing clear insight into the job's state.
 
 #### Cluster Autoscaler and resource provisioning
@@ -377,7 +377,8 @@ To prevent API server flooding when a pod is rejected for the same reason repeat
 - Before dispatching a status patch, the scheduler will compare the new rejection message
   with the cached `lastPreEnqueueRejectionMessage`.
 - The asynchronous call to the API server will only be dispatched if the status is new or different from the cached one.
-  This deduplication is important for performance.
+  This deduplication is important for performance. Moreover, when the new message is empty or the whole `PreEnqueueResult` is `nil`,
+  the call won't be send, as explained in the [how should outdated messages be handled](#4-how-should-outdated-messages-be-handled) section.
 
 ### 4. Asynchronous dispatch and state management
 
@@ -444,7 +445,7 @@ The following logic will be executed if any plugin rejects the Pod:
    it means the Pod's status is already up-to-date, and the function can return to prevent redundant API calls.
 
 3. If all checks pass, the scheduler proceeds with the update:
-   - It constructs the condition to patch and enqueue it into the asynchronous API dispatcher.
+   - It constructs the condition to patch and enqueues it into the asynchronous API dispatcher.
    - An `Event` is emitted for the Pod with the reason `NotReadyForScheduling` and the rejection message.
    - The scheduler updates the `pInfo.lastPreEnqueueRejectionMessage` with the new message.
 
@@ -455,7 +456,7 @@ If the Pod successfully passes all `PreEnqueue` plugins:
 1. The scheduler will check the `PodInfo` object to see if a `lastPreEnqueueRejectionMessage` is present from a previous failed attempt.
 
 2. If a cached message exists (meaning the Pod was previously rejected but is now ready),
-   the scheduler will construct the request to clear the contition and enqueue it into the asynchronous API dispatcher.
+   the scheduler will construct the request to clear the condition and enqueue it into the asynchronous API dispatcher.
    This will remove the `PodScheduled` condition where the `reason` is `NotReadyForScheduling`.
 
 3. The `pInfo.lastPreEnqueueRejectionMessage` field is cleared.
@@ -511,6 +512,7 @@ so no special actions are required outside the scheduler.
 
 Users need to disable the feature gate. Any existing `NotReadyForScheduling` conditions on Pods
 will remain until the Pod is scheduled or its status is otherwise updated.
+`PreEnqueueResult` returned by the `PreEnqueue` plugins will be ignored.
 
 ### Version Skew Strategy
 
