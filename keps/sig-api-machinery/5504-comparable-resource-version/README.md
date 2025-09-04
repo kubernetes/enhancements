@@ -388,7 +388,10 @@ N/A
 ##### e2e tests
 
 The E2E tests for this will be the conformance tests that will be added in order
-to ensure that a cluster is conformant with the new resource version constraints. The conformance tests themselves will use the helper function as an example of a client that runs the 
+to ensure that a cluster is conformant with the new resource version
+constraints. The conformance tests themselves will use the helper function as an
+example of a client that requests any GA object and expects them to be
+comparable.
 
 ### Graduation Criteria
 
