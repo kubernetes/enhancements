@@ -8,8 +8,9 @@ status: implementable
 creation-date: 2025-01-20
 reviewers:
   - "@dom4ha"
+  - "@macsko"
 approvers:
-  - "@alculquicondor"
+  - "@macsko"
 
 see-also:
   - "/keps/sig-node/5027-dra-admin-controlled-device-attributes"
@@ -20,7 +21,7 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.33"
+latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:

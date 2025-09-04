@@ -70,6 +70,7 @@ SIG Architecture for cross-cutting KEPs).
   - [User Stories](#user-stories)
     - [Degraded Devices](#degraded-devices)
     - [External Health Monitoring](#external-health-monitoring)
+    - [Safe Pod Eviction](#safe-pod-eviction)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
@@ -167,6 +168,10 @@ ResourceClaim.
 - Enable users to decide whether they want to keep running a workload in a degraded
   mode while a device is unhealthy or prefer to get pods rescheduled.
 
+- Publish information about devices ("device health") such that control plane
+  components or admins can decide how to react, without immediately affecting
+  scheduling or workloads.
+
 ### Non-Goals
 
 - Not part of the plan for alpha: developing a kubectl command for managing device taints.
@@ -181,9 +186,19 @@ ResourceClaim.
 A driver itself can detect problems which may or may not be tolerable for
 workloads, like degraded performance due to overheating. Removing such devices
 from the ResourceSlice would unconditionally prevent using them for new
-pods. Instead, publishing with a taint informs users about this degradation and
-leaves them the choice whether the device is still usable enough to run pods.
-It also automates stopping pods which don't tolerate such a degradation.
+pods. Instead, taints can be added to ResourceSlices to provide sufficient information
+for decision making on the indicated problems. This may include information
+in JSON format with a schema that is defined by the vendor together with
+the semantic of taints.
+
+A control plane component or the admins react to that information. They may
+publish a DeviceTaintRule which prevents using the degraded device for new pods
+or even evict all pods using it at the moment to replace or reset the device
+once it is idle.
+
+Users can decide to tolerate less critical taints in their workload, at their
+own risk. Admins scheduling maintenance pods need to tolerate their own taints
+to get the pod scheduled.
 
 #### External Health Monitoring
 
@@ -192,6 +207,29 @@ separate monitoring component for hardware aspects that are not available or
 not supported by that DRA driver. When that component detects problems, it can
 check its policy configuration and decide to take devices offline by creating
 a DeviceTaintRule with a taint for affected devices.
+
+#### Safe Pod Eviction
+
+Selecting the wrong set of devices in a DeviceTaintRule can have potentially
+disastrous consequences, including quickly evicting all workloads using any
+device in the cluster instead of those using a single device. To avoid this, a
+cluster admin can first create a DeviceTaintRule such that it has no immediate
+effect. `kubectl describe` then includes information about the matched devices
+and how many pods would be evicted if the effect was to evict. At this point,
+scheduling is not affected and pods keep running.
+
+Then the admin can edit the DeviceTaintRule to set the desired effect to
+"evict all affected pods".
+Once eviction starts, it happens at a low enough rate that admins have a chance
+to delete the DeviceTaintRule before all pods are evicted if they made a
+mistake after all. This rate is configurable to enable faster eviction, if
+admins are sure that this is what they want. The DeviceTaintRule status
+provides information about the progress.
+
+It can happen that a pod still gets scheduled after activating the taint because
+the scheduler hasn't observed that change yet. Such a pod then gets evicted.
+Either way, eventually no affected pods are running and no new ones get
+scheduled either.
 
 ### Risks and Mitigations
 
@@ -217,6 +255,10 @@ policies could be deployed to limit which tolerations may be used, but as
 taints are not defined by Kubernetes itself, none of that is part of Kubernetes
 itself.
 
+A taint is not meant to be used as an access control mechanism. Users are
+allowed to ignore taints (at their own risk). Adding a taint in a live cluster
+is inherently racy because it first needs to be observed by e.g. the scheduler.
+
 ## Design Details
 
 The feature is following the approach and APIs taken for node taints and
@@ -228,6 +270,33 @@ the purpose of this KEP:
 - The kubelet will stop any running containers and mark the pod as completed.
 - The ResourceClaim controller will remove such a completed pod from the claim's
   `ReservedFor` and deallocate the claim once it has no consumers.
+
+The semantic of the value associated with a taint key is defined by whoever
+publishes taints with that key. DRA drivers should use the driver name as
+domain in the key to avoid conflicts. To support tolerating taints by value,
+values should not require parsing to extract information. It's better to use
+different keys with simple values than one key with a complex value.
+
+The taint value may or may not be sufficient to represent the state of a
+device. Therefore the API also allows publishing structured information in JSON
+format as a raw extension field, similar to the ResourceClaim device status.
+For humans, a description field can be used to provide a summary or additional
+explanations why the taint was added.
+
+If some common patterns emerge, then Kubernetes could standardize the name,
+value and data for certain taints. Those then have a certain semantic. This
+is similar to standardizing device attributes. The recommended pattern for
+names is:
+- `[<prefix].]<some domain owned by the vendor of a DRA driver>/<some-vendor-specific-taint>`:
+  the domain part avoids name clashes. This can be the same as a DRA driver name,
+  but isn't required to. Descriptive names for the different taints defined
+  by a vendor are useful.
+- `kubernetes.io/...`: reserved for use by Kubernetes.
+
+`Effect: None` can be used to publish taints which are merely informational.
+Such taints are ignored during scheduling and cause no eviction. Therefore
+it is not necessary to specify tolerations for them. Nonetheless a toleration
+for `Effect: None` is allowed. Such tolerations then have no effect either.
 
 Taints are cumulative:
 - Taints defined by an admin in a DeviceTaintRule get added to the
@@ -260,15 +329,50 @@ pods using the claim.
 
 ### API
 
-The ResourceSlice content gets extended:
+The ResourceSlice content gets extended. A natural place for a taint that
+affects one specific device would be inside the `Device` struct. The problem
+with that approach is that with 128 allowed devices per ResourceSlice the
+maximum size of each taint would have to be very small to keep the worst-case
+size of a ResourceSlice within the limits imposed by etcd and the API request
+machinery.
+
+Therefore a different approach is used where each ResourceSlice either provides
+information about devices or about taints, but never both. Using the
+ResourceSlice for taints instead of a different type has the advantage that the
+existing mechanisms and code for publishing and consuming the information can
+be reused. The same approach is likely to be used for other additional
+ResourceSlice pool information, like mixin definitions. The downside is that at
+least two ResourceSlices are necessary once taints get published by a DRA
+driver.
+
+If changes of taints are limited to the content of single ResourceSlice and
+their number stays the same, too, then there is no need to bump the generation
+of the pool: a consumer will see and use either the old set of ResourceSlices
+or the new, updated set. This makes updating taints efficient because it avoids
+having to update the other ResourceSlices with a different generation or
+count. DRA drivers which support taints are therefore encouraged to always publish
+a ResourceSlice for taints even if there are currently none.
+
+An empty ResourceSlice is valid. This was already allowed previously to let DRA
+drivers indicate that they are up and running on a node even if they found no
+devices.
 
 ```Go
-type Device struct {
+type ResourceSliceSpec struct {
     ...
 
-    // If specified, these are the driver-defined taints.
+    // Devices lists some or all of the devices in this pool.
     //
-    // The maximum number of taints is 4.
+    // Must not have more than 128 entries. Either Devices or Taints may be set, but not both.
+    //
+    // +optional
+    // +listType=atomic
+    // +oneOf=ResourceSliceContent
+    Devices []Device
+
+    // If specified, these are driver-defined taints.
+    //
+    // The maximum number of taints is 32. Either Devices or Taints may be set, but not both.
     //
     // This is an alpha field and requires enabling the DRADeviceTaints
     // feature gate.
@@ -276,12 +380,40 @@ type Device struct {
     // +optional
     // +listType=atomic
     // +featureGate=DRADeviceTaints
-    Taints []DeviceTaint
+    // +oneOf=ResourceSliceContent
+    Taints []SliceDeviceTaint
 }
 
-// DeviceTaintsMaxLength is the maximum number of taints per device.
-const DeviceTaintsMaxLength = 4
+// DeviceTaintsMaxLength is the maximum number of taints per ResourceSlice.
+const DeviceTaintsMaxLength = 32
 
+// SliceDeviceTaint defines one taint within a ResourceSlice.
+type SliceDeviceTaint struct {
+   // Device is the name of the device in the pool that the ResourceSlice belongs to
+   // which is affected by the taint. Multiple taints may affect the same device.
+   //
+   // It is not required that such a device exists in the pool. If there is none
+   // with the same name, the taint is ignored by Kubernetes. One possible usage
+   // for this is publishing of health information which applies to the entire
+   // pool of devices and which then gets used by some vendor-specific
+   // controller that implements custom policies for dealing with problems.
+   //
+   // The name must not be empty to prevent accidentally leaving it unset.
+   // For the health use case a special name can be used which does not
+   // match the names used for actual devices.
+   //
+   // +required
+   Device string
+
+   Taint DeviceTaint
+}
+```
+
+DeviceTaint has all the fields of a v1.Taint, but the description is a bit
+different. In particular, PreferNoSchedule is not valid. Other fields got added
+to satisfy additional use cases like device health information.
+
+```Go
 // The device this taint is attached to has the "effect" on
 // any claim which does not tolerate the taint and, through the claim,
 // to pods using the claim.
@@ -300,7 +432,7 @@ type DeviceTaint struct {
 
     // The effect of the taint on claims that do not tolerate the taint
     // and through such claims on the pods using them.
-    // Valid effects are NoSchedule and NoExecute. PreferNoSchedule as used for
+    // Valid effects are None, NoSchedule and NoExecute. PreferNoSchedule as used for
     // nodes is not valid here.
     //
     // +required
@@ -322,12 +454,72 @@ type DeviceTaint struct {
     // This field was defined as "It is only written for NoExecute taints." for node taints.
     // But in practice, Kubernetes never did anything with it (no validation, no defaulting,
     // ignored during pod eviction in pkg/controller/tainteviction).
+
+    // Data contains arbitrary data specific to the taint key.
+    //
+    // The length of the raw data must be smaller or equal to 10 Ki.
+    //
+    // +optional
+    Data *runtime.RawExtension
+
+    // EvictionsPerSecond controls how quickly Pods get evicted if that is
+    // the effect of the taint.
+    //
+    // Evictions are tracked separately for each taint. Each eviction has
+    // a rate limiter which uses the EvictionsPerSecond configured for the
+    // taint. Deleting a pod that is evicted by the taint is delayed by that
+    // rate limiter.
+    //
+    // A pod may be affected by more than one taint. In that case, the
+    // smallest delay required to satisfy any of the rate limits is used
+    // to delay eviction of a pod. The effect is that pods affected
+    // by multiple taints get evicted at the highest rate defined by any
+    // of those taints.
+    //
+    // The default is 10 Pods/s.
+    //
+    // +optional
+    EvictionsPerSecond *int64
 }
+
+const (
+    // DefaultEvictionsPerSecond is the default for [DeviceTaint.EvictionsPerSecond]
+    // if none is specified explicitly.
+    DefaultEvictionsPerSecond = 10
+
+    // TaintDescriptionMaxLength is the maximum size of [DeviceTaint.Description].
+    TaintDescriptionMaxLength = 1024
+
+    // TaintDataMaxLength is the maximum size of [DeviceTaint.Data].
+    TaintDataMaxLength = 10 * 1024
+)
+```
+
+The expected usage of EvictionsPerSecond is to speed up eviction because the
+default is fairly conservative. Evicting at the highest rate defined by any of
+the taints affecting a pod is consistent with that expected usage. The
+alternative would be to evict at the smallest rate, but then admins might not
+get what they asked for. It also has the disadvantage that a compromised node
+can slow down pod eviction by publishing taints in ResourceSlices with a very
+low EvictionsPerSecond.
+
+The other parameter for a rate limiter besides the rate is the burst, the
+number of pods which get evicted without delay. The rate starts to apply after
+that many pods have been evicted. The API has no separate parameter for
+configuring the burst to keep the API simple. The burst parameter that is used
+by the implementation is also 10. This is a somewhat arbitrary compromise
+between evicting small number of pods quickly and applying the rate for larger
+number of pods.
+
+```
 
 // +enum
 type DeviceTaintEffect string
 
 const (
+    // No effect, the taint is purely informational.
+    DeviceTaintEffectNone DeviceTaintEffect = "None"
+
     // Do not allow new pods to schedule which use a tainted device unless they tolerate the taint,
     // but allow all pods submitted to Kubelet without going through the scheduler
     // to start, and allow all already-running pods to continue running.
@@ -337,9 +529,6 @@ const (
     DeviceTaintEffectNoExecute DeviceTaintEffect = "NoExecute"
 )
 ```
-
-Taint has the exact same fields as a v1.Taint, but the description is a bit
-different. In particular, PreferNoSchedule is not valid.
 
 Tolerations get added to a DeviceRequest:
 
@@ -445,10 +634,35 @@ devices. This could be done each time a scheduling cycle starts, but it
 would be repetitive work. Instead, a
 [ResourceSlice tracker](https://github.com/kubernetes/kubernetes/blob/85734ac6b38e29a9a390520e7a5b6de1fbf5ff6b/staging/src/k8s.io/dynamic-resource-allocation/resourceslice/tracker/tracker.go#L56-L59)
 reacts to informer events for ResourceSlice and DeviceTaintRule and
-maintains a set of updated ResourceSlices which also contain the taints
-set via a DeviceTaintRule. The tracker provides the API of an informer
-and thus can be used as a drop-in replacement for a ResourceSlice
-informer.
+maintains a set of updated slices which also contain the taints
+set via a DeviceTaintRule and, starting with Kubernetes 1.35,
+the taints published by DRA drivers in separate ResourceSlices.
+
+The tracker provides the API of an informer and thus can be used as a
+replacement for a ResourceSlice informer. In the initial implementation
+it produced ResourceSlices with taints added to the `Device` struct.
+Now that this struct no longer contains taints,
+it uses the types from `k8s.io/dynamic-resource-allocation/api` to represent
+ResourceSlices. The difference compared to the `k8s.io/resource/v1` Go types are:
+
+- Usage of `unique.Handle[String]` = `api.UniqueString` to speed up certain
+  string comparisons - this had turned out to improve scheduling performance.
+  It is less relevant for device taints.
+- `api.TrackedDevice` extends `Device` with a list of taints.
+- `api.TrackedDeviceTaint` extends `DeviceTaint` with a pointer back to
+  the `DeviceTaintRule` for updating the status (if applicable) and
+  with a numeric ID.
+
+This ID is generated on-the-fly by the ResourceSlice tracker. Each new taint
+that has not been seen before is assigned a new number. During updates, taints
+from the same rule (when available) or with the same attributes (otherwise) retain
+their ID. It does not persist across process restarts, which is sufficient
+because the ID is only used internally.
+
+The eviction controller uses this ID to keep track of on-going evictions. Each
+eviction has its own rate limiter which gets instantiated on demand when
+eviction of pods starts. Idle evictions get removed to avoid constant memory
+overhead.
 
 ```Go
 // DeviceTaintRule adds one taint to all devices which match the selector.
@@ -465,20 +679,18 @@ type DeviceTaintRule struct {
     // Changing the spec automatically increments the metadata.generation number.
     Spec DeviceTaintRuleSpec
 
-    // ^^^
-    // A spec gets added because adding a status seems likely.
-    // Such a status could provide feedback on applying the
-    // eviction and/or statistics (number of matching devices,
-    // affected allocated claims, pods remaining to be evicted,
-    // etc.).
+    // Status provides information about what was requested in the spec.
+    //
+    // +optional
+    Status DeviceTaintRuleStatus
 }
 
 // DeviceTaintRuleSpec specifies the selector and one taint.
 type DeviceTaintRuleSpec struct {
     // DeviceSelector defines which device(s) the taint is applied to.
-    // All selector criteria must be satified for a device to
+    // All selector criteria must be satisfied for a device to
     // match. The empty selector matches all devices. Without
-    // a selector, no devices are matches.
+    // a selector, no devices are matched.
     //
     // +optional
     DeviceSelector *DeviceTaintSelector
@@ -535,7 +747,46 @@ type DeviceTaintSelector struct {
     // +listType=atomic
     Selectors []DeviceSelector
 }
+
+// DeviceTaintRuleStatus provides information about an on-going pod eviction.
+type DeviceTaintRuleStatus struct {
+    // Conditions provide information about the current state of the DeviceTaintRule
+    // in a machine-readable and human-readable format.
+    //
+    // The following condition is currently defined as part of this API, more may
+    // get added:
+    // - Type: EvictionInProgress
+	// - Status: True if there are currently pods which need to be evicted, False otherwise
+	//   (includes the effects which don't cause eviction).
+    // - Reason: not specified, may change
+    // - Message: includes information about number of pending pods and already evicted pods
+    //   in a human-readable format, updated periodically, may change
+    //
+    // For `effect: None`, the condition above gets set once for each change to
+    // the spec, with the message containing information about what would happen
+    // if the effect was `NoExecute`. This feedback can be used to decide whether
+    // changing the effect to `NoExecute` will work as intended. It only gets
+    // set once to avoid having to constantly update the status.
+    //
+    // Must have 8 or less entries.
+    //
+    // +optional
+    // +listType=map
+    // +listMapKey=type
+    Conditions []metav1.Condition
+}
+
+const DeviceTaintRuleStatusMaxConditions = 8
 ```
+
+The condition is meant to be used to check for completion of a triggered eviction with:
+
+    kubectl wait --for=condition=EvictionInProgress=false DeviceTaintRule/my-taint-rule
+
+Reasons are not specified as part of the API because it's not required by the
+use cases and would restrict future changes unnecessarily. For example, `reason: Idle`
+can go together with `evictionInProgress: False` when momentarily there are no
+pods which need to be evicted.
 
 ### Test Plan
 
@@ -568,6 +819,14 @@ v1.33.0:
 - `k8s.io/kubernetes/pkg/apis/resource/validation`: 97.8%
 - `k8s.io/kubernetes/pkg/controller/devicetainteviction`: 89.9%
 
+Test cases that are worth calling out:
+
+- Ensure that eviction happens at the desired rate for:
+  - One set of pods affected by one taint.
+  - One set of pods affected by multiple taints with different rates.
+  - Different set of pods which are affected by multiple taints with different rates.
+- Eviction at default rate and different explicitly chosen rates.
+- Combinations of tolerations and taints.
 
 ##### Integration tests
 
@@ -596,7 +855,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 Useful E2E tests are checking that the scheduler really honors taints during
 scheduling. Adding a taint in a ResourceSlice must evict a running pod. Same
-for adding a taint through a DeviceTaintRule.
+for adding a taint through a DeviceTaintRule. A toleration for a NoExecute
+taint must allow a pod to run.
 
 ### Graduation Criteria
 
@@ -622,6 +882,19 @@ for adding a taint through a DeviceTaintRule.
 
 Tainting gets disabled when downgrading to a release without support for it or
 when disabling the feature. The effect is as if the taints weren't set.
+
+The alpha fields for taints in ResourceSlices changed in 1.35. DRA drivers
+which use the common helper code and are trying to publish taints directly for
+devices (API in 1.33 and 1.34) in a cluster with the API from 1.35 will get
+[notified about the dropped fields](https://github.com/kubernetes/kubernetes/blob/f28b4c9efbca5c5c0af716d9f2d5702667ee8a45/staging/src/k8s.io/dynamic-resource-allocation/kubeletplugin/draplugin.go#L124-L143).
+The recommended reaction is to log and fail, which indicates to admins that
+they need to update or reconfigure the DRA driver. The same applies for the
+other direction (trying to use the new API on an older Kubernetes).
+
+The DeviceTaintRule in the alpha API got extended. The new field for setting
+the rate limit is ignored by previous releases. `effect: None` is only valid
+for Kubernetes >= 1.35 and DeviceTaintRules with that value must be removed
+before a downgrade.
 
 ### Version Skew Strategy
 
