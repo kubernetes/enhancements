@@ -422,7 +422,7 @@ The controller is only meant to do something when new nodes are added, and that 
 
 ###### What are other known failure modes?
 
-- If there are constant node events that match our field filters, the reconcile could happen in a loop. This is not much worse than the 10-second interval we had before.
+- Continuous node events that match our field filters could trigger reconciliation in a tight loop. To prevent this, we apply a rate limiter to the workqueue. The limiter ensures that reconciliations never occur more frequently than every 10 seconds, preserving the behavior of the previous fixed interval while adding robustness against event storms.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
