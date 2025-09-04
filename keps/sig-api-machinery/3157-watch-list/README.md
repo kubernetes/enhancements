@@ -103,6 +103,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Beta](#beta)
     - [Beta2](#beta2)
     - [Beta3](#beta3)
+    - [Beta4](#beta4)
     - [GA](#ga)
     - [Post-GA](#post-ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
