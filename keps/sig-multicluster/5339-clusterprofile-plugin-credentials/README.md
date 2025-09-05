@@ -312,7 +312,8 @@ status:
    - name: location
      value: us-central1
   credentialProviders:
-    google:
+  - name: google
+    cluster:
       cluster:
         server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
 ```
