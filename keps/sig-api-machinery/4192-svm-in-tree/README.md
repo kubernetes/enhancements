@@ -123,13 +123,13 @@ type StorageVersionMigration struct {
   // Standard object metadata.
   // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
   // +optional
-  metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+  metav1.ObjectMeta `json:"metadata,omitempty"`
   // Specification of the migration.
   // +optional
-  Spec StorageVersionMigrationSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+  Spec StorageVersionMigrationSpec `json:"spec,omitempty"`
   // Status of the migration.
   // +optional
-  Status StorageVersionMigrationStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
+  Status StorageVersionMigrationStatus `json:"status,omitempty"`
 }
 
 // Spec of the storage version migration.
@@ -163,7 +163,7 @@ type StorageVersionMigrationStatus struct {
   // ResourceVersion to compare with the GC cache for performing the migration.
   // This is the current resource version of given group, version and resource when
   // kube-controller-manager first observes this StorageVersionMigration resource.
-  ResourceVersion string `json:"resourceVersion,omitempty" protobuf:"bytes,2,opt,name=resourceVersion"`
+  ResourceVersion string `json:"resourceVersion,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -176,13 +176,13 @@ type StorageVersionMigrationList struct {
   // Standard list metadata
   // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
   // +optional
-  metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+  metav1.ListMeta `json:"metadata,omitempty"`
   // Items is the list of StorageVersionMigration
   // +patchMergeKey=type
   // +patchStrategy=merge
   // +listType=map
   // +listMapKey=type
-  Items []StorageVersionMigration `json:"items" listType:"map" listMapKey:"type" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=items"`
+  Items []StorageVersionMigration `json:"items" listType:"map" listMapKey:"type" patchStrategy:"merge" patchMergeKey:"type"`
 }
 ```
 
