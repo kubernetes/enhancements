@@ -94,22 +94,16 @@ This KEP aims to make it easy for users to perform storage migrations without ha
 - Any modification regarding `StorageVersion` API for HA API servers
 - Adding logic that relies on the hashed storage versions exposed via the discovery API
 
-### UNCLEAR Goals and/or Non-Goals
-
-- Automatic storage version migration for CRDs
-- Make it easy for Kubernetes developers to drop old API schemas by guaranteeing that storage migration is run automatically on SV hash changes (should this also be on a timer or API server identity?)
-- Automated Storage Version Migration via the hash exposed by the `StorageVersion` API
-
 ## Proposal
 
-- Move the existing SVM controller logic in-tree into KCM
-- Move the existing SVM REST APIs in-tree (possibly under a new API group to avoid conflicts with the old API being run concurrently)
-- For Alpha, we will not trigger automatic storage version migration, and it will be deferred to the user.
+- Move the existing SVM controller logic in-tree into KCM from its [original source](https://github.com/kubernetes-sigs/kube-storage-version-migrator).
+- Move the existing SVM REST APIs in-tree (possibly under a new API group to avoid conflicts with the old API being run concurrently).
+- Automatic storage version migration will be deferred to the user.
 
 ### User Stories (Optional)
 
-#### Story 1 **[UNCLEAR]**
-As an end user of Kubernetes, we get automatic storage version migration whenever the storage version changes due to an api server upgrade/downgrade.
+#### Story 1
+As an end user of Kubernetes, I can trigger storage version migration for my resources.
 
 #### Story 2
 As an end user using encryption at rest, whenever the key change is detected we can run the storage migration to use the new key for encryption. 
@@ -249,15 +243,6 @@ When transitioning the Storage Version Migrator in-tree, we will exclusively mov
 ### Approach
 #### Garbage Collection Cache
 Kube Controller Manager's garbage collection cache contains the name and namespace for all resources, providing a suitable dataset for the migration process. This approach is detailed [here](https://docs.google.com/document/d/1lHDbrMCmNG1KXEpw6gMhDL8qWAWgeSlfW6gbCvD80uw/edit?usp=sharing). _We will use this approach for the Alpha release_.
-
-### Rejected Alternative
-#### Streaming List
-Currently, the Migrator controller uses the `chunked List` method to retrieve the list of resources from the API server and subsequently perform storage migrations as needed. However, chunked lists are [resource-intensive]((https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/3157-watch-list/README.md#motivation)) and can lead to a significant overload on the API server, potentially resulting in it being terminated due to out-of-memory (OOM) issues. To address this concern, we have proposed the adoption of an Alpha feature introduced in Kubernetes _v1.27_, known as [`Streaming List`](https://kubernetes.io/docs/reference/using-api/api-concepts/#streaming-lists).
-
-When the Migrator controller is integrated in-tree, it will leverage the `Streaming List` approach to obtain and monitor resources while executing storage version migrations, as opposed to using the resource-intensive `chunked list` method. In cases where, for any reason, the client cannot establish a streaming watch connection with the API server, it will fall back to the standard `chunked list` method, retaining the older LIST/WATCH semantics.
-    
-- _Open Question_:
-    - Does `Streaming List` support inconsistent lists? Currently, with chunked lists, we receive inconsistent lists. We need to determine if we can achieve the same with Streaming List. Depending on the outcome, we may consider removing the [ContinueToken](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go#L63) from the API.
 
 ### RBAC for SVM
 - Storage Version Migrator Controller
@@ -539,7 +524,27 @@ NA
 
 ## Alternatives
 
-NA
+### Streaming List (considered, rejected)
+The original Migrator controller used the _chunked List_ method to retrieve the
+list of resources from the API server and subsequently performed storage migrations
+as needed. However, chunked lists are [resource-intensive]((https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/3157-watch-list/README.md#motivation))
+and can lead to a significant overload on the API server, potentially resulting in
+it being terminated due to out-of-memory (OOM) issues. To address this concern, we
+have proposed the adoption of an Alpha feature introduced in Kubernetes _v1.27_,
+known as [`Streaming List`](https://kubernetes.io/docs/reference/using-api/api-concepts/#streaming-lists).
+
+When the Migrator controller would get integrated in-tree, it would leverage the `Streaming List`
+approach to obtain and monitor resources while executing storage version migrations,
+as opposed to using the resource-intensive `chunked list` method. In cases where,
+for any reason, the client cannot establish a streaming watch connection with the
+API server, it will fall back to the standard `chunked list` method, retaining the
+older LIST/WATCH semantics.
+
+- _Open Question for this approach_:
+    - Does `Streaming List` support inconsistent lists? Currently, with chunked lists,
+      we receive inconsistent lists. We need to determine if we can achieve the same
+      with Streaming List. Depending on the outcome, we may consider removing the
+      [ContinueToken](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go#L63) from the API.
 
 ## Infrastructure Needed (Optional)
 
