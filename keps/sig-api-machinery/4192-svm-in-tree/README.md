@@ -236,13 +236,23 @@ The final APIs that will be moved in-tree are:
 
 ### [Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller) to move
 #### [Migrator Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator)
-Currently, the Storage Version Migrator comprises two controllers: the `Trigger` controller and the `Migrator` controller. The Trigger controller performs resource discovery, identifying supported resources with the preferred server version every `10 minutes`. Subsequently, the Trigger controller creates the `StorageVersionMigration` resource to initiate the migration process. The Migrator controller then picks up this resource and executes the actual migration.
+Currently, the Storage Version Migrator comprises two controllers: the `Trigger`
+controller and the `Migrator` controller. The Trigger controller performs resource
+discovery, identifying supported resources with the preferred server version every
+`10 minutes`. Subsequently, the Trigger controller creates the `StorageVersionMigration`
+resource to initiate the migration process. The Migrator controller then picks up this
+resource and executes the actual migration.
 
-When transitioning the Storage Version Migrator in-tree, we will exclusively move the Migrator controller as a component of KCM. The creation of the Migration resource will be deferred to the user, instead of being triggered automatically.
+When transitioning the Storage Version Migrator in-tree, we will exclusively move the
+Migrator controller as a component of KCM. The creation of the Migration resource
+will be deferred to the user, instead of being triggered automatically.
 
 ### Approach
 #### Garbage Collection Cache
-Kube Controller Manager's garbage collection cache contains the name and namespace for all resources, providing a suitable dataset for the migration process. This approach is detailed [here](https://docs.google.com/document/d/1lHDbrMCmNG1KXEpw6gMhDL8qWAWgeSlfW6gbCvD80uw/edit?usp=sharing). _We will use this approach for the Alpha release_.
+Kube Controller Manager's garbage collection cache contains the name and namespace
+for all resources, providing a suitable dataset for the migration process. This
+approach is detailed [here](https://docs.google.com/document/d/1lHDbrMCmNG1KXEpw6gMhDL8qWAWgeSlfW6gbCvD80uw/edit?usp=sharing).
+_We will use this approach for the Alpha release_.
 
 ### RBAC for SVM
 - Storage Version Migrator Controller
