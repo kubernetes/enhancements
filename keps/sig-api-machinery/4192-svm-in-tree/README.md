@@ -147,14 +147,6 @@ type StorageVersionMigrationSpec struct {
   // the endpoint serving the resource.
   // Immutable.
   Resource GroupVersionResource `json:"resource" protobuf:"bytes,1,opt,name=resource"`
-  // The token used in the list options to get the next chunk of objects
-  // to migrate. When the .status.conditions indicates the migration is
-  // "Running", users can use this token to check the progress of the
-  // migration.
-  // +optional
-  ContinueToken string `json:"continueToken,omitempty" protobuf:"bytes,2,opt,name=continueToken"`
-  // TODO: consider recording the storage version hash when the migration
-  // is created. It can avoid races.
 }
 
 // The names of the group, the version, and the resource.
@@ -178,23 +170,6 @@ const (
   MigrationFailed MigrationConditionType = "Failed"
 )
 
-// Describes the state of a migration at a certain point.
-type MigrationCondition struct {
-  // Type of the condition.
-  Type MigrationConditionType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=MigrationConditionType"`
-  // Status of the condition, one of True, False, Unknown.
-  Status corev1.ConditionStatus `json:"status" protobuf:"bytes,2,opt,name=status,casttype=k8s.io/api/core/v1.ConditionStatus"`
-  // The last time this condition was updated.
-  // +optional
-  LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty" protobuf:"bytes,3,opt,name=lastUpdateTime"`
-  // The reason for the condition's last transition.
-  // +optional
-  Reason string `json:"reason,omitempty" protobuf:"bytes,4,opt,name=reason"`
-  // A human readable message indicating details about the transition.
-  // +optional
-  Message string `json:"message,omitempty" protobuf:"bytes,5,opt,name=message"`
-}
-
 // Status of the storage version migration.
 type StorageVersionMigrationStatus struct {
   // The latest available observations of the migration's current state.
@@ -203,13 +178,11 @@ type StorageVersionMigrationStatus struct {
   // +listType=map
   // +listMapKey=type
   // +optional
-  Conditions []MigrationCondition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+  Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
   // ResourceVersion to compare with the GC cache for performing the migration.
   // This is the current resource version of given group, version and resource when
-// kube-controller-manager first observes this StorageVersionMigration resource.
+  // kube-controller-manager first observes this StorageVersionMigration resource.
   ResourceVersion string `json:"resourceVersion,omitempty" protobuf:"bytes,2,opt,name=resourceVersion"`
-  // LastMigratedResourceNameHash is use to pick up migration from where it left off in case of failure.
-  LastMigratedResourceNameHash string `json:"lastMigratedResourceNameHash,omitempty" protobuf:"bytes,3,opt,name=lastMigratedResourceNameHash"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -385,9 +358,8 @@ total:                                                                          
 
 #### Beta
 
-- Feature is enabled by default
-- All of the above documented tests are complete
-- Leader election to make sure new controller can work with both CRD and in-tree APIs.
+- Feature is enabled by default.
+- All of the above documented tests are complete.
 - Using Garbage Collection Cache means using RV as an integer to validate the freshness of the cache. Approval from SigArch is required on this RV semantics.
 
 ### Upgrade / Downgrade Strategy
