@@ -116,14 +116,14 @@ In addition to general scheduling improvements, SLA‑aware opt‑in via tolerat
 
 - AI/ML pipelines can place latency‑sensitive inference on high‑SLA nodes while directing checkpoint-able batch workloads to run on spot nodes. When spot nodes are reclaimed, taints trigger graceful drain and controlled failover.
 
-| Benefit                        | Impact on DRA                                             | Impact on AI/ML workloads                               |
-| ------------------------------ | --------------------------------------------------------- | ------------------------------------------------------- |
-| **Cost–reliability trade-off** | Critical workloads stay on premium nodes; interruptible batch uses spot | Inference on reliable nodes; checkpoint-able training on cheaper pools  |
-| **Workload-aware placement**   | Different claim types target appropriate node tiers       | Pipeline stages match their reliability requirements    |
-| **Graceful preemption**        | `NoExecute` provides controlled eviction timing           | Predictable failover for training and serving workloads |
-| **Resource fairness**          | Prevents monopolization of premium capacity               | Teams share reliable accelerators fairly                |
-| **Elastic scaling**            | Bursts overflow to lower-SLA pools safely                 | HPA scales to spot with clear boundaries                |
-| **Policy transparency**        | Node reliability classes are explicit and auditable       | Platform teams enforce clear reliability tiers          |
+| Benefit                        | Impact on DRA                                                           | Impact on AI/ML workloads                                              |
+| ------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Cost–reliability trade-off** | Critical workloads stay on premium nodes; interruptible batch uses spot | Inference on reliable nodes; checkpoint-able training on cheaper pools |
+| **Workload-aware placement**   | Different claim types target appropriate node tiers                     | Pipeline stages match their reliability requirements                   |
+| **Graceful preemption**        | `NoExecute` provides controlled eviction timing                         | Predictable failover for training and serving workloads                |
+| **Resource fairness**          | Prevents monopolization of premium capacity                             | Teams share reliable accelerators fairly                               |
+| **Elastic scaling**            | Bursts overflow to lower-SLA pools safely                               | HPA scales to spot with clear boundaries                               |
+| **Policy transparency**        | Node reliability classes are explicit and auditable                     | Platform teams enforce clear reliability tiers                         |
 
 ## Proposal
 
@@ -528,7 +528,7 @@ func validateTolerations(tolerations []core.Toleration, fldPath *field.Path) fie
 
 ```go
 // ToleratesTaint checks if the toleration tolerates the taint.
-func (t *Toleration) ToleratesTaint(taint *Taint) bool {
+func (t *Toleration) ToleratesTaint(taint *Taint) (bool, error) {
      switch t.Operator {
     // Existing key and effect matching logic...
     
@@ -539,28 +539,29 @@ func (t *Toleration) ToleratesTaint(taint *Taint) bool {
         // Only parse values when comparison operators are actually used
         return compareValues(t.Value, taint.Value, t.Operator)
     default:
-        return false
+        return false, errors.New("cannot handle the operator")
     }
 }
 
-func compareValues(tolerationVal, taintVal string, op TolerationOperator) bool {
+// return error to inform the user what went wrong, not only that the toleration is not matching for any node.
+func compareValues(tolerationVal, taintVal string, op TolerationOperator) (bool, error) {
     tVal, tErr := strconv.ParseInt(tolerationVal, 10, 64)
     if tErr != nil {
-        return false // Invalid toleration value
+        return false, tErr // Invalid toleration value
     }
     
     nVal, nErr := strconv.ParseInt(taintVal, 10, 64)  
     if nErr != nil {
-        return false // Invalid taint value
+        return false, nErr // Invalid taint value
     }
     
     switch op {
     case TolerationOpLt:
-        return tVal < nVal
+        return tVal < nVal, nil
     case TolerationOpGt:
-        return tVal > nVal
+        return tVal > nVal, nil
     default:
-        return false
+        return false, errors.New("toleration and taints values are equal")
     }
 }
 ```
