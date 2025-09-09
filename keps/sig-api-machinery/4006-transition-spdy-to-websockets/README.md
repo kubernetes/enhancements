@@ -96,7 +96,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Background: <code>PortForward</code> Subprotocol](#background-portforward-subprotocol)
   - [Proposal: New <code>PortForward</code> Tunneling Subprotocol Version - <code>v2.portforward.k8s.io</code>](#proposal-new-portforward-tunneling-subprotocol-version---v2portforwardk8sio)
   - [Proposal: API Server PortForward -- Stream Tunnel Proxy](#proposal-api-server-portforward----stream-tunnel-proxy)
-  - [Pre-GA: Kubelet <code>StreamTranslatorProxy</code>](#pre-ga-kubelet-streamtranslatorproxy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -234,10 +233,6 @@ know that this has succeeded?
 `kubectl exec`, `kubectl attach`, `kubectl cp`, and `kubectl port-forward` for the
 communication leg between `kubectl` and the API Server.
 
-2. Extend the WebSockets communication leg from the API Server to Kubelet. After this
-extension, WebSockets streaming will occur between `kubectl` and Kubelet (proxied
-through the API Server). This plan is described at [Pre-GA: Kubelet](#pre-ga-kubelet-).
-
 ### Non-Goals
 
 <!--
@@ -246,6 +241,8 @@ and make progress.
 -->
 
 1. We will not make *any* changes to current WebSocket based browser/javascript clients.
+2. We will not extend the WebSockets communication leg from the API Server to Kubelet (in
+this KEP).
 
 ## Proposal
 
@@ -266,7 +263,7 @@ the current API Server proxy to translate or tunnel the `kubectl` WebSockets dat
 a SPDY upstream connection. In this way, the cluster components upstream from the
 API Server will not initially need to be changed. We intend to extend the communication
 path for WebSockets streaming from `kubectl` to Kubelet once the the initial leg
-is proven to work (i.e. that it goes GA).
+is proven to work (i.e. that it goes GA), but it will be in another KEP.
 
 ### User Stories (Optional)
 
@@ -510,23 +507,6 @@ as the downstream connection within the dual concurrent `io.Copy` proxying gorou
 The upstream connection is the same SPDY connection to the container (through the
 Kubelet and CRI).
 
-### Pre-GA: Kubelet `StreamTranslatorProxy`
-
-The eventual plan is to incrementally transition all SPDY communication legs to WebSockets.
-After the WebSocket communication leg from `kubectl` to the API Server is proven
-to work, the next communication leg to transition is the one from the API Server to
-the Kubelet. Both the API Server and the Kubelet stream data messages using the
-`UpgradeAwareProxy`. Since the initial plan is to modify the `UpgradeAwareProxy`
-in the API Server to delegate to the `StreamTranslatorProxy`, it will be straightforward
-to transition this next communication leg by moving the integrated `StreamTranslatorProxy`
-from the API Server to the Kubelet.
-
-The final communication leg to transition from SPDY to WebSockets will be the one
-from Kubelet to the Container Runtimes. Since this communication happens within a
-node (using Unix domain sockets), this path is not as critical. But this effort
-will be more work, since it will require modifying not just Kubelet, but **all**
-Container Runtimes.
-
 ### Test Plan
 
 <!--
@@ -762,7 +742,6 @@ in back-to-back releases.
 - Conformance tests for `PortForward` completed and enabled.
 - Conformance tests for `PortForward` have been stable and
   non-flaky for two weeks.
-- Extend the WebSockets communication leg from the API Server to Kubelet.
 
 ### Upgrade / Downgrade Strategy
 
