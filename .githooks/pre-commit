@@ -20,6 +20,13 @@ set -o pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-exec "${REPO_ROOT}/hack/verify-kep-metadata.sh"
-exec "${REPO_ROOT}/hack/verify-toc.sh"
-exec "${REPO_ROOT}/hack/verify-spelling.sh"
+scripts=(
+    "hack/verify-kep-metadata.sh"
+    "hack/verify-toc.sh"
+    "hack/verify-spelling.sh"
+)
+
+for s in "${scripts[@]}"; do
+    echo "Running $s..."
+    "${REPO_ROOT}/$s" || exit 1
+done
