@@ -599,7 +599,7 @@ extended resource backed by DRA requests.
 This registers all cluster events that might make an unschedulable pod schedulable,
 like finishing the allocation of a claim, or resource slice updates.
 
-The existing dynamicresource plugin has registered almost all the events needed or
+The existing dynamicresource plugin has registered almost all the events needed for
 extended resource backed by DRA, with one addition `framework.UpdateNodeAllocatable`
 for node action.
 
@@ -969,7 +969,13 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Will be considered for beta.
+`kube_pod_resource_limit` and `kube_pod_resource_request`
+(label: `namespace`, `pod`, `node`, `scheduler`, `priority`, **`resource`**, `unit`)
+can be used to determine if the feature is in use by workloads though it doesn't differentiate 
+between extended resources backed by DRA or device plugin.
+
+`resourceclaim_controller_resource_claims` (label: `admin_access`, `allocated`, `source`)
+should be a good metric to determine if the resource claim is created by extended resource backed by DRA.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -989,7 +995,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] Other (treat as last resort)
   - Details:
 -->
-Will be considered for beta.
+- [ x ] API .status
+    - Other field: `.status.extendedResourceClaimStatus` will have a list of resource claims that are created for
+      DRA extended resources.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1007,7 +1015,8 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-Will be considered for beta.
+Existing DRA and related SLOs continue to apply.
+Pod scheduling duration with this feature should be as fast as existing DRA.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1021,7 +1030,14 @@ Pick one more of these and delete the rest.
 - [ ] Other (treat as last resort)
   - Details:
 -->
-Will be considered for beta.
+These are the same as for the main DRA feature:
+
+- [x] Metrics
+    - Metric name: resourceclaim_controller_creates_total
+    - Metric name: resourceclaim_controller_resource_claims
+    - Metric name: workqueue with name="resource_claim"
+    - Metric name: scheduler_pending_pods
+    - Metric name: scheduler_plugin_execution_duration_seconds
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1029,7 +1045,7 @@ Will be considered for beta.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-Will be considered for beta.
+No
 
 ### Dependencies
 
