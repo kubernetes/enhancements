@@ -164,9 +164,9 @@ than a `ResourceClaim` becomes visible through the watcher (see a [comment](http
 In such cases where the condition is expected to resolve in seconds, populating the status would be inappropriate noise.
 
 - **Pros:**
-  - Gives plugin authors explicit control over what users see.
+  - Gives plugin authors direct control over the user-facing message and the decision to report it.
   - Decouples internal rejection reasons from user-facing messages.
-  - Allows plugins to opt out of reporting by returning an empty message.
+  - Allows plugins to opt out of reporting simply by returning an empty message, a clear and unambiguous signal.
 
 - **Cons:**
   - Requires a breaking change to the `PreEnqueue` plugin interface.
@@ -174,7 +174,12 @@ In such cases where the condition is expected to resolve in seconds, populating 
 - **Alternatives Considered:**
   - Use the raw status message: This is simpler as it requires no interface changes.
     However, these messages are often not written well for end-users.
-    It also makes it difficult for a plugin to conditionally opt out of reporting a status.
+    Additionally, to allow plugins to opt out, an implicit mechanism would be needed,
+    such as returning a `Status` with an empty `reasons` field. This approach has two significant flaws:
+    - It would force plugins to omit the debugging information from the scheduler's logs
+      just to control a user-facing feature, degrading observability. Preserving detailed logging is essential.
+    - Relying on implicit "magic" behavior makes the framework harder to use and less straightforward for plugin developers.
+      The proposed explicit `PreEnqueueResult` provides a much clearer and more self-documenting API.
 
 ### 2. Should all PreEnqueue plugins report the status?
 
@@ -194,6 +199,14 @@ In such cases where the condition is expected to resolve in seconds, populating 
   - Mandatory reporting for all rejections: This would make the scheduler's behavior uniform.
     However, it might create significant API churn for plugins that reject pods frequently and for short durations,
     negatively impacting performance and UX.
+  - Mandatory reporting with a delay (cooldown period): This approach attempts to reduce API churn by waiting for a brief,
+    configurable delay before reporting a rejection. While better than immediate mandatory reporting, this has some flaws:
+    - It removes control from the plugins, which are in the best position to know whether a rejection is truly transient
+      or a persistent issue that needs a status update.
+    - A single, global delay value is difficult to set correctly for all plugins and all possible cluster states.
+    - It doesn't guarantee relevance. A Pod's PreEnqueue retry can be significantly delayed due to a long scheduling queue or other factors,
+      making the delayed message just as irrelevant as an immediate one. While a delay could be a beneficial additional mechanism
+      to reduce update bursts in the future, it's not a suitable main control mechanism.
 
 ### 3. What reason should be used for the Pod condition?
 
@@ -203,8 +216,8 @@ to avoid any disruption to existing behavior.
 
 - **Pros:**
   - It clearly communicates the stage of rejection.
-  - It provides a specific identifier for this state,
-    allowing components like Cluster Autoscaler to develop logic around it.
+  - It doesn't require any changes in the Cluster Autoscaler or other components to preserve their current behavior.
+    Such components can later opt-in to recognize the new reason and develop logic around it, allowing for safer, optional enhancement.
   - It avoids breaking the established semantics of existing reasons and the clients that rely on them.
 
 - **Cons:**
@@ -239,13 +252,22 @@ either the `PodScheduled` condition becoming True or the `Unschedulable` conditi
 - **Cons:**
   - A stale message could be displayed if a Pod is first rejected by a reporting plugin (Plugin A)
     and then subsequently blocked by a non-reporting plugin (Plugin B).
-    The message from Plugin A would persist.
+    The message from Plugin A would persist. However, this behavior is consistent with the existing `Unschedulable` condition,
+    which can also become stale between scheduling retries. This is a known and accepted trade-off.
   
 - **Alternatives Considered:**
   - Actively clearing the message: The scheduler could clear the condition if,
     on a subsequent check, the original rejecting plugin no longer rejects the pod.
     This would provide a more accurate real-time status but could cause confusion
     if the condition appears and disappears while the Pod remains `Pending` for another, unreported reason.
+  - Update with a generic message: In the case where a Pod is blocked by a non-reporting plugin,
+    the scheduler could generate a generic message (e.g., "Pod is blocked on PreEnqueue by plugin: Plugin B").
+    This has a two flaws:
+    - While it identifies the blocking plugin, it doesn't explain why the Pod was blocked, which is the essential information for debugging.
+      A generic message isn't a significant improvement over a stale (but potentially actionable) message.
+    - The status patch is a best-effort, asynchronous API call that can fail. Since there is no guaranteed retry mechanism,
+      the system cannot promise that the status is perfectly up-to-date. Adding complexity to generate generic messages
+      might not be a sufficient reason.
   - Not clearing the message: The scheduler could just leave the `NotReadyForScheduling` condition
     even if all `PreEnqueue` plugins passed. This might make the Pod harder to debug and track.
 
@@ -278,16 +300,6 @@ The custom gang scheduling logic, using a `PreEnqueue` plugin, blocks all these 
 the queue until there are enough resources for all of them to pass the scheduling.
 Currently, all the Pods would just be displayed as `Pending`. With this feature, each Pod's status would be
 updated with some message indicating it is waiting on other members of the gang, providing clear insight into the job's state.
-
-#### Cluster Autoscaler and resource provisioning
-
-As a cluster operator, I rely on the Cluster Autoscaler (CA) to automatically provision new nodes when there are unschedulable pods,
-discovered by the `PodReasonUnschedulable` condition. Currently, when a Pod is rejected by a `PreEnqueue` plugin like `DynamicResources`,
-it remains `Pending` without any status. The CA typically ignores these pods because it doesn't recognize them as being blocked
-by a lack of node resources. This means if a Pod requires a special resource (like a GPU from a DRA driver) and no nodes with that resource exist,
-the CA will not scale up. With this KEP, the Pod will get a `NotReadyForScheduling` condition.
-The Cluster Autoscaler can be updated to recognize this condition as a valid trigger for scale-up.
-When it sees a Pod with this condition, it could correctly request a new node from a node pool that provides required resource.
 
 ### Risks and Mitigations
 
@@ -367,18 +379,18 @@ A new pod reason constant, `PodReasonNotReadyForScheduling`, will be added to `s
 PodReasonNotReadyForScheduling = "NotReadyForScheduling"
 ```
 
-This doesn't require other changes in the `core/v1` API or kube-apiserver.
+**Note:** This doesn't require other changes in the `core/v1` API or kube-apiserver.
 
 ### 3. Preventing redundant API calls
 
 To prevent API server flooding when a pod is rejected for the same reason repeatedly, message caching will be introduced.
 
-- A new field will be added to the `PodInfo` struct within the queue, for example, `lastPreEnqueueRejectionMessage`.
+- A new field will be added to the `framework.QueuedPodInfo` struct within the queue, for example, `LastPreEnqueueRejectionMessage`.
 - Before dispatching a status patch, the scheduler will compare the new rejection message
-  with the cached `lastPreEnqueueRejectionMessage`.
+  with the cached `LastPreEnqueueRejectionMessage`.
 - The asynchronous call to the API server will only be dispatched if the status is new or different from the cached one.
   This deduplication is important for performance. Moreover, when the new message is empty or the whole `PreEnqueueResult` is `nil`,
-  the call won't be send, as explained in the [how should outdated messages be handled](#4-how-should-outdated-messages-be-handled) section.
+  the call won't be sent, as explained in the [how should outdated messages be handled](#4-how-should-outdated-messages-be-handled) section.
 
 ### 4. Asynchronous dispatch and state management
 
@@ -408,12 +420,12 @@ func (p *PriorityQueue) runPreEnqueuePlugins(ctx context.Context, pInfo *framewo
 			if result == nil || result.Message == "" {
 				return // Plugin opted out of reporting.
 			}
-			if pInfo.lastPreEnqueueRejectionMessage == result.Message {
+			if pInfo.LastPreEnqueueRejectionMessage == result.Message {
 				return // Message is unchanged, de-duplicate.
 			}
 			// Enqueue the PodStatusPatch call with PodReasonNotReadyForScheduling and result.Message.
 			// Emit an Event with the same reason and message.
-			pInfo.lastPreEnqueueRejectionMessage = result.Message
+			pInfo.LastPreEnqueueRejectionMessage = result.Message
 			return
 		}
 	}
@@ -421,11 +433,11 @@ func (p *PriorityQueue) runPreEnqueuePlugins(ctx context.Context, pInfo *framewo
 	if p.apiDispatcher == nil || !p.preEnqueuePodStatusEnabled {
 		return // Gates are disabled, stop processing.
 	}
-	if pInfo.lastPreEnqueueRejectionMessage == "" {
+	if pInfo.LastPreEnqueueRejectionMessage == "" {
 		return // No previous rejection message to clear.
 	}
 	// Enqueue a PodStatusPatch call to clear the NotReadyForScheduling condition.
-	pInfo.lastPreEnqueueRejectionMessage = ""
+	pInfo.LastPreEnqueueRejectionMessage = ""
 }
 ```
 
@@ -441,25 +453,25 @@ The following logic will be executed if any plugin rejects the Pod:
      the plugin has opted out of reporting a status for this rejection.
 
 2. The scheduler will compare the incoming `result.Message` with a cached message from the previous attempt,
-   stored in the `PodInfo` object (e.g., `pInfo.lastPreEnqueueRejectionMessage`). If the new message is identical to the cached one,
+   stored in the `framework.QueuedPodInfo` object (e.g., `pInfo.LastPreEnqueueRejectionMessage`). If the new message is identical to the cached one,
    it means the Pod's status is already up-to-date, and the function can return to prevent redundant API calls.
 
 3. If all checks pass, the scheduler proceeds with the update:
    - It constructs the condition to patch and enqueues it into the asynchronous API dispatcher.
    - An `Event` is emitted for the Pod with the reason `NotReadyForScheduling` and the rejection message.
-   - The scheduler updates the `pInfo.lastPreEnqueueRejectionMessage` with the new message.
+   - The scheduler updates the `pInfo.LastPreEnqueueRejectionMessage` with the new message.
 
 #### Success path
 
 If the Pod successfully passes all `PreEnqueue` plugins:
 
-1. The scheduler will check the `PodInfo` object to see if a `lastPreEnqueueRejectionMessage` is present from a previous failed attempt.
+1. The scheduler will check the `framework.QueuedPodInfo` object to see if a `LastPreEnqueueRejectionMessage` is present from a previous failed attempt.
 
 2. If a cached message exists (meaning the Pod was previously rejected but is now ready),
    the scheduler will construct the request to clear the condition and enqueue it into the asynchronous API dispatcher.
    This will remove the `PodScheduled` condition where the `reason` is `NotReadyForScheduling`.
 
-3. The `pInfo.lastPreEnqueueRejectionMessage` field is cleared.
+3. The `pInfo.LastPreEnqueueRejectionMessage` field is cleared.
 
 ### Test Plan
 
