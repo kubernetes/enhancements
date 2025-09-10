@@ -6,7 +6,7 @@ owning-sig: sig-testing
 participating-sigs:
   - sig-instrumentation
   - sig-api-machinery
-status: provisional
+status: implementable
 creation-date: 2025-09-04
 reviewers:
   - "@aojea"
@@ -32,8 +32,8 @@ latest-milestone: "v1.35"
 milestone:
   alpha: "v1.35"
   # TODO: alpha/beta/GA doesn't really maek sense here, not user facing
-  beta: "v1.36"
-  stable: "v1.36"
+  beta: "v1.35"
+  stable: "v1.35"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

@@ -428,6 +428,10 @@ To start we will add something to cover the declarative validation metric.
 
 ### Graduation Criteria
 
+N/A. Alpha/Beta/GA does not apply to a KEP of this nature.
+This KEP is about decision making around the e2e tests, it does not have
+any feature-gated changes or user-facing API changes.
+
 <!--
 **Note:** *Not required until targeted at a release.*
 
