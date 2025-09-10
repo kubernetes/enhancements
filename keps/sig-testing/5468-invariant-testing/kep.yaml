@@ -13,7 +13,9 @@ reviewers:
   - "@pohly"
   - "@richabanker"
 approvers:
-  - TBD
+  - "@aojea"
+  - "@pohly"
+  - "@richabanker"
 
 see-also:
   - "/keps/sig-api-machinery/4153-declarative-validation"
