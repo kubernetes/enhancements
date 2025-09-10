@@ -289,13 +289,13 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-[ginkgo], which we use for the e2e tests, does not have a facility for 
+[Ginkgo], which we use for the e2e tests, does not have a facility for 
 "this test must run after all other tests". It does have ordering, but only
 within a group of tests. Alternatively we can run arbitrary code after the
 suite, but that does not suit our ability to opt-in/out of the tests.
 
 We will introduce a package under `test/e2e` that contains sentinel test(s) which
-do nothing other than register to ginkgo that they have run, if selected.
+do nothing other than register to Ginkgo that they have run, if selected.
 
 These tests can be labeled appropriately, allowing the existing test selection
 mechanisms to select / skip them.
@@ -957,4 +957,4 @@ SIG to get the process for these resources started right away.
 -->
 
 [declarative validation]: https://git.k8s.io/enhancements/keps/sig-api-machinery/4153-declarative-validation/README.md
-[ginkgo]: https://onsi.github.io/ginkgo/
+[Ginkgo]: https://onsi.github.io/ginkgo/
