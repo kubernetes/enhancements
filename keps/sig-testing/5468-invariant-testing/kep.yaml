@@ -12,10 +12,12 @@ reviewers:
   - "@aojea"
   - "@pohly"
   - "@richabanker"
+  - "@jpbetz"
 approvers:
   - "@aojea"
   - "@pohly"
   - "@richabanker"
+  - "@jpbetz"
 
 see-also:
   - "/keps/sig-api-machinery/4153-declarative-validation"
