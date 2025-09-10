@@ -319,7 +319,13 @@ to handle the test failure and who to report bugs to, from the documented owners
 
 Something like this, for the failure message:
 > Invariant failed for missing metric: <metric-name>
-> If this failed on a PR, check your PR for bugs, if this failed on a periodic test please file a bug and assign the owners.
+>
+> If this failed on a pull request, please check if the PR changes may be related
+> to the failure, if not, you can also search for an existing github issue before
+> filing a new issue.
+>
+> If this failed in a periodic CI, please file a bug and assign the owners.
+>
 > Owners for this metric: <github-handles>
 
 
