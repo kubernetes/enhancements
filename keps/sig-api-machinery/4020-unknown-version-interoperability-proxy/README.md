@@ -17,7 +17,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Garbage Collector](#garbage-collector)
     - [Namespace Lifecycle Controller](#namespace-lifecycle-controller)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -27,6 +27,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Identifying destination apiserver's network location](#identifying-destination-apiservers-network-location)
     - [Proxy transport between apiservers and authn](#proxy-transport-between-apiservers-and-authn)
   - [Discovery Merging](#discovery-merging)
+    - [Caching and consistency](#caching-and-consistency)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -101,12 +102,12 @@ this enhancement is being considered for a milestone.
 
 ## Summary
 
-When a cluster has multiple apiservers at mixed versions (such as during an
-upgrade/downgrade or when runtime-config changes and a rollout happens), not
-every apiserver can serve every resource at every version.
+This proposal introduces a Mixed Version Proxy (also earlier referred to as Unknown Version Interoperability Proxy) to solve issues with version skew in Kubernetes clusters. During upgrades or downgrades, when API servers have different versions, this feature ensures that:
 
-To fix this, we will add a filter to the handler chain in the aggregator which
-proxies clients to an apiserver that is capable of handling their request.
+1. Client requests for a specific built-in resource are proxied to an API server capable of serving it, avoiding 404 Not Found errors
+2. Clients receive a complete, cluster-wide discovery document by merging information from all peer API servers, preventing controllers from making incorrect decisions based on incomplete data
+
+All discovery changes are implemented at the existing aggregated discovery endpoints (/apis and /api/v1), with no new discovery endpoints being introduced.
 
 ## Motivation
 
@@ -182,7 +183,7 @@ Why so much work?
   problem completely. We need both safety against destructive actions and the
   ability for controllers to proceed and not block.
 
-### User Stories (Optional)
+### User Stories
 
 #### Garbage Collector
 
@@ -273,6 +274,10 @@ This might be a good place to talk about core concepts and how they relate.
     information about apiserver IP/endpoint and the
     trust bundle (used to authenticate server while proxying) to users via REST APIs.
 
+6. **Failure to Initialize Peer Discovery**
+
+     If the `kube-apiserver` is not started with the necessary certificates and keys (`--proxy-client-key/cert` and `--peer-ca-file` and `--requestheader-client-ca-file`) required for peer-to-peer authentication, the peer discovery controller will fail to initialize. The merged discovery handler is designed to fall back to serving the local, un-merged discovery response in this scenario, allowing the API server to remain operational without compromising the safety of the cluster.
+
 ## Design Details
 
 ### Aggregation Layer
@@ -285,12 +290,9 @@ This filter will maintain the following internal caches:
     group-version(LocalDiscovery cache). This will be done via a discovery call
     using a loopback client. A post-start hook will populate this cache, guaranteeing
     the apiserver has a complete view of its served resources before processing
-    any incoming requests.
+    any incoming requests. A periodic refresh will occur every 30 minutes to ensure its freshness.
     - an informer cache of resources served by each peer apiserver in the
-    cluster(PeerAggregatedDiscovery cache). This cache will be updated by an informer
-    on [apiserver identity Lease objects](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/1965-kube-apiserver-identity/README.md#proposal).
-    The informer's event handler will make discovery calls to peer apiservers
-    whose lease objects are created or updated (as a result of change in [holderIdentity](https://github.com/kubernetes/kubernetes/blob/release-1.32/staging/src/k8s.io/api/coordination/v1/types.go#L58) implying a server restart).
+    cluster(PeerAggregatedDiscovery cache). This cache is populated by a separate **peer-discovery controller** which uses an informer on [apiserver identity Lease objects](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/1965-kube-apiserver-identity/README.md#proposal). The informer's event handler will make discovery calls to peer apiservers whose lease objects are created or updated (as a result of change in [holderIdentity](https://github.com/kubernetes/kubernetes/blob/release-1.32/staging/src/k8s.io/api/coordination/v1/types.go#L58) implying a server restart). The apiserver uses this cache to identify which peer serves the requested resource.
 
 2. This filter will pass on the request to the next handler in the local aggregator
 chain, if:
@@ -309,8 +311,7 @@ will then be proxied to any peer apiserver, selected randomly, thats found to be
 able to serve the resource as indicated in the PeerAggregatedDiscovery cache.
     1. There is a possibility of a race condition regarding creation/update of an
    aggregated resource or a CRD and its registration in the LocalDiscovery cache.
-   If such a resource is not found in LocalDiscovery cache but is found in the PeerAggregatedDiscovery
-   cache, we will always route the request for this resource to the suitable peer.
+   This transient state is mitigated by a periodic refresh of the local discovery cache every 30 minutes. In such cases, the request will be routed to the peer.
 
 4. If there is no eligible apiserver found in the PeerAggregatedDiscovery cache
 for the requested resource, we will pass on the request to the next handler in the
@@ -377,7 +378,24 @@ upon bootstrap
 
 ### Discovery Merging
 
-TODO: detailed description of discovery merging. (not scheduled until beta.)
+A new handler will be introduced to serve a consolidated discovery document. This handler is the core of the merged discovery feature, which combines local API server discovery with information from peer API servers in the cluster. This is achieved by extending the functionality of the existing aggregated discovery endpoints, and no new endpoints will be introduced.
+
+The new handler is responsible for the following actions:
+
+* Document Generation: The handler will intelligently merge local discovery data with information from the PeerAggregatedDiscovery cache to create a single, comprehensive view of all available API groups and resources
+* Client Negotiation: The handler will interpret a new `profile` parameter in the `Accept` header. By default, it will serve a merged discovery document. A client can explicitly request an unmerged, local-only discovery response by setting `profile=unmerged`. This capability is essential because it allows the API server to fetch the unmerged discovery documents from its peers. The information from these requests is then used to populate the API server's PeerAggregatedDiscovery cache. This cache is fundamental for two main reasons: it is the critical data source for building the consolidated, merged discovery response, and it is used to determine which peer API server is capable of handling a proxied resource request, making the proxying logic possible.
+* Backward Compatibility: The handler will ensure that un-aggregated discovery requests continue to function as before. The entire feature is controlled by a feature gate, allowing for a safe, gradual rollout. To maintain interoperability in a mixed-version cluster, a key design point is the use of the Accept header to distinguish between different request types.
+  * Peer-to-Peer Discovery: When a newer API server, with the feature enabled, makes a discovery call to an older peer to populate its local cache, it uses a content type variant `(application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;...;profile=unmerged)`. This allows the older peer to fall back to its standard discovery behavior, ensuring the request succeeds and the newer API server can collect the necessary unmerged data.
+  * Client Discovery: When an older API server or an external client makes a standard discovery request to a newer peer, the new handler defaults to returning the merged discovery document. This guarantees that the older client sees a complete, accurate view of all available resources without requiring any prior knowledge of the new feature.
+
+#### Caching and consistency
+
+To ensure high performance and data freshness, the merged discovery handler maintains a separate, in-memory cache for its merged response. This cache is invalidated whenever a change is detected in the peer discovery cache, which is itself updated by the informer on the API server identity leases. This two-layer caching strategy provides a robust feedback loop:
+
+1. Peers Announce: API servers announce their presence and capabilities via identity leases.
+1. Caches Update: The informer on these leases triggers the repopulation of the peer discovery cache on each API server.
+1. Merged Cache Invalidates: An update to the peer discovery cache automatically invalidates the merged discovery cache.
+1. Recalculation: The next merged discovery request triggers a single, optimized recalculation of the merged response, which is then cached for subsequent requests.
 
 ### Test Plan
 
@@ -424,7 +442,11 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/controlplane/apiserver/options`: `07/18/2023` - `100%`
+- `staging/src/k8s.io/apiserver/pkg/util/peerproxy`: `03/18/2025` - `100%`
+- `staging/src/k8s.io/apiserver/pkg/reconcilers`: `07/18/2023` - `100%`
+- `staging/src/k8s.io/apiserver/pkg/endpoints/discovery/aggregated`: `09/06/2025` - `100%`
+
 
 ##### Integration tests
 
@@ -440,16 +462,12 @@ In the first alpha phase, the integration tests are expected to be added for:
 
 - The behavior with feature gate turned on/off
 - Request is proxied to an apiserver that is able to handle it
-- Validation where an apiserver tries to serve a request that has already been
-proxied once
-- Validation where an apiserver tries to call a peer but actually calls itself
-(to simulate a networking configuration where
-this happens on accident), and the test fails with error 503
-- Validation where a request that cannot be served by any apiservers is received,
-and is passed on locally that eventually
-gets handled by the NotFound handler resulting in 404 error
-- Validation where apiserver is mis configured and is proxied to an incorrect peer
-resulting in 503 error
+- Validation that a request is proxied to the available peer if another eligible peer becomes unavailable
+
+Merged discovery tests:
+
+- Validation that the merged discovery endpoint correctly combines API groups and resources from multiple API servers with different versions
+- Validation of the Accept header negotiation, ensuring that by default we return the consolidated document, while profile=unmerged returns the local document
 
 ##### e2e tests
 
@@ -984,16 +1002,9 @@ a given API server
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- v1.28: Mixed Version Proxy KEP merged and moved to alpha
+- v1.33: Replaced StorageversionAPI with AggregatedDiscovery to fetch served resources by peer apiservers
+- v1.35: Merged Discovery implemented
 
 ## Drawbacks
 
