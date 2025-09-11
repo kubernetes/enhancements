@@ -27,7 +27,6 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v33/github"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 
@@ -96,52 +95,31 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 	proposalPath := filepath.Join(repoPath, ProposalPathStub)
 	fi, err := os.Stat(proposalPath)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"getting file info for proposal path %s",
-			proposalPath,
-		)
+		return nil, fmt.Errorf("getting file info for proposal path %s: %w", proposalPath, err)
 	}
 
 	if !fi.IsDir() {
-		return nil, errors.Wrap(
-			err,
-			"checking if proposal path is a directory",
-		)
+		return nil, fmt.Errorf("checking if proposal path is a directory: %w", err)
 	}
 
 	prrApprovalPath := filepath.Join(proposalPath, PRRApprovalPathStub)
 	fi, err = os.Stat(prrApprovalPath)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"getting file info for PRR approval path %s",
-			prrApprovalPath,
-		)
+		return nil, fmt.Errorf("getting file info for PRR approval path %s: %w", prrApprovalPath, err)
 	}
 
 	if !fi.IsDir() {
-		return nil, errors.Wrap(
-			err,
-			"checking if PRR approval path is a directory",
-		)
+		return nil, fmt.Errorf("checking if PRR approval path is a directory: %w", err)
 	}
 
 	proposalReadme := filepath.Join(proposalPath, "README.md")
 	fi, err = os.Stat(proposalReadme)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"getting file info for proposal README path %s",
-			proposalPath,
-		)
+		return nil, fmt.Errorf("getting file info for proposal README path %s: %w", proposalPath, err)
 	}
 
 	if !fi.Mode().IsRegular() {
-		return nil, errors.Wrap(
-			err,
-			"checking if proposal README is a file",
-		)
+		return nil, fmt.Errorf("checking if proposal README is a file: %w", err)
 	}
 
 	groups, err := fetcher.FetchGroups()
@@ -169,7 +147,7 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 
 	proposalTemplate, err := repo.getProposalTemplate()
 	if err != nil {
-		return nil, errors.Wrap(err, "getting proposal template")
+		return nil, fmt.Errorf("getting proposal template: %w", err)
 	}
 
 	repo.ProposalTemplate = proposalTemplate
@@ -258,11 +236,7 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 	// KEPs in the local filesystem
 	files, err := r.findLocalKEPMeta(sig)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"searching for local KEPs from %s",
-			sig,
-		)
+		return nil, fmt.Errorf("searching for local KEPs from %s: %w", sig, err)
 	}
 
 	logrus.Debugf("loading the following local KEPs: %v", files)
@@ -271,11 +245,7 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 	for i, kepYamlPath := range files {
 		kep, err := r.loadKEPFromYaml(r.BasePath, kepYamlPath)
 		if err != nil {
-			return nil, errors.Wrapf(
-				err,
-				"reading KEP %s from yaml",
-				kepYamlPath,
-			)
+			return nil, fmt.Errorf("reading KEP %s from yaml: %w", kepYamlPath, err)
 		}
 
 		allKEPs[i] = kep
@@ -296,7 +266,7 @@ func (r *Repo) LoadLocalKEP(sig, name string) (*api.Proposal, error) {
 
 	_, err := os.Stat(kepPath)
 	if err != nil {
-		return nil, errors.Wrapf(err, "getting file info for %s", kepPath)
+		return nil, fmt.Errorf("getting file info for %s: %w", kepPath, err)
 	}
 
 	return r.loadKEPFromYaml(r.BasePath, kepPath)
@@ -481,7 +451,7 @@ func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) 
 	if err != nil {
 		logrus.Errorf(
 			"%v",
-			errors.Wrapf(err, "validating PRR for %s", p.Name),
+			fmt.Errorf("validating PRR for %s: %w", p.Name, err),
 		)
 	}
 
