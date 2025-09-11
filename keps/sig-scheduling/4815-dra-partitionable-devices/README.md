@@ -421,7 +421,8 @@ that the references can actually be resolved during admission since we are only
 able to validate a `ResourceSlice` in isolation. This means that users will not
 discover mistakes until a `ResourceClaim` actually tries to allocate a device
 that belongs to the `ResourcePool`. This means more complexity and a less user-friendly
-UX.
+UX. However, `ResourceSlices` are created by drivers, so issues here would mean a bug
+in the driver.
 
 ## Design Details
 
@@ -595,7 +596,7 @@ flexibility on how they set up their `ResourceSlices`, we are doing two things:
 
 * `SharedCounters` must be defined in a separate `ResourceSlice`, meaning that the
   counter sets will not contribute towards the resource limit on the `ResourceSlice`s
-  that defines devices. We can use this same pattern in other situations, for example
+  that define devices. We can use this same pattern in other situations, for example
   with Mixins.
 * We enforce some limits across the full `ResourceSlice` rather than on
   individual fields.
@@ -631,6 +632,8 @@ There are ways we may be able to improve the experience:
 * Introduce a controller that can validate that all references within a `ResourcePool`
   are valid. It can then update a status on all `ResourceSlices` in the `ResourcePool`.
   This will still be asynchronous, so the UX is not as good as validation during admission.
+  This is less of an issue here though, since `ResourceSlices` are created by drivers and
+  we can add logic for this in the kubeletplugin library that is used by most drivers.
 
 
 ### Defining device partitions in terms of consumed capacity in a device
