@@ -25,7 +25,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Diagnosing the Pods using DRA](#diagnosing-the-pods-using-dra)
     - [Using Deferred ResourceQuota Enforcement](#using-deferred-resourcequota-enforcement)
     - [Using custom Gang Scheduling implementation](#using-custom-gang-scheduling-implementation)
-    - [Cluster Autoscaler and resource provisioning](#cluster-autoscaler-and-resource-provisioning)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Stale or missing Pod status on patch failure](#stale-or-missing-pod-status-on-patch-failure)
     - [Impact on scheduling throughput and latency](#impact-on-scheduling-throughput-and-latency)
@@ -57,6 +56,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Detailed comparison for five design alternatives](#detailed-comparison-for-five-design-alternatives)
+    - [Primary evaluation criteria](#primary-evaluation-criteria)
+    - [Comparison table](#comparison-table)
+    - [Analysis](#analysis)
+    - [Conclusion](#conclusion)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -108,7 +112,8 @@ and advanced [Gang Scheduling](https://kep.k8s.io/4671) implementations.
 Currently, when a `PreEnqueue` plugin rejects a Pod, this decision is not communicated back to the user
 via the Pod's status. The Pod simply remains `Pending`, leaving the user to manually inspect scheduler logs
 or other components to diagnose the issue. This lack of feedback is particularly problematic for plugins
-that operate transparently to the user, as the reason for the delay is completely hidden.
+that operate transparently to the user (where rejection is not directly derivable from a Pod spec),
+as the reason for the delay is completely hidden.
 While the Scheduling Gates feature does apply a status condition, it does so via the kube-apiserver
 with its own reason (`SchedulingGated`).
 
@@ -170,6 +175,9 @@ In such cases where the condition is expected to resolve in seconds, populating 
 
 - **Cons:**
   - Requires a breaking change to the `PreEnqueue` plugin interface.
+  - Plugin developers are used to to the framework's standard pattern of returning a single `Status` object to signal an outcome.
+    The new `Message` could initially cause confusion about the relationship between the two return values,
+    which must be addressed with clear documentation and in-tree examples.
 
 - **Alternatives Considered:**
   - Use the raw status message: This is simpler as it requires no interface changes.
@@ -715,3 +723,96 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### Detailed comparison for five design alternatives
+
+To choose the best design, five distinct models were evaluated, mapping out the full design space.
+The two primary distinction points are the Interface (how a plugin provides information)
+and the Dispatch mechanism (how the scheduler acts on that information),
+with a sub-variant for the Implicit Interface model (with or without an Opt-Out).
+
+The five models are:
+1. **Explicit + Immediate (KEP Proposal):** A new `PreEnqueueResult` is introduced.
+  Plugins explicitly return a user message. The update is sent immediately.
+2. **Explicit + Delayed (Hybrid model):** A new `PreEnqueueResult` is introduced.
+  The scheduler waits for a delay before sending the last captured *user-facing* message.
+3. **Implicit + Delayed (with Opt-out):** The existing `framework.Status` is used.
+  A plugin can opt out by returning an empty `Status` message.
+  Otherwise, the scheduler waits for a delay before sending the last captured internal message.
+4. **Implicit + Delayed (no Opt-out):** The existing `framework.Status` is used.
+  *Every* rejection is reported after a delay, unless it's overwritten.
+5. **Implicit + Immediate (Baseline):** The existing `framework.Status` is used.
+  The scheduler immediately sends the internal message as a status update.
+
+#### Primary evaluation criteria
+
+To provide a structured comparison, the following key design goals and constraints were considered for each alternative:
+
+**1. User and developer experience**
+
+This is the primary motivation for the KEP. It evaluates the impact on both the end-users debugging their Pods and the developers building custom scheduler plugins.
+
+- **User message quality:** The clarity and actionability of the information presented in the Pod's status.
+- **Stale message risk:** The danger of the system showing outdated, actually incorrect information.
+- **Handles transient issues:** The ability to intelligently reduce status update noise from short-lived, self-resolving rejections.
+- **Plugin developer control:** The ability given to the plugin developers to control the reporting behavior.
+- **Interface consistency:** How well the API fits with existing, established patterns in the scheduler framework.
+- **Breaking change:** Whether the change requires all (PreEnqueue) plugin developers to update their code.
+
+**2. System health and observability**
+
+This evaluates the impact on the cluster as a whole, its performance, and the ability of administrators to monitor its behavior.
+
+- **`kube-apiserver` load:** The performance impact of new API calls generated by the feature.
+- **Logging quality:** Ensuring the quality and completeness of the scheduler's internal logs are not weakened by the new feature.
+- **`SchedulingGated` conflict:** Checking whether the model would require non-trivial changes to keep the current behavior of reporting SchedulingGates rejection.
+  Or migrating those to the new framework.
+
+**3. Implementation and operational cost**
+
+This evaluates the engineering overhead of building and maintaining the feature.
+
+- **Implementation complexity:** The engineering cost to build and maintain the feature.
+- **Configuration complexity:** The complexity of correctly configuring the feature.
+
+#### Comparison table
+
+| **Feature**                    | **1. Explicit + Immediate (KEP)**    | **2. Explicit + Delayed (Hybrid)**         | **3. Implicit + Delayed (Opt-out)**          | **4. Implicit + Delayed (No opt-out)**  | **5. Implicit + Immediate (Baseline)** |
+| :----------------------------- | :----------------------------------- | :----------------------------------------- | :------------------------------------------- | :-------------------------------------- | :------------------------------------- |
+| **User message quality**       | 🟢 **High** (Dedicated field)        | 🟢 **High** (Dedicated field)               | 🟡 **Variable** (Reuses `fwk.Status`)        | 🟡 **Variable** (Reuses `fwk.Status`)   | 🟡 **Variable** (Reuses `fwk.Status`)   |
+| **Logging quality**            | 🟢 **High** (Decoupled from status)  | 🟢 **High** (Decoupled from status)         | 🔴 **Low** (Opt-out forces empty log reason) | 🟡 **Variable** (Tied to user message)  | 🟡 **Variable** (Tied to user message)  |
+| **Interface consistency**      | 🟡 **Medium** (New return pattern)   | 🟡 **Medium** (New return pattern)          | 🟢 **High** (Existing pattern)               | 🟢 **High** (Existing pattern)          | 🟢 **High** (Existing pattern)          |
+| **Handles transient issues**   | 🟡 **Good** (Opt-out only)           | 🟢 **Excellent** (Delay + explicit opt-out) | 🟢 **Excellent** (Delay + implicit opt-out)  | 🟡 **Good** (Delay only)                | 🔴 **Poor** (Noisy)                     |
+| **Stale message risk**         | 🔴 **High** (Can be stale)           | 🟡 **Medium** (Can be stale or delayed)     | 🟡 **Medium** (Can be stale or delayed)      | 🟢 **Low** (Always latest, but delayed) | 🟢 **Lowest** (Always latest)           |
+| **Plugin developer control**   | 🟢 **High** (If, what, when)         | 🟡 **Partial** (If, what)                   | 🟡 **Partial** (If, what)                    | 🔴 **Minimal** (What)                   | 🟡 **Partial** (What and when)          |
+| **`SchedulingGates` conflict** | 🟢 **Solved** (Via explicit opt-out) | 🟢 **Solved** (Via explicit opt-out)        | 🟢 **Solved** (Via implicit opt-out)         | 🔴 **Requires addressing**              | 🔴 **Requires addressing**              |
+| **Configuration complexity**   | 🟢 **None**                          | 🔴 **High** (Requires delay value)          | 🔴 **High** (Requires delay value)           | 🔴 **High** (Requires delay value)      | 🟢 **None**                             |
+| **Implementation complexity**  | 🟡 **Medium** (Framework changes)    | 🔴 **Highest** (Framework + API Dispatcher) | 🔴 **High** (API Dispatcher)                 | 🔴 **High** (API Dispatcher)            | 🟢 **Low** (Queue change only)          |
+| **`kube-apiserver` load**      | 🟡 **Medium** (Skip transient)       | 🟢 **Lowest** (Skip transient, merging)     | 🟢 **Lowest** (Skip transient, merging)      | 🟡 **Medium** (Merging)                 | 🔴 **High** (Always sends new statuses) |
+| **Breaking change**            | 🔴 **Yes**                           | 🔴 **Yes**                                  | 🟢 **No**                                    | 🟢 **No**                               | 🟢 **No**                               |
+
+#### Analysis
+
+This comprehensive comparison allows us to evaluate the options and focus on a key trade-offs.
+
+- **Model 1 (Explicit + Immediate KEP proposal)** prioritizes plugin developer control and transparency
+  by making every reported rejection immediately visible. Its significant weaknesses are the risk of stale messages
+  and the necessity of introducing changes to the PreEnqueue interface.
+- **Model 2 (Explicit + Delayed Hybrid)** offers high-quality messages and solves the stale message risk.
+  However, it still allows plugins to opt out of reporting (which the SchedulingGates plugin could use).
+  The delay can mitigate transient rejections, and using API dispatcher logic could further reduce the load on the kube-apiserver.
+  Because this model requires a delay, it introduces implementation and configuration complexities.
+- **Model 3 (Implicit + Delayed with Opt-Out)** similar to Model 2, this solves the stale message risk and provides an opt-out.
+  However, it reuses the `fwk.Status` field to report the message, making the opt-out implicit and thus harming observability.
+  It also shares the pros (delay and dispatcher logic) and cons (complexity) of the previous model.
+- **Model 4 (Implicit + Delayed without Opt-Out)** is identical to the previous model but removes the opt-out capability.
+  This means that preserving the SchedulingGates plugin's status reporting would require non-trivial changes:
+  either supporting its current behavior (setting status via the kube-apiserver)
+  or migrating it to this feature (distinguishing the condition's reason).
+- **Model 5 (Implicit + Immediate)** is the simplest model, but it is likely too limited for this feature.
+  It cannot support advanced logic to mitigate transient rejections,
+  which would lead to routing all new status updates directly to the kube-apiserver.
+
+#### Conclusion
+
+TBD
