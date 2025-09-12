@@ -289,25 +289,45 @@ type FileKeySelector struct {
 
 The full specification of an env file:
 
-1. **File Format**: The environment variable (env) file must adhere to valid env file syntax to ensure proper parsing. The syntax for env files is as follows:
-   * Blank Lines: Blank lines are ignored.
-   * Leading Spaces: Leading spaces on all lines are ignored.
-   * Variable Declaration: Variables must be declared as `VAR=VAL`. Spaces surrounding `=` and trailing spaces are ignored.
-       ```
-       VAR=VAL → VAL
-       ```
-   * Comments: Lines beginning with # are treated as comments and ignored.
-       ```
-       # comment
-       VAR=VAL → VAL
-       VAR=VAL # not a comment → VAL # not a comment
-       ```
-   * Line Continuation: A backslash (`\`) at the end of a variable declaration line indicates the value continues on the next line. The lines are joined with a single space.
-       ```
-       VAR=VAL \
-       VAL2
-       → VAL VAL2
-       ```
+1. **Environment Variable Syntax**:
+
+    The syntax for environment variables is a strict subset of the POSIX shell standard, with one key constraint: variable values must be enclosed in single quotes, Any env file supported by k8s will yield the same environment variables as if it was interpreted by bash. However bash supports more values and those may not be supported by k8s.
+
+    For example:
+    ```
+    MY_VAR='my-literal-value'
+    ```
+    **Specification:**
+
+    Based on this principle, the following rules are enforced:
+
+    * Values must be enclosed in single quotes (e.g., VAR='value').
+
+    * The content within the single quotes is preserved literally. No whitespace folding, character modifications, or other interpretations will be applied.
+
+    * The value is not subject to escape sequence processing or expansion. All characters within the single quotes are treated as part of the string.
+
+    * Multi-line values are supported (newlines within single quotes are preserved)
+
+    * Lines starting with '#' are treated as comments and ignored
+
+    The following syntax forms are not supported:
+
+    * Any value not wrapped in quotes is prohibited.
+  
+      * Example: VAR=value
+  
+    * Double quotes are not allowed.
+
+      * Example: VAR="val"
+
+    * Multiple adjacent quoted strings are not supported.
+
+      * Example: VAR='val1''val2
+
+    * Any sort of intra-value interpolation.
+
+    Note: You can explore these standard POSIX behaviors in a compatible environment for yourself by running `bash --posix`.
 
 
 2. **Variable Naming**: We will apply the same variable name [restrictions](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/apis/core/validation/validation.go#L2583-L2596) as other API-defined env vars.
@@ -365,9 +385,10 @@ No
 - Add unit tests for API validation to ensure user input fields comply with our specifications: `k8s.io/kubernetes/pkg/apis/core/validation`: `2025-06-06` - `84.7`
 - Add unit tests to validate the generation of environment variables for the pod: `k8s.io/kubernetes/pkg/kubelet`: `2025-06-06` - `70.1`
 
+
 ##### Integration tests
 
-- Pods tests: https://github.com/kubernetes/kubernetes/blob/91ee30074bee617d52fc24dc85132fe948aa5153/test/integration/pods/pods_test.go
+We don't need integration tests; unit tests and e2e tests are sufficient to cover this.
 
 ##### e2e tests
 
@@ -375,6 +396,7 @@ The tests will be guarded by the `[Feature:EnvFiles]` tag.
 - Add tests for both StandaloneMode and regular static pod mode to verify that environment variables are correctly set.
 - Add tests ensure that environment variables can be correctly referenced during the postStart and preStop lifecycle hooks.
 - Add tests for regular pods to ensure that environment variables can be correctly referenced.
+The link to the added e2e test: https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/file_key.go
 
 ### Graduation Criteria
 
@@ -464,19 +486,150 @@ with this new fields:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-We will manually attempt an upgrade-downgrade test with the following scenario.
+I am testing the downgrade -> upgrade process in my local environment.
 
-As defined under [Version Skew Strategy](#version-skew-strategy),
-we are assuming the cluster may have kubelets with older versions (without
-this KEP' changes):
+I use `FEATURE_GATES=EnvFiles=true ./hack/local-up-cluster.sh` to create a new cluster.
 
-1. When the kubelet is upgraded, the env files will be instantiated in the
-   container. On downgrade, the env files will be ignored but the pod will still
-   run. On upgrade, the env files should be instantiated in the container again.
+Check the cluster version:
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl version
+Client Version: v1.35.0
+Kustomize Version: v5.7.1
+Server Version: v1.35.0
+```
+Run a pod that uses EnvFiles:
+```
+cat <<EOF | $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dapi-test-pod
+spec:
+  initContainers:
+    - name: setup-envfile
+      image:  nginx
+      command:
+      - sh
+      - -c
+      - echo DB_ADDRESS=\'existing_value\' > /data/config.env
+      volumeMounts:
+        - name: config
+          mountPath: /data
+  containers:
+    - name: use-envfile
+      image: nginx
+      command: [ "/bin/sh", "-c", "sleep infinity" ]
+      env:
+        - name: DB_ADDRESS
+          valueFrom:
+            fileKeyRef:
+              path: config.env
+              volumeName: config
+              key: DB_ADDRESS
+              optional: false
+  restartPolicy: Never
+  volumes:
+    - name: config
+      emptyDir: {}
+EOF
+```
+Confirm the pod is running normally and the EnvFiles feature is working correctly:
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
+NAME            READY   STATUS    RESTARTS   AGE
+dapi-test-pod   1/1     Running   0          7s
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec dapi-test-pod -- env | grep "DB_ADDRESS"
+Defaulted container "use-envfile" out of: use-envfile, setup-envfile (init)
+DB_ADDRESS='existing_value'
+```
 
-2. When the apiserver is upgraded, new envs will be written. But on downgrade,
-   it cannot be written but the existing envs will continue to exist. On
-   upgrade, the envs can again be written.
+Checkout the `release-1.34` branch, add a tag using `git tag v1.34.0`, rebuild the `kubelet` and `kube-apiserver` binaries, and run kubelet and kube-apiserver using the same local command.
+
+Check the cluster version:
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl version
+Client Version: v1.35.0
+Kustomize Version: v5.7.1
+Server Version: v1.34.0
+```
+Confirm the pod is still running and the EnvFiles feature is still working correctly:
+
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
+NAME            READY   STATUS    RESTARTS   AGE
+dapi-test-pod   1/1     Running   0          3m4s
+
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec dapi-test-pod -- env | grep "DB_ADDRESS"
+Defaulted container "use-envfile" out of: use-envfile, setup-envfile (init)
+DB_ADDRESS='existing_value'
+```
+Delete the pod and recreate it:
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl delete -f opt/env-pod.yml
+pod "dapi-test-pod" deleted from default namespace
+
+cat <<EOF | $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dapi-test-pod
+spec:
+  initContainers:
+    - name: setup-envfile
+      image:  nginx
+      command:
+      - sh
+      - -c
+      - echo DB_ADDRESS=\'existing_value\' > /data/config.env
+      volumeMounts:
+        - name: config
+          mountPath: /data
+  containers:
+    - name: use-envfile
+      image: nginx
+      command: [ "/bin/sh", "-c", "sleep infinity" ]
+      env:
+        - name: DB_ADDRESS
+          valueFrom:
+            fileKeyRef:
+              path: config.env
+              volumeName: config
+              key: DB_ADDRESS
+              optional: false
+  restartPolicy: Never
+  volumes:
+    - name: config
+      emptyDir: {}
+EOF
+```
+Confirm the pod is running and the EnvFiles feature is still working correctly:
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
+NAME            READY   STATUS    RESTARTS   AGE
+dapi-test-pod   1/1     Running   0          6s
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec dapi-test-pod -- env | grep "DB_ADDRESS"
+Defaulted container "use-envfile" out of: use-envfile, setup-envfile (init)
+DB_ADDRESS='existing_value'
+```
+Checkout to the master branch, add a tag using `git tag v1.35.0`, rebuild the `kubelet` and `kube-apiserver` binaries, and run `kubelet` and `kube-apiserver` using the same local command.
+
+Check the cluster version:
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl version
+Client Version: v1.35.0
+Kustomize Version: v5.7.1
+Server Version: v1.35.0
+```
+Confirm the pod is still running and the EnvFiles feature is still working correctly:
+```
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
+NAME            READY   STATUS    RESTARTS   AGE
+dapi-test-pod   1/1     Running   0          3m4s
+
+$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec dapi-test-pod -- env | grep "DB_ADDRESS"
+Defaulted container "use-envfile" out of: use-envfile, setup-envfile (init)
+DB_ADDRESS='existing_value'
+```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -574,6 +727,7 @@ N/A
 * 2023/02/15: Initial proposal
 * 2025/06/06: Open the new PR and continue implementing the KEP.
 * 2025/08/13: Align KEPs with implemented PRs and documentation.
+* 2025/09/12: Improve env file syntax and promote to beta stage.
 
 ## Drawbacks
 
