@@ -19,6 +19,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Resource States](#resource-states)
+  - [Priority of Resize Requests](#priority-of-resize-requests)
   - [Kubelet and API Server Interaction](#kubelet-and-api-server-interaction)
     - [Kubelet Restart Tolerance](#kubelet-restart-tolerance)
   - [Scheduler and API Server Interaction](#scheduler-and-api-server-interaction)
@@ -37,6 +38,12 @@
   - [QOS Class](#qos-class)
   - [Resource Quota](#resource-quota)
   - [Affected Components](#affected-components)
+  - [Instrumentation](#instrumentation)
+    - [<code>kubelet_container_requested_resizes_total</code>](#kubelet_container_requested_resizes_total)
+    - [<code>kubelet_pod_resize_duration_seconds</code>](#kubelet_pod_resize_duration_seconds)
+    - [<code>kubelet_pod_pending_resizes</code>](#kubelet_pod_pending_resizes)
+    - [<code>kubelet_pod_in_progress_resizes</code>](#kubelet_pod_in_progress_resizes)
+    - [<code>kubelet_pod_deferred_resize_accepted_total</code>](#kubelet_pod_deferred_resize_accepted_total)
   - [Static CPU &amp; Memory Policy](#static-cpu--memory-policy)
   - [Future Enhancements](#future-enhancements)
     - [Mutable QOS Class &quot;Shape&quot;](#mutable-qos-class-shape)
@@ -390,9 +397,6 @@ WindowsPodSandboxConfig.
    configurations will see values that may not represent actual configurations. As a
    mitigation, this change needs to be documented and highlighted in the
    release notes, and in top-level Kubernetes documents.
-1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
-   could be in use, and approaches such as setting limit near current usage may
-   be required. This issue needs further investigation.
 1. Scheduler race condition: If a resize happens concurrently with the scheduler evaluating the node
    where the pod is resized, it can result in a node being over-scheduled, which will cause the pod
    to be rejected with an `OutOfCPU` or `OutOfMemory` error. Solving this race condition is out of
@@ -432,6 +436,36 @@ Changes are always propogated through these 4 resource states in order:
 Desired --> Allocated --> Actuated --> Actual
 ```
 
+### Priority of Resize Requests
+
+Resize requests detected by the kubelet (in `HandlePodUpdates` and `HandlePodAdditions`)
+will be added to a queue of pending resizes. Resize requests will be attempted according to
+the following priority:
+
+1. *Resource requests are not increasing*: Resizes that don't increase requests will be
+prioritized first. These resizes are expected to always succeed and would not be marked as
+pending.
+2. *PriorityClass*: Pods with a higher PriorityClass.
+3. *QoS Class*: Pods with a higher QoS class, where Guaranteed > Burstable. Best effort pods 
+do not have CPU or memory resources, so are excluded from the discussion here.
+4. *Time since resize request*: If all else is the same, resizes that have been pending
+longer will be retried first (leveraging LastTransitionTime on the PodResizePending condition).
+
+These priorities are *only* used to indicate which resize requests will be attempted first. 
+Scheduler preemption/eviction to make room for pending resizes is not in scope. 
+
+A higher priority resize being marked as pending should not block the remaining pending resizes
+from being attempted, i.e. we will try all remaining resizes in the queue even if one is unsuccessful.
+Resizes that are deferred will be added back to the queue to be re-attempted later. Resizes that are
+infeasible may never be retried.
+
+Allocation will be attempted on the pods in the queue:
+- At the end of `HandlePodUpdates`, `HandlePodRemoves`, and `HandlePodCleanups` when a change to the queue is detected.
+- Upon completion of another resize request.
+- Periodically, to catch any cases that we may have missed.
+
+A successful allocation will trigger a pod sync, which will actuate the allocated resize and update the
+pod status accordingly.
 
 ### Kubelet and API Server Interaction
 
@@ -810,11 +844,17 @@ Setting the memory limit below current memory usage can cause problems. If the k
 sufficient memory, the outcome depends on the cgroups version. With cgroups v1 the change will
 simply be rejected by the kernel, whereas with cgroups v2 it will trigger an oom-kill.
 
-In the initial beta release of in-place resize, we will **disallow** `PreferNoRestart` memory limit
-decreases, enforced through API validation. The intent is for this restriction to be relaxed in the
-future, but the design of how limit decreases will be approached is still undecided.
+If the memory resize restart policy is `NotRequired` (or unspecified), the Kubelet will make a
+**best-effort** attempt to prevent oom-kills when decreasing memory limits, but doesn't provide any
+guarantees. Before decreasing container memory limits, the Kubelet will read the container memory
+usage (via the StatsProvider). If usage is greater than the desired limit, the resize will be
+skipped for that container. The pod condition `PodResizeInProgress` will remain, with an `Error`
+reason, and a message reporting the current usage & desired limit. This is considered best-effort
+since it is still subject to a time-of-check-time-of-use (TOCTOU) race condition where the usage exceeds the limit after the
+check is performed. A similar check will also be performed at the pod level before lowering the pod
+cgroup memory limit.
 
-Memory limit decreases with `RestartRequired` are still allowed.
+_Version skew note:_ Kubernetes v1.33 (and earlier) nodes only check the pod-level memory usage.
 
 ### Swap
 
@@ -881,6 +921,74 @@ Other components:
 * check how the change of meaning of resource requests influence other
   Kubernetes components.
 
+### Instrumentation
+
+The kubelet will record the following metrics:
+
+#### `kubelet_container_requested_resizes_total`
+
+This metric tracks the total number of resize attempts observed by the Kubelet, counted at the container level.
+A single pod update changing multiple containers will be considered separate resize attempts.
+
+Labels: 
+- `resource` - what resource. Possible values: `cpu`, or `memory`. If more than one of these is changing in the resize request, we increment the counter multiple times, once for each.
+- `requirement` - Possible values: `limits`, or `requests`. If more than one of these is changing in the resize request, we increment the counter multiple times, once for each.
+- `operation` -  whether the resize is an increase or a decrease. Possible values: `increase`, `decrease`, `add`, or `remove`.
+- `namespace` - the namespace of the pod.
+
+This metric is recorded as a counter.
+
+#### `kubelet_pod_resize_duration_seconds`
+This metric tracks the duration of [doPodResizeAction](https://github.com/kubernetes/kubernetes/blob/92de70895830ea1a9c2c6554bdab4cbee7ce867d/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L699), which 
+is responsible for actuating the resize.
+
+Labels: 
+- `namespace` - the namespace of the pod.
+
+This metric is recorded as a histogram.
+
+#### `kubelet_pod_pending_resizes`
+
+This metric tracks the current count of pods that the kubelet marks as pending. This will make it
+easier for us to see which of the current limitations users are running into the most.
+
+Labels:
+- `reason` - why the resize is pending. Possible values: `infeasible` or `deferred`.
+- `reason_detail` - more details about why the resize is pending. Although a more detailed "message" will be provided in the `PodResizePending`
+condition in the pod, we limit this label to only the following possible values to keep cardinality low:
+  - `guaranteed_pod_cpu_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside CPU Manager static policy.
+  - `guaranteed_pod_memory_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside Memory Manager static policy.
+  - `static_pod` - In-place resize is not supported for static pods.
+  - `swap_limitation` - In-place resize is not supported for containers with swap.
+  - `insufficient_node_allocatable` - The node doesn't have enough capacity for this resize request.
+- `namespace` - the namespace of the pod.
+
+This list of possible reasons may shrink or grow depending on limitations that are added or removed in the future.
+
+This metric is recorded as a gauge.
+
+#### `kubelet_pod_in_progress_resizes`
+
+This metric tracks the total count of resize requests that the kubelet marks as in progress, meaning that
+the resources have been allocated but not yet actuated.
+
+Labels: 
+- `namespace` - the namespace of the pod.
+
+This metric is recorded as a gauge.
+
+#### `kubelet_pod_deferred_resize_accepted_total`
+
+This metric tracks the total number of resize requests that the Kubelet originally marked as deferred but 
+later accepted. This metric primarily exists because if a deferred resize is accepted through the timed retry (as
+opposed to being triggered by an event such as another pod being deleted or sized down), it indicates an issue in the Kubelet's logic for handling deferred resizes that we should fix.
+
+Labels:
+  - `accepted_reason` - whether the resize was accepted through the timed retry or due to another pod event. Possible values: `periodic_retry`, `event_based`.
+  - `namespace` - the namespace of the pod.
+
+This metric is recorded as a counter.
+
 ### Static CPU & Memory Policy
 
 Resizing pods with static CPU & memory policy configured is out-of-scope for the beta release of
@@ -891,7 +999,8 @@ This will be reconsidered post-beta as a future enhancement.
 
 ### Future Enhancements
 
-1. Allow memory limits to be decreased, and handle the case where limits are set below usage.
+1. Improve memory limit decrease oom-kill prevention by leveraging other kernel mechanisms or using
+   gradual decreaese.
 1. Kubelet (or Scheduler) evicts lower priority Pods from Node to make room for
    resize. Pre-emption by Kubelet may be simpler and offer lower latencies.
 1. Allow ResizePolicy to be set on Pod level, acting as default if (some of)
@@ -907,7 +1016,6 @@ This will be reconsidered post-beta as a future enhancement.
 1. Explore periodic resyncing of resources. That is, periodically issue resize requests to the
    runtime even if the allocated resources haven't changed.
 1. Allow resizing containers with swap allocated.
-1. Prioritize resizes when resources are freed, or at least make ordering deterministic.
 
 #### Mutable QOS Class "Shape"
 
@@ -1546,6 +1654,8 @@ _This section must be completed when targeting beta graduation to a release._
       and update CRI `UpdateContainerResources` contract
     - Add back `AllocatedResources` field to resolve a scheduler corner case
     - Introduce Actuated resources for actuation
+- 2025-06-03 - v1.34 post-beta updates
+    - Allow no-restart memory limit decreases
 
 ## Drawbacks
 

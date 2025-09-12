@@ -1,10 +1,8 @@
-prnumber: "3460"
-name: 3458-remove-transient-node-predicates-from-service-controller
 title: Remove transient node predicates from KCCM's service controller
 kep-number: "3458"
-authors: ['@alexanderConstantinescu']
+authors:
+  - "@alexanderConstantinescu"
 owning-sig: sig-network
-participating-sigs: [sig-network]
 reviewers:
   - "@thockin"
 approvers:

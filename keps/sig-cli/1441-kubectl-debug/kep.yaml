@@ -6,7 +6,7 @@ owning-sig: sig-cli
 participating-sigs:
   - sig-cli
   - sig-node
-status: implementable
+status: implemented
 creation-date: 2019-08-05
 reviewers:
   - "@aylei"
@@ -34,7 +34,7 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-# 
+#
 # kubectl does not use feature-gates
 feature-gates: []
 disable-supported: false

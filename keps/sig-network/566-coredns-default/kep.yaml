@@ -14,4 +14,8 @@ approvers:
 editor: "@rajansandeep"
 creation-date: 2018-05-18
 last-updated: 2018-05-18
-status: provisional
+status: implemented
+latest-milestone: "v1.12"
+stage: stable
+milestone:
+  stable: "v1.12"

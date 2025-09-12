@@ -1,18 +1,24 @@
 title: Pod Ready++
 kep-number: 580
 authors:
-  - "freehan@"
+  - "@freehan"
 owning-sig: sig-network
 participating-sigs:
   - sig-node
   - sig-cli
 reviewers:
-  - thockin@
-  - dchen1107@
+  - "@thockin"
+  - "@dchen1107"
 approvers:
-  - thockin@
-  - dchen1107@
-editor: "freehan@"
+  - "@thockin"
+  - "@dchen1107"
+editor: "@freehan"
 creation-date: 2018-04-01
 last-updated: 2018-04-01
-status: provisional
+status: implemented
+latest-milestone: "v1.14"
+stage: stable
+milestone:
+  alpha: "v1.11"
+  beta: "v1.12"
+  stable: "v1.14"

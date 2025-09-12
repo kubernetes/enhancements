@@ -16,10 +16,11 @@ see-also:
   - "/keps/sig-api-machinery/2340-Consistent-reads-from-cache"
   - "/keps/sig-api-machinery/365-paginated-lists"
 replaces: []
-stage: alpha
-latest-milestone: "v1.33"
+stage: beta
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.33"
+  beta: "v1.34"
 feature-gates:
   - name: DetectCacheInconsistency
     components:

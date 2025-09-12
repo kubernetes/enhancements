@@ -187,7 +187,9 @@ devices using a `ResourceClaim`. However, the current API does not allow the
 user to indicate any priority when multiple types or configurations of devices
 may meet the needs of the workload. This feature allows the user to specify
 alternative requests that statisfy the workloads need, giving the scheduler more
-flexiblity in scheduling the workload.
+flexiblity in scheduling the workload. This can increase the change that their
+workloads will get scheduled, although it doesn't guarantee that the optimal
+set of devices will be allocated. Scoring will improve this once implemented.
 
 ## Motivation
 
@@ -954,6 +956,13 @@ Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: 70.0%
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 72.9%
 
+Start of 1.34 development cycle (04/23/2025):
+
+- `k8s.io/dynamic-resource-allocation/cel`: 88.2%
+- `k8s.io/dynamic-resource-allocation/structured`: 91.3%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 79.3%
+
 ##### Integration tests
 
 <!--
@@ -971,14 +980,13 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+Integration test verifying correctness:
+- https://github.com/kubernetes/kubernetes/blob/master/test/integration/dra/dra_test.go#L299
+
 The existing [integration tests for kube-scheduler which measure
 performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme)
-will be extended to cover the overheaad of running the additional logic to
-support the features in this KEP. These also serve as [correctness
-tests](https://github.com/kubernetes/kubernetes/commit/cecebe8ea2feee856bc7a62f4c16711ee8a5f5d9)
-as part of the normal Kubernetes "integration" jobs which cover [the dynamic
-resource
-controller](https://github.com/kubernetes/kubernetes/blob/294bde0079a0d56099cf8b8cf558e3ae7230de12/test/integration/scheduler_perf/util.go#L135-L139).
+will be extended to cover the overhead of running the additional logic to
+support the features in this KEP.
 
 ##### e2e tests
 
@@ -995,9 +1003,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 End-to-end testing depends on a working resource driver and a container runtime
 with CDI support. A [test
 driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
-was developed as part of the overall DRA development effort. We will extend this
-test driver to enable support for alternative device requests and add tests to
-ensure they are handled by the scheduler as described in this KEP.
+was developed as part of the overall DRA development effort. We have added e2e tests
+that cover this feature:
+- https://github.com/kubernetes/kubernetes/blob/master/test/e2e/dra/dra.go#L864
+The results are available at https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all
 
 ### Graduation Criteria
 
@@ -1010,8 +1019,8 @@ ensure they are handled by the scheduler as described in this KEP.
 #### Beta
 
 - Gather feedback
-- Implement node scoring
 - Evaluate feasibilty of cluster auto scaler implementation
+  - Cluster autoscaler support for DRA has been implemented and that will also include support for this feature.
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
@@ -1027,25 +1036,25 @@ they are all local to the control plane.
 
 ### Version Skew Strategy
 
-The proposed API change relaxes a `required` constraint on the
-`DeviceRequest.DeviceClassName` field. The `DeviceRequest` thus becomes a one-of
-that must have either the `DeviceClassName` or the `FirstAvailable` field
-populated.
+The `ResourceClaim` API in the `DeviceRequest` object has two fields, `Exactly` which
+is used to specify a single device request, and `FirstAvailable` that lets users
+specify the prioritized list of device requests. These are a one-off, so every
+valid `DeviceRequest` must specify one and only one of these two fields.
 
-Older clients have been advised in the current implementation to check this
-field, even though it is required, and fail to allocate a claim that does not
-have the field set. This means that during rollout, if the API server has this
-feature, but the scheduler does not, the scheduler will fail to schedule pods
-that utilize the feature. The pod will be scheduled later according to the new
-functionality after the scheduler is upgraded.
+This means that if the scheduler does not have the feature enabled, while it
+is enabled in the APIServer, the scheduler will see an invalid `ResourceClaim`
+and fail to allocate devices to the claim. Once the scheduler is updated, it
+will be able to see the new fields on the claim and be able to allocate devices
+accordingly.
 
 This feature affects the specific allocations that get made by the scheduler.
 Those allocations are stored in the `ResourceClaim` status, and will be acted
 upon by the kubelet and DRA-driver just as if the user had made the request
-without this feature. Thus, there is no impact on the data plane version skew;
-if the selected request could be satisfied by the data plane without this
-feature, it will work exactly the same with this feature.
-
+without this feature. However, the references to the original request in the
+`DeviceRequestAllocationResult.Request` field will be on the format
+`<main request>/<subrequest>` for `DeviceRequest`s using the feature. The
+driver must be updated to understand this format in order to correctly
+be able to make the allocated devices available to pods and containers.
 ## Production Readiness Review Questionnaire
 
 <!--
@@ -1097,12 +1106,6 @@ also must be enabled for this feature to work.
     - kube-apiserver
     - kube-scheduler
     - kube-controller-manager
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1144,8 +1147,7 @@ another node or recreated for some reason.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The feature will begin working again for future scheduling choices that make use
-of it. For `Deployments` or other users of `ResourceClaimTemplate`, previously
-failing Pod creations or scheduling may begin to succeed.
+of it.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1162,163 +1164,90 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Unit tests will be written to validate the enablement and disablement behavior,
-as well as type conversions for the new field and relaxed validation.
+The feature has unit tests that verifies enablement and disablement of the
+feature:
+* https://github.com/kubernetes/kubernetes/blob/c519248e8a865d837f3f40308eaf9559e605306d/staging/src/k8s.io/dynamic-resource-allocation/structured/allocator_test.go#L2114
+
+There are also tests to validate dropping fields when the feature is disabled:
+* https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/resource/resourceclaim/strategy_test.go
+* https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/resource/resourceclaimtemplate/strategy_test.go
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Workloads that doesn't use the Prioritized List feature should not be impacted,
+since the functionality is unchanged unless users opt in by specifying a prioritized
+list of device requests in the ResourceClaim.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-
-Will consider in the beta timeframe.
+If the feature is being used in ResourceClaims before support for it has fully
+rolled out across the cluster, it can cause a failure to schedule pods or a failure
+to run the pods on the nodes. This will not affect running workloads unless they
+have to be restarted.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+One indicator are unexpected restarts of the cluster control plane components
+(kube-scheduler, apiserver, kube-controller-manager).
 
-Will consider in the beta timeframe.
+If the `scheduler_pending_pods` metric in the kube-scheduler suddenly increases
+of remains constant, it can suggest that pods are no longer gettings scheduled
+which might be due to a problem with the DRA scheduler plugin. Another are an
+increase in the number of pods that fail to start, as indicated by the
+`kubelet_started_containers_errors_total` metric.
+
+In all cases further analysis of logs and pod events is needed to determine
+whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+This will be done manually before transition to beta by bringing up a KinD cluster with
+kubeadm and changing the feature gate for individual components.
 
-Will consider in the beta timeframe.
+Roundtripping of API types is covered by unit tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
-
-No, though we do relax validation on one field to make it no longer a required
-field.
+No
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+There will be `ResourceClaim` objects with the `spec.devices.requests.firstAvailable` set.
 
-Will consider in the beta timeframe.
+Metrics in kube-controller-manager about total (`resourceclaim_controller_resource_claims`) and allocated ResourceClaims (`resourceclaim_controller_allocated_resource_claims`) will have a label that can be used as a filter to get the
+numbers for only `ResourceClaim` with at least one request using the feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-Will consider in the beta timeframe.
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] API .status
+  - Other field: `.status.allocation.devices.results.request` will have a value on the format `<main request>/<subrequest>`
+    for requests using the Prioritized List feature.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
 
 Existing DRA and related SLOs continue to apply.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+These are the same as for the main DRA feature:
 
-Will consider in the beta timeframe.
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: resourceclaim_controller_create_total
+  - Metric name: resourceclaim_controller_create_failures_total
+  - Metric name: resourceclaim_controller_resource_claims
+  - Metric name: resourceclaim_controller_allocated_resource_claims
+  - Metric name: workqueue with name="resource_claim"
+  - Metric name: scheduler_pending_pods
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No
 
-We can consider a histogram metric showing how many allocations are made from
-indices 0-7 of ResourceClaims that utilize this feature.
-
-### Dependencies
-
-<!--
-This section must be completed when targeting beta to a release.
--->
+### Dependencies 
 
 ###### Does this feature depend on any specific services running in the cluster?
-
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
 
 This feature depends on the DRA structured parameters feature being enabled, and
 on DRA drivers being deployed. There are no requirements beyond those already
@@ -1326,62 +1255,19 @@ needed for DRA structured parameters.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
-
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
 
 No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
-
 No, just a new field on the `ResourceClaim.DeviceRequest` struct.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
-
 No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
-
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
 
 Yes, when using this field, the user will add additional data in their
 `ResourceClaim` and `ResourceClaimTemplate` objects. This is an incremental
@@ -1390,76 +1276,28 @@ limited to 8 in order to minimize the potential object size.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
-
-Scheduling a claim that uses this feature may take a bit longer, if it is
-necessary to go deeper into the list of alternative options before finding a
-suitable device. We can measure this impact in alpha.
+Scheduling a claim that uses this feature may take a bit longer, since it
+requires trying out additional requests in the situation that the first request
+in the prioritized list can't be met.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
-
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
 
 No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
-
 No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
+The troubleshooting section in https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#troubleshooting
+still applies. The only additional failure modes comes from version skew
+in the cluster and the troubleshooting steps provided through the link above
+should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 ###### What are other known failure modes?
-
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1476,7 +1314,9 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-1.32 Enhancements Freeze - KEP merged, alpha implementation initiated
+- 1.32 Enhancements Freeze - KEP merged, alpha implementation initiated
+- 1.33 Prioritized List is included as an alpha feature.
+- 1.34 Prioritized List graduates to beta.
 
 ## Drawbacks
 

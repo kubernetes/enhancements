@@ -473,6 +473,7 @@ details). For now, we leave it here.
 - 2022-06-09: KEP targeted at Alpha in 1.25
 - 2023-01-09: KEP targeted at Beta in 1.27
 - 2025-02-07: KEP targeted at Stable in 1.33
+- 2025-06-10: KEP targeted at Stable in 1.34
 
 ## Drawbacks
 

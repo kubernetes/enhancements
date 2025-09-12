@@ -33,6 +33,7 @@ aliases:
     - bridgetkromhout
     - cheftako
     - elmiko
+    - joelspeed
   sig-cluster-lifecycle-leads:
     - CecileRobertMichon
     - fabriziopandini
@@ -55,7 +56,7 @@ aliases:
     - ahrtr
     - jmhbnz
     - serathius
-    - wenjiaswe
+    - siyuanfoundation
   sig-instrumentation-leads:
     - dashpole
     - dgrisonnet
@@ -123,17 +124,15 @@ aliases:
   sig-windows-leads:
     - aravindhp
     - claudiubelu
-    - knabben
-    - jsturtevant
     - marosset
+    - zylxjtu
   wg-api-expression-leads:
     - apelisse
     - kwiesmueller
   wg-batch-leads:
     - kannon92
     - mwielgus
-    - soltysh
-    - swatisehgal
+    - tenzen-y
   wg-data-protection-leads:
     - xing-yang
     - yuxiangqian

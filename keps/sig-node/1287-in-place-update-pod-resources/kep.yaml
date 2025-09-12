@@ -6,6 +6,7 @@ authors:
   - "@schylek"
   - "@vinaykul"
   - "@tallclair"
+  - "@natasha41575"
 owning-sig: sig-node
 participating-sigs:
   - sig-autoscaling
@@ -33,7 +34,7 @@ replaces:
 
 stage: "beta"
 
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 
 milestone:
   alpha: "v1.27"

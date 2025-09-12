@@ -276,7 +276,7 @@ In addition to the Pod itself, each integration test should be repeated with obj
 - [X] No trouble reports from alpha release
 
 #### GA
-- [ ] No trouble reports with the beta release, plus some anecdotal evidence of it being used successfully.
+- [X] No trouble reports with the beta release, plus some anecdotal evidence of it being used successfully.
 
 ### Upgrade / Downgrade Strategy
 
@@ -506,8 +506,16 @@ N/A
   - [x] KEP (`k/enhancements`) update PR(s):
     - https://github.com/kubernetes/enhancements/pull/4428
     - https://github.com/kubernetes/enhancements/pull/4755
+    - https://github.com/kubernetes/enhancements/pull/4884
   - [x] Code (`k/k`) update PR(s):
     - https://github.com/kubernetes/kubernetes/pull/127167
+  - [ ] Docs (`k/website`) update PR(s):
+- [x] Beta
+  - [x] KEP (`k/enhancements`) update PR(s):
+    - https://github.com/kubernetes/enhancements/pull/5045
+    - https://github.com/kubernetes/enhancements/pull/5137
+  - [x] Code (`k/k`) update PR(s):
+    - https://github.com/kubernetes/kubernetes/pull/130128
   - [ ] Docs (`k/website`) update PR(s):
 
 ## Drawbacks

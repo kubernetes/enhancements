@@ -3,7 +3,7 @@ kep-number: 5027
 authors:
   - "@pohly"
 owning-sig: sig-scheduling
-status: implementable
+status: provisional
 creation-date: 2024-01-10
 reviewers:
   - "@dom4ha"
@@ -23,7 +23,6 @@ latest-milestone: "v1.33"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.33"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

@@ -1,7 +1,6 @@
 # KEP-1864: Optionally Disable Node Ports for Service Type=LoadBalancer
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -29,30 +28,6 @@
   - [APIServer Flag](#apiserver-flag)
   - [Service Type=LoadBalancerWithoutNodePorts](#service-typeloadbalancerwithoutnodeports)
 <!-- /toc -->
-
-## Release Signoff Checklist
-
-Items marked with (R) are required *prior to targeting to a milestone / release*.
-
-- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [X] (R) KEP approvers have approved the KEP status as `implementable`
-- [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [X] (R) Graduation criteria is in place
-- [X] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 

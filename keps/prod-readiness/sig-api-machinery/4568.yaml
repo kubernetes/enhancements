@@ -1,3 +1,5 @@
 kep-number: 4568
 beta:
   approver: "@jpbetz"
+stable:
+  approver: "@deads2k"

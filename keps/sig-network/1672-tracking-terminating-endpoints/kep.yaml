@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-network
 participating-sigs:
   - sig-scalability
-status: implementable
+status: implemented
 creation-date: 2020-04-07
 reviewers:
   - "@thockin"
@@ -16,7 +16,7 @@ reviewers:
 approvers:
   - "@thockin"
 see-also:
-  - /kep/sig-network/20190603-EndpointSlice-API.md
+  - /kep/sig-network/0752-endpointslices/
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.

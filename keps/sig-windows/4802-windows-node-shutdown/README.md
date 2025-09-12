@@ -265,8 +265,9 @@ Until then, we will cover all the scenerios with e2e tests
 
 #### Alpha -> Beta Graduation
 
-* Addresses feedback from alpha testers
 * Sufficient E2E and unit testing
+    *   Adding [Windows node level test](https://github.com/kubernetes/kubernetes/pull/129938) , which will include the gracefulshutdown case.
+    *   [Enabling the test in CAPZ cluster](https://github.com/kubernetes-sigs/windows-testing/pull/506)
 
 #### Beta -> GA Graduation
 
@@ -292,7 +293,7 @@ n/a
 This section must be completed when targeting alpha to a release.
 -->
 
-###### How can this feature be enabled / disabled in a live cluster?
+* **How can this feature be enabled / disabled in a live cluster?**
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `WindowsGracefulNodeShutdown`
@@ -301,33 +302,32 @@ This section must be completed when targeting alpha to a release.
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
     plane?
-    No
+    - No
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
-    yes (will require restart of kubelet)
+    - yes (will require restart of kubelet)
 
-###### Does enabling the feature change any default behavior?
+* **Does enabling the feature change any default behavior?**
 
-The main behavior change is that during a node shutdown, pods running on the 
+  * The main behavior change is that during a node shutdown, pods running on the 
 node will be terminated gracefully.
 
-###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?**
 
-Yes, the feature can be disabled by either disabling the feature gate, or
+  * Yes, the feature can be disabled by either disabling the feature gate, or
       setting `kubeletConfig.ShutdownGracePeriod` to 0 seconds.
 
-###### What happens if we reenable the feature if it was previously rolled back?
+* **What happens if we reenable the feature if it was previously rolled back?**
 
-Kubelet will attempt to perform graceful termination of pods during a
-        node shutdown.
+  * Kubelet will attempt to perform graceful termination of pods during a
+    node shutdown.
 
-###### Are there any tests for feature enablement/disablement?
+* **Are there any tests for feature enablement/disablement?**
 
-  The e2e framework does not currently support enabling or disabling feature
-  gates. 
-  We have e2e tests to cover the feature when it is enabled and some predefined
-  setting. 
-  Will add node level integration tests when the node level test framework is available for Windows node
+  * The e2e framework does not currently support enabling or disabling feature
+  gates.  We have e2e tests to cover the feature when it is enabled and some predefined
+  setting. Will add node level integration tests when the node level test framework is 
+  available for Windows node
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -335,24 +335,22 @@ Kubelet will attempt to perform graceful termination of pods during a
 This section must be completed when targeting beta to a release.
 -->
 
-###### How can a rollout or rollback fail? Can it impact already running workloads?
+* **How can a rollout or rollback fail? Can it impact already running workloads?**
 
-It wil not impact running workloads during rollout/rollback.
+  * It wil not impact running workloads during rollout/rollback.
 
-###### What specific metrics should inform a rollback?
+* **What specific metrics should inform a rollback?**
 
-n/a
-
-The failure of the roll out will behave like disbling this feature, operators can check the kubelet log to get more specific info.
+  * The failure of the roll out will behave like disbling this feature, operators can check the kubelet log to get more specific info.
 ex: `The windows node graceful shutdown has not been enabled, the reasons are xxx`
 
-###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-This is basically how all features work so upgrade and downgrade apply as normal.
+  * The feature is part of kubelet config so updating kubelet config should enable/disable the feature; upgrade/downgrade is N/A
 
-###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
 
-No
+  * No
 
 ### Monitoring Requirements
 
@@ -363,11 +361,11 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-###### How can an operator determine if the feature is in use by workloads?
+* **How can an operator determine if the feature is in use by workloads?**
 
-Check if the feature gate and kubelet config settings are enabled on a node.
+  * Check if the feature gate and kubelet config settings are enabled on a node.
 
-###### How can someone using this feature know that it is working for their instance?
+* **How can someone using this feature know that it is working for their instance?**
 
 - [ ] Events
   - Event Reason: 
@@ -377,26 +375,26 @@ Check if the feature gate and kubelet config settings are enabled on a node.
 - [X] Other (treat as last resort)
   - Details: Pod.Status.Message, Pod.Status.Reason
 
-###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+* **What are the reasonable SLOs (Service Level Objectives) for the enhancement?**
 
-n/a
+  * n/a
 
-###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [x] Metrics
+  - Metric name: GracefulShutdownStartTime, GracefulShutdownEndTime
   - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [X] Other (treat as last resort)
+  - Components exposing the metric: Kubelet
+- [x] Other (treat as last resort)
   - Details: The operator can get the service health information from the logs
 
-###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+* **Are there any missing metrics that would be useful to have to improve observability of this feature?**
 
-n/a
+  * n/a
 
 ### Dependencies
 
@@ -404,9 +402,9 @@ n/a
 This section must be completed when targeting beta to a release.
 -->
 
-###### Does this feature depend on any specific services running in the cluster?
+* **Does this feature depend on any specific services running in the cluster?**
 
-No, this feature doesn't depend on any specific services running the cluster.
+  * No, this feature doesn't depend on any specific services running the cluster.
 
 ### Scalability
 
@@ -420,33 +418,33 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-###### Will enabling / using this feature result in any new API calls?
+* **Will enabling / using this feature result in any new API calls?**
 
-No
+  * No
 
-###### Will enabling / using this feature result in introducing new API types?
+* **Will enabling / using this feature result in introducing new API types?**
 
-No
+  * No
 
-###### Will enabling / using this feature result in any new calls to the cloud provider?
+* **Will enabling / using this feature result in any new calls to the cloud provider?**
 
-No
+  * No
 
-###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+* **Will enabling / using this feature result in increasing size or count of the existing API objects?**
 
-No
+  * No
 
-###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+* **Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?**
 
-No
+  * No
 
-###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+* **Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
-No
+  * No
 
-###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+* **Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?**
 
-No
+  * No
 
 ### Troubleshooting
 
@@ -461,17 +459,21 @@ splitting it into a dedicated `Playbook` document (potentially with some monitor
 details). For now, we leave it here.
 -->
 
-###### How does this feature react if the API server and/or etcd is unavailable?
+* **How does this feature react if the API server and/or etcd is unavailable?**
 
-The feature does not depend on the API server / etcd.
+  * The feature does not depend on the API server / etcd.
 
-###### What are other known failure modes?
+* **What are other known failure modes?**
 
-n/a
+  - Kubelet does not detect the shutdown e.g. due to kubelet is not started as a Windows service. 
+    - Detection: Kubelet logs
+    - Mitigations: Workloads will not be affected, graceful node shutdown will not be enabled
+    - Diagnostics: At default (v2) logging verbosity, kubelet will log if it is [running as a windows service](https://github.com/kubernetes/kubernetes/blob/b4e17418b340e161b8c6cc7f85a6e716abcb561a/pkg/windows/service/service.go#L130)
+    - Testing: Working on adding SIG-Windows node level E2E tests check for graceful node shutdown including priority based shutdown
 
-###### What steps should be taken if SLOs are not being met to determine the problem?
+* **What steps should be taken if SLOs are not being met to determine the problem?**
 
-n/a
+  * n/a
 
 ## Implementation History
 

@@ -788,7 +788,7 @@ For each of them, fill in the following information by copying the below templat
 
 ## Implementation History
 
-- 1.33: first KEP revision and implementation
+- 1.33: first KEP revision, implementation postponed until there is a more specific need for it
 
 ## Drawbacks
 

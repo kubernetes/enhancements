@@ -18,13 +18,13 @@ approvers:
 
 see-also:
   - "https://docs.google.com/document/d/1ZzUoFY1SrdjVefl7gVOJZJLt1I1LHttw8pcX95nlgMY/edit?usp=sharing"
-  - "github.com/kubernetes/enhancements/blob/master/keps/sig-network/2004-topology-aware-subsetting"
-  - "github.com/kubernetes/enhancements/blob/master/keps/sig-network/2030-topology-aware-proxying"
-  - "github.com/kubernetes/enhancements/blob/master/keps/sig-network/2086-service-internal-traffic-policy"
-  - "github.com/kubernetes/enhancements/tree/master/keps/sig-network/4444-service-traffic-distribution"
+  - "/keps/sig-network/2004-topology-aware-subsetting"
+  - "/keps/sig-network/2030-topology-aware-proxying"
+  - "/keps/sig-network/2086-service-internal-traffic-policy"
+  - "/keps/sig-network/4444-service-traffic-distribution"
   - "https://github.com/kubernetes/enhancements/issues/3015"
 replaces:
-  - "github.com/kubernetes/enhancements/tree/master/keps/sig-network/536-topology-aware-routing"
+  - "/keps/sig-network/536-topology-aware-routing"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

@@ -16,14 +16,14 @@ approvers:
 see-also:
   - "/keps/sig-node/3960-pod-lifecycle-sleep-action"
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 
 milestone:
   alpha: "v1.32"
   beta: "v1.33"
-  stable: ""
+  stable: "v1.34"
 
 feature-gates:
   - name: PodLifecycleSleepActionAllowZero

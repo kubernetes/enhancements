@@ -137,17 +137,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -207,7 +207,7 @@ know that this has succeeded?
 * Introduce a `kuberc` file as a place for client preferences.
 * Version and structure this file in a way that makes it easy to introduce new behaviors and settings for users.
 * Enable users to define kubectl command aliases.
-* Enable users to define kubectl default flags.
+* Enable users to define kubectl default options.
 * Deprecate [kubeconfig `Preferences` field](https://github.com/kubernetes/kubernetes/blob/4b024fc4eeb4a3eeb831e7fddec52b83d0b072df/staging/src/k8s.io/client-go/tools/clientcmd/api/v1/types.go#L40).
 
 ### Non-Goals
@@ -305,21 +305,34 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-During alpha this feature will be enabled through the `KUBECTL_KUBERC=true` environment variable. The file will default to being located in `~/.kube/kuberc`. A flag will allow overriding this default location with a path i.e. `kubectl --kuberc /var/kube/rc`.
+For beta this feature will be enabled by default. However, users can disable it
+by setting the `KUBECTL_KUBERC` environment variable to `false`. Additionally,
+users can always set the `KUBERC` environment variable to `off`, which disables
+the preference mechanism at any point in time.
 
-Three initial top level keys are proposed.
+By default, the configuration file will be located in `~/.kube/kuberc`. A flag
+will allow overriding this default location with a specific path, for example:
+`kubectl --kuberc /var/kube/rc`.
 
-* `apiVersion` to determine the version of the config.
-* `kind` to keep consistency with Kubernetes resources.
-* `aliases` for users to declare their own aliases for commands with flags and values.
-* `overrides` for users to set default flags to apply to commands.
+The following top-level keys are proposed, alongside the kubernetes `metav1.TypeMeta`
+fields (`apiVersion`, `kind`):
 
-`aliases` will not be allowed to override builtins but take precedence of plugins i.e. builtins -> aliases -> plugins. Additional flags and values will be appended to the end of the aliased command. It is the responsibility of the user to define aliases with this in mind.
+* `aliases` Allows users to declare their own command aliases, including options and values.
+* `defaults` Enables users to set default options to be applied to commands.
 
-`overrides` is modeled after all configurable behavior being implemented as flags first. This is a design decision that was made after modeling out the intended behavior and realizing that targeting flags filled the use cases. A merge will be done in the execution of the command for flags with inline overrides taking precedence.
+`aliases` will not be permitted to override built-in commands but will take
+precedence over plugins (builtins -> aliases -> plugins). Any additional options
+and values will be appended to the end of the aliased command. Users are
+responsible for defining aliases with this behavior in mind.
+
+`defaults` is designed based on the principle that all configurable behavior is
+initially implemented as options. This design decision was made after analyzing the
+intended behavior and realizing that targeting options effectively addresses the
+use cases. During command execution, a merge will be occur, with inline overrides
+taking precedence over the defaults.
 
 ```
-apiVersion: kubectl.config.k8s.io/v1alpha1
+apiVersion: kubectl.config.k8s.io/v1beta1
 kind: Preference
 
 aliases:
@@ -327,19 +340,19 @@ aliases:
     command: get
     prependArgs:
     - pods
-    flags:
+    options:
     - name: labels
       default: what=database
     - name: namespace
       default: us-2-production
 
-overrides:
+defaults:
   - command: apply
-    flags:
+    options:
       - name: server-side
         default: "true"
   - command: delete
-    flags:
+    options:
       - name: interactive
         default: "true"
 
@@ -369,7 +382,11 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-Aside from standard testing we will also be skew testing.
+We're planning to expand tests adding:
+- config API fuzzy tests
+- cross API config loading
+- input validation and correctness
+- simple e2e using kuberc
 
 ##### Unit tests
 
@@ -395,10 +412,9 @@ extending the production code to implement this enhancement.
 
 -->
 
-We're planning unit tests covering:
-- basic functionality
-- config API fuzzy tests
-- input validation and correctness
+- `k8s.io/kubectl/pkg/cmd/`: `2025-05-13` - `57.0%`
+- `k8s.io/kubectl/pkg/config/`: `2025-05-13` - `0.0%`
+- `k8s.io/kubectl/pkg/kuberc/`: `2025-05-13` - `64.5%`
 
 ##### Integration tests
 
@@ -413,9 +429,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 -->
 
-We're planning at least the following integration tests:
-- `KUBECTL_KUBERC` enablement and disablement
-- basic functionality
+- [test-cmd.run_kuberc_tests](https://github.com/kubernetes/kubernetes/blob/fd15e3fd5566fb0a65ded1883fbf51ce7a68fe28/test/cmd/kuberc.sh): [integration cmd-master](https://testgrid.k8s.io/sig-release-master-blocking#cmd-master)
 
 ##### e2e tests
 
@@ -470,6 +484,14 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Gather feedback from developers and surveys
 - Complete features A, B, C
 - Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved
+
+**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
 
 #### GA
 
@@ -477,6 +499,9 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - N installs
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
+**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
 
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
@@ -539,6 +564,12 @@ enhancement:
 -->
 
 This feature will follow the [version skew policy of kubectl](https://kubernetes.io/releases/version-skew-policy/#kubectl).
+
+Furthermore, kubectl will be equipped with a mechanism which will allow it to
+read all past versions of the kuberc file, and pick the latest known one.
+This mechanism will ensure that users can continue using whatever version of
+kuberc they started with, unless they are interested in newer feature available
+only in newer releases.
 
 ## Production Readiness Review Questionnaire
 
@@ -635,7 +666,9 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes there will be.
+Yes, there is a [kuberc CLI test](https://github.com/kubernetes/kubernetes/blob/06c196438acb771d26ff983ff0f18a611acba208/test/cmd/kuberc.sh#L153-L156),
+which verifies that `--kuberc` is used when the `KUBECTL_KUBERC` is on, and is
+ignored when it's turned off.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -747,13 +780,6 @@ Not applicable.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
-  -
 Not applicable.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -905,6 +931,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+`kubectl` is not resilient to API server unavailability.
+
 ###### What are other known failure modes?
 
 <!--
@@ -920,7 +948,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+Not applicable.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Not applicable.
 
 ## Implementation History
 
@@ -938,12 +970,11 @@ Major milestones might include:
 * 2021-06-02: [Proposal to add delete confirmation](https://github.com/kubernetes/enhancements/issues/2775)
 * 2022-06-13: This KEP created.
 * 2024-06-07: Update KEP with new env var name and template.
+* 2025-05-13: Update KEP for beta promotion.
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+None considered.
 
 ## Alternatives
 
@@ -953,6 +984,8 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+None considered.
+
 ## Infrastructure Needed (Optional)
 
 <!--
@@ -960,3 +993,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+Not applicable.

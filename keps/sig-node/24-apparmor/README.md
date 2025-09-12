@@ -473,7 +473,7 @@ Phase 1 (v1.30): AppArmor field support merged
 
 Phase 2 (v1.34):
 - API server stops copying fields to annotations
-- Warn on ALL annotation use
+- Warn on annotation use if there is no corresponding _container_ field (including on workload resources)
 - **Risk:** policy controllers that don't consider field values
 
 Phase 3 (v1.36): End state

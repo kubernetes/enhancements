@@ -435,44 +435,10 @@ type ServiceExportStatus struct {
         // +patchMergeKey=type
         // +listType=map
         // +listMapKey=type
-        Conditions []ServiceExportCondition `json:"conditions,omitempty"`
-}
-
-// ServiceExportConditionType identifies a specific condition.
-type ServiceExportConditionType string
-
-const {
-      // ServiceExportValid means that the service referenced by this
-      // service export has been recognized as valid by an mcs-controller.
-      // This will be false if the service is found to be unexportable
-      // (ExternalName, not found).
-      ServiceExportValid ServiceExportConditionType = "Valid"
-      // ServiceExportConflict means that there is a conflict between two
-      // exports for the same Service. When "True", the condition message
-      // should contain enough information to diagnose the conflict:
-      // field(s) under contention, which cluster won, and why.
-      // Users should not expect detailed per-cluster information in the
-      // conflict message.
-      ServiceExportConflict ServiceExportConditionType = "Conflict"
-}
-
-// ServiceExportCondition contains details for the current condition of this
-// service export.
-//
-// Once KEP-1623 (sig-api-machinery/1623-standardize-conditions) is
-// implemented, this will be replaced by metav1.Condition.
-type ServiceExportCondition struct {
-        Type ServiceExportConditionType `json:"type"`
-        // Status is one of {"True", "False", "Unknown"}
-        Status corev1.ConditionStatus `json:"status"`
-        // +optional
-        LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
-        // +optional
-        Reason *string `json:"reason,omitempty"`
-        // +optional
-        Message *string `json:"message,omitempty"`
+        Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 ```
+
 ```yaml
 apiVersion: multicluster.k8s.io/v1alpha1
 kind: ServiceExport
@@ -481,15 +447,20 @@ metadata:
   namespace: my-ns
 status:
   conditions:
-  - type: Ready
+  - type: Valid
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:51Z"
-  - type: InvalidService
-    status: "False"
+    reason: Valid
+    message: "The ServiceExport and its Service is exportable."
+  - type: Ready
+    status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
+    reason: Exported
+    message: "The service has been exported"
   - type: Conflict
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
+    reason: TypeConflict
     message: "Conflicting type. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
 ```
 
@@ -555,6 +526,11 @@ Because of the potential wide impact a `ServiceImport` may have within a
 cluster, non-cluster-admin users should not be allowed to create or modify
 `ServiceImport` resources. The mcs-controller should be solely responsible for
 the lifecycle of a `ServiceImport`.
+
+Some errors may occur during the `ServiceImport`'s lifecycle, such as IP protocol
+incompatibilities (i.e.: importing an IPv6 only service in an IPv4 cluster). These
+errors and general status reporting of a `ServiceImport` should be reported
+via its status conditions field.
 
 For each exported service, one `ServiceExport` will exist in each cluster that
 exports the service. The mcs-controller will create and maintain a derived
@@ -638,6 +614,12 @@ type ServiceImportStatus struct {
   // +listType=map
   // +listMapKey=cluster
   Clusters []ClusterStatus `json:"clusters"`
+  // +optional
+  // +patchStrategy=merge
+  // +patchMergeKey=type
+  // +listType=map
+  // +listMapKey=type
+  Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // ClusterStatus contains service configuration mapped to a specific source cluster
@@ -662,6 +644,11 @@ spec:
     port: 80
   sessionAffinity: None
 status:
+  conditions:
+  - type: Ready
+    reason: Ready
+    status: "True"
+    lastTransitionTime: "2020-03-30T01:33:51Z"
   clusters:
   - cluster: us-west2-a-my-cluster
 ```
@@ -704,7 +691,8 @@ this cluster.
   complicate deployments by even attempting to stretch them across clusters.
   Instead, regular `ExternalName` type `Services` should be created in each
   cluster individually. If a `ServiceExport` is created for an `ExternalName`
-  service, an `InvalidService` condition will be set on the export.
+  service, a condition type `Valid` with reason `InvalidServiceType` and
+  status `false` will be set on the `ServiceExport`.
 
 #### ClusterSetIP
 
@@ -1003,10 +991,12 @@ services. If these properties are out of sync for a subset of exported services,
 there is no clear way to determine how a service should be accessed.
 
 Conflict resolution policy: **If any properties have conflicting values that can
-not simply be merged, a `ServiceExportConflict` condition will be set on all
-`ServiceExport`s for the conflicted service with a description of the conflict.
+not simply be merged, a `Conflict` condition with a `true` status will be set
+on all `ServiceExport`s for the conflicted service with a description of the conflict.
 The conflict will be resolved by assigning precedence based on each
 `ServiceExport`'s `creationTimestamp`, from oldest to newest.**
+
+**Note:** When a `ServiceExport`'s conflict condition changes from `False` to `True` due to this resolution policy, runtime traffic remains unaffected. The oldest cluster will win the conflict and continue to be referenced in the `ServiceImport`, maintaining service continuity. Conversely, when the conflict condition transitions from `True` to `False` (for example, when the oldest cluster's service is unexported), the `ServiceImport` may remain unchanged to avoid potentially disruptive changes to active traffic patterns.  
 
 #### Service Port
 

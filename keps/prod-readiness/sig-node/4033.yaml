@@ -6,3 +6,5 @@ alpha:
   approver: "@johnbelamaric"
 beta:
   approver: "@johnbelamaric"
+stable:
+  approver: "@deads2k"

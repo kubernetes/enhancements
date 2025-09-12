@@ -459,6 +459,7 @@ Major milestones might include:
 - 2024-11-01: Alpha code PR merged
 - 2024-12-11: Kubernetes v1.32 release with PodLifecycleSleepActionAllowZero in alpha stage
 - 2025-02-06: KEP updated targeting to beta in v1.33
+- 2025-06-11: KEP updated targeting to stable in v1.34
 
 ## Drawbacks
 

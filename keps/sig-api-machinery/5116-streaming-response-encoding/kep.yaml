@@ -9,14 +9,15 @@ reviewers:
   - liggitt
 approvers:
   - deads2k
-stage: beta
-latest-milestone: "v1.33"
+stage: stable
+latest-milestone: "v1.34"
 milestone:
   beta: "v1.33"
+  stable: "v1.34"
 feature-gates:
   - name: StreamingCollectionEncodingToJSON
     components:
       - kube-apiserver
-  - name: StreamingCollectionEncodingToProto
+  - name: StreamingCollectionEncodingToProtobuf
     components:
       - kube-apiserver

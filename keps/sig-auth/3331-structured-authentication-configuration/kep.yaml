@@ -11,11 +11,12 @@ approvers:
 - "@liggitt"
 creation-date: "2022-06-02"
 status: implementable
-stage: beta
-latest-milestone: "v1.33"
+stage: stable
+latest-milestone: "v1.34"
 milestone:
   alpha: "v1.29"
   beta: "v1.30"
+  stable: "v1.34"
 feature-gates:
 - name: StructuredAuthenticationConfiguration
   components:

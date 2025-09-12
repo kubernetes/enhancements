@@ -6,3 +6,5 @@ alpha:
   approver: "@jpbetz"
 beta:
   approver: "@jpbetz"
+stable:
+  approver: "@jpbetz"

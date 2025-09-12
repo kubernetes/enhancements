@@ -1,8 +1,9 @@
-title: PSI based Node Conditions
+title: Expose PSI Metrics
 kep-number: 4205
 authors:
   - "@ndixita"
   - "@dragoncell"
+  - "roycaihw"
 owning-sig: sig-node
 participating-sigs:
   - sig-node
@@ -21,27 +22,32 @@ see-also: []
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.33"
+latest-milestone: "v1.34"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.33"
+  beta: "v1.34"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: PSINodeCondition
+  - name: KubeletPSI
     components:
       - kubelet
-      - kube-controller-manager
-      - kube-scheduler
 
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: []
+metrics:
+- container_pressure_cpu_stalled_seconds_total
+- container_pressure_cpu_waiting_seconds_total
+- container_pressure_memory_stalled_seconds_total
+- container_pressure_memory_waiting_seconds_total
+- container_pressure_io_stalled_seconds_total
+- container_pressure_io_waiting_seconds_total

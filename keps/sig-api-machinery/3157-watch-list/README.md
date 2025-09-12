@@ -102,6 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [Beta2](#beta2)
+    - [Beta3](#beta3)
     - [GA](#ga)
     - [Post-GA](#post-ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -277,8 +278,8 @@ The rough idea/plan is as follows:
 
 - step 1: change the informers to establish a WATCH request with a new query parameter instead of a LIST request.
 - step 2: upon receiving the request from an informer, compute the RV at which the result should be returned (possibly contacting etcd if consistent read was requested). It will be used to make sure the watch cache has seen objects up to the received RV. This step is necessary and ensures we will meet the consistency requirements of the request.
+- step 2a: wait until watch catches up with the computed RV
 - step 2a: send all objects currently stored in memory for the given resource type.
-- step 2b: propagate any updates that might have happened meanwhile until the watch cache catches up to the latest RV received in step 2.
 - step 2c: send a bookmark event to the informer with the given RV.
 - step 3: listen for further events using the request from step 1.
 
@@ -342,15 +343,15 @@ Whereas further down in this section we provided a detailed description of each 
 </tr>
 <tr>
   <th>2a.</th>
-  <th>The watch cache starts streaming initial data it already has in memory.</th>
+  <th>The watch cache waits until is observed the requested ResourceVersion.</th>
 </tr>
 <tr>
   <th>2b.</th>
-  <th>The watch cache waits until it has observed data up to the RV received in step 2. Streaming all new data (if any) to the reflector immediately.</th>
+  <th>The watch cache stream all the contents from its in-memory store.</th>
 </tr>
 <tr>
   <th>2c.</th>
-  <th>The watch cache has observed the RV (from step 2) and sends a bookmark event with the given RV to the reflector.</th>
+  <th>After sending all the objects it sends a bookmark event with the given RV to the reflector.</th>
 </tr>
 <tr>
   <th>3.</th>
@@ -763,16 +764,29 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Extend the existing performance tests with a case that adds a large number of small objects. 
   The current perf test adds a small number of large objects. 
   The new variant will help catch potential regressions such as https://github.com/kubernetes/kubernetes/issues/129467 
- 
 
-#### GA
+#### Beta3
+With new concerns brought in 1.33 release timeline, we reviset the approach for the feature.
+The discussion happened in [this document] and resulted in the following update for the criteria:
+
+- Revert the client-go changes that use watchList to implement List.
+  This inclues removing the API annotation that made this possible, because it doesn't
+  serve another purpose.
+- Ensure we don't break the "latestRV" usecase for StorageVersionMigrator reusing the
+  informer cache from the kube-controller-manager
+- Ensure that the feature is usable by external projects by validating it works with
+  controller-runtime out-of-the-box via simple enablement
+- Add support for AcceptContentType header with the value application/json;as=Table and
+  application/json;as=PartialObjectMetadata
 - [Switch](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L416) 
   the `storage/cacher` to use streaming directly from etcd 
   (This will also allow us to [remove](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/client-go/tools/cache/reflector.go#L110) the `reflector.UseWatchList` field).
-- Currently, WatchList request does not support the use of the AcceptContentType header with the value application/json;as=Table. 
-  When this value is set, the API will return a 406 Not Acceptable response. 
-  This behavior needs to be updated to ensure compatibility with standard LIST requests.
+- Enable the feature by-default for kube-controller-manager.
 
+[this document]: https://docs.google.com/document/d/1x30DjXSSF5krpyoTCwManJg6vphpnGI37xfCRaiHAbs
+
+#### GA
+- No user issues reported
 
 #### Post-GA
 - Make  **list** calls expensive in APF. 
@@ -914,10 +928,10 @@ Pick one of these and delete the rest.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: WatchList
-   - Components depending on the feature gate: 
-    - kube-apiserver
-  - Feature gate name: WatchListClient (the actual name might be different because it hasn't been added yet)
   - Components depending on the feature gate:
+    - kube-apiserver
+  - Feature gate name: WatchListClient
+    - Components depending on the feature gate:
     - kube-controller-manager via client-go library
 - [ ] Other
   - Describe the mechanism:

@@ -455,7 +455,7 @@ Disable PodLifecycleSleepAction feature gate, and restart related components.
 
 - 2023-04-22: Initial draft KEP
 - 2023-12-20: Target to beta in v1.30 
-- 2024-09-21: Target to stable in v1.32
+- 2025-06-11: Target to stable in v1.34
   
 ## Drawbacks
 
