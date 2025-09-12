@@ -289,25 +289,50 @@ type FileKeySelector struct {
 
 The full specification of an env file:
 
-1. **File Format**: The environment variable (env) file must adhere to valid env file syntax to ensure proper parsing. The syntax for env files is as follows:
-   * Blank Lines: Blank lines are ignored.
-   * Leading Spaces: Leading spaces on all lines are ignored.
-   * Variable Declaration: Variables must be declared as `VAR=VAL`. Spaces surrounding `=` and trailing spaces are ignored.
-       ```
-       VAR=VAL → VAL
-       ```
-   * Comments: Lines beginning with # are treated as comments and ignored.
-       ```
-       # comment
-       VAR=VAL → VAL
-       VAR=VAL # not a comment → VAL # not a comment
-       ```
-   * Line Continuation: A backslash (`\`) at the end of a variable declaration line indicates the value continues on the next line. The lines are joined with a single space.
-       ```
-       VAR=VAL \
-       VAL2
-       → VAL VAL2
-       ```
+1. **Environment Variable Syntax**:
+
+    The syntax for environment variables is a strict subset of the POSIX shell standard, with one key constraint: variable values must be enclosed in single quotes.
+
+    For example:
+    ```
+    MY_VAR='my-literal-value'
+    ```
+
+    **Parsing Rationale and POSIX Compliance:**
+
+    When parsing the variable's value, our interpreter will strictly emulate the behavior of a double-quoted variable expansion ("$VAR") in a POSIX-compliant shell. This design choice ensures that the provided value is treated as a literal string without any interpretation or modification.
+
+    To illustrate the difference in a POSIX shell:
+
+    Given the following variable definition with a newline character:
+    ```
+    VAR='line1
+    line2'
+    ```
+    * An unquoted expansion (echo $VAR) subjects the value to word splitting. The shell replaces the newline with a space, resulting in a single line of output:
+    ```
+    line1 line2
+    ```
+    * A double-quoted expansion (echo "$VAR") preserves all characters and whitespace literally, including the newline. The output is:
+    ```
+    line1
+    line2
+    ```
+    Our system adopts the latter, more predictable behavior of double-quoted expansion.
+
+    **Specification:**
+
+    Based on this principle, the following rules are enforced:
+
+    * Values must be enclosed in single quotes.
+
+      * Example: VAR='value'
+
+    * The content within the single quotes is preserved literally. No whitespace folding, character modifications, or other interpretations will be applied.
+
+    * The value is not subject to escape sequence processing or expansion. All characters within the single quotes are treated as part of the string.
+
+    Note: You can explore these standard POSIX behaviors in a compatible environment for yourself by running bash --posix.
 
 
 2. **Variable Naming**: We will apply the same variable name [restrictions](https://github.com/kubernetes/kubernetes/blob/a7ca13ea29ba5b3c91fd293cdbaec8fb5b30cee2/pkg/apis/core/validation/validation.go#L2583-L2596) as other API-defined env vars.
@@ -574,6 +599,7 @@ N/A
 * 2023/02/15: Initial proposal
 * 2025/06/06: Open the new PR and continue implementing the KEP.
 * 2025/08/13: Align KEPs with implemented PRs and documentation.
+* 2025/09/12: Improve env file syntax
 
 ## Drawbacks
 
