@@ -15,6 +15,7 @@
 - [Design Details](#design-details)
   - [Limits](#limits)
   - [Validation](#validation)
+    - [Future options](#future-options)
   - [Defining device partitions in terms of consumed capacity in a device](#defining-device-partitions-in-terms-of-consumed-capacity-in-a-device)
   - [Defining multi-host devices](#defining-multi-host-devices)
     - [Multi-host scheduling limitations](#multi-host-scheduling-limitations)
@@ -364,7 +365,6 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
    with a list of counters in different counter sets and it makes it possible
    to align groups of counters with the underlying physical devices.
 
-
 1. Introduce a new field, `ConsumesCounters` under `Device`. It specifies
    the amount the device will draw for the counters in the referenced `CounterSet`.
    Therefore, if the amount drawn from the counters isn't available in the
@@ -377,7 +377,10 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
       1. The `PerDeviceNodeSelection` field is of type boolean and is mutually
       exclusive with the existing node selection fields in the `ResourceSliceSpec`
       (`NodeName`, `NodeSelector`, and `AllNodes`). If the value of this field is
-      `true`, then the node association must be specified on each device.
+      `true`, then the node association must be specified on each device. `ResourceSlices`
+      with this field set must be published by a control plance component rather
+      than a driver running on the node, as it prevents the driver from finding
+      all `ResourceSlices` by filtering on `NodeName`.
 
       1. The fields `NodeName`, `NodeSelector`, and `AllNodes` fields mirror the
       fields on the `ResourceSliceSpec` and are mutually exlusive. Setting
@@ -388,11 +391,8 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
 
 The `SharedCounters` field is mutually exlusive with the `Devices` field, meaning
 that `SharedCounters` must always be specified in a different `ResourceSlice` than
-devices consuming the counters. They must however be in the same `ResourcePool`.
-
-The `NodeName`, `NodeSelector`, `AllNodes`, and `PerDeviceNodeSelection` fields
-can only be set for `ResourceSlice`s that specifies devices. So they must always
-be unset for `ResourceSlices` that specified shared counters.
+devices consuming the counters. They must however be in the same `ResourcePool` with
+the same `Generation`.
 
 With these additions in place, the scheduler has everything it needs to support
 the dynamic allocation of full devices, their (possibly overlapping)
@@ -438,10 +438,10 @@ type ResourceSliceSpec struct {
   // must specify this individually.
   //
   // Exactly one of NodeName, NodeSelector, AllNodes, and PerDeviceNodeSelection
-  // must be set when the `Devices` field is set. If the `SharedCounters` field is
-  // set, none of the fields can be set.
+  // must be set.
   //
   // +optional
+  // +oneOf=NodeSelection
   // +featureGate=DRAPartitionableDevices
   PerDeviceNodeSelection bool
 
@@ -621,20 +621,36 @@ to validate whether references in `DeviceCounterConsumption` points to counter s
 that actually exists. Similarly, we will not be able to identify ambigous references,
 where there are multiple counter sets within a single `ResourcePool` with the same name.
 
-This additional validation will happen during allocation, meaning that issues will
-not be surfaced until a `ResourceClaim` needs to be allocated.
+The allocator will perform additional validation when it tries to use the ResourceSlices for
+allocation. It will:
+* Only consider devices from complete `ResourcePools`.
+* Abort scheduling of the pod and report a fatal error if any of the complete `ResourcePools`
+  fail validation.
 
-There are ways we may be able to improve the experience:
-* Require that references to counter sets must use the name of the `ResourceSlice` as the
-  prefix so references will be on the form `<resourceSliceName>/<counterSetName>`. We can
-  validate that the names of `CounterSet`s are unique within a `ResourceSlice`, so this 
-  removes the possibility of ambiguous references.
-* Introduce a controller that can validate that all references within a `ResourcePool`
-  are valid. It can then update a status on all `ResourceSlices` in the `ResourcePool`.
-  This will still be asynchronous, so the UX is not as good as validation during admission.
-  This is less of an issue here though, since `ResourceSlices` are created by drivers and
-  we can add logic for this in the kubeletplugin library that is used by most drivers.
+This makes sure any errors are discovered as soon as possible and we avoid situations where
+some devices from a `ResourcePool` might be eligible while others are not. This could lead to
+situations that would be very difficult to root cause.
+The drawback of this solution is that any error in the `ResourceSlices` for a node will
+prevent all devices from that node from being allocated. Also, a `ResourceSlice` with
+the node selector `AllNodes: true` will prevent devices from all nodes from being allocated.
 
+To try to prevent this situations from happening, we will add client-side validation in the
+ResourceSlice controller helper, so that any errors in the ResourceSlices will be caught before
+they even are applied to the APIServer. This will only work for controllers that use the helper
+code, but it will minimize the chances that the Allocator will find errors during the allocation phase.
+
+#### Future options
+
+We can further improve the experience here by introducing a controller that can validate that all references within a `ResourcePool`
+are valid. It can then update a status on all `ResourceSlices` in the `ResourcePool`. The
+controller can only do full validation for complete pools, i.e. when all `ResourceSlices`
+in the pool is on the same generation, but some validation can be done even on incomplete
+pools.
+Validation with a controller will still be asynchronous, so the UX is not as good as validation during admission.
+This is less of an issue here though, since `ResourceSlices` are created by drivers and
+we can add logic for this in the kubeletplugin library that is used by most drivers.
+This is not in scope for the current KEP, but mentioned here as a possible improvement that
+can be introduced later.
 
 ### Defining device partitions in terms of consumed capacity in a device
 
