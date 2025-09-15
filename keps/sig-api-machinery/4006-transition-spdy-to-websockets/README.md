@@ -715,6 +715,8 @@ in back-to-back releases.
 
 ##### v1.30 RemoteCommand Subprotocol (exec, cp, and attach)
 
+- `kubectl` environment variable KUBECTL_REMOTE_COMMAND_WEBSOCKETS is **ON** by default.
+- API Server feature flag `TranslateStreamCloseWebsocketRequests` is **ON** by default.
 - Additional `exec`, `cp`, and `attach` unit tests completed and enabled.
 - Additional `exec`, `cp`, and `attach` integration tests completed and enabled.
 - Additional `exec`, `cp`, and `attach` e2e tests completed and enabled.
@@ -734,6 +736,9 @@ in back-to-back releases.
 
 #### GA
 
+- `kubectl` environment variables and API Server feature gates are locked to on by default.
+- Deprecate `kubectl` environment variables and API Server feature gates for future removal.
+- Address RBAC authorization for WebSocket upgrades. The mechanism must be compatible with existing authorization rules for subresources (e.g., `pods/exec`) that are typically enforced on POST requests.
 - Add WebSocket support for HTTPS proxies.
   - See (https://github.com/kubernetes/kubernetes/issues/126134)
 - Conformance tests for `RemoteCommand` completed and enabled.
