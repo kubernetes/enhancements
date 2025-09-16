@@ -171,7 +171,7 @@ creation but not guaranteed to be immutable and thus should be treated as so.
 
 * A built-in Kubernetes admission plugin, `PodTopologyLabels` will be introduced in kube-apiserver
 * The `PodTopologyLabels` admission plugin is responsible for mutating `pods/binding` subresource, adding topology labels matching the target Node.
-* `PodTopologyLabels` admission will overwrite `topology.k8s.io/*` labels on Pods.
+* `PodTopologyLabels` admission will overwrite `topology.kubernetes.io/*` labels on Pods.
 * A feature gate, `PodTopologyLabelsAdmission` will be introduced in v1.33. Alpha and disabled by default.
 The `PodTopologyLabels` admission plugin can only be set when this feature gate is enabled.
 * The Binding REST implementation will be updated to copy all labels from `pods/binding` subresource into Pods.
