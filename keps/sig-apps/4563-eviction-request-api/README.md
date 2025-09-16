@@ -477,9 +477,11 @@ our case is the progress of the eviction.
 There can be many eviction requesters for a single EvictionRequest.
 
 When a requester decides that a pod needs to be evicted, it should create an EvictionRequest:
-- `.metadata.name` should be set to the pod UID to avoid conflicts and allow for easier lookups
-  as the name is predictable. For more details, see
-  [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects) alternatives section.
+- `.metadata.generateName` should be set instead of the `.metadata.name` to avoid conflicts.
+  Conflicts could occur due to pods with the same name but a different UIDs. In the future, it might
+  be possible that EvictionRequest will be extended for other resources than pods (e.g. PVCs), which
+  could result in name conflicts. For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
+  alternatives section.
 - `.spec.podRef` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
@@ -719,11 +721,7 @@ type PodSpec struct {
 type EvictionRequest struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// Object's metadata.
-	// .metadata.generateName is not supported.
-	// .metadata.name should match the .metadata.uid of the pod being evicted.
-	// The labels of the eviction request object will be merged with pod's .metadata.labels. The
-	// labels of the pod have a preference.
+	// Standard object's metadata.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
@@ -744,9 +742,10 @@ type EvictionRequest struct {
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
 	// PodRef references a pod that is subject to eviction/termination.
-	// This field is required and immutable.
-	// +required
-	PodRef LocalPodReference `json:"podRef" protobuf:"bytes,1,opt,name=podRef"`
+	// Only one reference of (PodRef, *TBD*) is required. 
+	// This field is immutable.
+	// +optional
+	PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,1,opt,name=podRef"`
 
 	// Interceptors reference interceptors that respond to this eviction request.
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
@@ -757,7 +756,6 @@ type EvictionRequestSpec struct {
 	//
 	// The maximum length of the interceptors list is 300. The number of interceptors is limited to
 	// 50 in the 9900-10099 interval and to 250 outside of this interval.
-	// +optional
 	// This field is immutable.
 	// +optional
 	// +patchMergeKey=interceptorClass
@@ -957,17 +955,17 @@ CREATE and DELETE requests and list EvictionRequests (.spec) during DELETE reque
 
 ##### CREATE
 
-Name of the EvictionRequest object must be unique and predictable for each pod to prevent the creation
-of multiple EvictionRequests for the same pod. We do not expect the interceptors to support interaction
-with multiple EvictionRequests for a pod.
+We would like to prevent the creation of multiple EvictionRequests for the same pod because we do
+not expect the interceptors to support interaction with multiple EvictionRequests for a pod.
 
-`.metadata.generateName` is not supported. If it is set, the request will be rejected.
-
-`.metadata.name` must be identical to `.spec.podRef.uid` or the request will be rejected.
 The Pod matching the `.spec.podRef.name` will be obtained from the admission plugin lister. If the
-`.spec.podRef.uid` does not match with the pod's UID, the request will be rejected. For more
-details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects) section in
-the Alternatives.
+`.spec.podRef.uid` does not match with the pod's UID, the request will be rejected. 
+
+We should also check that no EvictionRequest exists with the same `.spec.podRef`.
+
+The API is designed to be extensible to include additional types that could be evicted (e.g. PVCs).
+Currently, `.spec.podRef` is required, but we might change this to include additional references
+in the future.
 
 `.spec.interceptors` are populated from pod's `.spec.evictionInterceptors` (see
 [Interceptor](#interceptor) and [Pod and EvictionRequest API](#pod-and-evictionrequest-api)).
@@ -1061,7 +1059,7 @@ metadata:
    `requester.evictionrequest.coordination.k8s.io/name_nodemaintenance.k8s.io` finalizer on the
    EvictionRequest.
 3. The descheduling controller notices that the pod p-1 is running in the wrong zone. It wants to
-   create an EvictionRequest (named after the pod's UID) for this pod, but the EvictionRequest
+   create an EvictionRequest for this pod, but the EvictionRequest
    already exists. It sets the
    `requester.evictionrequest.coordination.k8s.io/name_descheduling.avalanche.io` finalizer on the
    EvictionRequest.
@@ -1902,7 +1900,8 @@ applications are blocking the node drain and asses whether they can be safely de
 It would be useful for the name of the EvictionRequest object to be unique and predictable for each
 pod instance to prevent the creation of multiple EvictionRequests for the same pod. Because we do
 not expect the interceptors to support interaction with multiple EvictionRequests for a pod. We can
-also verify `.spec.podRef` field on admission.
+also verify `.spec.podRef` field on admission. Unfortunately such approach would not be easy to
+extend in the future.
 
 We could validate each EvictionRequest `.metadata.name` to have one of the following formats:
 
@@ -1917,6 +1916,7 @@ Cons:
 - `.metadata.generateName` is not supported.
 - Not very user friendly. The workaround is to better format the output with the clients (e.g.
   kubectl).
+- Not extensible - hard to support new resources (e.g. PVCs).
 
 #### Pod Name
 
@@ -1929,6 +1929,7 @@ Cons:
   with the same name.
 - Actors in the system might start to rely on the name alone, rather than the full reference in
   `.spec.podRef.uid`, and mis-target pods.
+- Not extensible - hard to support new resources (e.g. PVCs).
 
 
 #### Pod UID and Pod Name Prefix
@@ -1953,6 +1954,7 @@ Pros:
 Cons
 - `.metadata.generateName` is not supported.
 - Cumbersome to use.
+- Not extensible - hard to support new resources (e.g. PVCs).
 
 
 #### Any Name
@@ -1963,6 +1965,7 @@ Pros:
 - Versatility; users can use any name they see fit.
 - `.metadata.generateName` is supported.
 - Actors in the system have a greater incentive to use `.spec.podRef`.
+- Extensible - easy to support new resources (e.g. PVCs) with `.metadata.generateName`.
 
 Cons:
 - Name conflict resolution is left up to the users, but as a workaround they can simply generate the
