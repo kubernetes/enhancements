@@ -321,7 +321,7 @@ Something like this, for the failure message:
 > Invariant failed for missing metric: <metric-name>
 >
 > If this failed on a pull request, please check if the PR changes may be related
-> to the failure, if not, you can also search for an existing github issue before
+> to the failure, if not, you can also search for an existing GitHub issue before
 > filing a new issue.
 >
 > If this failed in a periodic CI, please file a bug and assign the owners.
