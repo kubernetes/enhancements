@@ -245,6 +245,9 @@ with the failure results.
 No invariant tests may roll up to the general test owners.
 There is precedent in documenting featuregate and metrics owners.
 
+Similarly, the associated SIG(s) must be registered, for use in tagged related
+issues.
+
 A shared system will be introduced to the e2e framework to enable this form of
 testing.
 
@@ -327,6 +330,7 @@ Something like this, for the failure message:
 > If this failed in a periodic CI, please file a bug and assign the owners.
 >
 > Owners for this metric: <github-handles>
+> Associated Special Interest Groups: <sig-foo>
 
 
 ### Test Plan
