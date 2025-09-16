@@ -838,19 +838,19 @@ type EvictionRequestStatus struct {
     // +patchStrategy=merge
     // +listType=map
     // +listMapKey=type
-    Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,8,rep,name=conditions"`
+    Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 
 	// Message is a human readable message indicating details about the eviction request.
 	// This may be an empty string.
 	// +required
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=32768
-	Message string `json:"message" protobuf:"bytes,7,opt,name=message"`
+	Message string `json:"message" protobuf:"bytes,2,opt,name=message"`
 
 	// Interceptors of the ActiveInterceptorClass can adopt this eviction request by updating the
 	// HeartbeatTime or orphan/complete it by setting ActiveInterceptorCompleted to true.
 	// +optional
-	ActiveInterceptorClass *string `json:"activeInterceptorClass,omitempty" protobuf:"bytes,1,opt,name=activeInterceptorClass"`
+	ActiveInterceptorClass *string `json:"activeInterceptorClass,omitempty" protobuf:"bytes,3,opt,name=activeInterceptorClass"`
 
 	// ActiveInterceptorCompleted should be set to true when the interceptor of the
 	// ActiveInterceptorClass has fully or partially completed (may result in pod termination).
@@ -858,19 +858,19 @@ type EvictionRequestStatus struct {
 	// If this field is true, there is no additional interceptor available, and the evicted pod is
 	// still running, it will be evicted using the Eviction API.
 	// +optional
-	ActiveInterceptorCompleted bool `json:"activeInterceptorCompleted,omitempty" protobuf:"varint,2,opt,name=activeInterceptorCompleted"`
+	ActiveInterceptorCompleted bool `json:"activeInterceptorCompleted,omitempty" protobuf:"varint,4,opt,name=activeInterceptorCompleted"`
 
 	// ExpectedInterceptorFinishTime is the time at which the eviction process step is expected to
 	// end for the current interceptor and its class.
 	// May be empty if no estimate can be made.
 	// +optional
-	ExpectedInterceptorFinishTime *metav1.Time `json:"expectedInterceptorFinishTime,omitempty" protobuf:"bytes,3,opt,name=expectedInterceptorFinishTime"`
+	ExpectedInterceptorFinishTime *metav1.Time `json:"expectedInterceptorFinishTime,omitempty" protobuf:"bytes,5,opt,name=expectedInterceptorFinishTime"`
 
 	// HeartbeatTime is the time at which the eviction process was reported to be in progress by
 	// the interceptor.
 	// Cannot be set to the future time (after taking time skew of up to 10 seconds into account).
 	// +optional
-	HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,4,opt,name=heartbeatTime"`
+	HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,6,opt,name=heartbeatTime"`
 
 	// EvictionRequestCancellationPolicy should be set to Forbid by the interceptor if it is not possible
 	// to cancel (delete) the eviction request.
@@ -890,14 +890,12 @@ type EvictionRequestStatus struct {
 	//
 	// This field is required.
     // +required
-	EvictionRequestCancellationPolicy EvictionRequestCancellationPolicy `json:"evictionRequestCancellationPolicy" protobuf:"varint,5,opt,name=evictionRequestCancellationPolicy"`
+	EvictionRequestCancellationPolicy EvictionRequestCancellationPolicy `json:"evictionRequestCancellationPolicy" protobuf:"varint,7,opt,name=evictionRequestCancellationPolicy"`
 
-	// The number of unsuccessful attempts to evict the referenced pod via the API-initiated eviction,
-	// e.g. due to a PodDisruptionBudget.
-	// This is set by the eviction controller after all the interceptors have completed.
-	// The minimum value is 1, and subsequent updates can only increase it.
+	// Pod-specific status that is populated during Pod eviction.
+	// This field can only be set when .spec.podRef is set.
     // +optional
-	FailedAPIEvictionCounter *int32 `json:"failedAPIEvictionCounter,omitempty" protobuf:"varint,6,opt,name=failedAPIEvictionCounter"`
+    PodEvictionStatus *PodEvictionStatus `json:"podEvictionStatus,omitempty" protobuf:"varint,8,opt,name=podEvictionStatus"`
 }
 
 // +enum
@@ -911,6 +909,16 @@ Allow EvictionRequestCancellationPolicy = "Allow"
 // The EvictionRequest can't be deleted until the Pod is fully terminated.
 Forbid EvictionRequestCancellationPolicy = "Forbid"
 )
+
+// Pod-specific status that is populated during Pod eviction.
+type PodEvictionStatus struct {
+    // The number of unsuccessful attempts to evict the referenced pod via the API-initiated eviction,
+    // e.g. due to a PodDisruptionBudget.
+    // This is set by the eviction controller after all the interceptors have completed.
+    // The minimum value is 0, and subsequent updates can only increase it.
+    // +required
+    FailedAPIEvictionCounter int32 `json:"failedAPIEvictionCounter" protobuf:"varint,1,opt,name=failedAPIEvictionCounter"`
+}
 
 ```
 
