@@ -391,7 +391,7 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
 
 The `SharedCounters` field is mutually exlusive with the `Devices` field, meaning
 that `SharedCounters` must always be specified in a different `ResourceSlice` than
-devices consuming the counters. They must however be in the same `ResourcePool` with
+devices consuming the counters. They must however be in the same resource pool with
 the same `Generation`.
 
 With these additions in place, the scheduler has everything it needs to support
@@ -420,7 +420,7 @@ By allowing cross-`ResourceSlice` references, we will not be able to validate
 that the references can actually be resolved during admission since we are only
 able to validate a `ResourceSlice` in isolation. This means that users will not
 discover mistakes until a `ResourceClaim` actually tries to allocate a device
-that belongs to the `ResourcePool`. This means more complexity and a less user-friendly
+that belongs to the resource pool. This means more complexity and a less user-friendly
 UX. However, `ResourceSlices` are created by drivers, so issues here would mean a bug
 in the driver.
 
@@ -448,7 +448,7 @@ type ResourceSliceSpec struct {
   // SharedCounters defines a list of counter sets, each of which
   // has a name and a list of counters available.
   //
-  // The names of the Counter Sets must be unique in the ResourcePool.
+  // The names of the counter sets must be unique in the resource pool.
   //
   // The maximum number of counter sets is 8.
   //
@@ -460,7 +460,7 @@ type ResourceSliceSpec struct {
 
 // CounterSet defines a named set of counters
 // that are available to be used by devices defined in the
-// ResourcePool.
+// resource pool.
 //
 // The counters are not allocatable by themselves, but
 // can be referenced by devices. When a device is allocated,
@@ -619,16 +619,16 @@ The ResourceSlice-wide limits are:
 We will validate as much as possible during admission, but we will not be able
 to validate whether references in `DeviceCounterConsumption` points to counter sets
 that actually exists. Similarly, we will not be able to identify ambigous references,
-where there are multiple counter sets within a single `ResourcePool` with the same name.
+where there are multiple counter sets within a single resource pool with the same name.
 
 The allocator will perform additional validation when it tries to use the ResourceSlices for
 allocation. It will:
-* Only consider devices from complete `ResourcePools`.
-* Abort scheduling of the pod and report a fatal error if any of the complete `ResourcePools`
+* Only consider devices from complete resource pools.
+* Abort scheduling of the pod and report a fatal error if any of the complete resource pools
   fail validation.
 
 This makes sure any errors are discovered as soon as possible and we avoid situations where
-some devices from a `ResourcePool` might be eligible while others are not. This could lead to
+some devices from a resource pool might be eligible while others are not. This could lead to
 situations that would be very difficult to root cause.
 The drawback of this solution is that any error in the `ResourceSlices` for a node will
 prevent all devices from that node from being allocated. Also, a `ResourceSlice` with
@@ -636,13 +636,13 @@ the node selector `AllNodes: true` will prevent devices from all nodes from bein
 
 To try to prevent this situations from happening, we will add client-side validation in the
 ResourceSlice controller helper, so that any errors in the ResourceSlices will be caught before
-they even are applied to the APIServer. This will only work for controllers that use the helper
+they even are applied to the APIServer. This will only work for drivers that use the helper
 code, but it will minimize the chances that the Allocator will find errors during the allocation phase.
 
 #### Future options
 
-We can further improve the experience here by introducing a controller that can validate that all references within a `ResourcePool`
-are valid. It can then update a status on all `ResourceSlices` in the `ResourcePool`. The
+We can further improve the experience here by introducing a controller that can validate that all references within a resource pool
+are valid. It can then update a status on all `ResourceSlices` in the resource pool. The
 controller can only do full validation for complete pools, i.e. when all `ResourceSlices`
 in the pool is on the same generation, but some validation can be done even on incomplete
 pools.
