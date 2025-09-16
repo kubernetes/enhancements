@@ -11,6 +11,10 @@ reviewers:
 approvers:
   - "@dom4ha"
   - "@sanposhiho"
+prr-approval:
+  stable:
+    milestone: "v1.35"
+    reviewer: "@dom4ha"
 
 stage: stable
 
