@@ -6,10 +6,11 @@ owning-sig: sig-scheduling
 status: implementable
 creation-date: 2025-02-06
 reviewers:
-  - dom4ha
-  - sanposhiho
+  - "@dom4ha"
+  - "@sanposhiho"
 approvers:
-  - alculquicondor
+  - "@dom4ha"
+  - "@sanposhiho"
 
 stage: stable
 
