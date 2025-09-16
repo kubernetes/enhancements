@@ -901,7 +901,16 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-Will be considered for beta.
+Workloads that do not use the DRA Extended Resource feature should not be impacted,
+since the functionality is unchanged.
+
+If the feature is being used in pods before support for it has been fully rolled out
+across the cluster, api server, scheduler in control plane, and kubelet in nodes, it
+can cause a failure to schedule pods or a failure to run the pods on the nodes.
+This will not affect already running workloads unless they have to be restarted.
+
+Device plugin drivers can be replaced with DRA drivers for the same devices on a
+per-node basis, one node at a time.
 
 ###### What specific metrics should inform a rollback?
 
@@ -909,7 +918,20 @@ Will be considered for beta.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-Will be considered for beta.
+One indicator are unexpected restarts of the cluster control plane components
+(kube-scheduler, apiserver) or kubelet.
+
+If the scheduler_pending_pods metric in the kube-scheduler suddenly increases, it can
+suggest that pods are no longer gettings scheduled which might be due to a problem with
+the DRA scheduler plugin. Another are an increase in the number of pods that fail to start,
+as indicated by the kubelet_started_containers_errors_total metric.
+
+If the node.status.Capacity for the extended resources for the devices do not decrease to zero,
+or a pod fail to be scheduled, or run on the node, it may indicate that the device plugin driver
+on the node for the devices is not properly replaced by the DRA driver.
+
+In all cases further analysis of logs and pod events is needed to determine whether
+errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -918,14 +940,17 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-Will be considered for beta.
+This will be covered by automated tests before transition to beta by bringing up a KinD cluster and
+changing the feature gate for individual components.
+
+Roundtripping of API types is covered by unit tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-Will be considered for beta.
+No
 
 ### Monitoring Requirements
 
