@@ -20,6 +20,7 @@
     - [Scheduler Performance Regression](#scheduler-performance-regression)
     - [API Compatibility and Version Skew](#api-compatibility-and-version-skew)
     - [Edge Cases in Numeric Parsing](#edge-cases-in-numeric-parsing)
+    - [Taint Misconfiguration Detection](#taint-misconfiguration-detection)
     - [Cross-SIG Impact](#cross-sig-impact)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
@@ -157,6 +158,22 @@ spec:
   - key: node.kubernetes.io/sla
     operator: Gt
     value: "750"
+    effect: NoSchedule
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: flexible-sla-workload
+spec:
+  tolerations:
+  # Accept nodes with SLA >= 900 (SLA = 900 OR SLA > 900)
+  - key: node.kubernetes.io/sla
+    operator: Equal
+    value: "900"
+    effect: NoSchedule
+  - key: node.kubernetes.io/sla
+    operator: Gt
+    value: "900"
     effect: NoSchedule
 ---
 # Critical workload will not be scheduled until a suitable high reliability node has capacity
@@ -396,6 +413,8 @@ spec:
 
 - Invalid taints meant to be used with the new comparison operators (e.g., `node.kubernetes.io/sla=95.5` and `node.kubernetes.io/version=1`) are not detected at admission time.
 
+- **Taint Misconfiguration Risk**: When nodes have taints with non-numeric values (e.g., `node.kubernetes.io/sla=high` instead of `node.kubernetes.io/sla=950`) that are intended for use with numeric operators, the misconfiguration is only detected during pod scheduling attempts, not at taint creation time. This can lead to scheduling failures that are difficult to diagnose.
+
 ### Risks and Mitigations
 
 #### Scheduler Performance Regression
@@ -430,6 +449,16 @@ spec:
 - Comprehensive unit tests covering edge cases (overflow, underflow, malformed strings)
 - API validation rejects pods with unparseable values rather than silently failing
 - Clear error messages help users identify and fix configuration issues
+
+#### Taint Misconfiguration Detection
+
+**Risk**: Node taints intended for numeric comparison may contain non-numeric values (e.g., `node.kubernetes.io/sla=high` instead of `node.kubernetes.io/sla=950`), causing scheduling failures that are only detected during pod placement attempts rather than at taint creation time.
+
+**Mitigation**:
+
+- Clear documentation and examples showing proper numeric taint configuration
+- Enhanced error messages in scheduling events that clearly indicate parsing failures
+- Monitoring and alerting on scheduling failures due to taint parsing errors
 
 #### Cross-SIG Impact
 
@@ -560,8 +589,6 @@ func compareValues(tolerationVal, taintVal string, op TolerationOperator) (bool,
         return tVal < nVal, nil
     case TolerationOpGt:
         return tVal > nVal, nil
-    default:
-        return false, errors.New("toleration and taints values are equal")
     }
 }
 ```
@@ -580,11 +607,10 @@ N/A
 
 All core changes must be covered by unit tests, in both Taint API, validation, and scheduler sides:
 
-- **API Validation Tests:** (staging/src/k8s.io/api/core/v1/toleration_test.go)
-- **Scheduler Helper Tests:** (staging/src/k8s.io/component-helpers/scheduling/corev1/helpers_test.go)
-- **Validation Tests:** ( pkg/apis/core/validation/validation_test.go)
-- **ToleratesTaint plugin:** (pkg/scheduler/framework/plugins/tainttoleration/taint_toleration_test.go)
-- `<package>`: `<date>` - `<test coverage>`
+- `staging/src/k8s.io/api/core/v1/toleration_test.go`: Sep-16-2025 - 66.7%
+- `staging/src/k8s.io/component-helpers/scheduling/corev1/helpers_test.go`: Sep-16-2025 - 100%
+- `pkg/apis/core/validation/validation_test.go`: Sep-16-2025 - 85.1%
+- `pkg/scheduler/framework/plugins/tainttoleration/taint_toleration_test.go`: Sep-16-2025 - 86.9%
 
 ##### Performance tests
 
@@ -599,16 +625,12 @@ The following scenarios need to be covered in integration tests:
 - Feature gate's enabling/disabling
 - **Scheduler Integration Tests:** will be extended to cover the new taints cases introduced in this KEP:(test/integration/scheduler)
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
-
 ##### e2e tests
 
 The existing e2e tests will be extended to cover the new taints cases introduced in this KEP:
 
 - **Node Taints e2e Tests:** (test/e2e/node/taints.go)
 - **Scheduler Taints e2e Tests:** (test/e2e/scheduling)
-
-- [test name]()
 
 ### Graduation Criteria
 
