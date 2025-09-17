@@ -137,10 +137,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -258,10 +258,10 @@ The overall change is:
 - for `kubeadm init` to adjust the created kubeconfig to point to the local kube-apiserver, which gets created by kubeadm during the `kubeconfig` phase ([xref](https://github.com/kubernetes/kubernetes/blob/8871513c1b64cae321552abfe9a3a90969637560/cmd/kubeadm/app/cmd/phases/init/kubeconfig.go#L87))
 - for `kubeadm upgrade` to edit the kubelet config file to point to the local kube-apiserver.
 
-To make this work for `kubeadm join`, an additional change is required: etcd needs to get started and joined to the etcd cluster before waiting for the kubelet to finish its bootstrap process, instead of the other way around.  
+To make this work for `kubeadm join`, an additional change is required: etcd needs to get started and joined to the etcd cluster before waiting for the kubelet to finish its bootstrap process, instead of the other way around.
 This requires reordering some of the operations done in different kubeadm phases by extracting the relevant parts into separate phases and changing their order.
 
-Because reordering the phases can be considered a breaking change to the CLI of kubeadm for some users, this should get done behind a feature gate, while preserving the previous behavior when the feature gate is disabled.  
+Because reordering the phases can be considered a breaking change to the CLI of kubeadm for some users, this should get done behind a feature gate, while preserving the previous behavior when the feature gate is disabled.
 
 ### User Stories (Optional)
 
@@ -274,7 +274,7 @@ bogged down.
 
 #### Story 1
 
-As a kubeadm user, I wish no component violates the Kubernetes version skew policy when joining a control plane node.  
+As a kubeadm user, I wish no component violates the Kubernetes version skew policy when joining a control plane node.
 
 #### Story 2
 
@@ -282,7 +282,7 @@ As a kubeadm user, I wish the kubelet of a joining control plane node points to 
 
 #### Story 3
 
-As a kubeadm user, I wish the CLI of kubeadm to be stable and breaking changes to it to be announced ahead of time.  
+As a kubeadm user, I wish the CLI of kubeadm to be stable and breaking changes to it to be announced ahead of time.
 
 #### Story 4
 
@@ -617,7 +617,7 @@ enhancement:
 
 - N/A -> Alpha: users can patch their `ClusterConfiguration` in the `kube-system/kubeadm-config` ConfigMap to enable the `ControlPlaneKubeletLocalMode` feature gate, before calling `kubeadm upgrade apply`. This will allow them to join control plane nodes with this feature enabled. This scenario is anticipated as rare, because usually users maintain a stable control plane with 3 or more members before upgrading it. But it is still plausible and can be documented in the feature gate documentation. The `kubelet.conf` on existing nodes can also be edited to match the new behavior.
 - Alpha -> Beta: similarly to the previous stage users can modify the `ClusterConfiguration` to disable the feature gate during upgrade. This will allow them to use the "old way", in case they wish to join more control plane nodes to the cluster while the feature gate is enabled by default.
-- Beta -> GA: users could no longer patch the `ClusterConfiguration` to opt-out of the feature and it will be locked to be enabled by default.  
+- Beta -> GA: users could no longer patch the `ClusterConfiguration` to opt-out of the feature and it will be locked to be enabled by default.
 
 ### Version Skew Strategy
 
@@ -659,6 +659,7 @@ Major milestones might include:
 - 12.07.2024: KEP adjusted to match discussed implementation.
 - 15.07.2024: KEP alpha implementation merged.
 - 06.02.2024: PRs to promote the feature gate to Beta.
+- 17.09.2025: PRs to promote the feature gate to GA.
 
 ## Drawbacks
 
@@ -666,7 +667,7 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
-Moving or introducing new phases are breaking changes to the CLI of kubeadm.  
+Moving or introducing new phases are breaking changes to the CLI of kubeadm.
 Adding new phases may break users which are executing the single phases manually.
 The changes must be well-documented in release notes for users to adapt the changes.
 
@@ -684,8 +685,8 @@ information to express the idea and why it was not acceptable.
 
 ### Take the risk of violating Kubernetes version skew policy
 
-By not introducing the change, users of kubeadm are on risk to hit a case in the future where a violation of the Kubernetes version skew policy happens and joining a control plane node may fail.  
-We anticipate such cases to be rare.  
+By not introducing the change, users of kubeadm are on risk to hit a case in the future where a violation of the Kubernetes version skew policy happens and joining a control plane node may fail.
+We anticipate such cases to be rare.
 
 ### Use external etcd
 
