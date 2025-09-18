@@ -1,4 +1,6 @@
 kep-number: 4671
+alpha:
+  approver: "@wojtek-t"
 beta:
   approver: "@wojtek-t"
 stable:
