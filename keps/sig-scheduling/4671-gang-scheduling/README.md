@@ -1,47 +1,13 @@
 <!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-Follow the guidelines of the [documentation style guide].
-In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
-
-To get started with this template:
-
 - [X] **Pick a hosting SIG.** 
-  sig-scheduling.
-
 - [X] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
 - [X] **Make a copy of this template directory.**
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
+- [X] **Fill out as much of the kep.yaml file as you can.**
+- [X] **Fill out this file as best you can.**
+- [X] **Create a PR for this KEP.**
 - [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
 
 ```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
 ```
 
 When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
@@ -143,17 +109,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-In this KEP, kube-scheduler is modified to support gang scheduling[^1]. To implement gang scheduling, kube-scheduler identifies pods that are in a group and waits until all pods reach the same stage of the scheduling/binding cycle before allowing any pods from the group to advance past that point.  If not all pods can reach that point before a timeout expires, then the scheduler stops trying to schedule that group, and all pods release all their resources.  This allows other workloads to try to attempt to access those resources.
+In this KEP, kube-scheduler is modified to support gang scheduling[^1]. To implement gang scheduling, kube-scheduler identifies pods that are in a group and waits until all pods reach the same stage of the scheduling/binding cycle before allowing any pods from the group to advance past that point.  If not all pods can reach that point before a timeout expires, then the scheduler stops trying to schedule that group, and all pods release all their resources.  This allows other workloads to try to allocate those resources.
 
- A new core type called `Workload` is introduced to tell the kube-scheduler which pods require gang scheduling, what other pods should be scheduled together with, and any policy options related to gang scheduling. Pods have an object reference to their `Workload`, if any. The `Workload` object is intended to evolve[^2] via future KEPs to support additional kube-scheduler improvements, such as topology-aware scheduling,  
+ A new core type called `Workload` is introduced to tell the kube-scheduler that a group of pods should be scheduled together and any policy options related to gang scheduling. Pods have an object reference in their spec to their `Workload`, if any. The `Workload` object is intended to evolve[^2] via future KEPs to support additional kube-scheduler improvements, such as topology-aware scheduling,  
 
 ## Motivation
 
-Parallel applications can require communication between every pod in order to begin execution, and frequent ongoing communication between all pods (such as barrier or all-reduce operations) in order to make progress.  Starting all pods at close to the same time is necessary to run these workloads.  Otherwise, either compute resources are idle, or the application may fail.
+Parallel applications can require communication between every pod in order to begin execution, and then ongoing communication between all pods (such as barrier or all-reduce operations) in order to make progress.  Starting all pods at close to the same time is necessary to run these workloads.  Otherwise, either expensive compute resources are idle, or the application may fail due to an application-level communication timeout.
 
-Gang scheduling has been implemented multiple times outside of kube-scheduler at least 4 times[^3].  Moving support into kube-scheduler makes gang scheduling support available in all Kubernetes distributions and allows the scheduler extension framework and other core-project owned components to evolve to better support this type of workload.
+Gang scheduling has been implemented outside of kube-scheduler at least 4 times[^3].  Some controllers are starting to support multiple Gang Schedulers in order to be portable across different clusters.  Moving support into kube-scheduler makes gang scheduling support available in all Kubernetes distributions and eventually may allow workload controllers to reply on a standard interface to request gang scheduling from the standard or custom schedulers. A standard API may also allow other components to understand workload needs better (such as cluster autoscalers).
 
-Workloads that require gang scheduling often also need all members of the gang to be as topologically "close" to one another as possible, in order to perform optimally. Existing Pod affinity rules influence pod placement, but they do not consider the gang as a unit of scheduling, and they do not cause the scheduler to efficiently try multiple mutually exclusive placement options for a set of pods. The design of the Workload object introduced in this KEP anticipates how Gang Scheduling support can evolve into full Topology-aware scheduling support in kube-scheduler, in subsequent KEPs.  
+Workloads that require gang scheduling often also need all members of the gang to be as topologically "close" to one another as possible, in order to perform adequately. Existing Pod affinity rules influence pod placement, but they do not consider the gang as a unit of scheduling and they do not cause the scheduler to efficiently try multiple mutually exclusive placement options for a set of pods. The design of the Workload object introduced in this KEP anticipates how Gang Scheduling support can evolve over subsequent KEPs into full Topology-aware scheduling support in kube-scheduler, .  
 
 The Workload object will allow kube-scheduler to be more aware that pods are part of workloads with complex internal structure.  Those workloads include builtins like `Job` and `StatefulSet`, and custom workloads, like `JobSet`, `LeaderWorkerSet` and `MPIJob`. All of these workload types are used for AI training and inference use cases.  
 
@@ -191,6 +157,8 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 - It is not a goal to take away the responsibility from controllers to create pods.
 - It is not a goal to bring fairness or multiple workload queues into kube-scheduler.  Kueue and Volcano.sh will continue to provide this.
 - It is not a goal to be able to map all the declarative state and behaviors of all workloads into ths `Workload` object. It will focus on state that is relevant to kube-scheduler, and possibly to cluster autoscalers, reschedulers and closely related components.
+- Address resource contention between two separate.
+- Introducing a resource reservation that can later hold pods.  This feature seems desirable, and will be informed by experience gained from _Gang Scheduling woth using Workload Object_. 
 
 ## Proposal
 
@@ -296,15 +264,23 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Naming
 
-The following naming alternatives are being considered:
-
-* `Workload` or ??? as the resource Kind.
-* `scheduling` or ??? as the apigroup.
-* `PodGroup` or `GangGroup` for the top level grouping under `Workload`.
-  * If `PodGroup` is chosen, then we intend that levels called `PodSubGroup` and `PodSet` would be nested underneath in future KEPs.
-  * If `GangGroup` is chosen, then we intend that levels called `RankedGroup` and `EqGroup` would be nested underneath in future KEPs.
+* `Workload` is the resource Kind.
+* `scheduling` is the ApiGroup.
+* `spec.workload` is the name of the new field in pod.
+* Within a Workload there is a list of groups of pods. Each group represents a top-level division of pods within a Workload.  Each group can be independently gang scheduled (or not use gang scheduling). This group is named <<[UNRESOLVED community feedback requested]>> `PodGroup` or `GangGroup` for the top level. <<[/UNRESOLVED]>>.  
+* In a future , we expect that this group can optionally specify further subdivision into sub groups.  Each sub-group can have an index.  The indexes go from 0 to N, without repeats or gaps. These subgroups are called <<[UNRESOLVED depending on previous unresolved item]>> `PodSubGroup` if `PodGroup` is chosen, or else `RankedGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
+* In subsequent KEPs, we expect that a sub-group can optionally specify further subdivision into pod equivalence classes.  All pods in a pod equivalence class have the same values for all fields that affect scheduling feasibility.  These pod equivalence classes are called <<[UNRESOLVED depending on a previous unresolved item]>> `PodSet` if `PodGroup` is chosen, or else `EqGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
 
 ### Associating Pod into PodGroups
+
+When a `Workload` consists of a single group of pods needing Gang Scheduling, it is clear which pods belong to the group from the `spec.workload.name` field of the pod.  However `Workload` supports listing multiple list items, and a list item can represent a single group, or a set of identical replica groups.
+In these cases, there needs to be additional information to indicate which group a pod belongs to.
+
+<<[UNRESOLVED @erictune @wojtek-t]>> 
+Two options are being considered:
+  * 
+
+ <<[/UNRESOLVED]>>
 The example below uses  `PodGroupSelector` on each `PodGroup` to identify pods.  For the Job example above, this looks like:
 
 ```yaml
@@ -1036,4 +1012,6 @@ SIG to get the process for these resources started right away.
 
 [^1]: The Kubernetes community uses the term "gang scheduling" to mean "all-or-nothing scheduling of a set of pods" [1,2,3,4,5,6,7,8,9,10,11,12,13]. In the Kubernetes context, it does not imply time-multiplexing (in contrast to prior academic work such as [Feitelson and Rudolph](https://doi.org/10.1016/0743-7315(92)90014-E), and in contrast to [Slurm Gang Scheduling](https://slurm.schedmd.com/gang_scheduling.html)).  
 
-[~2]: [API Design for Gang and Workload-Aware Scheduling](https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?pli=1&tab=t.0)
+[^2]: [API Design for Gang and Workload-Aware Scheduling](https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?pli=1&tab=t.0)
+[^3]: Volcano.sh, Co-scheduling plugin, Preferred Networks Plugin, and Kueue all implement gang scheduling outside of kube-scheduler.  Additionally, two previous proposals have been made on this KEP's issue.  These alternatives are compared in detail in the [Background tab of the API Design for Gang Scheduling](https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?pli=1&tab=t.3zjbiyx2yldg).
+
