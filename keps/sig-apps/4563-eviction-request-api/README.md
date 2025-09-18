@@ -52,6 +52,7 @@
     - [HorizontalPodAutoscaler](#horizontalpodautoscaler)
       - [HorizontalPodAutoscaler Pod Surge Example](#horizontalpodautoscaler-pod-surge-example)
     - [Descheduling and Downscaling](#descheduling-and-downscaling)
+  - [Future Improvements](#future-improvements)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -482,7 +483,7 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
   be possible that EvictionRequest will be extended for other resources than pods (e.g. PVCs), which
   could result in name conflicts. For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
   alternatives section.
-- `.spec.podRef` should be set to fully identify the pod. The name and the UID should be
+- `.spec.target.podRef` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
 - `.spec.heartbeatDeadlineSeconds` should be set to a reasonable value. It is recommended to leave
@@ -542,7 +543,7 @@ We can distinguish 4 different kinds of interceptors:
 
 First, the interceptor should register itself with all the pods it is interested in
 evicting/intercepting (either partially or fully) by adding itself to the
-`.spec.evictionInterceptors` field. This list is then added to the
+`.spec.evictionInterceptors` field of the pod. This list is then added to the
 [EvictionRequest](#pod-and-evictionrequest-api)) on admission.
 
 The Interceptor type should set the `interceptorClass`, `priority` and `role`  fields. For more
@@ -741,18 +742,18 @@ type EvictionRequest struct {
 
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
-	// PodRef references a pod that is subject to eviction/termination.
-	// Only one reference of (PodRef, *TBD*) is required. 
+	// Target contains a reference to an object (e.g. a pod) that should be evicted.
 	// This field is immutable.
-	// +optional
-	PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,1,opt,name=podRef"`
+	// +required
+	Target EvictionTarget `json:"target" protobuf:"bytes,1,opt,name=target"`
 
 	// Interceptors reference interceptors that respond to this eviction request.
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
-	// the graceful termination of a pod.
+	// the graceful eviction of a target (e.g. termination of a pod).
 	//
 	// This field does not need to be set and is resolved when the EvictionRequest object is created
-	// on admission. It is populated from Pod's .spec.evictionInterceptors.
+	// on admission. It can be populated from multiple sources:
+	// - Pod's .spec.evictionInterceptors
 	//
 	// The maximum length of the interceptors list is 300. The number of interceptors is limited to
 	// 50 in the 9900-10099 interval and to 250 outside of this interval.
@@ -767,14 +768,25 @@ type EvictionRequestSpec struct {
 	// HeartbeatDeadlineSeconds is a maximum amount of time that an interceptor should take to
 	// periodically report on an eviction progress by updating the .status.heartbeatTime.
 	// If the .status.heartbeatTime is not updated within the duration of
-	// HeartbeatDeadlineSeconds, the eviction request is passed over to the next interceptor with the
-	// highest priority. If there is none, the pod is evicted using the Eviction API.
+	// HeartbeatDeadlineSeconds, the eviction request is passed over to the next interceptor with
+	// the highest priority. If there is none and if the target is a pod, it is evicted using the
+	// Eviction API.
 	//
 	// The minimum value is 600 (10m) and the maximum value is 21600 (6h).
 	// The default value is 1800 (30m).
 	// This field is required and immutable.
 	// +required
 	HeartbeatDeadlineSeconds *int32 `json:"heartbeatDeadlineSeconds" protobuf:"varint,3,opt,name=heartbeatDeadlineSeconds"`
+}
+
+// EvictionTarget contains a reference to an object that should be evicted.
+// Only one target (PodRef, *TBD*) is required.
+type EvictionTarget struct {
+    // PodRef references a pod that is subject to eviction/termination.
+    // Only one target (PodRef, *TBD*) is required.
+    // This field is immutable.
+    // +optional
+    PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,1,opt,name=podRef"`
 }
 
 // LocalPodReference contains enough information to locate the referenced pod inside the same namespace.
@@ -791,7 +803,7 @@ type LocalPodReference struct {
 
 // Interceptor allows you to identify the interceptor responding to the EvictionRequest.
 // Interceptors should observe and communicate through the EvictionRequest API to help with
-// the graceful termination of a pod.
+// the graceful eviction of a target (e.g. termination of a pod).
 type Interceptor struct {
 	// InterceptorClass must be RFC-1123 DNS subdomain identifying the interceptor (e.g.
 	// foo.example.com).
@@ -822,8 +834,8 @@ type Interceptor struct {
 	Priority int32 `json:"priority" protobuf:"varint,2,opt,name=priority"`
 
 	// Role of the interceptor. The "controller" value is reserved for the managing controller of
-	// the pod. The role can send additional signal to other interceptors if they should preempt
-	// this interceptor or not.
+	// the target (e.g. a pod). The role can send additional signal to other interceptors if they
+	// should preempt this interceptor or not.
 	// The priority must be set to 10000 when a "controller" value is specified.
 	// +optional
 	Role *string `json:"role,omitempty" protobuf:"bytes,3,opt,name=role"`
@@ -853,10 +865,11 @@ type EvictionRequestStatus struct {
 	ActiveInterceptorClass *string `json:"activeInterceptorClass,omitempty" protobuf:"bytes,3,opt,name=activeInterceptorClass"`
 
 	// ActiveInterceptorCompleted should be set to true when the interceptor of the
-	// ActiveInterceptorClass has fully or partially completed (may result in pod termination).
+	// ActiveInterceptorClass has either fully or partially completed, which may have resulted in
+	// target eviction (e.g. pod termination).
 	// This field can also be set to true if no interceptor is available.
-	// If this field is true, there is no additional interceptor available, and the evicted pod is
-	// still running, it will be evicted using the Eviction API.
+	// If this field is true and no additional interceptor is available:
+	// - If the target is a pod that is still running, it will be evicted using the Eviction API.
 	// +optional
 	ActiveInterceptorCompleted bool `json:"activeInterceptorCompleted,omitempty" protobuf:"varint,4,opt,name=activeInterceptorCompleted"`
 
@@ -875,7 +888,7 @@ type EvictionRequestStatus struct {
 	// EvictionRequestCancellationPolicy should be set to Forbid by the interceptor if it is not possible
 	// to cancel (delete) the eviction request.
 	// When this value is Forbid, DELETE requests of this EvictionRequest object will not be accepted
-	// while the pod exists.
+	// while the target (e.g. a pod) exists.
 	// This field is not reset by the eviction request controller when selecting an interceptor.
 	// Changes to this field should always be reconciled by the active interceptor.
 	//
@@ -883,17 +896,19 @@ type EvictionRequestStatus struct {
 	// The default value is Allow.
 	//
 	// Allow policy allows cancellation of this eviction request.
-	// The EvictionRequest can be deleted before the Pod is fully terminated.
+    // The EvictionRequest can be deleted before the target is fully evicted (e.g. before the pod is
+    // fully terminated).
 	//
-	// Forbid policy forbids cancellation of this eviction request.
-	// The EvictionRequest can't be deleted until the Pod is fully terminated.
+    // Forbid policy forbids cancellation of this eviction request.
+    // The EvictionRequest can't be deleted until the target is fully evicted (e.g. until the pod is
+    // fully terminated).
 	//
 	// This field is required.
     // +required
 	EvictionRequestCancellationPolicy EvictionRequestCancellationPolicy `json:"evictionRequestCancellationPolicy" protobuf:"varint,7,opt,name=evictionRequestCancellationPolicy"`
 
-	// Pod-specific status that is populated during Pod eviction.
-	// This field can only be set when .spec.podRef is set.
+	// Pod-specific status that is populated during [od eviction.
+	// This field can only be set when .spec.target.podRef is set.
     // +optional
     PodEvictionStatus *PodEvictionStatus `json:"podEvictionStatus,omitempty" protobuf:"varint,8,opt,name=podEvictionStatus"`
 }
@@ -902,15 +917,17 @@ type EvictionRequestStatus struct {
 type EvictionRequestCancellationPolicy string
 
 const (
-// Allow policy allows cancellation of this eviction request.
-// The EvictionRequest can be deleted before the Pod is fully terminated.
-Allow EvictionRequestCancellationPolicy = "Allow"
-// Forbid policy forbids cancellation of this eviction request.
-// The EvictionRequest can't be deleted until the Pod is fully terminated.
-Forbid EvictionRequestCancellationPolicy = "Forbid"
+    // Allow policy allows cancellation of this eviction request.
+    // The EvictionRequest can be deleted before the target is fully evicted (e.g. before the pod is
+    // fully terminated).
+    Allow EvictionRequestCancellationPolicy = "Allow"
+    // Forbid policy forbids cancellation of this eviction request.
+    // The EvictionRequest can't be deleted until the target is fully evicted (e.g. until the pod is
+    // fully terminated).
+    Forbid EvictionRequestCancellationPolicy = "Forbid"
 )
 
-// Pod-specific status that is populated during Pod eviction.
+// Pod-specific status that is populated during pod eviction.
 type PodEvictionStatus struct {
     // The number of unsuccessful attempts to evict the referenced pod via the API-initiated eviction,
     // e.g. due to a PodDisruptionBudget.
@@ -966,14 +983,14 @@ CREATE and DELETE requests and list EvictionRequests (.spec) during DELETE reque
 We would like to prevent the creation of multiple EvictionRequests for the same pod because we do
 not expect the interceptors to support interaction with multiple EvictionRequests for a pod.
 
-The Pod matching the `.spec.podRef.name` will be obtained from the admission plugin lister. If the
-`.spec.podRef.uid` does not match with the pod's UID, the request will be rejected. 
+The Pod matching the `.spec.target.podRef.name` will be obtained from the admission plugin lister.
+If the `.spec.target.podRef.uid` does not match with the pod's UID, the request will be rejected.
 
-We should also check that no EvictionRequest exists with the same `.spec.podRef`.
+We should also check that no EvictionRequest exists with the same `.spec.target.podRef`.
 
 The API is designed to be extensible to include additional types that could be evicted (e.g. PVCs).
-Currently, `.spec.podRef` is required, but we might change this to include additional references
-in the future.
+Currently, `.spec.target.podRef` is required, but we might change this to include additional
+references in the future.
 
 `.spec.interceptors` are populated from pod's `.spec.evictionInterceptors` (see
 [Interceptor](#interceptor) and [Pod and EvictionRequest API](#pod-and-evictionrequest-api)).
@@ -1002,13 +1019,13 @@ Delete requests are forbidden for EvictionRequest objects that have the
 ##### CREATE, UPDATE, DELETE
 
 Principal making the request should be authorized for deleting pods that match the EvictionRequest's
-`.spec.podRef`.
+`.spec.target.podRef`.
 
 #### Immutability of EvictionRequest Spec Fields
 
-`.spec.podRef` does not make sense to make mutable, the EvictionRequest is always scoped to a
-specific instance of a pod. If the pod is immediately recreated with the same name, but a different
-UID, a new EvictionRequest object should be created
+`.spec.target` and `.spec.target.podRef` does not make sense to make mutable, the EvictionRequest is
+always scoped to a specific instance of a target/pod. If the pod is immediately recreated with the
+same name, but a different UID, a new EvictionRequest object should be created
 
 `.spec.interceptors` is only set by the Eviction Requester and during the EvictionRequest object
 create admission. We do not allow subsequent changes to this field to ensure the predictability of
@@ -1423,6 +1440,13 @@ HPA Downscaling example:
 
 The same can be done by any descheduling controller (instead of an HPA) to re-balance a set of Pods
 to comply with de/scheduling rules.
+
+### Future Improvements
+- The `EvictionRequestSpec` and `EvictionRequestStatus` are extendable and `EvictionRequest` can
+  support the eviction of objects other than pods in the future. This can be achieved by adding a
+  `pvcRef` to the `.spec.target`, for example. In this case, we would expect either
+  `.spec.target.podRef` or `.spec.target.pvcRef` to be present. This allows us to support any type
+  in the future.
 
 ### Test Plan
 
@@ -1908,8 +1932,8 @@ applications are blocking the node drain and asses whether they can be safely de
 It would be useful for the name of the EvictionRequest object to be unique and predictable for each
 pod instance to prevent the creation of multiple EvictionRequests for the same pod. Because we do
 not expect the interceptors to support interaction with multiple EvictionRequests for a pod. We can
-also verify `.spec.podRef` field on admission. Unfortunately such approach would not be easy to
-extend in the future.
+also verify `.spec.target.podRef` field on admission. Unfortunately such approach would not be easy
+to extend in the future.
 
 We could validate each EvictionRequest `.metadata.name` to have one of the following formats:
 
@@ -1936,7 +1960,7 @@ Cons:
 - Potential for conflict if an old EvictionRequest object exists and a pod with a new UID is created
   with the same name.
 - Actors in the system might start to rely on the name alone, rather than the full reference in
-  `.spec.podRef.uid`, and mis-target pods.
+  `.spec.target.podRef.uid`, and mis-target pods.
 - Not extensible - hard to support new resources (e.g. PVCs).
 
 
@@ -1946,13 +1970,13 @@ Cons:
 The `POD_UID` is there for uniqueness and the `POD_NAME_PREFIX` is there for a user convenience.
 
 - The `POD_UID` (length [36 characters](https://pkg.go.dev/github.com/google/uuid#UUID.String))
-  must be identical to `.spec.podRef.uid` or the request will be rejected.
+  must be identical to `.spec.target.podRef.uid` or the request will be rejected.
 - The maximum length of the `POD_NAME_PREFIX` is 150 characters. Even though, the maximum length of
   the name is 253 characters and the length of `POD_UID` is 36 characters, we leave 66 characters
   for a potential future extension. If the pod name is less than or equal to 150 characters, then
-  the `POD_NAME_PREFIX` must be identical to `.spec.podRef.name`. If the pod name length is
-  greater, then the `POD_NAME_PREFIX` must be a prefix of `.spec.podRef.name` and have a length of
-  150 characters. If this is not met, the request will be rejected.
+  the `POD_NAME_PREFIX` must be identical to `.spec.target.podRef.name`. If the pod name length is
+  greater, then the `POD_NAME_PREFIX` must be a prefix of `.spec.target.podRef.name` and have a
+  length of 150 characters. If this is not met, the request will be rejected.
 
 Pros:
 - Unique and conflict free.
@@ -1967,12 +1991,13 @@ Cons
 
 #### Any Name
 
-We would allow users to specify any name, and just check the `.spec.podRef` field on admission.
+We would allow users to specify any name, and just check the `.spec.target.podRef` field on
+admission.
 
 Pros:
 - Versatility; users can use any name they see fit.
 - `.metadata.generateName` is supported.
-- Actors in the system have a greater incentive to use `.spec.podRef`.
+- Actors in the system have a greater incentive to use `.spec.target.podRef`.
 - Extensible - easy to support new resources (e.g. PVCs) with `.metadata.generateName`.
 
 Cons:
