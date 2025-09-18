@@ -44,6 +44,10 @@ SIG Architecture for cross-cutting KEPs).
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Naming](#naming)
+  - [Associating Pod into PodGroups](#associating-pod-into-podgroups)
+  - [API](#api)
+  - [Scheduler Changes](#scheduler-changes)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -157,8 +161,9 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 - It is not a goal to take away the responsibility from controllers to create pods.
 - It is not a goal to bring fairness or multiple workload queues into kube-scheduler.  Kueue and Volcano.sh will continue to provide this.
 - It is not a goal to be able to map all the declarative state and behaviors of all workloads into ths `Workload` object. It will focus on state that is relevant to kube-scheduler, and possibly to cluster autoscalers, reschedulers and closely related components.
-- Address resource contention between two separate.
 - Introducing a resource reservation that can later hold pods.  This feature seems desirable, and will be informed by experience gained from _Gang Scheduling woth using Workload Object_. 
+- Address resource contention between two separate schedulers. Resource reservations may address this.
+
 
 ## Proposal
 
@@ -432,7 +437,10 @@ type WorkloadStatus struct {
 
 ### Scheduler Changes
 
-TODO(wojtekt, dom4ha): write this.
+The Gang Scheduling functionality will be implemented using a combination of kube-scheduler plugins and scheduling framework changes.
+The plugin will use  PreEnqueue and WaitOnPermit framework hooks to control the scheduling process of a gang. The scheduling framework changes will watch Workloads, map pods to and from their Workloads and Gang(s) within the workload. 
+
+More detail about scheduled changes is described in [this document](https://docs.google.com/document/d/1lMYkDuGqEoZWfE2b8vjQx0vHieOMyfmi6VHUef5-5is/edit?tab=t.0#heading=h.1p88ilpefnb).
 
 
 ### Test Plan
