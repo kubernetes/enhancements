@@ -9,7 +9,7 @@ owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
   - sig-node
-status: implementable
+status: implemented
 creation-date: 2023-03-07
 reviewers:
   - "@Huang-Wei" 
