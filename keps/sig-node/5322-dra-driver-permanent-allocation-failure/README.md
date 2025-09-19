@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5322: DRA: Handle permanent driver allocation failures
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -90,9 +90,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+  - [User Stories](#user-stories)
+    - [Efficiency](#efficiency)
+    - [Visibility of Errors](#visibility-of-errors)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -173,6 +173,18 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
+For Dynamic Resource Allocation (DRA), the kubelet interfaces with a separate
+driver component via gRPC which is responsible for attaching devices to
+containers based on scheduler outcomes. When drivers indicate to the kubelet
+that a failure occurred during that process, the kubelet will try again later.
+This strategy enables the kubelet to overcome transient failures in drivers, but
+is wasteful when the error is deterministic based on unchanged inputs.
+
+This KEP proposes additions to the gRPC interface between the kubelet and DRA
+drivers to enable drivers to report permanent failures, and updates to the
+kubelet to respond to those errors by ceasing to continuously retry invoking the
+DRA driver.
+
 ## Motivation
 
 <!--
@@ -184,12 +196,32 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+Several failure modes of the DRA driver's `NodePrepareResources` gRPC method are
+not possible to resolve by trying again with the same input the way the kubelet
+currently handles all failures:
+
+- The opaque `config` associated with a request in a ResourceClaim may be
+  invalid
+- A device allocated by the scheduler may have just been found by the driver to
+  be unusable
+
+Pods with unfulfillable DRA allocations will stay stuck in a non-erroneous
+pending state until manual intervention is taken to identify the cause for the
+lack of progress and ultimately delete and recreate the Pod. In the meantime,
+the kubelet will waste time retrying an operation that is known will fail the
+same way as it did previously. Making the permanent nature of the error known as
+soon as possible allows the quickest path for remediation.
+
 ### Goals
 
 <!--
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
+
+- Minimize the amount of unnecessary work done by the kubelet and DRA drivers.
+- Enable workloads to more responsively reschedule Pods in a permanent failure
+  state.
 
 ### Non-Goals
 
@@ -209,7 +241,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -218,9 +250,17 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Efficiency
 
-#### Story 2
+As a cluster administrator, I want to minimize the amount of unnecessary work
+done by critical components like the kubelet and DRA drivers to maximize their
+availability for more important work.
+
+#### Visibility of Errors
+
+As a workload administrator, I want to ensure that my workloads are able to
+start up as quickly and reliably as possible by proactively rescheduling Pods
+when their allocated DRA resources cannot be fulfilled.
 
 ### Notes/Constraints/Caveats (Optional)
 
