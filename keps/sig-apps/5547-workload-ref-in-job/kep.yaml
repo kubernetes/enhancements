@@ -1,0 +1,40 @@
+title: Expose workloadRef in the Job API for scheduler coordination
+kep-number: 5547
+authors:
+  - "@helayoty"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-scheduling
+  - sig-apps
+status: implementable
+creation-date: 2025-09-19
+reviewers:
+  - "@janetkuo"
+  - "@soltysh"
+  - "@erictune"
+approvers:
+  - "@janetkuo"
+  - "@soltysh"
+
+see-also:
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+
+stage: alpha
+
+latest-milestone: "v1.35"
+
+milestone:
+  alpha: "v1.35"
+  beta: TDB
+  stable: TDB
+
+feature-gates:
+  - name: TBD
+    components:
+      - kube-apiserver
+      - kube-scheduler
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - TDB
