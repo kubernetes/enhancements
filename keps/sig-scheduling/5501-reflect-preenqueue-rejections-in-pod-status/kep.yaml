@@ -1,0 +1,33 @@
+title: Reflect PreEnqueue rejections in Pod status
+kep-number: 5501
+authors:
+  - "@macsko" 
+owning-sig: sig-scheduling
+status: implementable
+creation-date: 2025-09-01
+reviewers:
+  - "@sanposhiho"
+  - "@dom4ha"
+approvers:
+  - "@sanposhiho"
+  - "@dom4ha"
+
+stage: beta
+
+latest-milestone: "v1.35"
+
+milestone:
+  beta: "v1.35"
+  stable: "v1.37"
+
+feature-gates:
+  - name: SchedulerPreEnqueuePodStatus
+    components:
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - scheduler_schedule_attempts_total
+  - scheduler_pod_scheduling_sli_duration_seconds
+  - scheduler_event_handling_duration_seconds
