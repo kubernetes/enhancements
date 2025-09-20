@@ -4,7 +4,7 @@ authors:
   - "@sethev"
   - "@adrianmoisey"
 owning-sig: sig-network
-status: implementable
+status: implemented
 creation-date: 2024-01-22
 reviewers:
   - "@danwinship"
