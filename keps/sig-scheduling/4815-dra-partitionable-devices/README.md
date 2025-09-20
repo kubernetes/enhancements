@@ -11,7 +11,11 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Partial scheduling of pods for multi-host devices](#partial-scheduling-of-pods-for-multi-host-devices)
+    - [Validation moved from admission to runtime](#validation-moved-from-admission-to-runtime)
 - [Design Details](#design-details)
+  - [Limits](#limits)
+  - [Validation](#validation)
+    - [Future options](#future-options)
   - [Defining device partitions in terms of consumed capacity in a device](#defining-device-partitions-in-terms-of-consumed-capacity-in-a-device)
   - [Defining multi-host devices](#defining-multi-host-devices)
     - [Multi-host scheduling limitations](#multi-host-scheduling-limitations)
@@ -188,7 +192,7 @@ allocated (but others might still be able to).
 For example, the following `ResourceClaim` can be used to select a set of
 non-overlapping MIG devices from a specific GPU.
 ```yaml
-apiVersion: resource.k8s.io/v1alpha3
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
   name: mig-devices
@@ -197,25 +201,29 @@ spec:
     devices:
       requests:
       - name: mig-1g-5gb-0
-        deviceClassName: mig.nvidia.com
-        selectors:
-        - cel:
-            expression: "device.attributes['gpu.nvidia.com'].profile == '1g.5gb'"
+        exactly:
+          deviceClassName: mig.nvidia.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.nvidia.com'].profile == '1g.5gb'"
       - name: mig-1g-5gb-1
-        deviceClassName: mig.nvidia.com
-        selectors:
-        - cel:
-            expression: "device.attributes['gpu.nvidia.com'].profile == '1g.5gb'"
+        exactly:
+          deviceClassName: mig.nvidia.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.nvidia.com'].profile == '1g.5gb'"
       - name: mig-2g-10gb
-        deviceClassName: mig.nvidia.com
-        selectors:
-        - cel:
-            expression: "device.attributes['gpu.nvidia.com'].profile == '2g.10gb'"
+        exactly:
+          deviceClassName: mig.nvidia.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.nvidia.com'].profile == '2g.10gb'"
       - name: mig-3g-20gb
-        deviceClassName: mig.nvidia.com
-        selectors:
-        - cel:
-            expression: "device.attributes['gpu.nvidia.com'].profile == '3g.20gb'"
+        exactly:
+          deviceClassName: mig.nvidia.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.nvidia.com'].profile == '3g.20gb'"
       constraints:
       - requests: []
         matchAttribute: "gpu.nvidia.com/parentUUID"
@@ -268,7 +276,7 @@ For example, a user can request a 4x4 slice of TPUs with a `ResourceClaim`
 like the following:
 
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
   name: tpu-device
@@ -277,10 +285,11 @@ spec:
     devices:
       requests:
       - name: 4x4-tpu
-        deviceClassName: tpu.google.com
-        selectors:
-        - cel:
-            expression: 'device.capacity['google-tpu'].tpus == quantity("16")
+        exactly:
+          deviceClassName: tpu.google.com
+          selectors:
+          - cel:
+              expression: 'device.capacity['google-tpu'].tpus == quantity("16")
 ```
 There are four "good" allocations for this request:
 * All TPUs on nodes 1, 2, 5, and 6.
@@ -346,12 +355,12 @@ ResourceSlice API. It introduces a new field on the `ResourceSliceSpec`, namely
 a new field `PerDeviceNodeSelection` on the `ResourceSliceSpec` and new fields
 on the device that mirrors the node selector fields on the `ResourceSlice`.
 
-1. The `SharedCounters` field is a list of named `CounterSet`s. Each
-   defines a set of counters that is available for devices. This makes it possible
-   to define overlapping partitions of devices, while still making sure that no
-   device can be allocated if the necessary counters (i.e. resources) is not
-   available. Each counter is identified by its name and the name of its set.
-   Nesting counters inside sets was chosen because it enables referencing a mixin
+1. The `SharedCounters` field is a list of named `CounterSet`s. Each defines a set of counters
+   that is available for devices. This makes it possible to define overlapping
+   partitions of devices, while still making sure that no device can be allocated
+   if the necessary counters (i.e. resources) are not available. Each counter is
+   identified by its name and the name of its set. Nesting counters inside sets was
+   chosen because it enables referencing a mixin
    ([KEP-5234](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5234-dra-resourceslice-mixins))
    with a list of counters in different counter sets and it makes it possible
    to align groups of counters with the underlying physical devices.
@@ -368,7 +377,10 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
       1. The `PerDeviceNodeSelection` field is of type boolean and is mutually
       exclusive with the existing node selection fields in the `ResourceSliceSpec`
       (`NodeName`, `NodeSelector`, and `AllNodes`). If the value of this field is
-      `true`, then the node association must be specified on each device.
+      `true`, then the node association must be specified on each device. `ResourceSlices`
+      with this field set must be published by a control plance component rather
+      than a driver running on the node, as it prevents the driver from finding
+      all `ResourceSlices` by filtering on `NodeName`.
 
       1. The fields `NodeName`, `NodeSelector`, and `AllNodes` fields mirror the
       fields on the `ResourceSliceSpec` and are mutually exlusive. Setting
@@ -376,6 +388,11 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
       `NodeSelector` field means the device is available on all nodes matching
       the selector, while setting the `AllNodes` field to `true` means the
       device is available on all nodes in the cluster.
+
+The `SharedCounters` field is mutually exlusive with the `Devices` field, meaning
+that `SharedCounters` must always be specified in a different `ResourceSlice` than
+devices consuming the counters. They must however be in the same resource pool with
+the same `Generation`.
 
 With these additions in place, the scheduler has everything it needs to support
 the dynamic allocation of full devices, their (possibly overlapping)
@@ -394,8 +411,18 @@ part of the multi-host device. But it can not guarantee that all pods will be
 scheduled, since pods will be subject to any other constraints (like sufficient
 CPU and memory) during scheduling.
 
-A better story should be in place for beta, including a plan for alignment and
-possible integration with Kueue.
+These challenges are being addressed as part of the gang scheduling effort that
+also includes alignment with DRA.
+
+#### Validation moved from admission to runtime
+
+By allowing cross-`ResourceSlice` references, we will not be able to validate
+that the references can actually be resolved during admission since we are only
+able to validate a `ResourceSlice` in isolation. This means that users will not
+discover mistakes until a `ResourceClaim` actually tries to allocate a device
+that belongs to the resource pool. This means more complexity and a less user-friendly
+UX. However, `ResourceSlices` are created by drivers, so issues here would mean a bug
+in the driver.
 
 ## Design Details
 
@@ -415,14 +442,15 @@ type ResourceSliceSpec struct {
   //
   // +optional
   // +oneOf=NodeSelection
+  // +featureGate=DRAPartitionableDevices
   PerDeviceNodeSelection bool
 
   // SharedCounters defines a list of counter sets, each of which
   // has a name and a list of counters available.
   //
-  // The names of the SharedCounters must be unique in the ResourceSlice.
+  // The names of the counter sets must be unique in the resource pool.
   //
-  // The maximum number of counters in all sets is 32.
+  // The maximum number of counter sets is 8.
   //
   // +optional
   // +listType=atomic
@@ -432,7 +460,7 @@ type ResourceSliceSpec struct {
 
 // CounterSet defines a named set of counters
 // that are available to be used by devices defined in the
-// ResourceSlice.
+// resource pool.
 //
 // The counters are not allocatable by themselves, but
 // can be referenced by devices. When a device is allocated,
@@ -448,7 +476,7 @@ type CounterSet struct {
   // Counters defines the set of counters for this CounterSet
   // The name of each counter must be unique in that set and must be a DNS label.
   //
-  // The maximum number of counters in all sets is 32.
+  // The maximum number of counters in a counter set is 256.
   //
   // +required
   Counters map[string]Counter
@@ -486,10 +514,9 @@ type Device struct {
   //
   // There can only be a single entry per counterSet.
   //
-  // The total number of device counter consumption entries
-  // must be <= 32. In addition, the total number in the
-  // entire ResourceSlice must be <= 1024 (for example,
-  // 64 devices with 16 counters each).
+  // The maximum number of counter sets per device is 4. The total number
+  // of consumed counters across all devices in a single ResourceSlice
+  // must not exceed 2048.
   //
   // +optional
   // +listType=atomic
@@ -540,10 +567,9 @@ type DeviceCounterConsumption struct {
 
   // Counters defines the counters that will be consumed by the device.
   //
-  // The maximum number counters in a device is 32.
-  // In addition, the maximum number of all counters
-  // in all devices is 1024 (for example, 64 devices with
-  // 16 counters each).
+  // The maximum number of counters in a single DeviceCounterConsumption
+  // is 256. The total number of counters across all DeviceCounterConsumptions
+  // in a ResourceSlice is 2048.
   //
   // +required
   Counters map[string]Counter
@@ -563,7 +589,68 @@ ability to express that multiple devices draw from the same set of counters, so
 allocation of one device might make other devices unallocatable, and (2) the
 ability to define multi-host devices.
 
-We discuss each of this in turn.
+### Limits
+The size of a resource in Kubernetes is limited by etcd, meaning that we need to make
+sure that users can not create `ResourceSlice`s that exceed the limit. To give users
+flexibility on how they set up their `ResourceSlices`, we are doing two things:
+
+* `SharedCounters` must be defined in a separate `ResourceSlice`, meaning that the
+  counter sets will not contribute towards the resource limit on the `ResourceSlice`s
+  that define devices. We can use this same pattern in other situations, for example
+  with Mixins.
+* We enforce some limits across the full `ResourceSlice` rather than on
+  individual fields.
+
+The per-field limits in a `ResourceSlice` are:
+* The maximum number of devices is 128.
+* The maximum combined number of capacities and attributes per device is 32.
+* The maximum number of device counter consumptions per device is 4.
+* The maximum number of counters per device counter consumption is 256.
+* The maximum number of taints per device is 4.
+* The maximum number of counter sets is 8.
+* The maximum number of counters per counter set is 256.
+
+The ResourceSlice-wide limits are:
+* The total number of consumed counters across all devices in a ResourceSlice
+  must not exceed 2048.
+
+### Validation
+
+We will validate as much as possible during admission, but we will not be able
+to validate whether references in `DeviceCounterConsumption` points to counter sets
+that actually exists. Similarly, we will not be able to identify ambigous references,
+where there are multiple counter sets within a single resource pool with the same name.
+
+The allocator will perform additional validation when it tries to use the ResourceSlices for
+allocation. It will:
+* Only consider devices from complete resource pools.
+* Abort scheduling of the pod and report a fatal error if any of the complete resource pools
+  fail validation.
+
+This makes sure any errors are discovered as soon as possible and we avoid situations where
+some devices from a resource pool might be eligible while others are not. This could lead to
+situations that would be very difficult to root cause.
+The drawback of this solution is that any error in the `ResourceSlices` for a node will
+prevent all devices from that node from being allocated. Also, a `ResourceSlice` with
+the node selector `AllNodes: true` will prevent devices from all nodes from being allocated.
+
+To try to prevent this situations from happening, we will add client-side validation in the
+ResourceSlice controller helper, so that any errors in the ResourceSlices will be caught before
+they even are applied to the APIServer. This will only work for drivers that use the helper
+code, but it will minimize the chances that the Allocator will find errors during the allocation phase.
+
+#### Future options
+
+We can further improve the experience here by introducing a controller that can validate that all references within a resource pool
+are valid. It can then update a status on all `ResourceSlices` in the resource pool. The
+controller can only do full validation for complete pools, i.e. when all `ResourceSlices`
+in the pool is on the same generation, but some validation can be done even on incomplete
+pools.
+Validation with a controller will still be asynchronous, so the UX is not as good as validation during admission.
+This is less of an issue here though, since `ResourceSlices` are created by drivers and
+we can add logic for this in the kubeletplugin library that is used by most drivers.
+This is not in scope for the current KEP, but mentioned here as a possible improvement that
+can be introduced later.
 
 ### Defining device partitions in terms of consumed capacity in a device
 
@@ -572,57 +659,79 @@ to define multiple, allocatable partitions of a single overarching device can be
 seen below.
 
 ```yaml
-sharedCounters:
-- name: gpu-0-counter-set
-  counters:
-    memory: 
-      value: 40Gi
-devices:
-- name: gpu-0
-  capacity:
-    memory: 
-      value: 40Gi
-  consumesCounters:
-  - counterSet: gpu-0-counter-set
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: counter-slice
+spec:
+  driver: "resource-driver.example.com"
+  pool:
+    generation: 1
+    name: "my-pool"
+    resourceSliceCount: 2
+  sharedCounters:
+  - name: gpu-0-counter-set
     counters:
       memory: 
         value: 40Gi
-- name: gpu-0-partition-0
-  capacity:
-    memory: 
-      value: 10Gi
-  consumesCounters:
-  - counterSet: gpu-0-counter-set
-    counters:
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: device-slice
+spec:
+  driver: "resource-driver.example.com"
+  pool:
+    generation: 1
+    name: "my-pool"
+    resourceSliceCount: 2
+  nodeName: "my-node"
+  devices:
+  - name: gpu-0
+    capacity:
+      memory: 
+        value: 40Gi
+    consumesCounters:
+    - counterSet: gpu-0-counter-set
+      counters:
+        memory: 
+          value: 40Gi
+  - name: gpu-0-partition-0
+    capacity:
       memory: 
         value: 10Gi
-- name: gpu-0-partition-1
-  capacity:
-    memory: 
-      value: 10Gi
-  consumesCounters:
-  - counterSet: gpu-0-counter-set
-    counters:
+    consumesCounters:
+    - counterSet: gpu-0-counter-set
+      counters:
+        memory: 
+          value: 10Gi
+  - name: gpu-0-partition-1
+    capacity:
       memory: 
         value: 10Gi
-- name: gpu-0-partition-2
-  capacity:
-    memory: 
-      value: 10Gi
-  consumesCounters:
-  - counterSet: gpu-0-counter-set
-    counters:
+    consumesCounters:
+    - counterSet: gpu-0-counter-set
+      counters:
+        memory: 
+          value: 10Gi
+  - name: gpu-0-partition-2
+    capacity:
       memory: 
         value: 10Gi
-- name: gpu-0-partition-3
-  capacity:
-    memory: 
-      value: 10Gi
-  consumesCounters:
-  - counterSet: gpu-0-counter-set
-    counters:
+    consumesCounters:
+    - counterSet: gpu-0-counter-set
+      counters:
+        memory: 
+          value: 10Gi
+  - name: gpu-0-partition-3
+    capacity:
       memory: 
         value: 10Gi
+    consumesCounters:
+    - counterSet: gpu-0-counter-set
+      counters:
+        memory: 
+          value: 10Gi
 ```
 
 In this example, five devices are defined: a full GPU called "gpu-0" and four
@@ -659,14 +768,16 @@ it will typically be the responsibility of a central controller to publish the
 ResourceSlice.
 
 ```yaml
+apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
-apiVersion: resource.k8s.io/v1beta1
-...
+metadata:
+  name: device-slice
 spec:
-  perDeviceNodeSelection: true
-  pool:
-    ...
   driver: tpu.dra.example.com
+  pool:
+    generation: 1
+    name: "my-pool"
+    resourceSliceCount: 2
   sharedCounters:
   - name: tpu-counter-set
     counters:
@@ -678,6 +789,18 @@ spec:
         value: "4"
       tpus-node-6:
         value: "4"
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: device-slice
+spec:
+  driver: tpu.dra.example.com
+  pool:
+    generation: 1
+    name: "my-pool"
+    resourceSliceCount: 2
+  perDeviceNodeSelection: true
   devices:
   # 4x4 slice
   - name: tpu-4x4-1
@@ -823,8 +946,8 @@ scheduled.
 
 DRA does not guarantee that all or none of the pods can be scheduled (i.e.
 group scheduling), so handling those situations will be up to the user or
-higher-level frameworks. For beta we aim to improve the story here,
-possibly through integration with Kueue.
+higher-level frameworks. The effort to support gang scheduling in the
+kube scheduler will provide a better story here.
 
 ### Putting it all together for the MIG use-case
 
@@ -882,9 +1005,6 @@ sharedCounters:
 
 Three example devices representing MIG partitions can be defined as follows:
 ```yaml
-sharedCounters:
-- name: gpu-0-counter-set
-  ...
 devices:
 - name: gpu-0-mig-1g.5gb-0
   attributes:
@@ -1027,7 +1147,7 @@ In order to allocate a 2x4 TPU slice using the ResourceSlice
 following can be used:
 
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
   name: tpu-consumer-resource-claim
@@ -1035,10 +1155,11 @@ spec:
   devices:
     requests:
     - name: tpu-request
-      deviceClassName: tpu.google.com
-      selectors:
-      - cel:
-          expression: 'device.capacity["tpu.google.com"].tpus == quantity("8")'
+      exactly:
+        deviceClassName: tpu.google.com
+        selectors:
+        - cel:
+            expression: 'device.capacity["tpu.google.com"].tpus == quantity("8")'
 ```
 
 This simply requests a device with 8 TPUs. Since there are 4 TPUs per node, this requires
@@ -1427,24 +1548,13 @@ change, but will now be handled separately. It will add features that let
 users define devices in a more compact way and thereby reducing the size of API
 objects. But it is ultimately up to how 3rd party vendors decide to use them.
 
-To limit the size of the `ResourceSlice` objects we have implemented several limits that
-is enforced by validation:
-* The maximum number of counters in a single `ResourceSlice` is limited to 32.
-* The maximum number of devices in a single `ResourceSlice` is limited to 128.
+The decision to require that `ResourceSlice` objects can only contain either
+`SharedCounters` or `Devices` was made to prevent having to enforce overly strict
+validation to make sure that `ResourceSlice` objects can't exceed the etcd limit.
 
-For each `Device` the following limits are enforced:
-* The maximum number of attributes and capacity in a single `Device` is limited to 32.
-* The maximum number of consumed counters in a single `Device` is limited to 32.
-
-Across all `Device` objects in a `ResourceSlice`, the following limits are enforced:
-* The total number of consumed counters across all `Device` objects in a single `ResourceSlice`
-  is limited to 1024.
-
-The `ResourceSlice`-wide limits on fields within the `Device` object is used to allow users
-to decide whether to have few devices with many properties or many devices with few properties.
-
-With these changes, the worst-case ResourceSlice increases from 922,195 bytes to 1,107,864 bytes.
-
+With this design, the worst-case ResourceSlice becomes:
+* For ResourceSlice with devices: 1,147,229 bytes
+* For ResourceSlice with shared counters: 173,420 bytes
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
