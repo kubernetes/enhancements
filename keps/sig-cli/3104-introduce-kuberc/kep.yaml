@@ -5,7 +5,7 @@ authors:
   - "@soltysh"
 owning-sig: sig-cli
 participating-sigs:
-  - sig-cli
+  - sig-auth
 status: implementable
 creation-date: 2022-06-13
 reviewers:
