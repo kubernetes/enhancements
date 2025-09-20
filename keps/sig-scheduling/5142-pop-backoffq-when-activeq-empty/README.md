@@ -75,10 +75,10 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -246,12 +246,12 @@ to implement this enhancement.
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2025-02-06` - `91.4`
+- `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2025-09-12` - `91.4`
 
 ##### Integration tests
 
-- [`k8s.io/kubernetes/test/integration/scheduler/queueing`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler/queueing) - add test cases covering the scenario.
-- [scheduler_perf](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf) - add test cases measuring performance in this scenario.
+- [`k8s.io/kubernetes/test/integration/scheduler/queueing`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler/queueing) - added `TestPopFromBackoffQWhenActiveQEmpty` that covers the scenario.
+- [scheduler_perf](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf) - no perf test has been added to measure this particular scenario, as it's very difficult to simulate the conditions (empty active queue, pods waiting in backoff). At the same in time the available metrics for existing perf tests show that scheduling throughput has not decreased since 1.33 (when this featured was switched on as Beta).
 
 ##### e2e tests
 
@@ -260,7 +260,7 @@ The whole feature should be already covered by integration tests.
 
 ### Graduation Criteria
 
-The feature will start from beta and be enabled by default, because it is an internal kube-scheduler feature and guarded by a flag.
+The feature started as beta in 1.33 and has been enabled by default, because it is an internal kube-scheduler feature and guarded by a flag.
 
 #### Alpha
 
@@ -274,13 +274,13 @@ N/A
 
 #### GA
 
-- Gather feedback from users and fix reported bugs.
+- No issues have been reported in relation to this feature.
 
 ### Upgrade / Downgrade Strategy
 
 **Upgrade**
 
-During the beta period, the feature gate `SchedulerPopFromBackoffQ` is enabled by default, so users don't need to opt in.
+After promoting to GA the feature gate `SchedulerPopFromBackoffQ` is enabled by default, so users don't need to opt in.
 This is a purely in-memory feature for the kube-scheduler, so no special actions are required outside the scheduler.
 
 **Downgrade**
@@ -430,6 +430,16 @@ Unknown
 ## Implementation History
 
 - 6th Feb 2025: The initial KEP is submitted.
+- Feb-Mar 2025: Feature is implemented in the kubernetes codebase. PRs:
+
+#130214 Split backoffQ into backoffQ and errorBackoffQ in scheduler kubernetes
+
+#130492 Call PreEnqueue plugins before adding pod to backoffQ kubernetes
+
+#130680 Update backoffQ's less function to order pods by priority in windows kubernetes
+
+#130772 Pop from backoffQ when activeQ is empty kubernetes
+- 15th Sep 2025: Feature gate updated in tests, KEP updated to upgrade to GA
 
 ## Drawbacks
 
