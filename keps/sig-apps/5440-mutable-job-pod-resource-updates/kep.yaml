@@ -5,15 +5,16 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2025-06-21
 reviewers:
-  - "TBD"
+  - "tenzen-y"
 approvers:
-  - "@Huang-Wei"
+  - "@soltysh"
 
 see-also:
   - "/keps/sig-apps/2232-suspend-jobs"
+  - "/keps/sig-scheduling/2926-job-muable-scheduling-directives"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: beta
@@ -31,7 +32,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: MutableJobPodResourcesForSuspendedJobs
+  - name: MutablePodResourcesForSuspendedJobs
     components:
       - kube-apiserver
 disable-supported: true

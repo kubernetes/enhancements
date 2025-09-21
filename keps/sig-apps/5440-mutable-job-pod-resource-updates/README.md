@@ -244,7 +244,11 @@ As an user, I want to be able to submit a job to a queueing solution. If my job 
 
 #### Story 3
 
-As a cluster administrator, I want to monitor existing workloads and see how many resources they are actually using. If a workload is oversubscribed and their actual utilization is lower, I want to suspend that workload and checkpoint the workload via external APIs. I would then lower the request requirements to match the actual utilization and resubmit my job.
+As a cluster administrator, I want to monitor existing workloads and see how many resources they are actually using. 
+If a workload is oversubscribed and their actual utilization is lower, I want to checkpoint the workload via external APIs and then suspend the workload. 
+This will terminate the pods.
+I would then lower the request requirements to match the actual utilization and resume my job.
+
 
 ### Risks and Mitigations
 
@@ -255,9 +259,6 @@ As a cluster administrator, I want to monitor existing workloads and see how man
 - Potential for resource specification changes to make a job unschedulable if the
   updated requirements exceed available cluster capacity. Queue controllers should
   validate resource availability before making changes.
-
-- A race condition could theoretically happen if a job is unsuspended and then quickly
-  suspended again before resource updates, though this is not a typical use case pattern.
 
 ## Design Details
 
@@ -311,7 +312,7 @@ We will add the following test scenarios to kubernetes/test/integration/jobs.
 
 - When a job is suspended with feature gate enabled, resources are able to be mutated.
 - When a job is not suspended and feature gate enabled, resources should not be mutated.
-- When feature date is disabled and suspended, mutations are not allowed.
+- When feature gate is disabled and a job is suspended, mutations are not allowed.
 
 #### e2e tests
 
@@ -324,7 +325,7 @@ a new field, there is no benefit in having an alpha release.
 
 #### Beta
 
-- Feature implemented behind a feature flag
+- Feature implemented behind a feature flag (disabled by default)
 - Unit and integration tests passing
 
 #### GA
@@ -500,7 +501,9 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N/A
+No, there are no missing metrics. A metric is not necessary for this feature as users can patch workloads to resize.
+
+This would be a one time request and monitoring provides little value.
 
 ### Dependencies
 
