@@ -783,10 +783,6 @@ Impacts of a restart outside of resource configuration are out of scope.
 
 #### Notes
 
-* If CPU Manager policy for a Node is set to 'static', then only integral
-  values of CPU resize are allowed. If non-integral CPU resize is requested
-  for a Node with 'static' CPU Manager policy, that resize is rejected, and
-  an error message is logged to the event stream.
 * To avoid races and possible gamification, all components will use Pod's
   Status.ContainerStatuses[i].Resources when computing resources used
   by Pods.
@@ -1006,11 +1002,9 @@ This metric is recorded as a counter.
 
 ### Static CPU & Memory Policy
 
-Resizing pods with static CPU & memory policy configured is out-of-scope for the beta release of
-in-place resize. If a pod is a guaranteed QOS on a node with a static CPU or memory policy
-configured, then the resize will be marked as infeasible.
+Resizing pods with static CPU & memory policy configured is out-of-scope for this KEP. If a pod is a guaranteed QOS on a node with a static CPU or memory policy configured, then the resize will be marked as infeasible.
 
-This will be reconsidered post-beta as a future enhancement.
+This suppport will be added post-GA as a separate enhancement in its own KEP.
 
 ### Future Enhancements
 
