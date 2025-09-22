@@ -20,6 +20,7 @@
 - [Design Details](#design-details)
   - [Resource States](#resource-states)
   - [Priority of Resize Requests](#priority-of-resize-requests)
+  - [Kubelet-triggered eviction](#kubelet-triggered-eviction)
   - [Kubelet and API Server Interaction](#kubelet-and-api-server-interaction)
     - [Kubelet Restart Tolerance](#kubelet-restart-tolerance)
   - [Scheduler and API Server Interaction](#scheduler-and-api-server-interaction)
@@ -41,6 +42,7 @@
   - [Instrumentation](#instrumentation)
     - [<code>kubelet_container_requested_resizes_total</code>](#kubelet_container_requested_resizes_total)
     - [<code>kubelet_pod_resize_duration_seconds</code>](#kubelet_pod_resize_duration_seconds)
+    - [<code>kubelet_pod_infeasible_resizes_total</code>](#kubelet_pod_infeasible_resizes_total)
     - [<code>kubelet_pod_pending_resizes</code>](#kubelet_pod_pending_resizes)
     - [<code>kubelet_pod_in_progress_resizes</code>](#kubelet_pod_in_progress_resizes)
     - [<code>kubelet_pod_deferred_resize_accepted_total</code>](#kubelet_pod_deferred_resize_accepted_total)
@@ -96,20 +98,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -822,7 +824,7 @@ be a race condition where the Kubelet may or may not accept the first resize, de
 it admits the first change before seeing the second. This race condition is accepted as working as
 intended.
 
-The atomic resize requirement should be reevaluated prior to GA, and in the context of pod-level resources.
+The atomic resize requirement should be reevaluated in the context of pod-level resources.
 
 ### Actuating Resizes
 
@@ -869,7 +871,7 @@ _Version skew note:_ Kubernetes v1.33 (and earlier) nodes only check the pod-lev
 
 ### Swap
 
-Currently (v1.33), if swap is enabled & configured, burstable pods are allocated swap based on their
+Currently (v1.35), if swap is enabled & configured, burstable pods are allocated swap based on their
 memory requests. Since resizing swap requires more thought and additional design, we will forbid
 resizing memory requests of such containers for now. Since the API server is not privy to the node's
 swap configuration, this will be surfaced as resizes being marked `Infeasible`.
@@ -887,7 +889,7 @@ A pod's QOS class is immutable. This is enforced during validation, which requir
 resize the computed QOS Class matches the previous QOS class.
 
 [Future enhancements: Mutable QOS Class "Shape"](#mutable-qos-class-shape) proposes a potential
-change to partially relax this restriction, but is removed from Beta scope.
+change to partially relax this restriction, but is removed from the scope of this KEP.
 
 [Future enhancements: explicit QOS Class](#design-sketch-explicit-qos-class) proposes an alternative
 enhancement on that, to make QOS class explicit and improve semantics around [workload resource
@@ -1322,6 +1324,7 @@ TODO: Identify more cases
   - Resize atomicity
   - Exposing allocated resources in the pod status
   - QOS class changes
+- The subset of pod resize tests [here](https://github.com/kubernetes/kubernetes/blob/1aec2eb0030d2f121b4cf78998e9391d9389f1a0/test/e2e/common/node/pod_resize.go) under `doPodResizeTests` and `doPodResizeErrorTests` that meet the Conformance test requirements are promoted to Conformance.
 
 ### Upgrade / Downgrade Strategy
 Scheduler and API server should be updated before Kubelets in that order.
@@ -1664,6 +1667,7 @@ _This section must be completed when targeting beta graduation to a release._
     - Introduce Actuated resources for actuation
 - 2025-06-03 - v1.34 post-beta updates
     - Allow no-restart memory limit decreases
+- 2025-09-22 - v1.35 updates for GA graduation
 
 ## Drawbacks
 
