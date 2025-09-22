@@ -1,33 +1,3 @@
-<!--
-- [X] **Pick a hosting SIG.** 
-- [X] **Create an issue in kubernetes/enhancements**
-- [X] **Make a copy of this template directory.**
-- [X] **Fill out as much of the kep.yaml file as you can.**
-- [X] **Fill out this file as best you can.**
-- [X] **Create a PR for this KEP.**
-- [ ] **Merge early and iterate.**
-
-```
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-4671: Gang Scheduling using Workload Object
 
 
@@ -39,10 +9,10 @@ SIG Architecture for cross-cutting KEPs).
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Story 1: Gang-scheduling of a Job](#story-1-gang-scheduling-of-a-job)
+    - [Story 2: Gang-scheduling of a custom workload](#story-2-gang-scheduling-of-a-custom-workload)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [The API needs to be extended in an unpredictable way](#the-api-needs-to-be-extended-in-an-unpredictable-way)
 - [Design Details](#design-details)
   - [Naming](#naming)
   - [Associating Pod into PodGroups](#associating-pod-into-podgroups)
@@ -54,6 +24,9 @@ SIG Architecture for cross-cutting KEPs).
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -160,8 +133,8 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 - It is not a goal to take away the responsibility from controllers to create pods.
 - It is not a goal to bring fairness or multiple workload queues into kube-scheduler.  Kueue and Volcano.sh will continue to provide this.
-- It is not a goal to be able to map all the declarative state and behaviors of all workloads into ths `Workload` object. It will focus on state that is relevant to kube-scheduler, and possibly to cluster autoscalers, reschedulers and closely related components.
-- Introducing a resource reservation that can later hold pods.  This feature seems desirable, and will be informed by experience gained from _Gang Scheduling woth using Workload Object_. 
+- It is not a goal to be able to map all the declarative state and behaviors of all workloads into the `Workload` object. It will focus on state that is relevant to kube-scheduler, and possibly to cluster autoscalers, reschedulers and closely related components.
+- Introducing a resource reservation that can later hold pods.  This feature seems desirable, and will be informed by experience gained from this proposal.
 - Address resource contention between two separate schedulers. Resource reservations may address this.
 
 
@@ -207,7 +180,7 @@ spec:
 
 The `Workload` core resource will be introduced. A `Workload` does not create any pods. It just describes what pods the scheduler should expect to see, and how to treat them.   
 
- It does not affect pod creation by Job or any other controller.  It only  A sample resource looks like this:
+ It does not affect pod creation by Job or any other controller.  A sample resource looks like this:
 ```yaml
 apiVersion: scheduling/v1alpha1   
 kind: Workload
@@ -231,50 +204,40 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Story 1: Gang-scheduling of a Job
 
-#### Story 2
+I have a tightly-coupled job and I want its pods to be scheduled and run only when the
+resources for all of them can be found in the cluster.
 
-### Notes/Constraints/Caveats (Optional)
+#### Story 2: Gang-scheduling of a custom workload
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+I have my own workload definition (CRD) and controller managing its lifecycle. I would
+like to be able to easily benefit of gang-scheduling feature supported by the core
+Kubernetes without extensive changes to my custom controller.
+
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+#### The API needs to be extended in an unpredictable way
 
-How will security be reviewed, and by whom?
+We try to mitigate it by an extensive analysis of usecases and already sketching
+how we envision the direction in which the API will need to evolve to support further
+usecases. You can read more about it in the [extended proposal] document.
 
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
 
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 ### Naming
 
 * `Workload` is the resource Kind.
 * `scheduling` is the ApiGroup.
 * `spec.workload` is the name of the new field in pod.
-* Within a Workload there is a list of groups of pods. Each group represents a top-level division of pods within a Workload.  Each group can be independently gang scheduled (or not use gang scheduling). This group is named <<[UNRESOLVED community feedback requested]>> `PodGroup` or `GangGroup` for the top level. <<[/UNRESOLVED]>>.  
-* In a future , we expect that this group can optionally specify further subdivision into sub groups.  Each sub-group can have an index.  The indexes go from 0 to N, without repeats or gaps. These subgroups are called <<[UNRESOLVED depending on previous unresolved item]>> `PodSubGroup` if `PodGroup` is chosen, or else `RankedGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
-* In subsequent KEPs, we expect that a sub-group can optionally specify further subdivision into pod equivalence classes.  All pods in a pod equivalence class have the same values for all fields that affect scheduling feasibility.  These pod equivalence classes are called <<[UNRESOLVED depending on a previous unresolved item]>> `PodSet` if `PodGroup` is chosen, or else `EqGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
+* Within a Workload there is a list of groups of pods. Each group represents a top-level division of pods within a Workload.  Each group can be independently gang scheduled (or not use gang scheduling). This group is named
+  <<[UNRESOLVED community feedback requested]>> `PodGroup` or `GangGroup` for the top level. <<[/UNRESOLVED]>>.
+* In a future , we expect that this group can optionally specify further subdivision into sub groups.  Each sub-group can have an index.  The indexes go from 0 to N, without repeats or gaps. These subgroups are called
+  <<[UNRESOLVED depending on previous unresolved item]>> `PodSubGroup` if `PodGroup` is chosen, or else `RankedGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
+* In subsequent KEPs, we expect that a sub-group can optionally specify further subdivision into pod equivalence classes.  All pods in a pod equivalence class have the same values for all fields that affect scheduling feasibility.  These pod equivalence classes are called
+  <<[UNRESOLVED depending on a previous unresolved item]>> `PodSet` if `PodGroup` is chosen, or else `EqGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
 
 ### Associating Pod into PodGroups
 
@@ -309,9 +272,16 @@ spec:
         jobset.sigs.k8s.io/replicatedjob-name: job2
 
 ```
-This works well with existing controllers without changes.
+This works well for the simplest usecases, but becomes more complex with replicated gangs.
+As an example, for `LeaderWorkerSet`, while pods have `leaderworkerset.sigs.k8s.io/group-index`
+label, the actual podGroupSelector would become:
+```
+      podGroupSelector:
+        leaderworkerset.sigs.k8s.io/group-index: <replica_number>
+```
 
-Another option being considered is to specify the name of the `PodGroup` in the Pod itself, like this:
+Another option being considered is to specify the exact `PodGroup` and its replica number in the Pod
+itself, like this:
 
 ```yaml
 apiVersion: v1
@@ -323,10 +293,15 @@ spec:
   workload:
     name: wkld-1
     podGroup: job1
+    podGroupReplica: 2
   ...
 
 ```
 This is more succinct and makes the role of a pod clear just from inspecting the pod.
+However, it may require some minor changes in the controllers themselves to adopt this pattern
+(e.g. for LeaderWorkerSet we will need to populate the pod template similarly we currently
+populate the labels).
+
 
 ### API
 
@@ -342,17 +317,19 @@ type Workload struct {
 type ReplicaMode string
 
 const (
-	ReplicaModeUnreplicated ReplicaMode = "Unreplicated"
+    ReplicaModeUnreplicated ReplicaMode = "Unreplicated"
 )
 
 // WorkloadSpec describes a workload in a portable way that scheduler and related
 // tools can understand.  
 type WorkloadSpec struct {
-  // Optional but recommended to set.
-  ControllerRef *v1.ObjectReference
-  // PodGroups is a list of groups of pods.
-  // Each group may request gang scheduling.
-  PodGroups []PodGroup 
+    // ControllerRef points to the true workload, e.g. Deployment.
+    // It is optional to set and is intended to make this mapping easier for
+    // things like CLI tools.
+    ControllerRef *v1.ObjectReference
+    // PodGroups is a list of groups of pods.
+    // Each group may request gang scheduling.
+    PodGroups []PodGroup 
 }
 
 type GangMode string
@@ -364,7 +341,7 @@ const (
 	GangModeOff GangMode = "Off"
 
 	// GangModeReplicatedGang means that there is a variable number of identical copies of this PodGroup,
-       //  as specified in Replicas, and each copy needs to be independently gang scheduled.
+    //  as specified in Replicas, and each copy needs to be independently gang scheduled.
 	GangModeReplicated GangMode = "Replicated"
 )
 
@@ -379,54 +356,44 @@ type GangSchedulingPolicy struct {
 // all list items.  Every list item must have a distintict value for this key.  This ensures
 // pod groups have disjoint sets of pods in them.
 type PodGroupSelector struct {
-       // Selector that identifies pods in this gang.
-	Selector *metav1.LabelSelector
-}
-
-
-type GangGroup struct {
-      Name *string
-      GangMode *GangMode // default is GangModeGang 
-      RankedGroups *[]RankedGroup
-
-// Topology request applying to all pods in this GangGroup.
-TopologyRequest *TopologyRequest
-// GangScheduling options applying to all pods in this gang.
-// Only specify if GangMode == GangModeGang
-GangSchedulingPolicy
+    // Selector that identifies pods in this gang.
+    Selector *metav1.LabelSelector
 }
 
 // PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
 // multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
 // number of identical copies.
+//
+// TODO: Decide on the naming: PodGroup vs GangGroup.
 type PodGroup struct {
-  Name *string
-  GangMode *GangMode // default is "Single"
+    Name *string
+    GangMode *GangMode // default is "Single"
 
 	// ReplicatedGangKey must be set when GangMode = "Replicated"
-	// It must be one of:
-  //   - `metadata.labels['<KEY>']`
-	//   Note: Annotations are not supported because they are not indexed easily, and may not
-  //         have a form that can be printed without escaping.
-	// Each value of that key maps to a different identical gang, which will be anonymous in status,
-  // and referred to by the key's value in events and errors.
-	ReplicatedGangKey *ObjectFieldSelector
-  // Optional when GangMode = "ReplicatedGang".
-  // Forbidden otherwise.
-  Replicas int
+    // It must be one of:
+    //   - `metadata.labels['<KEY>']`
+    //   Note: Annotations are not supported because they are not indexed easily, and may not
+    //         have a form that can be printed without escaping.
+    // Each value of that key maps to a different identical gang, which will be anonymous in status,
+    // and referred to by the key's value in events and errors.
+    ReplicatedGangKey *ObjectFieldSelector
 
-	// PodGroupSelector must be set when GangMode = "Single" or "Off".
-	// Must be one of:
-  //   - `metadata.labels['<KEY>']`
-	//   Note: Annotation not supported because it is not indexed easily, and it may not
-  //         have a form that can be printed without escaping.
-	// Each value of that key maps to a different gang, which will be anonymous in status,
-  // and referred to by the key's value in events and errors.
-	PodGroupSelector PodGroupSelector
+    // Optional when GangMode = "ReplicatedGang".
+    // Forbidden otherwise.
+    Replicas int
 
-// GangScheduling options applying to all pods in this PodGroup.
-// Only specify if GangMode != GangModeOff
-GangSchedulingPolicy
+    // PodGroupSelector must be set when GangMode = "Single" or "Off".
+    // Must be one of:
+    //   - `metadata.labels['<KEY>']`
+    //   Note: Annotation not supported because it is not indexed easily, and it may not
+    //         have a form that can be printed without escaping.
+    // Each value of that key maps to a different gang, which will be anonymous in status,
+    // and referred to by the key's value in events and errors.
+    PodGroupSelector PodGroupSelector
+
+    // GangSchedulingPolicy defines the options applying to all pods in this gang.
+    // Forbidden if GangMode is set to "Off".
+    GangSchedulingPolicy GangSchedulingPolicy
 }
 
 
@@ -456,16 +423,13 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+N/A
 
 ##### Unit tests
 
@@ -537,107 +501,52 @@ If e2e tests are not necessary or useful, explain why.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Workload API is introduced behind Workload feature flag
+- API tests for Workload API (that will be promoted to conformance in GA release)
+- kube-scheduler implements first version of gang-scheduling based on groups defined in the Workload object
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- All functionality completed
-- All security enforcement completed
-- All monitoring requirements completed
-- All testing requirements completed
-- All known pre-release issues and gaps resolved
-
-**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+- TBD in for Beta release
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
+- TBD in for Beta release
 
-**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-<!--
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+This KEP effectively boils down to two separate functionalities:
+- the Workload API and new field in Pod API that allows linking Pods to Workloads
+- scheduler changes implementing the gang scheduling functionality
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+When user upgrades the cluster to the version that supports these two features:
+- they can start using the new API by creating Workload objects and linking pods to it via
+  explicitly specifying their new `spec.workload` field
+- scheduler automatically uses the new extensions and tries to schedule all pods from a given
+  gang in a scheduling group based on the defined `Workload` objects
+
+When user downgrades the cluster to the version that no longer supports these two features:
+- the `Workload` objects can no longer be created (the existing ones are not removed though)
+- the `spec.workload` field can no longer be set on the Pods (the already set fields continue
+  to be set though)
+- scheduler reverts to the original behavior of scheduling one pod at a time ignoring
+  existence of `Workload` objects and pods being linked to them
+
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+The feature is limited to control plane, so the version skew with nodes (kubelets) doesn't matter.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+For the API changes (introduction of Workload API and the new field in Pod API), the old version of
+components (in particular kube-apiserver) may not handle those. Thus, users should not set those
+fields before confirming all control-plane instances were upgraded to the version supporting those.
+
+For the gang-scheduling itself, this is purely kube-scheduler in-memory feature, so the skew doesn't
+really matter (as there is always only single kube-scheduler instance being a leader).
+
 
 ## Production Readiness Review Questionnaire
 
@@ -671,19 +580,14 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: Workload
   - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-scheduler
+  - Feature gate name: GangScheduling
+  - Components depending on the feature gate:
+    - kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -693,40 +597,34 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. Gang scheduling is triggerred purely via existence of Workload objects and
+those are not yet created automatically behind the scenes.
+
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
+Yes. The GangScheduling features gate need to be switched off to disabled gang scheduling
+functionality.
+If additionally the API changes needs to be disabled, the Workload feature gate needs to
+also be disabled. However, the content of `spec.workload` fields in Pod objects will not be
+cleared, as well as the existing Workload objects will not be deleted.
 
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+The feature should start working again.
+However, the user need to remember that some Workload objects could already be stored
+in etcd and may affect the behavior of some of the existing workloads.
+
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
+No.
+The enablement/disablement for the new field in Pod API will be added similarly to this PR:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+
+Note that gang-scheduling itself is purely in-memory feature, so feature themselves are enough.
+
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -763,9 +661,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -842,114 +738,65 @@ implementation difficulties, etc.).
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No dependendies other than the components where the feature is implemented
+(kube-apiserver and kube-scheduler).
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Yes:
+
+Watching for workloads:
+  - API call type: LIST+WATCH Workloads
+  - estimated throughput: < XX/s
+  - originating component: kube-scheduler, kube-controller-manager (GC)
+
+Status updates:
+  - API call type: PUT/PATCH Workloads
+  - estimated throughput < XX/s
+  - originating component: kube-scheduler
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+Yes:
+  - API type: Workload
+  - Supported number of objects per cluster: XX,000
+  - Supported number of objects per namespace: XX,000
+
+The above numbers should eventually match the numbers for built-in workload APIs
+(e.g. Deployments, Jobs, StatefulSets, ...).
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+Yes. New field (spec.workload) is added to the Pod API:
+  - API type: Pod
+  - Estimated increase in size: XX-XXX bytes per object (depending on the final choice described
+    in the Associating Pod into PodGroups section above).
+
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+Pod startup SLI/SLO may be affected and should be adjusted appropriately.
+The reason is that scheduling a pod being part of a gang will now be blocked on all pods
+from a gan to be created and observed by the scheduler (which from large gangs can take
+non-negligible amount of time).
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+The increase of CPU/MEM consumption of kube-apiserver and kube-scheduler should be negligible
+percentage of the current resource usage.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No.
 
 ### Troubleshooting
 
@@ -1004,11 +851,11 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+The longer version of this design describing the whole thought process of choosing the
+above described approach can be found in the [extended proposal] document.
+
+[extended proposal]: https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?
+
 
 ## Infrastructure Needed (Optional)
 
@@ -1021,5 +868,6 @@ SIG to get the process for these resources started right away.
 [^1]: The Kubernetes community uses the term "gang scheduling" to mean "all-or-nothing scheduling of a set of pods" [1,2,3,4,5,6,7,8,9,10,11,12,13]. In the Kubernetes context, it does not imply time-multiplexing (in contrast to prior academic work such as [Feitelson and Rudolph](https://doi.org/10.1016/0743-7315(92)90014-E), and in contrast to [Slurm Gang Scheduling](https://slurm.schedmd.com/gang_scheduling.html)).  
 
 [^2]: [API Design for Gang and Workload-Aware Scheduling](https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?pli=1&tab=t.0)
+
 [^3]: Volcano.sh, Co-scheduling plugin, Preferred Networks Plugin, and Kueue all implement gang scheduling outside of kube-scheduler.  Additionally, two previous proposals have been made on this KEP's issue.  These alternatives are compared in detail in the [Background tab of the API Design for Gang Scheduling](https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?pli=1&tab=t.3zjbiyx2yldg).
 
