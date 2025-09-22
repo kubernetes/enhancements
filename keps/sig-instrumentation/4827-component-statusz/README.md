@@ -26,10 +26,14 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Data Format and versioning](#data-format-and-versioning)
   - [Authz and authn](#authz-and-authn)
   - [Endpoint Response Format](#endpoint-response-format)
-    - [Data format : text](#data-format--text)
-    - [Request](#request)
-    - [Response fields](#response-fields)
-    - [Sample response](#sample-response)
+    - [Data format: text](#data-format-text)
+      - [Request](#request)
+      - [Sample response](#sample-response)
+    - [Data format: JSON (v1alpha1)](#data-format-json-v1alpha1)
+      - [Request](#request-1)
+      - [Response Body: <code>Statusz</code> object](#response-body-statusz-object)
+      - [Sample Response](#sample-response-1)
+  - [API Versioning and Deprecation Policy](#api-versioning-and-deprecation-policy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -121,10 +125,13 @@ With statusz, we envision the following advantages
 * Replace existing monitoring solutions: metrics, logs, traces
 * To provide a general-purpose extension mechanism for other components (e.g., container runtime, CNI, device plugins) to expose their own information through z-pages
 * Provide information about components that are not directly accessible due to network restrictions
+* **Report the status of internal sub-components or external dependencies.** Many Kubernetes components, such as the `kube-controller-manager` (with its multiple controller loops) or the `kube-apiserver` (with its dependency on etcd), are complex. Surfacing the status of all these individual pieces is a significantly more complex problem that this KEP does not aim to solve. This endpoint is intentionally limited to reporting the status of the main serving binary itself. A separate KEP would be required to address aggregated or detailed dependency status.
 
 ## Proposal
 
 We are proposing to add a new endpoint, /statusz on all core Kubernetes components which returns key details regarding a component's current state, including versioning, build information, and compatibility.
+
+The scope of this endpoint is intentionally limited to the status of the primary serving process. It will not report on the status of internal sub-components (like individual controller loops in `kube-controller-manager`) or external dependencies (like etcd for `kube-apiserver`). This focused approach avoids the complexities that made the legacy `core/v1 ComponentStatus` API difficult to maintain and reason about. Surfacing the status of dependencies is a distinct problem that may be addressed in a future enhancement.
 
 ### User Stories
 
@@ -158,15 +165,32 @@ We are proposing to add a new endpoint, /statusz on all core Kubernetes componen
     
   We will prioritize inclusion of only essential diagnostic and monitoring data that aligns with the intended purpose of the z-page.
 
-3. **Premature Dependency on Unstable Format**
+3. **API Stability and Evolution**
 
-  The alpha release will explicitly support plain text format only, making it clear that the output is not intended for parsing or automated monitoring. The feature will be secured behind a feature gate that is disabled by default, ensuring users opt-in consciously. Also, the endpoint will support specifying a version as a query parameter to facilitate future transitions to structured schema changes without breaking existing integrations, once the usage patterns and requirements are better understood
+  The alpha release will support both a plain text format and a versioned JSON format (`v1alpha1`). The feature will be secured behind a feature gate that is disabled by default, ensuring users opt-in consciously. The `v1alpha1` JSON format is explicitly marked as alpha-quality, intended for early feedback, and is subject to change.
+
+  For Beta, to provide a stable contract for consumers, the JSON response API will be promoted to `v1beta1` or `v1` based on feedback and will be considered stable. The plain text format remains the default for human consumption and backward compatibility.
 
 ## Design Details
 
 ### Data Format and versioning
 
-Initially, the statusz page will exclusively support a plain text format for responses. In future, when we have established a structured schema for the response, we can support specifying a version param, like /statusz?version=2, to ensure future compatibility. Through this, we can evolve the endpoint and introduce changes to the response schema without impacting clients relying on previous versions, ensuring backward compatibility.
+The `/statusz` endpoint defaults to a `text/plain` response format, which is intended for human consumption and should not be parsed by automated tools.
+
+For programmatic access, a structured, versioned JSON format is available with an initial alpha version of `v1alpha1`. This version is not stable and is intended for feedback and iteration during the Alpha phase.
+
+- **Group**: `config.k8s.io`
+- **Version**: `v1alpha1` (initial version, subject to change)
+- **Kind**: `Statusz`
+
+To receive the structured JSON response, a client **must** explicitly request it using an `Accept` header specifying these parameters. For example:
+
+```
+GET /statusz
+Accept: application/json;as=Statusz;v=v1alpha1;g=config.k8s.io
+```
+
+This negotiation mechanism ensures clients are explicit about the exact API they want, preventing accidental dependencies on unstable or incorrect formats. If a client requests `application/json` without the required parameters, the server will respond with a `406 Not Acceptable` error.
 
 ### Authz and authn
 
@@ -189,24 +213,19 @@ rules:
 
 ### Endpoint Response Format
 
-#### Data format : text
+The `/statusz` endpoint supports both plain text and structured JSON formats. The default format is `text/plain`.
 
-#### Request
-* Method: **GET** 
+#### Data format: text
+
+This format is the default and is intended for human readability.
+
+##### Request
+* Method: **GET**
 * Endpoint: **/statusz**
-* Header: `Content-Type: text/plain`
+* Header: `Accept: text/plain` (or no Accept header)
 * Body: empty
 
-#### Response fields
-* **Start Time**: The exact date and time when the component process was initiated
-* **Uptime**: The duration for which the component has been running continuously
-* **Go Version**: The specific version of the Go programming language used to build the component's binary
-* **Binary Version**: The version of the component's binary, helpful for compatibility checks and troubleshooting
-* **Emulation Version**: The Kubernetes API version which this component is emulating as
-* **Minimum Compatibility Version**: The minimum Kubernetes API version with which the component is designed to work seamlessly
-* **Useful Links**: Relative URLs to other essential endpoints, such as /healthz, /livez, /readyz, and /metrics, for deeper insights into the component's health, readiness, and performance metrics
-
-#### Sample response
+##### Sample response
 
 ```
 Started: Fri Sep  6 06:19:51 UTC 2024
@@ -216,7 +235,7 @@ Binary version: 1.31.0-beta.0.981&#43;c6be932655a03b-dirty
 Emulation version: 1.31.0-beta.0.981
 Minimum Compatibility version: 1.30.0
 
-List of useful endpoints
+List of paths
 --------------
 configz:/configz
 healthz:/healthz
@@ -225,6 +244,115 @@ metrics:/metrics
 readyz:/readyz
 sli metrics:/metrics/slis
 ```
+
+#### Data format: JSON (v1alpha1)
+
+This format is available in Alpha for programmatic access and must be explicitly requested. It is considered an alpha-level format.
+
+##### Request
+* Method: **GET**
+* Endpoint: **/statusz**
+* Header: `Accept: application/json;as=Statusz;v=v1alpha1;g=config.k8s.io`
+* Body: empty
+
+##### Response Body: `Statusz` object
+
+The response is a `Statusz` object.
+
+###### Go Struct Definition
+```go
+// Statusz is the structured response for the /statusz endpoint.
+type Statusz struct {
+	// Kind is "Statusz".
+	Kind string `json:"kind"`
+	// APIVersion is the version of the object, e.g., "config.k8s.io/v1alpha1".
+	APIVersion string `json:"apiVersion"`
+
+	// Standard object's metadata.
+	// +optional
+	Metadata metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// StartTime is the time the component process was initiated.
+	StartTime metav1.Time `json:"startTime"`
+	// UptimeSeconds is the duration in seconds for which the component has been running continuously.
+	UptimeSeconds int64 `json:"uptimeSeconds"`
+
+	// GoVersion is the version of the Go programming language used to build the binary.
+	// The format is not guaranteed to be consistent across different Go builds.
+	// +optional
+	GoVersion string `json:"goVersion,omitempty"`
+	// BinaryVersion is the version of the component's binary.
+	// The format is not guaranteed to be semantic versioning and may be an arbitrary string.
+	BinaryVersion string `json:"binaryVersion"`
+	// EmulationVersion is the Kubernetes API version which this component is emulating.
+	// if present, formatted as "<major>.<minor>"
+	// +optional
+	EmulationVersion string `json:"emulationVersion,omitempty"`
+	// MinimumCompatibilityVersion is the minimum Kubernetes API version with which the component is designed to work.
+	// if present, formatted as "<major>.<minor>"
+	// +optional
+	MinimumCompatibilityVersion string `json:"minimumCompatibilityVersion,omitempty"`
+
+	// Paths contains relative URLs to other essential read-only endpoints for debugging and troubleshooting.
+	// +optional
+	Paths []string `json:"paths,omitempty"`
+}
+```
+
+###### JSON Structure
+```json
+{
+  "kind": "Statusz",
+  "apiVersion": "config.k8s.io/v1alpha1",
+  "metadata": {
+    "name": "<component-name>"
+  },
+  "startTime": "<start-time>",
+  "uptimeSeconds": <uptime-in-seconds>,
+  "goVersion": "<go-version>",
+  "binaryVersion": "<binary-version>",
+  "emulationVersion": "<emulation-version>",
+  "minimumCompatibilityVersion": "<min-compatibility-version>",
+  "paths": [
+    "/configz",
+    "/healthz",
+    "/livez",
+    "/metrics",
+    "/readyz",
+    "/metrics/slis"
+  ]
+}
+```
+
+##### Sample Response
+
+```json
+{
+  "kind": "Statusz",
+  "apiVersion": "config.k8s.io/v1alpha1",
+  "metadata": {
+    "name": "apiserver"
+  },
+  "startTime": "2024-09-06T06:19:51Z",
+  "uptimeSeconds": 30,
+  "goVersion": "go1.23.0",
+  "binaryVersion": "1.31.0-beta.0.981+c6be932655a03b-dirty",
+  "emulationVersion": "1.31",
+  "minimumCompatibilityVersion": "1.30",
+  "paths": [
+    "/configz",
+    "/healthz",
+    "/livez",
+    "/metrics",
+    "/readyz",
+    "/metrics/slis"
+  ]
+}
+```
+### API Versioning and Deprecation Policy
+
+The versioned `/statusz` endpoint will follow the standard [Kubernetes API deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -233,34 +361,44 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
+N/A
+
 ##### Unit tests
 
-- There will addition of new tests in the following packages
-  - `staging/src/k8s.io/component-base/zpages/statusz`: `2024-10-08` - `100%`
+- `staging/src/k8s.io/component-base/zpages/statusz`: Unit tests will be added to cover both the plain text and structured JSON output, including serialization and content negotiation logic.
 
 ##### Integration tests
 
+- Integration tests will be added for each component to verify that the `/statusz` endpoint is correctly registered and serves both `text/plain` and the versioned `application/json` content types.
 
 ##### e2e tests
 
-- Ensure existence of the /statusz endpoint
+- E2E tests will be added to query the `/statusz` endpoint for each core component and validate the following:
+  - The endpoint is reachable and returns a `200 OK` status.
+  - Requesting with the `Accept` header for `application/json;as=Statusz;v=v1alpha1;g=config.k8s.io` returns a valid `Statusz` JSON object.
+  - The JSON response can be successfully unmarshalled.
+  - Requesting with `text/plain` or no `Accept` header returns the non-empty plain text format.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Feature implemented for apiserver
-- Ensure proper tests are in place.
+- Feature gate `ComponentStatusz` is disabled by default.
+- A structured JSON response (`config.k8s.io/v1alpha1`) is introduced for feedback, alongside the default `text/plain` format.
+- Feature is implemented for at least one component (e.g., kube-apiserver).
+- E2E tests are added for both plain text and the new JSON response format.
+- Gather feedback from users and developers on the structured format.
 
 #### Beta
 
-- Gather feedback from developers
-- Feature implemented for other Kubernetes Components
+- Feature gate `ComponentStatusz` is enabled by default.
+- The JSON response API is promoted to `v1beta1` or `v1` based on feedback and is considered stable.
+- Feature is implemented for all core Kubernetes components.
 
 #### GA
 
-- Several cycles of bake-time
+- The JSON response API is promoted to a stable `v1` version after bake-in.
+- Conformance tests are in place for the endpoint.
 
 #### Deprecation
 
