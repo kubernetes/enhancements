@@ -162,7 +162,7 @@ We propose to extend some of the guarantees that the apiserver uses to the
 client as well, particularly the ability to consume the resource version as an
 integer, and the ability to compare resource versions to each other for more
 than equality. Clients can use the new semantics in order to determine the
-relative order of two different resource versions for the same type.
+relative order of two different resource versions from the same resource.
 
 ## Motivation
 
@@ -251,7 +251,9 @@ and efficiency, defined as follows:
     have no leading 0's, and all characters are 0-9, and return an error
     otherwise
   2) Compare length of strings, if they are not equal then the one with larger length is greater
-  3) If they are equal, perform a lexical comparison per character left to right until we hit a different character, at that point comparison between the characters will give us the larger integer
+  3) If they are equal, perform a lexical comparison per character left to right
+     until we hit a different character, at that point comparison between the
+     characters will give us the larger integer
 
 By doing it via lexical comparison we do not impose a restriction on resource
 version sizing and is more efficient than [bigint
