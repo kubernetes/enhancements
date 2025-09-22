@@ -407,7 +407,7 @@ spec:
 
 - **Strict Validation**: Unlike existing `Equal`/`Exists` operators which accept any string values, numeric operators require valid integer strings. This may catch existing invalid configurations.
 
-- **No Implicit Conversion**: Values like `"0950"` vs `"950"` are numerically equal but may confuse users expecting string matching behavior.
+- **Leading Zeros Validation**: The API validation will reject taint and toleration values that contain leading zeros (e.g., `"0950"`, `"007"`) when used with numeric operators (`Lt`, `Gt`). This ensures consistent behavior and prevents the ambiguity between string and numeric interpretations. Only values without leading zeros are accepted (e.g., `"950"`, `"7"`).
 
 - **Parsing Overhead**: Each taint/toleration match with numeric operators requires integer parsing.
 
@@ -441,14 +441,17 @@ spec:
 
 #### Edge Cases in Numeric Parsing
 
-**Risk**: Unexpected behavior with edge cases like integer overflow, leading zeros, or malformed input could cause scheduling failures.
+**Risk**: Unexpected behavior with edge cases like integer overflow, leading zeros, or malformed input could cause scheduling failures. Leading zeros in values (e.g., `"0950"`) could create user confusion about whether values are treated as strings or numbers.
 
 **Mitigation**:
 
 - Use Go's standard `strconv.ParseInt()` with well-defined error handling
-- Comprehensive unit tests covering edge cases (overflow, underflow, malformed strings)
+- Comprehensive unit tests covering edge cases (overflow, underflow, malformed strings, leading zeros)
 - API validation rejects pods with unparseable values rather than silently failing
+- **API validation explicitly rejects values with leading zeros** when using numeric operators to eliminate confusion
 - Clear error messages help users identify and fix configuration issues
+- Documentation clearly states that leading zeros are not permitted for numeric operators
+- **Performance validation via scheduler-perf tests** to ensure no measurable scheduling latency degradation from integer parsing overhead
 
 #### Taint Misconfiguration Detection
 
@@ -458,6 +461,7 @@ spec:
 
 - Clear documentation and examples showing proper numeric taint configuration
 - Enhanced error messages in scheduling events that clearly indicate parsing failures
+- Scheduler logging for taint parsing failures to help cluster admins identify misconfigured nodes even when pods successfully schedule on other nodes with valid numeric taints
 - Monitoring and alerting on scheduling failures due to taint parsing errors
 
 #### Cross-SIG Impact
@@ -546,6 +550,13 @@ func validateTolerations(tolerations []core.Toleration, fldPath *field.Path) fie
             if _, err := strconv.ParseInt(toleration.Value, 10, 64); err != nil {
                 allErrors = append(allErrors, field.Invalid(idxPath.Child("value"),
                     toleration.Value, "value must be a valid integer for numeric operators"))
+                continue
+            }
+            
+            // Reject values with leading zeros to prevent confusion
+            if len(toleration.Value) > 1 && toleration.Value[0] == '0' && toleration.Value != "0" {
+                allErrors = append(allErrors, field.Invalid(idxPath.Child("value"),
+                    toleration.Value, "leading zeros are not allowed in numeric values (use '950' instead of '0950')"))
             }
         }
     }
@@ -581,6 +592,9 @@ func compareValues(tolerationVal, taintVal string, op TolerationOperator) (bool,
     
     nVal, nErr := strconv.ParseInt(taintVal, 10, 64)  
     if nErr != nil {
+        // Log taint parsing failures to help cluster admins identify misconfigured nodes
+        // even when pods can still schedule on other nodes with valid numeric taints
+        klog.Warningf("Failed to parse taint value %q as integer for numeric comparison: %v", taintVal, nErr)
         return false, nErr // Invalid taint value
     }
     
@@ -605,7 +619,7 @@ N/A
 
 ##### Unit tests
 
-All core changes must be covered by unit tests, in both Taint API, validation, and scheduler sides:
+All core changes must be covered by unit tests, in both Taint API, validation, and scheduler sides. Tests must specifically cover leading zeros behavior (e.g., `"0950"` vs `"950"`):
 
 - `staging/src/k8s.io/api/core/v1/toleration_test.go`: Sep-16-2025 - 66.7%
 - `staging/src/k8s.io/component-helpers/scheduling/corev1/helpers_test.go`: Sep-16-2025 - 100%
