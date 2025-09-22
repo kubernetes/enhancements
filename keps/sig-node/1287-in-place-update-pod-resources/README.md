@@ -308,24 +308,34 @@ The `ResizePolicy` field is immutable.
 Resize status will be tracked via 2 new pod conditions: `PodResizePending` and `PodResizeInProgress`.
 
 **PodResizePending** will track states where the spec has been resized, but the Kubelet has not yet
-allocated the resources. There are two reasons associated with this condition:
+allocated the resources (desired resources != actuated resources). There are two reasons associated 
+with this condition:
 
 * `Deferred` - the proposed resize is feasible in theory (it fits on this node)
-  but is not possible right now; it will be regularly reevaluated.
-* `Infeasible` - the proposed resize is not feasible and is rejected; it may not
-  be re-evaluated.
+  but is not possible right now; it will be regularly reevaluated. This can happen
+  if the node does not have enough free resources at the moment, but might in the 
+  future when other pods are removed or scaled down.
+* `Infeasible` - the proposed resize is not feasible and is rejected; it will never
+  be re-evaluated. Today, the possible reasons for infeasible include:
+  * The requested resources exceed the node's total capacity.
+  * The pod is a static pod.
+  * In-place resize is not yet supported for containers with swap enabled.
+  * In-place resize is not yet supported for guaranteed pods alongside memory manager static policy.
+  * In-place resize is not yet supported for guaranteed pods alongside CPU manager static policy.
 
 In either case, the condition's `message` will include details of why the resize has not been
 admitted. `lastTransitionTime` will be populated with the time the condition was added. `status`
 will always be `True` when the condition is present - if there is no longer a pending resized
-(either the resize was allocated or reverted), the condition will be removed.
+(either the resize was allocated or reverted), the condition will be removed. `observedGeneration` will
+reflect the `metadata.generation` of the pod when the resize was last attempted.
 
 **PodResizeInProgress** will track in-progress resizes, and should be present whenever allocated resources
 != actuated resources (see [Resource States](#resource-states)). For successful synchronous
 resizes, this condition should be short lived, and `reason` and `message` will be left blank. If an
 error occurs while actuating the resize, the `reason` will be set to `Error`, and `message` will be
 populated with the error message. In the future, this condition will also be used for long-running
-resizing behaviors (see [Memory Limit Decreases](#memory-limit-decreases)).
+resizing behaviors (see [Memory Limit Decreases](#memory-limit-decreases)). `observedGeneration` will
+reflect the `metadata.generation` of the pod when the resize was initially requested.
 
 Note that it is possible for both conditions to be present at the same time, for example if an error
 is encountered while actuating a resize and a new resize comes in that gets deferred.
