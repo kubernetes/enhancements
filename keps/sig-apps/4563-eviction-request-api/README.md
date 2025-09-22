@@ -881,9 +881,8 @@ type EvictionRequestStatus struct {
     // The EvictionRequest can't be deleted until the target is fully evicted (e.g. until the pod is
     // fully terminated).
 	//
-	// This field is required.
-    // +required
-	EvictionRequestCancellationPolicy EvictionRequestCancellationPolicy `json:"evictionRequestCancellationPolicy" protobuf:"varint,7,opt,name=evictionRequestCancellationPolicy"`
+    // +optional
+	EvictionRequestCancellationPolicy *EvictionRequestCancellationPolicy `json:"evictionRequestCancellationPolicy,omitempty" protobuf:"varint,7,opt,name=evictionRequestCancellationPolicy"`
 
 	// Pod-specific status that is populated during [od eviction.
 	// This field can only be set when .spec.target.podRef is set.
@@ -997,8 +996,8 @@ the next interceptor and so on. We can also condition this transition according 
 `.status.activeInterceptorCompleted` should be true or `.status.heartbeatTime` has exceeded the
 deadline.
 
-`.status.evictionRequestCancellationPolicy` should be `Allow` on creation, as its resolution should be
-left to the eviction request controller.
+`.status.evictionRequestCancellationPolicy` is defaulted to `Allow` on creation. Its resolution
+should then be left to interceptors.
 
 `.status.podEvictionStatus.failedAPIEvictionCounter` can be only incremented.
 
