@@ -105,7 +105,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -192,50 +192,25 @@ Tests which validate Service creation/update and Ingress creation/update to be u
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
-
-If integration tests are not necessary or useful, explain why.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
+**Alpha:**
 
 1. With the feature gate enabled, test that Services can be created with both new and previous validation
 1. With the feature gate disabled, test that Services can be created with the previous validation, and fail when using the new validation
 1. Disable the feature gate and ensure that the Service can be edited without a validation error being returned
 
+**Beta:**
+
+Tests have been written: https://github.com/kubernetes/kubernetes/blob/v1.34.0/test/integration/service/service_test.go#L1219-L1309
+
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
+**Alpha:**
 
 - Create a Service that requires the new validation and test if a DNS lookup works for it
+
+**Beta:**
+
+An e2e exists: https://github.com/kubernetes/kubernetes/blob/v1.34.0/test/e2e/network/dns.go#L659-L686
 
 ### Graduation Criteria
 
@@ -254,18 +229,6 @@ If e2e tests are not necessary or useful, explain why.
 - Promote e2e test to conformance
 
 ### Upgrade / Downgrade Strategy
-
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
 
 ### Version Skew Strategy
 
@@ -318,18 +281,21 @@ probably need to delete them and recreate them with new names.
 
 ###### What specific metrics should inform a rollback?
 
-There are no metrics that would inform anyone that the feature was
-failing, symptoms may include an increased level of failed Service creation.
-Since the feature is opt-in, individual users can simply
-stop using the feature if it is not working for them.
+The following metrics could indicate that this feature is failing:
+
+1. `apiserver_request_total{code=500, version=v1, resource=service, verb=POST}`
+1. `apiserver_request_total{code=500, version=v1, resource=service, verb=PATCH}`
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Yes, using the following steps:
+
+1. Installed a 1.34 Kubernetes cluster with the `RelaxedServiceNameValidation` feature gate disabled
+1. Attempted to create a service with a name starting in a digit - it failed as expected
+1. Upgraded to a custom built 1.35 Kubernetes cluster with the `RelaxedServiceNameValidation` feature gate enabled
+1. Attempted to create a service with a name starting in a digit - it succeeded as expected
+1. Downgraded back to 1.34 with the `RelaxedServiceNameValidation` feature gate disabled
+1. Edited that same service, and it succeeded as expected
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -414,9 +380,14 @@ N/A
 - [x] Alpha
   - [x] KEP (`k/enhancements`) update PR(s):
     - https://github.com/kubernetes/enhancements/pull/5315
-  - [ ] Code (`k/k`) update PR(s):
-    - 
+  - [x] Code (`k/k`) update PR(s):
+    - https://github.com/kubernetes/kubernetes/pull/132339
   - [ ] Docs (`k/website`) update PR(s):
+- [x] Beta
+  - [ ] KEP (`k/enhancements`) update PR(s):
+    - ...
+  - [ ] Code (`k/k`) update PR(s):
+    - ...
 
 ## Drawbacks
 
