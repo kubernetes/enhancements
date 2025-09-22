@@ -278,14 +278,13 @@ the `/resize` subresource:
 To provide fine-grained user control, PodSpec.Containers is extended with
 ResizeRestartPolicy - a list of named subobjects (new object) that supports
 'cpu' and 'memory' as names. It supports the following restart policy values:
-* `PreferNoRestart` - default value; resize the Container without restart, if possible.
-  * `NotRequired` - Equivalent to `PreferNoRestart`, deprecated with v1.33.
+* `NotRequired` - default value; resize the Container without restart, if possible.
 * `RestartContainer` - the container requires a restart to apply new resource values.
   (e.g.  Java process needs to change its Xmx flag) By using ResizePolicy, user
   can mark Containers as safe (or unsafe) for in-place resource update. Kubelet
   uses it to determine the required action.
 
-Note: `PreferNoRestart` restart policy for resize does not *guarantee* that a container won't be
+Note: `NotRequired` restart policy for resize does not *guarantee* that a container won't be
 restarted. If the runtime knows a resize will trigger a restart, it should return an error instead,
 and the Kubelet will retry the resize on the next pod sync. The restart behavior when shrinking
 memory limits is not yet defined.
@@ -295,10 +294,10 @@ that usually CPU can be added/removed without much problem whereas changes to
 available memory are more probable to require restarts.
 
 If more than one resource type with different policies are updated at the same
-time, then `RestartContainer` policy takes precedence over `PreferNoRestart` policy.
+time, then `RestartContainer` policy takes precedence over `NotRequired` policy.
 
 If a pod's RestartPolicy is `Never`, the ResizePolicy fields must be set to
-`PreferNoRestart` to pass validation.  That said, any in-place resize may result
+`NotRequired` to pass validation.  That said, any in-place resize may result
 in the container being stopped *and not restarted*, if the system can not
 perform the resize in place.
 
@@ -528,12 +527,12 @@ The scheduler will use the maximum of:
 ### Flow Control
 
 The following steps denote the flow of a series of in-place resize operations
-for a Pod with ResizePolicy set to PreferNoRestart for all its Containers.
+for a Pod with ResizePolicy set to NotRequired for all its Containers.
 This is intentionally hitting various edge-cases for demonstration.
 
 1. A new pod is created
     - `spec.containers[0].resources.requests[cpu]` = 1
-    - `spec.containers[0].resizePolicy[cpu].restartPolicy` = `"PreferNoRestart"`
+    - `spec.containers[0].resizePolicy[cpu].restartPolicy` = `"NotRequired"`
     - all status is unset
 
 1. Pod is scheduled
@@ -1258,15 +1257,15 @@ Setup a namespace with min and max LimitRange and create a single, valid Pod.
 #### Resize Policy Tests
 
 Setup a guaranteed class Pod with two containers (c1 & c2).
-1. No resize policy specified, defaults to PreferNoRestart. Verify that CPU and
+1. No resize policy specified, defaults to NotRequired. Verify that CPU and
    memory are resized without restarting containers.
-1. PreferNoRestart (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
+1. NotRequired (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
    Verify that c1 is resized without restart, c2 is restarted on resize.
-1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
+1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
    verify container is resized without restart.
-1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 memory only,
+1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 memory only,
    verify container is resized with restart.
-1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
+1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
    verify container is resized with restart.
 
 #### Backward Compatibility and Negative Tests
@@ -1650,7 +1649,7 @@ _This section must be completed when targeting beta graduation to a release._
 - 2025-01-24 - v1.33 updates for planned beta
     - Replace ResizeStatus with conditions
     - Improve memory limit downsize handling
-    - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
+    - Rename ResizeRestartPolicy `NotRequired` to `NotRequired`,
       and update CRI `UpdateContainerResources` contract
     - Add back `AllocatedResources` field to resolve a scheduler corner case
     - Introduce Actuated resources for actuation
