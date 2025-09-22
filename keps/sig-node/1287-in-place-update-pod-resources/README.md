@@ -476,6 +476,12 @@ Allocation will be attempted on the pods in the queue:
 A successful allocation will trigger a pod sync, which will actuate the allocated resize and update the
 pod status accordingly.
 
+### Kubelet-triggered eviction
+
+A pod can be marked as critical with the `priorityClassName` of `system-node-critical` or `system-cluster-critical` as
+described in [Guaranteed Scheduling For Critical Add-On Pods](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical). If the kubelet receives a resize request for a
+critical pod and there is not enough space for the resize, it will evict a non-critical pod to make room.
+
 ### Kubelet and API Server Interaction
 
 When a new Pod is created, Scheduler is responsible for selecting a suitable
