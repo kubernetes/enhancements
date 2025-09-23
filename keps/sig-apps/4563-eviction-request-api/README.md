@@ -52,6 +52,8 @@
       - [HorizontalPodAutoscaler Pod Surge Example](#horizontalpodautoscaler-pod-surge-example)
     - [Descheduling and Downscaling](#descheduling-and-downscaling)
   - [Future Improvements](#future-improvements)
+    - [New Targets Types](#new-targets-types)
+    - [New EvictionRequest Types and Synchronization of Pod Termination Mechanisms](#new-evictionrequest-types-and-synchronization-of-pod-termination-mechanisms)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -468,6 +470,7 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
   be possible that EvictionRequest will be extended for other resources than pods (e.g. PVCs), which
   could result in name conflicts. For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
   alternatives section.
+- `.spec.type` should be set to `Soft` (default value) since it is currently the only supported type.
 - `.spec.target.podRef` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
@@ -565,6 +568,8 @@ If the interceptor is interested in intercepting/evicting the pod it should look
 `.spec.heartbeatDeadlineSeconds` and make sure to update the status periodically in less than that
 duration. For example, if `.spec.heartbeatDeadlineSeconds` is set to the default value of 1800 (30m),
 it may update the status every 3 minutes. The status updates should look as follows:
+- Check that it supports the `.spec.type`. Please note that the only supported eviction request type
+  is `Soft` for now.
 - Check that `.status.activeInterceptorClass` still matches the `interceptorClass` previously set
   in the pod's `.spec.evictionInterceptors`. and that `.status.activeInterceptorCompleted` is still
   false. If one of these is not correct and the eviction process is still not complete, it should
@@ -693,10 +698,27 @@ type EvictionRequest struct {
 
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
+	// Valid types are Soft.
+    // The default value is Soft.
+	// 
+	// Soft type attempts to evict the target gracefully.
+	// Each active interceptor is given unlimited time to resolve the eviction request, provided
+	// that it responds periodically (see .spec.heartbeatDeadlineSeconds). This means there is no
+	// deadline for a single interceptor, or for the eviction request as a whole.
+	//
+	// For pod targets, the eviction request controller will call the /evict API endpoint when
+	// there are no more interceptors. This call may not succeed due to PodDisruptionBudgets, which
+	// may block the pod termination (see .status.podEvictionStatus.failedAPIEvictionCounter). A
+	// successful soft eviction request should ideally result in the pod being terminated gracefully.
+	//
+    // This field is immutable.
+    // +required
+	Type `json:"type" protobuf:"bytes,1,opt,name=type"`
+	
 	// Target contains a reference to an object (e.g. a pod) that should be evicted.
 	// This field is immutable.
 	// +required
-	Target EvictionTarget `json:"target" protobuf:"bytes,1,opt,name=target"`
+	Target EvictionTarget `json:"target" protobuf:"bytes,2,opt,name=target"`
 	
 	// At least one requester is required when creating an eviction request. 
 	// A requester is also required for the eviction request to be processed.
@@ -711,7 +733,7 @@ type EvictionRequestSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=interceptorClass
-	Requesters []Requester `json:"requesters,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=requesters"`
+	Requesters []Requester `json:"requesters,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=requesters"`
 
 	// Interceptors reference interceptors that respond to this eviction request.
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
@@ -729,7 +751,7 @@ type EvictionRequestSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=interceptorClass
-	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"interceptorClass" protobuf:"bytes,3,rep,name=interceptors"`
+	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"interceptorClass" protobuf:"bytes,4,rep,name=interceptors"`
 
 	// HeartbeatDeadlineSeconds is a maximum amount of time that an interceptor should take to
 	// periodically report on an eviction progress by updating the .status.heartbeatTime.
@@ -742,8 +764,25 @@ type EvictionRequestSpec struct {
 	// The default value is 1800 (30m).
 	// This field is required and immutable.
 	// +required
-	HeartbeatDeadlineSeconds *int32 `json:"heartbeatDeadlineSeconds" protobuf:"varint,4,opt,name=heartbeatDeadlineSeconds"`
+	HeartbeatDeadlineSeconds *int32 `json:"heartbeatDeadlineSeconds" protobuf:"varint,5,opt,name=heartbeatDeadlineSeconds"`
 }
+
+
+// +enum
+type EvictionRequestType string
+
+const (
+    // Soft type attempts to evict the target gracefully.
+	// Each active interceptor is given unlimited time to resolve the eviction request, provided
+	// that it responds periodically (see .spec.heartbeatDeadlineSeconds). This means there is no
+	// deadline for a single interceptor, or for the eviction request as a whole.
+	//
+	// For pod targets, the eviction request controller will call the eviction API endpoint when
+	// there are no more interceptors. This call may not succeed due to PodDisruptionBudgets, which
+	// may block the pod termination (see .status.podEvictionStatus.failedAPIEvictionCounter). A
+	// successful soft eviction request should ideally result in the pod being terminated gracefully.
+    Soft EvictionRequestType = "Soft"
+)
 
 // EvictionTarget contains a reference to an object that should be evicted.
 // Only one target (PodRef, *TBD*) is required.
@@ -1019,6 +1058,9 @@ Principal making the request should be authorized for deleting pods that match t
 `.spec.target.podRef`.
 
 #### Immutability of EvictionRequest Spec Fields
+
+`.spec.type` It is unclear whether we want to allow the type to be changed. Since there is only one
+type, `Soft`, we can keep the field immutable for now.
 
 `.spec.target` and `.spec.target.podRef` does not make sense to make mutable, the EvictionRequest is
 always scoped to a specific instance of a target/pod. If the pod is immediately recreated with the
@@ -1441,11 +1483,29 @@ The same can be done by any descheduling controller (instead of an HPA) to re-ba
 to comply with de/scheduling rules.
 
 ### Future Improvements
-- The `EvictionRequestSpec` and `EvictionRequestStatus` are extendable and `EvictionRequest` can
-  support the eviction of objects other than pods in the future. This can be achieved by adding a
-  `pvcRef` to the `.spec.target`, for example. In this case, we would expect either
-  `.spec.target.podRef` or `.spec.target.pvcRef` to be present. This allows us to support any type
-  in the future.
+
+#### New Targets Types
+The `EvictionRequestSpec` and `EvictionRequestStatus` are extendable and `EvictionRequest` can
+support the eviction of objects other than pods in the future. This can be achieved by adding a
+`pvcRef` to the `.spec.target`, for example. In this case, we would expect either
+`.spec.target.podRef` or `.spec.target.pvcRef` to be present. This allows us to support any type
+in the future.
+
+#### New EvictionRequest Types and Synchronization of Pod Termination Mechanisms
+
+We can introduce a more disruptive eviction request types (`.spec.type`). For example `Hard`,
+`SoftWithDeadline`, etc. The `Hard` type would allow us to use the interceptor infrastructure and
+graceful termination in any pod deletion call. We have to examine each use case to determine the
+appropriate level of "softness" or "hardness" for each eviction request. For instance, we could
+introduce timeouts or deadlines for each interceptor or for the eviction request as a whole.
+
+This would help us introduce a graceful eviction in the following cases, among others:
+- Taint Based Eviction
+- Scheduling Preemption
+- Node Pressure Eviction
+
+This would allow us to synchronize all pod termination mechanisms under one API and react to pod
+termination before it occurs.
 
 ### Test Plan
 
