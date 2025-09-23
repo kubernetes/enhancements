@@ -267,11 +267,10 @@ _We will use this approach for the Alpha release_.
     rules:
     - apiGroups: ["*"]
       resources: ["*"]
-      verbs: 
-      - get 
-      - list
-      - watch
-      - update
+      verbs: ["patch", "get", "list", "watch"]
+    - apiGroups: ["storagemigration.k8s.io"]
+      resources: ["storageversionmigrations/status"]
+      verbs: ["update"]
       
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
