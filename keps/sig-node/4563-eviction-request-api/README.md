@@ -54,6 +54,7 @@
   - [Future Improvements](#future-improvements)
     - [New Targets Types](#new-targets-types)
     - [New EvictionRequest Types and Synchronization of Pod Termination Mechanisms](#new-evictionrequest-types-and-synchronization-of-pod-termination-mechanisms)
+  - [Adoption](#adoption)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -289,6 +290,9 @@ See some practical use cases for this feature:
 2. Ability to upscale first before terminating the pods with HPA: [HorizontalPodAutoscaler Pod Surge Example](#horizontalpodautoscaler-pod-surge-example)
    based on the [EvictionRequest Process](#evictionrequest-process).
 3. Ability to select which pods to terminate when downscaling an application: [Descheduling and Downscaling](#descheduling-and-downscaling)
+
+[Future Improvements](#future-improvements) and [Adoption](#adoption) also hold important
+considerations for the evolution of this feature.
 
 ### Eviction Requester
 
@@ -1506,6 +1510,62 @@ This would help us introduce a graceful eviction in the following cases, among o
 
 This would allow us to synchronize all pod termination mechanisms under one API and react to pod
 termination before it occurs.
+
+### Adoption
+
+This feature does not introduce any breaking changes to the way the current API-initiated eviction
+and PDBs work. This feature's usefulness relies on the adoption in Kubernetes core and ecosystem.
+
+The main focus is improving node drain scenarios. In the Kubernetes core this is mostly implemented
+by a kubectl drain and graceful node shutdown. 
+
+We could quickly introduce this feature to kubectl drain. However, we are trying to introduce a new
+ declarative drain API as part of the Node Maintenance KEP, which would use the EvictionRequest API
+and replace the kubectl drain. It might not make sense to implement it for kubectl drain, if it is
+soft-deprecated later. We will monitor the progress of the Node Maintenance KEP and decide on the
+implementation later.
+
+A similar situation applies to the Graceful Node Shutdown feature (GNS), but in this case,
+EvictionRequest alone is insufficient enough to resolve all GNS issues. The Node Maintenance feature
+could play a big significant in making the GNS feature complete. A new KEP should be opened to
+improve the GNS as there are many points that have to be solved. How graceful the shutdown should be?
+Do we need a new EvictionRequest type(s) or eviction timeout/deadline? should we outsource the drain
+logic from the kubelet to the Node Maintenance controller, or should we let kubelet work as is but
+communicate through the NodeMaintenance object? Is additional configuration needed for the GNS?
+
+The ecosystem has many [node drain solutions](https://github.com/atiratree/kube-enhancements/blob/improve-node-maintenance/keps/sig-apps/4212-declarative-node-maintenance/README.md#motivation)
+that would benefit from the increased safety nad smoother, more capable eviction. Adoption depends
+on each project, but we will try to promote the use of this feature. The Kured project has already
+expressed an interest in using the EvictionRequest and Node Maintenance features.
+
+The adoption of this feature by actors responding to (AKA interceptors) and resolving
+EvictionRequests is also important. The main advantages are observability and graceful termination
+guarantees.
+- Core controllers can gradually adopt this feature. The deployment controller can particularly use
+this feature to upscale first before terminating the pods of the Deployment
+([Deployment Pod Surge Example](#deployment-pod-surge-example)). As mentioned in the motivation
+section,users requested this feature to improve pod availability and safety. It should bring in
+immediate benefit to clusters using Deployments during node drain scenarios without requiring any
+action from users. 
+- We will explore ways to improve and unify Taint Based Eviction, Scheduling Preemption and Node
+  Pressure Eviction.
+- The Descheduler project has already implemented a similar feature to the EvictionRequest
+  (annotation based) and has expressed interest in adopting EvictionRequest instead in [KEP-1397](https://github.com/kubernetes-sigs/descheduler/blob/master/keps/1397-evictions-in-background/README.md).
+- The KubeVirt project has an integration with the aforementioned descheduling feature and has
+  expressed an intent to adopt the EvictionRequest.
+- Uber has shown interest in using the EvictionRequest feature for its internal systems. They have a
+  custom solution that facilitates coordination between the applications and their drain logic. This
+  was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=aCclWRYrkSU&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
+  They created a PoC for the EvictionRequest API ([recording](https://youtu.be/uhJ16dCVYBk?list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D&t=2321))
+  and would like to use it even if it isn't accepted by Kubernetes.
+- NVIDIA is interested in using EvictionRequest API as part of the NodeMaintenance feature. They
+  have an in-house system and would like to use more advanced Kubernetes features to replace some of
+  their own. This was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=Yn7Dp57VQD4&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
+- Datadog has also expressed interest in using the EvictionRequest API. Their in-house solution
+  supports pre-activities which allow users to run custom code before drain/eviction. This concept
+  is analogous to the EvictionRequest's interceptors. This was presented to the Node Lifecycle WG
+  ([recording](https://www.youtube.com/watch?v=7S1GpAstzSI&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
+
 
 ### Test Plan
 
