@@ -86,56 +86,42 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-In this KEP, kube-scheduler is modified to support gang scheduling[^1]. To implement gang scheduling, kube-scheduler identifies pods that are in a group and waits until all pods reach the same stage of the scheduling/binding cycle before allowing any pods from the group to advance past that point.  If not all pods can reach that point before a timeout expires, then the scheduler stops trying to schedule that group, and all pods release all their resources.  This allows other workloads to try to allocate those resources.
+In this KEP, kube-scheduler is modified to support gang scheduling[^1]. We focus on framework support and building blocks, not the ideal gang-scheduling algorithm - it can come as a follow-up. We start with simpler implementation of gang scheduling, kube-scheduler identifies pods that are in a group and waits until all pods reach the same stage of the scheduling/binding cycle before allowing any pods from the group to advance past that point.  If not all pods can reach that point before a timeout expires, then the scheduler stops trying to schedule that group, and all pods release all their resources.  This allows other workloads to try to allocate those resources.
 
- A new core type called `Workload` is introduced to tell the kube-scheduler that a group of pods should be scheduled together and any policy options related to gang scheduling. Pods have an object reference in their spec to their `Workload`, if any. The `Workload` object is intended to evolve[^2] via future KEPs to support additional kube-scheduler improvements, such as topology-aware scheduling,  
+A new core type called `Workload` is introduced to tell the kube-scheduler that a group of pods should be scheduled together and any policy options related to gang scheduling. Pods have an object reference in their spec to their `Workload`, if any. The `Workload` object is intended to evolve[^2] via future KEPs to support additional kube-scheduler improvements, such as topology-aware scheduling.
 
 ## Motivation
 
 Parallel applications can require communication between every pod in order to begin execution, and then ongoing communication between all pods (such as barrier or all-reduce operations) in order to make progress.  Starting all pods at close to the same time is necessary to run these workloads.  Otherwise, either expensive compute resources are idle, or the application may fail due to an application-level communication timeout.
 
-Gang scheduling has been implemented outside of kube-scheduler at least 4 times[^3].  Some controllers are starting to support multiple Gang Schedulers in order to be portable across different clusters.  Moving support into kube-scheduler makes gang scheduling support available in all Kubernetes distributions and eventually may allow workload controllers to reply on a standard interface to request gang scheduling from the standard or custom schedulers. A standard API may also allow other components to understand workload needs better (such as cluster autoscalers).
+Gang scheduling has been implemented outside of kube-scheduler at least 4 times[^3].  Some controllers are starting to support multiple Gang Schedulers in order to be portable across different clusters.  Moving support into kube-scheduler makes gang scheduling support available in all Kubernetes distributions and eventually may allow workload controllers to rely on a standard interface to request gang scheduling from the standard or custom schedulers. A standard API may also allow other components to understand workload needs better (such as cluster autoscalers).
 
-Workloads that require gang scheduling often also need all members of the gang to be as topologically "close" to one another as possible, in order to perform adequately. Existing Pod affinity rules influence pod placement, but they do not consider the gang as a unit of scheduling and they do not cause the scheduler to efficiently try multiple mutually exclusive placement options for a set of pods. The design of the Workload object introduced in this KEP anticipates how Gang Scheduling support can evolve over subsequent KEPs into full Topology-aware scheduling support in kube-scheduler, .  
+Workloads that require gang scheduling often also need all members of the gang to be as topologically "close" to one another as possible, in order to perform adequately. Existing Pod affinity rules influence pod placement, but they do not consider the gang as a unit of scheduling and they do not cause the scheduler to efficiently try multiple mutually exclusive placement options for a set of pods. The design of the Workload object introduced in this KEP anticipates how Gang Scheduling support can evolve over subsequent KEPs into full Topology-aware scheduling support in kube-scheduler.
 
-The Workload object will allow kube-scheduler to be more aware that pods are part of workloads with complex internal structure.  Those workloads include builtins like `Job` and `StatefulSet`, and custom workloads, like `JobSet`, `LeaderWorkerSet` and `MPIJob`. All of these workload types are used for AI training and inference use cases.  
+The `Workload` object will allow kube-scheduler to be aware that pods are part of workloads with complex internal structure.  Those workloads include builtins like `Job` and `StatefulSet`, and custom workloads, like `JobSet`, `LeaderWorkerSet`, `MPIJob` and `TrainJob`. All of these workload types are used for AI training and inference use cases.
 
-
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
 
 ### Goals
-- Workloads requiring gang scheduling can be run on a stock, conformant Kubernetes cluster without any addons. 
-  - It becomes easier to write fully-portable examples of sample AI training and inference applications.
-  - Systems like Kueue and Volcano.sh can still offer much additional functionality, but the baseline is raised.
-  - Controllers and software frameworks can hide some of the details of configuring gang scheduling from their users.
-- When a workload requiring gang scheduling is submitted to Kubernetes, the workload does not remain in a "stuck" state.
-  - In particular, where some pods are Running and others can never be satisfied (due to limited resources or misconfiguration of the workload).
-- When two workloads of the same priority, and both requiring gang scheduling are submitted, a deadlock will not occur.
-  - In particular, avoid the case where where each workload holds some resources, and is waiting for the other to release enough resources for it to complete.
-- Developers working on kube-scheduler can access information about that behavior of a workload that a pod belongs to without:
-  - needing to infer the behavior from what pods it has seen so far
-  - validating all pods in a group have identical policy fields.
-  - watching and interpreting a large number of different workload specs.
-- Authors/users of custom workload controllers can use gang scheduling, and future scheduler improvements without needing to add code to a scheduler to support their workload.
-  - Compare to the support for _specific_ workload controllers in Kueue and Volcano.sh.
--  Don't break any existing workloads.
-  -  Kube-scheduler must behave the same when workloads don't use the gang-scheduling feature. 
-  -  Kube-scheduler must continue to support running all workload types (including bare pods and unknown custom controllers) in the same cluster as workloads that use gang scheduling.
+- Introduce a concept of a `Workload` as a primary building block for workload-aware scheduling vision
+- Implement the first version of `Workload` API necessary for defining a Gang
+- Ensuring that we can extend `Workload` API in backward compatible way toward north-star API
+- Ensuring that `Workload` API will be usable for both built-in and third-parth workload controllers and APIs
+- Implement first version of gang-scheduling in kube-scheduler
+- Provide full backward compatibility for all existing scheduling features
 
 ### Non-Goals
 
-- It is not a goal to take away the responsibility from controllers to create pods.
-- It is not a goal to bring fairness or multiple workload queues into kube-scheduler.  Kueue and Volcano.sh will continue to provide this.
-- It is not a goal to be able to map all the declarative state and behaviors of all workloads into the `Workload` object. It will focus on state that is relevant to kube-scheduler, and possibly to cluster autoscalers, reschedulers and closely related components.
-- Introducing a resource reservation that can later hold pods.  This feature seems desirable, and will be informed by experience gained from this proposal.
-- Address resource contention between two separate schedulers. Resource reservations may address this.
+- Take aware responsibility to crate pods from controllers.
+- Bring fairness or multiple workload queues in kube-scheduler. Kueue and Volcano.sh will continue to provide this.
+- Map all the declarative state and habviors into `Workload` object. It is focused only on scheduling-related parts.
+
+The following are non-goals for this KEP but will probably soon appear to be goals for follow-up KEPs:
+
+- Introduce a concept of `Reservation` that can be later consumed by pods.
+- Workload-level preemption.
+- Address resource contention between different schedulers (including possible deadlocks).
+- Address the problem of premature preemptions in case the higher priority workloads does not
+  eventually schedule.
 
 
 ## Proposal
@@ -147,7 +133,7 @@ kind: Pod
 spec:
   ...
   workload:
-    name: wkld-1
+    name: job-1
   ...
 ```
 
@@ -185,13 +171,14 @@ The `Workload` core resource will be introduced. A `Workload` does not create an
 apiVersion: scheduling/v1alpha1   
 kind: Workload
 metadata:
-  name: myjob
+  name: job-1
 spec:
   podGroups:   # or gangGroups -- TBD
     - name: "pg1"
       gangMode: Single
-      minCount: 100
-      schedulingTimeoutSeconds: 60
+      gangSchedulingPolicy:
+        minCount: 100
+        schedulingTimeoutSeconds: 60
 ```
 
 
@@ -255,21 +242,23 @@ The example below uses  `PodGroupSelector` on each `PodGroup` to identify pods. 
 apiVersion: scheduling/v1alpha1   
 kind: Workload
 metadata:
-  name: myjobset
+  name: jobset
 spec:
   podGroups:   # or gangGroups -- TBD
-    - name: "job1"
+    - name: "job-1"
       gangMode: Single
-      minCount: 100
-      schedulingTimeoutSeconds: 60
+      gangSchedulingPolicy:
+        minCount: 100
+        schedulingTimeoutSeconds: 60
       podGroupSelector:
-        jobset.sigs.k8s.io/replicatedjob-name: job1
-     - name: "job2"
+        jobset.sigs.k8s.io/replicatedjob-name: job-1
+    - name: "job-2"
       gangMode: Single
-      minCount: 100
-      schedulingTimeoutSeconds: 60
+      gangSchedulingPolicy:
+        minCount: 100
+        schedulingTimeoutSeconds: 60
       podGroupSelector:
-        jobset.sigs.k8s.io/replicatedjob-name: job2
+        jobset.sigs.k8s.io/replicatedjob-name: job-2
 
 ```
 This works well for the simplest usecases, but becomes more complex with replicated gangs.
@@ -287,12 +276,12 @@ itself, like this:
 apiVersion: v1
 kind: Pod
 name:
-  jobset-job1-abc123
+  jobset-job-1-abc123
 spec:
   ...
   workload:
-    name: wkld-1
-    podGroup: job1
+    name: jobset
+    podGroup: job-1
     podGroupReplica: 2
   ...
 
@@ -347,7 +336,8 @@ const (
 
 // GangSchedulingPolicy holds options that affect how gang scheduling of one PodGroup is handled by the scheduler.
 type GangSchedulingPolicy struct {
-	ShedulingTimeoutSeconds *int
+    // TODO: Decide between SchedulingTimeoutSeconds and making this field of type time.Duration.
+	SchedulingTimeoutSeconds *int
 	MinCount *int
 }
 
@@ -402,12 +392,82 @@ type WorkloadStatus struct {
 }
 ```
 
+The individual `PodGroups` and `PodGroup` replicas are treated as independent gangs. As an example, if one of
+the groups can be scheduled and the other can't be - this is exactly what will happen. If the underlying
+user intention was to have either both of them or none of them running, they should form a single group and
+not be split into two. A `LeaderWorkerSet` is a good example of it, where a single `PodGroup` replica consists
+of a single leader and `N` workers and that forms a scheduling (and runtime unit), but workload as a whole
+may consist of a number of such replicas.
+
 ### Scheduler Changes
 
-The Gang Scheduling functionality will be implemented using a combination of kube-scheduler plugins and scheduling framework changes.
-The plugin will use  PreEnqueue and WaitOnPermit framework hooks to control the scheduling process of a gang. The scheduling framework changes will watch Workloads, map pods to and from their Workloads and Gang(s) within the workload. 
+The kube-scheduler will be watching for `Workload` objects (using informers) and will use them to map pods
+to and from their `Workload` objects.
 
-More detail about scheduled changes is described in [this document](https://docs.google.com/document/d/1lMYkDuGqEoZWfE2b8vjQx0vHieOMyfmi6VHUef5-5is/edit?tab=t.0#heading=h.1p88ilpefnb).
+In the initial implementation, we expect users to create the `Workload` objects. In the next steps controllers
+will be updated to create an appropriate `Workload` objects themselves whenever they can appropriately infer
+the intention from the desired state.
+Note that given scheduling options are stored in the `Workload` object, pods linked to the `Workload`
+object will not be scheduled until this `Workload` object is created and observed by the kube-scheduler.
+
+The north star vision for gang scheduling implementation should satisfy the following requirements:
+
+1. Ensure that pods being part of a gang are not bound if all pods belonging to it can't be scheduled.
+2. Provide the "optimal enough" placement by considering all pods from a gang together.
+3. Avoid deadlock scenario when multiple workloads are being scheduled at the same time by kube-scheduler.
+4. Avoid deadlock scenario when multiple workloads are being scheduled at the same time by different
+   schedulers.
+5. Avoid premature preemptions of already running pods in case a higher priority gang will be rejected.
+6. Support gang-level (or workload-level in general) level preemption.
+7. Updating workload status and triggering rescheduling when a gang failed binding in the all-or-nothing
+   fashion.
+
+Addressing all these requirements in a single shot would be a huge change, so as part ot this KEP we
+will only focus on a subset of those. However, we very briefly sketch the path towards the vision to
+ensure that this KEP is moving in the right direction.
+
+For `Alpha`, we are focusing on introducing the concept of the `Workload` and plumbing it into
+kube-scheduler in the simplest possible way. We will implemen a new plugin implementing the following
+hooks:
+- PreEnqueue - used as a barrier to wait for the `Workload` object and all the necessary pods to be
+  observed by the scheduler before even considering them for actual scheduling
+- WaitOnPermit - used as a barrier to wait for the pods to be assigned to the nodes before initiating
+  potential preemptions and their bindings
+
+This seems to be the simplest possible implementation to address the requirement (1). We are consciously
+ignoring the rest of the requirements for `Alpha` phase.
+
+
+For `Beta`, we want to also touch requirements (2) and (3) by extending the scheduling framework with
+a new dedicated phase (tentatively called Workload). In that phase,
+kube-scheduler will be looking at all pods from a gang (part of `Workload`) and compute the placement
+for all of these pods in a single scheduling cycle. Those placements will be stored only in-memory and
+block the required resources from scheduling. Tentively we plan to use `NominatedNodeName` field for it.
+After that, pods will go through regular pod-by-pod scheduling phases (including Filter and Score)
+with a nomination as a form of validation the proposed placement and execution of this placement decision.
+Therefore we expect the order of processing pods won't ever be important, but all-or-nothing nature of
+gangs will be preserved while advancing through the further steps of the binding process.
+
+While we will not target addressing "optimal enough" part of requirement (2), we will assure that we
+can process all gang pods together. The single scheduling cycle and blocking resources in beta
+will address the requirement (3).
+
+More detail about scheduler changes is described in [this document](https://docs.google.com/document/d/1lMYkDuGqEoZWfE2b8vjQx0vHieOMyfmi6VHUef5-5is/edit?tab=t.0#heading=h.1p88ilpefnb).
+
+
+We will continue with further improvements on top of it with follow-up KEPs. We are planning to
+introduce the concept of `Reservation` that will allow to treat distributed subset of resources as
+a single unit from scheduling perspective. With that, the proposed placement being a result of
+the scheduling decision of the `Workload` phase will become a `Reservation`. This will become the
+coordination point and a mechanism for multiple schedulers to share the underlying infrastructure
+addressing the requirement (4). This will also be a critical building block for workload-level
+preemption and addressing requirement (6). Further extensions to `Reservation` with different states
+(e.g. not yet block resources) will help with addressing the unnessary preemptions issue -
+requirement (5). Finally making the binding process aware of gangs will allow to make sure the
+process is either successful or triggers workload rescheduling satisfying requirement (7).
+
+However, approval for this KEP is NOT an approval for this vision. We only sketch it to show that
+we see a viable path forward from the proposed design that will not require significant rework.
 
 
 ### Test Plan
@@ -518,6 +578,8 @@ If e2e tests are not necessary or useful, explain why.
 
 ### Upgrade / Downgrade Strategy
 
+This KEP is completely additive and can safely fallback to the original behavior on downgrade.
+
 This KEP effectively boils down to two separate functionalities:
 - the Workload API and new field in Pod API that allows linking Pods to Workloads
 - scheduler changes implementing the gang scheduling functionality
@@ -538,7 +600,7 @@ When user downgrades the cluster to the version that no longer supports these tw
 
 ### Version Skew Strategy
 
-The feature is limited to control plane, so the version skew with nodes (kubelets) doesn't matter.
+The feature is limited to the control plane, so the version skew with nodes (kubelets) doesn't matter.
 
 For the API changes (introduction of Workload API and the new field in Pod API), the old version of
 components (in particular kube-apiserver) may not handle those. Thus, users should not set those
@@ -581,7 +643,7 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: Workload
+  - Feature gate name: Workload/GenericWorkload/NativeWorkload
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
@@ -754,7 +816,7 @@ Watching for workloads:
   - estimated throughput: < XX/s
   - originating component: kube-scheduler, kube-controller-manager (GC)
 
-Status updates:
+Status updates (potentially not in Alpha):
   - API call type: PUT/PATCH Workloads
   - estimated throughput < XX/s
   - originating component: kube-scheduler
@@ -785,7 +847,7 @@ Yes. New field (spec.workload) is added to the Pod API:
 
 Pod startup SLI/SLO may be affected and should be adjusted appropriately.
 The reason is that scheduling a pod being part of a gang will now be blocked on all pods
-from a gan to be created and observed by the scheduler (which from large gangs can take
+from a gang to be created and observed by the scheduler (which from large gangs can take
 non-negligible amount of time).
 
 
