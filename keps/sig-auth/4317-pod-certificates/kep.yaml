@@ -15,17 +15,17 @@ approvers:
   - enj
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.34"
-  beta: ""
+  beta: "v1.35"
   stable: ""
 
 # The following PRR answers are required at alpha release
@@ -33,11 +33,8 @@ milestone:
 feature-gates:
   - name: PodCertificateRequest
     components: ['kube-apiserver']
-  - name: PodCertificateProjection
-    components: ['kubelet']
-  - name: PodCertificateAPIClientCertificates
-    components: ['kube-apiserver', 'kube-controller-manager']
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - "kubelet_pod_certificate_states"
