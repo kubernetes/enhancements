@@ -2,6 +2,7 @@ title: Kube-proxy Services Acceleration
 kep-number: 4963
 authors:
   - "@aojea"
+  - "@aroradaman"
 owning-sig: sig-network
 status: implementable
 creation-date: 2024-11-14
@@ -18,13 +19,13 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.33"
+latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.33"
-  beta: "v1.34"
-  stable: "v1.35"
+  alpha: "v1.35"
+  beta: "v1.36"
+  stable: "v1.37"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -36,4 +37,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - count_accelerated_connections_total
+  - kubeproxy_accelerated_connections_count_total

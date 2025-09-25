@@ -12,9 +12,8 @@
     - [Story 2](#story-2)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Default Value](#default-value)
-    - [Default value evaluation](#default-value-evaluation)
-  - [Mechanics](#mechanics)
+  - [Service API Extension](#service-api-extension)
+  - [FastPath Controller](#fastpath-controller)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -38,8 +37,8 @@
 - [Alternatives](#alternatives)
   - [Technology](#technology)
   - [API Design](#api-design)
-    - [Alternative 1: Adding a new field to the Service API](#alternative-1-adding-a-new-field-to-the-service-api)
-    - [Alternative 2: Adding a new configuration option to select network interfaces on nodes](#alternative-2-adding-a-new-configuration-option-to-select-network-interfaces-on-nodes)
+    - [Alternative 1: Adding a new configuration option to select network interfaces on nodes](#alternative-1-adding-a-new-configuration-option-to-select-network-interfaces-on-nodes)
+    - [Alternative 2: Offloading all the service connections with packets greater than configurable threshold](#alternative-2-offloading-all-the-service-connections-with-packets-greater-than-configurable-threshold)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -74,237 +73,147 @@ This KEP proposes utilizing the flowtable infrastructure within the Linux kernel
 
 ## Motivation
 
-Kube-proxy manages Service traffic by manipulating iptables/nftables rules. This approach can introduce performance overhead, particularly for services with high throughput or a large number of connections. The kernel's flowtables offer a more efficient alternative for handling established connections, bypassing the standard netfilter processing pipeline.
+Every packet entering the Linux kernel is evaluated against all rules attached to the netfilter hooks, even for established connections. These rules may be added by CNIs,
+system administrators, firewalls, or kube-proxy, and together they define how packets are filtered, routed, or rewritten. As a result, packets continue to traverse the
+full netfilter processing path, which can add unnecessary overhead for long-lived or high-throughput connections.
+
+A connection becomes established only after the initial packets successfully pass through all applicable rules without being dropped or rejected. Once established,
+packets associated with a Kubernetes service can be offloaded to the kernel fast path using flowtables. This allows subsequent service packets to bypass the full
+netfilter stack, accelerating kube-proxy traffic and reducing CPU usage.
 
 ### Goals
 
-- Provide an option for kube-proxy users to enable Service traffic acceleration.
+- Provide an option for kube-proxy users to enable traffic acceleration for TCP and UDP services.
 
 ### Non-Goals
 
-- Separation of Concerns: Kube-proxy's primary responsibility is to manage Service traffic. Extending the flowtable offloading functionality to non-Service traffic will potentially introduce unintended side effects. It's better to keep the feature focused on its core purpose.
+- Separation of Concerns: Kube-proxy's primary responsibility is to manage Service traffic. Extending the flowtable offloading functionality to non-Service traffic will
+- potentially introduce unintended side effects. It's better to keep the feature focused on its core purpose.
+- Supporting service acceleration for SCTP services.
 
 ## Proposal
 
-The kernel [Netfilter’s flowtable infrastructure](https://docs.kernel.org/networking/nf_flowtable.html) allows to define a fastpath through the flowtable datapath. This infrastructure also provides hardware offload support.
+We propose adding a new controller to KubeProxy to manage service acceleration using flowtables. This controller will install rules specifically for flowtable offloading.
+This approach allows us to utilize flowtables for all linux backends (iptables, ipvs and nftables) without modifying their core logic. 
 
-```
-                                       userspace process
-                                        ^              |
-                                        |              |
-                                   _____|____     ____\/___
-                                  /          \   /         \
-                                  |   input   |  |  output  |
-                                  \__________/   \_________/
-                                       ^               |
-                                       |               |
-    _________      __________      ---------     _____\/_____
-   /         \    /          \     |Routing |   /            \
--->  ingress  ---> prerouting ---> |decision|   | postrouting |--> neigh_xmit
-   \_________/    \__________/     ----------   \____________/          ^
-     |      ^                          |               ^                |
- flowtable  |                     ____\/___            |                |
-     |      |                    /         \           |                |
-  __\/___   |                    | forward |------------                |
-  |-----|   |                    \_________/                            |
-  |-----|   |                 'flow offload' rule                       |
-  |-----|   |                   adds entry to                           |
-  |_____|   |                     flowtable                             |
-     |      |                                                           |
-    / \     |                                                           |
-   /hit\_no_|                                                           |
-   \ ? /                                                                |
-    \ /                                                                 |
-     |__yes_________________fastpath bypass ____________________________|
 
-             Fig.1 Netfilter hooks and flowtable interactions
-```
-
-Enabling the flowtable fastpath requires to use nftables. It only needs to create a flowtable and add the corresponding network interfaces whose traffic will be offloaded.
-The traffic to be offloaded will be selected by a flowtable rule in the forward chain.
-
-Example configuration:
-
-```
-table inet x {
-        flowtable f {
-                hook ingress priority 0; devices = { eth0, eth1 };
-        }
-        chain y {
-                type filter hook forward priority 0; policy accept;
-                ip protocol tcp flow add @f
-                counter packets 0 bytes 0
-        }
-}
-```
-
-We propose introducing a new kube-proxy feature that allows users to use the flowtable fastpath for Service traffic:
-
-- **Sane Defaults:** Kubernetes should provide the best possible performance out of the box and simplify the user experience, this feature will be enabled by default with a sensible threshold, so most users will immediately experience the performance benefits without any manual configuration.
-- **Flexibility and Safeguards:** Users will have the ability to adjust the behavior or completely disable it. This provides flexibility and "escape hatches" for users who may encounter compatibility issues, require fine-grained control over their network traffic, or need to optimize for specific workload characteristics on a node.
+Only long-lived connections will benefit from the fastpath optimization, short-lived connections may see overall performance degradation due to overhead of offloading flows
+for a small number of packets. To ensure the optimization is applied selectively for flowtables offloading, we propose extending the Service API with a new enum, 
+`TrafficHint`. The field indicates expected traffic semantics of a Service. Only connections with `TrafficHint: LongLived` will be considered for fastpath offload.
 
 ### User Stories
 
 #### Story 1
 
-As a Kubernetes user, I want Kubernetes to automatically optimize the network performance of my applications and minimize resource consumption by default, without requiring manual configuration.
+As a Kubernetes user, I want Kubernetes to automatically optimize the network performance of my applications and minimize resource consumption by default, without requiring
+much manual configuration.
 
 #### Story 2
 
-As a cluster administrator managing a cluster where services typically handle small, short-lived connections, I want to be able to easily configure or disable the flowtable offloading feature to prevent potential performance degradation and maintain control over my network environment.
+As a cluster administrator managing a cluster where services typically handle small, short-lived connections, I want to be able to easily configure or disable the flowtable
+offloading feature for services to prevent potential performance degradation and maintain control over my network environment.
 
 ### Risks and Mitigations
 
-Once the network traffic moves to the fastpath it completely bypass the kernel stack, so
-any other network applications that depend on the packets going through the network stack (monitoring per example) will not be able to see the connection details. The feature will only apply the fastpath based on a defined threshold, that will also allow to disable the feature.
+Moving network traffic to the fastpath causes packets to bypass the standard netfilter hooks after the ingress hook. Flowtables operate at the ingress hook, and packets still
+traverse taps, so tools like tcpdump and Wireshark will continue to observe traffic. However, any applications that rely on hooks or rules evaluated after the ingress hook
+may not observe or process these packets as expected. To mitigate this, fastpath offload will be applied selectively based on a configurable threshold, and users will have 
+the option to disable the feature entirely.
 
-Flowtables netfilter infrastructure is not well documented and we need to validate assumptions to avoid unsupported or suboptimal configurations. Establishing good relations and involve netfilter maintainers in the design will mitigate these possible problems.
+Flowtables netfilter infrastructure is not well documented and we need to validate assumptions to avoid unsupported or suboptimal configurations. Establishing good relations
+and involve netfilter maintainers in the design will mitigate these possible problems.
 
 ## Design Details
 
-This feature will only work with kube-proxy nftables mode. We will add a new configuration option to kube-proxy to enable Service traffic offload based on a number of packets threshold per connection.
+### Service API Extension
 
-The packet threshold approach offers several advantages over the [alternatives](#alternatives):
-
-- It directly targets the need to apply offloading on large connections focusing on the size of connections (number of packets) while avoiding potential performance penalties for small connections.
-- It's a straightforward and easily understandable metric for users.
-- It allows for fine-grained control over which connections are offloaded.
-
-A configurable parameter (--offload-packet-threshold) will determine the minimum number of packets a connection must exchange before being considered for offloading.
-
-### Default Value
-
-The default value for the --offload-packet-threshold will be carefully chosen based to ensure optimal performance for a wide range of applications. The traffic that will get more benefit from this feature will be the so called [elephant flows](https://en.wikipedia.org/wiki/Elephant_flow), so we'll obtain our default value based on that.
-
-The [elephant flow detection is a complex topic with a considerable number of literature about it](https://scholar.google.pt/scholar?q=elephant+flow+detection&hl=es&as_sdt=0&as_vis=1&oi=scholart). For our use case we propose a more simplistic approach based on the number of packets, so it can give us good trade off between performance improvement and safety, we want to avoid complex heuristics and have a more predictable and easy to think about behaviour based on the lessons learned from [KEP-2433 Topology aware hints](https://github.com/kubernetes/enhancements/tree/master/keps/sig-network/2433-topology-aware-hints#proportional-cpu-heuristic).
-
-We chose 20 as the number of packets as the threshold to offload, based on existing thresold used by Cisco systems in [Cisco Application Centric Infrastructure](https://scholar.google.com/scholar_lookup?hl=en&publication_year=2018&author=G.+Tam&title=Cisco+Application+Centric+Infrastructure), Cisco referred to an elephant flow if the flow contains more than 15 packet sizes, i.e., short flow is less than 15 packets, we add 5 packets of buffer to be on the safe side. This means that, using TCP as an example, and assuming an MTU of 1500 bytes and removing the overhead of the TCP headers (that can vary from 20-60 bytes, use 40 for this example), offloading will benefit workloads that transmit more than: TCP Payload * Number of packets = 1460 bytes/packet * 20 = 29200 bytes.
-
-#### Default value evaluation
-
-We can use `netperf` to evaluate the impact and benefits of this feature for large streams of data. The scenario will be one client Pod running `netperf` and a second Pod running `netserver` behind a Service. It is important to mention that `netperf` requires two connections, one for the control plane and other for the data plane so the Service MUST expose two different ports for each of them. An example of this setup can be done with:
-
-```sh
-$ kubectl run client --image=cilium/netperf
-$ kubectl run server --image=cilium/netperf
-```
-
-And creating a Service with the following manifest:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    run: server
-  name: server
-spec:
-  ports:
-  - name: netperf-udp
-    port: 5201
-    protocol: UDP
-    targetPort: 5201
-  - name: netperf-tcp
-    port: 5202
-    protocol: TCP
-    targetPort: 5202
-  - name: netperf-ctl
-    port: 12865
-    protocol: TCP
-    targetPort: 12865
-  selector:
-    run: server
-  type: ClusterIP
-```
-
-Connecting to the `client` Pod we can run test the dataplane performance:
-
-- Service traffic without flowtables:
-
-```sh
-$ netperf -H 10.244.0.10 -fm -tTCP_STREAM -i10
-MIGRATED TCP STREAM TEST from 0.0.0.0 (0.0.0.0) port 0 AF_INET to 10.244.0.10 (10.244.) port 0 AF_INET : +/-2.500% @ 99% conf.
-Recv   Send    Send
-Socket Socket  Message  Elapsed
-Size   Size    Size     Time     Throughput
-bytes  bytes   bytes    secs.    10^6bits/sec
-
-131072  16384  16384    10.00    13046.26
-```
-
-- Service traffic with flowtables without threshold:
-
-```sh
-$ netperf -H 10.96.142.98 -fm -tTCP_STREAM -i10 -- -P 10001,5201
-MIGRATED TCP STREAM TEST from 0.0.0.0 (0.0.0.0) port 10001 AF_INET to 10.96.142.98 (10.96.1) port 5201 AF_INET : +/-2.500% @ 99% conf.
-Recv   Send    Send
-Socket Socket  Message  Elapsed
-Size   Size    Size     Time     Throughput
-bytes  bytes   bytes    secs.    10^6bits/sec
-
-131072  16384  16384    10.00    16572.83
-```
-
-- Service traffic with flowtables with default threshold 20:
-
-```sh
-$ netperf -H 10.96.142.98 -fm -tTCP_STREAM -l10 -- -P 10001,5202 -R 1
-MIGRATED TCP STREAM TEST from 0.0.0.0 (0.0.0.0) port 10001 AF_INET to 10.96.142.98 (10.96.1) port 5202 AF_INET
-Recv   Send    Send
-Socket Socket  Message  Elapsed
-Size   Size    Size     Time     Throughput
-bytes  bytes   bytes    secs.    10^6bits/sec
-
-131072  16384  16384    10.00    16292.78
-
-```
-
-The performance impact is still significant, but avoids the penalty on short lived connections, that are impacted in the latency as we can see with the [netperf CRR test](https://hewlettpackard.github.io/netperf/doc/netperf.html#TCP_005fCRR) that emulate short lived HTTP connections:
-
-
-- Service traffic without flowtables:
-
-```sh
-$ netperf -H 10.244.0.10 -fm -tTCP_CRR -i10 -- -o min_latency,mean_latency,max_latency,stddev_latency,transaction_rate
-MIGRATED TCP Connect/Request/Response TEST from 0.0.0.0 (0.0.0.0) port 0 AF_INET to 10.244.0.10 (10.244.) port 0 AF_INET : +/-2.500% @ 99% conf.
-Minimum Latency Microseconds,Mean Latency Microseconds,Maximum Latency Microseconds,Stddev Latency Microseconds,Transaction Rate Tran/s
-41,56.63,848,11.14,17730.719
-```
-
-- Service traffic with flowtables no threshold:
-
-```sh
-netperf -H 10.96.142.98 -fm -tTCP_CRR -i10 -- -P 10001,5201 -o min_latency,mean_latency,max_latency,stddev_latency,transaction_rate
-MIGRATED TCP Connect/Request/Response TEST from 0.0.0.0 (0.0.0.0) port 10001 AF_INET to 10.96.142.98 (10.96.1) port 5201 AF_INET : +/-2.500% @ 99% conf.
-Minimum Latency Microseconds,Mean Latency Microseconds,Maximum Latency Microseconds,Stddev Latency Microseconds,Transaction Rate Tran/s
-40,57.64,2244,11.85,17388.759
-```
-
-Since we have a default threshold of 20 packet, the offload will not impact negatively short lived connections as we can see in the previous results.
-
-### Mechanics
-
-Users will have the ability to adjust the --offload-packet-threshold value or completely disable flowtable offloading if desired. This provides flexibility and "escape hatches" for users who may encounter compatibility issues, require fine-grained control over their network traffic, or need to optimize for specific workload characteristics on a node.
-
-Kube-proxy will create a `flowtable` in the kube-proxy table with the name `kube-proxy-flowtable` and will monitor the network interfaces in the node to populate the `flowtable` with the interfaces on the Node.
-
-Kube-proxy will insert a rule to offload all Services established traffic in the `filter-forward` chain:
+Users can set the `TrafficHint` field to opt in to fastpath acceleration for a Service. In the future, this field can also be leveraged to enable other dataplane optimizations
+such as GRO-based UDP packet aggregation, reduced conntrack timeouts, or traffic distribution towards local endpoints. These optimizations are workload-dependent and only
+beneficial for certain traffic patterns. The `TrafficHint` field provides kube-proxy with contextual information about the expected traffic semantics, allowing it to program
+the dataplane with suitable optimizations for the Service.
 
 ```go
-	// Offload the connection after the defined number of packets
-	if proxier.fastpathPacketThreshold > 0 {
-		tx.Add(&knftables.Flowtable{
-			Name: serviceFlowTable,
-		})
-		tx.Add(&knftables.Rule{
-			Chain: filterForwardChain,
-			Rule: knftables.Concat(
-				"ct original", ipX, "daddr", "@", clusterIPsSet,
-				"ct packets >", proxier.fastpathPacketThreshold,
-				"flow offload", "@", serviceFlowTable,
-			),
-		})
+// +enum
+// TrafficHint indicates the expected traffic behavior of a Service.
+// Service implementations may use this hint to apply dataplane optimizations, which can vary
+// depending on the type of optimization and the technology used to program the dataplane.
+type TrafficHint string
+
+// These are the valid TrafficHint values for a Service.
+const (
+	// LongLived indicates that the Service is expected to handle long-lived flows.
+	// Dataplane implementations may use this hint to enable fastpath optimizations
+	// for long-lived connections, reducing per-packet CPU overhead and improving
+	// traffic throughput.
+	LongLived TrafficHint = "LongLived"
+)
+
+// ServiceSpec describes the attributes that a user creates on a service.
+type ServiceSpec struct {
+
+	// TrafficHint describe the expected service traffic semantics.
+    TrafficHint *TrafficHint
+    
+    // ...
+}
+```
+
+### FastPath Controller
+
+The controller will run as an independent go routine, separate from existing proxier backends. The controller will create a dedicated table `kube-proxy-flowtable`, in the `inet`
+family to manage fastpath offloading. The controller will create `fastpath` flowtable and will continuously reconcile all the opted services and node network interfaces for offloading.
+
+Fastpath offloading is only supported in the `forward` hook. Since the forward hook cannot operate at a [priority urgent than DNAT](https://people.netfilter.org/pablo/nf-hooks.png),
+the  controller must rely on conntrack to retrieve the original destination IP and port to selectively offload service traffic. Currently, nftables does not support matching on sets
+with data type [`inet_service` using `ct original proto-dst` expression](https://github.com/kubernetes/kubernetes/issues/131765#issuecomment-2994343818). As a result, packets must
+be identified for offload in the `prerouting` hook, and then offloaded to the flowtables in the `forward` hook.
+
+The controller will create following three sets in `kube-proxy-flowtable` for tracking Service that have opted into fastpath:
+1. `service-nodeports`  (Protocol and NodePort)
+2. `service-ip4-ports`  (Protocol, ServiceIP and ServicePort)
+3. `service-ip6-ports`  (Protocol, ServiceIP and ServicePort)
+
+Two primary chains will be added in `kube-proxy-flowtable`:
+1. `fastpath-mark`
+   Attached to `prerouting` hook with a priory urgent than DNAT. This chains marks the packets belonging to the Services listed in the sets above.
+2. `fastpath`
+   Attached to `forward` hook with filter priority. This chain offloads the marked packets to `fastpath` flowtable and clears the mark afterward.
+
+```nft
+table inet kube-proxy-fastpath {
+	set service-nodeport {
+		type inet_proto . inet_service
+		elements = { tcp . 31147 }
 	}
+
+	set service-ip4-ports {
+		type inet_proto . ipv4_addr . inet_service
+		elements = { tcp . 10.96.128.18 . 5001 }
+	}
+
+	set service-ip6-ports {
+		type inet_proto . ipv6_addr . inet_service
+		elements = { tcp . fd00:10:96::c284 . 5001 }
+	}
+
+	flowtable fastpath {
+		hook ingress priority filter
+		devices = { eth0, tunl0 }
+	}
+
+	chain fastpath-mark {
+		type filter hook prerouting priority dstnat - 10; policy accept;
+		meta l4proto . th dport @service-nodeport meta mark set meta mark | 0x00008000
+		meta l4proto . ip daddr . th dport @service-ip4-ports meta mark set meta mark | 0x00008000
+		meta l4proto . ip6 daddr . th dport @service-ip6-ports meta mark set meta mark | 0x00008000
+	}
+
+	chain fastpath {
+		type filter hook forward priority filter; policy accept;
+		meta mark 0x00008000 flow add @fastpath
+		meta mark set meta mark & 0x00007fff
+	}
+}
 ```
 
 ### Test Plan
@@ -317,9 +226,8 @@ to implement this enhancement.
 
 ##### Unit tests
 
-To be added
-
-- `<package>`: `<date>` - `<test coverage>`
+There will addition of new tests and modification of existing ones in the following packages:
+- `k8s.io/kubernetes/pkg/proxy`: `2025-09-07` - `89.8%`
 
 ##### Integration tests
 
@@ -592,22 +500,25 @@ Why should this KEP _not_ be implemented?
 
 ### Technology
 
-- eBPF was considered, but this was discarded because of the complexity, the increase on node resources consumption and the lack of support for old kernels.
+- eBPF was considered, but this was discarded because of the complexity, the increase on node resources consumption and the lack of support for 
+old kernels.
 
 ### API Design 
 
-#### Alternative 1: Adding a new field to the Service API
-
-- This approach would involve extending the Service API to include a field that indicates whether flowtable offloading should be enabled for that Service.
-- Why it was discarded:
-  - A Service-level setting lacks the granularity to differentiate between large and small connections within that Service. The goal is to offload large connections by default, and a Service-level setting can't achieve this.
-  - The Service abstraction represents a logical grouping of pods, not a specific traffic pattern. Using it to control a low-level network optimization like flowtable offloading creates an abstraction mismatch.
-  - Adding a new field to the Service API increases complexity for users and implementers.
-
-#### Alternative 2: Adding a new configuration option to select network interfaces on nodes
+#### Alternative 1: Adding a new configuration option to select network interfaces on nodes
 
 - This would allow users to specify which network interfaces on the nodes should have flowtable offloading enabled.
 - Why it was discarded:
-  - Mapping network interfaces to specific connections or traffic types is complex and can be confusing for users. Interface names are often tied to pods, and Services can route traffic to multiple pods dynamically.
-  - This approach doesn't directly address the core problem of identifying large connections. It relies on an indirect mapping between interfaces and traffic patterns, which can be unreliable and difficult to manage.
-  - This option wouldn't be applicable in scenarios where multiple services share the same network interface.
+    - Mapping network interfaces to specific connections or traffic types is complex and can be confusing for users. Interface names are often
+tied to pods, and Services can route traffic to multiple pods dynamically.
+    - This approach doesn't directly address the core problem of identifying large connections. It relies on an indirect mapping between interfaces
+and traffic patterns, which can be unreliable and difficult to manage.
+    - This option wouldn't be applicable in scenarios where multiple services share the same network interface.
+
+#### Alternative 2: Offloading all the service connections with packets greater than configurable threshold
+
+- This approach would involve adding a new field to KubeProxy configuration that determines when the connections should be offloaded. Only connections
+with packets greater than threshold will be offloaded.
+- Why it was discarded:
+    - Defining an appropriate threshold is a challenge.
+    - This provides only global control, doesn't allow fine-grained control to enable offloading for selective services.
