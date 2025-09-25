@@ -922,7 +922,11 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-N/A
+When a timeout occurs in BindingConditions, the Pod is repeatedly re-scheduled, which leads to an increase in the `scheduler_schedule_attempts_total` metric with the label `result=unschedulable`.
+
+Additionally, since the waiting time within the Pre-Bind phase increases, the `scheduler_framework_extension_point_duration_seconds` metric - especially the higher latency histogram buckets with labels `extension_point=PreBind` and `status=1` (Error) - will show elevated counts.
+
+In all cases further analysis of logs and pod events is needed to determine whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -932,7 +936,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-N/A
+This was tested before promotion to beta, using `PRESERVE_ETCD=true hack/local-up-cluster.sh` and `test/e2e/dra/test-driver/dra-test-driver.go` (with minor customizations to enable BindingConditions). Pods using ResourceClaims started in one version could be removed by the other. When the feature is disabled, the new fields were ignored.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
