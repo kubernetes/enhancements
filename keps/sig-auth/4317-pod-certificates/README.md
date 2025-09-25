@@ -561,7 +561,7 @@ type PodCertificateProjection struct {
   // implementations should document what UserConfig keys they support. Signer
   // implementations should reject PodCertificateRequests that contain user config that
   // they do not recognize with a condition of type "Denied" and reason "InvalidUserConfig".
-  UserConfig string `json:"userConfig,omitempty" protobuf:"bytes,6,rep,name=userConfig"`
+  UserConfig map[string]string `json:"userConfig,omitempty" protobuf:"bytes,6,rep,name=userConfig"`
 
 	// The type of keypair Kubelet will generate for the pod.
 	//
