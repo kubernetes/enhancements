@@ -1,9 +1,10 @@
 title: Node Resource Hot Plug
 kep-number: 3953
 authors:
-  - "@Karthik-K-N"
   - "@mkumatag"
+  - "@Karthik-K-N"
   - "@kishen-v"
+  - "@marquiz"
 owning-sig: sig-node
 participating-sigs:
   - sig-node
