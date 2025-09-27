@@ -24,7 +24,7 @@ To get started with this template:
   appropriate SIG(s).
 * [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-* [ ] **Merge early and iterate.**
+* [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -147,12 +147,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 * [x] (R) Design details are appropriately documented
 * [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   + [x] e2e Tests for all Beta API Operations (endpoints)
-  + [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  + [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  + [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  + [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 * [x] (R) Graduation criteria is in place
-  + [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-* [ ] (R) Production readiness review completed
-* [ ] (R) Production readiness review approved
+  + [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+* [x] (R) Production readiness review completed
+* [x] (R) Production readiness review approved
 * [x] "Implementation History" section is up-to-date for milestone
 * [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 * [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -574,6 +574,7 @@ Added tests:
 `pod rejected by kubelet should have updated generation and observedGeneration`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
 `pod observedGeneration field set in pod conditions`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
 `pod-resize-scheduler-tests`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=pod-resize-scheduler-tests
+`mirror pod updates`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=mirror%20pod%20updates
 
 
 ### Graduation Criteria
@@ -1194,6 +1195,7 @@ Major milestones might include:
 2025-01-21: initial KEP draft created
 2025-02-12: PR feedback addressed, KEP moved to "implementable" and merged
 2025-06-05: proposed promotion to beta
+2025-09-23: proposed promotion to stable
 
 ## Drawbacks
 
