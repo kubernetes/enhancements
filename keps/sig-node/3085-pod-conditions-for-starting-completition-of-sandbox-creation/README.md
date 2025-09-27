@@ -1011,10 +1011,12 @@ Tests List
 
 - [x] [Pod Conditions Test](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pod_conditions_test.go)
   - [testgrid](https://testgrid.k8s.io/sig-node-release-blocking#node-kubelet-serial-containerd&include-filter-by-regex=PodReadyToStartContainers)
-- [] GracefulNodeShutdown test
+- [x] GracefulNodeShutdown test
   - Add test to check status of pod ready to start condition are set to false after terminating
+    (added as part of [k/k PR#121044](https://github.com/kubernetes/kubernetes/pull/121044))
 - [] Volume Mounting Issues
   - [x] Add test to verify sandbox condition for missing configmap.
+    (added as part of [k/k PR#121321](https://github.com/kubernetes/kubernetes/pull/121321))
   - [ ] Add test to verify sandbox condition for missing secret.
 
 E2E tests will be introduced to cover the user scenarios mentioned above. Tests
@@ -1679,6 +1681,11 @@ may leverage this feature.
 - PodHasNetwork renamed to PodReadyToStartContainers in 1.28.
 - Beta promotion to 1.29
   - Moving PodReadyToStartContainers to staging/src/k8s.io/api/core/v1/types.go as a API constant
+  - Added e2e tests:
+    - [check PodReadyToStartContainers condition after gracefulshutdown](https://github.com/kubernetes/kubernetes/pull/121044)
+    - [test - PodReadyToStartContainerCondition when config map is created](https://github.com/kubernetes/kubernetes/pull/121321)
+  - Updated pod-lifecyle documentation to reflect beta promotion, and feature-gate enabled by default.
+  - Published blog: [PodReadyToStartContainers Condition Moves to Beta](https://kubernetes.io/blog/2023/12/19/pod-ready-to-start-containers-condition-now-in-beta/)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
