@@ -259,12 +259,13 @@ We may consider this as a future improvement.
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+- **DRA Device Health Timeout Configuration:** The timeout for marking a DRA device's health as "Unknown" 
+  when no updates are received can be configured per device through the `health_check_timeout_seconds` field
+  in the `DeviceHealth` message. This allows different hardware types (e.g., GPUs, FPGAs, TPUs, storage devices)
+  to specify appropriate timeout values based on their health-reporting characteristics. If not specified,
+  Kubelet will use a default timeout of 30 seconds. This addresses 
+  [Issue #133118](https://github.com/kubernetes/kubernetes/issues/133118) and the discussion in 
+  [PR #130606](https://github.com/kubernetes/kubernetes/pull/130606/files#r2221829511).
 
 ### Risks and Mitigations
 
@@ -310,6 +311,13 @@ optional, proactive health reporting mechanism from DRA plugins.
     will be responsible for reconciling the state reported by the plugin, handling
     timeouts for stale data (marking devices as "Unknown" if not updated
     within a certain period), and persisting this information across Kubelet restarts.
+    
+    **Note:** The timeout for marking a device's health as "Unknown" can be
+    configured per device via the `health_check_timeout_seconds` field in the
+    `DeviceHealth` message. If not specified, Kubelet will use a default timeout
+    of 30 seconds. This addresses [Issue #133118](https://github.com/kubernetes/kubernetes/issues/133118),
+    allowing different hardware types (e.g., GPUs, FPGAs, TPUs, storage) to specify
+    appropriate timeout values based on their health-reporting characteristics.
 
 3.  **Kubelet Integration:** The DRA Manager in Kubelet will act as the gRPC client.
     Upon plugin registration, it will attempt to initiate the health monitoring
@@ -368,6 +376,10 @@ message DeviceHealth {
   // Timestamp of when this health status was last determined by the plugin, as a Unix timestamp (seconds).
   // Required.
   int64 last_updated_timestamp = 4;
+  // Health check timeout duration in seconds for this device.
+  // If not specified or zero, Kubelet will use a default timeout.
+  // Optional.
+  int64 health_check_timeout_seconds = 5;
 }
 ```
 
@@ -448,6 +460,7 @@ Planned tests will cover the user-visible behavior of the feature:
 #### Beta
 
 - Complete e2e tests coverage
+- Verify configurable device health check timeout implementation works correctly across different plugin vendors (see [Issue #133118](https://github.com/kubernetes/kubernetes/issues/133118))
 
 #### GA
 
