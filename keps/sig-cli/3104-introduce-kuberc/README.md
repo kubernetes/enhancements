@@ -92,6 +92,20 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Open Questions](#open-questions)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Kubectl Kuberc Management Command (kubectl kuberc)](#kubectl-kuberc-management-command-kubectl-kuberc)
+  - [kubectl kuberc view](#kubectl-kuberc-view)
+  - [kubectl kuberc default](#kubectl-kuberc-default)
+    - [command](#command)
+    - [option](#option)
+    - [overwrite](#overwrite)
+    - [recommended](#recommended)
+  - [kubectl kuberc alias](#kubectl-kuberc-alias)
+    - [name](#name)
+    - [command](#command-1)
+    - [option](#option-1)
+    - [prependargs](#prependargs)
+    - [appendargs](#appendargs)
+    - [overwrite](#overwrite-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -357,6 +371,121 @@ defaults:
         default: "true"
 
 ```
+
+### Kubectl Kuberc Management Command (kubectl kuberc)
+
+In alpha (and initially in beta), users are expected to generate their kuberc files manually. However, this operation is error-prone and cumbersome.
+The lack of kubectl command which operates on kuberc file makes the adoption of this feature significantly difficult.
+Therefore, this section proposes new kubectl command, namely `kubectl kuberc`.
+
+`kubectl kuberc` is the main command serving as an entry point to the subcommands similar to how `kubectl create` is designed.
+Invocation of `kubectl kuberc` prints the subcommands. 
+Currently, there are three subcommands (but this can be extended in the future, when more functionality is added to kuberc).
+All the subcommands accept `kuberc` flag to explicitly specify the kuberc file to be updated. File priority order is the same with
+kuberc execution:
+
+* If `--kuberc` flag is specified, operate on this file
+* If `KUBERC` environment variable is specified, operate on this file
+* If none, operate on default kuberc (i.e. `$HOME/.kube/kuberc`).
+
+This command and subcommands are marked as alpha initially. They can be executed under `kubectl alpha`, until they are promoted to beta.
+
+### kubectl kuberc view
+
+`kubectl kuberc view` subcommand prints the defined kuberc file content in the given format via `--output` flag (default is yaml).
+
+### kubectl kuberc default
+
+`kubectl kuberc default` subcommand creates/updates the default values of commands. It has these flags;
+
+#### command
+
+`kubectl kuberc default` command validates the presence of the command given via flag `--command`.
+This flag can contain subcommands as well. Examples might be `--command=apply`, `--command="create role"`.
+
+#### option
+
+`--option` flag accepts list of options. We may or may not validate the presence of the flag name in the given command. 
+But it is up to user to set the correct default value in correct type. Therefore, default field of the options is arbitrary.
+Examples might be `--option="--server-side=true"`, `--option="--namespace=test"`.
+
+Although kuberc supports short versions of flags (e.g. `-n test`), 
+this flag forces users to enter options in standardized format `--option=--$flag_name=$flag_value`. 
+This gives us the opportunity to standardize kuberc files. 
+
+#### overwrite
+
+By default, this command errors out, if it finds a section of same command and same flag that is executed. `--overwrite` flag
+is used to update this section.
+
+#### recommended
+
+This boolean flag adds the recommended flag options by SIG CLI such as interactive delete, server side apply, so on. 
+
+```yaml
+defaults:
+  - command: apply
+    options:
+      - name: server-side
+        default: "true"
+      - name: namespace
+        default: "test"
+```
+
+As a result, in order to create the above defaults, user needs to simply run `kubectl kuberc default --command=apply --option="--server-side=true" --option="--namespace=test"`
+
+### kubectl kuberc alias
+
+`kubectl kuberc alias` defines alias definitions of a command and a set of flag options. It has these flags;
+
+#### name
+
+This required field is to define the name of the alias. This is inherently arbitrary field based on the preferences of the user.
+
+#### command
+
+`kubectl kuberc alias` command validates the presence of the command given via flag `--command`.
+This flag can contain subcommands as well. Examples might be `--command=apply`, `--command="create role"`.
+
+#### option
+
+`--option` flag accepts list of options. We may or may not validate the presence of the flag name in the given command.
+But it is up to user setting the correct default value in correct type. Therefore, default field of the options is arbitrary.
+Examples might be `--option="--server-side=true"`, `--option="--namespace=test"`.
+
+Although kuberc supports short versions of flags (e.g. `-n test`),
+this flag forces users to enter options in opinionated format `--option=--$flag_name=$flag_value`.
+This gives us the opportunity to standardize kuberc files.
+
+#### prependargs
+
+`--prependargs` is an arbitrary list of strings that accepts anything in a string array format. 
+
+#### appendargs
+
+`--appendargs` is an arbitrary list of strings that accepts anything in string array format.
+
+#### overwrite
+
+By default, this command errors out, if it finds a section of same alias name. `--overwrite` flag
+is used to update this section.
+
+
+```yaml
+aliases:
+  - name: getdbprod
+    command: get
+    prependArgs:
+    - pods
+    options:
+    - name: labels
+      default: what=database
+    - name: namespace
+      default: us-2-production
+```
+
+As a result, in order to create the above alias, user needs to simply run:
+`kubectl kuberc alias getdbprod --command=get --option="--labels=what=database" --option="--namespace=us-2-production" --prependargs="pods"`
 
 ### Test Plan
 
