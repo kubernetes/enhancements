@@ -107,19 +107,19 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -318,6 +318,7 @@ The output flags for JSON and YAML are handled in
 already transitively depended on by `k8s.io/kubectl/pkg/cmd/util` where the CLI
 gates are defined. Rather than trying to break the import cycle, we will just
 check the environment variable directly, without the utils package.
+
 
 ### Future compatibility
 
@@ -1188,6 +1189,9 @@ to KYAML, parses that KYAML back into the original type (with the standard YAML
 decoder), and compares the original and result objects. Doing this enough times
 should give us fairly high confidence.
 
+- `sigs.k8s.io/yaml/kyaml`: `2025-07-24` - `89.1%`
+- `k8s.io/cli-runtime/pkg/printers/`: `2025-07-25` - `66.4%`
+
 ##### Integration tests
 
 N/A
@@ -1388,6 +1392,8 @@ N/A
 
 May 09, 2025: KEP draft v0
 May 26, 2025: KEP draft implementable
+May 28, 2025: KEP is set to alpha stage
+Aug 28, 2025: KEP is set to beta stage
 
 ## Drawbacks
 
