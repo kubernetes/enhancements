@@ -460,6 +460,8 @@ Major milestones might include:
 - 2024-12-11: Kubernetes v1.32 release with PodLifecycleSleepActionAllowZero in alpha stage
 - 2025-02-06: KEP updated targeting to beta in v1.33
 - 2025-06-11: KEP updated targeting to stable in v1.34
+- 2025-07-20: [Code implementation for GA graduation](https://github.com/kubernetes/kubernetes/pull/132595) merged into k/k
+- 2025-10-20: k/enhancements PR opened updating KEP status as implemented
 
 ## Drawbacks
 

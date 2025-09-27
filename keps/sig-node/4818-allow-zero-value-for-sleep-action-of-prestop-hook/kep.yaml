@@ -4,7 +4,7 @@ authors:
   - "@sreeram-venkitesh"
 owning-sig: sig-node
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: "2024-09-16"
 
 reviewers:
