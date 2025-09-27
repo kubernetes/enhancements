@@ -26,10 +26,15 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Data Format and versioning](#data-format-and-versioning)
   - [Authz and authn](#authz-and-authn)
   - [Endpoint Response Format](#endpoint-response-format)
-    - [Data format : text](#data-format--text)
-    - [Request](#request)
-    - [Response fields](#response-fields)
-    - [Sample response](#sample-response)
+    - [Response Fields](#response-fields)
+    - [Data format: JSON (v1)](#data-format-json-v1)
+      - [Request](#request)
+      - [Response Body](#response-body)
+      - [Sample Response](#sample-response)
+    - [Data format: text](#data-format-text)
+      - [Request](#request-1)
+      - [Sample response](#sample-response-1)
+  - [API Versioning and Deprecation Policy](#api-versioning-and-deprecation-policy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -158,15 +163,26 @@ We are proposing to add a new endpoint, /statusz on all core Kubernetes componen
     
   We will prioritize inclusion of only essential diagnostic and monitoring data that aligns with the intended purpose of the z-page.
 
-3. **Premature Dependency on Unstable Format**
+3. **API Stability and Evolution**
 
-  The alpha release will explicitly support plain text format only, making it clear that the output is not intended for parsing or automated monitoring. The feature will be secured behind a feature gate that is disabled by default, ensuring users opt-in consciously. Also, the endpoint will support specifying a version as a query parameter to facilitate future transitions to structured schema changes without breaking existing integrations, once the usage patterns and requirements are better understood
+  The alpha release will explicitly support plain text format only, making it clear that the output is not intended for parsing or automated monitoring. The feature will be secured behind a feature gate that is disabled by default, ensuring users opt-in consciously.
+
+  For Beta, to provide a stable contract for consumers, we are introducing a versioned JSON response available via content negotiation (`Accept: application/json;v=v1`). The plain text format remains the default for human consumption and backward compatibility.
 
 ## Design Details
 
 ### Data Format and versioning
 
-Initially, the statusz page will exclusively support a plain text format for responses. In future, when we have established a structured schema for the response, we can support specifying a version param, like /statusz?version=2, to ensure future compatibility. Through this, we can evolve the endpoint and introduce changes to the response schema without impacting clients relying on previous versions, ensuring backward compatibility.
+The `/statusz` endpoint will provide a structured, versioned response by default to ensure stability and a clear contract for consumers. The initial version will be `v1`.
+
+The default response format will be `application/json`. Clients can explicitly request the plain text format for human readability by sending an `Accept: text/plain` header.
+
+Clients can request a specific version and format using the `Accept` header, following standard Kubernetes API content negotiation practices. For example:
+
+- **Default (JSON):** `GET /statusz` or `GET /statusz` with `Accept: application/json;v=v1`
+- **Plain Text:** `GET /statusz` with `Accept: text/plain`
+
+This approach allows us to evolve the API in the future by introducing new versions (e.g., `v2`, `v3`) without breaking existing clients.
 
 ### Authz and authn
 
@@ -189,15 +205,13 @@ rules:
 
 ### Endpoint Response Format
 
-#### Data format : text
+The `/statusz` endpoint supports both structured JSON and plain text formats, with JSON being the default.
 
-#### Request
-* Method: **GET** 
-* Endpoint: **/statusz**
-* Header: `Content-Type: text/plain`
-* Body: empty
+#### Response Fields
+The following fields are exposed in the response:
 
-#### Response fields
+* **apiVersion**: The version of the response schema (JSON only).
+* **componentName**: The name of the Kubernetes component.
 * **Start Time**: The exact date and time when the component process was initiated
 * **Uptime**: The duration for which the component has been running continuously
 * **Go Version**: The specific version of the Go programming language used to build the component's binary
@@ -206,25 +220,105 @@ rules:
 * **Minimum Compatibility Version**: The minimum Kubernetes API version with which the component is designed to work seamlessly
 * **Useful Links**: Relative URLs to other essential endpoints, such as /healthz, /livez, /readyz, and /metrics, for deeper insights into the component's health, readiness, and performance metrics
 
-#### Sample response
+#### Data format: JSON (v1)
+
+This is the default and preferred format for programmatic access.
+
+##### Request
+* Method: **GET**
+* Endpoint: **/statusz**
+* Header: `Accept: application/json;v=v1` (or no Accept header)
+* Body: empty
+
+##### Response Body
+
+The response is a JSON object with the following structure:
+
+```json
+{
+  "apiVersion": "v1",
+  "componentName": "<component-name>",
+  "startTime": "<start-time>",
+  "upTime": "<uptime-duration>",
+  "goVersion": "<go-version>",
+  "binaryVersion": "<binary-version>",
+  "emulationVersion": "<emulation-version>",
+  "minimumCompatibilityVersion": "<min-compatibility-version>",
+  "paths": [
+    "/configz",
+    "/healthz",
+    "/livez",
+    "/metrics",
+    "/readyz",
+    "/metrics/slis"
+  ]
+}
+```
+
+##### Sample Response
+
+```json
+{
+  "apiVersion": "v1",
+  "componentName": "kube-apiserver",
+  "startTime": "2024-09-06T06:19:51Z",
+  "upTime": "30s",
+  "goVersion": "go1.23.0",
+  "binaryVersion": "1.31.0-beta.0.981+c6be932655a03b-dirty",
+  "emulationVersion": "1.31.0-beta.0.981",
+  "minimumCompatibilityVersion": "1.30.0",
+  "paths": [
+    "/configz",
+    "/healthz",
+    "/livez",
+    "/metrics",
+    "/readyz",
+    "/metrics/slis"
+  ]
+}
+```
+
+#### Data format: text
+
+This format is available for human readability.
+
+##### Request
+* Method: **GET**
+* Endpoint: **/statusz**
+* Header: `Accept: text/plain`
+* Body: empty
+
+##### Sample response
 
 ```
-Started: Fri Sep  6 06:19:51 UTC 2024
-Up: 0 hr 00 min 30 sec
-Go version: go1.23.0
-Binary version: 1.31.0-beta.0.981&#43;c6be932655a03b-dirty
-Emulation version: 1.31.0-beta.0.981
-Minimum Compatibility version: 1.30.0
+Start Time: Fri Sep  6 06:19:51 UTC 2024
+Uptime: 0 hr 00 min 30 sec
+Go Version: go1.23.0
+Binary Version: 1.31.0-beta.0.981&#43;c6be932655a03b-dirty
+Emulation Version: 1.31.0-beta.0.981
+Minimum Compatibility Version: 1.30.0
 
-List of useful endpoints
+Available Paths
 --------------
-configz:/configz
-healthz:/healthz
-livez:/livez
-metrics:/metrics
-readyz:/readyz
-sli metrics:/metrics/slis
+configz: /configz
+healthz: /healthz
+livez: /livez
+metrics: /metrics
+readyz: /readyz
+slis: /metrics/slis
 ```
+### API Versioning and Deprecation Policy
+
+The versioned `/statusz` endpoint will follow a deprecation policy to ensure a predictable lifecycle for consumers as the API evolves.
+
+The deprecation policy for a given API version (e.g., `v1`) is as follows:
+- A deprecated API version must continue to be served for no less than **12 months or 3 releases** (whichever is longer) after the deprecation is announced.
+
+The deprecation process will be as follows:
+1.  **Announce Deprecation**: When a new API version is introduced (e.g., `v2`), the older version (e.g., `v1`) will be marked as deprecated. This will be communicated in the official release notes, and requests to the deprecated API version will return a `Warning` header.
+2.  **Deprecation Window**: The deprecated API version will be supported for the duration of the deprecation window (at least 12 months or 3 releases).
+3.  **Removal**: After the deprecation window has passed, the deprecated API version may be removed in a future Kubernetes release.
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -233,34 +327,46 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
+N/A
+
 ##### Unit tests
 
-- There will addition of new tests in the following packages
-  - `staging/src/k8s.io/component-base/zpages/statusz`: `2024-10-08` - `100%`
+- `staging/src/k8s.io/component-base/zpages/statusz`: Unit tests will be added to cover both the plain text and structured JSON output, including serialization and content negotiation logic.
 
 ##### Integration tests
 
+- Integration tests will be added for each component to verify that the `/statusz` endpoint is correctly registered and serves both `text/plain` and the versioned `application/json` content types.
 
 ##### e2e tests
 
-- Ensure existence of the /statusz endpoint
+- E2E tests will be added to query the `/statusz` endpoint for each core component and validate the following:
+  - The endpoint is reachable and returns a `200 OK` status.
+  - Requesting with the `Accept` header for `application/json;v=v1` returns a valid JSON object.
+  - The JSON response can be successfully unmarshalled.
+  - Requesting with `text/plain` or no `Accept` header returns the non-empty plain text format.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Feature implemented for apiserver
-- Ensure proper tests are in place.
+- Feature implemented behind a feature flag (`ComponentStatusz`).
+- Feature implemented for apiserver.
+- Initial implementation provides a plain text response.
+- Basic unit tests are in place.
 
 #### Beta
 
-- Gather feedback from developers
-- Feature implemented for other Kubernetes Components
+- Feature gate `ComponentStatusz` is enabled by default.
+- Structured, versioned JSON response format is implemented.
+- Plain text format is maintained for backward compatibility.
+- Feature is implemented for all core Kubernetes components (kube-apiserver, kube-controller-manager, kube-scheduler, kubelet, kube-proxy).
+- Integration and e2e tests are added for the JSON response format.
+- Gather feedback from users and developers on the structured format.
 
 #### GA
 
-- Several cycles of bake-time
+- The versioned JSON response is considered stable.
+- Several cycles of bake-time to ensure API stability and usefulness.
 
 #### Deprecation
 
