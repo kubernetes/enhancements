@@ -151,7 +151,7 @@ eventRecorder.Event(pod, v1.EventTypeWarning, "CgroupV1", fmt.Sprint("cgroup v1 
 ```
 ### Introduce a kubelet flag to disable cgroup v1 support
 
-A new boolean kubelet flag, `--disable-cgroupv1-support`, will be introduced. By default, this flag will be set to `false` to ensure users can continue to use cgroup v1 without any issues. The primary objective of introducing this flag is to set it to `true` in CI, ensuring that all blocking and new CI jobs use only cgroup v2 by default (unless the job explicitly wants to run on cgroup v1).
+A new boolean kubelet flag, `--fail-cgroupv1`, will be introduced. By default, this flag will be set to `false` to ensure users can continue to use cgroup v1 without any issues. The primary objective of introducing this flag is to set it to `true` in CI, ensuring that all blocking and new CI jobs use only cgroup v2 by default (unless the job explicitly wants to run on cgroup v1).
 
 
 ### Code modifications for default cgroup assumptions
@@ -268,11 +268,11 @@ This feature won't follow the normal cycle of alpha->beta->GA, and will instead 
 #### GA
 - Kubelet detects the host using cgroup v1, it will not only log a warning message but also generate an event to highlight the cgroup v1 moving to maintenance mode.
 - Introduce a new metric, `kubelet_cgroup_version`, to provide insights into the cgroup version utilized by the hosts.
-- Introduce a boolean kubelet flag `--disable-cgroupv1-support` and set it to `false` by default.
+- Introduce a boolean kubelet flag `--fail-cgroupv1` and set it to `false` by default.
 - Blog post on advantages of using cgroup v2 with kubernetes.
 - Code modifications for to assume cgroup v2 by default. Check [this]( #code-modifications-for-default-cgroup-assumptions) section for details.
 - Ensure all features coverage by running all tests on cgroup v2 (while some may still run on cgroup v1 to test back compatibility)
-- Make cgroup v2 host mandatory for new e2e and node e2e jobs. Set `--disable-cgroupv1-support` to `true` for those jobs.
+- Make cgroup v2 host mandatory for new e2e and node e2e jobs. Set `--fail-cgroupv1` to `true` for those jobs.
 - Fix all pending known bugs in cgroup v2 support in kubernetes.
 - Separation of cgroup v1 and cgroup v2 Code Paths. Check [this](#separation-of-cgroup-v1-and-cgroup-v2-code-paths) section for details.
 
