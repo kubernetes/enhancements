@@ -1,0 +1,37 @@
+title: Deprecate ipvs mode in kube-proxy
+kep-number: 5495
+authors:
+  - "@adrianmoisey"
+owning-sig: sig-network
+participating-sigs: []
+status: implementable
+creation-date: 2025-08-25
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+
+see-also:
+  - "/keps/sig-network/265-ipvs-based-load-balancing/README.md"
+  - "/keps/sig-network/3866-nftables-proxy/README.md"
+replaces: []
+
+stage: deprecated
+
+latest-milestone: "v1.35"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  deprecated: "v1.35"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: []
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics: []
