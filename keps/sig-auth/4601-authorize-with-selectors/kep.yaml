@@ -4,7 +4,7 @@ authors:
   - "@deads2k"
 owning-sig: sig-auth
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2024-04-26
 reviewers:
   - "@liggitt"
