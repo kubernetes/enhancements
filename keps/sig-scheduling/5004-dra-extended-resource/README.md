@@ -948,7 +948,7 @@ logs or events for this purpose.
 can be used to determine if the feature is in use by workloads though it doesn't differentiate
 between extended resources backed by DRA or device plugin.
 
-We will add a new `source` label to`resourceclaim_controller_resource_claims` (label: `admin_access`, `allocated`),
+We will add a new `source` label to `resourceclaim_controller_resource_claims` (label: `admin_access`, `allocated`),
 which can determine if the resource claim is created by extended resource or resource claim template.
 It should be a good metric to determine if the resource claim is created by extended resource backed by DRA.
 
@@ -963,10 +963,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 -->
@@ -1010,39 +1010,39 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  Values of each label are not thorough, picking up some example values which is related to this feature SLI.
+  Values of each label are not exhaustive; we are providing some example values that are related to this feature's SLI.
   **Existing metrics:**
     - Metric name: workqueue
         - Type: Gauge/Counter (multiple workqueue metrics)
         - Labels: `name` ("resource_claim")
-        - Description: Multiple workqueue metrics including adds, depth, duration, and retries handled by workqueue
+        - SLI Usage: Monitor workqueue depth and duration to detect resource claim processing bottlenecks. High depth or duration values indicate potential performance issues in resource claim handling that could affect pod scheduling times.
     - Metric name: scheduler_pending_pods
         - Type: Gauge
         - Labels: `queue` ("active", "backoff", "unschedulable", "gated")
-        - Description: Number of pending pods, by the queue type. 'active' means number of pods in activeQ; 'backoff' means number of pods in backoffQ; 'unschedulable' means number of pods in unschedulablePods that the scheduler attempted to schedule and failed; 'gated' is the number of unschedulable pods that the scheduler never attempted to schedule because they are gated
+        - SLI Usage: Track increases in 'unschedulable' queues to identify when extended resource availability is preventing pod scheduling. Sustained high values may indicate resource constraint issues or misconfigurations.
     - Metric name: scheduler_plugin_execution_duration_seconds
         - Type: Histogram
         - Labels: `plugin` ("NodeResourcesFit", "DynamicResources"), `extension_point`, `status`
-        - Description: Duration for running a plugin at a specific extension point
-        - We need to monitor NodeResourcesFit, because this feature implicitly affects its filtering phase.
+        - SLI Usage: Monitor latencies for NodeResourcesFit and DynamicResources plugins to ensure the extended resource integration doesn't introduce performance regressions.
+        - We need to monitor NodeResourcesFit because this feature implicitly affects its filtering phase.
     - Metric name: scheduler_pod_scheduling_sli_duration_seconds
         - Type: Histogram
         - Labels: `attempts`
-        - Description: E2e latency for a pod being scheduled, from the time the pod enters the scheduling queue and might involve multiple scheduling attempts
+        - SLI Usage: Track end-to-end scheduling performance for pods using extended resources.
 
 **Updating metrics:**
 - Metric name: resourceclaim_controller_resource_claims
     - Type: Gauge
-    - Labels: `admin_access` , `allocated`, `source` ("extended-resource", "resource-claim-template")
-    - Description: Number of ResourceClaims
-    - `source` label is newly added. It can be determined based on the `resource.kubernetes.io/extended-resource-claim` annotation of resource claims.
+    - Labels: `admin_access`, `allocated`, `source` ("extended-resource", "resource-claim-template")
+    - SLI Usage: Monitor the ratio of allocated vs. total resource claims filtered by `source="extended-resource"` to track resource utilization. A low ratio of allocated claims may indicate DRA driver or resource claim controller issues.
+    - The `source` label is newly added. It can be determined based on the `resource.kubernetes.io/extended-resource-claim` annotation of resource claims.
 
 **New metrics:**
 - Metric name: scheduler_resourceclaim_creates_total
     - Type: Counter
     - Labels: `status` ("failure", "success")
-    - Description: Total number of resource claim creation attempts by the scheduler
-    - Because the resource claim is created in scheduler, we need a different one from `resourceclaim_controller_creates_total`.
+    - SLI Usage: Calculate success rate to monitor the reliability of automatic resource claim creation. High failure rates indicate potential issues with extended resource configuration.
+    - Because the resource claim is created in the scheduler, we need a different metric from `resourceclaim_controller_creates_total`.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
