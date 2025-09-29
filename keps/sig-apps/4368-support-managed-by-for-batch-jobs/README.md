@@ -140,7 +140,7 @@ controller, and delegate the status synchronization to the Kueue controller.
 ### Non-Goals
 
 - passing custom parameters to the external controller
-- Introduce a new concurrency policy for CronJobs (eg. `ForbidActive` or `SoftForbid`)
+- Introduce a new concurrency policy for CronJobs (e.g. `ForbidActive` or `SoftForbid`)
 to replace a Job that is about to complete, but still has terminating pods.
 
 ## Proposal
@@ -278,7 +278,7 @@ a typo in the field value, or the cluster administrator may not install the
 custom controller (like MultiKueue) on that cluster.
 
 In such cases the user may not observe any progress by the job for a long time
-and my need to debug the Job.
+and may need to debug the Job.
 
 In order to allow for debugging of situations like this the Job controller will
 put a log line indicating the synchronization is delegated to another controller
@@ -352,9 +352,6 @@ type JobSpec struct {
 	// all characters before the first "/" must be a valid subdomain as defined
 	// by RFC 1123. All characters trailing the first "/" must be valid HTTP Path
 	// characters as defined by RFC 3986. The value cannot exceed 64 characters.
-	//
-	// This field is alpha-level. The job controller accepts setting the field
-	// when the feature gate JobManagedBy is enabled (disabled by default).
 	// +optional
 	ManagedBy *string
 }
@@ -548,7 +545,7 @@ Second Alpha (1.31):
 - Address reviews and bug reports from Beta users
 - Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicated-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
 - Re-evaluate the need to skip reconciliation in the event handlers to optimize performance
-- Assess the fragmentation of the ecosystem. Look for other implementations of a job controller and asses their conformance with k8s.
+- Assess the fragmentation of the ecosystem. Look for other implementations of a job controller and assess their conformance with k8s.
 - Lock the feature gate
 
 #### Deprecation
@@ -1080,7 +1077,7 @@ N/A.
 
 ## Implementation History
 
-- 2023-12.20 - First version of the KEP
+- 2023-12-20 - First version of the KEP
 - 2024-03-05 - Merged implementation PR [Support for the Job managedBy field (alpha)](https://github.com/kubernetes/kubernetes/pull/123273)
 - 2024-03-07 - Merged [Update Job conformance test for job status updates](https://github.com/kubernetes/kubernetes/pull/123751)
 - 2024-03-08 - Merged [Follow up fix to the job status update test](https://github.com/kubernetes/kubernetes/pull/123815)
@@ -1090,6 +1087,7 @@ N/A.
 - 2024-06-21 - Merged [Update the count of ready pods when deleting pods](https://github.com/kubernetes/kubernetes/pull/125546)
 - 2024-07-12 - Merged [Delay setting terminal Job conditions until all pods are terminal](https://github.com/kubernetes/kubernetes/pull/125510)
 - 2024-07-30 - Merged [Update the docs for JobManagedBy and JobPodReplacementPolicy related to pod termination](https://github.com/kubernetes/website/pull/46808)
+- 2024-10-17 - Merged [Graduate JobManagedBy to Beta in 1.32](https://github.com/kubernetes/kubernetes/pull/127402)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
@@ -1369,7 +1367,7 @@ It makes them not that useful to debug situations when the Job didn't make
 progress for long time. So, they would not give a reliable signal for debugging
 based on playbooks.
 
-Renewing the even on every Job update seems excessive from the performance
+Renewing the event on every Job update seems excessive from the performance
 perspective.
 
 ## Infrastructure Needed (Optional)
