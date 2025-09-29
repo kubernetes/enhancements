@@ -231,12 +231,24 @@ usecases. You can read more about it in the [extended proposal] document.
 When a `Workload` consists of a single group of pods needing Gang Scheduling, it is clear which pods belong to the group from the `spec.workload.name` field of the pod.  However `Workload` supports listing multiple list items, and a list item can represent a single group, or a set of identical replica groups.
 In these cases, there needs to be additional information to indicate which group a pod belongs to.
 
-<<[UNRESOLVED @erictune @wojtek-t]>> 
-Two options are being considered:
-  * 
+We proposed to extend the newly introduced `pod.spec.workload` field with additional information
+to include that information. More specifically, the `pod.spec.workload` field is of type `PodWorkload`
+and is defined as following:
 
- <<[/UNRESOLVED]>>
-The example below uses  `PodGroupSelector` on each `PodGroup` to identify pods.  For the Job example above, this looks like:
+```go
+type WorkloadReferemce struct {
+    // Workload defines the name of the Workload object this pod belongs to.
+    Workload string
+
+    // PodGroup defines the name of the PodGroup within a Workload this pod belongs to.
+    PodGroup string
+    // PodGroupReplica defines the replica number within a PodGroup for PodGroups
+    // in ReplicatedGangMode that this pod belongs to.
+    PodGroupReplica *int32
+}
+```
+
+The example below shows how this could look like for wih the following `Workload` object:
 
 ```yaml
 apiVersion: scheduling/v1alpha1   
@@ -246,31 +258,12 @@ metadata:
 spec:
   podGroups:   # or gangGroups -- TBD
     - name: "job-1"
-      gangMode: Single
+      gangMode: Replicated
+      replicas: 4
       gangSchedulingPolicy:
         minCount: 100
         schedulingTimeoutSeconds: 60
-      podGroupSelector:
-        jobset.sigs.k8s.io/replicatedjob-name: job-1
-    - name: "job-2"
-      gangMode: Single
-      gangSchedulingPolicy:
-        minCount: 100
-        schedulingTimeoutSeconds: 60
-      podGroupSelector:
-        jobset.sigs.k8s.io/replicatedjob-name: job-2
-
 ```
-This works well for the simplest usecases, but becomes more complex with replicated gangs.
-As an example, for `LeaderWorkerSet`, while pods have `leaderworkerset.sigs.k8s.io/group-index`
-label, the actual podGroupSelector would become:
-```
-      podGroupSelector:
-        leaderworkerset.sigs.k8s.io/group-index: <replica_number>
-```
-
-Another option being considered is to specify the exact `PodGroup` and its replica number in the Pod
-itself, like this:
 
 ```yaml
 apiVersion: v1
@@ -286,10 +279,19 @@ spec:
   ...
 
 ```
-This is more succinct and makes the role of a pod clear just from inspecting the pod.
-However, it may require some minor changes in the controllers themselves to adopt this pattern
-(e.g. for LeaderWorkerSet we will need to populate the pod template similarly we currently
-populate the labels).
+
+We decided for this option because it is more succint and makes the role of a pod clear just
+from inspecting the pod (and simple/efficient to group).
+We acknowledge the fact that this option may require additional minor changes in the controllers
+to adopt this pattern (e.g. for LeaderWorkerSet we will need to populate the pod template
+similarly that we currently populate the labels).
+
+The primary alternative we consider was to introduce the the `PodGroupSelector` on each `PodGroup`
+to identify pods belonging to it. However, with this pattern:
+- there are additional corner cases (e.g. a pod links to a workload but none of its PodGroups matching
+  that pod)
+- for replicated gang, we can't use the full label selector, but rather support specifying only the
+  label key, similar to `MatchLabelKeys` in pod affinity
 
 
 ### API
@@ -302,12 +304,6 @@ type Workload struct {
 	Spec WorkloadSpec
 	Status WorkloadStatus
 }
-
-type ReplicaMode string
-
-const (
-    ReplicaModeUnreplicated ReplicaMode = "Unreplicated"
-)
 
 // WorkloadSpec describes a workload in a portable way that scheduler and related
 // tools can understand.  
@@ -341,15 +337,6 @@ type GangSchedulingPolicy struct {
 	MinCount *int
 }
 
-// PodGroupSelector holds a label selector that identifies pods of one PodGroup.
-// Immutable. Only MatchLabels is valid.  Only one key in MatchLabels can have a different value across
-// all list items.  Every list item must have a distintict value for this key.  This ensures
-// pod groups have disjoint sets of pods in them.
-type PodGroupSelector struct {
-    // Selector that identifies pods in this gang.
-    Selector *metav1.LabelSelector
-}
-
 // PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
 // multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
 // number of identical copies.
@@ -359,27 +346,9 @@ type PodGroup struct {
     Name *string
     GangMode *GangMode // default is "Single"
 
-	// ReplicatedGangKey must be set when GangMode = "Replicated"
-    // It must be one of:
-    //   - `metadata.labels['<KEY>']`
-    //   Note: Annotations are not supported because they are not indexed easily, and may not
-    //         have a form that can be printed without escaping.
-    // Each value of that key maps to a different identical gang, which will be anonymous in status,
-    // and referred to by the key's value in events and errors.
-    ReplicatedGangKey *ObjectFieldSelector
-
     // Optional when GangMode = "ReplicatedGang".
     // Forbidden otherwise.
     Replicas int
-
-    // PodGroupSelector must be set when GangMode = "Single" or "Off".
-    // Must be one of:
-    //   - `metadata.labels['<KEY>']`
-    //   Note: Annotation not supported because it is not indexed easily, and it may not
-    //         have a form that can be printed without escaping.
-    // Each value of that key maps to a different gang, which will be anonymous in status,
-    // and referred to by the key's value in events and errors.
-    PodGroupSelector PodGroupSelector
 
     // GangSchedulingPolicy defines the options applying to all pods in this gang.
     // Forbidden if GangMode is set to "Off".
