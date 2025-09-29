@@ -10,26 +10,26 @@ updates.
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [X] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [X] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [X] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [X] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [X] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [X] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -93,15 +93,19 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories](#user-stories)
     - [Efficiency](#efficiency)
     - [Visibility of Errors](#visibility-of-errors)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [API](#api)
+  - [Kubelet Handling](#kubelet-handling)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -114,7 +118,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -230,6 +233,9 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
+- Automatically attempt to mitigate permanent errors, such as by deleting or
+  rescheduling Pods. That should be left to higher-level controllers.
+
 ## Proposal
 
 <!--
@@ -262,9 +268,9 @@ As a workload administrator, I want to ensure that my workloads are able to
 start up as quickly and reliably as possible by proactively rescheduling Pods
 when their allocated DRA resources cannot be fulfilled.
 
+<!--
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
 What are the caveats to the proposal?
 What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
@@ -285,6 +291,11 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+By retrying in all error cases, the current implementation is resilient to
+transient errors. Adding a path that does not retry opens up the possibility
+for miscategorized errors to cause a Pod to terminally fail even when a
+subsequent attempt might allow the Pod's startup to progress.
+
 ## Design Details
 
 <!--
@@ -293,6 +304,44 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+Broadly, two changes are required to enable permanent errors to skip being
+retried:
+
+1. Allow DRA drivers to annotate errors encountered during the
+   `NodePrepareResources` gRPC call as being permanent.
+1. Update the kubelet to skip retrying to allocate resources for a Pod when a
+   previous request for that Pod failed permanently.
+
+### API
+
+The kubelet's DRA gRPC interface will be updated to allow drivers to express
+that an error is permanent with a new `permanent_error` field:
+
+```proto
+message NodePrepareResourceResponse {
+    // These are the additional devices that kubelet must
+    // make available via the container runtime. A claim
+    // may have zero or more requests and each request
+    // may have zero or more devices.
+    repeated Device devices = 1;
+    // If non-empty, preparing the ResourceClaim failed.
+    // Devices are ignored in that case.
+    string error = 2;
+    // When true and a non-empty error is returned, indicates that the
+    // error is permanent. Permanent errors are expected to fail
+    // consistently for a given request and should not be retried.
+    bool permanent_error = 3;
+}
+```
+
+### Kubelet Handling
+
+Once the kubelet receives a permanent error from a DRA driver for a given Pod,
+it must take the appropriate action to give up on the Pod permanently. More
+concretely, the kubelet will set the Pod's `status.phase` to `Failed`. The
+kubelet already knows not to continue reconciling `Failed` Pods and many other
+Pod controllers already handle `Failed` Pods.
 
 ### Test Plan
 
@@ -307,7 +356,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -339,7 +388,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/kubelet`: `2025-09-29` - `72.6%`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `2025-09-29` - `81.7%`
+- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `2025-09-29` - `69.5%`
 
 ##### Integration tests
 
@@ -365,7 +416,9 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+These changes are focused on interactions between third-party DRA drivers and
+the kubelet. Since integration tests generally focus on interactions with etcd
+and the API server, integration tests for this feature will not be added.
 
 ##### e2e tests
 
@@ -384,7 +437,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+E2E tests will be added to verify that Pods referencing ResourceClaims which
+fail to allocate permanently transition to the `Failed` `status.phase`.
+
+Likewise, Pods referencing ResourceClaims which fail to allocate transiently
+should remain in the `Pending` phase until the transient error is overcome and
+the Pod reaches the `Running` phase.
 
 ### Graduation Criteria
 
@@ -461,6 +519,22 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Additional tests are in Testgrid and linked in KEP
+
+#### GA
+
+- 3 examples of real-world usage
+- Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -489,6 +563,18 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+When the kubelet is a newer version which implements this KEP and a DRA driver
+is an older version whose gRPC interface does not yet include the
+`permanent_error` field, the kubelet will observe that all errors coming from a
+DRA driver's `NodePrepareResources` response are transient. This matches the
+current behavior where the kubelet does not yet implement this KEP.
+
+When the inverse is true and a DRA driver responds to `NodePrepareResources`
+with a permanent error to a kubelet that does not implement this KEP, then the
+error will be treated as a transient error. DRA drivers therefore should expect
+that identical requests may be made even when a permanent error was given in a
+prior response.
 
 ## Production Readiness Review Questionnaire
 
@@ -532,15 +618,10 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: DRAHandlePermanentDriverFailures
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    - kubelet
 
 ###### Does enabling the feature change any default behavior?
 
@@ -548,6 +629,8 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -562,7 +645,16 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, setting the feature gate to `false` will immediately cause all errors from
+DRA drivers to be handled by the kubelet the same way as they were previously.
+DRA drivers should not need to be aware of whether or not the kubelet implements
+or enables this feature in order to behave in a correct way.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+When the feature is reenabled, new errors that are classified as permanent will
+be handled the same way as if the feature were enabled initially. This feature
+does not require any persisted state.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -579,11 +671,15 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
+This will be covered with unit tests for the kubelet.
+
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
+
+Will be considered for beta.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -597,12 +693,16 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Will be considered for beta.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Will be considered for beta.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -612,11 +712,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Will be considered for beta.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+Will be considered for beta.
 
 ### Monitoring Requirements
 
@@ -635,6 +739,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Will be considered for beta.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -644,7 +750,6 @@ Pick one more of these and delete the rest.
 Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
--->
 
 - [ ] Events
   - Event Reason: 
@@ -653,6 +758,9 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
+-->
+
+Will be considered for beta.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -671,11 +779,12 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Will be considered for beta.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
--->
 
 - [ ] Metrics
   - Metric name:
@@ -683,6 +792,9 @@ Pick one more of these and delete the rest.
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
+-->
+
+Will be considered for beta.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -690,6 +802,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Will be considered for beta.
 
 ### Dependencies
 
@@ -713,6 +827,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+Will be considered for beta.
 
 ### Scalability
 
@@ -741,6 +857,9 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+Depending on the exact implementation, permanent errors will result in at most
+one extra API call per Pod to PATCH pods/status.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -750,6 +869,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -757,6 +878,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -766,6 +889,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -777,6 +902,9 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No. Startup latency is not affected because Pods affected by this feature never
+finish starting up.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -790,6 +918,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+No
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -801,6 +931,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No
 
 ### Troubleshooting
 
@@ -817,6 +949,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Will be considered for beta.
+
 ###### What are other known failure modes?
 
 <!--
@@ -832,7 +966,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+Will be considered for beta.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Will be considered for beta.
 
 ## Implementation History
 
@@ -847,11 +985,19 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 1.35: Initial proposal and implementation
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+While this feature makes it more convenient to determine when a Pod needs to be
+rescheduled, it does not unlock any brand new use cases. It is already possible
+for a higher-level controller to determine that a Pod taking too much time to
+start up and act accordingly. The complexity of this change might outweigh the
+benefits.
 
 ## Alternatives
 
@@ -861,9 +1007,9 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+<!--
 ## Infrastructure Needed (Optional)
 
-<!--
 Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
