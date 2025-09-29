@@ -449,8 +449,7 @@ spec:
 
 - Clear documentation and examples showing proper numeric taint configuration
 - Enhanced error messages in scheduling events that clearly indicate parsing failures
-- Scheduler logging for taint parsing failures to help cluster admins identify misconfigured nodes even when pods successfully schedule on other nodes with valid numeric taints
-- Monitoring and alerting on scheduling failures due to taint parsing errors
+- Users can use the metric to set up alerts and monitoring.
 
 #### Cross-SIG Impact
 
