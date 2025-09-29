@@ -92,7 +92,7 @@ A new core type called `Workload` is introduced to tell the kube-scheduler that 
 
 ## Motivation
 
-Parallel applications can require communication between every pod in order to begin execution, and then ongoing communication between all pods (such as barrier or all-reduce operations) in order to make progress.  Starting all pods at close to the same time is necessary to run these workloads.  Otherwise, either expensive compute resources are idle, or the application may fail due to an application-level communication timeout.
+Parallel applications can require communication between every pod in order to begin execution, and then ongoing communication between all pods (such as barrier or all-reduce operations) in order to make progress.  Starting all pods as close to the same time is necessary to run these workloads.  Otherwise, either expensive compute resources are idle, or the application may fail due to an application-level communication timeout.
 
 Gang scheduling has been implemented outside of kube-scheduler at least 4 times[^3].  Some controllers are starting to support multiple Gang Schedulers in order to be portable across different clusters.  Moving support into kube-scheduler makes gang scheduling support available in all Kubernetes distributions and eventually may allow workload controllers to rely on a standard interface to request gang scheduling from the standard or custom schedulers. A standard API may also allow other components to understand workload needs better (such as cluster autoscalers).
 
@@ -111,9 +111,9 @@ The `Workload` object will allow kube-scheduler to be aware that pods are part o
 
 ### Non-Goals
 
-- Take aware responsibility to crate pods from controllers.
+- Take away responsibility to create pods from controllers.
 - Bring fairness or multiple workload queues in kube-scheduler. Kueue and Volcano.sh will continue to provide this.
-- Map all the declarative state and habviors into `Workload` object. It is focused only on scheduling-related parts.
+- Map all the declarative state and behaviors into `Workload` object. It is focused only on scheduling-related parts.
 
 The following are non-goals for this KEP but will probably soon appear to be goals for follow-up KEPs:
 
@@ -171,6 +171,7 @@ The `Workload` core resource will be introduced. A `Workload` does not create an
 apiVersion: scheduling/v1alpha1   
 kind: Workload
 metadata:
+  namespaces: ns-1
   name: job-1
 spec:
   podGroups:   # or gangGroups -- TBD
@@ -236,7 +237,7 @@ to include that information. More specifically, the `pod.spec.workload` field is
 and is defined as following:
 
 ```go
-type WorkloadReferemce struct {
+type WorkloadReference struct {
     // Workload defines the name of the Workload object this pod belongs to.
     Workload string
 
@@ -244,11 +245,11 @@ type WorkloadReferemce struct {
     PodGroup string
     // PodGroupReplica defines the replica number within a PodGroup for PodGroups
     // in ReplicatedGangMode that this pod belongs to.
-    PodGroupReplica *int32
+    PodGroupReplica string
 }
 ```
 
-The example below shows how this could look like for wih the following `Workload` object:
+The example below shows how this could look like for with the following `Workload` object:
 
 ```yaml
 apiVersion: scheduling/v1alpha1   
@@ -396,7 +397,7 @@ will only focus on a subset of those. However, we very briefly sketch the path t
 ensure that this KEP is moving in the right direction.
 
 For `Alpha`, we are focusing on introducing the concept of the `Workload` and plumbing it into
-kube-scheduler in the simplest possible way. We will implemen a new plugin implementing the following
+kube-scheduler in the simplest possible way. We will implement a new plugin implementing the following
 hooks:
 - PreEnqueue - used as a barrier to wait for the `Workload` object and all the necessary pods to be
   observed by the scheduler before even considering them for actual scheduling
