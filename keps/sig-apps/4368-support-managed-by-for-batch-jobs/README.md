@@ -34,6 +34,8 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
+      - [Ecosystem Assessment](#ecosystem-assessment)
+      - [Follow-up Work](#follow-up-work)
     - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade](#upgrade)
@@ -92,11 +94,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -140,7 +142,7 @@ controller, and delegate the status synchronization to the Kueue controller.
 ### Non-Goals
 
 - passing custom parameters to the external controller
-- Introduce a new concurrency policy for CronJobs (eg. `ForbidActive` or `SoftForbid`)
+- Introduce a new concurrency policy for CronJobs (e.g. `ForbidActive` or `SoftForbid`)
 to replace a Job that is about to complete, but still has terminating pods.
 
 ## Proposal
@@ -278,7 +280,7 @@ a typo in the field value, or the cluster administrator may not install the
 custom controller (like MultiKueue) on that cluster.
 
 In such cases the user may not observe any progress by the job for a long time
-and my need to debug the Job.
+and may need to debug the Job.
 
 In order to allow for debugging of situations like this the Job controller will
 put a log line indicating the synchronization is delegated to another controller
@@ -293,8 +295,14 @@ providing a user readable information if the Job is synchronized by a custom
 controller.
 
 Alternative ideas considered were
-[a dedicated condition](#condition-to-indicated-job-is-skipped)
+[a dedicated condition](#condition-to-indicate-job-is-skipped)
 and [events](#event-indicating-the-job-is-skipped).
+
+Based on beta feedback, kubectl extensions are deferred as follow-up enhancements.
+The "managedBy" field is already visible via standard kubectl commands
+(`kubectl get job <name> -o yaml`), and MultiKueue users have not reported
+difficulties debugging Jobs with this field. We will reconsider these enhancements
+based on user feedback post-GA.
 
 #### Custom controllers not compatible with API assumptions by CronJob
 
@@ -352,9 +360,6 @@ type JobSpec struct {
 	// all characters before the first "/" must be a valid subdomain as defined
 	// by RFC 1123. All characters trailing the first "/" must be valid HTTP Path
 	// characters as defined by RFC 3986. The value cannot exceed 64 characters.
-	//
-	// This field is alpha-level. The job controller accepts setting the field
-	// when the feature gate JobManagedBy is enabled (disabled by default).
 	// +optional
 	ManagedBy *string
 }
@@ -372,6 +377,11 @@ We skip the reconciliation inside the `syncJob` function
 We will re-evaluate for [GA](#ga) to also skip the reconciliation within the
 `enqueueSyncJobInternal` for optimal performance. See discussion in the
 [Skip reconciliation in the event handler](#skip-reconciliation-in-the-event-handler).
+
+Skipping reconciliation in event handlers is deferred as a performance
+optimization for post-GA. This is considered a premature optimization
+without evidence of performance issues from MultiKueue users on the
+management cluster.
 
 There is no validation for a value of the field beyond its format as described
 in the [API](#API) comment above.
@@ -493,9 +503,9 @@ The following scenarios are covered:
   - it does not add the Suspended condition for a Job with `.spec.suspend=true` ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2059)).
 - the Job controller reconciles jobs with custom "managedBy" field when the feature gate is disabled ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2030))
 - the Job controller handles correctly re-enablement of the feature gate [link](https://github.com/kubernetes/kubernetes/blob/169a952720ebd75fcbcb4f3f5cc64e82fdd3ec45/test/integration/job/job_test.go#L1691)
-- the `job_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2044-L2058))
-- the `job_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2000-L2029))
-- the `job_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy") (tested indirectly as [here](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2000-L2029) the Job controller updates the Job status)
+- the `jobs_by_external_controller_total` metric is incremented when a new Job with custom "managedBy" is created ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2044-L2058))
+- the `jobs_by_external_controller_total` metric is not incremented for a new Job without "managedBy" or with default value ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2000-L2029))
+- the `jobs_by_external_controller_total` metric is not incremented for Job updates (regardless of the "managedBy") (tested indirectly as [here](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L2000-L2029) the Job controller updates the Job status)
 
 The following scenarios related to [Terminating pods and terminal Job conditions](#terminating-pods-and-terminal-job-conditions) are covered:
 - `Failed` or `Complete` conditions are not added while there are still terminating pods ([link](https://github.com/kubernetes/kubernetes/blob/856475e5fffe3d99c71606d6024f5ed93e37eebc/test/integration/job/job_test.go#L1183))
@@ -513,6 +523,8 @@ We propose a single e2e test for the following scenario:
 - the Job controller does not reconcile a job with any other value of the "managedBy" field. In particular,
   it does not reset the status for an unsuspended Job.
 
+[Job should allow to delegate reconciliation to external controller](https://github.com/kubernetes/kubernetes/blob/b393d87d16f225f873f72a79734b3409323b4a05/test/e2e/apps/job.go#L1310-L1333): [SIG Apps](https://testgrid.k8s.io/sig-apps#gce&include-filter-by-regex=external%20controller&include-filter-by-regex=Job%20should%20allow%20to%20delegate%20reconciliation%20to%20external%20controller), [triage search](https://storage.googleapis.com/k8s-triage/index.html?sig=apps&test=Job%20should%20allow%20to%20delegate%20reconciliation%20to%20external%20controller)
+
 ### Graduation Criteria
 
 #### Alpha
@@ -523,7 +535,7 @@ We propose a single e2e test for the following scenario:
   API fields affected by the new validation rules
 - make CronJob more resilient by checking the Job condition is `Complete` when using `CompletionTime` (see [here](#custom-controllers-not-compatible-with-api-assumptions-by-cronjob))
 - The feature flag disabled by default
-- implement the `job_by_external_controller_total` metric
+- implement the `jobs_by_external_controller_total` metric
 
 Second Alpha (1.31):
 - preparatory fix to address all known inconsistencies between validation and the
@@ -546,10 +558,60 @@ Second Alpha (1.31):
 #### GA
 
 - Address reviews and bug reports from Beta users
-- Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicated-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
+  - So far, with the adoption in MultiKueue we have not got users requesting extra debuggability. With the "managedBy" field being immutable it seems the feature is not causing issues requiring extensive debug. The metric and immutable field should be sufficient as a source of truth.
+
+- Re-evaluate the ideas of improving debuggability (like [extended `kubectl`](#debuggability), [dedicated condition](#condition-to-indicate-job-is-skipped), or [events](#event-indicating-the-job-is-skipped))
+  - Keep these ideas as follow-up features and not blockers for the graduation.
+
 - Re-evaluate the need to skip reconciliation in the event handlers to optimize performance
-- Assess the fragmentation of the ecosystem. Look for other implementations of a job controller and asses their conformance with k8s.
+  - This could be a follow-up performance improvement, but does not seem required. We have no record of MultiKueue users hitting performance issues on the management cluster due to Job controller.
+
+- Assess the fragmentation of the ecosystem. Look for other implementations of a job controller and assess their conformance with k8s.
+  - See [Ecosystem Assessment](#ecosystem-assessment) section below.
+
 - Lock the feature gate
+  - This will be done in follow-up implementation PR for 1.35.
+
+##### Ecosystem Assessment
+
+We already have a couple of implementations of the "managedBy" field in order to integrate with MultiKueue:
+- JobSet
+- Kubeflow Trainer v1
+- Kubeflow Trainer v2
+- KubeRay
+- Tekton Pipelines
+- AppWrapper
+
+These implementations follow the k8s core design, particularly making the field immutable.
+
+**Conformance Analysis:**
+
+| Aspect                     | k8s Job | JobSet | Kubeflow Trainer v1  | Kubeflow Trainer v2  | KubeRay           | Tekton Pipelines   | AppWrapper |
+|----------------------------|---------|--------|----------------------|----------------------|-------------------|--------------------|------------|
+| Open set of allowed values | y       | y      | n                    | n                    | n                 | y                  | y          |
+| Max length 63 chars        | y       | y      | y (by closed set)    | y (by closed set)    | y (by closed set) | n                  | n          |
+| Specific format validation | y       | y      | y (by closed set)    | y (by closed set)    | y (by closed set) | n                  | n          |
+| Immutability               | y       | y      | y                    | y                    | y                 | y                  | y          |
+| Status validation          | y       | n      | n                    | n                    | n                 | n                  | n          |
+| Skip inside Reconcile      | y       | y      | y                    | y                    | y                 | y (also filtering) | y          |
+
+**Key Findings:**
+- There is a bit inconsistency about the "open set of values" vs "closed set of values"
+- Kubeflow Trainer v1 puts the field under `spec.runPolicy.managedBy`. This is because the code for different controllers is deduplicated at the level of the runPolicy field
+- Kubeflow Trainer locks the set to only "known controllers" like MultiKueue: `kueue.x-k8s.io/multikueue`. This was done to be "on the safe side", and avoid complex status validations as in the core
+- The main part is that all of them follow the key aspects: **immutability** and **skip inside Reconcile**
+- All projects consistently wanted to avoid the effort of validating the status which we took in the k8s Job
+
+**Validation inconsistencies:**
+- Some controllers (Tekton, AppWrapper) don't enforce the 63-character length limit. If they allow more than 63 characters, then nothing will break for them. The idea of restricting in the core k8s was to make it more constrained
+- Most controllers skip the status validation that k8s Job implements to avoid the extra work, since "managedBy" is immutable
+
+##### Follow-up Work
+
+We may reconsider dropping the code gracefully handling Jobs with invalid statuses after 1.39 behind a dedicated feature gate. All Jobs created in 1.32+ won't require the graceful handling as the rules prevent entering invalid state. We will wait at least 4 releases before locking such a feature gate.
+
+**Metric Stability:**
+The `jobs_by_external_controller_total` metric will be promoted to STABLE in 1.35.
 
 #### Deprecation
 
@@ -569,7 +631,7 @@ A downgrade to a version which does not support this feature (1.29 and below)
 does not require any additional configuration changes. All jobs, including these
 that specified a custom value for "managedBy", will be handled in the default
 way by the Job controller. However, this introduces the risk of
-[two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
+[two controllers running at the same time](#two-controllers-running-when-feature-is-disabled).
 
 In order to prepare the risk the admins may want to make sure the custom controllers
 using the "managedBy" field are disabled before the downgrade.
@@ -598,7 +660,7 @@ is not supported on the old version.
 In case the version of the kube-controller-manager leader is skewed (old), the
 built-in Job controller would reconcile the Jobs with custom "managedBy" field,
 running into the risk of
-[two controllers running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
+[two controllers running at the same time](#two-controllers-running-when-feature-is-disabled).
 It is recommended the users don't create jobs with custom "managedBy" field
 during an ongoing upgrade.
 
@@ -682,7 +744,7 @@ Yes.
 
 However, when the feature is disabled and there are Jobs external controllers by
 using "managedBy" field there is a risk of
-[two controller running at the same time](#two-controllers-running-at-the-same-time-on-old-version).
+[two controller running at the same time](#two-controllers-running-when-feature-is-disabled).
 Thus, it is recommended administrators make sure there are no Jobs using external
 controllers before rollback.
 
@@ -752,7 +814,7 @@ being flipped between two owners.
 The feature is opt-in so in case of such problems the custom "managedBy" field
 should not be used.
 
-Also, an admin could check if the value of the `job_by_external_controller_total`
+Also, an admin could check if the value of the `jobs_by_external_controller_total`
 matches the expectations. For example, if the value of the metric does not increase
 when new jobs are being added with a custom "managedBy" field, it might be
 indicative that the feature is not working correctly.
@@ -831,7 +893,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Check the `job_by_external_controller_total` metric. If the value is non-zero
+Check the `jobs_by_external_controller_total` metric. If the value is non-zero
 for a field, it means there were Jobs using the custom controller created, so
 the feature is in use.
 
@@ -885,22 +947,24 @@ Pick one more of these and delete the rest.
 
 - [x] Metrics
   - Metric name:
-    - `job_by_external_controller_total` (new), with the `controller_name` label
+    - `jobs_by_external_controller_total` (new), with the `controller_name` label
 corresponding to the custom value of the "managedBy" field. The metric is
 incremented by the built-in Job controller on each ADDED Job event,
 corresponding to a Job with custom value of the "managedBy" field.
 This metric can be helpful to determine the health of a job and its controller
 in combination with already existing metrics (see below).
+      - Components exposing the metric: kube-controller-manager
     - `apiserver_request_total[code=409, resource=job, group=batch]` (existing):
-substantial increase of this metric, when additionally `job_by_external_controller_total>0`
+substantial increase of this metric, when additionally `jobs_by_external_controller_total>0`
 may be indicative of two controllers stepping onto each-other causing
-conflicts (see [here](#two-controllers-running-at-the-same-time-on-old-version)).
+conflicts (see [here](#two-controllers-running-when-feature-is-disabled)).
+      - Components exposing the metric: kube-apiserver
     - `kube_cronjob_status_active` (existing), substantial increase of this
 metric, may suggest that there are accumulating non-progressing jobs controlled
-by `CronJob`. If additionally `job_by_external_controller_total>0` it may suggest
+by `CronJob`. If additionally `jobs_by_external_controller_total>0` it may suggest
 that the Jobs are getting stuck due to not being synchronized by the custom
 controller.
-  - Components exposing the metric: kube-apiserver
+      - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1080,7 +1144,7 @@ N/A.
 
 ## Implementation History
 
-- 2023-12.20 - First version of the KEP
+- 2023-12-20 - First version of the KEP
 - 2024-03-05 - Merged implementation PR [Support for the Job managedBy field (alpha)](https://github.com/kubernetes/kubernetes/pull/123273)
 - 2024-03-07 - Merged [Update Job conformance test for job status updates](https://github.com/kubernetes/kubernetes/pull/123751)
 - 2024-03-08 - Merged [Follow up fix to the job status update test](https://github.com/kubernetes/kubernetes/pull/123815)
@@ -1090,6 +1154,7 @@ N/A.
 - 2024-06-21 - Merged [Update the count of ready pods when deleting pods](https://github.com/kubernetes/kubernetes/pull/125546)
 - 2024-07-12 - Merged [Delay setting terminal Job conditions until all pods are terminal](https://github.com/kubernetes/kubernetes/pull/125510)
 - 2024-07-30 - Merged [Update the docs for JobManagedBy and JobPodReplacementPolicy related to pod termination](https://github.com/kubernetes/website/pull/46808)
+- 2024-10-17 - Merged [Graduate JobManagedBy to Beta in 1.32](https://github.com/kubernetes/kubernetes/pull/127402)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
@@ -1369,7 +1434,7 @@ It makes them not that useful to debug situations when the Job didn't make
 progress for long time. So, they would not give a reliable signal for debugging
 based on playbooks.
 
-Renewing the even on every Job update seems excessive from the performance
+Renewing the event on every Job update seems excessive from the performance
 perspective.
 
 ## Infrastructure Needed (Optional)
