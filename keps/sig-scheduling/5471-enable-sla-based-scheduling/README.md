@@ -18,7 +18,6 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Scheduler Performance Regression](#scheduler-performance-regression)
-    - [API Compatibility and Version Skew](#api-compatibility-and-version-skew)
     - [Edge Cases in Numeric Parsing](#edge-cases-in-numeric-parsing)
     - [Taint Misconfiguration Detection](#taint-misconfiguration-detection)
     - [Cross-SIG Impact](#cross-sig-impact)
@@ -428,17 +427,6 @@ spec:
 - Consider caching parsed values in scheduler data structures if performance issues arise
 - Feature gate allows disabling if performance problems occur
 
-#### API Compatibility and Version Skew
-
-**Risk**: Pods using new operators cannot be scheduled if some schedulers don't support the feature, creating deployment failures during upgrades.
-
-**Mitigation**:
-
-- Feature gate prevents usage until all components are upgraded
-- Clear upgrade documentation specifying component upgrade order
-- Backward compatibility testing ensures existing workloads continue functioning
-- Gradual rollout recommendations for production clusters
-
 #### Edge Cases in Numeric Parsing
 
 **Risk**: Unexpected behavior with edge cases like integer overflow, leading zeros, or malformed input could cause scheduling failures. Leading zeros in values (e.g., `"0950"`) could create user confusion about whether values are treated as strings or numbers.
@@ -779,15 +767,17 @@ No.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes, a new metrics:
+Yes, a new metric:
 
-- `scheduler_numeric_taint_evaluations_total`: tracks each numeric evaluation with its result.
-- `scheduler_numeric_tolerations_total`: tracks successful scheduling with numeric tolerations.
-These metrics provide visibility into:
+- `scheduler_numeric_tolerations_total`: tracks successful pod scheduling with numeric tolerations (aggregated count, not per-evaluation).
+
+This metric provides visibility into:
 
 1. How frequently the numeric toleration feature is being used
-2. The effectiveness of numeric taint/toleration matching
+2. Overall adoption and usage patterns
 3. Per-profile usage patterns for multi-scheduler setups
+
+Note: We intentionally avoid tracking each individual numeric evaluation to prevent metric explosion in large clusters.
 
 In addition, the scheduler has an existing `scheduler_unschedulable_pods` metric that handles the multiple failure reasons by incrementing for each plugin that rejects a pod.
 
@@ -865,5 +855,18 @@ There are many different alternatives were considered:
      - No default push-back behavior
      - No eviction semantics
      - Labels aren't meant for operational constraints.
+
+4. **Add Separate `NumValue int64` Field:** Add a dedicated numeric field alongside the existing `Value string` field in Taint/Toleration structs.
+   - **Pros:**
+     - Eliminates parsing overhead and errors
+     - Type-safe integer handling
+     - No concerns about leading zeros or malformed values
+     - Better performance for numeric comparisons
+   - **Cons:**
+     - Not aesthetically pleasing API design with dual fields
+     - Users might set wrong field or both fields accidentally
+     - Complex validation logic for field combinations
+     - Memory/storage overhead for additional field
+     - API complexity and documentation burden
 
 ## Infrastructure Needed (Optional)
