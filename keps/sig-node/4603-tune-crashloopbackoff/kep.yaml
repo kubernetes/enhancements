@@ -39,9 +39,7 @@ feature-gates:
   - name: ReduceDefaultCrashLoopBackoffDecay
     components:
       - kubelet
-  - name: EnableKubeletCrashLoopBackoffMax
-    components:
-      - kubelet
+
 disable-supported: true
 # The following PRR answers are required at beta release
 # metrics:
