@@ -21,13 +21,29 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1: Rerun with init containers](#story-1-rerun-with-init-containers)
     - [Story 2: Efficient in-place restart](#story-2-efficient-in-place-restart)
     - [Story 3: RestartPod with init container providing items from a queue](#story-3-restartpod-with-init-container-providing-items-from-a-queue)
+    - [Story 4: Restart main container on sidecar failures](#story-4-restart-main-container-on-sidecar-failures)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Unintended Pod Restart Loops](#unintended-pod-restart-loops)
 - [Design Details](#design-details)
   - [API](#api)
+  - [Restart Phases](#restart-phases)
+    - [Best-effort Pre-stop hooks](#best-effort-pre-stop-hooks)
+    - [Termination Grace Periods](#termination-grace-periods)
+    - [Containers in Runtime](#containers-in-runtime)
+    - [ContainerStatuses in API](#containerstatuses-in-api)
+    - [Sandbox](#sandbox)
+    - [Volumes](#volumes)
+    - [Init Containers](#init-containers)
+    - [Regular Containers](#regular-containers)
+    - [Ephemeral Containers](#ephemeral-containers)
+    - [Probes](#probes)
+  - [Pod Status](#pod-status)
+    - [[New] Pod condition PodRestartInPlace](#new-pod-condition-podrestartinplace)
+    - [Existing Pod Conditions](#existing-pod-conditions)
+    - [Pod Phase](#pod-phase)
   - [Kubelet Implementation](#kubelet-implementation)
-    - [Kubelet and Node Restarts](#kubelet-and-node-restarts)
-  - [PodCondition PodRestarting](#podcondition-podrestarting)
+    - [Kubelet Restarts](#kubelet-restarts)
+    - [Node Restarts](#node-restarts)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -100,6 +116,10 @@ Another scenario is when Init container "takes the next item from the queue". An
 - https://github.com/kubernetes/enhancements/issues/3676
 - https://github.com/kubernetes/enhancements/issues/3759#issuecomment-2389506153
 
+**Handles Init Container Failures**
+
+Sidecar container failures sometimes render the main container not ready, and restarting the sidecar is insufficient. For example, if a sidecar that manages the remote volume fails and restarts, the main container may be trying to access an outdated volume. With RestartPod action, the sidecar could force the main container to restart as well for a clean environment.
+
 **Efficient In-Place Restart**
 
 Deleting and recreating a pod is a heavy operation involving the scheduler, node resource allocation, and re-initialization of networking and storage. An in-place restart, which preserves the pod sandbox and its associated resources (UID, IP, devices), is significantly faster and reduces resource churn. 
@@ -108,9 +128,9 @@ This is especially helpful for ML training workloads, where computation resource
 
 - https://docs.google.com/document/d/16zexVooHKPc80F4dVtUjDYK9DOpkVPRNfSv0zRtfFpk/edit?tab=t.0#heading=h.y6xl7juq7465
 
-**Simplified Application and Sidecar Logic**
+**Separates Watcher-sidecars from worker containers**
 
-In complex pods, restarts should be coordinated. In the proposed setup for efficient ML training jobs, sidecar containers are monitoring for failures, and should notify the main container to exit or restart. A `RestartPod` action simplifies lifecycle management. Instead of implementing complex inter-container communication to signal a pod-level failure, a sidecar can simply exit with a specific code to trigger a full pod restart, resetting the main application from its last checkpoint. See also
+In ML training workloads we have setups with a watcher process that listens for failures, and restarts the worker from the previous checkpoint if needed. Without a RestartPod action, the watcher process and worker process have to be coupled in a single container, increasing complexity and decreasing cohesion. The RestartPod action eliminates this coupling. See also
 
 - https://docs.google.com/document/d/16zexVooHKPc80F4dVtUjDYK9DOpkVPRNfSv0zRtfFpk/edit?tab=t.0#heading=h.y6xl7juq7465
 - https://github.com/kubernetes/enhancements/issues/4438 
@@ -134,7 +154,7 @@ Restarting all containers together brings the entire pod to a known good state. 
 ### Non-Goals
 
 - Introducing triggers for pod restart other than container exits (e.g., via a direct API call). This could be a future enhancement.
-- Tearing down and recreating the pod sandbox during the restart. The focus is on an efficient "in-place" restart.
+- Tearing down and recreating the all pod resources during the restart. The focus is on an efficient "in-place" restart of the containers and preserve the environment.
 
 ## Proposal
 
@@ -155,6 +175,10 @@ See details in https://docs.google.com/document/d/16zexVooHKPc80F4dVtUjDYK9DOpkV
 #### Story 3: RestartPod with init container providing items from a queue
 
 As a developer, I want a pod with an init container and a main container. The init container takes the next item from the queue, and the main container process the item. The main container should be able to exit and indicate that it wants a "new item" to process.
+
+#### Story 4: Restart main container on sidecar failures
+
+As a developer, I have a pod with a sidecar container that provides resources to the main container. If the sidecar fails and restarts, the main container would be trying to access an outdated resource. I want to be able to restasrt all containers if the sidecar fails. This helps to keep my main container up-to-date with the sidecar containers.
 
 ### Risks and Mitigations
 
@@ -211,65 +235,154 @@ The history of the container statuses will be preserved. The restart count of al
 
 If the pod restart policy is "Never", and the init container fails after the `RestartPod` action requested, the Pod will be marked as Failed.
 
-### Kubelet Implementation
+### Restart Phases
+The pod restart can be split into two phases.
 
-The in-place pod restart will be implemented in the kubelet as a state machine with a timestamp to robustly manage the lifecycle transition. When a `RestartPod` rule is triggered, the kubelet will cycle the pod through the following phases:
+The first phase is pod **termination**. The kubelet compares the containerStatuses with restart rules and decides to terminate the pod. The kubelet sets the PodRestartInPlace=True pod condition to the API. The SyncLoop will try to 1) kill all running containers, 2) remove all init and regular containers from the container runtime. The sandbox is preserved to keep the pod IP, UID, devices, and network namespace. The API endpoint slice is also kept. 
 
-1.  **Termination Phase:** When a `RestartPod` rule is triggered, the kubelet will transition its internal, in-memory state for the pod to `TerminatingForRestart`. In this state, the kubelet's only goal is to terminate all of the pod's containers. This process is similar to a normal pod shutdown but skips tearing down the sandbox.
+Steps to terminate the pod includes:
 
-    -   The kubelet updates the pod's status on the API server with the `PodRestarting=True` condition for observability.
-    -   `preStop` hooks are executed.
-    -   Probes are stopped (readiness probe should be stopped after preStop hooks are executed).
-    -   Containers are sent a `SIGTERM` signal for graceful shutdown.
-    -   Containers are sent a `SIGKILL` if has not stopped after the termination grace period.
-    -   Any container exits that occur while in this state are considered part of the planned shutdown.
-<<[UNRESOLVED whether volumes mounts need to be cleaned up]>>
-    -   Volumes are unmounted.
-<<[/UNRESOLVED]>>
+1) Add pod condition PodRestartInPlace
+1) Kill all running containers
+    - No ordering during the kill
+    - Best-effort: prestop hooks
+    - Termination grace periods are not respected.
+1) Remove all init and regular containers from container runtime
+    - ContainerStatuses are kept in the API
+    - Exited containers on the runtime is removed
+    - Necessary for a clean restart; otherwise kubelet cannot tell if a container exited before the restart (expected) or after the restart (a new failure).
+1) No changes to probes
+1) No changes to other pod resources, such as sandbox, IP, network namespcae, devices, volumes, etc.
 
-2.  **Startup Phase:** Once the kubelet verifies that all containers have terminated, it transitions its internal state to `Startup` with a timestamp. In this state, the kubelet's goal is to start the pod from the beginning. Because the sandbox already exists, it will skip creating the sandbox (therefore preserve the sandbox). The container statuses from the previous run are preserved for history.
+The second phase is pod **startup**. With all containers terminated and removed, the kubelet unset the PodRestartInPlace pod condition to the API. Because kubelet sees no containers from the container runtime, it can proceed with the **normal Pod startup** actions in the SyncLoop. This will follow the regular pod startup flow, except the sandbox already exists. 
 
-    -   The container statuses from the previous run are preserved for history.
-<<[UNRESOLVED whether volumes mounts need to be cleaned up]>>
-    -   Volumes are mounted.
-<<[/UNRESOLVED]>>
-    -   Init containers are executed in order.
-    -   Regular and sidecar containers are started.
-    -   `postStart` hooks are executed.
-    -   Probes are re-activated, and startup probes succeeds.
+This includes the following steps:
 
-If any container is terminated while the pod is in the `Startup` phase, the kubelet evaluates the failure timestamp against the state machine’s timestamp. If the container termination timestamp is before the state machine’s timestamp, then it means the container has not been restarted. Otherwise, it means the container has already been restarted once, and it is a new, genuine failure. It will then handle this failure according to the pod's `restartPolicy` (e.g., for a policy of `Never`, the pod will be marked as `Failed`).
+1) The pod resources (sandbox, IP, devices, volumes, etc.) already exists; kubelet will skip recreating those resources.
+1) Running init containers in sequence
+    - Any new failures will be handled according to restartPolicy, e.g. fail pod if restartPolicy=Never
+    - Only proceeds after success
+1) Running all sidecar containers in sequence
+    - Only proceeds after startupProbe succeeds
+1) regular containers
+1) poststart hooks
+1) Probes became active again
 
-Once all containers are running successfully, the kubelet transitions its internal state back to `Running` and updates the pod's status to set the `PodRestarting` condition to `False`.
+#### Best-effort Pre-stop hooks
+The prestop hooks will be respected on a best-effort basis.
 
-During this process, the pod's UID, IP address, network namespace, devices, and CGroups will be preserved. All regular containers will be restarted, regardless of their individual `restartPolicy` or previous exit status. Ephemeral containers will not be restarted.
+#### Termination Grace Periods
+The `TerminationGracePeriodSeconds` is not respected. In many cases, best effort cleanups and termination grace periods are desired for real terminations, such as pod being deleted or evicted. However, they might not be expected for quick in-place restarts. Because the container will restart in-place relatively quickly, there shouldn’t be much concern about skipping the cleanup. The termination grace periods will still be respected if the pod is terminating (not restart in-place).
 
-#### Kubelet and Node Restarts
+This provides “graceful termination” for real terminations and “fast and nongraceful termination" for in-place restarts.
 
-The in-memory state machine is lost if the kubelet restarts. To ensure the pod restart process is reentrant, the `PodRestarting` condition in the `Pod.status` serves as the persistent record of the state.
+**Alternative1**: Respect pod.Spec.terminationGracePeriodSeconds
 
-When the kubelet starts, it syncs all pods assigned to it. If it finds a pod with the `PodRestarting` condition set to `True`, it reconstructs its internal state machine by inspecting the pod's `containerStatuses`:
-- If any containers are still in a running state, the kubelet deduces it was in the **Termination Phase**. It will resume this phase by terminating the remaining running containers.
-- If all containers are terminated, the kubelet deduces it was in the **Startup Phase**. It will perform the usual pod startup sequence by ensuring the sandbox exists, the volumes are mounted, the init containers are executed, the sidecar and the regular containers are started.
+An alternative would be to respect the terminationGracePeriod on the pod level; all containers will be using the same value of pod-level termination grace period. This gives containers the opportunity to perform graceful termination even during restarts. However, this could cause “unexpected cleanup” being performed during the PodRestart; and could slow down the restart process.
 
-If the pod entered Startup Phase, and kubelet got restarted, the kubelet might think the pod is in Termination Phase. This could cause a second restart of the pod. However, since the pod is already marked for restart, a repeated restart is not a significant threat.
+This provides “graceful termination” for real terminations as well as “slow and graceful termination” for in-place restarts.
 
-If the node got restarted, the container runtime and kubelet will lose their history. The kubelet will start from the Termination phase because of `PodRestarting=True` condition. Since no containers are running, it goes directly into Startup phase, and proceeds with normal pod startup sequence, including sandbox creation, volumes mounts, init container execution, sidecar and regular container execution. At the end, the `PodRestaring=True` condition is removed.
+**Alternative2**: Customizable TerminationGracePeriod for RestartPod
 
-This mechanism ensures that the in-place restart operation can continue correctly even if the kubelet is restarted mid-process.
+Another alternative is to allow users to specify a separate terminationGracePeriod for RestartPod action. With this setup, containers can have appropriate time to cleanup for real terminations, and can have shorter (or even none) periods for in-place restarts. Similar to the probe-level termination grace periods, which overrides the pod-level termination grace period.
 
-### PodCondition PodRestarting
+This does add extra complexity to the API and implementation. It can be extended in the future if there are feature requests for RestartPod specific termination grace periods.
 
-To make the restart process observable, a new `PodCondition` will be added to the `Pod.status.conditions`.
+#### Containers in Runtime
+Init containers, sidecar containers, and regular containers are all removed from the runtime to ensure a clean restart of the pod. Ephemeral containers are kept, because they are ephemeral in nature and should not be executed again.
+
+#### ContainerStatuses in API
+Container statuses in the API are kept for observability and clarity. However, they will not affect how kubelet restart the pod and containers.
+
+#### Sandbox
+Sandbox is preserved. This means pod UID, IP, devices are all preserved. This ensures a faster restart and the pod will get the same resources.
+
+#### Volumes
+Volumes are kept. PodRestart focuses on container restart, instead of resetting the environment.
+
+Note: In some cases, remounting the volumes might be desired. This is not in-scope of this KEP. There are ongoing discussions around a separate KEP that focusing on marking volumes as "required for remount" during the container-level restarts or RestartPod actions.
+
+#### Init Containers
+Init containers are started in order, including sidecar containers. 
+- Requires init containers to be reentrant.
+- A failing init container with restartAction=RestartPod can keep the pod restarting (also possible today).
+
+#### Regular Containers
+All regular containers will be restarted during a RestartPod action.
+- Including succeeded containers with restartPolicy=OnFailure or restartPolicy=Never
+- Including all failed containers with restartPolicy=Never
+- RestartPod makes more sense to restart all the containers, skipping containers can make reasoning harder.
+- In the case of Jobs, it is preferable to restart everything, so the worker can run from scratch again.
+- Also possible today if the node got restarted.
+- Failed / Succeeded containers can run multiple times if misconfigured. 
+
+#### Ephemeral Containers
+Will not be restarted due to their ephemeral nature.
+
+#### Probes
+Probes are not deactivated during the restart. All probes are expected to fail during pod restart. The failure of probes should not trigger another pod restart.
+
+**Liveness Probes**
+Liveness probes on containers that were running before the restart are expected to fail (because the container is being restarted). The kubelet will coordinate the liveness probe with the SyncPod cycle to ensure that the container is started in order and not affected by liveness probes.
+
+**Readiness Probes**
+Readiness probes are expected to fail as well. It is expected that the readiness probe may render the container as not ready.
+
+**Startup Probes**
+Startup probes are expected to fail during the restart. After the restart, Startup probes will become active and valid again. The execution of startup probes after the restart will affect the pod lifecycle (e.g. if startup probe failed, the pod will be marked as failed if restartPolicy=Never).
+
+### Pod Status
+
+#### [New] Pod condition PodRestartInPlace
+
+To make the restart process observable, a new pod condition will be added to the `Pod.status.conditions`.
 
 ```
-type: PodRestarting
+type: PodRestartInPlace
 status: True / False
 reason: ContainerExited
 message: 'Container my-container exited with code 88, triggering pod restart'
 ```
 
-The kubelet will set this condition to `True` at the beginning of the termination phase and set it to `False` once the startup phase is complete and the containers are running.
+The kubelet will set this condition to `True` at the beginning of the termination phase. The kubelet will set it to `False` at the end of the termination phase (with all containers removed from the runtime).
+
+This condition has the following benefits:
+- Restart status is kept across reboots and updates.
+- Consistent with 1) API server is single truth; 2) the SyncLoop read Pod from API server and update pod status and perform actions
+- Pod lifecycle is reported to the API server and visible to user / other components
+
+#### Existing Pod Conditions
+
+When a container is stopped, pod condition `Ready` and `ContainersReady` will be marked as False. 
+
+However, pod condition `Initialized` will not be marked as false, because currently it is assumed that once a pod is initialized, it cannot be “uninitialized”. The reasoning is that `PodRestart` should be considered “restarting all containers of the pod”, not necessarily recreating the pod itself.
+
+#### Pod Phase
+
+The pod pod should be in the `Pending` phase throughout the restart. This means if the pod was in the `Running` phase, it could be reverted to the `Pending` phase. This is possible today as well.
+
+### Kubelet Implementation
+
+The in-place pod restart will be implemented in the kubelet as a state machine based on the PodCondition mentioned above. If the PodRestartInPlace condition is true, then the pod is in the Termination Phase. Otherwise, it is considered the Startup Phase (which is the same as pod regular startup).
+
+When a `RestartPod` rule is triggered, the kubelet will set the PodCondition `PodRestartInPlace=True`. In this state, the kubelet's only goal is to kill and remove all of the pod's containers. This process is similar to a normal pod shutdown but skips tearing down the sandbox. The container statuses from the previous run are preserved for history.
+
+Once the kubelet verifies that all containers are removed, it transitions to startup phase by setting the PodCondition `PodRestartInPlace=False`. In this state, the kubelet's goal is to start the pod from the beginning, preserving the existing sandbox. This is the same as a normal pod startup sequence. 
+
+#### Kubelet Restarts
+
+If kubelet restarted in the Termination Phase, because the PodCondition is preserved on the API server, kubelet could continue the cleanup.
+- If the kubelet did not preserve pod condition, it could also infer from the container statuses from the CRI that a RestartPod action is triggered.
+
+If kubelet restarted in the Startup Phase, it proceeds normally as today by synchronizing all pods. From kubelet’s perspective, the pod just got created and assigned.
+
+#### Node Restarts
+
+On node restarts, kubelet and container runtime loses all containers. In the first pass, kubelet would sync the pods assigned to it. 
+
+- If the pod was previously restarted in place, and was in the **Termination Phase**, it would have the pod condition `PodRestartInPlace=True`. Since kubelet sees all containers do not exist, it will set the pod condition `PodRestartInPlace=False` and proceed with normal pod start up sequence.
+
+- If the pod was previously restarted in place, and was in the **Startup Phase**, then kubelet will proceed as if the pod just got created.
 
 ### Test Plan
 
@@ -298,7 +411,7 @@ Unit and E2E tests are expected to provide sufficient coverage.
 -   Create a pod with a container that has a `restartPolicyRule` with the `RestartPod` action. Verify that when the container (init, regular, or sidecar) exits with the specified code, the entire pod is restarted in-place (same UID, IP).
 -   Verify that init containers are re-executed after a pod restart is triggered.
 -   Verify that all regular and sidecar containers are restarted.
--   Verify that the `PodRestarting` condition is added to the pod status during the restart and removed after it completes.
+-   Verify that the `PodRestartInPlace` condition is added to the pod status during the restart and removed after it completes.
 
 List of other restart sequences that need to be tested:
 
@@ -547,9 +660,9 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-The size of the PodCondition API object will be increased for account for the new PodRestarting status, example:
+The size of the PodCondition API object will be increased for account for the new PodRestartInPlace status, example:
 ```
-type: PodRestarting
+type: PodRestartInPlace
 status: True / False
 reason: ContainerExited
 message: 'Container my-container exited with code 88, triggering pod restart'
