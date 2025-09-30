@@ -100,6 +100,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+- [Possible Future Work](#possible-future-work)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -220,10 +221,6 @@ That accomplishes goal 1 of leaving serialization / deserialization code unchang
 
 All of these steps can be accomplished without changing non-protobuf aspects of Kubernetes API Go types,
 which accomplishes goal 2 of leaving the Go types unchanged from previous releases.
-
-A possible step 6 is to modify the generated `String()` methods (which *happen* to be in protobuf generated code)
-from outputting pseudo-Go structures to something simpler and more meaningful like a JSON-encoding of the object.
-This is not part of the REST or storage API surface, but could disrupt callers who expect exact string representations in tests.
 
 ### User Stories
 
@@ -388,20 +385,6 @@ The subset of the gogo code generation used by `k8s.io/code-generator/cmd/go-to-
 will be forked to a location within the `kubernetes` or `kubernetes-sigs` project,
 and pruned / modified to only output the subset of generated code kept by `go-to-protobuf`.
 
-**Modify String() implementation**
-
-There is widespread reliance on Kubernetes API objects implementing `String()`,
-so preserving the existence of `String()` implementations is necessary to minimize disruption.
-
-However, this only *happens* to be done as part of protobuf generation,
-and the output is a pseudo-Go structure that requires large amounts of code to construct,
-and is not particularly meaningful from an API perspective.
-
-After the code-generation is forked and modifiable, the `String()` implementation will be
-switched to output a JSON encoding of the object. This will either be done by modifying
-the protobuf `String()` generator, or by creating a separate `String()` generator
-and disabling the protobuf `String()` generator.
-
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -436,11 +419,6 @@ First phase:
 Second phase:
   * Complete step 5: Removal of code-generation use of gogo packages
   * Result: No gogo packages are referenced from any staging .go file, or as a direct dependency from any Kubernetes go.mod file
-
-Third phase:
-  * Complete step 6: modify `String()` implementations to be independent of protobuf generation
-  * Result: `String()` implementations for API objects can be generated independent of protobuf,
-    and return results 
 
 #### Deprecation
 
@@ -632,6 +610,30 @@ Two alternatives were considered:
    The approach described in this KEP does not preclude such a change in the future,
    if it becomes apparent there are benefits that would justify a change of that magnitude,
    and a plan is proposed to make that change safely.
+
+## Possible Future Work
+
+The following are *possible* future changes that could be made to the protobuf generator
+once it is in a location that can be modified in ways scoped to Kubernetes API types.
+These changes are not planned as part of this KEP, but are captured here for reference.
+
+**Add omitzero support**
+
+Current protobuf serialization *always* outputs non-pointer scalar and struct fields.
+This means that feature-gate-disabled fields must be created as pointers so they will not be serialized unless populated.
+Adding support for an `omitzero` tag to protobuf serialization would allow for non-pointer fields which can still be feature-gate-disabled.
+
+**Simplify String() implementation**
+
+There is widespread reliance on Kubernetes API objects implementing `String()`,
+so preserving the existence of `String()` implementations is necessary to minimize disruption.
+
+However, this only *happens* to be done as part of protobuf generation,
+and the output is a pseudo-Go structure that requires large amounts of code to construct,
+and is not particularly meaningful from an API perspective.
+
+After the code-generation is forked and modifiable, the `String()` implementation could be
+switched to a simpler implementation, for example returning a JSON encoding of the object.
 
 ## Infrastructure Needed (Optional)
 
