@@ -103,6 +103,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Beta](#beta)
     - [Beta2](#beta2)
     - [Beta3](#beta3)
+    - [Beta4](#beta4)
     - [GA](#ga)
     - [Post-GA](#post-ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -760,13 +761,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Beta2
 - The feature is enabled for kubelet.
-- Add watchlist support to the fake client so that starting an informer with a fake client works correctly.
 - Extend the existing performance tests with a case that adds a large number of small objects. 
   The current perf test adds a small number of large objects. 
   The new variant will help catch potential regressions such as https://github.com/kubernetes/kubernetes/issues/129467 
 
 #### Beta3
-With new concerns brought in 1.33 release timeline, we reviset the approach for the feature.
+With new concerns brought in 1.33 release timeline, we revised the approach for the feature.
 The discussion happened in [this document] and resulted in the following update for the criteria:
 
 - Revert the client-go changes that use watchList to implement List.
@@ -782,6 +782,16 @@ The discussion happened in [this document] and resulted in the following update 
   the `storage/cacher` to use streaming directly from etcd 
   (This will also allow us to [remove](https://github.com/kubernetes/kubernetes/blob/a07b1aaa5b39b351ec8586de800baa5715304a3f/staging/src/k8s.io/client-go/tools/cache/reflector.go#L110) the `reflector.UseWatchList` field).
 - Enable the feature by-default for kube-controller-manager.
+
+#### Beta4
+- Disable watchlist support in the fake client so that informers do not use watchlists. 
+  This ensures that unit tests relying on non-standard fake client behavior will continue to work.
+- Currently, the `ListWatcher` used by the `WatchCache` does not pass the RV from the reflectors.
+  As a result the consistency detector used by the reflectors fails for the `WatchCache`.
+  This issue needs to be resolved.
+- Enable the `WatchListClient` feature gate by default. 
+  The FG is defined in client-go. 
+  Enabling it will turn on the feature for all clients.
 
 [this document]: https://docs.google.com/document/d/1x30DjXSSF5krpyoTCwManJg6vphpnGI37xfCRaiHAbs
 
