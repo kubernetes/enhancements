@@ -388,7 +388,8 @@ The north star vision for gang scheduling implementation should satisfy the foll
 4. Avoid deadlock scenario when multiple workloads are being scheduled at the same time by different
    schedulers.
 5. Avoid premature preemptions of already running pods in case a higher priority gang will be rejected.
-6. Support gang-level (or workload-level in general) level preemption.
+6. Support gang-level (or workload-level in general) level preemption (if pods form a gang also
+   from a runtime perspective, they can't be preempted individually).
 7. Updating workload status and triggering rescheduling when a gang failed binding in the all-or-nothing
    fashion.
 
@@ -422,6 +423,11 @@ While we will not target addressing "optimal enough" part of requirement (2), we
 can process all gang pods together. The single scheduling cycle and blocking resources in beta
 will address the requirement (3).
 
+We will also introduce delayed preemption by moving it after `WaitOnPermit` phase. Together with
+introduction of a dedicated phase for scheduling all pods in a single scheduling cycle this
+will address the requirement (5). If accompanied with blocking the resources in-memory as
+mentioned above, this basically mitigates the problem.
+
 More detail about scheduler changes is described in [this document](https://docs.google.com/document/d/1lMYkDuGqEoZWfE2b8vjQx0vHieOMyfmi6VHUef5-5is/edit?tab=t.0#heading=h.1p88ilpefnb).
 
 
@@ -431,10 +437,18 @@ a single unit from scheduling perspective. With that, the proposed placement bei
 the scheduling decision of the `Workload` phase will become a `Reservation`. This will become the
 coordination point and a mechanism for multiple schedulers to share the underlying infrastructure
 addressing the requirement (4). This will also be a critical building block for workload-level
-preemption and addressing requirement (6). Further extensions to `Reservation` with different states
-(e.g. not yet block resources) will help with addressing the unnessary preemptions issue -
-requirement (5). Finally making the binding process aware of gangs will allow to make sure the
-process is either successful or triggers workload rescheduling satisfying requirement (7).
+preemption and addressing requirement (6). Finally, this will allow to address the few remaining
+corner cases around unnecessary preemption - requirement (5), such as blocking DRA resources
+(which we can't solve with NominatedNodeName). Further extensions to `Reservation` with different
+states (e.g. not yet block resources) will help with improving the scheduling accuracy.
+Finally making the binding process aware of gangs will allow to make sure the process is either
+successful or triggers workload rescheduling satisfying requirement (7).
+
+The workload-aware preemption is tightly coupled, but separate feature that will also be designed
+in a dedicated KEP. The current vision includes introducing a dedicated preemption policy (that
+will result in pods no longer being treated individually for preemption purposes) which makes it
+an additive feature. However, having a next level of details is required to ensure that we really
+have a feasible backward-compatible plan before promoting this feature to Beta.
 
 However, approval for this KEP is NOT an approval for this vision. We only sketch it to show that
 we see a viable path forward from the proposed design that will not require significant rework.
@@ -539,7 +553,11 @@ If e2e tests are not necessary or useful, explain why.
 
 #### Beta
 
-- TBD in for Beta release
+- Providing "optimal enough" placement by considering all pods from a gang together
+- Avoiding deadlock scenario when multiple workloads are being scheduled at the same time
+  by kube-scheduler
+- Implementing delayed preemption to avoid premature preemptions
+- Workload-aware preemption design to ensure we won't break backward compatibility with it.
 
 #### GA
 
