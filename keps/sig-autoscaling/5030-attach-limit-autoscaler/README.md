@@ -97,7 +97,10 @@ This leads to bunch of problems:
 
 - Since a node does not come up with a CSI driver typically, usually too many pods get scheduled on a node, which may not be supportable by the node in the first place. This leads to bunch of pods, just stuck.
 
-Once cluster-autoscaler is aware of CSI volume attach limits, we can fix kubernete's builtin scheduler to not schedule pods to nodes that don't have CSI driver installed and if pods require given CSI volumes.
+Once cluster-autoscaler is aware of CSI volume attach limits, we can fix kubernete's builtin scheduler to not schedule pods to nodes that don't have CSI driver installed and if pods require given CSI volumes. Also since 
+cluster-autoscaler isn't aware of CSI volume attach limits, when it scales nodes for pending pods it can't accurately determine how many nodes are required for pending pods that use CSI volumes. For example: if there are 20 pending pods(that use CSI volumes) and assuming cpu, memory and other critireas are met, cluster-autoscaler will not accurately take into account how many nodes are required to satisfy volume attach limits of a node.
+
+After the fixes we are proposing in cluster-autoscaler are made, cluster-autoscaler should accurately calculate number of nodes it needs to spin up to satisfy volume constraints of pending pods. 
 
 ### Goals
 
@@ -116,7 +119,7 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 2. Fix cluster-autoscaler so as it takes into account attach limits when scaling nodegroups with existing nodes.
 3. Fix kubernetes built-in scheduler so as we do not schedule pods to nodes that doesn't have CSI driver installed.
 
-Since cluster-autoscaler changes need to happen first, `kube-schduler` changes are out-of-scope for alpha implementation in v1.34.
+Since cluster-autoscaler changes need to happen first, `kube-scheduler` changes are out-of-scope for alpha implementation in v1.34.
 
 
 ### User Stories (Optional)
@@ -168,7 +171,7 @@ We can split the implementation in cluster-autoscaler in two parts:
 
 ### Scaling a node-group that already has one or more nodes.
 
-1. We propose a similar label as GPULabel added to the node that is supposed to come up with a CSI driver. This would ensure that, nodes which are supposed to have a certain CSI driver installed aren’t considered ready - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/core/static_autoscaler.go#L979 until CSI driver is installed there.
+n1. We propose a similar label as GPULabel added to the node that is supposed to come up with a CSI driver. This would ensure that, nodes which are supposed to have a certain CSI driver installed aren’t considered ready - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/core/static_autoscaler.go#L979 until CSI driver is installed there.
 
 However, we also propose that a node will be considered ready as soon as corresponding CSI driver is being reported as installed via corresponding CSINode object.
 
