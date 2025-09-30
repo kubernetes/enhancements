@@ -6,23 +6,23 @@ To get started with this template:
 - [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -80,6 +80,9 @@ SIG Architecture for cross-cutting KEPs).
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -92,7 +95,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Integrate with the CSI spec and VolumeAttributeClass](#integrate-with-the-csi-spec-and-volumeattributeclass)
+  - [Integrate with the CSI spec and VolumeAttributesClass](#integrate-with-the-csi-spec-and-volumeattributesclass)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -114,18 +117,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -141,7 +144,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes to make `PersistentVolume.spec.nodeAffinity` field mutable,
-making it possible to change the affinity with VolumeAttributeClass.
+making it possible to change the affinity of the volume.
 This allows user to migrate data or enabling features without
 interrupting workloads.
 
@@ -160,7 +163,7 @@ Currently, `PersistentVolume.spec.nodeAffinity` is set at creation time and cann
 But user may modify the volume to
 taking advantage of new features provided by the storage provider,
 or accommodate to the changes of business requirements.
-These modification can be expressed by `VolumeAttributeClass` in Kubernetes.
+These modification can be expressed by `VolumeAttributesClass` in Kubernetes.
 But sometimes, A modification to volume comes with change to its accessibility, such as:
 1. migration of data from one zone to regional storage;
 2. enabling features that is not supported by all the client nodes.
@@ -181,11 +184,11 @@ improving the reliability of stateful pod scheduling.
 
 ### Non-Goals
 
-- Enable CSI drivers to return a new accessibility requirement on ControllerModifyVolume.
+- Enable CSI drivers to return a new accessibility requirement on ControllerModifyVolume (future work).
 - Modifying the core scheduling logic of Kubernetes.
 - Implementing cloud provider-specific solutions within Kubernetes core.
 - Re-scheduling running pods with volumes being modified,
-  or interrupting workloads in any way.
+  or directly interrupting workloads.
 
 ## Proposal
 
@@ -199,7 +202,8 @@ nitty-gritty.
 -->
 
 1. Change APIServer validation to allow `PersistentVolume.spec.nodeAffinity` to be mutable.
-2. Ensure scheduler will re-schedule pending pods that using a PV that has been updated.
+2. Ensure scheduler will re-schedule pending pods that using a PV that has been updated (already implemented).
+3. When a Pod is scheduled to a node that does not match volume node affinity, kubelet should fail the Pod.
 
 ### User Stories (Optional)
 
@@ -231,7 +235,7 @@ nodeSelectorTerms:
     values:
     - cn-beijing
 ```
-manually, hopefully integrated into CSI in the future.
+manually currently, hopefully integrated into CSI in the future.
 
 #### Story 2
 
@@ -276,11 +280,24 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-`PersistentVolume.spec.nodeAffinity.required` should works like
-`Pod.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution`.
-It is never re-evaluated when the pod is already running.
-It is storage provider's responsibility to ensure that the running workload is not interrupted.
+It is storage provider's responsibility to ensure that the running workload is not interrupted while the data is being moved.
 
+Whoever modifies the `PersistentVolume.spec.nodeAffinity` field should ensure that
+no running Pods on nodes with incompatible labels are using the PV.
+Kubernetes will not verify this. It is expensive and racy.
+
+If the incompatibility does happen, we don't guarantee that those Pods will continue to run without any issue.
+However, we try our best not to interrupt them:
+- For volumes that not yet present in the Node.status.volumesAttached field,
+  we fail the Pods that use them, since we are sure the Pods have never been running.
+  (see [Handling race condition](#handling-race-condition) below)
+- For CSI drivers with `requiresRepublish` set to true, we will stop calling NodePublishVolume periodically. and an event is emitted.
+- For CSI drivers with `requiresRepublish` set to false, an event is emitted on kubelet restart. Otherwise the pod should continue to run.
+It is not re-evaluated when the pod is already running.
+
+Note that `Pod.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution` is similar.
+Currently if the node labels change and the Pod nodeAffinity becomes incompatible,
+the pod will continue to run until kubelet restarts, which will fail the pod.
 
 ### Risks and Mitigations
 
@@ -295,6 +312,18 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+
+User may likely rollout workload and PV nodeAffinity changes at the same time.
+This may trigger a race condition where the workload pods are scheduled to a node matchs the old nodeAffinity,
+but the volume cannot be used on the node.
+
+To mitigate this risk, we let kubelet to fail the mis-scheduled pods.
+Hopefully, workload controller will create a replacement pod for it.
+
+If the user is running an incompatible scheduler which does not respect PV nodeAffinity,
+we may ended up in an endless loop of creating then failing pods.
+This should be fine since we already have many cases like this.
+We mitigate this by adding an note in the release note.
 
 ## Design Details
 
@@ -317,9 +346,12 @@ If this happens, the pod will be stuck in a `ContainerCreating` state.
 Kubelet should detect this contidion and reject the pod.
 Hopefully some other controllers (StatefulSet controller) will re-create the pod and it will be scheduled to the correct node.
 
-Specifically, kubelet investigates the cause of the failure by checking the status of the underlying VolumeAttachment object.
-If `FailedPrecondition` error is found, and PV's nodeAffinity does not match current node,
-kubelet will setting pod phase to 'Failed'
+Specifically, kubelet should reject the pod (setting pod phase to 'Failed')
+if the volume is not present in the `node.status.volumesAttached` list and the volume nodeAffinity does not match the current node
+in `waitForVolumeAttach()`.
+
+We check `volumesAttached` to ensure the Pods have never been running, to avoid interrupting running Pods.
+We don't check the VolumeAttachment to make this also work for non-CSI volumes.
 
 ### Test Plan
 
@@ -366,7 +398,13 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `pkg/apis/core/validation`: 2025-06-02 - 84.7%
+- `pkg/apis/core/validation`: 2025-09-30 - 85.1%
+- `pkg/kubelet/volumemanager`: 2025-09-30 - 72.1%
+- `pkg/kubelet/volumemanager/reconciler`: 2025-09-30 - 82.7%
+
+- Will test kubelet volume manager correctly fails the pods with mismatch volume node affinity
+- Will test kubelet volume manager will not fail the pods with volumes already attached
+- Will test that API validation allows volume node affinity update if the feature gate is enabled
 
 ##### Integration tests
 
@@ -392,7 +430,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- Test modifying PV `nodeAffinity` will trigger reschedule of pending pods.
 
 ##### e2e tests
 
@@ -413,7 +451,7 @@ If e2e tests are not necessary or useful, explain why.
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
-- Test modifing VolumeAttributeClass can properly update PV `nodeAffinity`.
+- Test a mis-scheduled pod will be failed and re-created on another node.
 
 ### Graduation Criteria
 
@@ -489,6 +527,26 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- Gather feedback from developers and surveys
+- Additional tests are in Testgrid and linked in KEP
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved 
+
+#### GA
+
+- 2 examples of real-world usage
+- Allowing 2 releases for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -502,6 +560,13 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+APIServer and kubelet can be update / downgraded independently.
+
+Upgrade the external storage controller after APIServer to take advantage of the new feature if desired.
+Otherwise, admin can also utilize the new feature manually with kubectl.
+
+Downgrade/Reconfigure the external storage controller before APIServer to avoid updating PV nodeAffinity being rejected.
 
 ### Version Skew Strategy
 
@@ -517,6 +582,16 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This feature involves changes to the kubelet, and APIServer. But they are not strongly coupled.
+
+an n-3 kubelet will not able to fail the mis-scheduled pods. User can still manually delete the pods. Otherwise it should be fine.
+an new kubelt can also work with old APIServer. Although this should not happen.
+
+kube-scheduler is not directly affected.
+It just read the latest PV nodeAffinity for scheduling decision regardless of whether it's being updated or not.
+
+An old external storage controller should work fine with new APIServer, since it will not update PV nodeAffinity.
 
 ## Production Readiness Review Questionnaire
 
@@ -560,15 +635,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: MutablePVNodeAffinity
+  - Components depending on the feature gate: kubelet, kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
@@ -576,6 +645,15 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+PV `spec.nodeAffinity` becomes mutable.
+
+If a pod being scheduled to a node that is incompatible with the PV's nodeAffinity, the pod will fail.
+Previously, it will be stuck at `ContainerCreating` status.
+
+This should be rare, since we don't allow PV nodeAffinity to be updated,
+nor CSI driver can change the topology reported from NodeGetInfo.
+So this is only possible if the user edited the node labels manually, or is running an incompatible scheduler.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -590,7 +668,12 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes. Once disabled, PV node affinity cannot be updated any more.
+Already updated PVs will still keep the updated node affinity.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Nothing special.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -606,6 +689,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Yes. unit test will verify the validation and kubelet behavior when the feature gate is enabled or disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -632,6 +717,8 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+High value of `kubelet_admission_rejections_total{reason="VolumeNodeAffinity"}`
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -645,6 +732,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No
 
 ### Monitoring Requirements
 
@@ -662,6 +750,10 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Unfortunately, no metrics records the update of a specific field.
+Operator should check APIServer audit log.
+
+Operator may also use the storage controller specific metrics.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -674,13 +766,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+See a previously Pending or ContainerCreating Pod now properly Running.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -718,6 +804,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+Count of PV nodeAffinity field update. We have so many fields, it is not reasonable to add a metric for each field or specific to this field.
 
 ### Dependencies
 
@@ -741,6 +828,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No. But an external storage controller can depend on this feature.
 
 ### Scalability
 
@@ -768,6 +856,8 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No if unused.
+One PATCH PV request from external storage controller or human operator per affinity update.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -777,6 +867,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -785,6 +876,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No if unused.
+Depends on the external storage controller implementation to make API calls to actually migrate the data in the volume.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -794,6 +887,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -805,6 +899,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -817,6 +912,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No.
+Slightly increased CPU usage to check node affinity in kubelet.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -829,6 +926,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No.
 
 ### Troubleshooting
 
@@ -845,6 +943,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Nothing changed.
+
 ###### What are other known failure modes?
 
 <!--
@@ -859,6 +959,11 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+- endless loop of pod failure and recreation
+  - Detection: rapidly increasing `kubelet_admission_rejections_total{reason="VolumeNodeAffinity"}`
+  - Mitigations: scale down the workload to zero. These pods should already not work
+  - Diagnostics: scheduler logs to see why PV node affinity is ignored
+  - Testing: No. This should not happen in a conformant cluster.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -874,6 +979,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+- 2025-09: targeting alpha in v1.35
+- 2025-09-30: prototype implemented
 
 ## Drawbacks
 
@@ -883,7 +990,7 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-### Integrate with the CSI spec and VolumeAttributeClass
+### Integrate with the CSI spec and VolumeAttributesClass
 
 We have proposed the plan to integrate in the previous version of this KEP.
 But we did not reach consensus due to lack of SP want to implement this feature.

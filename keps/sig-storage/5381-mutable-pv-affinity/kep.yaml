@@ -5,9 +5,9 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-api-machinery
-  - sig-scheduling
   - sig-storage
-status: provisional
+  - sig-node
+status: implementable
 creation-date: 2025-06-02
 reviewers:
   - "@gnuified"
@@ -26,21 +26,21 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.34"
-  beta: "v1.35"
-  stable: "v1.37"
+  alpha: "v1.35"
+  beta: "v1.36"
+  stable: "v1.38"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: MutablePVAffinity
+  - name: MutablePVNodeAffinity
     components:
       - kube-apiserver
-      - external-resizer
+      - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
