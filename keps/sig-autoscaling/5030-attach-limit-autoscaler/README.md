@@ -24,8 +24,6 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-      - [Phase-1](#phase-1)
-      - [Phase-2](#phase-2)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -119,7 +117,8 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 2. Fix cluster-autoscaler so as it takes into account attach limits when scaling nodegroups with existing nodes.
 3. Fix kubernetes built-in scheduler so as we do not schedule pods to nodes that doesn't have CSI driver installed.
 
-Since cluster-autoscaler changes need to happen first, `kube-scheduler` changes are out-of-scope for alpha implementation in v1.34.
+While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying defaule enablement of scheduler change
+that prevents scheduling of pods to a node that doesn't have CSI driver installed until a release when Cluster-AutoScaler(CAS) changes have been GAed and meet N-3 version skew critirea. See - version skew section for more information.
 
 
 ### User Stories (Optional)
@@ -135,18 +134,15 @@ Since cluster-autoscaler changes need to happen first, `kube-scheduler` changes 
 
 ### Notes/Constraints/Caveats (Optional)
 
-Scheduler changes can only be merged after cluster-autoscaler changes has been GAed and there are no concerns about scheduler changes.
+Scheduler changes must be vendored into CAS repository prior to release, so as both scheduler and CAS can work with same feature gate.
+
+But in independently running scheduler(i.e out of CAS process) in k8s cluster, the feature-gate will not be enabled by default until `VolumeLimitScaling` featuregate
+has gone GA in CAS and satisifies version skew critirea of CAS and kube-scheduler.
 
 ### Risks and Mitigations
 
-As mentioned above, there is a risk associated with scheduler changes being merged before cluster-autoscaler changes can be merged, but we want to mitigate
-this by making sure cluster-autoscaler changes are merged first and has N+2 window before scheduler changes can be made GA. 
-
-
-Please note the risk exists in-terms of `kube-scheduler` code that is vendored in cluster-autoscaler. The risk doesn't exist from independently running `kube-scheduler`
-and cluster-autoscaler. So we have to be careful not to vendor a version of `kube-scheduler` in cluster-autoscaler that prevents scheduling of pods (that requires CSI volumes)
-to nodes that don't have CSI driver until `cluster-autoscaler` can properly take into account CSI node limits available in upcoming node.
-
+While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying defaule enablement of scheduler change
+that prevents scheduling of pods to a node that doesn't have CSI driver installed until a release when Cluster-AutoScaler(CAS) changes have been GAed and meet N-3 version skew critirea. See - version skew section for more information.
 
 
 <!--
@@ -184,28 +180,49 @@ A node which is ready  but does not have CSI driver installed within certain tim
 type NodeInfo struct {
 ....
 ....
-csiDrivers map[string]*DriverAllocatable
+// CSINodes contains all CSINodes exposed by this Node.
+CSINode *storagev1.CSINode
 ..
 }
 
-type DriverAllocatable struct {
-    Allocatable int32
+```
+
+3. We propose that, when saving `ClusterState` , we capture and add `CSINode` information in cluster snapshot. The updated signature of `SetClusterState` function would look like:
+
+```go
+SetClusterState(nodes []*apiv1.Node, scheduledPods []*apiv1.Pod, draSnapshot *drasnapshot.Snapshot, csiSnapshot *csisnapshot.Snapshot) error
+```
+
+Both delta and basic snapshot implementation would store `csiSnapshot` along with dra and other information.
+
+4. Since scaling of a nodegroup requires creation of santized templateNodeInfo from existing `nodeInfo` objects, we need to ensure that we are creating santized `CSINode` objects from real `CSINode` objects associated with existing `nodeInfo` object in nodegroup. We need to make associated changes into `node_info_utils.go` to take that into account:
+
+```go
+templateNodeInfo := framework.NewNodeInfo(sanitizedExample.Node(), sanitizedExample.LocalResourceSlices, expectedPods...)
+if example.CSINode != nil {
+  templateNodeInfo.AddCSINode(createSanitizedCSINode(example.CSINode, templateNodeInfo))
 }
 ```
 
-3. We propose that, when saving `ClusterState` , we capture and add `csiDrivers` information to all existing nodes.
 
-4. We propose that, when getting nodeInfosForGroups , the return nodeInfo map also contains csidriver information, which can be used later on for scheduling decisions.
+5. We propose that, when getting nodeInfosForGroups , the return nodeInfo map also contains csiNode information, which can be used later on for scheduling decisions.
 
 ```
 nodeInfosForGroups, autoscalerError := a.processors.TemplateNodeInfoProvider.Process(autoscalingContext, readyNodes, daemonsets, a.taintConfig, currentTime)
+```
+
+This should generally work out of box when  nodeInfo is extracted from previously stored cluster snapshot via:
+
+```go
+// will return wrapped framework.NodeInfo with both DRA and CSINode information
+ctx.ClusterSnapshot.GetNodeInfo(node.Name)
 ```
 
 Please note that, we will have to handle the case of scaling from 0, separately from
 scaling from 1, because in former case - no CSI volume limit information will be available
 If no node exists in a NodeGroup.
 
-5. We propose that, when deciding pods that should be considered for scaling nodes in podListProcessor.Process function, we update the hinting_simulator to consider CSI volume limits of existing nodes. This will allow cluster-autoscaler to exactly know, if all unschedulable pods will fit in the recently spun or currently running nodes.
+6. We further propose creation or extension of existing `StorageInfos` interface, so as both scheduler and CAS can work with the previously created fake `CSINode` objects. Without this change, both the hinting_simulator and estimator, which triggers scheduler plugin runs will not be able to find the templated `CSINode` object we created in previous step.
 
 Making aforementioned changes should allow us to handle scaling of nodes from 1.
 
@@ -227,6 +244,8 @@ The proposed change is small and a draft PR is available here - https://github.c
 This will stop too many pods crowding a node, when a new node is spun up and node is not yet reporting volume limits.
 
 But this alone is not enough to fix the underlying problem. Cluster-autoscaler must be fixed so as it is aware of attach limits of a node via CSINode object.
+
+We also need to ensure that `StorageInfos` interface that is shared between CAS and scheduler is extended for `CSINode` objects, so as CAS can run scheduler plugins with templated `CSINode` objects.
 
 ### Test Plan
 
@@ -289,16 +308,11 @@ We will add tests that validate both scaling from 0 and scaling from 1 use cases
 
 #### Alpha
 
-##### Phase-1
-
-- This is MVP of cnhanges in cluster-autoscaler.
-- All of the planned code changes for Phase1- alpha will be done in cluster-autoscaler and not in k/k repository.
-  We plan to impelemnt changes in cluster-autoscaler so as it can consider volume limits when scaling cluster.
-
-##### Phase-2
+- All of the planned code changes for alpha will be done in cluster-autoscaler and kubernetes/scheduler repository. 
+- We plan to impelemnt changes in cluster-autoscaler so as it can consider volume limits when scaling cluster.
 - Make changes in `kube-scheduler` so as it can stop scheduling of pods that require CSI volume if underlying CSI volume is not installed on the node.
 - Initial e2e tests completed and enabled.
-
+- All of the changes in CAS and kube-scheduler will be behind `VolumeLimitScaling` featuregate.
 
 <!---
 #### Beta
@@ -336,9 +350,8 @@ in back-to-back releases.
 In general Upgrade and Downgrade of `cluster-autoscaler` should be fine, it just means how CA scales nodes will 
 change.
 
-The concern about about `kube-scheduler` and `cluster-autoscaler` coupling does not apply to running versions, it just means
-that `cluster-autoscaler` should not bundle a version of `kube-scheduler` that blocks pods(that require CSI volumes) from getting scheduled, until
-CA is properly aware of volume limits.
+We do not want to downgrade to a version of CAS that has `VolumeLimitScaling` disabled while kube-scheduler has it enabled. 
+See Version Skew strategy for more details.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -353,6 +366,19 @@ enhancement:
 -->
 
 ### Version Skew Strategy
+
+This feature has no interaction with kubelet and other components running on the node. 
+
+However, if this feature is enabled in kube-scheduler (not part of CAS but externally running kube-scheduler) and CAS is older has has this feature disabled, 
+then we may run into an issue where CAS creates a node to satisfy pod requirements, but kube-scheduler will not schedule pods to the node until CSI driver
+is installed. 
+
+To satisfy this version skew, we propose:
+
+1. We will only enable this feature in kube-scheduler *after* corresponding feature-gate has been GAed in CAS and meets version skew critirea of CAS and kube's control-plane components.
+2. What this means is, when we enable `VolumeLimitScaling` feature in kube-scheduler, last 3 versions of CAS should already have this feature enabled and running by default and hence there should not be any version skew issues in case of downgrades.
+
+Just to make it clearer, although it should never happen - if feature-gate is disabled in scheduler but enabled in CAS, that will *never* be a problem, because in that case, CAS will probably take into account CSI volume limits when creating nodes and since kube-scheduler *yet* doesn't have limit for upcoming nodes, it will place those pods on those nodes without any restriction (like how it does today).
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -412,10 +438,11 @@ well as the [existing list] of feature gates.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `VolumeLimitScaling`
   - Components depending on the feature gate: `autoscaler`, `kube-scheduler`
-- [ ] Other
+- [x] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
     plane?
+    Yes, it should require restart of CAS and kube-scheduler.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
 
@@ -425,7 +452,12 @@ Yes, it will cause cluster-autoscaler to consider volume limits when scaling nod
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. This will simply cause old behaviour to be restored.
+For CAS:
+- Yes. This will simply cause old behaviour to be restored.
+
+For kube-scheduler:
+- This feature will *not* be enabled until the CAS this feature GAed and meets the version skew requirement, in which case disabling the feature in scheduler will simply cause
+scheduler to place pods on a node, which does not have CSI driver installed (current behaviour basically). Just to make it clearer, although it should never happen - if feature-gate is disabled in scheduler but enabled in CAS, that is not a problem.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -440,7 +472,13 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-It should work fine.
+For CAS:
+
+- The feature will start working same as before. 
+
+For kube-scheduler:
+
+- It should be work fine
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -465,6 +503,12 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+A rollout of this feature in CAS would be considered failing if somehow CAS is not creating 
+appropriate number of nodes to accommodate CSI volumes required by pods.
+
+A rollout of this feature in kube-scheduler would be considered failing if kube-scheduler is still
+placing pods to nodes that doesn't have CSI driver installed.
+
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
@@ -476,6 +520,10 @@ will rollout across nodes.
 -->
 
 ###### What specific metrics should inform a rollback?
+
+In CAS if `unschedulable_pods_count` metric consistently reports a number of pods pending of scheduling, in general that would be
+a good indication that something is broken in CAS. In general, this in itself doesn't mean those pending pods use CSI volumes
+but we are considering enhancing existing metrics with that information.
 
 <!--
 What signals should users be paying attention to when the feature is young
@@ -593,6 +641,12 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
+After the changes in this PR are merged, CAS now may have to read `CSINode` objects 
+before scaling decisions, but CAS was *already* reading `CSINode` objects via 
+scheduler plugins it vendors, because those plugins need `CSINode` listers.
+
+Overall - this should not result in any new API calls.
+
 <!--
 Describe them, providing:
   - API call type (e.g. PATCH pods)
@@ -608,6 +662,8 @@ Focusing mostly on:
 
 ###### Will enabling / using this feature result in introducing new API types?
 
+In the v1.35 alpha release, we are not considering introducing new API types yet. 
+
 <!--
 Describe them, providing:
   - API type
@@ -616,6 +672,11 @@ Describe them, providing:
 -->
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+In general I think, it should result in any new calls to the cloud provider. If anything, once 
+this feature is enabled in both CAS and kube-scheduler, it should prevent scheduling of pods to the nodes
+which can't reasonably accommodate them. And hence it should result in reduction of API calls we make
+to the cloudprovider.
 
 <!--
 Describe them, providing:
