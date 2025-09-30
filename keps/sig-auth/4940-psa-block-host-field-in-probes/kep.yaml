@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-auth
 participating-sigs:
   - sig-network
-status: provisional
+status: implemented
 creation-date: 2024-10-31
 reviewers:
   - deads2k
@@ -16,11 +16,9 @@ approvers:
   - deads2k
   - liggitt
 
-stage: alpha
+stage: stable
 
 latest-milestone: "v1.34"
 
 milestone:
-  alpha: "v1.34"
-  beta: "v1.34"
   stable: "v1.34"
