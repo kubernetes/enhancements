@@ -1,0 +1,50 @@
+title: KEP Template
+kep-number: 5468
+authors:
+  - "@BenTheElder"
+owning-sig: sig-testing
+participating-sigs:
+  - sig-instrumentation
+  - sig-api-machinery
+status: implementable
+creation-date: 2025-09-04
+reviewers:
+  - "@aojea"
+  - "@pohly"
+  - "@richabanker"
+  - "@jpbetz"
+approvers:
+  - "@aojea"
+  - "@pohly"
+  - "@richabanker"
+  - "@jpbetz"
+
+see-also:
+  - "/keps/sig-api-machinery/4153-declarative-validation"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.35"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+# TODO: alpha/beta/GA doesn't really maek sense here, not user facing
+milestone:
+  alpha: "v1.35"
+  beta: "v1.35"
+  stable: "v1.35"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+# none, this is in the e2e test framework
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+# none, this is in the e2e test framework
