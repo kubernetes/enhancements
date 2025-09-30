@@ -96,7 +96,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
-  - [Kubelet Handling](#kubelet-handling)
+  - [Pod Admission Failure](#pod-admission-failure)
+  - [Preventing Repeated Failures](#preventing-repeated-failures)
+  - [Diagnosing Permanent Errors](#diagnosing-permanent-errors)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -335,13 +337,48 @@ message NodePrepareResourceResponse {
 }
 ```
 
-### Kubelet Handling
+Permanent errors are ones which occur consistently for a given input to the DRA
+driver's `NodePrepareResources` gPRC call. Errors not classified as permanent
+are expected to be transient and eventually resolve. Permanent errors may be
+caused by faulty, irrecoverable devices or by invalid opaque `config` associated
+with a ResourceClaim's request.
+
+### Pod Admission Failure
 
 Once the kubelet receives a permanent error from a DRA driver for a given Pod,
-it must take the appropriate action to give up on the Pod permanently. More
+it must take the appropriate action to give up on the Pod as permanently as possible. More
 concretely, the kubelet will set the Pod's `status.phase` to `Failed`. The
 kubelet already knows not to continue reconciling `Failed` Pods and many other
 Pod controllers already handle `Failed` Pods.
+
+In some cases, the kubelet will re-reconcile Pods in a `Failed` phase. DRA
+drivers should not depend on requests resulting in permanent errors to never be
+made again. Similarly, DRA drivers should still expect the kubelet to invoke the
+`NodeUnprepareResources` method even after a prior `NodePrepareResources` call
+returned a permanent error.
+
+### Preventing Repeated Failures
+
+If a higher-level Pod controller replaces a Pod in the `Failed` phase with a new
+Pod because of a permanent failure from a DRA driver, steps should be taken to
+prevent the replacement Pod from being allocated the same device which is
+expected to fail again the same way.
+
+When [device taints and tolerations](https://kep.k8s.io/5055) are available, DRA
+drivers should consider adding a taint for the device with the `NoSchedule`
+effect if it determines other requests for that device are also likely to fail.
+When a permanent error is caused by invalid configuration in the ResourceClaim's
+request and not by a faulty device, drivers may not taint the device if another
+request for the same device with different parameters is expected to succeed.
+When device taints are not available, DRA drivers may instead consider removing
+a device from the ResourceSlice to remove it from the pool.
+
+### Diagnosing Permanent Errors
+
+The kubelet already logs errors returned from DRA drivers'
+`NodePrepareResources` responses and will generate an Event referring to the
+affected Pods. These messages will be updated to indicate when the error is
+permanent.
 
 ### Test Plan
 
@@ -443,6 +480,15 @@ fail to allocate permanently transition to the `Failed` `status.phase`.
 Likewise, Pods referencing ResourceClaims which fail to allocate transiently
 should remain in the `Pending` phase until the transient error is overcome and
 the Pod reaches the `Running` phase.
+
+Other potential E2E test scenarios include:
+- Ensuring a Pod referencing a ResourceClaim that encountered a permanent error
+  can be deleted when different DRA driver instances handle the
+  `NodePrepareResources` and `NodeUnprepareResources` calls.
+- Ensuring that Pods experiencing permanent DRA errors do not interfere with the
+  cleanup of CSI resources.
+- Ensuring the kubelet leaks no resources when many Pods encounter permanent DRA
+  errors.
 
 ### Graduation Criteria
 
