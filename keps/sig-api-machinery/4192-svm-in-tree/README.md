@@ -391,6 +391,9 @@ total:                                                                          
 - All of the above documented tests are complete
 - Leader election to make sure new controller can work with both CRD and in-tree APIs.
 - Using Garbage Collection Cache means using RV as an integer to validate the freshness of the cache. Approval from SigArch is required on this RV semantics.
+- Unexpected event handling(i.e. interrupted migrations)
+- Usage of [RealFIFO](https://github.com/kubernetes/kubernetes/pull/129568) and gating on feature enablement
+- Ensuring that migration only runs for API objects that support Create/Update in its discovery document
 
 ### Upgrade / Downgrade Strategy
 The feature is enabled using the feature gate `StorageVersionMigrator`. During an upgrade, this gate must be set to true. During a downgrade, this gate must be set to false, and any remaining _StorageVersionMigration_ resources should be manually removed.
