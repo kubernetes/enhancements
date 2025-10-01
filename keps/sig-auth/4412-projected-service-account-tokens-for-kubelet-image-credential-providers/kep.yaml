@@ -17,7 +17,7 @@ see-also:
 creation-date: "2024-09-09"
 status: implementable
 stage: beta
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 milestone:
   alpha: "v1.33"
   beta: "v1.34"
