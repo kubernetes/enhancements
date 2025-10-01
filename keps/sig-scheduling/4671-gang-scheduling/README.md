@@ -105,7 +105,7 @@ The `Workload` object will allow kube-scheduler to be aware that pods are part o
 - Introduce a concept of a `Workload` as a primary building block for workload-aware scheduling vision
 - Implement the first version of `Workload` API necessary for defining a Gang
 - Ensuring that we can extend `Workload` API in backward compatible way toward north-star API
-- Ensuring that `Workload` API will be usable for both built-in and third-parth workload controllers and APIs
+- Ensuring that `Workload` API will be usable for both built-in and third-party workload controllers and APIs
 - Implement first version of gang-scheduling in kube-scheduler
 - Provide full backward compatibility for all existing scheduling features
 
@@ -146,8 +146,11 @@ metadata:
 spec:
   completions: 100
   parallelism: 100
+  completionMode: Indexed
   template:
     spec:
+      workload:
+        name: job-1
       restartPolicy: OnFailure
       containers:
       - name: ml-worker
@@ -171,7 +174,7 @@ The `Workload` core resource will be introduced. A `Workload` does not create an
 apiVersion: scheduling/v1alpha1   
 kind: Workload
 metadata:
-  namespaces: ns-1
+  namespace: ns-1
   name: job-1
 spec:
   podGroups:   # or gangGroups -- TBD
@@ -237,17 +240,29 @@ to include that information. More specifically, the `pod.spec.workload` field is
 and is defined as following:
 
 ```go
+// WorkloadReference identifies the Workload object and PodGroup membership
+// that a Pod belongs to. The scheduler uses this information to enforce
+// gang scheduling semantics.
 type WorkloadReference struct {
     // Workload defines the name of the Workload object this pod belongs to.
     Workload string
 
     // PodGroup defines the name of the PodGroup within a Workload this pod belongs to.
     PodGroup string
-    // PodGroupReplica defines the replica number within a PodGroup for PodGroups
-    // in ReplicatedGangMode that this pod belongs to.
-    PodGroupReplica string
+    // PodGroupReplicaIndex is the replica index of the PodGroup that this pod
+    // belong to when the workload is running ReplicatedGangMode. In this mode,
+    // a workload may create multiple identical PodGroups.
+    // For workload in a different mode, this field is unset.
+    PodGroupReplicaIndex string
 }
 ```
+
+At least for Alpha, we start with `WorkloadReference` to be immutable field in the Pod.
+In further phases, we may decide to relax validation and allow for setting some of the fields later.
+Moreover, the visibility into issues (debuggability) will depend on [#5510], but we don't
+treat it as a blocker.
+
+[#5510]: https://github.com/kubernetes/enhancements/pull/5510
 
 The example below shows how this could look like for with the following `Workload` object:
 
@@ -312,7 +327,9 @@ type WorkloadSpec struct {
     // ControllerRef points to the true workload, e.g. Deployment.
     // It is optional to set and is intended to make this mapping easier for
     // things like CLI tools.
+    // This field is immutable.
     ControllerRef *v1.ObjectReference
+
     // PodGroups is a list of groups of pods.
     // Each group may request gang scheduling.
     PodGroups []PodGroup 
@@ -320,7 +337,7 @@ type WorkloadSpec struct {
 
 type GangMode string
 const (
-	// GangModeGang means that all pods in this PodGroup need to be scheduled as one gang.
+	// GangModeSingle means that all pods in this PodGroup need to be scheduled as one gang.
 	GangModeSingle GangMode = "Single"
 
 	// GangModeOff means that all pods in this PodGroup do not need to be scheduled as a gang.
@@ -333,7 +350,10 @@ const (
 
 // GangSchedulingPolicy holds options that affect how gang scheduling of one PodGroup is handled by the scheduler.
 type GangSchedulingPolicy struct {
-    // TODO: Decide between SchedulingTimeoutSeconds and making this field of type time.Duration.
+    // SchedulingTimeoutSeconds defines the timeout for the scheduling logic.
+    // Namely it's timeout from the moment when `minCount` pods show up in
+    // PreEnqueue, until those pods are observed in WaitOnPermit - for context
+    // see https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/#interfaces
 	SchedulingTimeoutSeconds *int
 	MinCount *int
 }
@@ -477,38 +497,14 @@ N/A
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/kubernetes/pkg/scheduler`: `2025-10-02` - 81.7%
+- `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2025-10-02` - 91.4%
+- `k8s.io/kubernetes/pkg/scheduler/framework`: `2025-10-02` - 81.7%
+- `k8s.io/kubernetes/pkg/scheduler/framework`: `2025-10-02` - 81.7%
+- `k8s.io/kubernetes/pkg/scheduler/framework/preemption`: `2025-10-02` - 64.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/util/assumecache`: `2025-10-02` - 86.2%
 
 ##### Integration tests
-
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
-
-If integration tests are not necessary or useful, explain why.
--->
 
 <!--
 This question should be filled when targeting a release.
@@ -521,6 +517,13 @@ This can be done with:
 - links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
+
+We will create integration test(s) to ensure basic functionalities of gang-scheduling including:
+- Pods linked to the non-existing workload are not scheduled
+- Pods get unblocked when workload is created and observed by scheduler
+- Pods are not scheduled if there is no space for the whole gang
+
+In Beta, we will add tests to verify that deadlocks are not happening.
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
@@ -540,6 +543,9 @@ This can be done with:
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 If e2e tests are not necessary or useful, explain why.
 -->
+
+We will add basic API tests for the the new `Workload` API, that will later be
+promoted to the conformance.
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
@@ -894,6 +900,8 @@ Major milestones might include:
 -->
 
 ## Drawbacks
+
+There are already multiple implementations of gang scheduling in the ecosystem.
 
 <!--
 Why should this KEP _not_ be implemented?
