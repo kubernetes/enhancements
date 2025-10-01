@@ -1,4 +1,4 @@
-title: "DRA: Handle permanent driver allocation failures"
+title: "DRA: Handle permanent driver failures"
 kep-number: 5322
 authors:
   - "@nojnhuh"

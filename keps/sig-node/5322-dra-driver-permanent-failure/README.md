@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5322: DRA: Handle permanent driver allocation failures
+# KEP-5322: DRA: Handle permanent driver failures
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -312,7 +312,7 @@ retried:
 
 1. Allow DRA drivers to annotate errors encountered during the
    `NodePrepareResources` gRPC call as being permanent.
-1. Update the kubelet to skip retrying to allocate resources for a Pod when a
+1. Update the kubelet to skip retrying to prepare allocated resources for a Pod when a
    previous request for that Pod failed permanently.
 
 ### API
@@ -475,9 +475,9 @@ If e2e tests are not necessary or useful, explain why.
 -->
 
 E2E tests will be added to verify that Pods referencing ResourceClaims which
-fail to allocate permanently transition to the `Failed` `status.phase`.
+receive permanent errors from DRA drivers transition to the `Failed` `status.phase`.
 
-Likewise, Pods referencing ResourceClaims which fail to allocate transiently
+Likewise, Pods referencing ResourceClaims which cause drivers to fail transiently
 should remain in the `Pending` phase until the transient error is overcome and
 the Pod reaches the `Running` phase.
 
