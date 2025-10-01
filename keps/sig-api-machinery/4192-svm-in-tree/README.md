@@ -15,7 +15,6 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [APIs to move](#apis-to-move)
-    - [We will move following <a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go">APIs</a> in-tree:](#we-will-move-following-apis-in-tree)
     - [Changes while we move above APIs in-tree:](#changes-while-we-move-above-apis-in-tree)
   - [<a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller">Controller</a> to move](#controller-to-move)
     - [<a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator">Migrator Controller</a>](#migrator-controller)
