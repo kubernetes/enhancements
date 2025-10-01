@@ -369,7 +369,7 @@ enhancement:
 
 This feature has no interaction with kubelet and other components running on the node. 
 
-However, if this feature is enabled in kube-scheduler (not part of CAS but externally running kube-scheduler) and CAS is older has has this feature disabled, 
+However, if this feature is enabled in kube-scheduler (not part of CAS but externally running kube-scheduler) and CAS is older and has this feature disabled, 
 then we may run into an issue where CAS creates a node to satisfy pod requirements, but kube-scheduler will not schedule pods to the node until CSI driver
 is installed. 
 
