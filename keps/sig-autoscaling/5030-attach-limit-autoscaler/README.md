@@ -309,7 +309,7 @@ We will add tests that validate both scaling from 0 and scaling from 1 use cases
 #### Alpha
 
 - All of the planned code changes for alpha will be done in cluster-autoscaler and kubernetes/scheduler repository. 
-- We plan to impelemnt changes in cluster-autoscaler so as it can consider volume limits when scaling cluster.
+- We plan to implement changes in cluster-autoscaler so as it can consider volume limits when scaling cluster.
 - Make changes in `kube-scheduler` so as it can stop scheduling of pods that require CSI volume if underlying CSI volume is not installed on the node.
 - Initial e2e tests completed and enabled.
 - All of the changes in CAS and kube-scheduler will be behind `VolumeLimitScaling` featuregate.
