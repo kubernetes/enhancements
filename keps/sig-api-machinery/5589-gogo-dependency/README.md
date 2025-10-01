@@ -202,7 +202,7 @@ This accomplishes goal 4 (no runtime use of gogo packages for the Kubernetes API
 
 Step 4: Update the post-gogo-generation Go-rewriting step already present in
 [k8s.io/code-generator/cmd/go-to-protobuf](https://github.com/kubernetes/code-generator/tree/v0.34.0/cmd/go-to-protobuf)
-to remove generated protobuf code that is unused, removing all runtime references to gogo packages,
+to remove or isolate via build tags generated protobuf code that is unused, removing all runtime references to gogo packages,
 while still satisfying the interfaces required for apimachinery protobuf handling.
 This accomplishes goal 3 by removing generated aspects of Kubernetes API types like proto descriptors
 which *appeared* to allow standard proto libraries to interact with those objects,
@@ -301,7 +301,7 @@ Removed methods and their replacement are:
 * `XXX_Size` --> `Size`
 * `XXX_DiscardUnknown` --> Remove, was a no-op
 * `Descriptor` --> No replacement
-* `ProtoMessage` --> Remove, was a no-op
+* `ProtoMessage` --> Remove, was a no-op (or re-enable via a `kubernetes_protomessage_one_more_release` build tag for one release while eliminating use)
 
 Mitigation: there is no use of these methods across all
 [kubernetes](https://github.com/search?q=language%3AGo+-org%3Agogo+-repo%3Acosmos%2Fgogoproto+-path%3A%2Fvendor%7Ctest%7Cexample%7Cgogo%2F+%2F%5C.%28XXX_Unmarshal%7CXXX_Marshal%7CXXX_Merge%7CXXX_Size%7CXXX_DiscardUnknown%7CDescriptor%7CProtoMessage%29%5C%28%2F+org%3Akubernetes&type=code)
@@ -336,7 +336,7 @@ Mitigations:
 
 **Truncate exported methods**
 
-Only the exported methods used by `k8s.io/apimachinery` protobuf handling or with other widespread use will be kept:
+Only the exported methods used by `k8s.io/apimachinery` protobuf handling or with other widespread use will be kept in default builds:
 
 * Unmarshaling:
     ```go
@@ -357,6 +357,11 @@ Only the exported methods used by `k8s.io/apimachinery` protobuf handling or wit
     ```
 
 We will truncate the exported methods from protobuf generation to just those methods.
+
+The `ProtoMessage()` marker method will be relocated to build-tagged files,
+which library consumers can enable with a `kubernetes_protomessage_one_more_release`
+build tag for a single release as a build mitigation if they rely on this method.
+After one minor release, this will be removed as well.
 
 **Truncate imports**
 
@@ -486,7 +491,10 @@ Several unused generated protobuf-related methods will be removed:
 * `XXX_Size`
 * `XXX_DiscardUnknown`
 * `Descriptor`
-* `ProtoMessage`
+
+The `ProtoMessage` marker method for use with standard protobuf libraries
+will be isolated in build-tagged files, which can be temporarily reenabled with a
+`kubernetes_protomessage_one_more_release` build tag for one minor release.
 
 ### Monitoring Requirements
 
