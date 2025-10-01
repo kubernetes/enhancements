@@ -375,7 +375,7 @@ is installed.
 
 To satisfy this version skew, we propose:
 
-1. We will only enable this feature in kube-scheduler *after* corresponding feature-gate has been GAed in CAS and meets version skew critirea of CAS and kube's control-plane components.
+1. We will only enable this feature in kube-scheduler *after* corresponding feature-gate has been GAed in CAS and meets version skew criteria of CAS and kube's control-plane components.
 2. What this means is, when we enable `VolumeLimitScaling` feature in kube-scheduler, last 3 versions of CAS should already have this feature enabled and running by default and hence there should not be any version skew issues in case of downgrades.
 
 Just to make it clearer, although it should never happen - if feature-gate is disabled in scheduler but enabled in CAS, that will *never* be a problem, because in that case, CAS will probably take into account CSI volume limits when creating nodes and since kube-scheduler *yet* doesn't have limit for upcoming nodes, it will place those pods on those nodes without any restriction (like how it does today).
