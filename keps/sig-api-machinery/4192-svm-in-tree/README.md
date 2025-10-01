@@ -253,9 +253,29 @@ will be deferred to the user, instead of being triggered automatically.
 
 #### Garbage Collection Cache
 Kube Controller Manager's garbage collection cache contains the name and namespace
-for all resources, providing a suitable dataset for the migration process. This
-approach is detailed [here](https://docs.google.com/document/d/1lHDbrMCmNG1KXEpw6gMhDL8qWAWgeSlfW6gbCvD80uw/edit?usp=sharing).
-_We will use this approach for the Alpha release_.
+for all resources, providing a suitable dataset for the migration process.
+
+At the beginning of a migration, to make sure the garbage collector's cache is
+up-to-date with the cluster state, the SVM controller performs a list that is
+guaranteed to return at most one item (using limits/non-existent namespace names).
+The RV of the returned list is then stored and used to compare with the RV from
+the GC cache for the given resource. The controller waits until the GC cache RV
+is newer that the RV stored for the specific migration.
+
+The controller then issues patch requests for each of the objects in the GC cache
+for the given resource, that is only if the resource version of this object is not greater
+than the resource version for the migration that was observed earlier. These patch
+requests should contain minimum information:
+- API version and kind
+- resource name and namespace
+- UID from the GC cache
+  - to make sure we don't accidentally create an empty instance if the resource was
+    deleted in the meantime
+- resource version from the GC cache
+  - this would provoke conflict errors if the object was modified in the meantime,
+    meaning we no longer need to attempt the write because someone else already did that
+  - must also be set in case the object was removed to prevent "immutable field"
+    errors when setting UID as discussed above
 
 ### RBAC for SVM
 - Storage Version Migrator Controller
@@ -393,7 +413,7 @@ total:                                                                          
 The feature is enabled using the feature gate `StorageVersionMigrator`. During an upgrade, this gate must be set to true. During a downgrade, this gate must be set to false, and any remaining _StorageVersionMigration_ resources should be manually removed.
 
 ### Version Skew Strategy
-The feature will be enabled by the feature gate `StorageVersionMigrator` on both the _api-server_ and the _kube-controller-manager_. This gate must be set for both components during installation. Otherwise, since the kube-controller-manager is allowed to be one version lower than the api-server, it won't be able to process any StorageVersionMigration resources created by the API server.
+The feature will be enabled by the feature gate `StorageVersionMigrator` on the _kube-controller-manager_.
 
 ## Production Readiness Review Questionnaire
 
