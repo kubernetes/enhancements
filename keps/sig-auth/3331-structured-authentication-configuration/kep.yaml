@@ -12,7 +12,7 @@ approvers:
 creation-date: "2022-06-02"
 status: implementable
 stage: stable
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 milestone:
   alpha: "v1.29"
   beta: "v1.30"
