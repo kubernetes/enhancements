@@ -234,9 +234,11 @@ To avoid any conflicts with the Storage Version Migrators running out of tree, w
 The final APIs that will be moved in-tree are:
 - `v1alpha1` of `storageversionmigrations.storagemigration.k8s.io`
 
-### [Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller) to move
-#### [Migrator Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator)
-Currently, the Storage Version Migrator comprises two controllers: the `Trigger`
+## Former, out-of-tree implementation
+- [Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller) to move
+- [Migrator Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator)
+
+Currently, the Storage Version Migrator comprises of two controllers: the `Trigger`
 controller and the `Migrator` controller. The Trigger controller performs resource
 discovery, identifying supported resources with the preferred server version every
 `10 minutes`. Subsequently, the Trigger controller creates the `StorageVersionMigration`
@@ -247,7 +249,8 @@ When transitioning the Storage Version Migrator in-tree, we will exclusively mov
 Migrator controller as a component of KCM. The creation of the Migration resource
 will be deferred to the user, instead of being triggered automatically.
 
-### Approach
+### New KCM-based controller
+
 #### Garbage Collection Cache
 Kube Controller Manager's garbage collection cache contains the name and namespace
 for all resources, providing a suitable dataset for the migration process. This
