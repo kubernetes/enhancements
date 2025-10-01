@@ -213,7 +213,7 @@ currently handles all failures:
 Pods with unfulfillable DRA allocations will stay stuck in a non-erroneous
 pending state until manual intervention is taken to identify the cause for the
 lack of progress and ultimately delete and recreate the Pod. In the meantime,
-the kubelet will waste time retrying an operation that is known will fail the
+the kubelet will waste time retrying an operation that is known to fail the
 same way as it did previously. Making the permanent nature of the error known as
 soon as possible allows the quickest path for remediation.
 
@@ -367,11 +367,12 @@ expected to fail again the same way.
 When [device taints and tolerations](https://kep.k8s.io/5055) are available, DRA
 drivers should consider adding a taint for the device with the `NoSchedule`
 effect if it determines other requests for that device are also likely to fail.
-When a permanent error is caused by invalid configuration in the ResourceClaim's
-request and not by a faulty device, drivers may not taint the device if another
-request for the same device with different parameters is expected to succeed.
 When device taints are not available, DRA drivers may instead consider removing
 a device from the ResourceSlice to remove it from the pool.
+
+When a permanent error is caused by invalid configuration in the ResourceClaim's
+request and not by a faulty device, drivers should not taint the device if another
+request for the same device with different parameters is expected to succeed.
 
 ### Diagnosing Permanent Errors
 
