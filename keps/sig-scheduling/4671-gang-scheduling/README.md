@@ -337,11 +337,11 @@ type WorkloadSpec struct {
 
 type GangMode string
 const (
-	// GangModeSingle means that all pods in this PodGroup need to be scheduled as one gang.
-	GangModeSingle GangMode = "Single"
-
 	// GangModeOff means that all pods in this PodGroup do not need to be scheduled as a gang.
 	GangModeOff GangMode = "Off"
+
+	// GangModeSingle means that all pods in this PodGroup need to be scheduled as one gang.
+	GangModeSingle GangMode = "Single"
 
 	// GangModeReplicatedGang means that there is a variable number of identical copies of this PodGroup,
     //  as specified in Replicas, and each copy needs to be independently gang scheduled.
@@ -365,7 +365,7 @@ type GangSchedulingPolicy struct {
 // TODO: Decide on the naming: PodGroup vs GangGroup.
 type PodGroup struct {
     Name *string
-    GangMode *GangMode // default is "Single"
+    GangMode *GangMode // default is "Off"
 
     // Optional when GangMode = "ReplicatedGang".
     // Forbidden otherwise.
@@ -379,6 +379,75 @@ type PodGroup struct {
 
 type WorkloadStatus struct {
   // Necessary status fields TBD.
+}
+```
+
+We also consider an alternative API design for PodGroup as following:
+
+```go
+type GangMode string
+const (
+	// GangModeOff means that all pods in this PodGroup do not need to be scheduled as a gang.
+	GangModeOff GangMode = "Off"
+
+    // GangModeSingle means that all pods in this PodGroup need to be scheduled as one gang.
+	GangModeOn GangMode = "On"
+)
+
+// PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
+// multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
+// number of identical copies.
+//
+// TODO: Decide on the naming: PodGroup vs GangGroup.
+type PodGroup struct {
+    Name *string
+
+    GangMode GangMode // default is "Off"
+
+    // Replicas is the number of identical instances of a PodGroup that
+    // are part of the Workload.
+    // Defaults to 1.
+    Replicas int
+
+    // GangSchedulingPolicy defines the options applying to all pods in this gang.
+    // Forbidden if GangMode is set to "Off".
+    GangSchedulingPolicy GangSchedulingPolicy
+}
+```
+
+Yet another alternative would be the following:
+
+```go
+// PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
+// multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
+// number of identical copies.
+//
+// TODO: Decide on the naming: PodGroup vs GangGroup.
+type PodGroup struct {
+    Name *string
+
+    // Exactly one of the following fields should be set.
+
+    GangPodGroup *GangPodGroup
+
+    NonGangPodGroup *NonGangPodGroup
+}
+
+type GangPodGroup struct {
+    // Replicas is the number of identical instances of a PodGroup that
+    // are part of the Workload.
+    // Defaults to 1.
+    Replicas int
+
+    // GangSchedulingPolicy defines the options applying to all pods in this gang.
+    GangSchedulingPolicy GangSchedulingPolicy
+}
+
+type NonGangPodGroup struct {
+    // Replicas is the number of identical instances of a PodGroup that
+    // are part of the Workload.
+    // Defaults to 1.
+    Replicas int
 }
 ```
 
