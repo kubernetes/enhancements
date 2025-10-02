@@ -4,6 +4,12 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Linux Community Momentum](#linux-community-momentum)
+    - [Systemd](#systemd)
+    - [Red Hat Enterprise Linux](#red-hat-enterprise-linux)
+    - [Fedora](#fedora)
+    - [Debian](#debian)
+    - [Amazon Linux](#amazon-linux)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -87,11 +93,48 @@ Following the transition of cgroup v1 support to maintenance mode in KEP-4569, t
 
 The motivation builds on the rationale established in KEP-4569:
 - The Linux kernel community has made cgroup v2 the focus for new features
-- Major Linux distributions are phasing out cgroup v1 support
 - [systemd](https://github.com/systemd/systemd/releases/tag/v258) and other critical components are moving beyond cgroup v1
 - cgroup v2 offers better functionality, more consistent interfaces, and improved scalability
 
 By removing cgroup v1, Kubernetes provides a clear signal to the community about the removal path and encourages migration to the more secure and efficient cgroup v2 technology.
+
+### Linux Community Momentum
+
+#### Systemd
+
+Systemd has started phasing out cgroup v1 in [v256](https://github.com/systemd/systemd/releases/tag/v256).
+
+> Support for cgroup v1 ('legacy' and 'hybrid' hierarchies) is now
+  considered obsolete and systemd by default will refuse to boot under
+  it. To forcibly reenable cgroup v1 support,
+      SYSTEMD_CGROUP_ENABLE_LEGACY_FORCE=1 must be set on kernel command
+      line. The meson option 'default-hierarchy=' is also deprecated, i.e.
+      only cgroup v2 ('unified' hierarchy) can be selected as build-time
+      default.
+
+Systemd in [v258](https://github.com/systemd/systemd/releases/tag/v258) announces the removal of cgroup v1.
+
+#### Red Hat Enterprise Linux
+
+In RHEL 9.4, Red Hat has announced the [deprecation of cgroups v1](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/9.4_release_notes/deprecated-functionality).
+
+> In Red Hat Enterprise Linux 9, the default mode is v2. In Red Hat Enterprise Linux 10, systemd will not support booting in the cgroups v1 mode and only cgroups v2 mode will be available.
+
+#### Fedora
+
+Fedora 41 and Fedora 42 inherit systemd v256 so they will not boot cgroup v1 by default.
+
+Fedora 43 will inherit cgroup v1 removal so one will not be able to use cgroup v1 on latest Fedora version.
+
+#### Debian
+
+The latest release of debian "Trixie" is using [systemd 257](https://packages.debian.org/trixie/systemd) so users of debian would need to set SYSTEMD_CGROUP_ENABLE_LEGACY_FORCE=1 to enable cgroup v1 support on systemd.
+
+#### Amazon Linux
+
+[Amazon Linux 2023](https://docs.aws.amazon.com/linux/al2023/ug/cgroupv2.html) announces that cgroup v1 is unsupported and not recommended.
+
+> Although AL2023 still includes code that can make the system run using cgroupv1, this is not a recommended or supported configuration, and will be completely removed in a future major release of Amazon Linux.
 
 ### Goals
 
