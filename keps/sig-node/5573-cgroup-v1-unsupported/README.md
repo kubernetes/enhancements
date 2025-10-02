@@ -18,6 +18,7 @@
   - [Enable FailCgroupV1 by default](#enable-failcgroupv1-by-default)
   - [Update warning messages and events](#update-warning-messages-and-events)
   - [Documentation updates](#documentation-updates)
+  - [Testing of cgroup v1](#testing-of-cgroup-v1)
   - [Removal of cgroup v1](#removal-of-cgroup-v1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -92,8 +93,9 @@ In n+3 releases, we will remove the cgroup v1 code.
 Following the transition of cgroup v1 support to maintenance mode in KEP-4569, the next logical step is to move cgroup v1 to an unsupported state. This aligns with the broader ecosystem's migration to cgroup v2, including major Linux distributions and the Linux kernel community's focus on cgroup v2 for new features and improvements.
 
 The motivation builds on the rationale established in KEP-4569:
+
 - The Linux kernel community has made cgroup v2 the focus for new features
-- [systemd](https://github.com/systemd/systemd/releases/tag/v258) and other critical components are moving beyond cgroup v1
+- systemd announced deprecation 1.5 years ago in [v256](https://github.com/systemd/systemd/releases/tag/v256) and [removal](https://github.com/systemd/systemd/releases/tag/v258). Other critical components are moving beyond cgroup v1
 - cgroup v2 offers better functionality, more consistent interfaces, and improved scalability
 
 By removing cgroup v1, Kubernetes provides a clear signal to the community about the removal path and encourages migration to the more secure and efficient cgroup v2 technology.
@@ -228,6 +230,12 @@ Update all relevant documentation across the Kubernetes ecosystem:
 - Release notes
 - Blog posts about the transition
 
+### Testing of cgroup v1
+
+There is still a [lane](https://testgrid.k8s.io/sig-node-containerd#cos-cgroupv1-containerd-node-e2e) in Kubernetes upstream testing cgroup v1.
+
+Other lanes will be removed but we will continue supporting this lane until we fully remove cgroup v1 from the code base.
+
 ### Removal of cgroup v1
 
 <UNRESOLVED @haircommander>
@@ -259,6 +267,7 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 -->
 
 All existing cgroup v2 test jobs must continue to pass. Tests should verify that:
+
 1. The default behavior correctly disables cgroup v1 support
 2. Appropriate warning messages are displayed when cgroup v1 is detected
 
@@ -272,6 +281,7 @@ together with explanation why this is acceptable.
 -->
 
 Unit tests should cover:
+
 - Default configuration values
 - Warning message generation
 - Event creation for cgroup v1 detection
@@ -307,10 +317,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Beta
 
-- Default value for `FailCgroupV1` changed to `true`
+- Default value for `FailCgroupV1` kubelet config will be changed to `true`
 - Updated warning messages and events for unsupported status
 - Documentation updates in kubernetes/enhancements repository
-- All e2e testing removed for cgroup v1.
+- Subset of tests will run on cgroupv1 offering sanity check of cgroupv1 functioning. Since the cgroupv1 was moved to the maintenance mode, only older features are supported on cgroupv1.
 
 #### Stable
 
