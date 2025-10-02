@@ -354,8 +354,10 @@ type GangSchedulingPolicy struct {
     // Namely it's timeout from the moment when `minCount` pods show up in
     // PreEnqueue, until those pods are observed in WaitOnPermit - for context
     // see https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/#interfaces
-	SchedulingTimeoutSeconds *int
-	MinCount *int
+    // If the timeout is hit, we reject all the waiting pods, free the resources
+    // they were reserving and put all of them back to scheduling queue.
+    SchedulingTimeoutSeconds *int
+    MinCount *int
 }
 
 // PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
@@ -385,69 +387,49 @@ type WorkloadStatus struct {
 We also consider an alternative API design for PodGroup as following:
 
 ```go
-type GangMode string
-const (
-	// GangModeOff means that all pods in this PodGroup do not need to be scheduled as a gang.
-	GangModeOff GangMode = "Off"
-
-    // GangModeSingle means that all pods in this PodGroup need to be scheduled as one gang.
-	GangModeOn GangMode = "On"
-)
-
 // PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
 // multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
 // number of identical copies.
-//
-// TODO: Decide on the naming: PodGroup vs GangGroup.
 type PodGroup struct {
     Name *string
 
-    GangMode GangMode // default is "Off"
-
-    // Replicas is the number of identical instances of a PodGroup that
-    // are part of the Workload.
+    // Number of identical instances of PodGroup that are part of the Workload.
     // Defaults to 1.
     Replicas int
 
-    // GangSchedulingPolicy defines the options applying to all pods in this gang.
-    // Forbidden if GangMode is set to "Off".
-    GangSchedulingPolicy GangSchedulingPolicy
-}
-```
-
-Yet another alternative would be the following:
-
-```go
-// PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
-// multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
-// number of identical copies.
-//
-// TODO: Decide on the naming: PodGroup vs GangGroup.
-type PodGroup struct {
-    Name *string
-
-    // Exactly one of the following fields should be set.
-
-    GangPodGroup *GangPodGroup
-
-    NonGangPodGroup *NonGangPodGroup
+    // Policy defines the configuration of the PodGroup to enable different
+    // scheduling policies.
+    Policy PodGroupPolicy
 }
 
-type GangPodGroup struct {
-    // Replicas is the number of identical instances of a PodGroup that
-    // are part of the Workload.
-    // Defaults to 1.
-    Replicas int
+// PodGroupPolicy defines scheduling configuration of a PodGroup.
+type PodGroupPolicy struct {
+    // Exactly one of the policies should be set.
 
-    // GangSchedulingPolicy defines the options applying to all pods in this gang.
-    GangSchedulingPolicy GangSchedulingPolicy
+    // Default scheduling policy (default Kubernetes behavior).
+    Default *DefaultSchedulingPolicy
+
+    // Gang scheduling policy (all-or-nothing scheduling semantics)
+    Gang *GangSchedulingPolicy
 }
 
-type NonGangPodGroup struct {
-    // Replicas is the number of identical instances of a PodGroup that
-    // are part of the Workload.
-    // Defaults to 1.
-    Replicas int
+// DefaultSchedulingPolicy represents default scheduling behavior.
+type DefaultSchedulingPolicy struct {
+    // For now this is effectively just a marker type.
+}
+
+// GangSchedulingPolicy represents options for how gang scheduling of one
+// PodGroup should be handled.
+type GangSchedulingPolicy struct {
+    // SchedulingTimeoutSeconds defines the timeout for the scheduling logic.
+    // Namely it's timeout from the moment when `minCount` pods show up in
+    // PreEnqueue, until those pods are observed in WaitOnPermit - for context
+    // see https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/#interfaces
+    // If the timeout is hit, we reject all the waiting pods, free the resources
+    // they were reserving and put all of them back to scheduling queue.
+    SchedulingTimeoutSeconds *int
+
+    MinCount *int
 }
 ```
 
@@ -481,6 +463,8 @@ The north star vision for gang scheduling implementation should satisfy the foll
    from a runtime perspective, they can't be preempted individually).
 7. Updating workload status and triggering rescheduling when a gang failed binding in the all-or-nothing
    fashion.
+8. Support gang-scheduling even if part of the infrastructure needs to be provisioned (by Cluster
+   Autoscaler, Karpenter or other solutions).
 
 Addressing all these requirements in a single shot would be a huge change, so as part ot this KEP we
 will only focus on a subset of those. However, we very briefly sketch the path towards the vision to
@@ -538,6 +522,10 @@ in a dedicated KEP. The current vision includes introducing a dedicated preempti
 will result in pods no longer being treated individually for preemption purposes) which makes it
 an additive feature. However, having a next level of details is required to ensure that we really
 have a feasible backward-compatible plan before promoting this feature to Beta.
+
+Addressing requirement (8) is the biggest effort as it requires much closer integration between
+scheduler and autoscaling components. So in the initial steps we will only focus on mitigating
+this problem with existing mechanisms (e.g. reserving resources via NominatedNodeName).
 
 However, approval for this KEP is NOT an approval for this vision. We only sketch it to show that
 we see a viable path forward from the proposed design that will not require significant rework.
