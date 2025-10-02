@@ -651,11 +651,11 @@ use container runtime versions that have the needed changes.
 - This feature is not supported on Windows.
 - Get review from VM container runtimes maintainers (not blocker, as VM runtimes should just ignore
   the field, but nice to have)
+- Fully integrate into [Pod Security Standards (PSS)](#pod-security-standards-pss-integration)
 
 ##### GA
 
 - Gather and address feedback from the community
-- Fully integrate into [Pod Security Standards (PSS)](#pod-security-standards-pss-integration)
 
 ### Upgrade / Downgrade Strategy
 
