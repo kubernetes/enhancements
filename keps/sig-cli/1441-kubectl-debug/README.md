@@ -25,7 +25,7 @@
     - [Profile: restricted](#profile-restricted)
     - [Profile: sysadmin](#profile-sysadmin)
     - [Profile: netadmin](#profile-netadmin)
-    - [Default Profile and Automation Selection](#default-profile-and-automation-selection)
+    - [Default Profile](#default-profile)
     - [Future Improvements](#future-improvements)
   - [User Stories](#user-stories)
     - [Operations](#operations)
@@ -329,15 +329,14 @@ debugging a node to create a pod with the `NET_ADMIN` capaibility.
 
 The available profiles will be:
 
-| Profile      | Description                                                     |
-| ------------ | --------------------------------------------------------------- |
-| general      | A reasonable set of defaults tailored for each debuging journey |
-| baseline     | Compatible with baseline [Pod Security Standard]                |
-| restricted   | Compatible with restricted [Pod Security Standard]              |
-| auto         | Automatically choose between general, baseline, and restricted  |
-| sysadmin     | System Administrator (root) privileges                          |
-| netadmin     | Network Administrator privileges.                               |
-| legacy       | Backwards compatibility with 1.22 behavior                      |
+| Profile    | Description                                                     |
+|------------|-----------------------------------------------------------------|
+| general    | A reasonable set of defaults tailored for each debuging journey |
+| baseline   | Compatible with baseline [Pod Security Standard]                |
+| restricted | Compatible with restricted [Pod Security Standard]              |
+| sysadmin   | System Administrator (root) privileges                          |
+| netadmin   | Network Administrator privileges.                               |
+| legacy     | Backwards compatibility with 1.22 behavior                      |
 
 Debugging profiles are intended to work seamlessly with the [Pod Security Standard]
 enforced by the [PodSecurity] admission controller. The baseline and restricted
@@ -349,11 +348,11 @@ level.
 
 #### Profile: general
 
-| Journey             | Debug Container Behavior                                                   |
-| ------------------- | -------------------------------------------------------------------------- |
-| Node                | empty securityContext; uses host namespaces, mounts root partition         |
-| Pod Copy            | sets `SYS_PTRACE` in debugging container, sets shareProcessNamespace       |
-| Ephemeral Container | sets `SYS_PTRACE` in ephemeral container                                   |
+| Journey             | Debug Container Behavior                                             |
+|---------------------|----------------------------------------------------------------------|
+| Node                | empty securityContext; uses host namespaces, mounts root partition   |
+| Pod Copy            | sets `SYS_PTRACE` in debugging container, sets shareProcessNamespace |
+| Ephemeral Container | sets `SYS_PTRACE` in ephemeral container                             |
 
 This profile prioritizes the debugging experience for the general case. For pod debugging it sets
 `SYS_PTRACE` and uses pod-scoped namespaces. Probes and labels are stripped from Pod copies to
@@ -363,11 +362,11 @@ Node debugging uses host-scoped namespaces but doesn't otherwise request escalat
 
 #### Profile: baseline
 
-| Journey             | Debug Container Behavior                                                   |
-| ------------------- | -------------------------------------------------------------------------- |
-| Node                | empty securityContext; uses isolated namespaces                            |
-| Pod Copy            | empty securityContext; sets shareProcessNamespace                          |
-| Ephemeral Container | empty securityContext                                                      |
+| Journey             | Debug Container Behavior                          |
+|---------------------|---------------------------------------------------|
+| Node                | empty securityContext; uses isolated namespaces   |
+| Pod Copy            | empty securityContext; sets shareProcessNamespace |
+| Ephemeral Container | empty securityContext                             |
 
 This profile is identical to "general" but eliminates privileges that are disallowed under the
 baseline security profile, such as host namespaces, host volume, mounts and `SYS_PTRACE`.
@@ -376,11 +375,11 @@ Probes and labels continue to be stripped from Pod copies.
 
 #### Profile: restricted
 
-| Journey             | Debug Container Behavior                                                   |
-| ------------------- | -------------------------------------------------------------------------- |
-| Node                | empty securityContext; uses private namespaces                             |
-| Pod Copy            | empty securityContext; sets shareProcessNamespace                          |
-| Ephemeral Container | empty securityContext                                                      |
+| Journey             | Debug Container Behavior                          |
+|---------------------|---------------------------------------------------|
+| Node                | empty securityContext; uses private namespaces    |
+| Pod Copy            | empty securityContext; sets shareProcessNamespace |
+| Ephemeral Container | empty securityContext                             |
 
 This profile is identical to "baseline" but adds configuration that's required under the restricted
 security profile, such as requiring a non-root user and dropping all capabilities.
@@ -390,7 +389,7 @@ Probes and labels continue to be stripped from Pod copies.
 #### Profile: sysadmin
 
 | Journey             | Debug Container Behavior               |
-| ------------------- | -------------------------------------- |
+|---------------------|----------------------------------------|
 | Node                | sets privileged; uses host namespaces  |
 | Pod Copy            | sets privileged on debugging container |
 | Ephemeral Container | sets privileged on ephemeral container |
@@ -402,7 +401,7 @@ Probes and labels are be stripped from Pod copies.
 #### Profile: netadmin
 
 | Journey             | Debug Container Behavior                                                          |
-| ------------------- | --------------------------------------------------------------------------------- |
+|---------------------|-----------------------------------------------------------------------------------|
 | Node                | sets `NET_ADMIN` and `NET_RAW`; uses host namespaces                              |
 | Pod Copy            | sets `NET_ADMIN` and `NET_RAW` on debugging container; sets shareProcessNamespace |
 | Ephemeral Container | sets `NET_ADMIN` and `NET_RAW` on ephemeral container                             |
@@ -411,17 +410,12 @@ This profile offers elevated privileges for network debugging.
 
 Probes and labels are be stripped from Pod copies.
 
-#### Default Profile and Automation Selection
+#### Default Profile
 
-In order to provide a seamless experience and encourage use of [PodSecurity], the "auto"
-profile will automatically choose a profile that's compatible with the current security profile
-by examining the `pod-security.kubernetes.io/enforce` annotation on the namespace and
-selecting the most permissive of "general", "baseline", and "restricted" that the
-controller will allow.
+In order to maintain backwards compatibility the `legacy` profile will be the default profile until 1.35.
+When `--profile` is not specified `kubectl debug` will print a warning about the upcoming change in behavior.
 
-This will become the default behavior, but in order to maintain backwards compatibility
-the "legacy" profile will be the default profile until the 1.25 release.  When `--profile`
-is not specified `kubectl debug` will print a warning about the upcoming change in behavior.
+Including 1.35 and upwards, `general` will be the default profile. `legacy` profile will entirely be removed in 1.38.
 
 #### Future Improvements
 
@@ -443,8 +437,8 @@ be able to inspect the running pod without restarting it, but she doesn't
 necessarily need to enter the container itself. She wants to:
 
 1.  Inspect the filesystem of target container
-1.  Execute debugging utilities not included in the container image
-1.  Initiate network requests from the pod network namespace
+2.  Execute debugging utilities not included in the container image
+3.  Initiate network requests from the pod network namespace
 
 This is achieved by running a new "debug" container in the pod namespaces. Her
 troubleshooting session might resemble:
@@ -1107,6 +1101,7 @@ Definitely stop running `kubectl debug`.
 - *2020-09-23*: Update KEP for mutating multiple container images in debug-by-copy.
 - *2020-09-24*: Update KEP for Production Readiness and beta graduation.
 - *2024-01-16*: Promote kubectl debug to GA
+- *2025-10-02*: Update KEP to drop auto profile and default general
 
 ## Alternatives
 
