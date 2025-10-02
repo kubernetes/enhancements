@@ -412,11 +412,10 @@ Probes and labels are be stripped from Pod copies.
 
 #### Default Profile
 
-Default profile will be `general`.
+In order to maintain backwards compatibility the `legacy` profile will be the default profile until 1.35.
+When `--profile` is not specified `kubectl debug` will print a warning about the upcoming change in behavior.
 
-This will become the default behavior, but in order to maintain backwards compatibility
-the "legacy" profile will be the default profile until the 1.25 release.  When `--profile`
-is not specified `kubectl debug` will print a warning about the upcoming change in behavior.
+Including 1.35 and upwards, `general` will be the default profile. `legacy` profile will entirely be removed in 1.38.
 
 #### Future Improvements
 
@@ -1102,6 +1101,7 @@ Definitely stop running `kubectl debug`.
 - *2020-09-23*: Update KEP for mutating multiple container images in debug-by-copy.
 - *2020-09-24*: Update KEP for Production Readiness and beta graduation.
 - *2024-01-16*: Promote kubectl debug to GA
+- *2025-10-02*: Update KEP to drop auto profile and default general
 
 ## Alternatives
 
