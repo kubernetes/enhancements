@@ -1667,7 +1667,15 @@ _This section must be completed when targeting beta graduation to a release._
     - Introduce Actuated resources for actuation
 - 2025-06-03 - v1.34 post-beta updates
     - Allow no-restart memory limit decreases
-- 2025-09-22 - v1.35 updates for GA graduation
+    - Add instrumentation section
+    - Priority of resize requests
+- 2025-09-22 - Correct KEP details to match actual implementation
+      - revert PreferNoRestart resize policy back to NotRequired
+      - add more details about the resize status
+      - document kubelet-triggered eviction for critical pods
+      - update outdated notes regarding static CPU
+      - correct details about instrumentation
+- 2025-09-22 - Update in-place pod resize for GA
 
 ## Drawbacks
 
