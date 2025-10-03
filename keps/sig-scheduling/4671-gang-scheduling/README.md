@@ -177,12 +177,11 @@ metadata:
   namespace: ns-1
   name: job-1
 spec:
-  podGroups:   # or gangGroups -- TBD
+  podGroups:
     - name: "pg1"
-      gangMode: Single
-      gangSchedulingPolicy:
-        minCount: 100
-        schedulingTimeoutSeconds: 60
+      policy:
+        gang:
+          minCount: 100
 ```
 
 
@@ -224,11 +223,8 @@ usecases. You can read more about it in the [extended proposal] document.
 * `scheduling` is the ApiGroup.
 * `spec.workload` is the name of the new field in pod.
 * Within a Workload there is a list of groups of pods. Each group represents a top-level division of pods within a Workload.  Each group can be independently gang scheduled (or not use gang scheduling). This group is named
-  <<[UNRESOLVED community feedback requested]>> `PodGroup` or `GangGroup` for the top level. <<[/UNRESOLVED]>>.
-* In a future , we expect that this group can optionally specify further subdivision into sub groups.  Each sub-group can have an index.  The indexes go from 0 to N, without repeats or gaps. These subgroups are called
-  <<[UNRESOLVED depending on previous unresolved item]>> `PodSubGroup` if `PodGroup` is chosen, or else `RankedGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
-* In subsequent KEPs, we expect that a sub-group can optionally specify further subdivision into pod equivalence classes.  All pods in a pod equivalence class have the same values for all fields that affect scheduling feasibility.  These pod equivalence classes are called
-  <<[UNRESOLVED depending on a previous unresolved item]>> `PodSet` if `PodGroup` is chosen, or else `EqGroup` if `GangGroup` is chosen<<[/UNRESOLVED]>>.
+* In a future , we expect that this group can optionally specify further subdivision into sub groups.  Each sub-group can have an index.  The indexes go from 0 to N, without repeats or gaps. These subgroups are called `PodSubGroup`.
+* In subsequent KEPs, we expect that a sub-group can optionally specify further subdivision into pod equivalence classes.  All pods in a pod equivalence class have the same values for all fields that affect scheduling feasibility.  These pod equivalence classes are called `PodSet`.
 
 ### Associating Pod into PodGroups
 
@@ -244,8 +240,8 @@ and is defined as following:
 // that a Pod belongs to. The scheduler uses this information to enforce
 // gang scheduling semantics.
 type WorkloadReference struct {
-    // Workload defines the name of the Workload object this pod belongs to.
-    Workload string
+    // Name defines the name of the Workload object this pod belongs to.
+    Name string
 
     // PodGroup defines the name of the PodGroup within a Workload this pod belongs to.
     PodGroup string
@@ -272,13 +268,12 @@ kind: Workload
 metadata:
   name: jobset
 spec:
-  podGroups:   # or gangGroups -- TBD
+  podGroups:
     - name: "job-1"
-      gangMode: Replicated
       replicas: 4
-      gangSchedulingPolicy:
-        minCount: 100
-        schedulingTimeoutSeconds: 60
+      policy:
+        gang:
+          minCount: 100
 ```
 
 ```yaml
@@ -291,7 +286,7 @@ spec:
   workload:
     name: jobset
     podGroup: job-1
-    podGroupReplica: 2
+    podGroupReplicaIndex: 2
   ...
 
 ```
@@ -335,60 +330,8 @@ type WorkloadSpec struct {
     PodGroups []PodGroup 
 }
 
-type GangMode string
-const (
-	// GangModeOff means that all pods in this PodGroup do not need to be scheduled as a gang.
-	GangModeOff GangMode = "Off"
-
-	// GangModeSingle means that all pods in this PodGroup need to be scheduled as one gang.
-	GangModeSingle GangMode = "Single"
-
-	// GangModeReplicatedGang means that there is a variable number of identical copies of this PodGroup,
-    //  as specified in Replicas, and each copy needs to be independently gang scheduled.
-	GangModeReplicated GangMode = "Replicated"
-)
-
-// GangSchedulingPolicy holds options that affect how gang scheduling of one PodGroup is handled by the scheduler.
-type GangSchedulingPolicy struct {
-    // SchedulingTimeoutSeconds defines the timeout for the scheduling logic.
-    // Namely it's timeout from the moment when `minCount` pods show up in
-    // PreEnqueue, until those pods are observed in WaitOnPermit - for context
-    // see https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/#interfaces
-    // If the timeout is hit, we reject all the waiting pods, free the resources
-    // they were reserving and put all of them back to scheduling queue.
-    SchedulingTimeoutSeconds *int
-    MinCount *int
-}
-
-// PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
-// multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
-// number of identical copies.
-//
-// TODO: Decide on the naming: PodGroup vs GangGroup.
-type PodGroup struct {
-    Name *string
-    GangMode *GangMode // default is "Off"
-
-    // Optional when GangMode = "ReplicatedGang".
-    // Forbidden otherwise.
-    Replicas int
-
-    // GangSchedulingPolicy defines the options applying to all pods in this gang.
-    // Forbidden if GangMode is set to "Off".
-    GangSchedulingPolicy GangSchedulingPolicy
-}
-
-
-type WorkloadStatus struct {
-  // Necessary status fields TBD.
-}
-```
-
-We also consider an alternative API design for PodGroup as following:
-
-```go
-// PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
-// multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
+// PodGroup is a group of pods that may contain multiple shapes (PodSets) and may contain
+// multiple dense indexes (PodSubGroups) and which can optionally be replicated in a variable
 // number of identical copies.
 type PodGroup struct {
     Name *string
@@ -421,15 +364,11 @@ type DefaultSchedulingPolicy struct {
 // GangSchedulingPolicy represents options for how gang scheduling of one
 // PodGroup should be handled.
 type GangSchedulingPolicy struct {
-    // SchedulingTimeoutSeconds defines the timeout for the scheduling logic.
-    // Namely it's timeout from the moment when `minCount` pods show up in
-    // PreEnqueue, until those pods are observed in WaitOnPermit - for context
-    // see https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/#interfaces
-    // If the timeout is hit, we reject all the waiting pods, free the resources
-    // they were reserving and put all of them back to scheduling queue.
-    SchedulingTimeoutSeconds *int
-
     MinCount *int
+}
+
+type WorkloadStatus struct {
+  // Necessary status fields TBD.
 }
 ```
 
@@ -557,7 +496,6 @@ N/A
 - `k8s.io/kubernetes/pkg/scheduler`: `2025-10-02` - 81.7%
 - `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2025-10-02` - 91.4%
 - `k8s.io/kubernetes/pkg/scheduler/framework`: `2025-10-02` - 81.7%
-- `k8s.io/kubernetes/pkg/scheduler/framework`: `2025-10-02` - 81.7%
 - `k8s.io/kubernetes/pkg/scheduler/framework/preemption`: `2025-10-02` - 64.2%
 - `k8s.io/kubernetes/pkg/scheduler/framework/util/assumecache`: `2025-10-02` - 86.2%
 
@@ -573,6 +511,8 @@ This can be done with:
 - permalinks to the GitHub source code
 - links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
+
+- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 -->
 
 We will create integration test(s) to ensure basic functionalities of gang-scheduling including:
@@ -581,8 +521,6 @@ We will create integration test(s) to ensure basic functionalities of gang-sched
 - Pods are not scheduled if there is no space for the whole gang
 
 In Beta, we will add tests to verify that deadlocks are not happening.
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ##### e2e tests
 
@@ -599,12 +537,12 @@ This can be done with:
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 If e2e tests are not necessary or useful, explain why.
+
+- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 -->
 
 We will add basic API tests for the the new `Workload` API, that will later be
 promoted to the conformance.
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
 
@@ -959,10 +897,12 @@ Major milestones might include:
 ## Drawbacks
 
 There are already multiple implementations of gang scheduling in the ecosystem.
+However:
+- the other implementations don't address all the issues (e.g. different kinds of
+  races/deadlocks) that this proposal paves the way for addressing
+- the introduced concepts are fundamental enough in AI era, that we believe that
+  our users shouldn't need to install any extensions to have them addressed
 
-<!--
-Why should this KEP _not_ be implemented?
--->
 
 ## Alternatives
 
@@ -971,6 +911,59 @@ above described approach can be found in the [extended proposal] document.
 
 [extended proposal]: https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?
 
+It's maybe worth noting that we started the KEP with a different API definition of
+`PodGroup`, but based on the community discussions and feedback decided to change it.
+The original API definition for `PodGroup` was as following:
+
+```go
+type GangMode string
+const (
+	// GangModeOff means that all pods in this PodGroup do not need to be scheduled as a gang.
+	GangModeOff GangMode = "Off"
+
+	// GangModeSingle means that all pods in this PodGroup need to be scheduled as one gang.
+	GangModeSingle GangMode = "Single"
+
+	// GangModeReplicated means that there is a variable number of identical copies of this PodGroup,
+    //  as specified in Replicas, and each copy needs to be independently gang scheduled.
+	GangModeReplicated GangMode = "Replicated"
+)
+
+// GangSchedulingPolicy holds options that affect how gang scheduling of one PodGroup is handled by the scheduler.
+type GangSchedulingPolicy struct {
+    // SchedulingTimeoutSeconds defines the timeout for the scheduling logic.
+    // Namely it's timeout from the moment when the first  pod show up in
+    // PreEnqueue, until those pods are observed in WaitOnPermit - for context
+    // see https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/#interfaces
+    // If the timeout is hit, we reject all the waiting pods, free the resources
+    // they were reserving and put all of them back to scheduling queue.
+    //
+    // We decided to drop the field for Alpha because:
+    // 1) it won't be obvious for majority of users how to set it
+    // 2) it's usefulness after Beta is unclear - see:
+    //   https://github.com/kubernetes/enhancements/pull/5558#discussion_r2400876903
+    SchedulingTimeoutSeconds *int
+    MinCount *int
+}
+
+// PodGroup is a group of pods that may contain multiple shapes (EqGroups) and may contain
+// multiple dense indexes (RankedGroups) and which can optionally be replicated in a variable
+// number of identical copies.
+//
+// TODO: Decide on the naming: PodGroup vs GangGroup.
+type PodGroup struct {
+    Name *string
+    GangMode *GangMode // default is "Off"
+
+    // Optional when GangMode = "ReplicatedGang".
+    // Forbidden otherwise.
+    Replicas int
+
+    // GangSchedulingPolicy defines the options applying to all pods in this gang.
+    // Forbidden if GangMode is set to "Off".
+    GangSchedulingPolicy GangSchedulingPolicy
+}
+```
 
 ## Infrastructure Needed (Optional)
 
