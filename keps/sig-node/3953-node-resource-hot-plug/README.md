@@ -36,7 +36,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Unit tests](#unit-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.34)](#phase-1-alpha-target-134)
+    - [Phase 1: Alpha (target 1.35)](#phase-1-alpha-target-135)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -464,7 +464,7 @@ Following scenarios need to be covered:
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.34)
+#### Phase 1: Alpha (target 1.35)
 
 * Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `NodeResourceHotPlug`
   feature gate.
@@ -545,16 +545,6 @@ This section must be completed when targeting alpha to a release.
 -->
 
 ###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name:NodeResourceHotPlug
