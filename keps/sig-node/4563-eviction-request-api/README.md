@@ -192,12 +192,16 @@ The major issues are:
 5. Kubernetes does not offer resource reservation during a pod migration. We would like to make sure
    that we have guaranteed resources for the workload before terminating the pod. This is discussed
    in the [kubernetes/kubernetes#129038](https://github.com/kubernetes/kubernetes/issues/129038).
-6. Graceful deletion of DaemonSet pods is currently only supported as part of (Linux) graceful node
-   shutdown. The length of the shutdown is again not application specific and is set cluster-wide
-   (optionally by priority) by the cluster admin. This does not take into account
-   `.spec.terminationGracePeriodSeconds` of each pod and may cause premature termination of
-   the application. This has been discussed in issue [kubernetes/kubernetes#75482](https://github.com/kubernetes/kubernetes/issues/75482)
+6. Graceful deletion of DaemonSet pods is currently supported as part of graceful node shutdown.
+   However, this process has a few drawbacks. First, the length of the shutdown is not application
+   specific, it is set cluster-wide (optionally by priority) by the cluster admin. This does not
+   take into account `.spec.terminationGracePeriodSeconds` of each pod and may cause premature
+   termination of the application. This has been discussed in issue [kubernetes/kubernetes#75482](https://github.com/kubernetes/kubernetes/issues/75482)
    and in issue [kubernetes-sigs/cluster-api#6158](https://github.com/kubernetes-sigs/cluster-api/issues/6158).
+   Additionally, the DaemonSet controller runs its own scheduling logic and creates the pods again.
+   This causes a race. Such pods should be removed and not recreated, but higher priority pods that
+   have not yet been terminated should be recreated if they are missing. This has been discussed in
+   the issue [kubernetes/kubernetes#122912](https://github.com/kubernetes/kubernetes/issues/122912).
 7. Different pod termination mechanisms are not synchronized with each other. So for example, the
    taint manager may prematurely terminate pods that are currently under Node Graceful Shutdown.
    This can also happen with other mechanism (e.g., different types of evictions). This has been
