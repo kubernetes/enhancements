@@ -266,6 +266,65 @@ all pods if a plugin is enabled that does not implement it. In subsequent releas
 make implementation of the function a requirement, but of course plugins are also able to
 say pods are unsignable.
 
+### Comparison with Equivalence Cache (circa 2018)
+
+This KEP is addressing a very similar problem to the Equivalence Cache (eCache), an approach 
+suggested in 2018 and then retracted because it became extremely complex. While this KEP addresses a similar problem
+it does so in a very different way, which we believe avoids the issues experienced by the eCache
+
+The two issues experienced by eCache were:
+
+ * eCache performance was still O(num nodes).
+ * eCache was complex
+ * eCache was tightly coupled with plugins.
+
+ We'll address each in turn, but at a high level the differences stem from our scope reduction in this cache, where
+ we focus on simple constraints in a 1-pod-per-node world, and are comfortable extending our "race" period slightly.
+
+ #### eCache performance was still O(num nodes)
+
+ The eCache was caching a fundamentally different result than this cache. In the case of the eCache they were caching
+ the results of a predicate p, (which is sounds like was one of a number of ops for a given plugin) for a specific pod and node.
+ This meant the number of cache lookups per pod was O(num nodes * num predicates) where num predicates was O(num plugins). Because 
+ the cache was so fine-grained, the cache lookups were, in many cases, more expensive than the actual computation. This also meant
+ that while the cache could improve performance, it fundamentally did not remove the O(num nodes) nature of the per pod computation.
+
+ In the case of this cache, we are looking up the entire host filtering and scoring for a single pod, so the number of cache lookups
+ per pod is 1. We are caching the entire filtering / scoring result, so the map lookup is guaranteed to be faster even
+ than just iterating over the plugins themselves, let alone the computation needed to filter / score. As the number of nodes go up,
+ the fact that the cache lookup is O(1) per pod will make it an increasingly perfromant alternative to the full computation.
+
+ We can cache this more granular data because we only cache for simple plugins, and in fact avoid the complex plugins entirely.
+ Thus we do not need to be concerned about cross pod dependencies, meaning we do not need to try to keep detailed information 
+ up-to-date. Because we assume 1-pod-per-node and some amount of "staleness" we simply need to invalidate whole hosts, rather 
+ than requiring upkeep of complex predicate results required to keep the eCache functional.
+
+ #### eCache was complex
+
+ Because the eCache cached predicates, the logic for computing these results went into the cache as well. This meant that significant 
+ amount of the plugin functionality were replicated in the cache layer. This added significant complexity to the cache, and also made 
+ keeping the cache results themselves up to date was complex, involving multiple pods, etc. Because the eCache only improved performance for complex queries, they needed to include this complexity to provide value.
+
+ In contrast, the signature used in this cache is just a subset of the pod object, without complex logic. It is static and as the pod object changes slowly, it will change slowly as well. In addition, we explicitly avoid all the complex predicates in this cache because they are rarely used. Thus we do not have the same complexity needed in the cache.
+ 
+ ### The eCache was tightly coupled with plugins
+ 
+ Beacuse a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync.
+ As the pod object is fairly stable, this makes keeping the signature up to date a much simpler task. The creation of the signature is 
+ also spread across the plugins themselves, so instead of needing to keep the cache up to date, plugin owners simply have a new function 
+ they need to manage within their plugin, which the cache simply aggregates.
+
+ We will also need to provide tests that evaluate different pod configurations against different node configurations and ensures that
+ any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing
+ testing opportunities in other areas.
+
+ If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object that only has a subset
+ of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would
+ naturally surface new dependencies as additions to the scheduling object. However, as we expect plugin changes to be relatively 
+ modest, we don't believe the complexity of making the interface changes is worth the risk today.
+
+See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 as starting point on eCache.
+
 ### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
