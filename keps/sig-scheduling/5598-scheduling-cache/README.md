@@ -303,11 +303,11 @@ The two issues experienced by eCache were:
 
  Because the eCache cached predicates, the logic for computing these results went into the cache as well. This meant that significant 
  amount of the plugin functionality were replicated in the cache layer. This added significant complexity to the cache, and also made 
- keeping the cache results themselves up to date was complex, involving multiple pods, etc. Because the eCache only improved performance for complex queries, they needed to include this complexity to provide value.
+ keeping the cache results themselves up to date complex, involving multiple pods, etc. Because the eCache only improved performance for complex queries, they needed to include this complexity to provide value.
 
  In contrast, the signature used in this cache is just a subset of the pod object, without complex logic. It is static and as the pod object changes slowly, it will change slowly as well. In addition, we explicitly avoid all the complex predicates in this cache because they are rarely used. Thus we do not have the same complexity needed in the cache.
  
- ### The eCache was tightly coupled with plugins
+ #### eCache was tightly coupled with plugins
  
  Beacuse a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync.
  Since in this cache the signature is just parts of the pod object, and the pod object is fairly stable, this makes keeping the signature up
