@@ -1,18 +1,18 @@
 title: Extended Toleration Operators for Threshold-Based Placement
 kep-number: 5471
 authors:
-  - "@jane.doe"
+  - "@helayoty"
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
 status: implementable
 creation-date: 2025-08-08
 reviewers:
-  - "@SergeyKanzhelev"
-approvers:
-  - "@macsko"
   - "@dom4ha"
   - "@sanposhiho"
+approvers:
+  - "@macsko"
+
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -39,5 +39,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - scheduler_numeric_taint_evaluations_total
-  - scheduler_numeric_tolerations_total{operator="Gt|Lt"}
+  - scheduler_numeric_tolerations_total
