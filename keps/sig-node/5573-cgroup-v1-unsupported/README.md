@@ -15,6 +15,7 @@
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Move to Deprecated as first phase](#move-to-deprecated-as-first-phase)
   - [Enable FailCgroupV1 by default](#enable-failcgroupv1-by-default)
   - [Update warning messages and events](#update-warning-messages-and-events)
   - [Documentation updates](#documentation-updates)
@@ -86,7 +87,7 @@ Remove cgroup v1 support from Kubernetes codebase, building upon the maintenance
 
 This KEP will have a phased approach where beta will prevent kubelet from starting on a cgroup v1 node.
 
-In n+3 releases, we will remove the cgroup v1 code.
+We will commit to removing cgroup v1 code but there is not yet a timeline for removal.
 
 ## Motivation
 
@@ -130,7 +131,7 @@ Fedora 43 will inherit cgroup v1 removal so one will not be able to use cgroup v
 
 #### Debian
 
-The latest release of debian "Trixie" is using [systemd 257](https://packages.debian.org/trixie/systemd) so users of debian would need to set SYSTEMD_CGROUP_ENABLE_LEGACY_FORCE=1 to enable cgroup v1 support on systemd.
+The latest release of debian "Trixie" is using [systemd 257](https://packages.debian.org/trixie/systemd) so users of debian would need to set SYSTEMD_CGROUP_ENABLE_LEGACY_FORCE=1 to enable cgroup v1 support for systemd.
 
 #### Amazon Linux
 
@@ -150,9 +151,7 @@ The latest release of debian "Trixie" is using [systemd 257](https://packages.de
 
 5. **Community alignment**: Provide clear signals to the Kubernetes community about the deprecation timeline and encourage adoption of cgroup v2.
 
-6. **Remove testing cgroup v1**: Moving to unsupported means that Kubernetes will no longer run tests on cgroup v1 nodes.
-
-7. **Remove cgroup v1 code**: Removing the code is the next logic step once we stop testing it. This will clean up
+6. **Remove cgroup v1 code**: Removing the code is the next logic step once we stop testing it. This will clean up
 the codebase.
 
 ### Non-Goals
@@ -189,6 +188,8 @@ The primary risks involve potential disruptions for users who have not yet migra
 
 This enhancement primarily involves configuration changes and messaging updates, building on the infrastructure already implemented in KEP-4569.
 
+### Move to Deprecated as first phase
+
 ### Enable FailCgroupV1 by default
 
 The key technical change is to modify the default value of the kubelet config api `FailCgroupV1` from `false` to `true`. This change will be implemented in the kubelet configuration types.
@@ -214,9 +215,9 @@ From (maintenance mode):
 klog.Warning("cgroup v1 detected. cgroup v1 support has been transitioned into maintenance mode, please plan for the migration towards cgroup v2. More information at https://git.k8s.io/enhancements/keps/sig-node/4569-cgroup-v1-maintenance-mode")
 ```
 
-To (unsupported):
+To (deprecated):
 ```golang
-klog.Warning("cgroup v1 detected. cgroup v1 support is unsupported and will be removed in a future release. Please migrate to cgroup v2. More information at https://git.k8s.io/enhancements/keps/sig-node/5573-cgroup-v1-unsupported")
+klog.Warning("cgroup v1 detected. cgroup v1 support is deprecated and will be removed in a future release. Please migrate to cgroup v2. More information at https://git.k8s.io/enhancements/keps/sig-node/5573-cgroup-v1-unsupported")
 ```
 
 Similar updates will be made to corresponding events.
