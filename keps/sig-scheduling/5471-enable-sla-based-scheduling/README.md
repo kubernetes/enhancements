@@ -76,9 +76,9 @@ Extend **core/v1 Toleration** to support **numeric comparison operators** when m
 
 - New operators: `Lt`, `Gt` (in addition to existing `Equal`/`Exists`).
 - Primary motivation: allow pods to opt‑in to nodes by `SLA/failure‑probability` values published as taints (e.g., `node.kubernetes.io/sla=950`).
-- Scheduler impact is limited to the existing TaintToleration Filter; no new stages or algorithms.
+- Scheduler impact is limited to the existing TaintToleration plugin; no new stages or algorithms.
 
-This preserves the well‑understood safety model of taints/tolerations (eviction via`NoExecute`) while enabling threshold‑based placement similar to numeric NodeAffinity, but with better operational semantics.
+This preserves the well‑understood safety model of taints/tolerations (eviction via `NoExecute`) while enabling threshold‑based placement similar to numeric NodeAffinity, but with better operational semantics.
 
 ## Motivation
 
@@ -149,7 +149,7 @@ spec:
     value: "800"
     effect: NoSchedule
 ---
-# Cost-optimized workload explicitly tolerates SLA >= 750
+# Cost-optimized workload explicitly tolerates SLA > 750
 apiVersion: v1
 kind: Pod
 spec:
@@ -190,7 +190,7 @@ spec:
 
 #### Story 2 — AI inference service with strict SLOs
 
-As an AI platform engineer, I want to ensure my latency-critical inference pods only run on nodes with SLA ≥ 95%, and I want them to be evicted if the node's SLA rating drops below that threshold.
+As an AI platform engineer, I want to ensure my latency-critical inference pods only run on nodes with SLA > 95%, and I want them to be evicted if the node's SLA rating drops below that threshold.
 
 Taints and tolerations with numeric comparisons give me this eviction capability, which NodeAffinity cannot provide.
 
@@ -208,7 +208,7 @@ spec:
     value: "950"
     effect: NoExecute
 ---
-# Inference service requires SLA >= 950 with 30s grace period
+# Inference service requires SLA > 950 with 30s grace period
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -226,7 +226,7 @@ spec:
 
 #### Story 3 — AI training workload balancing cost and reliability
 
-As an ML engineer running large distributed training, I want to run most worker pods on cheaper spot GPU nodes, but keep certain roles (e.g., parameter servers, checkpoint writers) on SLA ≥ 99.9% on-demand GPUs.
+As an ML engineer running large distributed training, I want to run most worker pods on cheaper spot GPU nodes, but keep certain roles (e.g., parameter servers, checkpoint writers) on SLA > 99.9% on-demand GPUs.
 
 With numeric tolerations, I can opt-in only the pods that are safe to run on spot, while letting the cluster's default taints repel all others.
 
@@ -312,7 +312,7 @@ spec:
     - name: gpu
       deviceClassName: nvidia-a100
       tolerations:
-      # Only accept GPUs with SLA >= 950 (95%)
+      # Only accept GPUs with SLA > 950 (95%)
       - key: node.kubernetes.io/sla
         operator: Gt
         value: "950"
@@ -406,7 +406,7 @@ spec:
 
 - **Strict Validation**: Unlike existing `Equal`/`Exists` operators which accept any string values, numeric operators require valid integer strings. This may catch existing invalid configurations.
 
-- **Leading Zeros Validation**: The API validation will reject taint and toleration values that contain leading zeros (e.g., `"0950"`, `"007"`) when used with numeric operators (`Lt`, `Gt`). This ensures consistent behavior and prevents the ambiguity between string and numeric interpretations. Only values without leading zeros are accepted (e.g., `"950"`, `"7"`).
+- **Leading Zeros Validation**: The API validation will reject taint and toleration values that contain leading zeros (e.g., `"0950"`, `"007"`) when used with numeric operators (`Lt`, `Gt`). This ensures consistent behavior and prevents the ambiguity between string and numeric interpretations. Only values without leading zeros are accepted (e.g., `"950"`, `"7"`). Zero `0` as a value is accepted though.
 
 - **Parsing Overhead**: Each taint/toleration match with numeric operators requires integer parsing.
 
@@ -494,7 +494,7 @@ const (
 - **Intolerated taints**: Count against the node's score.
 - **Scoring**: Unchanged - nodes with fewer intolerable `PreferNoSchedule` taints receive higher scores.
 
-This maintains consistent soft-preference behavior while enabling threshold-based SLA matching. For example, A pod requiring SLA > 95% will prefer nodes with SLA ≥ 950 over nodes with SLA < 950, but won't be blocked from scheduling on lower-SLA nodes if higher-SLA capacity is unavailable.
+This maintains consistent soft-preference behavior while enabling threshold-based SLA matching. For example, A pod requiring SLA > 95% will prefer nodes with SLA > 950 over nodes with SLA < 950, but won't be blocked from scheduling on lower-SLA nodes if higher-SLA capacity is unavailable.
 
 ### Implementation
 
