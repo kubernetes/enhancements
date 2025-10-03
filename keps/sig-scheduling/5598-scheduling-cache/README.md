@@ -310,11 +310,11 @@ The two issues experienced by eCache were:
  ### The eCache was tightly coupled with plugins
  
  Beacuse a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync.
- As the pod object is fairly stable, this makes keeping the signature up to date a much simpler task. The creation of the signature is 
- also spread across the plugins themselves, so instead of needing to keep the cache up to date, plugin owners simply have a new function 
- they need to manage within their plugin, which the cache simply aggregates.
+ Since in this cache the signature is just parts of the pod object, and the pod object is fairly stable, this makes keeping the signature up
+ to date a much simpler task. The creation of the signature is also spread across the plugins themselves, so instead of needing to keep the 
+ cache up to date, plugin owners simply have a new function they need to manage within their plugin, which the cache simply aggregates.
 
- We will also need to provide tests that evaluate different pod configurations against different node configurations and ensures that
+ We will also provide tests that evaluate different pod configurations against different node configurations and ensures that
  any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing
  testing opportunities in other areas.
 
