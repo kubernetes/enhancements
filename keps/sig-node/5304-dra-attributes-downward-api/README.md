@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5304: DRA Device Attributes Downward API
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -161,122 +161,221 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
--->
+This KEP proposes a Downward API for Dynamic Resource Allocation (DRA) device attributes, implemented entirely in the kubelet. Workloads like KubeVirt need device identifiers (e.g., PCIe bus address for physical GPUs, mediated device UUID for virtual GPUs) to configure device access inside guests. While these identifiers exist in DRA objects (`ResourceClaim`, `ResourceSlice`), they are not currently consumable via the Pod's Downward API. This proposal adds a new Downward API selector (`resourceSliceAttributeRef`) for environment variables. The kubelet will run a local DRA attributes controller that watches `ResourceClaim` and `ResourceSlice` objects, caches resolved attributes per Pod resource claim/request, and resolves `resourceSliceAttributeRef` on demand.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+Workloads that need to interact with DRA-allocated devices (like KubeVirt virtual machines) require access to device-specific identifiers such as PCIe bus addresses or mediated device UUIDs. In order to fetch the attributes from allocated device, users first have to go to ResourceClaimStatus, find the request and device name, and then look up the resource slice with device name to get the attribute value. Ecosystem project like KubeVirt must resort to custom controllers that watch these objects and inject attributes via annotations/labels or other custom mechanisms, often leading to fragile, error-prone and racy designs.
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+The Kubernetes Downward API provides a standard mechanism for exposing Pod and container metadata to workloads. Extending this API to support DRA device attributes would enable workloads to discover device information without requiring additional custom controllers or privileged access to the Kubernetes API.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
+- Provide a stable Downward API path for device attributes associated with `pod.spec.resourceClaims[*]` requests
+- Support device attributes from `ResourceSlice` that are requested by user in pod spec
+- Maintain compatibility with existing DRA drivers without requiring changes to driver interfaces
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+- Expose the entirety of `ResourceClaim`/`ResourceSlice` objects in the Downward API
+- Allow arbitrary JSONPath into external objects via Downward API
+- Change or extend DRA driver interfaces
+- Support dynamic updates to device attributes after Pod container startup (for env vars)
+ - Propagate or snapshot attributes from `ResourceSlice` into `ResourceClaim` at allocation time (no scheduler involvement)
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
+This proposal introduces a new Downward API selector (`resourceSliceAttributeRef`) that allows Pods to reference DRA device attributes in environment variables. The kubelet will implement a local DRA attributes controller that:
+
+1. Watches Pods scheduled to the node and identifies those with `pod.spec.resourceClaims`
+2. Watches `ResourceClaim` objects in the Pod's namespace to retrieve allocation information
+3. Watches `ResourceSlice` objects for the node and driver to resolve device attributes
+4. Maintains a per-Pod cache of `(claimName, requestName) -> {attribute: value}` mappings
+5. Resolves `resourceSliceAttributeRef` references when containers start
+
+Downward API references expose one attribute per reference. The kubelet resolves only the attribute explicitly referenced via `resourceSliceAttributeRef`.
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
 #### Story 1
+
+As a KubeVirt developer, I want the virt-launcher Pod to automatically discover the PCIe root address of an allocated physical GPU via environment variables, so that it can construct the libvirt domain XML to pass through the device to the virtual machine guest without requiring a custom controller.
 
 #### Story 2
 
+As a DRA driver author, I want my driver to remain unchanged while allowing applications to consume device attributes (like `resource.kubernetes.io/pcieRoot` or `dra.kubervirt.io/mdevUUID`) through the native Kubernetes Downward API.
+
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+- Environment variables are set at container start time: Once a container starts, its environment variables are immutable. If device attributes change after container start, env vars will not reflect the change.
+- Resolution timing: Attributes are resolved at container start time (not at allocation time). There is no scheduler-side copying of attributes into `ResourceClaim`.
+- ResourceSlice churn: Resolution uses the contents of the matching `ResourceSlice` at container start. If the `ResourceSlice` (or the requested attribute) is missing at that time, kubelet records an event and fails the pod start.
+- Attribute names: Any attribute name that exists in the ResourceSlice can be referenced. 
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+Risk: Exposing device attributes might leak sensitive information.
+Mitigation: Only one attribute is exposed per reference. The NodeAuthorizer ensures kubelet only accesses ResourceClaims and ResourceSlices for Pods scheduled to that node. Attributes originate from the DRA driver via `ResourceSlice`; cluster policy should ensure sensitive data is not recorded there.
 
-How will security be reviewed, and by whom?
+Risk: Kubelet performance impact from watching ResourceClaim and ResourceSlice objects.
+Mitigation: Use shared informers with proper indexing to minimize API server load. Scope watches to node-local resources only. Monitor cache memory usage and set reasonable limits.
 
-How will UX be reviewed, and by whom?
+Risk: API surface expansion could make the Downward API overly complex.
+Mitigation: Keep the API minimal and type-safe with a dedicated selector; no arbitrary JSONPath. Require feature gate enablement in alpha to gather feedback before expanding.
 
-Consider including folks who also work outside the SIG or subproject.
--->
+Risk: Compatibility with future DRA changes.
+Mitigation: Implementation is decoupled from DRA driver interfaces. Changes to DRA object structure are handled in the kubelet controller. Attribute names are standardized and versioned.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+### API Changes
+
+#### New Downward API Selector: ResourceSliceAttributeSelector
+
+A new typed selector is introduced in `core/v1` that can be used in both environment variable sources and projected downward API volume items:
+
+```go
+// ResourceSliceAttributeSelector selects a DRA-resolved device attribute for a given claim+request.
+// +featureGate=DRADownwardDeviceAttributes
+// +structType=atomic
+type ResourceSliceAttributeSelector struct {
+    // ClaimName must match pod.spec.resourceClaims[].name.
+    // +required
+    ClaimName string `json:"claimName"`
+    
+    // RequestName must match the corresponding ResourceClaim.spec.devices.requests[].name.
+    // +required
+    RequestName string `json:"requestName"`
+    
+    // Attribute specifies which device attribute to expose from the ResourceSlice.
+    // The attribute name must be present in the ResourceSlice's device attributes.
+    // +required
+    Attribute string `json:"attribute"`
+
+    // DeviceIndex selects which device's attribute to surface when a request
+    // is satisfied by multiple devices. When unset, attributes from all
+    // allocated devices for the request are joined in allocation order.
+    // Zero-based index into the allocation results for the matching request.
+    // Must be >= 0 if set. Bounds are validated at resolution time by the kubelet.
+    // +optional
+    DeviceIndex *int32 `json:"deviceIndex,omitempty"`
+}
+
+// In core/v1 EnvVarSource:
+type EnvVarSource struct {
+    // ...existing fields...
+    
+    // ResourceSliceAttributeRef selects a DRA device attribute for a given claim+request.
+    // +featureGate=DRADownwardDeviceAttributes
+    // +optional
+    ResourceSliceAttributeRef *ResourceSliceAttributeSelector `json:"resourceSliceAttributeRef,omitempty"`
+}
+
+// (Projected volume support deferred to beta)
+```
+
+Validation:
+- Enforce exactly one of `fieldRef`, `resourceFieldRef`, or `resourceSliceAttributeRef` in both env and volume items
+- Validate `claimName` and `requestName` against DNS label rules
+- No API-level enumeration of attribute names; kubelet resolves attributes that exist in the matching `ResourceSlice` at runtime
+- If `deviceIndex` is set, validate it is >= 0; if unset, aggregate across all allocated devices
+
+####
+
+### Kubelet Implementation
+
+The kubelet runs a local DRA attributes controller that:
+
+1. Watches Pods: Identifies Pods on the node with `pod.spec.resourceClaims` and tracks their `pod.status.resourceClaimStatuses` to discover generated ResourceClaim names
+2. Watches ResourceClaims: For each relevant claim, reads `status.allocation.devices.results[*]` and maps entries by request name
+3. Watches ResourceSlices: Resolves standardized attributes from `spec.devices[*].attributes` for the matching device name
+4. Maintains Cache: Keeps a per-Pod map of `(claimName, requestName) -> {attribute: value}` with a readiness flag
+
+Resolution Semantics:
+- Cache entries are updated on claim/slice changes
+- For container environment variables, resolution happens at container start using the latest ready values
+ - Attributes are not frozen at allocation time; scheduler and controllers are not involved in copying attributes
+ 
+- Failure on missing data: If the `ResourceSlice` is not found, the attribute is absent, or `deviceIndex` is out of range at container start, kubelet records a warning event and returns an error to the sync loop. The pod start fails per standard semantics (e.g., `restartPolicy` governs restarts; Jobs will fail the pod).
+ - Multi-device requests:
+   - When `deviceIndex` is unset, kubelet resolves the attribute across all allocated devices for the request, preserving allocation order, and joins values with a comma (",") into a single string. Devices that do not report the attribute are skipped. If no devices provide the attribute, the value is considered not ready.
+   - When `deviceIndex` is set, kubelet selects the device at that zero-based index from the allocation results and resolves the attribute for that device only. If the index is out of range or the attribute is missing on that device, the value is considered not ready.
+
+Security & RBAC:
+- Node kubelet uses NodeAuthorizer to watch/read `ResourceClaim` and `ResourceSlice` objects related to Pods scheduled to the node
+- Scope access to only necessary fields
+- No cluster-wide escalation; all data flows through node-local caches
+
+### Usage Examples
+
+Environment Variable Example (Physical GPU Passthrough):
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: virt-launcher-gpu-passthrough
+spec:
+  resourceClaims:
+  - name: pgpu-claim
+    resourceClaimName: my-physical-gpu-claim
+  containers:
+  - name: compute
+    image: virt-launcher:latest
+    env:
+    - name: PGPU_CLAIM_PCI_ROOT
+      valueFrom:
+        resourceSliceAttributeRef:
+          claimName: pgpu-claim
+          requestName: pgpu-request
+          attribute: resource.kubernetes.io/pcieRoot
+          # deviceIndex omitted -> aggregate across all devices
+```
+
+ 
+
+Environment Variable Example (SpecificIndex for multi-device request):
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: virt-launcher-gpu-index
+spec:
+  resourceClaims:
+  - name: pgpu-claim
+    resourceClaimName: my-physical-gpu-claim
+  containers:
+  - name: compute
+    image: virt-launcher:latest
+    env:
+    - name: PGPU_CLAIM_PCI_ROOT_INDEX1
+      valueFrom:
+        resourceSliceAttributeRef:
+          claimName: pgpu-claim
+          requestName: pgpu-request
+          attribute: resource.kubernetes.io/pcieRoot
+          deviceIndex: 1
+```
+
+### Feature Gate
+
+- Name: `DRADownwardDeviceAttributes`
+- Stage: Alpha (v1.35)
+- Components: kube-apiserver, kubelet, kube-scheduler
+- Enables: 
+  - New `resourceSliceAttributeRef` selector in env vars
+  - DRA attributes controller in kubelet
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+No additional prerequisite testing updates are required. Existing DRA test infrastructure will be leveraged.
 
 ##### Unit tests
 
@@ -303,152 +402,94 @@ extending the production code to implement this enhancement.
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
+Integration tests will cover:
 
-If integration tests are not necessary or useful, explain why.
--->
+- Feature gate toggling: Verify API rejects `resourceSliceAttributeRef` when feature gate is disabled
+- End-to-end resolution: Create Pod with resourceClaims, verify env vars contain correct attribute values
+- Negative cases: Missing allocation, missing `ResourceSlice`, missing attribute, invalid `deviceIndex` — expect warning event and pod start failure
+ - Multi-device semantics: All-mode joining order and delimiter; SpecificIndex with valid/invalid index; missing attribute on selected device
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+Tests will be added to `test/integration/kubelet/` and `test/integration/dra/`.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+E2E tests will validate real-world scenarios:
 
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
+- KubeVirt-like workload: Pod with GPU claim consumes `resource.kubernetes.io/pcieRoot` via environment variable
+- Multi-claim Pod: Pod with multiple resource claims, each with different attributes
+ 
+- Feature gate disabled: Verify graceful degradation when gate is off
+- Node failure scenarios: Test behavior when kubelet restarts or node is drained
 
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+Tests will be added to `test/e2e/dra/` and `test/e2e_node/downwardapi_test.go`.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
+#### Alpha (v1.35)
 
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Feature implemented behind `DRADownwardDeviceAttributes` feature gate
+- API types added: `resourceSliceAttributeRef` in `core/v1.EnvVarSource`
+- Kubelet DRA attributes controller implemented
+- Support for `resource.kubernetes.io/pcieRoot` and `dra.kubervirt.io/mdevUUID` attributes
+- Unit tests for validation, cache, and resolution logic
+- Initial integration and e2e tests completed
+- Documentation published for API usage
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- All functionality completed
-- All security enforcement completed
-- All monitoring requirements completed
-- All testing requirements completed
-- All known pre-release issues and gaps resolved
-
-**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+TBD
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
-
-**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-<!--
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+TBD
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+**Upgrade:**
+- When upgrading to a release with this feature, the feature gate is disabled by default in alpha
+- Existing Pods without `resourceSliceAttributeRef` are unaffected
+- To use the feature, users must:
+  1. Enable the `DRADownwardDeviceAttributes` feature gate on kube-apiserver and kubelet
+  2. Update Pod specs to use `resourceSliceAttributeRef` in env vars or volumes
+- No changes to existing DRA drivers are required
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+**Downgrade:**
+- If downgrading from a version with this feature to one without it:
+- Pods using `resourceSliceAttributeRef` will fail API validation and cannot be created
+- Existing Pods with `resourceSliceAttributeRef` will continue to run but cannot be updated
+- Users should remove `resourceSliceAttributeRef` from Pod specs before downgrade
+- Feature gate can be disabled to reject new Pods with `resourceSliceAttributeRef`
+- Kubelet will ignore `resourceSliceAttributeRef` when feature gate is disabled
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+**Control Plane and Node Coordination:**
+- This feature primarily involves the kubelet and API server
+- The API server validates `resourceSliceAttributeRef` (feature gate enabled)
+- The kubelet resolves `resourceSliceAttributeRef` at runtime
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+**Version Skew Scenarios:**
+
+1. **Older kubelet (n-1, n-2, n-3) with newer API server:**
+   - API server accepts Pods with `resourceSliceAttributeRef` (if feature gate is enabled)
+   - Older kubelet without the feature will ignore `resourceSliceAttributeRef` (it is dropped during decoding)
+   - Containers still start; env vars/volumes referencing `resourceSliceAttributeRef` will not be populated
+   - **Risk**: Workloads relying on these values may misbehave
+   - **Mitigation**: Avoid relying on the field until all kubelets are upgraded; gate scheduling to upgraded nodes (e.g., using node labels/taints) or keep the feature gate disabled on the API server until nodes are updated
+
+2. **Newer kubelet with older API server:**
+   - Older API server rejects Pods with `resourceSliceAttributeRef` (unknown field)
+   - This is safe - users cannot create invalid Pods
+   - No special handling required
+
+3. **Scheduler and Controller Manager:**
+   - This feature does not require changes to scheduler or controller manager
+   - No version skew concerns with these components
+
+**Recommendation:**
+- Enable feature gate cluster-wide (API server and all kubelets) at the same time
+- Test in a non-production environment first
+- Use rolling upgrade strategy for kubelets
 
 ## Production Readiness Review Questionnaire
 
@@ -482,62 +523,48 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `DRADownwardDeviceAttributes`
+  - Components depending on the feature gate: kube-apiserver, kubelet
+  - Enabling requires restarting kube-apiserver and kubelet with `--feature-gates=DRADownwardDeviceAttributes=true`
+  - No downtime of control plane is required for enabling/disabling (rolling restart is sufficient)
+  - Kubelet restart is required on each node
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. Enabling the feature gate only adds new optional API fields (`resourceSliceAttributeRef`) to `EnvVarSource`. Existing Pods and workloads are unaffected. Users must explicitly opt in by:
+1. Using `resourceSliceAttributeRef` in Pod env vars
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
+Yes. The feature can be disabled by setting the feature gate to `false` and restarting the API server and kubelets.
 
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
+**Consequences:**
+- New Pods using `resourceSliceAttributeRef` will be rejected by the API server
+- Existing running Pods with `resourceSliceAttributeRef` will continue to run, but environment variables set at container start remain unchanged
+- Pods with `resourceSliceAttributeRef` cannot be updated while feature gate is disabled
 
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+**Recommendation:** Before disabling, ensure no critical workloads depend on `resourceSliceAttributeRef` or migrate them to alternative mechanisms (e.g., annotations).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+Re-enabling the feature gate restores full functionality:
+- API server accepts Pods with `resourceSliceAttributeRef`
+ 
+- New Pods will work correctly
+- Existing Pods (created while feature was disabled) are unaffected unless they already use `resourceSliceAttributeRef`
+
+No data migration or special handling is required.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Yes:
+- Unit tests will verify API validation behavior with feature gate on/off
+- Integration tests will verify:
+- Pods with `resourceSliceAttributeRef` are rejected when feature gate is disabled
+- Pods with `resourceSliceAttributeRef` are accepted when feature gate is enabled
+- Kubelet correctly resolves attributes when feature gate is enabled
+- Kubelet ignores `resourceSliceAttributeRef` when feature gate is disabled
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -688,79 +715,81 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Yes. 
+
+- WATCH ResourceClaim: Each kubelet will establish an informer based watch on ResourceClaim objects for Pods scheduled to its node
+- WATCH ResourceSlice: Each kubelet will establish an informer based watch on ResourceSlice objects for devices on its node
+
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No. This feature adds new fields to existing API types (`core/v1.EnvVarSource` and `resource.k8s.io/v1.DeviceRequest`) but does not introduce new API object types.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+Yes
+  - Pod, adds a field in pod
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+Yes, but the impact should be minimal:
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
+- Pod startup latency: Kubelet must resolve `resourceSliceAttributeRef` values before starting containers with environment variables, but the impact of this is minimized by local informer based lookup
 
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+- The feature does not affect existing SLIs/SLOs for clusters not using DRA or for Pods not using `resourceSliceAttributeRef`.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
+Yes, but the increase should be acceptable:
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+- Kubelet Memory:
+  - In-memory cache for attribute mappings: ~1KB per Pod with DRA claims (assumes 5 attributes × 50 bytes per attribute × 4 requests)
+  - Informer caches for ResourceClaim and ResourceSlice objects
+  - Estimated total: 5-10MB for 110 pods per node (worst case: all pods use DRA)
+
+
+- Kubelet CPU:
+  - Watch processing: Minimal, only processes updates for node-local resources
+  - Resolution: O(1) cache lookups, minimal CPU (<1% increase)
+  
+- API Server (RAM/CPU):
+  - Additional watch connections: 2 per kubelet (ResourceClaim, ResourceSlice)
+  - 5000-node cluster: 10,000 watch connections (~50-100MB RAM, negligible CPU)
+  - Mitigation: Use informer field selectors to minimize data sent over watches
+
+**Network IO:**
+- Watch streams: Incremental updates only, minimal bandwidth
+- Estimated: <10KB/s per kubelet under normal conditions
+
+These increases are within acceptable limits for modern Kubernetes clusters.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
+No significant risk of resource exhaustion:
 
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+Sockets:
+- Kubelet opens 2 watch connections to API server (ResourceClaim, ResourceSlice)
+
+Memory:
+- Pathological case: Malicious user creates many Pods with `resourceSliceAttributeRef` to exhaust kubelet memory
+- Risk: Low. Cache size bounded by max pods per node (110) × cache entry size (~1KB) = ~110KB
+- Mitigation: Existing pod limits prevent unbounded growth; cache eviction for terminated Pods
+
+Inodes:
+ 
+- Risk: Low. Limited by max volumes per pod (existing limits) and max pods per node
+- Mitigation: Existing Kubernetes limits on volumes and pods
+
+CPU:
+- Pathological case: Rapid ResourceClaim/ResourceSlice updates trigger excessive cache updates
+- Risk: Low. Updates are processed asynchronously; rate limited by API server watch semantics
+- Mitigation: malicius updates can be prevented by AP&F at apiserver level
+
+Performance tests will be added in beta to validate these assumptions under load (e.g., 110 pods/node, all using DRA).
 
 ### Troubleshooting
 
@@ -796,22 +825,16 @@ For each of them, fill in the following information by copying the below templat
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- 2025-10-02: KEP created and initial proposal drafted
+- 2025-10-03: KEP updated with complete PRR questionnaire responses
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+1. **Additional complexity in kubelet:** This feature adds a new controller to the kubelet that must watch and cache DRA objects. This increases kubelet complexity and maintenance burden.
+
+2. **API surface expansion:** Adding `resourceSliceAttributeRef` to the Downward API increases the API surface area and creates a dependency between the core API and DRA, which is still an alpha/beta feature.
+
+3. **Limited to kubelet resolution:** Unlike other Downward API fields that could theoretically be resolved by controllers, this feature requires kubelet-side resolution due to the need for node-local ResourceSlice data. This limits flexibility.
 
 ## Alternatives
 
@@ -823,8 +846,8 @@ information to express the idea and why it was not acceptable.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+None. This feature will be developed within existing Kubernetes repositories:
+- API changes in `kubernetes/kubernetes` (staging/src/k8s.io/api)
+- Kubelet implementation in `kubernetes/kubernetes` (pkg/kubelet)
+- Tests in `kubernetes/kubernetes` (test/integration, test/e2e, test/e2e_node)
+- Documentation in `kubernetes/website`
