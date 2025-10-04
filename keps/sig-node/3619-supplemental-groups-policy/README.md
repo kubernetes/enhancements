@@ -57,7 +57,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Introducing <code>RutimeClass</code>](#introducing-rutimeclass)
+  - [Introducing <code>RuntimeClass</code>](#introducing-runtimeclass)
   - [Adjusting container image by users](#adjusting-container-image-by-users)
   - [Just fixing CRI implementations](#just-fixing-cri-implementations)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -1228,7 +1228,7 @@ N/A
 
 ## Alternatives
 
-### Introducing `RutimeClass`
+### Introducing `RuntimeClass`
 
 As described in the [Motivation](#motivation) section, cluster administrators would need to deploy a custom low-level container runtime(e.g., [pfnet-research/strict-supplementalgroups-container-runtime](https://github.com/pfnet-research/strict-supplementalgroups-container-runtime)) that modifies OCI container runtime spec(`config.json`) produced by CRI implementations (e.g., containerd, cri-o). A custom `RuntimeClass` would be introduced for it.
 
