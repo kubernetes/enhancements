@@ -781,11 +781,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. It can be disabled after enabled.
+Yes. It can be disabled after enabled until Beta.
 When disabled, you can not create pods with `SupplementalGroupsPolicy` fields and no `.status.containerStatuses[*].user` will be reported in pod status.
 Please note if there are pods that have been created with `Strict` policy, the policy of the containers in such pods will keep enforced even after its disablement.
 
 See ["Version Skew Strategy"](#version-skew-strategy) for more complex cases (including upgrading/downgrading).
+
+But, starting v1.35, this feature graduates to GA, the `SupplementalGroupsPolicy` feature gate will be locked to true and will no longer be disable-able.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
