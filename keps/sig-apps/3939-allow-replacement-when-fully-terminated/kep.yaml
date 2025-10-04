@@ -7,7 +7,7 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
   - sig-apps
-status: implementable
+status: implemented
 creation-date: 2023-04-03
 reviewers:
   - "@mimowo"
