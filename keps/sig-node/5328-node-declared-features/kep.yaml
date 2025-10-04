@@ -1,0 +1,37 @@
+title: Node Declared Features
+kep-number: 5328
+authors:
+  - "@pravk03"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-scheduling
+
+creation-date: "2025-05-27"
+reviewers: 
+  - '@tallclair'
+  - '@yujuhong'
+  - '@wojtek-t'
+  - '@dom4ha'
+  - '@macsko'
+  - '@haircommander'
+approvers:
+- '@dchen1107'
+- '@SergeyKanzhelev'
+- '@dom4ha'
+- '@macsko'
+status: implementable
+stage: alpha
+latest-milestone: "v1.35"
+milestone:
+  alpha: "v1.35"
+
+feature-gates:
+  - name: NodeDeclaredFeatures
+    components:
+      - kubelet
+      - kube-scheduler
+      - kube-apiserver
+disable-supported: true
+
+metrics: []
