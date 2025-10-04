@@ -20,6 +20,7 @@
 - [Design Details](#design-details)
   - [Resource States](#resource-states)
   - [Priority of Resize Requests](#priority-of-resize-requests)
+  - [Kubelet-triggered eviction](#kubelet-triggered-eviction)
   - [Kubelet and API Server Interaction](#kubelet-and-api-server-interaction)
     - [Kubelet Restart Tolerance](#kubelet-restart-tolerance)
   - [Scheduler and API Server Interaction](#scheduler-and-api-server-interaction)
@@ -41,6 +42,7 @@
   - [Instrumentation](#instrumentation)
     - [<code>kubelet_container_requested_resizes_total</code>](#kubelet_container_requested_resizes_total)
     - [<code>kubelet_pod_resize_duration_seconds</code>](#kubelet_pod_resize_duration_seconds)
+    - [<code>kubelet_pod_infeasible_resizes_total</code>](#kubelet_pod_infeasible_resizes_total)
     - [<code>kubelet_pod_pending_resizes</code>](#kubelet_pod_pending_resizes)
     - [<code>kubelet_pod_in_progress_resizes</code>](#kubelet_pod_in_progress_resizes)
     - [<code>kubelet_pod_deferred_resize_accepted_total</code>](#kubelet_pod_deferred_resize_accepted_total)
@@ -96,20 +98,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -278,14 +280,13 @@ the `/resize` subresource:
 To provide fine-grained user control, PodSpec.Containers is extended with
 ResizeRestartPolicy - a list of named subobjects (new object) that supports
 'cpu' and 'memory' as names. It supports the following restart policy values:
-* `PreferNoRestart` - default value; resize the Container without restart, if possible.
-  * `NotRequired` - Equivalent to `PreferNoRestart`, deprecated with v1.33.
+* `NotRequired` - default value; resize the Container without restart, if possible.
 * `RestartContainer` - the container requires a restart to apply new resource values.
   (e.g.  Java process needs to change its Xmx flag) By using ResizePolicy, user
   can mark Containers as safe (or unsafe) for in-place resource update. Kubelet
   uses it to determine the required action.
 
-Note: `PreferNoRestart` restart policy for resize does not *guarantee* that a container won't be
+Note: `NotRequired` restart policy for resize does not *guarantee* that a container won't be
 restarted. If the runtime knows a resize will trigger a restart, it should return an error instead,
 and the Kubelet will retry the resize on the next pod sync. The restart behavior when shrinking
 memory limits is not yet defined.
@@ -295,10 +296,10 @@ that usually CPU can be added/removed without much problem whereas changes to
 available memory are more probable to require restarts.
 
 If more than one resource type with different policies are updated at the same
-time, then `RestartContainer` policy takes precedence over `PreferNoRestart` policy.
+time, then `RestartContainer` policy takes precedence over `NotRequired` policy.
 
 If a pod's RestartPolicy is `Never`, the ResizePolicy fields must be set to
-`PreferNoRestart` to pass validation.  That said, any in-place resize may result
+`NotRequired` to pass validation.  That said, any in-place resize may result
 in the container being stopped *and not restarted*, if the system can not
 perform the resize in place.
 
@@ -309,24 +310,34 @@ The `ResizePolicy` field is immutable.
 Resize status will be tracked via 2 new pod conditions: `PodResizePending` and `PodResizeInProgress`.
 
 **PodResizePending** will track states where the spec has been resized, but the Kubelet has not yet
-allocated the resources. There are two reasons associated with this condition:
+allocated the resources (desired resources != actuated resources). There are two reasons associated 
+with this condition:
 
 * `Deferred` - the proposed resize is feasible in theory (it fits on this node)
-  but is not possible right now; it will be regularly reevaluated.
-* `Infeasible` - the proposed resize is not feasible and is rejected; it may not
-  be re-evaluated.
+  but is not possible right now; it will be regularly reevaluated. This can happen
+  if the node does not have enough free resources at the moment, but might in the 
+  future when other pods are removed or scaled down.
+* `Infeasible` - the proposed resize is not feasible and is rejected; it will never
+  be re-evaluated. Today, the possible reasons for infeasible include:
+  * The requested resources exceed the node's total capacity.
+  * The pod is a static pod.
+  * In-place resize is not yet supported for containers with swap enabled.
+  * In-place resize is not yet supported for guaranteed pods alongside memory manager static policy.
+  * In-place resize is not yet supported for guaranteed pods alongside CPU manager static policy.
 
 In either case, the condition's `message` will include details of why the resize has not been
 admitted. `lastTransitionTime` will be populated with the time the condition was added. `status`
 will always be `True` when the condition is present - if there is no longer a pending resized
-(either the resize was allocated or reverted), the condition will be removed.
+(either the resize was allocated or reverted), the condition will be removed. `observedGeneration` will
+reflect the `metadata.generation` of the pod when the resize was last attempted.
 
 **PodResizeInProgress** will track in-progress resizes, and should be present whenever allocated resources
 != actuated resources (see [Resource States](#resource-states)). For successful synchronous
 resizes, this condition should be short lived, and `reason` and `message` will be left blank. If an
 error occurs while actuating the resize, the `reason` will be set to `Error`, and `message` will be
 populated with the error message. In the future, this condition will also be used for long-running
-resizing behaviors (see [Memory Limit Decreases](#memory-limit-decreases)).
+resizing behaviors (see [Memory Limit Decreases](#memory-limit-decreases)). `observedGeneration` will
+reflect the `metadata.generation` of the pod when the resize was initially requested.
 
 Note that it is possible for both conditions to be present at the same time, for example if an error
 is encountered while actuating a resize and a new resize comes in that gets deferred.
@@ -467,6 +478,12 @@ Allocation will be attempted on the pods in the queue:
 A successful allocation will trigger a pod sync, which will actuate the allocated resize and update the
 pod status accordingly.
 
+### Kubelet-triggered eviction
+
+A pod can be marked as critical with the `priorityClassName` of `system-node-critical` or `system-cluster-critical` as
+described in [Guaranteed Scheduling For Critical Add-On Pods](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical). If the kubelet receives a resize request for a
+critical pod and there is not enough space for the resize, it will evict a non-critical pod to make room.
+
 ### Kubelet and API Server Interaction
 
 When a new Pod is created, Scheduler is responsible for selecting a suitable
@@ -528,12 +545,12 @@ The scheduler will use the maximum of:
 ### Flow Control
 
 The following steps denote the flow of a series of in-place resize operations
-for a Pod with ResizePolicy set to PreferNoRestart for all its Containers.
+for a Pod with ResizePolicy set to NotRequired for all its Containers.
 This is intentionally hitting various edge-cases for demonstration.
 
 1. A new pod is created
     - `spec.containers[0].resources.requests[cpu]` = 1
-    - `spec.containers[0].resizePolicy[cpu].restartPolicy` = `"PreferNoRestart"`
+    - `spec.containers[0].resizePolicy[cpu].restartPolicy` = `"NotRequired"`
     - all status is unset
 
 1. Pod is scheduled
@@ -768,10 +785,6 @@ Impacts of a restart outside of resource configuration are out of scope.
 
 #### Notes
 
-* If CPU Manager policy for a Node is set to 'static', then only integral
-  values of CPU resize are allowed. If non-integral CPU resize is requested
-  for a Node with 'static' CPU Manager policy, that resize is rejected, and
-  an error message is logged to the event stream.
 * To avoid races and possible gamification, all components will use Pod's
   Status.ContainerStatuses[i].Resources when computing resources used
   by Pods.
@@ -811,7 +824,7 @@ be a race condition where the Kubelet may or may not accept the first resize, de
 it admits the first change before seeing the second. This race condition is accepted as working as
 intended.
 
-The atomic resize requirement should be reevaluated prior to GA, and in the context of pod-level resources.
+The atomic resize requirement should be reevaluated in the context of pod-level resources.
 
 ### Actuating Resizes
 
@@ -858,7 +871,7 @@ _Version skew note:_ Kubernetes v1.33 (and earlier) nodes only check the pod-lev
 
 ### Swap
 
-Currently (v1.33), if swap is enabled & configured, burstable pods are allocated swap based on their
+Currently (v1.35), if swap is enabled & configured, burstable pods are allocated swap based on their
 memory requests. Since resizing swap requires more thought and additional design, we will forbid
 resizing memory requests of such containers for now. Since the API server is not privy to the node's
 swap configuration, this will be surfaced as resizes being marked `Infeasible`.
@@ -876,7 +889,7 @@ A pod's QOS class is immutable. This is enforced during validation, which requir
 resize the computed QOS Class matches the previous QOS class.
 
 [Future enhancements: Mutable QOS Class "Shape"](#mutable-qos-class-shape) proposes a potential
-change to partially relax this restriction, but is removed from Beta scope.
+change to partially relax this restriction, but is removed from the scope of this KEP.
 
 [Future enhancements: explicit QOS Class](#design-sketch-explicit-qos-class) proposes an alternative
 enhancement on that, to make QOS class explicit and improve semantics around [workload resource
@@ -934,7 +947,6 @@ Labels:
 - `resource` - what resource. Possible values: `cpu`, or `memory`. If more than one of these is changing in the resize request, we increment the counter multiple times, once for each.
 - `requirement` - Possible values: `limits`, or `requests`. If more than one of these is changing in the resize request, we increment the counter multiple times, once for each.
 - `operation` -  whether the resize is an increase or a decrease. Possible values: `increase`, `decrease`, `add`, or `remove`.
-- `namespace` - the namespace of the pod.
 
 This metric is recorded as a counter.
 
@@ -942,10 +954,24 @@ This metric is recorded as a counter.
 This metric tracks the duration of [doPodResizeAction](https://github.com/kubernetes/kubernetes/blob/92de70895830ea1a9c2c6554bdab4cbee7ce867d/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L699), which 
 is responsible for actuating the resize.
 
-Labels: 
-- `namespace` - the namespace of the pod.
-
 This metric is recorded as a histogram.
+
+#### `kubelet_pod_infeasible_resizes_total`
+
+This metric tracks the total number of resizes that were rejected by the kubelet as infeasible.
+
+Labels: 
+- `reason_detail` - more details about why the resize is pending. Although a more detailed "message" will be provided in the `PodResizePending`
+condition in the pod, we limit this label to only the following possible values to keep cardinality low:
+  - `guaranteed_pod_cpu_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside CPU Manager static policy.
+  - `guaranteed_pod_memory_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside Memory Manager static policy.
+  - `static_pod` - In-place resize is not supported for static pods.
+  - `swap_limitation` - In-place resize is not supported for containers with swap.
+  - `insufficient_node_allocatable` - The node doesn't have enough capacity for this resize request.
+
+This list of possible reasons may shrink or grow depending on limitations that are added or removed in the future.
+
+This metric is recorded as a counter.
 
 #### `kubelet_pod_pending_resizes`
 
@@ -954,16 +980,6 @@ easier for us to see which of the current limitations users are running into the
 
 Labels:
 - `reason` - why the resize is pending. Possible values: `infeasible` or `deferred`.
-- `reason_detail` - more details about why the resize is pending. Although a more detailed "message" will be provided in the `PodResizePending`
-condition in the pod, we limit this label to only the following possible values to keep cardinality low:
-  - `guaranteed_pod_cpu_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside CPU Manager static policy.
-  - `guaranteed_pod_memory_manager_static_policy` - In-place resize is not supported for Guaranteed Pods alongside Memory Manager static policy.
-  - `static_pod` - In-place resize is not supported for static pods.
-  - `swap_limitation` - In-place resize is not supported for containers with swap.
-  - `insufficient_node_allocatable` - The node doesn't have enough capacity for this resize request.
-- `namespace` - the namespace of the pod.
-
-This list of possible reasons may shrink or grow depending on limitations that are added or removed in the future.
 
 This metric is recorded as a gauge.
 
@@ -971,9 +987,6 @@ This metric is recorded as a gauge.
 
 This metric tracks the total count of resize requests that the kubelet marks as in progress, meaning that
 the resources have been allocated but not yet actuated.
-
-Labels: 
-- `namespace` - the namespace of the pod.
 
 This metric is recorded as a gauge.
 
@@ -984,18 +997,15 @@ later accepted. This metric primarily exists because if a deferred resize is acc
 opposed to being triggered by an event such as another pod being deleted or sized down), it indicates an issue in the Kubelet's logic for handling deferred resizes that we should fix.
 
 Labels:
-  - `accepted_reason` - whether the resize was accepted through the timed retry or due to another pod event. Possible values: `periodic_retry`, `event_based`.
-  - `namespace` - the namespace of the pod.
+  - `retry_trigger` - whether the resize was accepted through the timed retry or due to another pod event. Possible values: `periodic_retry`, `pod_resized`, `pod_updated`, `pods_added`, `pods_removed`.
 
 This metric is recorded as a counter.
 
 ### Static CPU & Memory Policy
 
-Resizing pods with static CPU & memory policy configured is out-of-scope for the beta release of
-in-place resize. If a pod is a guaranteed QOS on a node with a static CPU or memory policy
-configured, then the resize will be marked as infeasible.
+Resizing pods with static CPU & memory policy configured is out-of-scope for this KEP. If a pod is a guaranteed QOS on a node with a static CPU or memory policy configured, then the resize will be marked as infeasible.
 
-This will be reconsidered post-beta as a future enhancement.
+This suppport will be added post-GA as a separate enhancement in its own KEP.
 
 ### Future Enhancements
 
@@ -1258,15 +1268,15 @@ Setup a namespace with min and max LimitRange and create a single, valid Pod.
 #### Resize Policy Tests
 
 Setup a guaranteed class Pod with two containers (c1 & c2).
-1. No resize policy specified, defaults to PreferNoRestart. Verify that CPU and
+1. No resize policy specified, defaults to NotRequired. Verify that CPU and
    memory are resized without restarting containers.
-1. PreferNoRestart (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
+1. NotRequired (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
    Verify that c1 is resized without restart, c2 is restarted on resize.
-1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
+1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
    verify container is resized without restart.
-1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 memory only,
+1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 memory only,
    verify container is resized with restart.
-1. PreferNoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
+1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
    verify container is resized with restart.
 
 #### Backward Compatibility and Negative Tests
@@ -1314,6 +1324,7 @@ TODO: Identify more cases
   - Resize atomicity
   - Exposing allocated resources in the pod status
   - QOS class changes
+- The subset of pod resize tests [here](https://github.com/kubernetes/kubernetes/blob/1aec2eb0030d2f121b4cf78998e9391d9389f1a0/test/e2e/common/node/pod_resize.go) under `doPodResizeTests` and `doPodResizeErrorTests` that meet the Conformance test requirements are promoted to Conformance.
 
 ### Upgrade / Downgrade Strategy
 Scheduler and API server should be updated before Kubelets in that order.
@@ -1650,12 +1661,21 @@ _This section must be completed when targeting beta graduation to a release._
 - 2025-01-24 - v1.33 updates for planned beta
     - Replace ResizeStatus with conditions
     - Improve memory limit downsize handling
-    - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
+    - Rename ResizeRestartPolicy `NotRequired` to `NotRequired`,
       and update CRI `UpdateContainerResources` contract
     - Add back `AllocatedResources` field to resolve a scheduler corner case
     - Introduce Actuated resources for actuation
 - 2025-06-03 - v1.34 post-beta updates
     - Allow no-restart memory limit decreases
+    - Add instrumentation section
+    - Priority of resize requests
+- 2025-09-22 - Correct KEP details to match actual implementation
+      - revert PreferNoRestart resize policy back to NotRequired
+      - add more details about the resize status
+      - document kubelet-triggered eviction for critical pods
+      - update outdated notes regarding static CPU
+      - correct details about instrumentation
+- 2025-09-22 - Update in-place pod resize for GA
 
 ## Drawbacks
 

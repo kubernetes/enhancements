@@ -32,14 +32,14 @@ approvers:
 see-also:
 replaces:
 
-stage: "beta"
+stage: "stable"
 
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 
 milestone:
   alpha: "v1.27"
   beta: "v1.33"
-  stable: "TBD"
+  stable: "v1.35"
 
 feature-gates:
   - name: InPlacePodVerticalScaling
