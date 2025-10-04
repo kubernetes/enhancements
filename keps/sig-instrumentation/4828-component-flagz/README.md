@@ -272,7 +272,7 @@ This section must be completed when targeting beta to a release.
 
 This feature should not cause rollout failures. If it does, we can disable the feature. In the worst
 case, it is possible it could cause runtime failures, but it is highly unlikely we would not detect this
-with existing tests.
+with existing tests. The endpoint is isolated and does not affect core workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -332,6 +332,8 @@ This is a debugging feature and not something that workloads depend on. Therefor
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 This enhancement proposes data that can be used to determine the health of the component.
+ (though this endpoint is not intended to be used for alerting.)
+It is not intended for use by workloads or for real-time monitoring or alerting.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -347,11 +349,11 @@ No, each component's flagz is independent.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No
+Yes, enabling this feature will result in a new HTTP endpoint (/flagz) being served by each component (including apiserver). However, this is not a Kubernetes API type or resource; it is a non-resource endpoint that provides component flag information for debugging and observability. No new Kubernetes API objects or resource types are introduced.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No.
+No, this feature does not introduce new Kubernetes API types or resources. While the flagz endpoint uses a structured JSON response with Group/Version/Kind for content negotiation and consistency, it is not a Kubernetes API object and is not managed or persisted by the API server. The GVK is used solely to provide a predictable format for clients querying the endpoint.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
