@@ -859,11 +859,14 @@ $ kubectl get events -o json -w
 {
     ...
     "kind": "Event",
+    "reason": "SupplementalGroupsPolicyNotSupported",
     "message": "Error: SupplementalGroupsPolicy is not supported in this node.",
     ...
 }
 ...
 ```
+
+So, you can follow `kubelet_admission_rejections_total{reason='SupplementalGroupsPolicyNotSupported'}` metrics to track such events.
 
 Also, the following kubelet metrics are also useful to check:
 
