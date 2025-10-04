@@ -662,11 +662,7 @@ Because this KEP's core implementation(i.e. `SupplementalGroupsPolicy` handling)
 
 #### GA
 
-- At least one of Container Runtimes which is not based on the classic container, gVisor for example, supports the updated CRI and released
-- Assuming no negative user feedback based on production experience, promote after 2 releases in beta.
-- [conformance tests] are added for `SupplementalGroupsPolicy` and `ContainerStatus.User` APIs
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+- No negative user feedback based on production experience, promote after 2 releases in beta.
 
 ### Upgrade / Downgrade Strategy
 
