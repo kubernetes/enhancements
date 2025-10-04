@@ -45,7 +45,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
   - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -129,7 +129,7 @@ When `strict-cpu-reservation` is enabled:
 
 ### Risks and Mitigations
 
-The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions` and is protected by feature gate `CPUManagerPolicyBetaOptions` before the feature graduates to `Stable` i.e. always enabled.
+The feature is isolated to a specific policy option `strict-cpu-reservation` under `cpuManagerPolicyOptions`.
 
 Concern for feature impact on best-effort workloads, the workloads that do not have resource requests, is brought up.
 
@@ -313,8 +313,8 @@ No new integration tests for kubelet are planned.
 
 #### GA
 
-- [ ] Allow time for feedback (1 year).
-- [ ] Make sure all risks have been addressed.
+- [X] Allow time for feedback (1 year).
+- [X] Make sure all risks have been addressed.
 
 ### Upgrade / Downgrade Strategy
 
@@ -332,9 +332,6 @@ The `/var/lib/kubelet/cpu_manager_state` needs to be removed when enabling or di
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `CPUManagerPolicyBetaOptions`
-  - Components depending on the feature gate: `kubelet`
 - [X] Change the kubelet configuration to set a `CPUManager` policy of `static` and a `CPUManager` policy option of `strict-cpu-reservation`
   - Will enabling / disabling the feature require downtime of the control plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning of a node?  No -- removing `/var/lib/kubelet/cpu_manager_state` and restarting kubelet are enough.
@@ -346,13 +343,13 @@ Yes. Reserved CPU cores will be strictly used for system daemons and interrupt p
 
 The feature is only enabled when all following conditions are met:
 1. The `static` `CPUManager` policy is selected
-2. The `CPUManagerPolicyBetaOptions` feature gate is enabled and the `strict-cpu-reservation` policy option is selected
+2. The `strict-cpu-reservation` policy option is selected
 3. The `reservedSystemCPUs` is not empty
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the feature can be disabled by:
-1. Disable feature gate `CPUManagerPolicyBetaOptions` or remove `strict-cpu-reservation` from the list of `CPUManager` policy options
+Yes, the feature can be disabled by the following steps:
+1. Remove `strict-cpu-reservation` from the list of `CPUManager` policy options
 2. Remove `/var/lib/kubelet/cpu_manager_state` and restart kubelet
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -361,7 +358,7 @@ The feature will be enabled regardless it is enabled for the first time or not.
 
 ###### Are there any tests for feature enablement/disablement?
 
-- A specific e2e test will demonstrate that the default behaviour is preserved when the feature gate is disabled, or when the feature is not used (2 separate tests)
+- A specific e2e test will demonstrate that the default behaviour is preserved when the feature is not used (2 separate tests)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -561,7 +558,7 @@ You can safely disable the feature.
 - 2024-03-08: Initial KEP created
 - 2024-10-07: KEP gets LGTM and Approval
 - 2025-02-03: KEP updated with Beta criteria
-
+- 2025-09-30: KEP updated with GA criteria
 
 ## Drawbacks
 
