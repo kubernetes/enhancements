@@ -1,4 +1,4 @@
-title: doc-policies-for-third-party-content
+title: Doc policies for third party content
 kep-number: 1326
 authors:
   - "@aimeeu"
@@ -7,13 +7,14 @@ authors:
   - "@zacharysarah"
 owning-sig: sig-docs
 reviewers:
-  - "@jaredbhatti"
-  - "@kbarnard10"
+  - "@katcosgrove"
+  - "@salaxander"
+  - "@tengqm"
 approvers:
   - "@cblecker"
   - "@derekwaynecarr"
   - "@dims"
 editor: "@zacharysarah"
 creation-date: 2019-10-20
-last-updated: 2019-10-20
+last-updated: 2025-09-16
 status: provisional
