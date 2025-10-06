@@ -227,7 +227,7 @@ In general balloon pods will look just like any other pod. They will be schedule
 
 ## Metrics details
 
-We will reach out the appropriate sigs for metrics to determine the pod labels should be consumed. We will start with sig-instruments
+We will reach out the appropriate sigs for metrics to determine the pod labels should be consumed. We will start with sig-instrumentation.
 
 ## Priorities
 
