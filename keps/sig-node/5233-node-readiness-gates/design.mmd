@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant NC as Node Controller
+    participant NA as Node-Agent (probes)
+    participant N as Node
+    participant CNI as CNI Component
+    participant DS as DaemonSet Controller
+    participant S as Scheduler
+    participant P as Pod (Regular)
+    participant DP as Pod (DaemonSet)
+
+    Note over N: Node Bootstrap Phase
+    N->>N: Configure spec.readinessGates<br/>[network.k8s.io/CNIReady]
+    NC->>N: Add taint: node.kubernetes.io/not-ready:NoSchedule
+    N->>N: Node marked as Ready after Kubelet and Runtime are ready.<br/>This does not signal ready for workload scheduling.
+
+    Note over CNI,DS: Component Initialization
+    DS->>DP: Create DaemonSet pods with tolerations
+    Note over DP: Tolerates node.kubernetes.io/not-ready taint
+    S->>DP: Schedule DaemonSet pods (can run on tainted node)
+    CNI->>CNI: Initialize CNI components
+
+    Note over NA, CNI: Node-Agent Probes for Readiness
+    NA->>CNI: Probe for readiness (e.g., check health endpoint)
+    CNI-->>NA: Report Ready
+    NA->>N: Patch status.conditions:<br/>network.k8s.io/CNIReady=True
+
+    Note over NC: Node Controller Evaluation
+    NC->>N: Check readinessGates vs conditions
+    alt All readiness gates satisfied
+        NC->>N: Remove taint: node.kubernetes.io/not-ready:NoSchedule
+        N->>N: Node becomes ready for regular scheduling
+    else Some gates still pending
+        N->>N: Keep taint active
+    end
+
+    Note over S,P: Regular Pod Scheduling
+    alt Node ready (no not-ready taint)
+        S->>P: Schedule regular pods normally
+    else Node not ready (taint present)
+        alt Pod tolerates node.kubernetes.io/not-ready
+            S->>P: Schedule pod (override behavior)
+        else Pod has no toleration
+            S->>P: Skip node, wait for readiness
+        end
+    end
+
+    Note over N: Final State
+    N->>N: spec.readinessGates: [network.k8s.io/CNIReady]<br/>status.conditions: [..., CNIReady=True]<br/>taints: [] (not-ready taint removed)
