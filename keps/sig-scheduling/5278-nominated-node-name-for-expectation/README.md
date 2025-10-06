@@ -630,7 +630,7 @@ Pods that are processed by Permit or PreBind plugins get NominatedNodeName durin
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes.
-The feature can be disabled in Alpha version by restarting the kube-scheduler and kube-apiserver with the feature-gate off.
+The feature can be disabled in Beta version by restarting the kube-scheduler and kube-apiserver with the feature-gate off.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -752,8 +752,8 @@ No.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 Yes - but it should be negligible impact.
-The memory usage in kube-scheduler is supposed to increase by external components starting to use this
-because when `NominatedNodeName` is added on the pods, the scheduler's internal component called `nominator` has to record them so that scheduling cycles can refer to them as necessary.
+The memory usage in kube-scheduler is supposed to increase because when `NominatedNodeName` is added on the pods, the scheduler's
+internal component called `nominator` has to record them so that scheduling cycles can refer to them as necessary.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 

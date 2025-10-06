@@ -17,7 +17,7 @@ approvers:
 
 stage: alpha
 
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 
 milestone:
   alpha: "v1.34"
