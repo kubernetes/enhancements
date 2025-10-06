@@ -1091,116 +1091,54 @@ it has been determined that they introduce too much overhead.
 * Kubernetes 1.28: kube-controller-manager converted completely, relationship
   with log/slog in Go 1.21 clarified
 * Kubernetes 1.29: kube-scheduler converted completely
+* Kubernetes 1.30: graduation to beta
 
 ## Status and next steps
 
-As of Kubernetes 1.29.1, kube-controller-manager and kube-scheduler have been
-converted. The logcheck tool can be used to count remaining log calls that need
+As of Kubernetes 1.34, kube-controller-manager and kube-scheduler have been
+converted. Work on the kubelet is in progress.
+
+The logcheck tool can be used to count remaining log calls that need
 to be converted:
 
 ```
 go install sigs.k8s.io/logtools/logcheck@latest
 
-echo "Component | Non-Structured Logging | Non-Contextual Logging " && echo "------ | ------- |  -------" && for i in $(find pkg/* cmd/* staging/src/k8s.io/* -maxdepth 0 -type d | sort); do  echo "$i | $(cd $i; ${GOPATH}/bin/logcheck -check-structured -check-deprecations=false 2>&1 ./... | wc -l ) | $(cd $i; ${GOPATH}/bin/logcheck -check-structured -check-deprecations=false -check-contextual ./... 2>&1 | wc -l )"; done
+echo "Component | Non-Structured Logging | Non-Contextual Logging | Owner " && echo "------ | ------- |  ------- | ------" && for i in $(find cmd/kube-apiserver cmd/kubelet cmd/kubelet pkg/* staging/src/k8s.io/client-go staging/src/k8s.io/apimachinery/* staging/src/k8s.io/apiserver -maxdepth 0 -type d | sort); do      echo "$i | $(cd $i; ${GOPATH}/bin/logcheck -check-structured -check-deprecations=false 2>&1 ./... | wc -l ) | $(cd $i; ${GOPATH}/bin/logcheck -check-structured -check-deprecations=false -check-contextual ./... 2>&1 | wc -l ) |" | grep -v '| 0 | 0 |'; done
 ```
 
-Note that this also counts calls where it was decided to not convert them. The
-actual check with golangci-lint ignores those because of a `//nolint:logcheck`
-suppression comment.
+Component | Non-Structured Logging | Non-Contextual Logging
+------ | ------- |  ------- | ------
+cmd/kube-apiserver | 2 | 3 |
+pkg/auth | 1 | 1 |
+pkg/certauthorization | 2 | 4 |
+pkg/controller | 0 | 4 |
+pkg/controlplane | 83 | 112 |
+pkg/credentialprovider | 27 | 51 |
+pkg/kubeapiserver | 3 | 17 |
+pkg/kubectl | 1 | 2 |
+pkg/kubelet | 1 | 1328 |
+pkg/kubemark | 7 | 7 |
+pkg/probe | 7 | 24 |
+pkg/proxy | 2 | 138 |
+pkg/registry | 58 | 113 |
+pkg/routes | 2 | 2 |
+pkg/scheduler | 2 | 2 |
+pkg/serviceaccount | 30 | 52 |
+pkg/util | 12 | 43 |
+pkg/volume | 551 | 897 |
+pkg/windows | 1 | 1 |
+staging/src/k8s.io/apimachinery/pkg | 74 | 119
+staging/src/k8s.io/apiserver | 322 | 739
+staging/src/k8s.io/client-go | 107 | 190
 
-Component | Non-Structured Logging | Non-Contextual Logging 
------- | ------- |  -------
-cmd/clicheck | 0 | 0
-cmd/cloud-controller-manager | 6 | 8
-cmd/dependencycheck | 0 | 0
-cmd/dependencyverifier | 0 | 0
-cmd/fieldnamedocscheck | 1 | 1
-cmd/gendocs | 0 | 0
-cmd/genkubedocs | 0 | 0
-cmd/genman | 0 | 0
-cmd/genswaggertypedocs | 2 | 2
-cmd/genutils | 0 | 0
-cmd/genyaml | 0 | 0
-cmd/gotemplate | 0 | 0
-cmd/importverifier | 0 | 0
-cmd/kubeadm | 264 | 463
-cmd/kube-apiserver | 6 | 7
-cmd/kube-controller-manager | 0 | 0
-cmd/kubectl | 0 | 0
-cmd/kubectl-convert | 0 | 0
-cmd/kubelet | 0 | 52
-cmd/kubemark | 1 | 1
-cmd/kube-proxy | 0 | 42
-cmd/kube-scheduler | 0 | 0
-cmd/preferredimports | 0 | 0
-cmd/prune-junit-xml | 0 | 0
-cmd/yamlfmt | 0 | 0
-pkg/api | 0 | 0
-pkg/apis | 0 | 0
-pkg/auth | 1 | 1
-pkg/capabilities | 0 | 0
-pkg/client | 0 | 0
-pkg/cloudprovider | 0 | 0
-pkg/cluster | 0 | 0
-pkg/controller | 0 | 3
-pkg/controlplane | 53 | 69
-pkg/credentialprovider | 48 | 77
-pkg/features | 0 | 0
-pkg/fieldpath | 0 | 0
-pkg/generated | 0 | 0
-pkg/kubeapiserver | 4 | 4
-pkg/kubectl | 1 | 2
-pkg/kubelet | 2 | 1983
-pkg/kubemark | 7 | 7
-pkg/printers | 0 | 0
-pkg/probe | 7 | 24
-pkg/proxy | 0 | 360
-pkg/quota | 0 | 0
-pkg/registry | 46 | 99
-pkg/routes | 2 | 2
-pkg/scheduler | 0 | 0
-pkg/security | 0 | 0
-pkg/securitycontext | 0 | 0
-pkg/serviceaccount | 25 | 44
-pkg/util | 20 | 57
-pkg/volume | 704 | 1110
-pkg/windows | 1 | 1
-staging/src/k8s.io/api | 0 | 0
-staging/src/k8s.io/apiextensions-apiserver | 58 | 89
-staging/src/k8s.io/apimachinery | 80 | 125
-staging/src/k8s.io/apiserver | 285 | 655
-staging/src/k8s.io/client-go | 163 | 283
-staging/src/k8s.io/cli-runtime | 1 | 2
-staging/src/k8s.io/cloud-provider | 122 | 162
-staging/src/k8s.io/cluster-bootstrap | 2 | 4
-staging/src/k8s.io/code-generator | 108 | 155
-staging/src/k8s.io/component-base | 33 | 64
-staging/src/k8s.io/component-helpers | 2 | 4
-staging/src/k8s.io/controller-manager | 10 | 10
-staging/src/k8s.io/cri-api | 0 | 0
-staging/src/k8s.io/csi-translation-lib | 3 | 4
-staging/src/k8s.io/dynamic-resource-allocation | 0 | 0
-staging/src/k8s.io/endpointslice | 0 | 0
-staging/src/k8s.io/kms | 0 | 0
-staging/src/k8s.io/kube-aggregator | 45 | 62
-staging/src/k8s.io/kube-controller-manager | 0 | 0
-staging/src/k8s.io/kubectl | 96 | 160
-staging/src/k8s.io/kubelet | 0 | 32
-staging/src/k8s.io/kube-proxy | 0 | 0
-staging/src/k8s.io/kube-scheduler | 0 | 0
-staging/src/k8s.io/legacy-cloud-providers | 1281 | 2015
-staging/src/k8s.io/metrics | 0 | 0
-staging/src/k8s.io/mount-utils | 55 | 95
-staging/src/k8s.io/pod-security-admission | 0 | 1
-staging/src/k8s.io/sample-apiserver | 0 | 0
-staging/src/k8s.io/sample-cli-plugin | 0 | 0
-staging/src/k8s.io/sample-controller | 0 | 0
-
-For Kubernetes 1.30, the focus is on client-go. APIs need to be extended
+The focus is now on client-go. APIs need to be extended
 carefully without breaking existing code so that a context can be provided for
 log calls. In some cases, this also makes a context available to code which
-currently uses `context.TODO` as a stop-gap measure. Currently there are over
-300 of those in `staging/src/k8s.io/client-go`. Whenever new APIs get
+currently uses `context.TODO` as a stop-gap measure. Initially there were over
+300 of those in `staging/src/k8s.io/client-go`, now 91 are left.
+
+Whenever new APIs get
 introduced, components which were already converted to contextual logging get
 updated to use those.
 
