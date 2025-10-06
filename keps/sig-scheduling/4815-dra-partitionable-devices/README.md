@@ -1379,6 +1379,13 @@ The DRA driver itself should also be able to survive a rollback, so long as it
 has been written to advertise any partitions as "pre-partitioned" devices. It
 will just lose the ability to set up new partitions dynamically.
 
+Enablement/disablement of without any upgrades in between will continue to work
+even though we are making backwards incompatible changes to the Partitionable
+Devices fields as part of a new revision of the alpha API. If either the APIServer
+or the scheduler have been upgraded to the revised version of the Partitionable
+Devices API, allocation of devices will fail as described in the 
+[Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning) section.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The scheduler may lose track of what devices it has allocated to what pods. Any
@@ -1405,16 +1412,26 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+We are making backwards-incompatible changes to the Partitionable Devices feature
+between the 1.34 and 1.35 versions. The changes impacts the ResourceSlice API and
+the schedulers assumptions around the structure of `ResourceSlice` objects. This means
+that the changes only impact DRA drivers that have implemented the Partitionable
+Devices feature.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-Will be considered for beta.
+If a cluster on version 1.34 or earlier have `ResourceSlice` objects using the
+fields added by the Partitionable Devices feature, they will be considered as
+part of invalid resource pools on clusters with version 1.35 or later, since we
+no longer allow the `SharedCounters` and `Devices` fields to be set in the same
+`ResourceSlice`. But allocation of devices from valid resource pools will still
+work.
+
+Similarly, a cluster on version 1.35 using the Partitionable Devices feature is
+downgraded to 1.34 (or earlier), devices in resource pools using the feature will
+not work since the scheduler will not be able to match consumed counters in devices
+with counter sets defined in separate `ResourceSlices`.
+
+Drivers and `ResourceSlices` using the Partitionable Devices feature should be
+removed from the cluster before upgrade/downgrade between 1.34 and 1.35.
 
 ###### What specific metrics should inform a rollback?
 
