@@ -2,6 +2,7 @@ title: Component Statusz
 kep-number: 4827
 authors:
   - "@richabanker"
+  - "@yongruilin"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-instrumentation
