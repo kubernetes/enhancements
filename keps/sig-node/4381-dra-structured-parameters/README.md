@@ -3080,7 +3080,7 @@ Major milestones might include:
 - Kubernetes 1.31: v1alpha3 with new API and several new features
 - Kubernetes 1.32: promotion to beta with v1beta1
 - Kubernetes 1.33: revised v1beta2 API with the same structure as intended for GA
-- Kubernetes 1.34: promotion to GA (tentative)
+- Kubernetes 1.34: promotion to GA
 
 ## Drawbacks
 
