@@ -163,6 +163,8 @@ using the new reason `NotReadyForScheduling`.
 **Note:** This entire feature will be controlled by a new feature gate, `SchedulerPreEnqueuePodStatus`.
 The enablement of this feature will be dependent on the `SchedulerAsyncAPICalls` feature gate being enabled,
 as the asynchronous patching mechanism is critical to protect scheduler throughput.
+Since the `SchedulerAsyncAPICalls` feature was disabled by default in v1.34,
+successfully enabling the `SchedulerPreEnqueuePodStatus` feature in v1.35 will depend on re-enabling the `SchedulerAsyncAPICalls` feature.
 
 #### 1. Reusing `framework.Status` and mandatory reporting
 
@@ -242,7 +244,8 @@ The API dispatcher in the scheduler could become a bottleneck.
 2. The impact on scheduling latency and throughput under heavy load will be measured using performance tests.
 
 3. The delaying mechanism is expected to reduce the load on kube-apiserver by canceling
-   or overwriting the pending API calls.
+   or overwriting the pending API calls. In addition, plugin developers will be encouraged to create error messages
+   that are as consistent as possible to reduce the number of updates required for a single Pod.
 
 4. The existing, highly optimized path for the SchedulingGates plugin (status set by kube-apiserver)
    is left intact to avoid any performance regression in that scenario.
