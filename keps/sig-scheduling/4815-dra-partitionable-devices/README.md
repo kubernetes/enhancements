@@ -378,12 +378,12 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
       exclusive with the existing node selection fields in the `ResourceSliceSpec`
       (`NodeName`, `NodeSelector`, and `AllNodes`). If the value of this field is
       `true`, then the node association must be specified on each device. `ResourceSlices`
-      with this field set must be published by a control plance component rather
+      with this field set must be published by a control plane component rather
       than a driver running on the node, as it prevents the driver from finding
       all `ResourceSlices` by filtering on `NodeName`.
 
       1. The fields `NodeName`, `NodeSelector`, and `AllNodes` fields mirror the
-      fields on the `ResourceSliceSpec` and are mutually exlusive. Setting
+      fields on the `ResourceSliceSpec` and are mutually exclusive. Setting
       `NodeName` means the device is available on a specific node, setting the
       `NodeSelector` field means the device is available on all nodes matching
       the selector, while setting the `AllNodes` field to `true` means the
@@ -392,7 +392,9 @@ on the device that mirrors the node selector fields on the `ResourceSlice`.
 The `SharedCounters` field is mutually exlusive with the `Devices` field, meaning
 that `SharedCounters` must always be specified in a different `ResourceSlice` than
 devices consuming the counters. They must however be in the same resource pool with
-the same `Generation`.
+the same `Generation`. The value in `Spec.Pool.ResourceSliceCount` should include
+all `ResourceSlices` in the pool, regardless of whether they include devices,
+counter sets or neither.
 
 With these additions in place, the scheduler has everything it needs to support
 the dynamic allocation of full devices, their (possibly overlapping)
@@ -420,9 +422,25 @@ By allowing cross-`ResourceSlice` references, we will not be able to validate
 that the references can actually be resolved during admission since we are only
 able to validate a `ResourceSlice` in isolation. This means that users will not
 discover mistakes until a `ResourceClaim` actually tries to allocate a device
-that belongs to the resource pool. This means more complexity and a less user-friendly
-UX. However, `ResourceSlices` are created by drivers, so issues here would mean a bug
-in the driver.
+that belongs to the resource pool.
+
+An invalid resource pool will not prevent a pod from getting scheduled if devices
+can be allocated from valid resource pools. For requests with `AllocationMode: All`,
+this means that those can not be satisfied if any of the devices available on the node
+is in an invalid resource pool. Only if a pod can't be scheduled on any of the nodes in
+the cluster _and_ an invalid resource pool were encountered on at least one of the nodes,
+will the system return an error. This error will be surfaced as a scheduling error that
+will be added in the `Pod` status.
+
+Four types of validation will be performed by the allocator:
+* The name of devices are unique within each resource pool. This validation is already included
+  in the allocator.
+* The name of counter sets are unique with in resource pool.
+* Consumed counter sets must exist within the resource pool.
+* Consumed counters within consumed counter sets must exist in the counter set.
+
+This change leads to a more complex and a less user-friendly UX. However, `ResourceSlices`
+are created by drivers, so issues here would mean a bug in the driver.
 
 ## Design Details
 
@@ -476,7 +494,7 @@ type CounterSet struct {
   // Counters defines the set of counters for this CounterSet
   // The name of each counter must be unique in that set and must be a DNS label.
   //
-  // The maximum number of counters in a counter set is 256.
+  // The maximum number of counters in a counter set is 32.
   //
   // +required
   Counters map[string]Counter
@@ -514,7 +532,7 @@ type Device struct {
   //
   // There can only be a single entry per counterSet.
   //
-  // The maximum number of counter sets per device is 4. The total number
+  // The maximum number of counter sets per device is 2. The total number
   // of consumed counters across all devices in a single ResourceSlice
   // must not exceed 2048.
   //
@@ -568,7 +586,7 @@ type DeviceCounterConsumption struct {
   // Counters defines the counters that will be consumed by the device.
   //
   // The maximum number of counters in a single DeviceCounterConsumption
-  // is 256. The total number of counters across all DeviceCounterConsumptions
+  // is 32. The total number of counters across all DeviceCounterConsumptions
   // in a ResourceSlice is 2048.
   //
   // +required
@@ -604,11 +622,11 @@ flexibility on how they set up their `ResourceSlices`, we are doing two things:
 The per-field limits in a `ResourceSlice` are:
 * The maximum number of devices is 128.
 * The maximum combined number of capacities and attributes per device is 32.
-* The maximum number of device counter consumptions per device is 4.
-* The maximum number of counters per device counter consumption is 256.
+* The maximum number of device counter consumptions per device is 2.
+* The maximum number of counters per device counter consumption is 32.
 * The maximum number of taints per device is 4.
 * The maximum number of counter sets is 8.
-* The maximum number of counters per counter set is 256.
+* The maximum number of counters per counter set is 32.
 
 The ResourceSlice-wide limits are:
 * The total number of consumed counters across all devices in a ResourceSlice
