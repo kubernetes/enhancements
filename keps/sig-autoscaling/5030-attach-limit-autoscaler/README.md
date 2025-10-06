@@ -673,7 +673,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-In general I think, it should result in any new calls to the cloud provider. If anything, once 
+In general I think, it should result in not any new calls to the cloud provider. If anything, once 
 this feature is enabled in both CAS and kube-scheduler, it should prevent scheduling of pods to the nodes
 which can't reasonably accommodate them. And hence it should result in reduction of API calls we make
 to the cloudprovider.
