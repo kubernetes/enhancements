@@ -171,16 +171,17 @@ two pods are the "same" we introduce a signature API to plugins.
 
 ## Motivation
 
-Today our scheduling algorithm is p x n where p is the number of pods to schedule
-and n the number of nodes in the cluster. As the size of clusters and jobs continue
+Today our scheduling algorithm is O(num pods x num nodes) where num pods is the number of pods to schedule
+and num nodes the number of nodes in the cluster. As the size of clusters and jobs continue
 to increase, this leads to low performance when scheduling or rescheduling 
 large jobs. This increases customer cost and slows down customer jobs, both
 unpleasant impacts. Optimizations like this one have the potential to dramaticly
 reduce the cost of scheduling in these scenarios.
 
-We are also working on gang scheduling, which will give us a way to consider multiple 
-pods at the same time. While full gang scheduling will likely deprecate the cache, 
-the signatures and reuse work should be portable to the new cycles that consider multiple pods.
+We are also working on multi-pod scheduling, which will give us a way to consider multiple 
+pods at the same time. While full multi-pod scheduling will likely deprecate the cache, 
+the signatures work and structuring of the cache dependencies should be portable to the new cycles
+that consider multiple pods.
 
 Another change is the shift towards 1-pod-per-node in batch and ML environments. Many
 of these environments (among others) only attempt to run a single customer pod on each node, along
@@ -272,7 +273,7 @@ This KEP is addressing a very similar problem to the Equivalence Cache (eCache),
 suggested in 2018 and then retracted because it became extremely complex. While this KEP addresses a similar problem
 it does so in a very different way, which we believe avoids the issues experienced by the eCache
 
-The two issues experienced by eCache were:
+The issues experienced by eCache were:
 
  * eCache performance was still O(num nodes).
  * eCache was complex
@@ -302,19 +303,20 @@ The two issues experienced by eCache were:
  #### eCache was complex
 
  Because the eCache cached predicates, the logic for computing these results went into the cache as well. This meant that significant 
- amount of the plugin functionality were replicated in the cache layer. This added significant complexity to the cache, and also made 
- keeping the cache results themselves up to date complex, involving multiple pods, etc. Because the eCache only improved performance for complex queries, they needed to include this complexity to provide value.
+ amount of the plugin functionality was replicated in the cache layer. This added significant complexity to the cache, and also made 
+ keeping the cache results themselves up to date complex, involving multiple pods, etc. Because the eCache only improved performance 
+ for complex queries, it needed to include this complexity to provide value.
 
- In contrast, the signature used in this cache is just a subset of the pod object, without complex logic. It is static and as the pod object changes slowly, it will change slowly as well. In addition, we explicitly avoid all the complex predicates in this cache because they are rarely used. Thus we do not have the same complexity needed in the cache.
+ In contrast, the signature used in this cache is just a subset of the pod object, without complex logic. It is static and as the pod object changes slowly, it will change slowly as well. In addition, we explicitly avoid all the complex plugins in this cache because they are rarely used. Thus we do not have the same complexity needed in the cache.
  
  #### eCache was tightly coupled with plugins
  
- Beacuse a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync.
+ Because a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync.
  Since in this cache the signature is just parts of the pod object, and the pod object is fairly stable, this makes keeping the signature up
  to date a much simpler task. The creation of the signature is also spread across the plugins themselves, so instead of needing to keep the 
- cache up to date, plugin owners simply have a new function they need to manage within their plugin, which the cache simply aggregates.
+ cache up to date, plugin owners simply have a new function they need to manage within their plugin, which the cache only aggregates.
 
- We will also provide tests that evaluate different pod configurations against different node configurations and ensures that
+ We will also provide tests that evaluate different pod configurations against different node configurations and ensure that
  any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing
  testing opportunities in other areas.
 
@@ -329,17 +331,25 @@ See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 a
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+#### Plugins need to keep signatures up to date
 
-How will security be reviewed, and by whom?
+The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We beleive this should
+be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec,
+but there is still risk of subtle dependencies creeping in.
 
-How will UX be reviewed, and by whom?
+If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object that only has a subset
+of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would
+naturally surface new dependencies as additions to the scheduling object. However, as we expect plugin changes to be relatively 
+modest, we don't believe the complexity of making the interface changes is worth the risk today.
 
-Consider including folks who also work outside the SIG or subproject.
--->
+#### We are narrowing the feature set where the cache will work
+
+Because we are explicitly limiting the functionality that this cache will support, we run the risk of designing something
+that will not work for enough customers for it to be useful.
+
+To mitigate this risk we are actively engaging with customers and doing analysis of data available on K8s users to ensure we are still
+capturing a large enough number of user use cases. We also will address this by expanding over time; we expect to have a few interested
+parties up front, but will then evaluate expansions that could onboard more.
 
 ## Design Details
 
