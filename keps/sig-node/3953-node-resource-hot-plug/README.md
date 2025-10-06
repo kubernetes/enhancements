@@ -19,11 +19,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-    - [Story 3](#story-3)
-    - [Story 4](#story-4)
-    - [Story 5](#story-5)
+    - [Story 1: Specialized Hardware](#story-1-specialized-hardware)
+    - [Story 2: Optimize System Performance](#story-2-optimize-system-performance)
+    - [Story 3: Reduce Operational Complexity](#story-3-reduce-operational-complexity)
+    - [Story 4: Increase Compute Capacity on-the-fly](#story-4-increase-compute-capacity-on-the-fly)
+    - [Story 5: Avoid Workload Disruption](#story-5-avoid-workload-disruption)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -85,7 +85,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Glossary
 
-Hotplug: Dynamically add compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (online offlined resources) or via hardware (physical additions while the system is running)
+Hotplug: Dynamically add compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (online offlined resources) or via hardware (physical additions while the system is running) which is purely additive to the existing capacity.
 
 Hotunplug: Dynamically remove compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (make resources go offline) or via hardware (physical removal while the system is running)
 
@@ -113,6 +113,7 @@ restarting the node or at-least restarting the kubelet, which does not have a ce
 
 However, this approach does carry a few drawbacks such as
  - Introducing a downtime for the existing/to-be-scheduled workloads on the cluster until the node is available.
+ - For baremetal clusters it involves significant amount time for the Nodes to be available.
  - Necessity to reconfigure the underlying services post node-reboot.
  - Managing the associated nuances that a kubelet restart or node reboot carries such as
    - https://github.com/kubernetes/kubernetes/issues/109595
@@ -157,31 +158,31 @@ With this proposal it's also necessary to recalculate and update OOMScoreAdj and
 
 ### User Stories
 
-#### Story 1
+#### Story 1: Specialized Hardware
 
 As a Kubernetes user, I want to allocate more resources (CPU, memory) to a node with existing specialized hardware or CPU Capabilities (for example:https://www.kernel.org/doc/html/v5.8/arm64/elf_hwcaps.html)
 so that additional workloads can leverage the hardware to be efficiently scheduled and run without manual intervention.
 
-#### Story 2
+#### Story 2: Optimize System Performance
 
-As a Kubernetes Application Developer, I want the kernel to optimize system performance by making better use of local resources when a node is resized, so that my applications run faster with fewer disruptions. This is achieved when there are
+As a Performance Analyst I want the kernel to optimize system performance by making better use of local resources when a node is resized, so that my applications run faster with fewer disruptions. This is achieved when there are
 Fewer Context Switches: With more CPU cores and memory on a resized node, the kernel has a better chance to spread workloads out efficiently. This can reduce contention between processes, leading to fewer context switches (which can be costly in terms of CPU time) 
 and less process interference and also reduces latency.
 Better Memory Allocation: If the kernel has more memory available, it can allocate larger contiguous memory blocks, which can lead to better memory locality (i.e., keeping related data closer in physical memory),improved paging and swap limits thus 
 reducing latency for applications that rely on large datasets, in the case of a database applications.
 
-#### Story 3
+#### Story 3: Reduce Operational Complexity
 
 As a Site Reliability Engineer (SRE), I want to reduce the operational complexity of managing multiple worker nodes, so that I can focus on fewer resources and simplify troubleshooting and monitoring.
 
-#### Story 4
+#### Story 4: Increase Compute Capacity on-the-fly
 
 As a Cluster administrator, I want to resize a Kubernetes node dynamically, so that I can quickly hot plug resources without waiting for new nodes to join the cluster.
 
-#### Story 5
+#### Story 5: Avoid Workload Disruption
 
 As a Cluster administrator, I expect my existing workloads to function without having to undergo a disruption which is induced during capacity addition followed by a node/kubelet restart to
-detect the change in compute capacity, which can bring in additional complications.
+detect the change in compute capacity, which can bring in further complications.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -277,7 +278,7 @@ With increase in cluster resources the following components will be updated:
 ### Handling hotplug events
 
 Once the capacity of the node is altered, the following are the sequence of events that occur in the kubelet. If any errors are 
-observed in any of the steps, operation is retried from step 1 along with a `FailedNodeResize` event under the node object.
+observed in any of the steps, operation is retried from step 1 along with a `FailedNodeResize` event and condition under the node object.
 1. Resizing existing containers:
     a. With the increased memory capacity of the nodes, the kubelet proceeds to update fields that are directly related to
       the available memory on the host. This would lead to recalculation of oom_score_adj and swap_limits.
@@ -307,7 +308,7 @@ T=0: Node Resources:
      Runtime:
         - <cgroup_path>/memory.swap.max: 1.33G
         
-T=1: Resize Instance to Hotplug Memory:
+T=1: Resize Node to Hotplug Memory:
         - Memory: 8G
         - Swap: 4G
      Pod:
@@ -333,7 +334,7 @@ To ensure the Cluster Autoscaler acknowledges resource hotplug, the following ap
 2. Identify Nodes Affected by Hotplug:
    * By flagging a Node as being impacted by hotplug, the Cluster Autoscaler could revert to a less reliable but more conservative "scale from 0 nodes" logic.
 
-Given that this KEP and autoscaler are inter-related, the above approaches were discussed in the community with relevant stakeholders, and have decided approaching this problem through the former route. 
+Given that this KEP and autoscaler are inter-related, the above approaches were discussed in the community with relevant stakeholders, and have decided approaching this problem through the approach 1. 
 The same will be targeted around the beta graduation of this KEP
 
 ### Handling HotUnplug Events
@@ -352,19 +353,18 @@ In this case, valid configuration refers to a state which can either be previous
 ```
 T=0: Node initial Resources:
     - Memory: 10G
-    - Pod: Memory
 
-T=1: Resize Instance to Hotplug Memory
+T=1: Resize Node to Hotplug Memory
     - Current Memory: 10G
     - Update Memory: 15G
     - Node state: Ready
 
-T=2: Resize Instance to HotUnplug Memory
+T=2: Resize Node to HotUnplug Memory
     - Current Memory: 15G
     - UpdatedMemory: 5G
     - Node state: NotReady
 
-T=3: Resize Instance to Hotplug Memory
+T=3: Resize Node to Hotplug Memory
     - Current Memory: 5G
     - Updated Memory Size: 15G
     - Node state: Ready
@@ -390,6 +390,14 @@ syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.Po
     .
     .
     case machineInfo := <-kl.nodeResourceManager.MachineInfo():
+        // Resync the resource managers.
+        klog.InfoS("Resync resource managers because of change in MachineInfo")
+        if err := kl.containerManager.ResyncComponents(machineInfo); err != nil {
+            klog.ErrorS(err, "Failed to resync resource managers with machine info update")
+			kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.FailedNodeResize, err.Error())
+            break
+        }
+		
         // Resize the containers.
         klog.InfoS("Resizing containers due to change in MachineInfo")
         if err := resizeContainers(); err != nil {
@@ -398,13 +406,7 @@ syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.Po
             break
         }
         
-        // Resync the resource managers.
-        klog.InfoS("ResyncComponents resource managers because of change in MachineInfo")
-        if err := kl.containerManager.ResyncComponents(machineInfo); err != nil {
-            klog.ErrorS(err, "Failed to resync resource managers with machine info update")
-            kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.FailedNodeResize, err.Error())
-            break
-        }
+
         
         // Update the cached MachineInfo.
         kl.setCachedMachineInfo(machineInfo)
