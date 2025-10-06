@@ -530,7 +530,7 @@ spec:
 Provided that the device class gpu.example.com is mapped to the extended
 resource example.com/gpu.
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
   name: gpu.example.com
@@ -1099,7 +1099,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
-No.
+The container runtime must support CDI.
+
+A third-party DRA driver is required for publishing resource information and preparing resources on a node.
+
+These are not new requirements from this feature, rather, they are required by DRA structured parameters.
 
 ### Scalability
 
@@ -1146,10 +1150,14 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+The troubleshooting section in https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#troubleshooting
+still applies.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Will be considered for beta.
+The Kubernetes control plane will be down, so no new Pods get scheduled. kubelet may
+still be able to start or or restart containers if it already received all the relevant
+updates (Pod, ResourceClaim, etc.).
 
 ###### What are other known failure modes?
 
@@ -1169,15 +1177,14 @@ For each of them, fill in the following information by copying the below templat
     - Detection: inspect pod status 'Pending'
     - Mitigations: reduce the number of devices requested in one extended resource backed by DRA requests
     - Diagnostics: scheduler logs at level 5 show the reason for the scheduling failure.
-    - Testing: Will be considered for beta.
+    - Testing: this is known, determinstic failure mode due to defined system limit, i.e., DRA requests must be no more than 128 devices.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-
-Will be considered for beta.
 
 ## Implementation History
 
 - Kubernetes 1.34: KEP accepted.
+- Kubernetes 1.35: promotion to beta.
 
 ## Drawbacks
 
