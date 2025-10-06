@@ -1,3 +1,5 @@
 kep-number: 2033
 alpha:
   approver: "@ehashman"
+beta:
+  approver: "@soltysh"

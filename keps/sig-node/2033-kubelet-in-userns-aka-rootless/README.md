@@ -148,20 +148,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [N/A] e2e Tests for all Beta API Operations (endpoints)
+  - [N/A] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [N/A] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+  - [N/A] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -493,7 +493,11 @@ The patch modifies `kubelet` to ignore errors that happens during setting the fo
 #### kube-proxy
 Patch: ["kube-proxy: allow running in userns"](https://github.com/rootless-containers/usernetes/blob/v20210303.0/src/patches/kubernetes/0002-kube-proxy-allow-running-in-userns.patch)
 
-The patch modifies `kube-proxy` to ignore an error during setting `RLIMIT_NOFILE`.
+The patch modifies `kube-proxy` (`userspace` mode) to ignore an error during setting `RLIMIT_NOFILE`.
+No change is needed for non-userspace mode.
+
+> **Note**
+> `userspace` proxy was removed in v1.26.
 
 ### Test Plan
 
@@ -508,19 +512,19 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-Tests are present in several subproject repos and third party repos:
-- https://github.com/kubernetes-sigs/kind/blob/v0.17.0/.github/workflows/cgroup2.yaml#L24
-- https://github.com/kubernetes/minikube/blob/v1.29.0/.github/workflows/pr.yml#L293-L410
-- https://github.com/k3s-io/k3s/blob/v1.26.1+k3s1/.github/workflows/cgroup.yaml#L92-L99
-- https://github.com/rootless-containers/usernetes/blob/v20221007.0/.cirrus.yml
+See [e2e tests](#e2e-tests) below.
 
-Tests will be added to `kubernetes/test-infra` as well when the [`k8s-infra-prow-build`](https://github.com/kubernetes/k8s.io/blob/a071c4ed0823f193ee29e2f14e191be42dc1a1f0/infra/gcp/terraform/k8s-infra-prow-build/main.tf#L78) cluster
-is upgraded to use cgroup v2.
-This will probably automatically happen when [GKE bumps up their "regular" channel to Kubernetes v1.26 or later](https://cloud.google.com/kubernetes-engine/docs/how-to/node-system-config).
+Additional tests are present in several subproject repos and third party repos:
+- https://github.com/kubernetes-sigs/kind/blob/v0.29.0/.github/workflows/vm.yaml#L24
+- https://github.com/kubernetes/minikube/blob/v1.36.0/.github/workflows/pr.yml#L299-L415
+- https://github.com/k3s-io/k3s/blob/v1.33.1%2Bk3s1/.github/workflows/e2e.yaml#L56
+- https://github.com/rootless-containers/usernetes/blob/gen2-v20250501.0/.github/workflows/main.yaml
+  - Covers multi-node clusters with Flannel (VXLAN)
+  - Covers several host distributions (Ubuntu, CentOS Stream, and Fedora)
 
 ##### Prerequisite testing updates
 
@@ -550,7 +554,14 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+N/A.
+Unit tests do not make sense here, as the relevant code depends on sysctl:
+- https://github.com/kubernetes/kubernetes/blob/v1.34.1/pkg/kubelet/cm/container_manager_linux.go#L483-L485
+- https://github.com/kubernetes/kubernetes/blob/v1.34.1/pkg/kubelet/kubelet.go#L559-L567
+
+The feature can be tested only by running the entire node components in UserNS.
+
+See [e2e tests](#e2e-tests) below for how the feature is actually tested.
 
 ##### Integration tests
 
@@ -576,7 +587,9 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+N/A, as integration tests do not make sense here, for the same reason as explained above for the [unit tests](#unit-tests).
+
+See [e2e tests](#e2e-tests) below for how the feature is actually tested.
 
 ##### e2e tests
 
@@ -595,7 +608,31 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+`NodeConformance` tests are executed using [kubetest2-kindinv](https://github.com/rootless-containers/kubetest2-kindinv).
+
+"kindinv" stands for "Kubernetes in (Rootless) Docker in (GCE) VM".
+GCE VM is used for enabling systemd that is required by Rootless Docker to set up cgroup v2.
+
+```bash
+exec kubetest2 kindinv \
+  --boskos-location=http://boskos.test-pods.svc.cluster.local \
+  --gcp-zone=us-central1-b \
+  --instance-image=ubuntu-os-cloud/ubuntu-2404-lts-amd64 \
+  --instance-type=n2-standard-4 \
+  --kind-rootless \
+  --user=rootless \
+  --build \
+  --up \
+  --down \
+  --test=ginkgo \
+  -- \
+  --focus-regex='\[NodeConformance\]' \
+  --skip-regex='\[Environment:NotInUserNS\]|\[Slow\]' \
+  --parallel=8
+```
+
+- Prow manifest: https://github.com/kubernetes/test-infra/blob/aefb999cad82965bd6fb7e3104525fe8d87e434f/config/jobs/kubernetes/sig-testing/kubernetes-kind-ci.yaml#L250-L314
+- Logs: https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/ci-kubernetes-e2e-kind-rootless
 
 ### Graduation Criteria
 
@@ -676,11 +713,22 @@ in back-to-back releases.
 - Alpha: Basic support for rootless mode on cgroups v2 hosts.
 
 - Beta: e2e tests coverage.
-  To move to beta, we need clarity if we intend to define two separate types of conformance suites:
-  - kubernetes clusters that can run privileged workloads
-  - kubernetes cluster that are restricted to run unprivileged workloads only
+  The tests are covered by `NodeConformance` tests (see above).
   Requirements:
   - [the cgroup v2 KEP](../2254-cgroup-v2/) to reach Beta or GA.
+  Open Source Usage:
+  - https://github.com/rootless-containers/usernetes/blob/gen2-v20250828.0/kubeadm-config.yaml#L45
+  - https://github.com/kubernetes-sigs/kind/blob/v0.30.0/pkg/cluster/internal/kubeadm/config.go#L501
+  - https://github.com/kubernetes/minikube/blob/v1.36.0/cmd/minikube/cmd/start_flags.go#L654
+  - https://github.com/k3s-io/k3s/blob/v1.33.4%2Bk3s1/pkg/daemons/agent/agent_linux.go#L26
+  - https://github.com/k3d-io/k3d/blob/v5.8.3/docs/usage/advanced/podman.md?plain=1#L141
+  - https://github.com/epinio/epinio/blob/v1.12.0/scripts/acceptance-cluster-setup.sh#L92
+  - https://github.com/lxc/cluster-api-provider-incus/blob/v0.7.0/docs/book/src/explanation/unprivileged-containers.md?plain=1#L23
+  - https://github.com/NVIDIA/aistore/blob/v1.3.31/deploy/dev/k8s/utils/ci/generate_kind_config.sh#L18
+  - https://github.com/GoogleCloudPlatform/anthos-samples/blob/8aff62c3f0bd835bda7479a01a591e1849c48fe9/anthos-attached-clusters/kind/main.tf#L37
+  - https://github.com/GoogleCloudPlatform/cloud-solutions/blob/pino-logging-gcp-config-v1.1.0/projects/k8s-hybrid-neg-controller/hack/kind-cluster-config.yaml#L24
+  - https://github.com/GoogleCloudPlatform/solutions-workshops/blob/grpc-xds/v0.5.0/grpc-xds/hack/kind-cluster-config-2.yaml#L24
+  In beta, [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will be updated to include `RunningInUserNS *bool`.
 
 - GA: Assuming no negative user feedback based on production experience, promote after >= 2 releases in beta.
   Requirements:
@@ -717,7 +765,8 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-N/A
+N/A.
+This KEP only affects the internal of kubelet, and does not affect any API.
 
 ## Production Readiness Review Questionnaire
 
@@ -763,7 +812,7 @@ well as the [existing list] of feature gates.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `KubeletInUserNamespace`
-  - Components depending on the feature gate:
+  - Components depending on the feature gate: kubelet
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -786,7 +835,8 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-During Alpha, we will document what workloads will work and what will not work.
+The limitation is same as Rootless Docker, Podman, etc.
+See <https://rootlesscontaine.rs/caveats/>.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -801,11 +851,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-N/A, as switching back rootless to rootful requires redeploying the kubelet, and vice versa.
+Yes, by turning off the feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-N/A.
+The rootless functionality is again available in kubelet.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -822,16 +872,13 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-CI will run `kind` (Kubernetes in Docker) tests with Rootless Docker/Podman.
-Tests with a real cluster will be added later as well.
+Yes. See [Test Plan](#test-plan).
 
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
-
-This section will be fulfilled when targeting beta graduation to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -845,12 +892,21 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Rollout: Rolling out requires recreating a new node instance, in a UserNS.
+Typical failures:
+- [subuids are not allocated](https://rootlesscontaine.rs/getting-started/common/subuid/)
+- [cgroup v2 delegation is not enabled](https://rootlesscontaine.rs/getting-started/common/cgroup2/)
+
+Rollback: this question is not applicable. Rolling back requires recreating a new node instance.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Increase of [`node_collector_unhealthy_nodes_in_zone`](https://kubernetes.io/docs/reference/instrumentation/metrics/).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -860,11 +916,15 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+This question is not applicable. Rolling out and rolling back requires recreating a new node instance.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No
 
 ### Monitoring Requirements
 
@@ -883,7 +943,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-N/A
+[`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will have `RunningInUserNS *bool`
+to indicate whether the node is running in UserNS.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -897,9 +958,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
+  - Event Reason:
+- [X] API .status
+  - Condition name: [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will have `RunningInUserNS *bool`
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
@@ -921,7 +982,9 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-N/A
+In default Kubernetes installation with the feature enabled,
+99th percentile per cluster-day of `node_collector_unhealthy_nodes_in_zone` <= X
+where X depends on the size of the cluster.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -929,12 +992,12 @@ N/A
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [X] Metrics
+  - Metric name: [`node_collector_unhealthy_nodes_in_zone`](https://kubernetes.io/docs/reference/instrumentation/metrics/)
   - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [X] Other (treat as last resort)
-  - Details: Use `systemctl --user is-system-running` to verify whether the processes (RootlessKit, kubelet, kube-proxy, and CRI) are running.
+  - Components exposing the metric: node-lifecycle-controller
+- [ ] Other (treat as last resort)
+  - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -943,7 +1006,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-N/A
+None
 
 ### Dependencies
 
@@ -1060,6 +1123,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+No.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -1072,7 +1137,12 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-RootlessKit and slirp4netns may face high CPU and memory consumption.
+User-mode implementation of TCP/IP (RootlessKit, slirp4netns, paste, etc.) may face high CPU and memory consumption.
+
+The "Figure 8: CPU utilization while running iperf3 client" in <https://arxiv.org/pdf/2402.00365> denotes that
+a configuration with RootlessKit for incoming packets and slirp4netns for outgoing packets may face roughly 20% of CPU usage.
+
+This issue can be addressed by using `lxc-user-nic` (SETUID helper) or `bypass4netns` (seccomp-based network accelerator).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -1085,6 +1155,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No
 
 ### Troubleshooting
 
@@ -1122,6 +1194,10 @@ Same as traditional rootful Kubernetes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+- Make sure that the supported version of the components are used
+- [Make sure that more than 65536 subuids are allocated](https://rootlesscontaine.rs/getting-started/common/subuid/)
+- [Make sure that cgroup v2 delegation is enabled](https://rootlesscontaine.rs/getting-started/common/cgroup2/)
+
 ## Implementation History
 
 <!--
@@ -1142,6 +1218,8 @@ Major milestones might include:
 - 2019-11-19: @giuseppe submitted [cgroup v2 KEP](https://github.com/kubernetes/enhancements/pull/1370)
 - 2019-11-19: present KEP to SIG-node (cgroup v2 version)
 - 2020-07-07: the cgroup v2 support is in `implementable` status
+- 2021-08-04: Kubernetes v1.22 (Alpha)
+- 2025-12-XX: Kubernetes v1.35 (Beta)
 
 ## Drawbacks
 
