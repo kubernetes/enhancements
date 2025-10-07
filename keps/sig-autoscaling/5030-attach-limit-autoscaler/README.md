@@ -109,6 +109,7 @@ After the fixes we are proposing in cluster-autoscaler are made, cluster-autosca
 ### Non-Goals
 
 - Deschedule pods that can't fit a node because of race conditions.
+- Fixing other autoscalers like Karpenter is out of scope for current proposal.
 
 ## Proposal
 
@@ -283,6 +284,10 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 -->
 
 ##### Unit tests
+
+After this proposal is implemented, simulated scheduling in CAS should work with fake `CSINode` objects 
+which report real volume limits and hence scheduling should accurately count number of required nodes
+for pending pods.
 
 <!--
 In principle every added code should have complete unit test coverage, so providing
