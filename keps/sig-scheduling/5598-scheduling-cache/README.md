@@ -166,7 +166,7 @@ earlier pods to reduce the cost of scheduling follow on pods that have the same 
 To simplify the first version, we only attempt this optimization for pods that have a single pod 
 of this type on a node, and we exclude pods that use complex constraints like
 PodTopologySpread and PodAffinity / AntiAffinity. We also have tight
-eviction rules on the cache (O(seconds)) to ensure it doesn't get stale. To tell if
+invalidation rules on the cache (O(seconds)) to ensure it doesn't get stale. To tell if
 two pods are the "same" we introduce a signature API to plugins.
 
 ## Motivation
