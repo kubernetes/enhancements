@@ -252,7 +252,7 @@ just pod and node attributes, but other pods in the system, global data
 about pod placement, etc. These nodes get a nil signature, and we fallback
 to the slow path.
 
-We exclude pods with the following constraints:
+We exclude pods with the following constraints (the only known incompatible constraints in the in-tree plugins):
    * Pod affinity rules (affinity or anti-affinity)
    * Topology spread rules (including inherited rules from the system default) This constraint we should attempt to lift in the future.
 
