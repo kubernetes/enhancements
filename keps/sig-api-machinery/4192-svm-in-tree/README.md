@@ -6,10 +6,9 @@
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
-  - [UNCLEAR Goals and/or Non-Goals](#unclear-goals-andor-non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1 <strong>[UNCLEAR]</strong>](#story-1-unclear)
+    - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -17,12 +16,9 @@
   - [APIs to move](#apis-to-move)
     - [We will move following <a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go">APIs</a> in-tree:](#we-will-move-following-apis-in-tree)
     - [Changes while we move above APIs in-tree:](#changes-while-we-move-above-apis-in-tree)
-  - [<a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller">Controller</a> to move](#controller-to-move)
-    - [<a href="https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator">Migrator Controller</a>](#migrator-controller)
-  - [Approach](#approach)
+- [Former, out-of-tree implementation](#former-out-of-tree-implementation)
+  - [New KCM-based controller](#new-kcm-based-controller)
     - [Garbage Collection Cache](#garbage-collection-cache)
-  - [Rejected Alternative](#rejected-alternative)
-    - [Streaming List](#streaming-list)
   - [RBAC for SVM](#rbac-for-svm)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -44,6 +40,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Streaming List (considered, rejected)](#streaming-list-considered-rejected)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -94,22 +91,16 @@ This KEP aims to make it easy for users to perform storage migrations without ha
 - Any modification regarding `StorageVersion` API for HA API servers
 - Adding logic that relies on the hashed storage versions exposed via the discovery API
 
-### UNCLEAR Goals and/or Non-Goals
-
-- Automatic storage version migration for CRDs
-- Make it easy for Kubernetes developers to drop old API schemas by guaranteeing that storage migration is run automatically on SV hash changes (should this also be on a timer or API server identity?)
-- Automated Storage Version Migration via the hash exposed by the `StorageVersion` API
-
 ## Proposal
 
-- Move the existing SVM controller logic in-tree into KCM
-- Move the existing SVM REST APIs in-tree (possibly under a new API group to avoid conflicts with the old API being run concurrently)
-- For Alpha, we will not trigger automatic storage version migration, and it will be deferred to the user.
+- Move the existing SVM controller logic in-tree into KCM from its [original source](https://github.com/kubernetes-sigs/kube-storage-version-migrator).
+- Move the existing SVM REST APIs in-tree (possibly under a new API group to avoid conflicts with the old API being run concurrently).
+- Automatic storage version migration will be deferred to the user.
 
 ### User Stories (Optional)
 
-#### Story 1 **[UNCLEAR]**
-As an end user of Kubernetes, we get automatic storage version migration whenever the storage version changes due to an api server upgrade/downgrade.
+#### Story 1
+As an end user of Kubernetes, I can trigger storage version migration for my resources.
 
 #### Story 2
 As an end user using encryption at rest, whenever the key change is detected we can run the storage migration to use the new key for encryption. 
@@ -240,24 +231,48 @@ To avoid any conflicts with the Storage Version Migrators running out of tree, w
 The final APIs that will be moved in-tree are:
 - `v1alpha1` of `storageversionmigrations.storagemigration.k8s.io`
 
-### [Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller) to move
-#### [Migrator Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator)
-Currently, the Storage Version Migrator comprises two controllers: the `Trigger` controller and the `Migrator` controller. The Trigger controller performs resource discovery, identifying supported resources with the preferred server version every `10 minutes`. Subsequently, the Trigger controller creates the `StorageVersionMigration` resource to initiate the migration process. The Migrator controller then picks up this resource and executes the actual migration.
+## Former, out-of-tree implementation
+- [Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/controller) to move
+- [Migrator Controller](https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/migrator)
 
-When transitioning the Storage Version Migrator in-tree, we will exclusively move the Migrator controller as a component of KCM. The creation of the Migration resource will be deferred to the user, instead of being triggered automatically.
+Currently, the Storage Version Migrator comprises of two controllers: the `Trigger`
+controller and the `Migrator` controller. The Trigger controller performs resource
+discovery, identifying supported resources with the preferred server version every
+`10 minutes`. Subsequently, the Trigger controller creates the `StorageVersionMigration`
+resource to initiate the migration process. The Migrator controller then picks up this
+resource and executes the actual migration.
 
-### Approach
+When transitioning the Storage Version Migrator in-tree, we will exclusively move the
+Migrator controller as a component of KCM. The creation of the Migration resource
+will be deferred to the user, instead of being triggered automatically.
+
+### New KCM-based controller
+
 #### Garbage Collection Cache
-Kube Controller Manager's garbage collection cache contains the name and namespace for all resources, providing a suitable dataset for the migration process. This approach is detailed [here](https://docs.google.com/document/d/1lHDbrMCmNG1KXEpw6gMhDL8qWAWgeSlfW6gbCvD80uw/edit?usp=sharing). _We will use this approach for the Alpha release_.
+Kube Controller Manager's garbage collection cache contains the name and namespace
+for all resources, providing a suitable dataset for the migration process.
 
-### Rejected Alternative
-#### Streaming List
-Currently, the Migrator controller uses the `chunked List` method to retrieve the list of resources from the API server and subsequently perform storage migrations as needed. However, chunked lists are [resource-intensive]((https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/3157-watch-list/README.md#motivation)) and can lead to a significant overload on the API server, potentially resulting in it being terminated due to out-of-memory (OOM) issues. To address this concern, we have proposed the adoption of an Alpha feature introduced in Kubernetes _v1.27_, known as [`Streaming List`](https://kubernetes.io/docs/reference/using-api/api-concepts/#streaming-lists).
+At the beginning of a migration, to make sure the garbage collector's cache is
+up-to-date with the cluster state, the SVM controller performs a list that is
+guaranteed to return at most one item (using limits/non-existent namespace names).
+The RV of the returned list is then stored and used to compare with the RV from
+the GC cache for the given resource. The controller waits until the GC cache RV
+is newer that the RV stored for the specific migration.
 
-When the Migrator controller is integrated in-tree, it will leverage the `Streaming List` approach to obtain and monitor resources while executing storage version migrations, as opposed to using the resource-intensive `chunked list` method. In cases where, for any reason, the client cannot establish a streaming watch connection with the API server, it will fall back to the standard `chunked list` method, retaining the older LIST/WATCH semantics.
-    
-- _Open Question_:
-    - Does `Streaming List` support inconsistent lists? Currently, with chunked lists, we receive inconsistent lists. We need to determine if we can achieve the same with Streaming List. Depending on the outcome, we may consider removing the [ContinueToken](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go#L63) from the API.
+The controller then issues patch requests for each of the objects in the GC cache
+for the given resource, that is only if the resource version of this object is not greater
+than the resource version for the migration that was observed earlier. These patch
+requests should contain minimum information:
+- API version and kind
+- resource name and namespace
+- UID from the GC cache
+  - to make sure we don't accidentally create an empty instance if the resource was
+    deleted in the meantime
+- resource version from the GC cache
+  - this would provoke conflict errors if the object was modified in the meantime,
+    meaning we no longer need to attempt the write because someone else already did that
+  - must also be set in case the object was removed to prevent "immutable field"
+    errors when setting UID as discussed above
 
 ### RBAC for SVM
 - Storage Version Migrator Controller
@@ -269,11 +284,10 @@ When the Migrator controller is integrated in-tree, it will leverage the `Stream
     rules:
     - apiGroups: ["*"]
       resources: ["*"]
-      verbs: 
-      - get 
-      - list
-      - watch
-      - update
+      verbs: ["patch", "get", "list", "watch"]
+    - apiGroups: ["storagemigration.k8s.io"]
+      resources: ["storageversionmigrations/status"]
+      verbs: ["update"]
       
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
@@ -399,7 +413,7 @@ total:                                                                          
 The feature is enabled using the feature gate `StorageVersionMigrator`. During an upgrade, this gate must be set to true. During a downgrade, this gate must be set to false, and any remaining _StorageVersionMigration_ resources should be manually removed.
 
 ### Version Skew Strategy
-The feature will be enabled by the feature gate `StorageVersionMigrator` on both the _api-server_ and the _kube-controller-manager_. This gate must be set for both components during installation. Otherwise, since the kube-controller-manager is allowed to be one version lower than the api-server, it won't be able to process any StorageVersionMigration resources created by the API server.
+The feature will be enabled by the feature gate `StorageVersionMigrator` on the _kube-controller-manager_.
 
 ## Production Readiness Review Questionnaire
 
@@ -542,7 +556,27 @@ NA
 
 ## Alternatives
 
-NA
+### Streaming List (considered, rejected)
+The original Migrator controller used the _chunked List_ method to retrieve the
+list of resources from the API server and subsequently performed storage migrations
+as needed. However, chunked lists are [resource-intensive]((https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/3157-watch-list/README.md#motivation))
+and can lead to a significant overload on the API server, potentially resulting in
+it being terminated due to out-of-memory (OOM) issues. To address this concern, we
+have proposed the adoption of an Alpha feature introduced in Kubernetes _v1.27_,
+known as [`Streaming List`](https://kubernetes.io/docs/reference/using-api/api-concepts/#streaming-lists).
+
+When the Migrator controller would get integrated in-tree, it would leverage the `Streaming List`
+approach to obtain and monitor resources while executing storage version migrations,
+as opposed to using the resource-intensive `chunked list` method. In cases where,
+for any reason, the client cannot establish a streaming watch connection with the
+API server, it will fall back to the standard `chunked list` method, retaining the
+older LIST/WATCH semantics.
+
+- _Open Question for this approach_:
+    - Does `Streaming List` support inconsistent lists? Currently, with chunked lists,
+      we receive inconsistent lists. We need to determine if we can achieve the same
+      with Streaming List. Depending on the outcome, we may consider removing the
+      [ContinueToken](https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go#L63) from the API.
 
 ## Infrastructure Needed (Optional)
 
