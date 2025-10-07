@@ -91,6 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Scheduler Implementation](#scheduler-implementation)
+    - [Scoring](#scoring)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -898,6 +899,27 @@ prefer a node that has the initial prioritized device request, those requests
 would need a higher score, which currently is planned for beta of this feature.
 For alpha, the scheduler may still pick a node with a less preferred device, if
 there are nodes with each type of device available.
+
+#### Scoring
+
+Full support for scoring in DRA is not in scope for this feature, but we will
+implement limited scoring to make sure that nodes which can satisfy claims with
+higher ranked subrequests are preferred over others.
+
+We will implement this by letting the dynamicresources scheduler plugin implement
+the `Score` interface. 
+
+The allocation result for each node will be given a score based on the ranking of
+the chosen subrequests across all requests using the `FirstAvailable` field across
+all claims referenced by the Pod. Since the number of subrequests for each request
+is capped at 8, we will compute a score between 1 and 8 for each request, with 8
+being the best (i.e. the first option was chosen) and 1 if the 8th subrequest was
+chosen. We save the score of 0 in case we want to implement optional requests. Since
+the score for every node is computed based on the same claims, we end up with a
+ranking of the results from all nodes.
+
+We don't see a need to normalize the scores for now, but this might be needed when
+we implement more complicated scoring in the future.
 
 ### Test Plan
 
