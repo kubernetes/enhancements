@@ -286,8 +286,8 @@ ResizeRestartPolicy - a list of named subobjects (new object) that supports
 
 Note: `NotRequired` restart policy for resize does not *guarantee* that a container won't be
 restarted. If the runtime knows a resize will trigger a restart, it should return an error instead,
-and the Kubelet will retry the resize on the next pod sync. The restart behavior when shrinking
-memory limits is not yet defined.
+and the Kubelet will retry the resize on the next pod sync. The behavior when shrinking
+memory limits is defined under [Memory Limit Decreases](#memory-limit-decreases) below.
 
 Setting the flag to separately control CPU & memory is due to an observation
 that usually CPU can be added/removed without much problem whereas changes to
