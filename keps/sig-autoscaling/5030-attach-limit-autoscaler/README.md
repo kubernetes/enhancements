@@ -17,6 +17,7 @@
   - [Scaling a node-group that already has one or more nodes.](#scaling-a-node-group-that-already-has-one-or-more-nodes)
   - [Scaling from zero](#scaling-from-zero)
 - [Kubernetes Scheduler change](#kubernetes-scheduler-change)
+  - [Handling Node Readliness](#handling-node-readliness)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -167,12 +168,7 @@ We can split the implementation in cluster-autoscaler in two parts:
 
 ### Scaling a node-group that already has one or more nodes.
 
-n1. We propose a similar label as GPULabel added to the node that is supposed to come up with a CSI driver. This would ensure that, nodes which are supposed to have a certain CSI driver installed aren’t considered ready - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/core/static_autoscaler.go#L979 until CSI driver is installed there.
-
-However, we also propose that a node will be considered ready as soon as corresponding CSI driver is being reported as installed via corresponding CSINode object.
-
-A node which is ready  but does not have CSI driver installed within certain time limit will be considered as NotReady and removed from the cluster.
-
+1. To ensure that nodes which were recently started but do not have CSI driver installed yet are considered as upcoming nodes and hence are properly handled via scaleup operation, we propose a mechanism similar to recently introduced mechanism for DRA resources. See section - "Handling Node Readliness" for more details.
 
 2. We propose that, we add volume limits and installed CSI driver information to framework.NodeInfo objects. So -
 
@@ -246,6 +242,21 @@ This will stop too many pods crowding a node, when a new node is spun up and nod
 But this alone is not enough to fix the underlying problem. Cluster-autoscaler must be fixed so as it is aware of attach limits of a node via CSINode object.
 
 We also need to ensure that `StorageInfos` interface that is shared between CAS and scheduler is extended for `CSINode` objects, so as CAS can run scheduler plugins with templated `CSINode` objects.
+
+### Handling Node Readliness 
+
+We propose to handle node readiness in similar way it was handled for DRA in - https://github.com/kubernetes/autoscaler/pull/8109 . The basic idea is, we compare using `TemplateNodeInfo`, what would be the expected CSI drivers available on the node and if node doesn't yet have those drivers installed, we consider node as not-ready.
+
+Alternatives:
+
+1.We propose a similar label as GPULabel added to the node that is supposed to come up with a CSI driver. This would ensure that, nodes which are supposed to have a certain CSI driver installed aren’t considered ready - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/core/static_autoscaler.go#L979 until CSI driver is installed there.
+
+However, we also propose that a node will be considered ready as soon as corresponding CSI driver is being reported as installed via corresponding CSINode object.
+
+A node which is ready  but does not have CSI driver installed within certain time limit will be considered as NotReady and removed from the cluster.
+
+2. A more exhaustive solution to node readiness is being proposed in - https://github.com/kubernetes/enhancements/pull/5416 , we are open to the idea of using it when it becomes usable from CAS. 
+
 
 ### Test Plan
 
