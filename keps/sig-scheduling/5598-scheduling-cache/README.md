@@ -256,7 +256,7 @@ We exclude pods with the following constraints (the only known incompatible cons
    * Pod affinity rules (affinity or anti-affinity)
    * Topology spread rules (including inherited rules from the system default) This constraint we should attempt to lift in the future.
 
-To construct a signature, we add a new function for each plugin to implement.
+To allow non in-tree plugins to construct a signature, we add a new framework function to implement.
 This function takes a pod and generates a signature for that plugin as a string. 
 The signature is likely a set of attributes of the pod, or something derived from them. 
 To construct a full signature we take the signatures of all the plugins and aggeregate them into
