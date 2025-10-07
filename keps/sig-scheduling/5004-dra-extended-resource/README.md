@@ -51,19 +51,19 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -815,8 +815,8 @@ ensure `ExtendedResourceName`s are handled by the scheduler as described in this
 
 #### Beta
 
-- Reevaluate where to create the special resource claim, in scheduler or some
-  other controller, based on feedback from Alpha and the nomination concept.
+- The basic scoring in NodeResourcesFit has to be implemented and that the queueing hints have to work efficiently.
+- Keep the Alpha behavior to create the special resource claim in scheduler.
 - Gather feedback from developers and surveys
 - 3 examples of vendors making use of the extensions proposed in this KEP
 - Scalability tests that mirror real-world usage as determined by user feedback
@@ -996,7 +996,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Details:
 -->
 - [x] API .status
-    - Other field: `.status.extendedResourceClaimStatus` will have a list of resource claims that are created for
+    - Other field: Pod's `.status.extendedResourceClaimStatus` will have a list of resource claims that are created for
       DRA extended resources.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -1067,7 +1067,8 @@ Pick one more of these and delete the rest.
     - Type: Counter
     - Labels: `status` ("failure", "success")
     - SLI Usage: Calculate success rate to monitor the reliability of automatic resource claim creation. High failure rates indicate potential issues with extended resource configuration.
-    - Because the resource claim is created in the scheduler, we need a different metric from `resourceclaim_controller_creates_total`.
+    - Because the resource claim is created in the scheduler PreBind phase by making k8s API call, we need a different metric from `resourceclaim_controller_creates_total`.
+    - The metric is incremented accordingly based on the API call outcome, either success or failure.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1156,7 +1157,7 @@ still applies.
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 The Kubernetes control plane will be down, so no new Pods get scheduled. kubelet may
-still be able to start or or restart containers if it already received all the relevant
+still be able to start or restart containers if it already received all the relevant
 updates (Pod, ResourceClaim, etc.).
 
 ###### What are other known failure modes?
