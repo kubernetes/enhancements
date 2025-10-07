@@ -96,7 +96,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Background: <code>PortForward</code> Subprotocol](#background-portforward-subprotocol)
   - [Proposal: New <code>PortForward</code> Tunneling Subprotocol Version - <code>v2.portforward.k8s.io</code>](#proposal-new-portforward-tunneling-subprotocol-version---v2portforwardk8sio)
   - [Proposal: API Server PortForward -- Stream Tunnel Proxy](#proposal-api-server-portforward----stream-tunnel-proxy)
-  - [Pre-GA: Kubelet <code>StreamTranslatorProxy</code>](#pre-ga-kubelet-streamtranslatorproxy)
+  - [Proposal: Synthetic RBAC CREATE Authorization Check](#proposal-synthetic-rbac-create-authorization-check)
+  - [Proposal: Transitioning the API Server-to-Kubelet Connection](#proposal-transitioning-the-api-server-to-kubelet-connection)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -109,6 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Beta](#beta)
       - [v1.30 RemoteCommand Subprotocol (exec, cp, and attach)](#v130-remotecommand-subprotocol-exec-cp-and-attach)
       - [v1.31 PortForward Subprotocol (port-forward)](#v131-portforward-subprotocol-port-forward)
+      - [v1.35 Synthetic RBAC CREATE Authorization Check](#v135-synthetic-rbac-create-authorization-check)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -236,7 +238,7 @@ communication leg between `kubectl` and the API Server.
 
 2. Extend the WebSockets communication leg from the API Server to Kubelet. After this
 extension, WebSockets streaming will occur between `kubectl` and Kubelet (proxied
-through the API Server). This plan is described at [Pre-GA: Kubelet](#pre-ga-kubelet-).
+through the API Server).
 
 ### Non-Goals
 
@@ -246,6 +248,10 @@ and make progress.
 -->
 
 1. We will not make *any* changes to current WebSocket based browser/javascript clients.
+
+2. We will not transition the streaming protocol for the communication leg on the
+Node between the Kubelet and the container runtime. This leg will continue to stream
+the SPDY protocol.
 
 ## Proposal
 
@@ -510,22 +516,36 @@ as the downstream connection within the dual concurrent `io.Copy` proxying gorou
 The upstream connection is the same SPDY connection to the container (through the
 Kubelet and CRI).
 
-### Pre-GA: Kubelet `StreamTranslatorProxy`
+### Proposal: Synthetic RBAC CREATE Authorization Check
 
-The eventual plan is to incrementally transition all SPDY communication legs to WebSockets.
-After the WebSocket communication leg from `kubectl` to the API Server is proven
-to work, the next communication leg to transition is the one from the API Server to
-the Kubelet. Both the API Server and the Kubelet stream data messages using the
-`UpgradeAwareProxy`. Since the initial plan is to modify the `UpgradeAwareProxy`
-in the API Server to delegate to the `StreamTranslatorProxy`, it will be straightforward
-to transition this next communication leg by moving the integrated `StreamTranslatorProxy`
-from the API Server to the Kubelet.
+The transition to WebSockets requires changing the initial streaming upgrade request
+from a POST to a GET, as the WebSocket protocol specification
+([RFC 6455](https://www.rfc-editor.org/rfc/rfc6455#section-4.1)) mandates that the
+opening handshake must be an HTTP GET request. This has an unintended security
+consequence: RBAC policies that only grant the get verb, such as a typical read-only
+"viewer" role, now unexpectedly allow users to run kubectl exec, attach, and port-forward.
+To close this privilege escalation vector and restore the principle of least privilege,
+this proposal introduces a secondary, synthetic authorization check performed within the
+API Server. When a WebSocket upgrade request is received for the pods/exec, pods/attach,
+or pods/portforward subresources, the handler will perform an additional check to ensure
+the user also has the create verb permission for that specific subresource. This new
+authorization check will be controlled by a feature gate,
+`AuthorizePodWebsocketUpgradeCreatePermission`, which will be enabled by default to
+ensure clusters are secure while allowing operators to temporarily disable it as
+they update their RBAC policies.
 
-The final communication leg to transition from SPDY to WebSockets will be the one
-from Kubelet to the Container Runtimes. Since this communication happens within a
-node (using Unix domain sockets), this path is not as critical. But this effort
-will be more work, since it will require modifying not just Kubelet, but **all**
-Container Runtimes.
+### Proposal: Transitioning the API Server-to-Kubelet Connection
+
+The long-term goal of this KEP is to replace SPDY with WebSockets for the entire
+communication path from the client to the Kubelet. After the initial
+kubectl-to-API-Server leg is stable, this proposal outlines the next phase:
+transitioning the communication between the API Server and the Kubelet. This is
+achieved by replicating the translation logic currently in the API Server—specifically
+the `StreamTranslatorProxy` (for exec/attach) and the `StreamTunnelingProxy`
+(for port-forward)—into the Kubelet's `UpgradeAwareProxy`. Once implemented, WebSocket
+streaming will extend end-to-end from the client to the Node, with the Kubelet then
+translating the stream to SPDY for the final, intra-node communication leg to the
+container runtime.
 
 ### Test Plan
 
@@ -735,6 +755,8 @@ in back-to-back releases.
 
 ##### v1.30 RemoteCommand Subprotocol (exec, cp, and attach)
 
+- `kubectl` environment variable KUBECTL_REMOTE_COMMAND_WEBSOCKETS is **ON** by default.
+- API Server feature flag `TranslateStreamCloseWebsocketRequests` is **ON** by default.
 - Additional `exec`, `cp`, and `attach` unit tests completed and enabled.
 - Additional `exec`, `cp`, and `attach` integration tests completed and enabled.
 - Additional `exec`, `cp`, and `attach` e2e tests completed and enabled.
@@ -752,8 +774,17 @@ in back-to-back releases.
 - Additional `port-forward` integration tests completed and enabled.
 - Additional `port-forward` e2e tests completed and enabled.
 
+##### v1.35 Synthetic RBAC CREATE Authorization Check
+
+- Force synthetic RBAC `CREATE` authorization check for WebSocket upgrades on the following
+  subresources: `pods/exec`, `pods/attach`, and `pods/portforward`. This additional check
+  will be gated by the API Server `AuthorizePodWebsocketUpgradeCreatePermission` feature flag,
+  which defaults to **TRUE**.
+
 #### GA
 
+- `kubectl` environment variables and API Server feature gates are locked to on by default.
+- Deprecate `kubectl` environment variables and API Server feature gates for future removal.
 - Add WebSocket support for HTTPS proxies.
   - See (https://github.com/kubernetes/kubernetes/issues/126134)
 - Conformance tests for `RemoteCommand` completed and enabled.
@@ -892,6 +923,8 @@ well as the [existing list] of feature gates.
   KUBECTL_REMOTE_COMMAND_WEBSOCKETS, TranslateStreamCloseWebsocketRequests
   - Feature gate name(s) for PortForward Subprotocol:
   KUBECTL_PORT_FORWARD_WEBSOCKETS, PortForwardWebsockets
+  - Feature gate name(s) for subresource endpoints `pods/exec`, `pods/attach`,
+  and `pods/portforward`: AuthorizePodWebsocketUpgradeCreatePermission
 - Components depending on the feature gate: kubectl, API Server
 
 ###### Does enabling the feature change any default behavior?
@@ -910,7 +943,11 @@ variable set to **ON** for `exec`, `cp`, and `attach` commands. While the
 KUBECTL_PORT_FORWARD_WEBSOCKETS environment variable must be set to **ON** for
 `port-forward` command. These modifications, however, will be transparent to the
 user unless the `kubectl`/API Server communication is communicating through an
-intermediary such as a proxy (which is the whole reason for the feature).
+intermediary such as a proxy (which is the whole reason for the feature). The API Server
+feature flag `AuthorizePodWebsocketUpgradeCreatePermission` forces a synthetic, secondary
+RBAC check for the `CREATE` verb permission on WebSocket upgrade requests. When this
+feature gate is **TRUE**, the additional permission check will apply to endpoints
+`pods/exec`, `pods/attach`, and `pods/portforward`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -928,7 +965,9 @@ NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 The features can be disabled for a single user by setting the `kubectl` environment
 variable associated with the feature to **OFF**. Or the features can be turned off
 for all `kubectl` users communicating with a cluster by turning off the feature flags
-for the API Server.
+for the API Server. A cluster operator can temporarily disable the more stringent permissions for
+subresources `pods/exec`, `pods/attach`, and `pods/portforward` by setting the
+`AuthorizePodWebsocketUpgradeCreatePermission` feature flag to **FALSE**.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -957,6 +996,9 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 - There are unit tests in the API Server which exercise the feature gate within
   the `UpgradeAwareProxy`, which conditionally delegates to the `StreamTunneling`
   proxy for the PortForward subprotocol.
+- There will be unit tests in the API Server to verify the feature gate
+  forcing more stringent RBAC checks for `pods/exec`, `pods/attach`, and
+  `pods/portforward`.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1455,6 +1497,8 @@ Major milestones might include:
 - First Kubernetes release where PortForward over WebSockets described in KEP: v1.30
 - PortForward over WebSockets shipped as alpha: v1.30
 - PortForward over WebSockets shipped as beta: v1.31
+- WebSocket HTTPS Proxy functionality shipped: v1.33
+- Synthetic RBAC `CREATE` authz check for WebSocket upgrade requests: v1.35
 
 ## Drawbacks
 
