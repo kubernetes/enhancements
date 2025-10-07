@@ -284,8 +284,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
     - PSI metrics collection doesn't introduce excessive CPU or memory usage increase in the kubelet
 
 #### GA
-- Gather evidence of real world usage.
-- No major issue reported.
+- Quantify the cAdvisor and kubelet-level overhead of PSI metric collection, especially where PSI is disabled at the kernel level.
+- Validate with SIG Node that collection overhead is acceptable for general use cases, or include opt-out knobs.
+- Gather evidence of real-world usage from beta users.
+- No major issues reported.
 
 #### Deprecation
 
