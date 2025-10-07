@@ -1,16 +1,17 @@
-title: Restart Pod on Container Exits
+title: Restart All Containers on Container Exits
 kep-number: 5532
 authors:
   - "@yuanwang04"
 owning-sig: sig-node
 participating-sigs: 
-  - 
+  - sig-apps
+  - sig-jobset
 status: implementable
 creation-date: 2025-09-21
 reviewers:
   - "@SergeyKanzhelev"
 approvers:
-  -
+  - "@dchen1107"
 
 see-also:
   - "/keps/sig-node/5307"
@@ -34,7 +35,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: RestartPodOnContainerExits
+  - name: RestartAllContainersOnContainerExits
     components:
       - kubelet
       - kube-apiserver
