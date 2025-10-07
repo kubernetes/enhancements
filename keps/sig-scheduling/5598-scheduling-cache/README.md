@@ -204,7 +204,8 @@ large jobs, who need high performance, and do not generally use these
 more complex constraints. While we expect the cache to always be on, many pods will not be 
 able to take advantage of it.
  * We are not adding gang scheduling of any kind in this KEP. This is purely a performance
-improvement, although we hope the work on this KEP will help us with gang scheduling as we build it.
+improvement without adding dependency on the Workload API
+[KEP-4671](https://github.com/kubernetes/enhancements/pull/5558), although we hope the work on this KEP will help us with gang scheduling as we build it.
 
 ## Proposal
 
