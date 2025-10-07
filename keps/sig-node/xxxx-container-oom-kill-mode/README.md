@@ -135,7 +135,7 @@ Add an `oomKillMode` field to the Container specification in the core v1 API. Th
    - cgroups are managed at the container level
 
 3. **Consistency with Existing APIs**: Follows the pattern of other container-level resource configurations:
-   - Resources (limits/requests) are container-level
+   - Resources (limits/requests) can be set at both pod and container level
    - SecurityContext can be set at both pod and container level
    - The existing `singleProcessOOMKill` implementation operates per container
 
@@ -175,6 +175,14 @@ const (
     OOMKillModeGroup OOMKillMode = "Group"
 )
 ```
+
+The optional `oomKillMode` field will be wired through every Kubernetes container surface:
+
+- `pod.spec.containers` (regular and sidecar containers)
+- `pod.spec.initContainers`
+- `ephemeralContainers`
+
+The existing `EphemeralContainer` struct will gain the same optional field so that debugging workflows stay consistent with long-running containers.
 
 ### Configuration Hierarchy
 
@@ -238,8 +246,8 @@ spec:
 
 ### Notes/Constraints/Caveats
 
-- **cgroup v1 limitations**: On systems using cgroup v1, the `Group` mode cannot be enforced as cgroup v1 lacks the `memory.oom.group` mechanism. The API will accept the configuration but log a warning and fall back to single-process behavior.
-- **Windows incompatibility**: This feature is Linux-specific and will be disabled on Windows nodes.
+- **cgroup v1 limitations**: On systems using cgroup v1, the `Group` mode cannot be enforced as cgroup v1 lacks the `memory.oom.group` mechanism. Kubelet will fail container creation with a clear event if `Group` is requested on such nodes, prompting the workload to be rescheduled on cgroup v2 capacity.
+- **Windows incompatibility**: This feature is Linux-specific. Pods that target Windows nodes (`spec.os.name=windows`) and set `oomKillMode` will be rejected during admission with a validation error.
 - **Container runtime support**: Requires container runtime support for setting `memory.oom.group`. Most modern runtimes (containerd, CRI-O) support this on cgroup v2.
 - **Existing behavior**: Containers without this field specified will continue to use the kubelet's node-level configuration until v1.38, ensuring zero impact on existing workloads during migration.
 
@@ -349,7 +357,7 @@ func (m *kubeGenericRuntimeManager) generateLinuxContainerResources(
 API validation will be added in `pkg/apis/core/validation/validation.go`:
 
 ```go
-func ValidateContainer(container *core.Container, path *field.Path) field.ErrorList {
+func ValidateContainer(podSpec *core.PodSpec, container *core.Container, path *field.Path) field.ErrorList {
     allErrs := field.ErrorList{}
     // ... existing validation ...
 
@@ -365,6 +373,13 @@ func ValidateContainer(container *core.Container, path *field.Path) field.ErrorL
                 fmt.Sprintf("must be one of %v", validModes.List()),
             ))
         }
+
+        if podSpec.OS != nil && podSpec.OS.Name == core.WindowsOS {
+            allErrs = append(allErrs, field.Forbidden(
+                path.Child("oomKillMode"),
+                "oomKillMode is not supported for Windows pods",
+            ))
+        }
     }
 
     return allErrs
@@ -377,8 +392,7 @@ Platform-specific validation in `pkg/kubelet/apis/config/validation/validation_l
 func validateOOMKillMode(kc *kubeletconfig.KubeletConfiguration, container *v1.Container) error {
     if container.OOMKillMode != nil && *container.OOMKillMode == v1.OOMKillModeGroup {
         if !isCgroup2UnifiedMode() {
-            // Log warning but don't fail - will fall back to single process
-            klog.Warningf("Group mode requested but cgroup v1 detected, will use single process kill")
+            return fmt.Errorf("oomKillMode=Group requires cgroup v2 support on the node")
         }
     }
     return nil
