@@ -1161,18 +1161,47 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 #### Unit Tests
 
 Unit tests will cover the sanity of code changes that implements the feature,
-and the policy controls that are introduced as part of this feature.
+and the policy controls that are introduced as part of this feature. This is
+not exhaustive, but a few specifics are covered below:
+
+##### Allocation Manager
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/pkg/kubelet/allocation/allocation_manager_test.go
+
+The allocation manager is responsible for determining whether a resize can be allocated.
+Unit tests cover this logic, including:
+- Resizes with unsupported features such as static cpu/memory memory or swap are marked infeasible.
+- Resizes for which the node does not currently have room for are marked as deferred.
+- Deferred resizes are retried according to the desired priority. 
+
+##### Kuberuntime Manager
+Tests: 
+- https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/pkg/kubelet/kuberuntime/kuberuntime_manager_test.go#L3048
+- https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/pkg/kubelet/kuberuntime/kuberuntime_manager_test.go#L2320
+- https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/pkg/kubelet/kuberuntime/kuberuntime_manager_test.go#L3290
+- https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/pkg/kubelet/kuberuntime/kuberuntime_manager_test.go#L3668
+
+The kuberuntime manager is responsible for actuating a resize after it has been allocated.
+Unit tests cover this logic, including:
+- Validation of the resize, i.e. that memory limits cannot be resized below the usage
+- The logic for determining whether a pod resize is in progress (and that the corresponding pod condition gets added)
+- Computation of what resize actions need to be performed
+- The mock container manager has the expected cgroup values post-resize. 
+
+##### CRI uunit tests
 
 CRI unit tests are updated to reflect use of ContainerResources object in
 UpdateContainerResources and ContainerStatus APIs.
 
 #### Integration tests
 
-Comprehensive E2E tests provide good coverage for alpha. We may replicate and/or move
-some of the E2E tests functionality into integration tests before Beta using data from
-any issues we uncover that are not covered by planned and implemented tests.
+Comprehensive E2E tests provide good coverage. The following integration tests are also
+added for additional coverage: 
+- https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/integration/pods/pods_test.go#L852
+- https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/integration/scheduler/queueing/queue.go#L287
 
 #### Pod Resize E2E Tests
+
+##### How the tests perform verification
 
 End-to-End tests resize a Pod via PATCH to Pod's Spec.Containers[i].Resources.
 The e2e tests use docker as container runtime.
@@ -1180,104 +1209,150 @@ The e2e tests use docker as container runtime.
     Status.ContainerStatuses[i].AllocatedResources field.
   - Resizing of Limits are verified by querying the cgroup limits of the Pod's
     containers.
+  - Pending resizes have the corresponding condition set in the Pod Status. 
+    Completed resizes have their resize status cleared. 
 
-E2E test cases for Guaranteed class Pod with one container:
+##### Success test cases for Guaranteed Pods with one container
+
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L116-L127
+
+For these tests, all pods had a restartable initContainer attached.
+
+Resize operations performed:
 1. Increase, decrease Requests & Limits for CPU only.
 1. Increase, decrease Requests & Limits for memory only.
-1. Increase, decrease Requests & Limits for CPU and memory.
-1. Increase CPU and decrease memory.
-1. Decrease CPU and increase memory.
-1. Add memory request & limit for CPU only container.
-1. Remove memory request & limit for CPU & memory container.
+1. Increase, decrease Requests & Limits for CPU and memory in the same direction.
+1. Increase, decrease Requests & Limits for CPU and memory in opposite directions.
 
-E2E test cases for Burstable class single container Pod that specifies
-both CPU & memory:
-1. Increase, decrease Requests - CPU only.
-1. Increase, decrease Requests - memory only.
-1. Increase, decrease Requests - both CPU & memory.
-1. Increase, decrease Limits - CPU only.
-1. Increase, decrease Limits - memory only.
-1. Increase, decrease Limits - both CPU & memory.
-1. Increase, decrease Requests & Limits - CPU only.
-1. Increase, decrease Requests & Limits - memory only.
-1. Increase, decrease Requests & Limits - both CPU and memory.
-1. Increase CPU (Requests+Limits) & decrease memory(Requests+Limits).
-1. Decrease CPU (Requests+Limits) & increase memory(Requests+Limits).
-1. Increase CPU Requests while decreasing CPU Limits.
-1. Decrease CPU Requests while increasing CPU Limits.
-1. Increase memory Requests while decreasing memory Limits.
-1. Decrease memory Requests while increasing memory Limits.
-1. CPU: increase Requests, decrease Limits, Memory: increase Requests, decrease Limits.
-1. CPU: decrease Requests, increase Limits, Memory: decrease Requests, increase Limits.
-1. Set requests == limits, ensure QOS class remains Burstable
+The following cases are tested against all the above resize operations:
+1. No restart policy; no resize of init container.
+1. No restart policy + resize of init container.
+1. Memory restart policy; no resize of init container.
+1. CPU restart policy; no resize of init container.
+1. CPU + Memory restart policy; no resize of init container.
+1. CPU + Memory restart policy + resize of init container.
 
-E2E tests for Burstable class single container Pod that specifies CPU only:
-1. Increase, decrease CPU - Requests only.
-1. Increase, decrease CPU - Limits only.
-1. Increase, decrease CPU - both Requests & Limits.
+##### Success test cases for Guaranteed Pods with multiple containers
 
-E2E tests for Burstable class single container Pod that specifies memory only:
-1. Increase, decrease memory - Requests only.
-1. Increase, decrease memory - Limits only.
-1. Increase, decrease memory - both Requests & Limits.
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L130
 
-E2E tests for BestEffort class single container Pod:
-1. Add CPU requests & limits, QOS class remains BestEffort
-2. Add Memory requests & limits, QOS class remains BestEffort
+1. 3 containers - increase cpu & mem on c1, c2, decrease cpu & mem on c3 - net increase
+1. 3 containers - increase cpu & mem on c1, decrease cpu & mem on c2, c3 - net decrease
+1. 3 containers - increase: CPU (c1,c3), memory (c2, c3) ; decrease: CPU (c2)
 
-E2E tests for Guaranteed class Pod with three containers (c1, c2, c3):
-1. Increase CPU & memory for all three containers.
-1. Decrease CPU & memory for all three containers.
-1. Increase CPU, decrease memory for all three containers.
-1. Decrease CPU, increase memory for all three containers.
-1. Increase CPU for c1, decrease c2, c3 unchanged - no net CPU change.
-1. Increase memory for c1, decrease c2, c3 unchanged - no net memory change.
-1. Increase CPU for c1, decrease c2 & c3 - net CPU decrease for Pod.
-1. Increase memory for c1, decrease c2 & c3 - net memory decrease for Pod.
-1. Increase CPU for c1 & c3, decrease c2 - net CPU increase for Pod.
-1. Increase memory for c1 & c3, decrease c2 - net memory increase for Pod.
+##### Success test cases for Burstable Pods with one container
 
-E2E tests for sidecar containers
-1. InitContainer, then sidecar - can increase & decrease CPU & memory of sidecar
-2. Sidecar then InitContainer - can increase & decrease CPU & memory of sidecar
-3. Resize sidecar along with container
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L208-L220
 
-#### CRI E2E Tests
+For these tests, there were no initContainers (since that is covered by the Guaranteed Pods cases).
 
-1. E2E test is added to verify UpdateContainerResources API with containerd runtime.
-1. E2E test is added to verify ContainerStatus API using containerd runtime.
-1. E2E test is added to verify backward compatibility using containerd runtime.
+Resize operations performed:
+1. Increase, decrease CPU Requests
+1. Increase, decrease CPU Limits
+1. Increase, decrease memory Requests
+1. Increase, decrease memory Limits
+1. Increase, decrease CPU & memory Requests and Limits in the same direction
+1. Increase, decrease CPU and memory in opposite directions
+1. Increase, decrease Requests & Limits in opposite directions
 
-#### Resource Quota and Limit Ranges
+The following cases are tested against all the above resize operations:
+1. No restart policy
+1. Memory restart policy
+1. CPU restart policy
+1. CPU + Memory restart policy
 
-Setup a namespace with ResourceQuota and a single, valid Pod.
-1. Resize the Pod within resource quota - CPU only.
-1. Resize the Pod within resource quota - memory only.
-1. Resize the Pod within resource quota - both CPU and memory.
-1. Resize the Pod to exceed resource quota - CPU only.
-1. Resize the Pod to exceed resource quota - memory only.
-1. Resize the Pod to exceed resource quota - both CPU and memory.
+##### Other success test cases for Burstable Pods
 
-Setup a namespace with min and max LimitRange and create a single, valid Pod.
-1. Increase, decrease CPU within min/max bounds.
-1. Increase CPU to exceed max value.
-1. Decrease CPU to go below min value.
-1. Increase memory to exceed max value.
-1. Decrease memory to go below min value.
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L228
 
-#### Resize Policy Tests
+1. 6 containers - various operations performed (including adding limits and requests)
+1. Resizing with equivalents (e.g. 2m -> 1m)
 
-Setup a guaranteed class Pod with two containers (c1 & c2).
-1. No resize policy specified, defaults to NotRequired. Verify that CPU and
-   memory are resized without restarting containers.
-1. NotRequired (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
-   Verify that c1 is resized without restart, c2 is restarted on resize.
-1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
-   verify container is resized without restart.
-1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 memory only,
-   verify container is resized with restart.
-1. NotRequired cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
-   verify container is resized with restart.
+##### Memory limit decrease
+
+Test: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L548
+
+This test covers that memory limits can be decreased, but not below the current usage.
+
+##### Patch error tests
+
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L307
+
+These tests cover that the following attempts to patch a pod for resize will be rejected by the API server:
+1. Best Effort pod - request memory
+1. Best Effort pod - request CPU
+1. Guaranteed pod - remove cpu & memory limits
+1. Burstable pod - remove cpu & memory limits + increase requests
+1. Burstable pod - remove memory requests
+1. Burstable pod - remove cpu requests
+1. Burstable pod - reorder containers
+1. Guaranteed pod - rename containers
+1. Burstable pod - set requests == limits
+1. Burstable pod - resize ephemeral storage
+1. Burstable pod - nonrestartable initContainer
+
+##### Scheduler logic tests
+
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/node/pod_resize.go#L494
+
+These tests cover the scheduler logic with respect to in-place pod resize and the defered / infeasible
+conditions. The flow of this test is:
+1. Create pod1 and pod2 on node such that pod1 has enough CPU to be scheduled, but pod2 does not.
+1. Resize pod2 down so that it fits on the node and can be scheduled. 
+1. Verify that pod2 gets scheduled and comes up and running.
+1. Create pod3 that requests more CPU than available, verify that it is pending.
+1. Resize pod1 down so that pod3 gets room to be scheduled.
+1. Verify that pod3 is scheduled and running.
+1. attempt to scale up pod1 to requests more CPU than available, verify the resize is deferred.
+1. Delete pod2 + pod3 to make room for pod3.
+1. Verify that pod1 resize has completed.
+1. Attempt to scale up pod1 to request more cpu than the node has, verify the resize is infeasible.
+
+##### Retry of deferred resizes
+
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/node/pod_resize.go#L690
+
+These tests cover the logic for retrying deferred resizes in the following cases:
+1. Deferred resizes succeed after the scale down of another pod. (Deletion case is covered in the previous tests).
+1. Deferred resizes are attempted according to the desired priority.
+1. Place 4 pods on the node; delete the first one and verify the chain reaction of deferred resizes succeeding. The 
+   resources are carefully chosen such that
+    - deletion of pod1 should make room for pod2's resize (but not pod3 or pod4).
+    - pod2's resize should make room for pod3's resize (but not pod4).
+    - pod3's resize should make room for pod4's resize.
+
+##### Resource Quota tests
+
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/node/pod_resize.go#L47
+
+1. Exceed max CPU
+1. Exceed max memory
+1. Exceed max CPU and memory
+1. Valid increase of CPU
+1. Valid increase of memory
+1. Valid increase of CPU and memory
+
+##### Limit Ranger tests
+
+Tests: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/node/pod_resize.go#L218
+
+1. Exceed max CPU
+1. Exceed max memory
+1. Exceed max CPU and memory
+1. Valid increase of CPU
+1. Valid increase of memory
+1. Valid increase of CPU and memory
+1. Go below min CPU
+1. Go below min memory
+1. Go below min CPU and memory
+1. Valid decrease of CPU
+1. Valid decrease of memory
+1. Valid decrease of CPU and memory
+
+##### Coverage of the READ and REPLACE endpoints
+
+The previous tests are planned to use the PATCH endpoint, but we also need coverage of READ and REPLACE endpoints.
+A basic test will be added that uses REPLACE to perform a resize, and the READ endpoint to verify the result.
 
 #### Backward Compatibility and Negative Tests
 
@@ -1292,7 +1367,6 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
    values of AllocatedResources and ResizePolicy fields being dropped.
 1. Verify that only CPU and memory resources are mutable by user.
 
-TODO: Identify more cases
 
 ### Graduation Criteria
 
@@ -1670,12 +1744,14 @@ _This section must be completed when targeting beta graduation to a release._
     - Add instrumentation section
     - Priority of resize requests
 - 2025-09-22 - Correct KEP details to match actual implementation
-      - revert PreferNoRestart resize policy back to NotRequired
-      - add more details about the resize status
-      - document kubelet-triggered eviction for critical pods
-      - update outdated notes regarding static CPU
-      - correct details about instrumentation
+    - revert PreferNoRestart resize policy back to NotRequired
+    - add more details about the resize status
+    - document kubelet-triggered eviction for critical pods
+    - update outdated notes regarding static CPU
+    - correct details about instrumentation
 - 2025-09-22 - Update in-place pod resize for GA
+    - Update test plan
+
 
 ## Drawbacks
 
