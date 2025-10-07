@@ -230,7 +230,7 @@ Since we assume 1-pod-per-node, we know that the node used by the current pod
 cannot be used by subsequent pods (of any signature).
 Thus we remove the host from all signatures in the cache. The cache is built
 in a way that makes it easy to remove entries by either pod signature or host
-so we can efficiently invalide entries. If we are not in a 1-pod-per-node
+so we can efficiently invalidate entries. If we are not in a 1-pod-per-node
 we could get "sub-optimal" results if the node just used is the best node for
 some other pod, but this should be the only issue.
 
