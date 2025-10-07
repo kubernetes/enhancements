@@ -232,7 +232,7 @@ Thus we remove the host from all signatures in the cache. The cache is built
 in a way that makes it easy to remove entries by either pod signature or host
 so we can efficiently invalidate entries. If we are not in a 1-pod-per-node
 we could get "sub-optimal" results if the node just used is the best node for
-some other pod, but this should be the only issue.
+any of the following pods, but this should be the only issue.
 
 All stored results are timestamped, and we remove entries when they are more
 than a few seconds old to ensure we do not get stale data. Since we are targeting
