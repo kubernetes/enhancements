@@ -55,11 +55,23 @@
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit Tests](#unit-tests)
+      - [Allocation Manager](#allocation-manager)
+      - [Kuberuntime Manager](#kuberuntime-manager)
+      - [CRI uunit tests](#cri-uunit-tests)
     - [Integration tests](#integration-tests)
     - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
-    - [CRI E2E Tests](#cri-e2e-tests)
-    - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
-    - [Resize Policy Tests](#resize-policy-tests)
+      - [How the tests perform verification](#how-the-tests-perform-verification)
+      - [Success test cases for Guaranteed Pods with one container](#success-test-cases-for-guaranteed-pods-with-one-container)
+      - [Success test cases for Guaranteed Pods with multiple containers](#success-test-cases-for-guaranteed-pods-with-multiple-containers)
+      - [Success test cases for Burstable Pods with one container](#success-test-cases-for-burstable-pods-with-one-container)
+      - [Other success test cases for Burstable Pods](#other-success-test-cases-for-burstable-pods)
+      - [Memory limit decrease](#memory-limit-decrease)
+      - [Patch error tests](#patch-error-tests)
+      - [Scheduler logic tests](#scheduler-logic-tests)
+      - [Retry of deferred resizes](#retry-of-deferred-resizes)
+      - [Resource Quota tests](#resource-quota-tests)
+      - [Limit Ranger tests](#limit-ranger-tests)
+      - [Coverage of the READ and REPLACE endpoints](#coverage-of-the-read-and-replace-endpoints)
     - [Backward Compatibility and Negative Tests](#backward-compatibility-and-negative-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -824,7 +836,7 @@ be a race condition where the Kubelet may or may not accept the first resize, de
 it admits the first change before seeing the second. This race condition is accepted as working as
 intended.
 
-The atomic resize requirement should be reevaluated in the context of pod-level resources.
+The atomic resize requirement may be reevaluated in the context of pod-level resources.
 
 ### Actuating Resizes
 
@@ -1389,16 +1401,30 @@ A basic test will be added that uses REPLACE to perform a resize, and the READ e
 - ContainerStatus API change tests are enforced and Windows runtime should comply.
 
 #### Stable
-- VPA integration of feature moved to beta,
-- User feedback (ideally from at least two distinct users) is green,
-- No major bugs reported for three months.
-- Pod-scoped resources are handled if that KEP is past alpha
-- `UpdatePodSandboxResources` is implemented by containerd & CRI-O
+- VPA integration of feature, `InPlaceOrRecreate` update mode, is moved to beta
+- User feedback (ideally from at least two distinct users) is green
+- No major bugs reported for three months
+- The following tests are promoted to Conformance:
+  - Coverage of the READ and REPLACE endpoints (https://github.com/kubernetes/kubernetes/pull/134407)
+  - The multi-container tests for guaranteed pods: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L130
+  - The multi-container test for burstable pods: https://github.com/kubernetes/kubernetes/blob/ad82c3d39f5e9f21e173ffeb8aa57953a0da4601/test/e2e/common/node/pod_resize.go#L231
+
+The following items have been removed from the stable graduation criteria:
+- In-place pod resize support for pod level resources. Pod level resources is now beta, so the
+  lack of support for resize is now a significant missing piece of that functionality; however
+  we don't believe this is a strong enough reason to block IPPR GA. We can, however, consider
+  whether this should block GA of pod level resources.
+- `UpdatePodSandboxResources` is implemented by containerd & CRI-O. This is implemented by
+  CRI-O; however there was a delay on the containerd side. We still expect this to be available
+  and land in containerd 2.2, which is slated to release before kubernetes 1.35. However, we
+  do not consider it blocking because it is a very small and noncritical part of this KEP.
 - Re-evaluate the following decisions:
-  - Resize atomicity
-  - Exposing allocated resources in the pod status
-  - QOS class changes
-- The subset of pod resize tests [here](https://github.com/kubernetes/kubernetes/blob/1aec2eb0030d2f121b4cf78998e9391d9389f1a0/test/e2e/common/node/pod_resize.go) under `doPodResizeTests` and `doPodResizeErrorTests` that meet the Conformance test requirements are promoted to Conformance.
+  - Resize atomicity: Resizes will stay atomic. Allowing partial resizes adds significant complexity
+    and the use case is unclear.
+  - Exposing allocated resources in the pod status: We will continue to expose allocated resources in
+    the pod status.
+  - QOS class changes: This is a large feature with broad implications, so can be considered in a future
+    enhancement.
 
 ### Upgrade / Downgrade Strategy
 Scheduler and API server should be updated before Kubelets in that order.
@@ -1735,7 +1761,7 @@ _This section must be completed when targeting beta graduation to a release._
 - 2025-01-24 - v1.33 updates for planned beta
     - Replace ResizeStatus with conditions
     - Improve memory limit downsize handling
-    - Rename ResizeRestartPolicy `NotRequired` to `NotRequired`,
+    - Rename ResizeRestartPolicy `NotRequired` to `PreferNoRestart`,
       and update CRI `UpdateContainerResources` contract
     - Add back `AllocatedResources` field to resolve a scheduler corner case
     - Introduce Actuated resources for actuation
