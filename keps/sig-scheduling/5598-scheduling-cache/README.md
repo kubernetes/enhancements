@@ -226,53 +226,58 @@ When a pod with the same signature comes later, we find the entry in our cache a
 node off the list. We then go down the nominated node path. Just as we would with a pod
 with a NominatedNodeName in it, we only re-evaluate the feasibility of this node before using it.
 
-Since we assume 1-pod-per-node, we know that the node used by the current pod 
-cannot be used by subsequent pods (of any signature).
-Thus we remove the host from all signatures in the cache. The cache is built
-in a way that makes it easy to remove entries by either pod signature or host
-so we can efficiently invalidate entries. If we are not in a 1-pod-per-node
-we could get "sub-optimal" results if the node just used is the best node for
-any of the following pods, but this should be the only issue.
+We assume 1-pod-per-node for pods that are using the cache. This is ensured by only using the cache when it is explicitly configured via a scheduler configuration setting, which is then registered in the pod using a scheduler name. We do not assume all workloads are 1-pod-per-node, only those that are configured to utilize the cache. Note that if a user creates a scheduler configuration using the cache and then sends non 1-pod-per-node workloads to the cache, they cannot get infeasible results (since we check this before use) but can get different scoring than they would have otherwise.
 
-All stored results are timestamped, and we remove entries when they are more
-than a few seconds old to ensure we do not get stale data. Since we are targeting
-large numbers of pods of the same type, this should be sufficient to get the benefit
-we are looking for.
+Because of the 1-pod-per-node restriction, we know that the node used by the current pod cannot be used by subsequent pods (of any signature). Thus we remove the host from all signatures in the cache. The cache is built in a way that makes it easy to remove entries by either pod signature or host so we can efficiently invalidate entries. If we are not in a 1-pod-per-node we could get "sub-optimal" results if the node just used is the best node for any of the following pods, but this should be the only issue.
+
+All stored results are timestamped, and we remove entries when they are more than a few seconds old to ensure we do not get stale data. Since we are targeting large numbers of pods of the same type, this should be sufficient to get the benefit we are looking for.
+
+The cache is also limited to a maximum number of signatures, and we will evict the oldest entries if we reach this limit.
 
 ### Pod scheduling signature
 
-The pod scheduling signature is used to determine if two pods are "the same"
-from a scheduling perspective. In specific, what this means is that any pod
-with the given signature will get the same scores / feasibility results from
-any arbitrary set of nodes. This is necessary for the cache to work, since we
-need to be able to reuse the previous work.
+The pod scheduling signature is used to determine if two pods are "the same" from a scheduling perspective. In specific, what this means is that any pod with the given signature will get the same scores / feasibility results from any arbitrary set of nodes. This is necessary for the cache to work, since we need to be able to reuse the previous work.
 
-Note that some pods will not have a signature, because the scoring uses not
-just pod and node attributes, but other pods in the system, global data
-about pod placement, etc. These nodes get a nil signature, and we fallback
-to the slow path.
+Note that some pods will not have a signature, because the scoring uses not just pod and node attributes, but other pods in the system, global data about pod placement, etc. These nodes get a nil signature, and we fallback to the slow path.
 
 We exclude pods with the following constraints (the only known incompatible constraints in the in-tree plugins):
    * Pod affinity rules (affinity or anti-affinity)
    * Topology spread rules (including inherited rules from the system default) This constraint we should attempt to lift in the future.
 
-To allow non in-tree plugins to construct a signature, we add a new framework function to implement.
-This function takes a pod and generates a signature for that plugin as a string. 
-The signature is likely a set of attributes of the pod, or something derived from them. 
-To construct a full signature we take the signatures of all the plugins and aggeregate them into
-a single string. If any plugin cannot generate a signature for a given pod (because it depends on information other
-than the pod and node), then we generate a "nil" signature and don't attemp to cache the pod.
+To allow non in-tree plugins to construct a signature, we add a new framework function to implement. This function takes a pod and generates a signature for that plugin as a string. The signature is likely a set of attributes of the pod, or something derived from them. To construct a full signature we take the signatures of all the plugins and aggeregate them into a single string. If any plugin cannot generate a signature for a given pod (because it depends on information other than the pod and node), then we generate a "nil" signature and don't attemp to cache the pod.
 
-Initially we won't require plugins to implement the new function, but we will turn off signatures for
-all pods if a plugin is enabled that does not implement it. In subsequent releases we will
-make implementation of the function a requirement, but of course plugins are also able to
-say pods are unsignable.
+Initially we won't require plugins to implement the new function, but we will turn off signatures for all pods if a plugin is enabled that does not implement it. In subsequent releases we will make implementation of the function a requirement, but of course plugins are also able to say pods are unsignable.
+
+The proposed version of the plugin interface looks like:
+
+```
+type PodSignatureMaker interface {
+	Unsignable()
+	AddElement(elementName, sigString string)
+	AddElementFromObj(elementName string, obj any) error
+	HasElement(elementName string) bool
+}
+
+// SignaturePlugin is an interface that should be implemented by plugins that either filter or score
+// pods to enable result caching and gang scheduling optimizations. If an enabled plugin that does Scoring,
+// Prescoring, Filtering or Prefiltering does not implement this interface we will turn off signatures for all pods.
+// For now we leave this optional, but in the future we may make it mandatory for all filtering and scoring plugins
+// to implement the interface (but of course plugins may choose to always return "unsignable").
+type SignaturePlugin interface {
+	Plugin
+	// This is called before PreFilter. The return value can be:
+	// - A string that represents the signature of this pod from this plugin's perspective. All pods with the same signature should see the same feasibility and
+	//   scoring for the same set of nodes in the same state, from the perspective of this plugin.
+	// - The assertion that this pod cannot be signed by this plugin; i.e. the scoring of this pod is dependent on more than the node and the pod. This
+	//   will disable caching and gang scheduling optimizations for the given pod, hurting performance.
+	// - An internal error condition passed back through the scheduling code.
+	PodSignature(pod *v1.Pod, signature PodSignatureMaker) error
+}
+```
 
 ### Comparison with Equivalence Cache (circa 2018)
 
-This KEP is addressing a very similar problem to the Equivalence Cache (eCache), an approach 
-suggested in 2018 and then retracted because it became extremely complex. While this KEP addresses a similar problem
-it does so in a very different way, which we believe avoids the issues experienced by the eCache
+This KEP is addressing a very similar problem to the Equivalence Cache (eCache), an approach suggested in 2018 and then retracted because it became extremely complex. While this KEP addresses a similar problem it does so in a very different way, which we believe avoids the issues experienced by the eCache
 
 The issues experienced by eCache were:
 
@@ -312,14 +317,9 @@ The issues experienced by eCache were:
  
  #### eCache was tightly coupled with plugins
  
- Because a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync.
- Since in this cache the signature is just parts of the pod object, and the pod object is fairly stable, this makes keeping the signature up
- to date a much simpler task. The creation of the signature is also spread across the plugins themselves, so instead of needing to keep the 
- cache up to date, plugin owners simply have a new function they need to manage within their plugin, which the cache only aggregates.
+ Because a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync. Since in this cache the signature is just parts of the pod object, and the pod object is fairly stable, this makes keeping the signature up to date a much simpler task. The creation of the signature is also spread across the plugins themselves, so instead of needing to keep the cache up to date, plugin owners simply have a new function they need to manage within their plugin, which the cache only aggregates.
 
- We will also provide tests that evaluate different pod configurations against different node configurations and ensure that
- any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing
- testing opportunities in other areas.
+ We will also provide tests that evaluate different pod configurations against different node configurations and ensure that any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing testing opportunities in other areas.
 
  If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object that only has a subset
  of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would
@@ -334,23 +334,23 @@ See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 a
 
 #### Plugins need to keep signatures up to date
 
-The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We beleive this should
-be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec,
-but there is still risk of subtle dependencies creeping in.
+The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We beleive this shouldc be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec, but there is still risk of subtle dependencies creeping in.
 
 If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object that only has a subset
-of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would
-naturally surface new dependencies as additions to the scheduling object. However, as we expect plugin changes to be relatively 
-modest, we don't believe the complexity of making the interface changes is worth the risk today.
+of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would naturally surface new dependencies as additions to the scheduling object. However, as we expect plugin changes to be relatively modest, we don't believe the complexity of making the interface changes is worth the risk today.
 
 #### We are narrowing the feature set where the cache will work
 
 Because we are explicitly limiting the functionality that this cache will support, we run the risk of designing something
 that will not work for enough customers for it to be useful.
 
-To mitigate this risk we are actively engaging with customers and doing analysis of data available on K8s users to ensure we are still
-capturing a large enough number of user use cases. We also will address this by expanding over time; we expect to have a few interested
-parties up front, but will then evaluate expansions that could onboard more.
+To mitigate this risk we are actively engaging with customers and doing analysis of data available on K8s users to ensure we are still capturing a large enough number of user use cases. We also will address this by expanding over time; we expect to have a few interested parties up front, but will then evaluate expansions that could onboard more.
+
+#### We are ignoring taint and label changes on nodes
+
+In the first version we are ignoring changes that might occur to nodes like taint changes or label changes. We believe this is acceptable in v1, but this could become an issue.
+
+We mitigate this risk by ensuring that we recheck feasibilty before using a cache entry, so changes should result in a retry rather than an error, and we will track the occurrence of these kinds of "misses" as we roll out to determine if we need to address it more fully.
 
 ## Design Details
 
@@ -363,18 +363,17 @@ us find the correct signature.
 Note that the signature does not need to be stable across versions, or even invocations of the scheduler. 
 It only needs to be comparable between pods on a given running scheduler instance.
 
- * DynamicResources: For now we mark a pod unsignable if it has dynamic resource claims. We should improve this in the future, since most
- resource claims will allow for a signature.
+ * DynamicResources: For now we mark a pod unsignable if it has dynamic resource claims. We should improve this in the future, since most DRA claims are node specific and we should be able to determine this with a little effort.
  * ImageLocality: We use the canonicalized image names from the Volumes as the signature.
  * InterPodAffinity: If either the PodAffinity or PodAntiAffinity fields are set, the pod is marked unsignable, otherwise an empty signature.
- * NodeAffinity: We use the NodeAffinity and NodeSelector fields as the signature.
+ * NodeAffinity: We use the NodeAffinity and NodeSelector fields, plus any defaults set in configuration as the signature.
  * NodeName: We use the NodeName field as the signature.
  * NodePorts: We use the results from util.GetHostPorts(pod) as the signature.
  * NodeResourcesBalancedAllocation: We use the output of calculatePodResourceRequestList as the signature.
  * NodeResourcesFit: We use the output of the computePodResourceRequest function as the signature.
  * NodeUnschedulable: We use the Tolerations field as the signature.
  * NodeVolumeLimits: We use all Volume information except from Volumes of type ConfigMap or Secret.
- * PodTopologySpread: If the PodTopologySpead field is set, or it is not set but a default set of rules are applied, we mark the pod unsignable, otherwise it returns an empty signature.
+ * PodTopologySpread: If the PodTopologySpead field is set, or it is not set but a default set of rules are applied, we mark the pod unsignable, otherwise it returns an empty signature. Because the plugin itself is creating the signature, it knows whether and what kind of default it will apply.
  * TaintToleration: We use the Tolerations field as the signature.
  * VolumeBinding: Same as NodeVolumeLimits.
  * VolumeRestrictions: Same as NodeVolumeLimits.
