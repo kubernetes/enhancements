@@ -185,7 +185,7 @@ that consider multiple pods.
 
 Another change is the shift towards 1-pod-per-node in batch and ML environments. Many
 of these environments (among others) only attempt to run a single customer pod on each node, along
-with a complement of daemon set pods. This simplifies our scheduling needs significantly.
+with a complement of daemon set pods. This simplifies our scheduling needs significantly, as it allows to reuse not only filtering, but also scoring results.
 
 ### Goals
 
