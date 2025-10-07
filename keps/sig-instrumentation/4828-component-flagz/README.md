@@ -272,7 +272,7 @@ This section must be completed when targeting beta to a release.
 
 This feature should not cause rollout failures. If it does, we can disable the feature. In the worst
 case, it is possible it could cause runtime failures, but it is highly unlikely we would not detect this
-with existing tests. The endpoint is isolated and does not affect core workloads.
+with existing tests. The endpoint is intended to provide enhanced observability into component state.
 
 ###### What specific metrics should inform a rollback?
 
