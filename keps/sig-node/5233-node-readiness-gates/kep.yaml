@@ -7,11 +7,14 @@ participating-sigs: ['sig-scheduling']
 status: provisional
 creation-date: 2024-04-20
 reviewers:
-  - "@tallclair"
-  - "@sanposhiho" # SIG Scheduling reviewer
+  - "@tallclair" # SIG Node
+  - "SergeyKanzhelev" # SIG Node
+  - "@sanposhiho" # SIG Scheduling
+  - "@macsko" # SIG Scheduling
+  - "@dom4ha" # SIG Scheduling
 approvers:
-  - "@thockin"
-  - "@dchen1107" # SIG Node approval
+  - "@thockin" # API
+  - "@dchen1107" # SIG Node
 
 see-also: []
 replaces: []
