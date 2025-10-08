@@ -424,7 +424,36 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+###### Coverage of existing packages
+
+Will add an extra function and test for plugins we touch.
+
+- `k8s.io/kubernetes/pkg/scheduler`: `2025-10-7` - `86.1`
+- `k8s.io/kubernetes/pkg/scheduler/framework`: `2025-10-7` - `51.8`
+- `k8s.io/kubernetes/pkg/scheduler/framework/runtime`: `2025-10-7` - `84.3`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `2025-10-7` - `80.5`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/imagelocality`: `2025-10-7` - `86.2`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity`: `2025-10-7` - `89.7`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity`: `2025-10-7` - `85.8`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename`: `2025-10-7` - `50`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports`: `2025-10-7` - `83.7`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources`: `2025-10-7` - `89.5`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeunschedulable`: `2025-10-7` - `87.1`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodevolumelimits`: `2025-10-7` - `73.7`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2025-10-7` - `87.8`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration`: `2025-10-7` - `86.9`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding`: `2025-10-7` - `83.9`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumerestrictions`: `2025-10-7` - `74`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumezone`: `2025-10-7` - `84.8`
+
+###### New unit tests
+
+The code draft has first versions of most of these, will add more as we get through the discussion process.
+
+- pod_host_cache_test.go - Tests for the cache implementation.
+- schedule_one.go - Add test cases for cache scenarios.
+- signature_test.go - Test cases for the framework signature call and the helper class.
+- signature_consistency_test.go - Test cases to ensure the signature captures all the necessary information. We will take a range of pod specs and node definitions, run them through the filtering / scoring code, then ensure that the pods with matching signatures always get equivalent results.
 
 ##### Integration tests
 
@@ -437,6 +466,10 @@ For more details, see https://github.com/kubernetes/community/blob/master/contri
 
 If integration tests are not necessary or useful, explain why.
 -->
+
+Will add a few integration tests:
+ - Perf tests: Add a few tests into scheduler_perf that look at performance with the cache enabled and disabled for a few target scenarios.
+ - End-to-end consistency: Add tests that run a set of pods through the scheduler end-to-end with the cache enable and disabled. Ensure the scheduling decisions are the same with the cache on or off. Hopefully use same pod spec and node definitions from the signature_consistency_test.
 
 <!--
 This question should be filled when targeting a release.
@@ -617,15 +650,9 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+- [ X ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `SchedulerCache`
+  - Components depending on the feature gate: `kube-scheduler`
 
 ###### Does enabling the feature change any default behavior?
 
@@ -633,6 +660,8 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+No, it should not. Pods will only use the cache if they are targeted to a scheduler config with the feature enabled.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -647,7 +676,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, the cache might keep some content, but this will not be used and should not cause problems.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The previous contents should be invalidated / evicted and things should work fine. No persistent changes are introduced by the cache, and its expiration time is O(seconds).
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -663,6 +696,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+We will add at least one test.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -826,6 +861,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -835,6 +872,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -842,6 +881,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -851,6 +892,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No, other than potentially adding a single configuration field to the scheduler config object.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -862,6 +905,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No, it should result in decreased time for scheduling operations.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -875,6 +920,8 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+Enabling the cache will add RAM usage to store the cache. This is should be small (O(Mb)) but will be there.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -886,6 +933,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+It could lead to RAM exhaustion if eviction mechanisms were to fail or the cache were configured to be too large.
 
 ### Troubleshooting
 
