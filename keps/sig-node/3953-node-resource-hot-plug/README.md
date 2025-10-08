@@ -560,10 +560,11 @@ This section must be completed when targeting alpha to a release.
 
 ###### Does enabling the feature change any default behavior?
 
-No. This feature is guarded by a feature gate. Existing default behavior does not change if the
-feature is not used. 
-Even if the feature is enabled via feature gate, If there is no change in 
-node configuration the system will continue to work in the same way.
+No behavior change when there is no change in node allocatable resources, and this feature is guarded by `NodeResourceHotPlug` feature gate.
+
+With feature enabled:
+    Hotplug of resource will lead to increase in Node allocatable resource and allowing Pending pods to be scheduled.
+    HotUnplug of resource will lead to decrease in Node allocatable resource, transitions the Node into NotReady state and may cause the workload disruption.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
