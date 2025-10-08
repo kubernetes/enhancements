@@ -849,7 +849,10 @@ For Alpha:
 For Beta:
 * Add e2e test to exercise the feature end-to-end
 * Implement out-of-tree signers for several scenarios to prove that the feature
-  is sufficient for real use cases.  Accomplished at
+  is sufficient for real use cases. These scenarios should include issuing of:
+  - serving certificates
+  - issuing client certificates
+  - SPIFFE certificates (?)
   [mesh-examples](https://github.com/ahmedtd/mesh-example).
 * Migrate kubelet implementation to use the beta API.
 * Deprecate and remove the alpha API.
