@@ -1,81 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-4762: Allows setting arbitrary FQDN as the pod's hostname
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -265,50 +188,6 @@ As shown in the table, setting `hostnameOverride` will only change the hostname 
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
 #### Alpha
 
 - Use the `HostnameOverride` feature gate to implement this feature.
@@ -421,34 +300,19 @@ No
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Users can check which workloads are utilizing this feature with the following command:
+```
+kubectl get pods -A -o json | jq -r '.items[] | select(.spec.hostnameOverride != null) | "\(.metadata.namespace) \(.metadata.name) \(.spec.hostnameOverride)"'
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-Validate alignment of `podSpec.hostnameOverride` with the pod's actual hostname using:
-kubectl exec <pod-name> -- hostname
+Users can use the following command to identify which workloads are using this feature and verify whether it is functioning as expected.
+```
+kubectl get pods -A -o json | jq -r '.items[] | select(.spec.hostnameOverride != null) | "\(.metadata.namespace) \(.metadata.name) \(.spec.hostnameOverride)"' | while IFS=' ' read -r ns pod ho; do actual=$(kubectl exec -n "$ns" "$pod" -- hostname 2>/dev/null); [ "$actual" = "$ho" ] && echo "$ns $pod $actual $ho"; done
+```
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -498,16 +362,6 @@ This section must be completed when targeting beta to a release.
 No
 
 ### Scalability
-
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -573,6 +427,7 @@ For each of them, fill in the following information by copying the below templat
 
 - 2024-07-18: Initial draft KEP
 - 2025-08-13: Align KEPs with implemented PRs and documentation.
+- 2025-10-10: Promote to beta stage
 
 ## Drawbacks
 
