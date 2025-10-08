@@ -747,8 +747,18 @@ The below rules are currently implemented or are very similar to an existing val
 | forbidden values | `+k8s:forbidden` | | Alpha |
 | item | `+k8s:item` | | Alpha |
 | zeroOrOneOfMember | `+k8s:zeroOrOneOfMember` | | Alpha |
-| listType=map | `+k8s:listType=map` | `x-kubernetes-list-type` | Beta |
+| listType | `+k8s:listType=map`, `+k8s:listType=set`, `+k8s:listType=atomic` | `x-kubernetes-list-type` | Beta |
 | listMapKey | `+k8s:listMapKey` | `x-kubernetes-list-map-keys` | Beta |
+| Conditional (feature gate) | `+k8s:ifOptionEnabled(FeatureX)=<validator-tag>` | N/A | Alpha |
+| Conditional (feature gate) | `+k8s:ifOptionDisabled(FeatureX)=<validator-tag>` | N/A | Alpha |
+| Iterate and validate map keys | `+k8s:eachKey=<validator-tag>` | N/A | Alpha |
+| Iterate and validate map/slice values | `+k8s:eachVal=<validator-tag>` | N/A | Alpha |
+| Sub-field validation | `+k8s:subfield(field)=<validator-tag>` | N/A | Alpha |
+| Immutability (set once) | `+k8s:immutable` | N/A | Alpha |
+| Immutability (required once set) | `+k8s:requiredOnceSet` | N/A | Alpha |
+| Immutability (frozen at creation) | `+k8s:frozen` | N/A | Alpha |
+| Group membership (virtual field) | `+k8s:memberOf(group=<group>)` | N/A | Alpha |
+| List map item (virtual field) | `+k8s:listMapItem(key: value)` | N/A | Alpha |
 
 ### Supporting Declarative Validation IDL tags On Shared Struct Fields
 
@@ -1576,6 +1586,8 @@ The promotion of a tag from one stability level to the next follows a defined se
 #### Complex Tags
 
 This track is for tags with complex validation logic and ratcheting. These tags begin at the **Alpha** stability level.
+
+This track is for tags that are always used in combination with other tags or that have complex ratcheting logic. All cross-field validations belong in this category. Additionally, for most of these tags, there is no clear alternative in the OpenAPI schema.
 
 **Alpha to Beta Graduation Criteria:**
 
