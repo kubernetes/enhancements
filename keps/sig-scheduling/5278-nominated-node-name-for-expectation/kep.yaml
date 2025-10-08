@@ -15,7 +15,7 @@ approvers:
   - "@macsko"
   - "@dom4ha"
 
-stage: alpha
+stage: beta
 
 latest-milestone: "v1.35"
 
