@@ -3,33 +3,44 @@ kep-number: 859
 authors:
   - "@pwittrock"
   - "@seans3"
+  - "@soltysh"
 owning-sig: sig-cli
 participating-sigs:
   - sig-api-machinery
+status: implementable
+creation-date: 2019-02-22
 reviewers:
   - "@deads2k"
   - "@kow3ns"
   - "@lavalamp"
 approvers:
   - "@soltysh"
-editor: TBD
-creation-date: 2019-02-22
-last-updated: 2019-05-11
-status: implementable
-see-also:
-replaces:
-superseded-by:
-stage: beta
-latest-milestone: "v1.22"
+  - "@ardaguclu"
+
+see-also: []
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.35"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha:  "v1.21"
   beta:   "v1.22"
-  stable: "v1.24"
-# kubectl-commands-in-headers is on by default, but it can be
-# disabled by setting the feature gate (environment variable)
-# to false.
+  stable: "v1.35"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: kubectl-commands-in-headers
+  - name: KUBECTL_COMMAND_HEADERS
     components:
       - kubectl
 disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
