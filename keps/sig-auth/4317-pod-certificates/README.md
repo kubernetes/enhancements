@@ -1084,7 +1084,7 @@ Nontrivial resource usage will primarily be driven by the user actually creating
 workloads that use podCertificate projections.  Things to watch for here would
 be rate of creation of PodCertificateRequests, as well as the breakdown of
 issued, failed, and denied requests.  Any problems can be addressed purely by
-deleting the offending pods.
+deleting the offending pods or pod controllers.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
