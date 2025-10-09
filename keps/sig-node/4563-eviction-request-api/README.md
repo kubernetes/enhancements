@@ -1911,6 +1911,16 @@ need to communicate their intent to evict a pod, report on the progress of the e
 lifecycle of the eviction request, and to handle the change of ownership between requesters and
 between interceptors. This is better done through a standalone API resource object.
 
+Alternatively, additional subresource(s) could be used to store information in the pod. These
+subresources could offer similar actions and information as the EvictionRequest. RBAC could be also
+used to control the access to these subresources. However, this approach has the following
+disadvantages:
+- RBAC cannot be very granular, or we would need a large number of subresources.
+- The new API surfaces is not small and would increase the size of the Pod object.
+- Updates and interactions with the pod are expected to be quiet frequent. This could weigh on the
+  current pod watches, as not every observer is interested in the eviction updates.
+- It is more difficult to extend the subresource API.
+
 ### Pod API
 
 The original proposal in the [Declarative Node Maintenance KEP](https://github.com/kubernetes/enhancements/pull/4213)
