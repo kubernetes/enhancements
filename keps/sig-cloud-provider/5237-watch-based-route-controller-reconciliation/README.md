@@ -147,9 +147,7 @@ We use a similar concept as already implemented in the node and service controll
 
 ```
 <<[UNRESOLVED @joelspeed @lukasmetzner]>>
-We are currently depating about how to integrate the new metric `route_controller_route_sync_total`.
-
-@lukasmetzner: IMO this could also be added after alpha?
+We had a discussion about adding a new metric for A/B testing. To not miss the v1.35 milestone, we decided to postpone this metric until the beta stage, which is planned for milestone v1.36.
 <<[/UNRESOLVED]>>
 ```
 
