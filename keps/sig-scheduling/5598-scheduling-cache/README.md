@@ -275,6 +275,14 @@ type SignaturePlugin interface {
 }
 ```
 
+### Handling multiple schedulers
+
+
+
+### Interactions with Kueue
+
+XXX tobe filled
+
 ### Comparison with Equivalence Cache (circa 2018)
 
 This KEP is addressing a very similar problem to the Equivalence Cache (eCache), an approach suggested in 2018 and then retracted because it became extremely complex. While this KEP addresses a similar problem it does so in a very different way, which we believe avoids the issues experienced by the eCache
