@@ -5,7 +5,8 @@ authors:
   - "@soltysh"
 owning-sig: sig-cli
 participating-sigs:
-  - sig-cli
+  - sig-auth
+  - sig-api-machinery
 status: implementable
 creation-date: 2022-06-13
 reviewers:
@@ -13,6 +14,7 @@ reviewers:
   - "@eddiezane"
   - "@soltysh"
   - "@mpuckett159"
+  - "@enj"
 approvers:
   - "@ardaguclu"
 
