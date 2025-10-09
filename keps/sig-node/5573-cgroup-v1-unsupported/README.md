@@ -21,6 +21,7 @@
   - [Documentation updates](#documentation-updates)
   - [Testing of cgroup v1](#testing-of-cgroup-v1)
   - [Removal of cgroup v1](#removal-of-cgroup-v1)
+  - [Meaning of deprecation](#meaning-of-deprecation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -83,16 +84,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Remove cgroup v1 support from Kubernetes codebase, building upon the maintenance mode introduced in KEP-4569. This enhancement will remove cgroup v1 support.
+Remove cgroup v1 support from Kubernetes codebase, building upon the maintenance mode introduced in KEP-4569.
 
 This KEP will have a phased approach where beta will prevent kubelet from starting on a cgroup v1 node.
 
-We will commit to removing cgroup v1 code but there is not yet a timeline for removal. 
+We will commit to removing cgroup v1 code but there is not yet a timeline for removal.
 The removal will be done no earlier than 1.38 to maintain the k8s deprecation policy.
 
 ## Motivation
 
-Following the transition of cgroup v1 support to maintenance mode in KEP-4569, the next logical step is to move cgroup v1 to an unsupported state. This aligns with the broader ecosystem's migration to cgroup v2, including major Linux distributions and the Linux kernel community's focus on cgroup v2 for new features and improvements.
+Following the transition of cgroup v1 support to maintenance mode in KEP-4569, the next logical step is to move cgroup v1 to a deprecated state. This aligns with the broader ecosystem's migration to cgroup v2, including major Linux distributions and the Linux kernel community's focus on cgroup v2 for new features and improvements.
 
 The motivation builds on the rationale established in KEP-4569:
 
@@ -100,7 +101,7 @@ The motivation builds on the rationale established in KEP-4569:
 - systemd announced deprecation 1.5 years ago in [v256](https://github.com/systemd/systemd/releases/tag/v256) and [removal](https://github.com/systemd/systemd/releases/tag/v258). Other critical components are moving beyond cgroup v1
 - cgroup v2 offers better functionality, more consistent interfaces, and improved scalability
 
-By removing cgroup v1, Kubernetes provides a clear signal to the community about the removal path and encourages migration to the more secure and efficient cgroup v2 technology.
+The goal of this enhancement would be to eventually remove cgroup v1 related code once the timeline is figured out.
 
 ### Linux Community Momentum
 
@@ -144,9 +145,9 @@ The latest release of debian "Trixie" is using [systemd 257](https://packages.de
 
 1. **Disable cgroup v1 support by default**: Set the kubelet flag `FailCgroupV1` to `true` by default, effectively making cgroup v1 unsupported unless explicitly enabled.
 
-2. **Clear messaging**: Update warning messages and events to reflect that cgroup v1 is now unsupported rather than in maintenance mode.
+2. **Clear messaging**: Update warning messages and events to reflect that cgroup v1 is now deprecated rather than in maintenance mode.
 
-3. **Documentation updates**: Update all relevant documentation to reflect the unsupported status of cgroup v1 and provide migration guidance.
+3. **Documentation updates**: Update all relevant documentation to reflect the deprecated status of cgroup v1 and provide migration guidance.
 
 4. **Preparation for removal**: This change prepares the codebase for eventual removal of cgroup v1 support in future releases.
 
@@ -179,6 +180,7 @@ The primary risks involve potential disruptions for users who have not yet migra
    - Third-party monitoring and security agents need to support cgroup v2
 
 **Mitigations**:
+
 - Provide comprehensive migration documentation and guidance
 - Change the KubeletConfig field FailCgroupV1 to false.
 - Clear warning messages when cgroup v1 is detected
@@ -196,12 +198,14 @@ This enhancement primarily involves configuration changes and messaging updates,
 The key technical change is to modify the default value of the kubelet config api `FailCgroupV1` from `false` to `true`. This change will be implemented in the kubelet configuration types.
 
 Current behavior:
+
 ```go
 // Default: false (cgroup v1 support enabled by default)
 FailCgroupV1: false,
 ```
 
 Proposed behavior:
+
 ```go
 // Default: true (cgroup v1 support disabled by default)
 FailCgroupV1: true,
@@ -212,11 +216,13 @@ FailCgroupV1: true,
 Update the warning messages and events introduced in KEP-4569 to reflect the new unsupported status:
 
 From (maintenance mode):
+
 ```golang
 klog.Warning("cgroup v1 detected. cgroup v1 support has been transitioned into maintenance mode, please plan for the migration towards cgroup v2. More information at https://git.k8s.io/enhancements/keps/sig-node/4569-cgroup-v1-maintenance-mode")
 ```
 
 To (deprecated):
+
 ```golang
 klog.Warning("cgroup v1 detected. cgroup v1 support is deprecated and will be removed in a future release. Please migrate to cgroup v2. More information at https://git.k8s.io/enhancements/keps/sig-node/5573-cgroup-v1-unsupported")
 ```
@@ -226,6 +232,7 @@ Similar updates will be made to corresponding events.
 ### Documentation updates
 
 Update all relevant documentation across the Kubernetes ecosystem:
+
 - Kubernetes.io documentation
 - Kubelet configuration documentation  
 - Migration guides
@@ -245,6 +252,17 @@ Once all supported releases of Kubernetes have `FailCGroupV1` set to true, we ca
 
 In this section, we should call the places where we are going to remove cgroup v1.
 </UNRESOLVED>
+
+### Meaning of deprecation
+
+Kubernetes will continue to test and verify no regressions appear in the following [job](https://testgrid.k8s.io/sig-node-containerd#cos-cgroupv1-containerd-node-e2e).
+
+Until cgroup v1 removal happens in the code base, this job will continue to be maintained and supported.
+
+If there are any regressions caused by code in this lane, the Kubernetes community will treat that as a regression
+and this would be a candidate for cherry-picks.
+
+CGroup v1 related features or UX improvements are not in scope since cgroup v1 is deprecated.
 
 ### Test Plan
 
@@ -275,13 +293,6 @@ All existing cgroup v2 test jobs must continue to pass. Tests should verify that
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
 Unit tests should cover:
 
 - Default configuration values
@@ -291,24 +302,9 @@ Unit tests should cover:
 
 ##### Integration tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
 Integration tests will verify the end-to-end behavior of the configuration changes and ensure proper interaction between kubelet components.
 
 ##### e2e tests
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
 
 1. Continue monitoring cgroup v2 CI jobs to ensure stability
 2. Add specific tests for the new default behavior
