@@ -362,10 +362,6 @@ aware routing, but that API is currently in flux. As a result this proposal is
 only suited to same-region multi-cluster services until the topology API
 progresses.
 
-As the plan for dual stack support is finalized, the Multi-Cluster Services API
-will follow dual stack Service design. Until then, dual stack will not be
-supported.
-
 [Service Topology API]:
     https://kubernetes.io/docs/concepts/services-networking/service-topology/
 
@@ -488,6 +484,18 @@ and `spec.exportedAnnotations`. Exporting labels and annotations is optionally
 supported by MCS-API implementations. If supported, annotations or labels must
 not be exported from the `metadata` of the `Service` or `ServiceExport` resources.
 
+An implementation may use the `ipFamilies` field from the exported Services as
+a hint to influence the `IPs` and `ipFamilies` of the ServiceImport object.
+The exact mechanism for determining those fields is implementation-defined.
+If `ipFamilies` is set on the ServiceImport object, it must not have duplicated
+families (for instance `ipFamilies: [IPv4, IPv4]` is not valid) and the IPs
+should eventually be in the same order as what is defined in `ipFamilies`.
+
+Also note that even in a dual stack cluster regular Services are by default SingleStack
+which might default to IPv4 or IPv6 depending on the cluster configuration and there
+are various constraints when mutating `ipFamilies` and `ipFamilyPolicy` on a Service
+(see [ref](https://kubernetes.io/docs/concepts/services-networking/dual-stack/)).
+
 Deleting a `ServiceExport` will stop exporting the name-mapped `Service`.
 
 #### Restricting Exports
@@ -566,9 +574,12 @@ const (
 type ServiceImportSpec struct {
   // +listType=atomic
   Ports []ServicePort `json:"ports"`
-  // +kubebuilder:validation:MaxItems:=1
+  // +kubebuilder:validation:MaxItems:=2
   // +optional
   IPs []string `json:"ips,omitempty"`
+  // +kubebuilder:validation:MaxItems:=2
+  // +optional
+  IPFamilies []corev1.IPFamily `json:"ipFamilies,omitempty"`
   // +optional
   Type ServiceImportType `json:"type"`
   // +optional
@@ -637,6 +648,8 @@ metadata:
 spec:
   ips:
   - 42.42.42.42
+  ipFamilies:
+    - IPv4
   type: "ClusterSetIP"
   ports:
   - name: http
@@ -696,12 +709,16 @@ this cluster.
 
 #### ClusterSetIP
 
-A non-headless `ServiceImport` is expected to have an associated IP address, the
-clusterset IP, which may be accessed from within an importing cluster. This IP
-may be a single IP used clusterset-wide or assigned on a per-cluster basis, but
-is expected to be consistent for the life of a `ServiceImport` from the
-perspective of the importing cluster. Requests to this IP from within a cluster
-will route to backends for the aggregated Service.
+A non-headless `ServiceImport` is expected to have associated IP addresses, the
+clusterset IPs, which may be accessed from within an importing cluster. These IPs
+may be used clusterset-wide or assigned on a per-cluster basis, but is expected
+to be consistent for the life of a `ServiceImport` from the perspective of the
+importing cluster. Requests to these IPs from within a cluster will route to
+backends for the aggregated Service. The `IPs` field must correspond to the
+protocols defined in the `ipFamilies` field, if specified. How the `ipFamilies`
+field is determined is implementation-defined, for instance it might correspond
+to what IP protocols the constituent `ServiceExport`s support or only the IP
+protocols that the local cluster supports.
 
 Note: this doc does not discuss `NetworkPolicy`, which cannot currently be used
 to describe a selector based policy that applies to a multi-cluster service.
