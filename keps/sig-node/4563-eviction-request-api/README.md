@@ -2067,15 +2067,15 @@ We could validate each EvictionRequest `.metadata.name` to have one of the follo
 #### Pod UID
 
 Pros:
-- Unique and conflict free.
+- Unique and conflict free (there is an astronomically small chance of conflict due to the UID
+  implementation).
 - Exact mapping of a Pod to an EvictionRequest. An EvictionRequest can look up a pod and vice versa.
 - Friendly to controllers (e.g. creation, lookup).
 
 Cons:
-- `.metadata.generateName` is not supported.
+- `.metadata.generateName` is not supported (we are mostly okay with not supporting it).
 - Not very user friendly. The workaround is to better format the output with the clients (e.g.
   kubectl).
-- Not extensible - hard to support new resources (e.g. PVCs).
 
 #### Pod Name
 
@@ -2083,12 +2083,14 @@ Pros:
 - User friendly.
 
 Cons:
-- `.metadata.generateName` is not supported.
+- `.metadata.generateName` is not supported (we are mostly okay with not supporting it).
 - Potential for conflict if an old EvictionRequest object exists and a pod with a new UID is created
-  with the same name.
+  with the same name. Although there is a `.spec.target.podRef.uid` field to distinguish between the
+  new and old request, all the actors in the system could be blocked if the old EvictionRequest is
+  present. For example, requesters cannot create a new EvictionRequest.
 - Actors in the system might start to rely on the name alone, rather than the full reference in
   `.spec.target.podRef.uid`, and mis-target pods.
-- Not extensible - hard to support new resources (e.g. PVCs).
+- Not extensible - hard to support new resources (e.g. PVCs). This point is not very important.
 
 
 #### Pod UID and Pod Name Prefix
@@ -2111,10 +2113,9 @@ Pros:
 - Partially friendly to controllers (e.g. creation, lookup).
 
 Cons
-- `.metadata.generateName` is not supported.
+- `.metadata.generateName` is not supported (we are mostly okay with not supporting it).
 - Cumbersome to use.
-- Not extensible - hard to support new resources (e.g. PVCs).
-
+- Not extensible - hard to support new resources (e.g. PVCs). This point is not very important.
 
 #### Any Name
 
@@ -2132,6 +2133,8 @@ Cons:
   name.
 - Less consistent/user friendly. It is harder to match the pod for all the actors/controllers and
   may result in an increased number of API requests to list all EvictionRequest objects.
+- There is a non-zero chance of a race condition due to slow caching in the admission plugin, which
+  would result in two requests being created for the same pod.
 
 
 ### Changes to the Eviction API
