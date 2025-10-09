@@ -383,21 +383,25 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 A new node_e2e test with  `serialize-image-pulls==false` will be added test parallel image pull limits.
+
 1. When maxParallelImagePulls is reached, all further image pulls will be blocked.
 2. Verify the behavior when the same image is pulled in parallel, which will happen when image pull policy is `Always`.
 
-- <test>: <link to test coverage>
+- pull image parallel test cases: https://github.com/kubernetes/kubernetes/blob/6c258fa74b2f0644a6b31a7ce3e613dda41effd4/test/e2e_node/image_pull_test.go
 
 ### Graduation Criteria
 
 #### Alpha
+
 - Initial e2e tests completed and enabled
 
 #### Beta
+
 - Gather feedback from developers and surveys
 - Add e2e test to cover the parallel image pull case
 
 #### GA
+
 - Gather feedback from real-world usage from kubernetes vendors.
 - Allowing time for feedback.
 
@@ -566,8 +570,8 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-The code change itself cannot be rolled back. But a user can roll back to the existing default behavior by setting `maxParallelImagePulls` to 0, or not setting it and letting it default to 0.
-
+A user can roll back to the previous default behavior by setting `serialize-image-pulls` to true and restarting kubelet.
+Similarly, setting `maxParallelImagePulls` to 1 will be equivalent to setting `serialize-image-pulls` to true.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -575,7 +579,7 @@ Nothing will happen.
 
 ###### Are there any tests for feature enablement/disablement?
 
-This feature is purely in-memory, so such test isn't really needed.
+Yes, see e2e tests section above.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -595,35 +599,19 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 <!--
 This section must be completed when targeting beta to a release.
 -->
-
+N/A
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-
-This is an opt-in feature, and it does not change any default behavior. If there is any bug in this feature, image pulls might fail.
-No running workloads will be imapcted.
+No running workloads will be impacted.
 
 Note that when changing MaxParallelImagePulls, kubelet restart is required. Since the parallel image pull counter
 is maintained in memory, restarting kubelet will reset the counter and potentially allow more image pulls than the limit.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-
 In worst case, image pulls might fail. Users can monitor image pull k8s events and `runtime_operations_errors_total` metric to see if there is an increase
-of image pull failures. 
+of image pull failures.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -633,7 +621,8 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-This is an opt-in feature, and it does not change any default behavior. We manually tested enabling and disabling this feature by changing kubelet config and
+See e2e tests section above. The upgrade->downgrade->upgrade path needs multiple kubelet restarts and is not quite necessary for this feature.
+We manually tested enabling and disabling this feature by changing kubelet config and
 restarting kubelet.
 
 The manual test steps are as following:
@@ -644,20 +633,17 @@ The manual test steps are as following:
 serializeImagePulls: false
 maxParallelImagePulls: 2
 ```
-3. Deploy three pods, each with a different container image to the one-node cluster. All the three images are 5GB. The relatively-big size makes sure there is enough time between image pulling events, and makes it easier for us to observe the behavior.
-4. Observe the k8s events by running `kubectl get events`, and observe that exactly two images finish pulling first, and then the remaining one image finishes.
-5. Manually change the MaxParallelImagePulls setting by SSH-ing to the node again and removing the `serializeImagePulls` entry and `maxParallelImagePulls` entry.
-6. Deploy two pods, each with a different container image to the cluster. Both of the two images are 5GB, and they are different images from the three images deployed in step 3.
-7. Observe the k8s events by running `kubectl get events`, and observe that exactly one image finishes pulling first, and then the remaining one image finishes.
-
-
+1. Deploy three pods, each with a different container image to the one-node cluster. All the three images are 5GB. The relatively-big size makes sure there is enough time between image pulling events, and makes it easier for us to observe the behavior.
+2. Observe the k8s events by running `kubectl get events`, and observe that exactly two images finish pulling first, and then the remaining one image finishes.
+3. Manually change the MaxParallelImagePulls setting by SSH-ing to the node again and removing the `serializeImagePulls` entry and `maxParallelImagePulls` entry.
+4. Deploy two pods, each with a different container image to the cluster. Both of the two images are 5GB, and they are different images from the three images deployed in step 3.
+5. Observe the k8s events by running `kubectl get events`, and observe that exactly one image finishes pulling first, and then the remaining one image finishes.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-
 No.
 
 ### Monitoring Requirements
