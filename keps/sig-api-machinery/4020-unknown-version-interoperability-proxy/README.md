@@ -102,22 +102,22 @@ this enhancement is being considered for a milestone.
 
 ## Summary
 
-This proposal introduces a Mixed Version Proxy (also earlier referred to as Unknown Version Interoperability Proxy) to solve issues with version skew in Kubernetes clusters. During upgrades or downgrades, when API servers have different versions, this feature ensures that:
+This proposal introduces a Mixed Version Proxy (also earlier referred to as Unknown Version Interoperability Proxy in the original version of the proposal) to solve issues with version skew in Kubernetes clusters. During upgrades or downgrades, when API servers have different versions, this feature ensures that:
 
 1. Client requests for a specific built-in resource are proxied to an API server capable of serving it, avoiding 404 Not Found errors
-2. Clients receive a complete, cluster-wide discovery document by merging information from all peer API servers, preventing controllers from making incorrect decisions based on incomplete data
+2. Clients receive a complete, cluster-wide discovery document (we'll call this the "peer-aggregated discovery"), by merging information from all peer API servers, preventing controllers from making incorrect decisions based on incomplete data
 
-Merged discovery is only supported for aggregated discovery endpoint, which requires clients to use the aggregated discovery Accept headers. Requests for un-aggregated (legacy) discovery will always return local-only data and do not participate in peer merging. All discovery changes are implemented at the existing aggregated discovery endpoint `/apis`, with no new discovery endpoints being introduced.
+Peer-aggregated discovery is only supported for aggregated discovery endpoint, which requires clients to use the aggregated discovery Accept headers. Requests for un-aggregated (legacy) discovery will always return local-only data and do not participate in peer merging. All discovery changes are implemented at the existing aggregated discovery endpoint `/apis`, with no new discovery endpoints being introduced.
 
-**Note:** Merged discovery is not supported for the api endpoint (`/api`) that serves the `core/v1` group. Since Kubernetes v1.4, no new top-level types have been added to `core/v1` group; only subresources have been introduced:
+**Note:** Peer-aggregated discovery is not supported for the api endpoint (`/api`) that serves the `core/v1` group. Since Kubernetes v1.4, no new top-level types have been added to `core/v1` group; only subresources have been introduced:
 
 - /api/v1/namespaces/{namespace}/pods/{name}/ephemeralcontainers
 - /api/v1/namespaces/{namespace}/pods/{name}/resize
 - /api/v1/namespaces/{namespace}/serviceaccounts/{name}/token
 
-Given this history and the expectation that any future new types will be added to new groups rather than `core/v1`, we do not anticipate the need for peer-merging discovery for `/api`. This means that the set of top-level resource types in `core/v1` is now considered complete and will not change in future Kubernetes releases; only subresources may be introduced. No new top-level resources will be added to `core/v1` going forward.
+Given this history and the expectation that any future new types will be added to new groups rather than `core/v1`, we do not anticipate the need for peer-aggregating discovery for `/api`. This means that the set of top-level resource types in `core/v1` is now considered complete and will not change in future Kubernetes releases; only subresources may be introduced. No new top-level resources will be added to `core/v1` going forward.
 
-**Note 2**:  Merged discovery is also not supported for requests to `/apis/<group>` and `/apis/<group>/<version>` since those are also served by un-aggregated discovery handler.
+**Note 2**:  Peer-aggregated discovery is also not supported for requests to `/apis/<group>` and `/apis/<group>/<version>` since those are also served by un-aggregated discovery handler.
 
 ## Motivation
 
@@ -286,11 +286,11 @@ This might be a good place to talk about core concepts and how they relate.
 
 6. **Failure to Initialize Peer Discovery**
 
-     If the `kube-apiserver` is not started with the necessary certificates and keys (`--proxy-client-key/cert` and `--peer-ca-file` and `--requestheader-client-ca-file`) required for peer-to-peer authentication, the peer discovery controller will fail to initialize. The merged discovery handler is designed to fall back to serving the local, un-merged discovery response in this scenario, allowing the API server to remain operational without compromising the safety of the cluster.
+     If the `kube-apiserver` is not started with the necessary certificates and keys (`--proxy-client-key/cert` and `--peer-ca-file` and `--requestheader-client-ca-file`) required for peer-to-peer authentication, the peer discovery controller will fail to initialize. The peer-aggregated discovery handler is designed to fall back to serving the local, peer-unaggregated discovery response in this scenario, allowing the API server to remain operational without compromising the safety of the cluster.
 
-7. **Temporary Staleness of Merged Discovery Cache When a Peer Leaves**
+7. **Temporary Staleness of Peer Aggregated Discovery Cache When a Peer Leaves**
 
-    When a peer apiserver leaves, its apiserver identity lease remains for up to 1 hour ([reference](https://github.com/kubernetes/kubernetes/blob/release-1.34/pkg/controlplane/apiserver/server.go#L61)). During this period, the peer's discovery information may persist in the merged discovery cache, causing it to be temporarily stale. This condition will resolve automatically once the lease expires and is removed, and does not compromise cluster safety.
+    When a peer apiserver leaves, its apiserver identity lease remains for up to 1 hour ([reference](https://github.com/kubernetes/kubernetes/blob/release-1.34/pkg/controlplane/apiserver/server.go#L61)). During this period, the peer's discovery information may persist in the peer-aggregated discovery cache, causing it to be temporarily stale. This condition will resolve automatically once the lease expires and is removed, and does not compromise cluster safety.
 
 ## Design Details
 
@@ -309,7 +309,7 @@ This handler will maintain the following internal caches:
         * Stores the resources served by each peer API server in the cluster
         * Populated by a peer-discovery controller, which watches [apiserver identity Lease objects](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/1965-kube-apiserver-identity/README.md#proposal)
         * When a lease is created or updated (as a result of a change in [holderIdentity](https://github.com/kubernetes/kubernetes/blob/release-1.32/staging/src/k8s.io/api/coordination/v1/types.go#L58) e.g., due to a server restart), the controller makes a discovery request to the corresponding peer API server
-        * This cache is essential for both - building the merged discovery response and determining which peer can handle a proxied resource request
+        * This cache is essential for both - building the peer-aggregated discovery response and determining which peer can handle a proxied resource request
 
 1. This handler will pass on the request to the next handler in the local aggregator
 chain, if:
@@ -401,33 +401,33 @@ This handler is responsible for the following actions:
 
 * Document Generation: Merges local discovery data with PeerAggregatedDiscovery cache to create a comprehensive view of all API groups and resources available in the cluster
 * Client Negotiation: Interprets a new `profile` parameter in the Accept header
-  * By default, serves the merged discovery document
+  * By default, serves the peer-aggregated discovery document
   * If `profile=unmerged` is specified, serves the local-only discovery response. This is used for PeerAggregatedDiscovery cache population and for backward compatibility 
-* Backward Compatibility: The handler ensures that un-merged discovery requests continue to function as before. When a newer API server (with the feature enabled) needs to fetch discovery information from an older peer (which is unaware of the feature), it sends a discovery request with the Accept header:
+* Backward Compatibility: The handler ensures that non peer-aggregated discovery requests continue to function as before. When a newer API server (with the feature enabled) needs to fetch discovery information from an older peer (which is unaware of the feature), it sends a discovery request with the Accept header:
   `application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;profile=unmerged, application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList, application/json;...;q=0.9`. This header signals the preference for an unmerged response. The older peer, which does not recognize the `profile=unmerged` parameter, simply falls back to its standard discovery behavior and returns its local discovery document. This guarantees that the request succeeds and allows the newer API server to collect the necessary unmerged data for its peer cache.
   
 #### Caching and consistency
 
-The merged discovery response is cached in memory for performance.  This cache is automatically invalidated and refreshed under two conditions:
+The peer-aggregated discovery response is cached in memory for performance.  This cache is automatically invalidated and refreshed under two conditions:
 
 1. When the local API server’s discovery cache changes (e.g., due to resource additions or removals)
 2. When peer API server discovery information changes (e.g., a peer joins or leaves, triggered by lease informer events)
-  - Note: When a peer leaves, its apiserver identity lease remains for up to 1 hour ([reference](https://github.com/kubernetes/kubernetes/blob/release-1.34/pkg/controlplane/apiserver/server.go#L61)). During this period, the peer's discovery information may persist in the merged discovery cache, causing it to be temporarily stale. This condition will resolve automatically once the lease expires and is removed.
+  - Note: When a peer leaves, its apiserver identity lease remains for up to 1 hour ([reference](https://github.com/kubernetes/kubernetes/blob/release-1.34/pkg/controlplane/apiserver/server.go#L61)). During this period, the peer's discovery information may persist in the peer-aggregated discovery cache, causing it to be temporarily stale. This condition will resolve automatically once the lease expires and is removed.
 
 This two-layer caching strategy provides a robust feedback loop:
 
 Case 1: Peer API server change sequence
 1. Peers Announce: API servers announce their presence(or absence) via identity leases
 2. Caches Update: The informer on these leases triggers the repopulation of the peer discovery cache on each API server
-3. Merged Cache Invalidates: An update to the peer discovery cache automatically invalidates the merged discovery cache
-4. Recalculation: The next merged discovery request triggers a single, optimized recalculation of the merged response, which is then cached for subsequent requests
+3. Merged Cache Invalidates: An update to the peer discovery cache automatically invalidates the peeer-aggregated discovery cache
+4. Recalculation: The next peer-aggregated discovery request triggers a single, optimized recalculation of the merged response, which is then cached for subsequent requests
 
 Case 2: Local Discovery change sequence
 
 1. Local Resource Change: The API server detects a change in its own resources (e.g., an API group or version is added, removed, or updated)
 2. Local Discovery Cache Update: The local discovery cache is updated to reflect the new set of available resources
-3. Merged Cache Invalidates: Any update to the local discovery cache automatically invalidates the merged discovery cache
-4. Recalculation: The next merged discovery request triggers a single, optimized recalculation of the merged response, which is then cached for subsequent requests
+3. Merged Cache Invalidates: Any update to the local discovery cache automatically invalidates the peer-aggregated discovery cache
+4. Recalculation: The next peer-aggregated discovery request triggers a single, optimized recalculation of the merged response, which is then cached for subsequent requests
 
 ### Test Plan
 
@@ -498,9 +498,9 @@ Resource request routing tests:
 - Request is proxied to an apiserver that is able to handle it
 - Validation that a request is proxied to the available peer if another eligible peer becomes unavailable
 
-Merged discovery tests:
+Peer-aggregated discovery tests:
 
-- Validation that the merged discovery endpoint correctly combines API groups and resources from multiple API servers with different served resources
+- Validation that the peer-aggregated discovery endpoint correctly combines API groups and resources from multiple API servers with different served resources
 - Validation of the Accept header negotiation, ensuring that by default we return the consolidated document, while `profile=unmerged` Accept header returns the local document
 
 ##### e2e tests
@@ -798,9 +798,9 @@ logs or events for this purpose.
 The following metrics could be used to see if the feature is in use:
 
 - `kubernetes_apiserver_rerouted_request_total` which is incremented anytime a resource request is proxied to a peer apiserver
-- `aggregator_discovery_merged_cache_misses_total` which is incremented everytime we construct a merged discovery response by merging resources served by a peer apiserver
-- `aggregator_discovery_merged_cache_hits_total` which is incremented everytime merged discovery was served from the cache
-- `aggregator_discovery_unmerged_count_total` which is incremented everytime an un-merged discovery was requested
+- `aggregator_discovery_merged_cache_misses_total` which is incremented everytime we construct a peer-aggregated discovery response by merging resources served by a peer apiserver
+- `aggregator_discovery_merged_cache_hits_total` which is incremented everytime peer-aggregated discovery was served from the cache
+- `aggregator_discovery_unmerged_count_total` which is incremented everytime a non peer-aggregated discovery was requested
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -817,8 +817,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - Metrics like `kubernetes_apiserver_rerouted_request_total` can be used to check
 how many resource requests were proxied to remote apiserver
-- The `aggregator_discovery_merged_cache_misses_total` and `aggregator_discovery_merged_cache_hits_total` metrics will show activity when merged discovery responses are constructed and served
-- The `aggregator_discovery_unmerged_count_total` metric will increment when un-merged discovery is requested
+- The `aggregator_discovery_merged_cache_misses_total` and `aggregator_discovery_merged_cache_hits_total` metrics will show activity when peer-aggregated discovery responses are constructed and served
+- The `aggregator_discovery_unmerged_count_total` metric will increment when non peer-aggregated discovery is requested
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -837,9 +837,9 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-- The merged discovery endpoint should reliably return a complete and up-to-date set of resources available in the cluster, except for brief periods during peer lease expiration or network partition
+- The peer-aggregated discovery endpoint should reliably return a complete and up-to-date set of resources available in the cluster, except for brief periods during peer lease expiration or network partition
 - The percentage of proxied resource requests that result in a successful response (not 5XX) should be high (>99% under normal conditions)
-- The system should minimize the duration of staleness in the merged discovery cache (ideally less than the lease expiration period, typically 1 hour)
+- The system should minimize the duration of staleness in the peer-aggregated discovery cache (ideally less than the lease expiration period, typically 1 hour)
 - The feature should not introduce significant latency or error rates for standard API operations
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -974,7 +974,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-The Local Discovery, Remote Discovery and Peer Merged Discovery caches should take care of not causing delays while
+The Local Discovery, Peer Discovery and Peer-aggregated Discovery caches should take care of not causing delays while
 handling a request.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
@@ -1051,7 +1051,7 @@ a given API server
 
 - v1.28: Mixed Version Proxy KEP merged and moved to alpha
 - v1.33: Replaced StorageversionAPI with AggregatedDiscovery to fetch served resources by peer apiservers
-- v1.35: Merged Discovery implemented
+- v1.35: Peer-aggregated Discovery implemented
 
 ## Drawbacks
 
