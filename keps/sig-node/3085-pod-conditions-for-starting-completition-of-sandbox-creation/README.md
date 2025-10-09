@@ -1018,6 +1018,8 @@ Tests List
   - [x] Add test to verify sandbox condition for missing configmap.
     (added as part of [k/k PR#121321](https://github.com/kubernetes/kubernetes/pull/121321))
   - [ ] Add test to verify sandbox condition for missing secret.
+- [] Dynamic Resource Allocation (DRA) Allocation Ordering
+  - [ ] Add test to verify the order between the `PodReadyToStartContainers` condition and devicemanager `Allocate()` gRPC calls to the device plugin, ensuring the condition is set at the expected point relative to resource allocation.
 
 E2E tests will be introduced to cover the user scenarios mentioned above. Tests
 will involve launching pods with characteristics mentioned below and
@@ -1028,6 +1030,7 @@ examining the pod status has the new `PodReadyToStartContainers` condition with
 2. A pod with references to a configmap (as a volume) that has not been created causing the pod sandbox creation to not complete until the configmap is created later.
 3. A pod with references to a secret (as a volume) that has not been created causing the pod sandbox creation to not complete until the secret is created later.
 4. A pod whose node is rebooted leading to the sandbox being recreated.
+5. A pod that requests device resources managed by the DRA framework, to verify the order between the `PodReadyToStartContainers` condition and DeviceManager `Allocate()` gRPC calls.  
 
 Tests for pod conditions in the `GracefulNodeShutdown` e2e_node test will be
 enhanced to check the status of the new pod sandbox conditions are `false` after
@@ -1113,6 +1116,8 @@ in back-to-back releases.
 - Feature Flag defaults to enabled.
 - Add test case for graceful shutdown.
 - Add test case for sandbox condition if pod fails to mount volume from a missing secret.
+- Clarify and define the order between the `PodReadyToStartContainers` condition and the DRA `Allocate()` (devicemanager's Allocate gRPC calls to the device plugin).  
+  Add documententation and a test to verify the behaviour. 
 
 #### GA
 
