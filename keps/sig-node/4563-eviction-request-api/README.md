@@ -473,11 +473,10 @@ our case is the progress of the eviction.
 There can be many eviction requesters for a single EvictionRequest.
 
 When a requester decides that a pod needs to be evicted, it should create an EvictionRequest:
-- `.metadata.generateName` should be set instead of the `.metadata.name` to avoid conflicts.
-  Conflicts could occur due to pods with the same name but a different UIDs. In the future, it might
-  be possible that EvictionRequest will be extended for other resources than pods (e.g. PVCs), which
-  could result in name conflicts. For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
-  alternatives section.
+-  `.metadata.name` should be set to the pod UID to avoid conflicts and allow for easier lookups
+  as the name is predictable. For more details, see
+  [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects) alternatives
+  section.
 - `.spec.type` should be set to `Soft` (default value) since it is currently the only supported type.
 - `.spec.target.podRef` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
@@ -686,7 +685,11 @@ type PodSpec struct {
 type EvictionRequest struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// Standard object's metadata.
+	// Object's metadata.
+	// .metadata.name should match the .metadata.uid of the pod being evicted.
+	// .metadata.generateName is not supported.
+	// The labels of the eviction request object will be merged with pod's .metadata.labels. The
+	// labels of the pod have a preference.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
@@ -1018,10 +1021,13 @@ CREATE and DELETE requests and list EvictionRequests (.spec) during DELETE reque
 We would like to prevent the creation of multiple EvictionRequests for the same pod because we do
 not expect the interceptors to support interaction with multiple EvictionRequests for a pod.
 
-The Pod matching the `.spec.target.podRef.name` will be obtained from the admission plugin lister.
-If the `.spec.target.podRef.uid` does not match with the pod's UID, the request will be rejected.
+`.metadata.generateName` is not supported. If it is set, the request will be rejected.
 
-We should also check that no EvictionRequest exists with the same `.spec.target.podRef`.
+`.metadata.name` must be identical to `.spec.podRef.uid` or the request will be rejected.
+The Pod matching the `.spec.target.podRef.name` will be obtained from the admission plugin lister.
+If the `.spec.target.podRef.uid` does not match with the pod's UID or no pod is found, the request
+will be rejected. For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
+section in the Alternatives.
 
 The API is designed to be extensible to include additional types that could be evicted (e.g. PVCs).
 Currently, `.spec.target.podRef` is required, but we might change this to include additional
@@ -1147,7 +1153,7 @@ metadata:
 2. The node drain controller creates an EvictionRequest for the only pod p-1 of application P to
    evict it from a node. It sets the`nodemaintenance.k8s.io` value to the `.spec.requesters`.
 3. The descheduling controller notices that the pod p-1 is running in the wrong zone. It wants to
-   create an EvictionRequest for this pod, but the EvictionRequest
+   create an EvictionRequest (named after the pod's UID) for this pod, but the EvictionRequest
    already exists. It sets the `descheduling.avalanche.io` value to the `.spec.requesters`.
 4. The eviction request controller designates Actor B as the next interceptor by updating
    `.status.activeInterceptorClass`.
@@ -2059,8 +2065,8 @@ applications are blocking the node drain and asses whether they can be safely de
 It would be useful for the name of the EvictionRequest object to be unique and predictable for each
 pod instance to prevent the creation of multiple EvictionRequests for the same pod. Because we do
 not expect the interceptors to support interaction with multiple EvictionRequests for a pod. We can
-also verify `.spec.target.podRef` field on admission. Unfortunately such approach would not be easy
-to extend in the future.
+also verify `.spec.target.podRef` field on admission. However, it would be difficult/impossible to
+change or support other naming strategies in the future.
 
 We could validate each EvictionRequest `.metadata.name` to have one of the following formats:
 
