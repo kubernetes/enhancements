@@ -291,15 +291,13 @@ type `DeviceSubRequest`. The `DeviceSubRequest` type is similar to
 available when providing multiple alternatives. The list provided in the
 `FirstAvailable` field is considered a priority order, such that the
 scheduler will use the first entry in the list that satisfies the
-requirements. 
+requirements.
 
-DRA does not yet implement scoring, which means that
-the selected devices might not be optimal. For example, if a prioritized
-list is provided in a request, DRA might choose entry number two on node A,
-even though entry number one would meet the requirements on node B. This is
-consistent with current behavior in DRA where the first match will be chosen.
-Scoring is something that will be implemented later, with early discussions
-in https://github.com/kubernetes/enhancements/issues/4970
+DRA does not yet implement full scoring (tracked in
+https://github.com/kubernetes/enhancements/issues/4970), but we will implement
+a limited form of scoring for this feature. This is to make sure nodes which
+can satisfy a claim with higher ranked subrequests are preferred over others. The
+details are described in the [Scoring](#scoring) section.
 
 ### User Stories
 
@@ -907,7 +905,7 @@ implement limited scoring to make sure that nodes which can satisfy claims with
 higher ranked subrequests are preferred over others.
 
 We will implement this by letting the dynamicresources scheduler plugin implement
-the `Score` interface. 
+the `Score` and `NormalizeScore` interfaces. 
 
 The allocation result for each node will be given a score based on the ranking of
 the chosen subrequests across all requests using the `FirstAvailable` field across
@@ -918,8 +916,14 @@ chosen. We save the score of 0 in case we want to implement optional requests. S
 the score for every node is computed based on the same claims, we end up with a
 ranking of the results from all nodes.
 
-We don't see a need to normalize the scores for now, but this might be needed when
-we implement more complicated scoring in the future.
+We will implement the `NormalizeScore` interface to normalize the results. We aim
+to do this in a way such that the worst selection possible (where the last subrequest
+is chosen for all requests specifying the `FirstAvailable` field) is given a score of
+0, and the best selection possible (where the first subrequest is chosen for all requests
+specifying the `FirstAvailable` field) is given a score of 100. This makes sure that the
+score accurately reflects "how much better" one alternative is compared to another.
+
+We will give the plugin a weight of 2 since it reflects scoring based on user preference.
 
 ### Test Plan
 
