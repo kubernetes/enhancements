@@ -1379,11 +1379,13 @@ The DRA driver itself should also be able to survive a rollback, so long as it
 has been written to advertise any partitions as "pre-partitioned" devices. It
 will just lose the ability to set up new partitions dynamically.
 
-Enablement/disablement of without any upgrades in between will continue to work
-even though we are making backwards incompatible changes to the Partitionable
-Devices fields as part of a new revision of the alpha API. If either the APIServer
-or the scheduler have been upgraded to the revised version of the Partitionable
-Devices API, allocation of devices will fail as described in the 
+We are making backwards-incompatible changes to the Partitionable Devices feature
+as part of a new revision of the alpha API between the 1.34 and 1.35 versions. 
+This will not impact enablement/disablement of the feature if here is is no upgrade
+or downgrade across those versions in between.
+
+If either the APIServer or the scheduler have been upgraded to the revised version
+of the Partitionable Devices API, allocation of devices will fail as described in the 
 [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning) section.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
