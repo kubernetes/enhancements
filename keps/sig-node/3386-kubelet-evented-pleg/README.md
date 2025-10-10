@@ -141,7 +141,8 @@ This might be a good place to talk about core concepts and how they relate.
 - Another risk is the CRI implementation could have a buggy event emitting system, and miss pod lifecycle events.
   - A mitigation is a `kube_pod_missed_events` metric, which the Kubelet could report when a lifecycle event is registered that wasn't triggered by an event, but rather by changes of state between lists.
   - While using the Evented implementation, the periodic relisting functionality would still be used with an increased interval which should work as a fallback mechanism for missed events in case of any disruptions.
-  - Evented PLEG will need to update global cache timestamp periodically in order to make sure pod workers don't get stuck at [GetNewerThan](https://github.com/kubernetes/kubernetes/blob/4a894be926adfe51fd8654dcceef4ece89a4259f/pkg/kubelet/pod_workers.go#L924) in case Evented PLEG misses the event for any unforeseen reason.
+- During the state transition of a pod, the execution time of the podWorker code is slower than the event reporting speed of the container runtime. As a result, when calling `GetNewerThan()`, the timestamp in the PLEG cache is newer than `lastSyncTime`, ultimately causing the podWorker to enter a blocking state.
+  - We use real-time container events to determine the container's state, rather than relying on the cached timestamp to decide whether the container's state is up to date. This is because, in the case of `EventedPLEG`, real-time container events always represent the latest container state, which also aligns with the design where the container lifecycle is driven by container events.
 
 ## Design Details
 
