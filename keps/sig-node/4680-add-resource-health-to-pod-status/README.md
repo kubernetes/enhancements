@@ -198,6 +198,11 @@ type ResourceHealth struct {
 	//
 	// In future we may want to introduce the PermanentlyUnhealthy Status.
 	Health ResourceHealthStatus `json:"health,omitempty" protobuf:"bytes,2,name=health"`
+	// Message provides additional human-readable context about the health status.
+	// This can include error details, failure reasons, or other diagnostic information.
+	// This field is optional and may be empty for healthy resources.
+	// +optional
+	Message string `json:"message,omitempty" protobuf:"bytes,3,opt,name=message"`
 }
 ```
 
@@ -267,6 +272,20 @@ We may consider this as a future improvement.
   [Issue #133118](https://github.com/kubernetes/kubernetes/issues/133118) and the discussion in 
   [PR #130606](https://github.com/kubernetes/kubernetes/pull/130606/files#r2221829511).
 
+
+- **Failure Message Field:** The `ResourceHealth` struct includes an optional `Message` field that provides
+  additional human-readable context about device health status. This field enables Device Plugins and DRA drivers
+  to report detailed error information, failure reasons, and diagnostic information beyond the basic health status.
+  This enhancement improves troubleshooting capabilities for device-related failures. See
+  [Issue #133202](https://github.com/kubernetes/kubernetes/issues/133202) and
+  [PR #134506](https://github.com/kubernetes/kubernetes/pull/134506) for implementation details.
+
+- **Device Health for Terminated Pods:** Kubelet will continue to update the device health status in PodStatus
+  even after a Pod has terminated (e.g., in Failed state or CrashLoopBackOff). This is critical for post-mortem
+  troubleshooting and enables retry policies (such as those introduced by
+  [KEP-3329: Retriable and non-retriable Pod failures for Jobs](https://github.com/kubernetes/enhancements/issues/3329))
+  to make informed decisions based on whether the failure was caused by an unhealthy device. See
+  [Issue #132978](https://github.com/kubernetes/kubernetes/issues/132978) for more details.
 ### Risks and Mitigations
 
 There is not many risks of this KEP. The biggest risk is that Device Plugins will not be
@@ -459,8 +478,18 @@ Planned tests will cover the user-visible behavior of the feature:
 
 #### Beta
 
+The following requirements must be met for Beta graduation in v1.35:
+
 - Complete e2e tests coverage
-- Verify configurable device health check timeout implementation works correctly across different plugin vendors (see [Issue #133118](https://github.com/kubernetes/kubernetes/issues/133118))
+- **Device Health for Terminated Pods** ([Issue #132978](https://github.com/kubernetes/kubernetes/issues/132978)):
+  Ensure that device health status is correctly reported and updated in PodStatus even after a Pod has terminated.
+  This is critical for troubleshooting and allowing retry policies to make informed decisions based on device health.
+- **Configurable Device Health Check Timeout** ([Issue #133118](https://github.com/kubernetes/kubernetes/issues/133118), [PR #133752](https://github.com/kubernetes/kubernetes/pull/133752)):
+  Verify that the configurable device health check timeout implementation (via `health_check_timeout_seconds` field)
+  works correctly across different plugin vendors and hardware types (e.g., GPUs, FPGAs, TPUs, storage devices).
+- **Failure Message Field** ([Issue #133202](https://github.com/kubernetes/kubernetes/issues/133202), [PR #134506](https://github.com/kubernetes/kubernetes/pull/134506)):
+  Support for a message field in device health reporting to provide additional context about health status and failures,
+  enabling better troubleshooting capabilities.
 
 #### GA
 
@@ -497,15 +526,19 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, with no side effect except of missing the new field in pod status. Values written 
-while the feature was enabled will continue to have it and may be wiped on next update request.
-They also may be ignored on reads.
+Yes, with no side effect except of missing the new field in pod status. When the feature is disabled,
+the values of the `AllocatedResourcesStatus` fields will be dropped when serving the API even if they
+are written to storage. This prevents clients from acting on potentially stale data when the feature
+is off. Values written while the feature was enabled may be wiped on next update request.
 Re-enablement of the feature will not guarantee to keep the values written before the
 feature was disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The pod status will be updated again. Consistency will not be guaranteed for fields written
+The pod status will be updated again. When the feature is re-enabled, there may be a brief period
+where stale values from storage reappear in the API before kubelet and controllers actuate and update
+the values with current device health information. This period should be kept as short as possible
+through normal kubelet reconciliation. Consistency will not be guaranteed for fields written
 before the last enablement. 
 
 ###### Are there any tests for feature enablement/disablement?
