@@ -25,10 +25,13 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Data Format and versioning](#data-format-and-versioning)
   - [Authz and authn](#authz-and-authn)
   - [Endpoint Response Format](#endpoint-response-format)
-    - [Data format : text](#data-format--text)
-    - [Request](#request)
-    - [Response fields](#response-fields)
-    - [Sample response](#sample-response)
+    - [Data format : text (Alpha, Beta, GA)](#data-format--text-alpha-beta-ga)
+      - [Request](#request)
+      - [Response fields](#response-fields)
+      - [Sample response](#sample-response)
+    - [Data format : json (v1) (Targeted for Beta)](#data-format--json-v1-targeted-for-beta)
+      - [Request](#request-1)
+      - [Sample response](#sample-response-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -149,7 +152,12 @@ We are proposing to add a new endpoint, /flagz on all core Kubernetes components
 
 ### Data Format and versioning
 
-Initially, the flagz page will exclusively support a plain text format for responses. In future, when we have established a structured schema for the response, we can support specifying a version param, like /flagz?version=2, to ensure future compatibility. Through this, we can evolve the endpoint and introduce changes to the response schema without impacting clients relying on previous versions, ensuring backward compatibility.
+The `flagz` endpoint will use content negotiation via the `Accept` header. The default response format is `text/plain`.
+
+- **Alpha**: The endpoint will only serve the `text/plain` format. Any `Accept` header requesting a different format will be ignored, and the response will default to `text/plain`.
+- **Beta**: The endpoint will be enhanced to serve a structured `application/json` format in addition to `text/plain`. Clients will be able to request a specific version of the JSON response (e.g., `application/json;v=v1`).
+
+This phased approach ensures that the initial implementation is simple and focused on human-readability, while providing a clear path for machine-readable, versioned responses in the future.
 
 ### Authz and authn
 
@@ -157,19 +165,21 @@ Access to the endpoint will be limited to members of the `system:monitoring grou
 
 ### Endpoint Response Format
 
-#### Data format : text
+#### Data format : text (Alpha, Beta, GA)
 
-#### Request
+This is the default format.
+
+##### Request
 * Method: **GET** 
 * Endpoint: **/flagz**
-* Header: `Content-Type: text/plain`
+* Header: `Accept: text/plain` (or omitted)
 * Body: empty
 
-#### Response fields
+##### Response fields
 * **Flag Name**: The name of the command-line flag or configuration option
 * **Value**: The current value assigned to the flag at runtime
 
-#### Sample response
+##### Sample response
 
 ```
 ----------------------------
@@ -182,6 +192,28 @@ delete-collection-workers=1
 enable-garbage-collector=true
 encryption-provider-config-automatic-reload=false
 ...
+```
+
+#### Data format : json (v1) (Targeted for Beta)
+
+##### Request
+* Method: **GET** 
+* Endpoint: **/flagz**
+* Header: `Accept: application/json;v=v1`
+* Body: empty
+
+##### Sample response
+
+```json
+{
+  "apiVersion": "v1",
+  "flags": {
+    "default-watch-cache-size": "100",
+    "delete-collection-workers": "1",
+    "enable-garbage-collector": "true",
+    "encryption-provider-config-automatic-reload": "false"
+  }
+}
 ```
 ### Test Plan
 
@@ -214,6 +246,7 @@ to implement this enhancement.
 
 - Gather feedback from developers
 - Feature implemented for other Kubernetes Components
+- Introduce a versioned, structured JSON response format.
 
 #### GA
 
