@@ -119,7 +119,7 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 2. Fix cluster-autoscaler so as it takes into account attach limits when scaling nodegroups with existing nodes.
 3. Fix kubernetes built-in scheduler so as we do not schedule pods to nodes that doesn't have CSI driver installed.
 
-While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying defaule enablement of scheduler change
+While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying default enablement of scheduler change
 that prevents scheduling of pods to a node that doesn't have CSI driver installed until a release when Cluster-AutoScaler(CAS) changes have been GAed and meet N-3 version skew critirea. See - version skew section for more information.
 
 
