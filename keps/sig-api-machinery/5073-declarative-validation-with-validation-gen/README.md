@@ -382,20 +382,20 @@ Each Declarative Validation tag is assigned one of three stability levels: Alpha
 #### Alpha
 
 *   **Description**: Alpha tags are experimental, intended for early development and testing, and are subject to backward-incompatible changes.
-*   **Guarantees**: The API machinery team may introduce backward-incompatible changes.
-*   **Usage**: When used in the Kubernetes repository, Alpha tags must be mirrored with a handwritten implementation for at least one release before promotion to Beta.
+*   **Guarantees**: Backward-incompatible changes are allowed. All in-tree tag usage will be updated to adapt to the change, but out-of-tree tag usage may break.
+*   **Usage**: When used in the Kubernetes repository, Alpha tags must be mirrored with a handwritten implementation.
 
 #### Beta
 
 *   **Description**: Beta tags are more mature, have been tested, and are not expected to change in backward-incompatible ways.
 *   **Guarantees**: All modifications to Beta tags must be backward-compatible.
-*   **Usage**: Beta tags are suitable for use in Kubernetes features that are in the Alpha or Beta stage of their lifecycle.
+*   **Usage**: Beta tags may be used in Kubernetes features/APIs that are in the Alpha or Beta stage of their lifecycle. Beta tags may be defined as 'DV-Only' validations i.e., on fields marked with `+k8s:declarativeValidationNative`) when used with Alpha or Beta features/APIs. Stable Kubernetes features/APIs may only use Beta tags when mirrored with hand written validation.
 
 #### Stable
 
 *   **Description**: Stable tags are production-ready and have undergone rigorous testing.
 *   **Guarantees**: All modifications must be backward-compatible.
-*   **Usage**: Only Stable tags are permitted for use in 'DV-Only' validations (i.e., on fields marked with `+k8s:declarativeValidationNative`), unless the API type is alpha or beta.
+*   **Usage**: Stable tags may be used with all features/APIs. Stable tags may be defined as 'DV-Only' validations (i.e., on fields marked with `+k8s:declarativeValidationNative`).
 
 ### DV-Only Implementation Strategy for v1.35
 No DV-Only usage will be permitted in v1.35. Instead, the v1.35 release will focus on:
@@ -1593,7 +1593,6 @@ This track is for tags that are always used in combination with other tags or th
 
 *   **Implementation Complete**: The validation logic is fully implemented and rigorously tested.
 *   **Leadership Confidence**: Declarative validation subproject leads are confident in the implementation.
-*   **Monitored in Production**: The tag has been used with mirrored handwritten code for at least one release cycle with zero mismatches.
 
 **Beta to Stable Graduation Criteria:**
 
