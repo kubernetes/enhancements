@@ -94,6 +94,7 @@
     - [Common Patterns Reference Enabled By Existing + New Tags: Non-Lists/Maps](#common-patterns-reference-enabled-by-existing--new-tags-non-listsmaps)
     - [Common Patterns Reference Enabled By Existing + New Tags: Lists/Maps](#common-patterns-reference-enabled-by-existing--new-tags-listsmaps)
     - [Common Patterns Reference Enabled By Existing + New Tags: List Items](#common-patterns-reference-enabled-by-existing--new-tags-list-items)
+      - [Immutability Patterns and Tags Demonstrated](#immutability-patterns-and-tags-demonstrated)
   - [Cross-Field Validation](#cross-field-validation)
     - [Handling Ratcheting In Cross-Field Validation Tags](#handling-ratcheting-in-cross-field-validation-tags)
   - [Referencing Fields in Validation-Gen For Cross-Field Validation Rules](#referencing-fields-in-validation-gen-for-cross-field-validation-rules)
@@ -1240,6 +1241,73 @@ csr.Conditions = [{Type: "InProgress", Status: "True"}]
 | Disallow a Specific Item | `+k8s:eachVal=+k8s:neq=”disallowed-value”` | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ² = Must remain at zero value (`+k8s:forbidden` validation logic)
+
+##### Immutability Patterns and Tags Demonstrated
+
+```go
+type DeploymentSpec struct {
+    // Pattern: Required
+    // +k8s:required
+    // Operation:
+    Replicas *int32
+
+    // ✅ CREATE: replicas = 3
+    // ✅ UPDATE(modify): replicas = 5
+    // ❌ UPDATE(clear): replicas = nil
+}
+
+type PersistentVolumeStatus struct {
+    // Pattern: RequiredOnceSet (Optional, but cannot be cleared once set)
+    // +k8s:optional
+    // +k8s:update=NoClear
+    Phase *PersistentVolumePhase
+
+    // Operation:
+    // ✅ CREATE: phase = nil             (volume created)
+    // ✅ UPDATE(set): phase = "Available" (set once)
+    // ✅ UPDATE(modify): phase = "Bound"  (modify allowed)
+    // ❌ UPDATE(clear): phase = nil       (cannot clear due to NoClear)
+}
+
+type PersistentVolumeClaimSpec struct {
+    // Pattern: Set Once (Optional, can be set at create or update, then immutable)
+    // +k8s:optional
+    // +k8s:update=NoModify
+    // +k8s:update=NoClear
+    VolumeName string
+
+    // Operation:
+    // ✅ CREATE: volumeName = ""
+    // ✅ UPDATE(set): volumeName = "pv-123" (set once by PV controller)
+    // ❌ UPDATE(modify): volumeName = "pv-456" (cannot change binding)
+    // ❌ UPDATE(clear): volumeName = "" (cannot unbind)
+}
+
+type PersistentVolumeSpec struct {
+    // Pattern: Required at creation, then immutable
+    // +k8s:required
+    // +k8s:immutable
+    Capacity ResourceList
+
+    // Operation:
+    // ✅ CREATE: capacity = {"storage": "10Gi"}
+    // ❌ UPDATE(modify): capacity = {"storage": "20Gi"}
+}
+
+type PodSpec struct {
+    // Pattern: Immutable (State decided at creation, cannot transition set/unset or modify)
+    // +k8s:optional
+    // +k8s:immutable // functionally equivalent to NoSet,NoModify,NoClear
+    HostNetwork bool
+    
+    // Operation scenario 1:
+    // ✅ CREATE: hostNetwork = true
+    // ❌ UPDATE(modify): hostNetwork = false
+    // Operation scenario 2:
+    // ✅ CREATE: hostNetwork = false (or unset)
+    // ❌ UPDATE(set/modify): hostNetwork = true
+}
+```
 
 
 ### Cross-Field Validation
