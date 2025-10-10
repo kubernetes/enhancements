@@ -660,8 +660,10 @@ code, but it will minimize the chances that the Allocator will find errors durin
 #### Future options
 
 We can further improve the experience here by introducing a controller that can validate that all references within a resource pool
-are valid. It can then update a status on all `ResourceSlices` in the resource pool. The
-controller can only do full validation for complete pools, i.e. when all `ResourceSlices`
+are valid. It can then update a status on all `ResourceSlices` in the resource pool and export
+metrics that allows administrators to monitor and quickly discover any issues regarding
+invalid resource pools.
+The controller can only do full validation for complete pools, i.e. when all `ResourceSlices`
 in the pool is on the same generation, but some validation can be done even on incomplete
 pools.
 Validation with a controller will still be asynchronous, so the UX is not as good as validation during admission.
