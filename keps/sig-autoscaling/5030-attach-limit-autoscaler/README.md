@@ -96,7 +96,7 @@ This leads to bunch of problems:
 
 - Since a node does not come up with a CSI driver typically, usually too many pods get scheduled on a node, which may not be supportable by the node in the first place. This leads to bunch of pods, just stuck.
 
-Once cluster-autoscaler is aware of CSI volume attach limits, we can fix kubernete's builtin scheduler to not schedule pods to nodes that don't have CSI driver installed and if pods require given CSI volumes. Also since 
+Once cluster-autoscaler is aware of CSI volume attach limits, we can fix kubernetes's builtin scheduler to not schedule pods to nodes that don't have CSI driver installed and if pods require given CSI volumes. Also since 
 cluster-autoscaler isn't aware of CSI volume attach limits, when it scales nodes for pending pods it can't accurately determine how many nodes are required for pending pods that use CSI volumes. For example: if there are 20 pending pods(that use CSI volumes) and assuming cpu, memory and other critireas are met, cluster-autoscaler will not accurately take into account how many nodes are required to satisfy volume attach limits of a node.
 
 After the fixes we are proposing in cluster-autoscaler are made, cluster-autoscaler should accurately calculate number of nodes it needs to spin up to satisfy volume constraints of pending pods. 
