@@ -143,7 +143,7 @@ has gone GA in CAS and satisifies version skew critirea of CAS and kube-schedule
 
 ### Risks and Mitigations
 
-While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying defaule enablement of scheduler change
+While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying default enablement of scheduler change
 that prevents scheduling of pods to a node that doesn't have CSI driver installed until a release when Cluster-AutoScaler(CAS) changes have been GAed and meet N-3 version skew critirea. See - version skew section for more information.
 
 
