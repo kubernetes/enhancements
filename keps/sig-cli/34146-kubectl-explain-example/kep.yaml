@@ -11,11 +11,11 @@ creation-date: "2025-09-27"
 last-updated: "2025-09-27"
 status: provisional
 stage: alpha
-latest-milestone: "v1.35"
+latest-milestone: "v1.36"
 milestone:
-    alpha: "v1.35"
-    beta: "v1.36"
-    stable: "v1.37"
+    alpha: "v1.36"
+    beta: "v1.37"
+    stable: "v1.38"
 feature-gates: []
 disable-supported: false
 metrics: []
