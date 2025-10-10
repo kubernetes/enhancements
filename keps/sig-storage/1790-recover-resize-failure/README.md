@@ -577,6 +577,8 @@ _This section must be completed when targeting beta graduation to a release._
 - 2020-01-27 Initial KEP pull request submitted
 - 2023-02-03 Changing the APIs of `pvc.Status.ResizeStatus` by renaming it to `pvc.Status.AllocatedResourceStatus` and converting it to a map.
 - 2024-09-12 Propose move to beta status.
+- 2025-06-16 Propose move to GA status.
+- 2025-12-18 Cleanup the feature gate.
 
 ## Drawbacks
 
