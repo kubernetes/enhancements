@@ -4,7 +4,6 @@ authors:
   - "@stlaz"
 owning-sig: sig-auth
 participating-sigs:
-  - sig-auth
   - sig-api-machinery
 status: implementable
 creation-date: 2023-03-27
@@ -14,13 +13,8 @@ reviewers:
 approvers:
   - "@deads2k"
 
-see-also:
-  -
-replaces:
-  - 
-
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
