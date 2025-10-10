@@ -618,13 +618,11 @@ type DeviceRequest struct {
     //
     // This field may only be set in the entries of DeviceClaim.Requests.
     //
-    // DRA does not yet implement scoring, so the scheduler will
-    // select the first set of devices that satisfies all the
-    // requests in the claim. And if the requirements can
-    // be satisfied on more than one node, other scheduling features
-    // will determine which node is chosen. This means that the set of
-    // devices allocated to a claim might not be the optimal set
-    // available to the cluster. Scoring will be implemented later.
+    // DRA does not yet implement full scoring, but it implements limited
+    // scoring so that nodes that can satisfy high ranked subrequests are
+    // preferred over others. The node ultimately chosen also depends on
+    // other scheduling features, so it is not guaranteed that the node
+    // preferred by DRA is chosen.
     //
     // +optional
     // +oneOf=deviceRequestType
@@ -912,7 +910,9 @@ the chosen subrequests across all requests using the `FirstAvailable` field acro
 all claims referenced by the Pod. Since the number of subrequests for each request
 is capped at 8, we will compute a score between 1 and 8 for each request, with 8
 being the best (i.e. the first option was chosen) and 1 if the 8th subrequest was
-chosen. We save the score of 0 in case we want to implement optional requests. Since
+chosen. If there are more than one request using the `FirstAvailable` field the score from
+all of them will be added up to get the score for the pod on the node.
+Since
 the score for every node is computed based on the same claims, we end up with a
 ranking of the results from all nodes.
 
