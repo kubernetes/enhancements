@@ -1011,11 +1011,15 @@ Tests List
 
 - [x] [Pod Conditions Test](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pod_conditions_test.go)
   - [testgrid](https://testgrid.k8s.io/sig-node-release-blocking#node-kubelet-serial-containerd&include-filter-by-regex=PodReadyToStartContainers)
-- [] GracefulNodeShutdown test
+- [x] GracefulNodeShutdown test
   - Add test to check status of pod ready to start condition are set to false after terminating
+    (added as part of [k/k PR#121044](https://github.com/kubernetes/kubernetes/pull/121044))
 - [] Volume Mounting Issues
   - [x] Add test to verify sandbox condition for missing configmap.
+    (added as part of [k/k PR#121321](https://github.com/kubernetes/kubernetes/pull/121321))
   - [ ] Add test to verify sandbox condition for missing secret.
+- [] Dynamic Resource Allocation (DRA) Allocation Ordering
+  - [ ] Add test to verify the order between the `PodReadyToStartContainers` condition and devicemanager `Allocate()` gRPC calls to the device plugin, ensuring the condition is set at the expected point relative to resource allocation.
 
 E2E tests will be introduced to cover the user scenarios mentioned above. Tests
 will involve launching pods with characteristics mentioned below and
@@ -1026,6 +1030,7 @@ examining the pod status has the new `PodReadyToStartContainers` condition with
 2. A pod with references to a configmap (as a volume) that has not been created causing the pod sandbox creation to not complete until the configmap is created later.
 3. A pod with references to a secret (as a volume) that has not been created causing the pod sandbox creation to not complete until the secret is created later.
 4. A pod whose node is rebooted leading to the sandbox being recreated.
+5. A pod that requests device resources managed by the DRA framework, to verify the order between the `PodReadyToStartContainers` condition and DeviceManager `Allocate()` gRPC calls.  
 
 Tests for pod conditions in the `GracefulNodeShutdown` e2e_node test will be
 enhanced to check the status of the new pod sandbox conditions are `false` after
@@ -1111,6 +1116,8 @@ in back-to-back releases.
 - Feature Flag defaults to enabled.
 - Add test case for graceful shutdown.
 - Add test case for sandbox condition if pod fails to mount volume from a missing secret.
+- Clarify and define the order between the `PodReadyToStartContainers` condition and the DRA `Allocate()` (devicemanager's Allocate gRPC calls to the device plugin).  
+  Add documententation and a test to verify the behaviour. 
 
 #### GA
 
@@ -1679,6 +1686,11 @@ may leverage this feature.
 - PodHasNetwork renamed to PodReadyToStartContainers in 1.28.
 - Beta promotion to 1.29
   - Moving PodReadyToStartContainers to staging/src/k8s.io/api/core/v1/types.go as a API constant
+  - Added e2e tests:
+    - [check PodReadyToStartContainers condition after gracefulshutdown](https://github.com/kubernetes/kubernetes/pull/121044)
+    - [test - PodReadyToStartContainerCondition when config map is created](https://github.com/kubernetes/kubernetes/pull/121321)
+  - Updated pod-lifecyle documentation to reflect beta promotion, and feature-gate enabled by default.
+  - Published blog: [PodReadyToStartContainers Condition Moves to Beta](https://kubernetes.io/blog/2023/12/19/pod-ready-to-start-containers-condition-now-in-beta/)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

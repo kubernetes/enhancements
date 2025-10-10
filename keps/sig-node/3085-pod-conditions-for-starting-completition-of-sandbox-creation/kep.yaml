@@ -12,9 +12,12 @@ creation-date: 2021-12-14
 reviewers:
   - "@ehashman"
   - "@dcbw"
+  - "@SergeyKanzhelev"
+  - "@dchen1107"
+  - "@mrunalp"
 approvers:
-  - "@derekwaynecarr"
   - "@aojea"
+  - "@mrunalp"
 
 see-also:
   - none
@@ -27,7 +30,7 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.30"
+latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
