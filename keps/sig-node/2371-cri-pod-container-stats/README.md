@@ -35,9 +35,9 @@
         - [Integration tests](#integration-tests)
         - [e2e tests](#e2e-tests)
     - [Graduation Criteria](#graduation-criteria)
-      - [Alpha implementation](#alpha-implementation)
-      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+      - [Alpha](#alpha)
+      - [Beta](#beta)
+      - [GA](#ga)
     - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Version Skew Strategy](#version-skew-strategy)
   - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -50,6 +50,7 @@
   - [Implementation History](#implementation-history)
   - [Drawbacks](#drawbacks)
   - [Alternatives](#alternatives)
+  - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 # cAdvisor-less, CRI-full Container and Pod Stats
@@ -619,6 +620,8 @@ Additional work may be required to evaluate other kubelet components (e.g. evict
 Ideally all components will rely on summary API thereby alleviating need for cAdvisor for container and pod level stats.
 This is also a requirement to be able to disable cAdvisor container metrics collection.
 
+To make clear to cluster admins when metrics are coming from CRI, rather than cadvisor, a new metric `kubelet_metrics_provider` will be used, with `provider` label either `cri` or `cadvisor`.
+
 #### cAdvisor
 
 Once CRI and Kubelet stats provider level changes are in place, we can evaluate disabling cAdvisor from collecting container and pod level stats.
@@ -793,7 +796,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - A test using the CRI stats feature gate with enabled CRI implementations should be used with cri_stats_provider to ensure the stats reported are conformant.
 
 ### Graduation Criteria
-#### Alpha implementation
+#### Alpha
 
 - CRI should be extended to provide required stats for `/stats/summary`
 - Kubelet should be extended to provide the required stats from CRI implementation for `/stats/summary`.
@@ -803,20 +806,19 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
    - This will allow the CRI to broadcast `/metrics/cadvisor` through the Kubelet's HTTP server.
 - Conduct research to find the set of metrics from `/metrics/cadvisor` that compliant CRI implementations must expose.
 
-#### Alpha -> Beta Graduation
+#### Beta
 
-- Conformance tests for the fields in `/metrics/cadvisor` should be created.
+- e2e_node tests for the fields in `/metrics/cadvisor` should be created.
 - Validate performance impact of this feature is within allowable margin (or non-existent, ideally).
 	- The CRI stats implementation should perform better than they did with CRI+cAdvisor.
 - cAdvisor stats provider will be marked as deprecated, as well as the cAdvisor providing the metrics endpoint `/metrics/cadvisor`.
-- Write migration documentation for entities relying on metrics from `/metrics/cadvisor`.
-- Windows stats and metrics will be added.
 
-#### Beta -> GA Graduation
+#### GA
 
 - The CRI stats provider in the Kubelet should be fully formed, and able to satisfy all the needs of downstream consumers
-- cAdvisor stats provider will likely be marked as deprecated (depending on dockershim deprecation).
+- cAdvisor stats provider support will be dropped
 - Feature gate removed and the CRI stats provider will no longer rely on cAdvisor for container/pod level metrics.
+- Conformance tests for stats and metrics being present as expected from the new sources.
 
 ### Upgrade / Downgrade Strategy
 
@@ -860,26 +862,26 @@ you need any help or guidance.
 
 _This section must be completed when targeting alpha to a release._
 
-* **How can this feature be enabled / disabled in a live cluster?**
+###### How can this feature be enabled / disabled in a live cluster?
+
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: PodAndContainerStatsFromCRI
     - Components depending on the feature gate: Kubelet
 
-* **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
-  Enabling this behavior means some stats endpoints will not be filled:
+###### Does enabling the feature change any default behavior?
+:
+Enabling this behavior means some stats endpoints will not be filled:
   - some entries in `/metrics/cadvisor`
   - Accelerator and UserDefinedMetrics in `/stats/summary`
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
   Yes, assuming the Kubelet is restarted.
 
-* **What happens if we reenable the feature if it was previously rolled back?**
+###### What happens if we reenable the feature if it was previously rolled back?
   There should be no problem with this.
 
-* **Are there any tests for feature enablement/disablement?**
+###### Are there any tests for feature enablement/disablement?
   It will need to be (at least manually) tested against enabling/disabling on a live Kubelet.
 
 Note: enabling/disabling feature gate will require cAdvisor is restarted. The most graceful way to make this happen is require the Kubelet restarts to apply these changes.
@@ -888,22 +890,17 @@ Note: enabling/disabling feature gate will require cAdvisor is restarted. The mo
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 If the CRI implementation doesn't support the required metrics, and cAdvisor has container metrics collection turned off,
 it is possible the node comes up with no metrics about pods and containers. This should be mitigated by making sure that
 the kubelet probes the CRI implementation and enables cAdvisor metrics collection even if the feature gate is on.
 
-* **What specific metrics should inform a rollback?**
+###### What specific metrics should inform a rollback?
 
 The lack of any metrics reported for pods and containers is the worst case scenerio here, and would require either a rollback or for the feature gate to be disabled.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 The source of the metrics is a private matter between the kubelet, CRI implementation and cAdvisor. Since cAdvisor
 in embedded in the kubelet, the two pieces that could move disjointly are kubelet and CRI implementation. The
@@ -912,9 +909,7 @@ words, rolling back and upgrading should have no affect--if the upgrade broke me
 (and measures weren't taken to cause kubelet to fallback to cAdvisor), then a rollback (or toggling of the feature gate)
 would return the metrics from cAdvisor.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 A piece of work for Beta is moving the source of the contents of `/metrics/cadvisor`. If users toggle the feature gate,
 prometheus collectors will have to move the URL. However, it's an expressed intention of the implementation to have the CRI
@@ -925,97 +920,61 @@ report metrics previously reported by cAdvisor, so the contents should not chang
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+###### How can an operator determine if the feature is in use by workloads?
 
 The source of the pod and container metrics previously reported to Prometheus by `/metrics/cadvisor` is the CRI implementation, not cAdvisor.
 Further, if the CRI implementation was using the old CRI stats provider, then the memory usage of the cgroup the kubelet and runtime
 were in should go down--as some duplicated work should be unduplicated.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
+Finally, the metric `kubelet_metrics_provider` will be emitted by the kubelet, with `provider` value being `cri`.
+
+###### How can someone using this feature know that it is working for their instance?
   - [x] Metrics
     - Metric name:
-        - all pod and container level stats coming from cAdvisor `container_*`
+        - `kubelet_metrics_provider`
     - Components exposing the metric:
-        - Previously cAdvisor, now CRI implementation.
+        - kubelet
   - [ ] Other (treat as last resort)
     - Details:
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - Reduction of CPU and memory usage between kubelet and CRI (if previously using CRI stats provider).
 - Minimal (< 2%) of performance hit between CPU and memory between CRI and kubelet (if previously using cAdvisor stats provider).
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+To make clear to cluster admins when metrics are coming from CRI, rather than cadvisor, a new metric `kubelet_metrics_provider` will be used, with `provider` label either `cri` or `cadvisor`.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+###### Does this feature depend on any specific services running in the cluster?
 
   - CRI implementation
     - Usage description:
       - Impact of its outage on the feature: The feature, as well as many other pieces of Kubernetes, would not work, as the CRI implementation is vital to the creation and running of Pods.
       - Impact of its degraded performance or high-error rates on the feature: All Kuberetes operations will slow down if the CRI spends too much energy in getting the stats.
+      - All supported CRI-O versions have this feature, but containerd must be version 2.2 or later.
 
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
-
-* **Will enabling / using this feature result in any new API calls?**
+###### Will enabling / using this feature result in any new API calls?
   It should not.
 
-* **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - There will be new CRI API types, described above. These are to be agreed upon by Kubelet and the CRI implementation.
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+- There will be new CRI API types, described above. These are to be agreed upon by Kubelet and the CRI implementation.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
   - No.
-* **Will enabling / using this feature result in increasing size or count of 
-the existing API objects?**
-  Describe them, providing:
-  - There are no changes that affect objects stored in the database.
-  - There are changes to the CRI API, which will have to be coordinated between CRI implementation and Kubelet.
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+- There are no changes that affect objects stored in the database.
+- There are changes to the CRI API, which will have to be coordinated between CRI implementation and Kubelet.
  
-* **Will enabling / using this feature result in increasing time taken by any 
-operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
   - The process of collecting and reporting the metrics should not differ too much between cAdvisor and the CRI implementation:
     - At a high level, both need to watch the changes to the stats (from cgroups, disk and network stats)
     - Once collected, the CRI implementation will need to report them (both through the CRI and eventually through the prometheus endpoint).
@@ -1024,8 +983,8 @@ operations covered by [existing SLIs/SLOs]?**
     - This may come because cAdvisor's performance has been fine-tuned, and changing the location of work may loose some optimizations.
     - However, it is explicitly stated that a requirement for transition from Alpha->Beta is little to no performance degradation.
     - The existence of the feature gate will allow users to mitigate this potential blip in performance (by not opting-in).
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
   - It most likely will reduce resource utilization. Right now, there is duplicate work being done between CRI and cAdvisor.
     This will not happen anymore.
   - The CRI implementation may scrape the metrics less efficiently than cAdvisor currently does. This should be measured and evaluated as a requirement of Beta.
@@ -1049,12 +1008,14 @@ details). For now, we leave it here.
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
+###### How does this feature react if the API server and/or etcd is unavailable?
   - Should not change.
-* **What are other known failure modes?**
+###### What are other known failure modes?
   - Kubelet should fall back to using cAdvisor if errors are detected with version skew. Nothing else should be affected.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+A cluster admin can investigate the CRI implementation, or revert the feature gate to fallback to cAdvisor.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -1071,6 +1032,7 @@ _This section must be completed when targeting beta graduation to a release._
 2022-12-09: Retarget KEP to alpha in 1.26
 2023-05-19: KEP targeted at Beta in 1.28
 2023-05-19: KEP retargeted to Alpha in 1.29
+2025-10-07: KEP retargeted to Beta in 1.35
 
 ## Drawbacks
 
@@ -1087,3 +1049,5 @@ Greater complexity as opposed to adding these unstructured metrics directly into
     - However, this doesn't address the anti-pattern of having multiple parties confusingly responsible for a wide array of metrics and other issues described.
 - Have cAdvisor implement the summary API. A cAdvisor daemonset could be a drop-in replacement for the summary API.
 - Don't keep supporting the summary API. Replace it with a "better" format, like prometheus. Or help users migrate to equivalent APIs that container runtimes already expose for monitoring.
+
+## Infrastructure Needed (Optional)
