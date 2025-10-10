@@ -80,11 +80,21 @@
     - [Addressing the Problem with Valid Zero Values Using the Linter](#addressing-the-problem-with-valid-zero-values-using-the-linter)
   - [Immutability Validation](#immutability-validation)
     - [Core Concepts](#core-concepts)
-    - [Immutability Patterns and Tags](#immutability-patterns-and-tags)
-    - [Immutability and Lifecycle Patterns Demonstrated](#immutability-and-lifecycle-patterns-demonstrated)
-    - [List Operations](#list-operations)
-    - [Conditional Immutability](#conditional-immutability)
-    - [Subresource-Specific Immutability](#subresource-specific-immutability)
+      - [Lifecycle Operations](#lifecycle-operations)
+      - [Field Type Lifecycle Behaviors](#field-type-lifecycle-behaviors)
+      - [Lifecycle Operations by Field Type](#lifecycle-operations-by-field-type)
+      - [Parent Lifecycle Scope Principle](#parent-lifecycle-scope-principle)
+      - [List AddItem and RemoveItem “Item” Equality Semantics For Each listType](#list-additem-and-removeitem-item-equality-semantics-for-each-listtype)
+      - [Item-Level Constraints](#item-level-constraints)
+      - [Validation Tags That Interact With CREATE, and/or UPDATE semantics](#validation-tags-that-interact-with-create-andor-update-semantics)
+    - [Immutability Validation Tags](#immutability-validation-tags)
+      - [+k8s:update](#k8supdate)
+      - [+k8s:immutable](#k8simmutable)
+      - [Chainable Tag Semantics](#chainable-tag-semantics)
+    - [Common Patterns Reference Enabled By Existing + New Tags: Non-Lists/Maps](#common-patterns-reference-enabled-by-existing--new-tags-non-listsmaps)
+    - [Common Patterns Reference Enabled By Existing + New Tags: Lists/Maps](#common-patterns-reference-enabled-by-existing--new-tags-listsmaps)
+    - [Common Patterns Reference Enabled By Existing + New Tags: List Items](#common-patterns-reference-enabled-by-existing--new-tags-list-items)
+      - [Immutability Patterns and Tags Demonstrated](#immutability-patterns-and-tags-demonstrated)
   - [Cross-Field Validation](#cross-field-validation)
     - [Handling Ratcheting In Cross-Field Validation Tags](#handling-ratcheting-in-cross-field-validation-tags)
   - [Referencing Fields in Validation-Gen For Cross-Field Validation Rules](#referencing-fields-in-validation-gen-for-cross-field-validation-rules)
@@ -754,11 +764,9 @@ The below rules are currently implemented or are very similar to an existing val
 | Iterate and validate map keys | `+k8s:eachKey=<validator-tag>` | N/A | Alpha |
 | Iterate and validate map/slice values | `+k8s:eachVal=<validator-tag>` | N/A | Alpha |
 | Sub-field validation | `+k8s:subfield(field)=<validator-tag>` | N/A | Alpha |
-| Immutability (set once) | `+k8s:immutable` | N/A | Alpha |
-| Immutability (required once set) | `+k8s:requiredOnceSet` | N/A | Alpha |
-| Immutability (frozen at creation) | `+k8s:frozen` | N/A | Alpha |
-| Group membership (virtual field) | `+k8s:memberOf(group=<group>)` | N/A | Alpha |
-| List map item (virtual field) | `+k8s:listMapItem(key: value)` | N/A | Alpha |
+| Immutability | `+k8s:immutable` | N/A | Alpha |
+| UPDATE transition control (granular immutability) | `+k8s:update=[NoSet,NoModify,NoClear]` | N/A | Alpha |
+| List map item (virtual field) | `+k8s:item(key: value)` | N/A | Alpha |
 
 ### Supporting Declarative Validation IDL tags On Shared Struct Fields
 
@@ -954,135 +962,137 @@ Kubernetes API fields have various immutability requirements based on their life
 
 #### Core Concepts
 
-**Field States:**
-- **Unset**: Field has no value (nil, zero value, or absent)
-- **Set**: Field has a value
+##### Lifecycle Operations
 
-**State Transitions:**
-- **Set**: Transition from unset->set
-- **Clear**: Transition from set->unset
-- **Modify**: Transition from one value to another value
+**CREATE**
 
-**Lifecycle Scope:**
-All immutability constraints are scoped to the parent object's lifecycle. When a parent object is replaced (e.g., a struct field set to a new instance), the immutability constraints apply to the new instance.
+*   **Create Definition**: `CREATE`: Parent object/struct is created
+*   **Create Field States**:
+    *   `Unset`: Field has no value (nil for pointers, zero value for non-pointers, empty for slices/maps)
+    *   `Set`: Field has a value (including explicit zero values)
 
-#### Immutability Patterns and Tags
+**UPDATE**
 
-The following tags implement different immutability patterns based on creation requirements and allowed transitions:
+*   **Update Transitions**:
+    *   `UPDATE(set)`: Field transitions from unset to set. For lists this means empty to non-empty. Scope: Optional Fields.
+    *   `UPDATE(modify)`: Field value changes, NOT lists/maps, List/Map Items.
+    *   `UPDATE(clear)`: Field transitions from set to unset. Scope: Optional Fields w/ no default, NOT lists/maps.
+    *   `UPDATE(addItem)`: Items added to collection. Scope: Lists/Maps.
+    *   `UPDATE(removeItem)`: Items removed from collection. Scope: Lists/Maps, List/Map Items.
 
-<table>
- <tr>
-   <td><strong>Pattern</strong></td>
-   <td><strong>Creation Requirement</strong></td>
-   <td><strong>Allowed Transitions</strong></td>
-   <td><strong>Forbidden Transitions</strong></td>
-   <td><strong>Description</strong></td>
-   <td><strong>Use Case</strong></td>
- </tr>
- <tr>
-   <td>required</td>
-   <td>Must be present</td>
-   <td>modify</td>
-   <td>set, clear</td>
-   <td>Must be set at parent creation, can change, never removed</td>
-   <td>Field must always exist but can change</td>
- </tr>
- <tr>
-   <td>requiredOnceSet</td>
-   <td>Can be unset</td>
-   <td>set, modify</td>
-   <td>clear</td>
-   <td>Can be set later, can change, but once set cannot be removed</td>
-   <td>Optional field that once set must remain</td>
- </tr>
- <tr>
-   <td>immutable</td>
-   <td>Can be unset</td>
-   <td>set</td>
-   <td>modify, clear</td>
-   <td>Can be set once (now or later), then frozen</td>
-   <td>Field can be set once by user/controller</td>
- </tr>
- <tr>
-   <td>required+immutable</td>
-   <td>Must be present</td>
-   <td>none</td>
-   <td>set, modify, clear</td>
-   <td>Must be set at parent creation, value frozen forever</td>
-   <td>Identity field set at creation</td>
- </tr>
- <tr>
-   <td>frozen</td>
-   <td>Can be unset</td>
-   <td>none</td>
-   <td>set, modify, clear</td>
-   <td>Field state (set/unset) and value frozen at parent creation</td>
-   <td>Architectural decision at creation</td>
- </tr>
-</table>
+##### Field Type Lifecycle Behaviors
 
-#### Immutability and Lifecycle Patterns Demonstrated
+Different field types have fundamentally different lifecycle characteristics:
+
+| Field Type | Can Be Omitted in API? | "Unset" Representation (Go value) |
+| :--- | :--- | :--- |
+| Whole resources (structs) | | Always exists |
+| Struct fields (non-pointer) | No | Always exists |
+| Primitive (non-pointer) | Yes (with +optional) | Zero value |
+| Pointer | Yes (with +optional) | nil |
+| Compound Fields (List/Map) | Yes (with +optional) | nil or empty |
+| Compound Field values (list and map values ) | Yes | Nil or empty (or not in the list/map?) |
+| Map Keys | Yes | Nil or empty (or not in the list/map?) |
+
+##### Lifecycle Operations by Field Type
+
+*   **Whole resources (structs)**
+    *   `CREATE`: when a new object is created in the API (via POST, PUT, or PATCH)
+    *   `UPDATE(set)`: N/A (always set)
+    *   `UPDATE(unset)`: N/A (never unset)
+    *   `UPDATE(modify)`: when an object is updated (pia PUT or PATCH)
+    *   `DELETE`: when an object is deleted in the API
+*   **Primitive Fields (non-pointer)**
+    *   `CREATE`: when the parent struct is created or set
+    *   `UPDATE(set)`: when the content changes from the zero-value to any other value
+    *   `UPDATE(unset)`: when the content changes from any non-zero-value to the zero-value
+    *   `UPDATE(modify)`: when the content changes from any non-zero-value to any other non-zero-value
+    *   `DELETE`: when the parent struct is deleted or unset
+*   **Struct Fields (non-pointer)**
+    *   `CREATE`: when the parent struct is created or set
+    *   `UPDATE(set)`: N/A (is always set)
+    *   `UPDATE(unset)`: N/A (is always set)
+    *   `UPDATE(modify)`: when the content changes from any value to any other value
+    *   `DELETE`: when the parent struct is deleted or unset
+*   **Pointer Fields**
+    *   `CREATE`: when the parent struct is created or set
+    *   `UPDATE(set)`: when the content changes from nil to any non-nil value
+    *   `UPDATE(unset)`: when the content changes from any non-nil value to nil
+    *   `UPDATE(modify)`: when the dereferenced content changes from any value to any other value
+    *   `DELETE`: when the parent struct is deleted or unset
+*   **Compound Fields (Lists/Maps)**
+    *   `CREATE`: when the parent struct is created or set
+    *   `UPDATE(set)`: when the content changes from zero items to non-zero items
+    *   `UPDATE(unset)`: when the content changes from non-zero items to zero items
+    *   `UPDATE(modify)`: when the content changes from while having non-zero items before and after
+    *   `UPDATE(addItem)`: when the number of items increases
+    *   `UPDATE(removeItem)`: when the number of items decreases
+    *   `DELETE`: when the parent struct is deleted or unset
+*   **Compound field values (list and map items)**
+    *   `CREATE`: when added to the parent
+    *   `UPDATE(set)`: N/A (is always set)
+    *   `UPDATE(unset)`: N/A (is always set)
+    *   `UPDATE(modify)`: when the content changes from any value to any other value
+    *   `DELETE`: when removed from the parent
+*   **Map Keys**
+    *   `CREATE`: when added to the parent
+    *   `UPDATE(set)`: N/A (is always set)
+    *   `UPDATE(unset)`: N/A (is always set)
+    *   `UPDATE(modify)`: N/A (is never modified)
+    *   `DELETE`: when removed from the parent
+
+##### Parent Lifecycle Scope Principle
+
+All constraints are scoped to the parent instance lifecycle. Replacing an optional parent creates a new lifecycle scope:
 
 ```go
 type DeploymentSpec struct {
-    // +k8s:required // Must exist, can be modified
-    // ✅ Create: replicas = 3
-    // ✅ Update: replicas = 5
-    // ❌ Update: replicas = nil
-    Replicas *int32
+    // +k8s:optional
+    Strategy *DeploymentStrategy
+}
+type DeploymentStrategy struct {
+    // === Immutable within this strategy instance ===
+    // +k8s:update=NoSet
+    // +k8s:update=NoModify
+    // +k8s:update=NoClear
+    Type string
 }
 
-type PersistentVolumeStatus struct {
-    // +k8s:requiredOnceSet
-    // ✅ Create: phase = ""              (volume created)
-    // ✅ Update: phase = "Available"     (set once)
-    // ✅ Update: phase = "Bound"         (modify)
-    // ❌ Update: phase = ""              (cannot clear)
-    Phase PersistentVolumePhase
+// CREATE: No strategy
+deployment.Spec.Strategy = nil                      ✅
+// UPDATE: Add strategy (new parent instance)
+deployment.Spec.Strategy = &DeploymentStrategy{
+    Type: "RollingUpdate",                          ✅
 }
-
-type PersistentVolumeClaimSpec struct {
-    // +k8s:immutable
-    // ✅ Create: volumeName = ""
-    // ✅ Update: volumeName = "pv-123" (set once by PV controller)
-    // ❌ Update: volumeName = "pv-456" (cannot change binding)
-    // ❌ Update: volumeName = "" (cannot unbind)
-    VolumeName string
-}
-
-type PersistentVolumeSpec struct {
-    // required+immutable: Must specify capacity at creation
-    // +k8s:required
-    // +k8s:immutable
-    // ✅ Create: capacity = {"storage": "10Gi"}
-    // ❌ Update: capacity = {"storage": "20Gi"}
-    Capacity ResourceList
-}
-
-type PodSpec struct {
-    // +k8s:frozen // State decided at creation (can be set or unset)
-    // Create with: hostNetwork = true   -> Frozen true
-    // Create with: hostNetwork = false  -> Frozen false
-    // Create without setting            -> Frozen false (zero value)
-    HostNetwork bool
+// UPDATE: Cannot modify immutable field
+deployment.Spec.Strategy.Type = "Recreate"          ❌
+// UPDATE: Replace entire strategy (new parent instance = new lifecycle)
+deployment.Spec.Strategy = &DeploymentStrategy{
+    Type: "Recreate",                               ✅
 }
 ```
 
-#### List Operations
+##### List AddItem and RemoveItem “Item” Equality Semantics For Each listType
 
-Lists have two levels of constraints:
+*   `listType=map`: The items are identified by a unique key specified by `+k8s:listMapKey=...`.
+    *   `AddItem` refers to adding an entry with a new key (keyed via `listMapKey=...`)
+    *   `RemoveItem` means removing an entry by its key. (keyed via `listMapKey=...`)
+*   `listType=atomic, unique=map`: Similar to `listType=map`.
+    *   `AddItem` refers to adding an entry with a new key (keyed via `listMapKey=...`)
+    *   `RemoveItem` means removing an entry by its key.(keyed via `listMapKey=...`)
+*   `listType=set`: Items are identified by their full content.
+    *   `AddItem` refers to adding a new entry (“keyed” via full content)
+    *   `RemoveItem` means removing a new entry (“keyed” via full content)
+*   `listType=atomic, unique=set`: Similar to `listType=set`.
+    *   `AddItem` refers to adding a new entry (“keyed” via full content)
+    *   `RemoveItem` means removing a new entry (“keyed” via full content)
+*   `listType=atomic` (non-unique): Not possible to define what `AddItem` or `RemoveItem` means for a specific entry. The only operation is a full replacement of the list.
+    *   `AddItem` - NOT ALLOWED, we error if this is attempted ❌
+    *   `RemoveItem` NOT ALLOWED, we error if this is attempted ❌
 
-**List-Level Constraints:**
-```go
-type ExampleStatus struct {
-    // Array must exist (can be empty)
-    // +k8s:required
-    Conditions []Condition `json:"conditions"`
-}
-```
+##### Item-Level Constraints
 
-**Item-Level Constraints:**
-For list items, clearing (nil-ing) a list is represented as unsetting all items. Item-level constraints can prevent list becoming nil:
+For list items clearing (nil-ing) a list is represented as unsetting all items. This means that item-level constraints can prevent list becoming nil:
 
 ```go
 type CertificateSigningRequestStatus struct {
@@ -1090,47 +1100,215 @@ type CertificateSigningRequestStatus struct {
     // +k8s:optional
     // +k8s:listType=map
     // +k8s:listMapKey=type
-    // +k8s:listMapItem(type: "Approved")=+k8s:immutable
-    // +k8s:listMapItem(type: "Denied")=+k8s:immutable
-    Conditions []CertificateSigningRequestCondition `json:"conditions,omitempty"`
+    // +k8s:item(type: "Approved")=+k8s:update=NoSet
+    // +k8s:item(type: "Approved")=+k8s:update=NoModify
+    // +k8s:item(type: "Approved")=+k8s:update=NoClear
+    Conditions []Condition
 }
+
+// With immutable items present:
+csr.Conditions = [{Type: "Approved", Status: "True"}]
+// ❌ csr.Conditions = nil  // Would remove immutable item
+
+// Without immutable items:
+csr.Conditions = [{Type: "InProgress", Status: "True"}]
+// ✅ csr.Conditions = nil  // Can clear - no protected items
 ```
+##### Validation Tags That Interact With CREATE, and/or UPDATE semantics
 
-#### Conditional Immutability
+*   **+k8s:optional**
+    *   Description: Field may or may not have a value
+    *   Operation:
+        *   CREATE: Can be set or unset
+        *   UPDATE*: ✅
+*   **+k8s:required**
+    *   Description: Field must always have a value
+    *   Operation:
+        *   CREATE: Must be set (or have default)
+        *   UPDATE(set): N/A (cannot be in unset state)
+        *   UPDATE(modify): ✅
+        *   UPDATE(clear): ❌
+*   **+k8s:forbidden**
+    *   Description: Field must never have a value
+    *   Operation:
+        *   CREATE: Must be unset
+        *   UPDATE(set): ❌
+        *   UPDATE(modify): N/A (never set)
+        *   UPDATE(clear): N/A (never set)
 
-Fields can have different immutability based on other field values:
+#### Immutability Validation Tags
+
+##### +k8s:update
+
+*   **Description**: Fine-grained control over UPDATE operations
+*   **Scope**: NO typedefs (only fields)
+*   **Payload Arguments**:
+    *   `NoSet`: Cannot transition unset->set (NOT list/maps)
+    *   `NoModify`: Cannot change value
+    *   `NoClear`: Cannot transition set->unset (NOT list/maps)
+    *   On compound field (list/map) directly:
+        *   `NoAddItem`: Cannot add to list/map (Scope: list/maps)
+        *   `NoRemoveItem`: Cannot remove from list/map (Scope: list/maps)
+
+##### +k8s:immutable
+
+*   **Scope**: NO typedefs (only fields)
+*   **Description**: Convenience tag wrapping the operation of `+k8s:update` tag logic and the exact “alias” differs based on the field type the tag is placed on. `+k8s:immutable` is functionally equivalent to:
 
 ```go
-type Secret struct {
-    // Data becomes immutable(frozen) when immutable flag is true
-    // +k8s:EQ(field: "immutable", value: "true")=+k8s:frozen
-    Data map[string][]byte `json:"data,omitempty"`
+// For non-lists/maps
+// +k8s:immutable
+// OR
+// +k8s:update=NoSet
+// +k8s:update=NoModify
+// +k8s:update=NoClear
 
-    // The immutable flag itself is immutable(frozen) once set to true
-    // +k8s:EQ(field: "immutable", value: "true")=+k8s:frozen
-    Immutable *bool `json:"immutable,omitempty"`
-}
+// For lists/maps
+// +k8s:immutable
+// OR
+// +k8s:update=NoSet
+// +k8s:update=NoAddItem
+// +k8s:update=NoRemoveItem
+// +k8s:eachVal=+k8s:immutable
 ```
 
-#### Subresource-Specific Immutability
+##### Chainable Tag Semantics
 
-Fields can have different immutability rules depending on the subresource:
+*   **+k8s:each[Key|Val]**
+    ```go
+    // +k8s:optional
+    // +k8s:eachVal=+k8s:update=NoSet,NoClear
+    Items []Item `json:"item,omitempty"
+    ```
+*   **+k8s:subfield**
+    ```go
+    type PersistentVolume struct {
+        // +k8s:optional
+        // +k8s:subfield(name)=+k8s:update=NoSet
+        // +k8s:subfield(name)=+k8s:update=NoModify
+        // +k8s:subfield(name)=+k8s:update=NoClear 
+        metav1.ObjectMeta
+    }
+    ```
+*   **+k8s:item** - selects a specific `listType=map` item selected by unique key from `listMapKey=..`. The chained validation does not run if the item being selected doesn’t exist.
+
+#### Common Patterns Reference Enabled By Existing + New Tags: Non-Lists/Maps
+
+| Pattern | Tags | CREATE | UPDATE: Set (unset->set) | UPDATE: Modify (value->value) | UPDATE: Unset (set->unset) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Optional | `+k8s:optional` | ✅ Can set<br>✅ Can omit | ✅ | ✅ | ✅ |
+| Optional with Default | `+k8s:optional`<br>`+default=X` | ✅ Can omit (gets default) | ❌¹ | ✅ | ❌¹ |
+| Required | `+k8s:required` | ✅ Must set | ❌¹ | ✅ | ❌¹ |
+| Never Allowed | `+k8s:forbidden` | ❌ | ❌ | ❌² | ❌² |
+| Required Immutable | `+k8s:required`<br>`+k8s:update=NoModify,NoClear` | ✅ Must set | ❌¹ | ❌ | ❌¹ |
+| Required Immutable x2 | `+k8s:required`<br>`+k8s:immutable` | ✅ Must set | ❌¹ | ❌ | ❌¹ |
+| Optional Immutable | `+k8s:optional`<br>`+k8s:update=NoModify,NoClear` | ✅ Can set<br>✅ Can omit | ✅ | ❌ | ❌ |
+| Optional Immutable x2 | `+k8s:optional`<br>`+k8s:immutable` | ✅ Can set<br>✅ Can omit | ✅ | ❌ | ❌ |
+| Defaulted Immutable | `+k8s:optional`<br>`+default=X`<br>`+k8s:update=NoModify,NoClear` | ✅ Can omit (gets default) | ❌¹ | ❌ | ❌¹ |
+| Defaulted Immutable x2 | `+k8s:optional`<br>`+default=X`<br>`+k8s:immutable` | ✅ Can omit (gets default) | ❌¹ | ❌ | ❌¹ |
+| Set Once | `+k8s:optional`<br>`+k8s:update=NoModify,NoClear` | ✅ Can set<br>✅ Can omit | ✅ | ❌ | ❌ |
+| Required Once Set | `+k8s:optional`<br>`+k8s:update=NoClear` | ✅ Can set<br>✅ Can omit | ✅ | ✅ | ❌ |
+| Defaulted Once Set | `+k8s:optional`<br>`+default=X`<br>`+k8s:update=NoClear` | ✅ Can omit (gets default) | ❌¹ | ✅ | ❌¹ |
+
+¹ = Enforced by `validate.Required` which is added to fields with `+k8s:required` OR `+k8s:optional` + `+default` (field effectively required)
+² = Must remain at zero value (`+k8s:forbidden` validation logic)
+
+#### Common Patterns Reference Enabled By Existing + New Tags: Lists/Maps
+
+| Pattern | Tags | CREATE | UPDATE: Set (unset->set) | UPDATE: AddItem | UPDATE: RemoveItem | Mutability of List Elements (ModifyItems) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Optional List/Map | `+k8s:optional` | ✅ Can initialize<br>✅ Can omit | ✅ | ✅ | ✅ | ✅ |
+| Required List/Map | `+k8s:required` | ✅ Must have at least one item | ❌¹ | ✅ | ✅* | ✅ |
+| Forbidden List/Map | `+k8s:forbidden` | ❌ | ❌² | ❌ | ❌² | ❌² |
+| Required Immutable List/Map | `+k8s:required`<br>`+k8s:update=NoAddItem,NoRemoveItem`<br>`+k8s:eachVal=+k8s:immutable` | ✅ Must have at least one item | ❌ | ❌ | ❌ | ❌ |
+| Required Immutable List/Map x 2 | `+k8s:required`<br>`+k8s:immutable` | ✅ Must have at least one item | ❌ | ❌ | ❌ | ❌ |
+| Optional Immutable List/Map | `+k8s:optional`<br>`+k8s:update=NoAddItem,NoRemoveItem`<br>`+k8s:eachVal=+k8s:immutable` | ✅ Can initialize<br>✅ Can omit | ✅ | ❌ | ❌ | ❌ |
+| Optional Immutable List/Map x 2 | `+k8s:optional`<br>`+k8s:immutable` | ✅ Can initialize<br>✅ Can omit | ✅ | ❌ | ❌ | ❌ |
+| Defaulted Immutable List/Map | `+k8s:optional`<br>`+default=[...]`<br>`+k8s:update=NoAddItem,NoRemoveItem`<br>`+k8s:eachVal=+k8s:immutable` | ✅ Can omit (gets default) | ❌ | ❌ | ✅ (gets re-defaulted) | ❌ |
+| Append-Only List/Map | `+k8s:optional`<br>`+k8s:update=NoRemoveItem` | ✅ Can initialize<br>✅ Can omit | ✅ | ✅ | ❌ | ✅ |
+
+* = Cannot remove last item
+¹ = `+k8s:required` prevents the initial unset state
+² = Must remain at zero value (`+k8s:forbidden` validation logic)
+
+#### Common Patterns Reference Enabled By Existing + New Tags: List Items
+
+| Pattern | Tags | CREATE | UPDATE: Set (unset->set) | UPDATE: AddItem | UPDATE: RemoveItem | Mutability of List Elements (ModifyItems) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Forbidden List/Map Item | `+k8s:item(key:value)=+k8s:forbidden` | ✅ Can add this item to list BUT can only be at zero value | ❌² | ❌ | ❌² | ❌² |
+| Immutable List/Map Item | `+k8s:item(key:value)=+k8s:update=NoModify,NoRemoveItem` | ✅ Can add this item to list<br>✅ Can initialize<br>✅ Can omit | ✅ | ❌ | ❌ | ❌ |
+| Immutable List/Map Item x2 | `+k8s:item(key:value)=+k8s:immutable` | ✅ Can add this item to list<br>✅ Can initialize<br>✅ Can omit | ✅ | ❌ | ❌ | ❌ |
+| Disallow a Specific Item | `+k8s:eachVal=+k8s:neq=”disallowed-value”` | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+² = Must remain at zero value (`+k8s:forbidden` validation logic)
+
+##### Immutability Patterns and Tags Demonstrated
 
 ```go
-type Container struct {
-    // Immutable via main resource, mutable via /resize
+type DeploymentSpec struct {
+    // Pattern: Required
     // +k8s:required
-    // +k8s:ifNotSubresource("/resize")=+k8s:frozen
-    Resources ResourceRequirements `json:"resources,omitempty"`
+    // Operation:
+    Replicas *int32
+
+    // ✅ CREATE: replicas = 3
+    // ✅ UPDATE(modify): replicas = 5
+    // ❌ UPDATE(clear): replicas = nil
+}
+
+type PersistentVolumeStatus struct {
+    // Pattern: RequiredOnceSet (Optional, but cannot be cleared once set)
+    // +k8s:optional
+    // +k8s:update=NoClear
+    Phase *PersistentVolumePhase
+
+    // Operation:
+    // ✅ CREATE: phase = nil             (volume created)
+    // ✅ UPDATE(set): phase = "Available" (set once)
+    // ✅ UPDATE(modify): phase = "Bound"  (modify allowed)
+    // ❌ UPDATE(clear): phase = nil       (cannot clear due to NoClear)
+}
+
+type PersistentVolumeClaimSpec struct {
+    // Pattern: Set Once (Optional, can be set at create or update, then immutable)
+    // +k8s:optional
+    // +k8s:update=NoModify
+    // +k8s:update=NoClear
+    VolumeName string
+
+    // Operation:
+    // ✅ CREATE: volumeName = ""
+    // ✅ UPDATE(set): volumeName = "pv-123" (set once by PV controller)
+    // ❌ UPDATE(modify): volumeName = "pv-456" (cannot change binding)
+    // ❌ UPDATE(clear): volumeName = "" (cannot unbind)
+}
+
+type PersistentVolumeSpec struct {
+    // Pattern: Required at creation, then immutable
+    // +k8s:required
+    // +k8s:immutable
+    Capacity ResourceList
+
+    // Operation:
+    // ✅ CREATE: capacity = {"storage": "10Gi"}
+    // ❌ UPDATE(modify): capacity = {"storage": "20Gi"}
 }
 
 type PodSpec struct {
-    // Can only be set via /binding subresource
-    // +k8s:ifNotSubresource("/binding")=+k8s:frozen
-    // +k8s:ifSubresource("/binding")=+k8s:immutable
-    NodeName string `json:"nodeName,omitempty"`
+    // Pattern: Immutable (State decided at creation, cannot transition set/unset or modify)
+    // +k8s:optional
+    // +k8s:immutable // functionally equivalent to NoSet,NoModify,NoClear
+    HostNetwork bool
+    
+    // Operation scenario 1:
+    // ✅ CREATE: hostNetwork = true
+    // ❌ UPDATE(modify): hostNetwork = false
+    // Operation scenario 2:
+    // ✅ CREATE: hostNetwork = false (or unset)
+    // ❌ UPDATE(set/modify): hostNetwork = true
 }
 ```
+
 
 ### Cross-Field Validation
 
