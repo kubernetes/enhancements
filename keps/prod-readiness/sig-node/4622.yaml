@@ -1,3 +1,5 @@
 kep-number: 4622
 beta:
   approver: "@jpbetz"
+stable:
+  approver: "@jpbetz"

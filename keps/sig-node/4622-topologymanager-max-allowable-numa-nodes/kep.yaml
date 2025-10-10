@@ -2,37 +2,42 @@ title: New TopologyManager Policy which configure the value of maxAllowableNUMAN
 kep-number: 4622
 authors:
   - "@cyclinder"
+  - "@ffromani" # ONLY for GA graduation and PRR review
 owning-sig: sig-node
 participating-sigs: []
 status: implementable
-creation-date: "2024-05-08"
+creation-date: "2025-02-15"
 reviewers:
   - "@klueska"
   - "@ffromani"
 approvers:
-  - "@sig-node-tech-leads"
-see-also: []
+  - "@klueska"
+see-also: 
+  - "keps/sig-node/2625-cpumanager-policies-thread-placement/"
+  - "keps/sig-node/2902-cpumanager-distribute-cpus-policy-option/"
+  - "keps/sig-node/3545-improved-multi-numa-alignment/"
+  - "keps/sig-node/4176-cpumanager-spread-cpus-preferred-policy/"
+  - "keps/sig-node/4540-strict-cpu-reservation"
+  - "keps/sig-node/4800-cpumanager-split-uncorecache/"
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.31"
+latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
+# (ffromani): started as beta xref: https://github.com/kubernetes/enhancements/issues/4622#issuecomment-2150320232
 milestone:
   beta: "v1.31"
-  stable: "v1.32"
+  stable: "v1.35"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: "TopologyManagerPolicyBetaOptions"
-    components:
-      - kubelet
   - name: "TopologyManagerPolicyOptions"
     components:
       - kubelet
@@ -40,4 +45,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics: 
-  - kubelet_topology_manager_admission_time
+  - topology_manager_admission_duration_ms
