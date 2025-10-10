@@ -1327,6 +1327,18 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+Alpha 1.34:
+
+- Initial KEP being merged: 2025-06-19
+- Initial implementation being merged: 2025-07-30
+- Feature blog 1.34 being merged: 2025-08-23
+
+Alpha 1.35:
+
+- Fix 133705 - failed to schedule next device PR being pushed: 2025-08-26
+- Fix 134100 - integration with partitionable device PR being pushed: 2025-09-17
+- Fix 134519 - add ShareID to kubelet plugin API PR being pushed: 2025-10-10
+
 ## Drawbacks
 
 <!--
