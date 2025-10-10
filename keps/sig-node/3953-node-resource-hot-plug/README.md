@@ -189,7 +189,7 @@ detect the change in compute capacity, which can bring in further complications.
 ### Risks and Mitigations
 
 - Change in Swap limit:
-    - The formula to calculate the swap limit is `<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
+    - The formula to calculate the swap limit is `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
     - With change in nodeTotalMemory and totalPodsSwapAvailable post up-scale, The existing swap limit may not be inline with the
       actual swap limit for existing pods.
         - This can be mitigated by recalculating the swap limit for the existing pods. However, there can be an associated overhead for
@@ -224,7 +224,6 @@ detect the change in compute capacity, which can bring in further complications.
   - Workloads that spawns per-CPU processes (threads, workpools, etc.)
   - Workloads that depend on the CPU-Memory relationships (e.g Processes that depend on NUMA/NUMA alignment.)
   - Dependency of external libraries/device drivers to support CPU hotplug as a supported feature.
-
 
 ## Design Details
 
@@ -281,7 +280,7 @@ Once the capacity of the node is altered, the following are the sequence of even
 observed in any of the steps, operation is retried from step 1 along with a `FailedNodeResize` event and condition under the node object.
 1. Resizing existing containers:
     a. With the increased memory capacity of the nodes, the kubelet proceeds to update fields that are directly related to
-      the available memory on the host. This would lead to recalculation of oom_score_adj and swap_limits.
+      the available memory on the host. This would lead to recalculation of swap_limits.
     b. This is achieved by invoking the CRI API - UpdateContainerResources.
 
 2. Reinitialise Resource Manager:
@@ -378,7 +377,7 @@ Few of the concerns surrounding hotunplug are listed below
     * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
 * Handling unplug of reserved CPUs.
 
-we intend to propose a separate KEP dedicated to hotunplug of resources to address the same.
+we are proposing a separate KEP [Node Resource Hot-Unplug](https://github.com/kubernetes/enhancements/issues/5578) dedicated to hot-unplug of resources to address the same.
 
 **Proposed Code changes**
 
