@@ -22,9 +22,19 @@
   - [Requirements for DV-Only Usage](#requirements-for-dv-only-usage)
   - [Graduation Criteria for DV Tags and Features](#graduation-criteria-for-dv-tags-and-features)
   - [Tag Stability Levels](#tag-stability-levels)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Stable](#stable)
   - [DV-Only Implementation Strategy for v1.35](#dv-only-implementation-strategy-for-v135)
   - [DV-Only Implementation Details](#dv-only-implementation-details)
   - [DV-Only Rollout Timeline](#dv-only-rollout-timeline)
+  - [Supporting Declarative only validations](#supporting-declarative-only-validations)
+    - [The <code>+k8s:declarativeValidationNative</code> Tag](#the-k8sdeclarativevalidationnative-tag)
+    - [Generator Behavior and Error Marking](#generator-behavior-and-error-marking)
+    - [Stability Enforcement](#stability-enforcement)
+    - [Exception for Alpha and Beta APIs](#exception-for-alpha-and-beta-apis)
+    - [Behavior for Mixed Validation Scenarios](#behavior-for-mixed-validation-scenarios)
+    - [Testing Strategy for Hybrid Types](#testing-strategy-for-hybrid-types)
 - [Analysis of existing validation rules](#analysis-of-existing-validation-rules)
   - [User Stories (Optional)](#user-stories-optional)
     - [Kubernetes developer wishes to add a field to an existing API version](#kubernetes-developer-wishes-to-add-a-field-to-an-existing-api-version)
@@ -101,10 +111,8 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Beta](#beta)
-      - [DeclarativeValidation](#declarativevalidation)
-    - [GA](#ga)
-      - [DeclarativeValidation](#declarativevalidation-1)
+    - [Complex Tags](#complex-tags)
+    - [Straightforward Tags](#straightforward-tags)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -368,12 +376,26 @@ Horizontal Features Must be GA before any DV-Only usage.  An example of such fea
 * Declarative Validation Workgroup confirmation that the feature is considered GA/stable
 
 ### Tag Stability Levels
-Each validation tag will be assigned a stability level:
 
-| Stability Level | Definition | DV-Only Eligible |
-| --------------- | ---------- | ---------------- |
-| GA/Stable       | Proven stable “on-by-default” usage | Yes |
-| Alpha           | Experimental or newly introduced | No - requires handwritten fallback |
+Each Declarative Validation tag is assigned one of three stability levels: Alpha, Beta, or Stable. A validation is considered "non-stable" if it uses any non-stable tags in its definition.
+
+#### Alpha
+
+*   **Description**: Alpha tags are experimental, intended for early development and testing, and are subject to backward-incompatible changes.
+*   **Guarantees**: Backward-incompatible changes are allowed. All in-tree tag usage will be updated to adapt to the change, but out-of-tree tag usage may break.
+*   **Usage**: When used in the Kubernetes repository, Alpha tags must be mirrored with a handwritten implementation.
+
+#### Beta
+
+*   **Description**: Beta tags are more mature, have been tested, and are not expected to change in backward-incompatible ways.
+*   **Guarantees**: All modifications to Beta tags must be backward-compatible.
+*   **Usage**: Beta tags may be used in Kubernetes features/APIs that are in the Alpha or Beta stage of their lifecycle. Beta tags may be defined as 'DV-Only' validations i.e., on fields marked with `+k8s:declarativeValidationNative`) when used with Alpha or Beta features/APIs. Stable Kubernetes features/APIs may only use Beta tags when mirrored with hand written validation.
+
+#### Stable
+
+*   **Description**: Stable tags are production-ready and have undergone rigorous testing.
+*   **Guarantees**: All modifications must be backward-compatible.
+*   **Usage**: Stable tags may be used with all features/APIs. Stable tags may be defined as 'DV-Only' validations (i.e., on fields marked with `+k8s:declarativeValidationNative`).
 
 ### DV-Only Implementation Strategy for v1.35
 No DV-Only usage will be permitted in v1.35. Instead, the v1.35 release will focus on:
@@ -423,6 +445,37 @@ v1.36 (target):
 
 v1.37+:
 * Enable DV-Only for expanding set of GA-graduated tags and features (pending v1.36+ metrics validation)
+
+### Supporting Declarative only validations
+To support declarative only validations rules for new APIs and validations, a new `+k8s:declarativeValidationNative` marker tag will be adopted.
+
+#### The `+k8s:declarativeValidationNative` Tag
+
+This field-level tag asserts that the field's validation is handled exclusively by other stable `+k8s:` validation tags on the same field.
+
+#### Generator Behavior and Error Marking
+
+The `validation-gen` tool will recognize this tag and wrap generated validation errors with the `.MarkDeclarativeOnly()` method. This allows programmatic identification of native declarative validations.
+
+#### Stability Enforcement
+
+`validation-gen` will enforce that only stable validation tags are used with `+k8s:declarativeValidationNative`. If a field is marked with this tag but uses an Alpha or Beta validation tag, the code generator will fail.
+
+#### Exception for Alpha and Beta APIs
+
+Alpha and Beta APIs may permitted the use of Alpha and Beta validation tags. This non stable validations must be mirrored by handwritten validations to graduate the API. This enforcement will be done by the code generator, It will fail to generate validation code for non stable types for graduated API's.
+
+#### Behavior for Mixed Validation Scenarios
+
+For types with declarative-only validations, the `DeclarativeValidation` feature gate is ineffective. All declarative validations will always run, and errors coming from declarative only validations will be filtered and returned.
+
+#### Testing Strategy for Hybrid Types
+
+Specific tests for hybrid types will verify that:
+1.  "DV-Only" validations are always enforced.
+2.  Feature gates only affect migrated rules.
+3.  Errors are correctly aggregated.
+4.  Execution is panic-proof.
 
 ## Analysis of existing validation rules
 
@@ -682,241 +735,30 @@ A number of the rules in the below sections are not implemented but will be triv
 
 The below rules are currently implemented or are very similar to an existing validator in the [valdation-gen prototype](https://github.com/jpbetz/kubernetes/tree/validation-gen)
 
-<table>
-  <tr>
-   <td>
-    <strong>Type of validation</strong>
-   </td>
-   <td>
-    <strong>IDL tag</strong>
-   </td>
-   <td>
-    <strong>Relative OpenAPI validation field</strong>
-   </td>
-  </tr>
-  <tr>
-   <td>
-    string format
-   </td>
-   <td>
-    `+k8s:format={format name}`
-   </td>
-   <td>
-    `format`
-   </td>
-  </tr>
-  <tr>
-   <td>
-    size limits
-   </td>
-   <td>
-    `+k8s:min{Length,Items}`, `+k8s:max{Length,Items}`
-   </td>
-   <td>
-    `min{Length,Items}`, `max{Length,Items}`
-   </td>
-  </tr>
-  <tr>
-   <td>
-     numeric limits (constant or field refs capable)
-   </td>
-   <td>
-    `+k8s:minimum`, `+k8s:maximum`, `+k8s:exclusiveMinimum`, `+k8s:exclusiveMaximum`
-   </td>
-   <td>
-    `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` (for constants); x-kubernetes-validations (for field refs)
-   </td>
-  </tr>
-  <tr>
-   <td>
-    required fields
-   </td>
-   <td>
-    `+k8s:optional`
-<p>
-    `+k8s:required`
-   </td>
-   <td>
-    `required`
-   </td>
-  </tr>
-  <tr>
-   <td>
-    enum values
-   </td>
-   <td>
-    `+k8s:enum`
-   </td>
-   <td>
-    `enum`
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    Union values
-   </td>
-   <td style="background-color: null">
-    `+k8s:unionMember` \
-`+k8s:unionDiscriminator`
-   </td>
-   <td style="background-color: null">
-    `oneOf,anyOf,allOf`
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    forbidden values
-   </td>
-   <td style="background-color: null">
-    `+k8s:forbidden`
-   </td>
-   <td style="background-color: #null">
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    feature gate is enabled
-   </td>
-   <td style="background-color: null">
-    `+k8s:ifOptionEnabled(FeatureX)=&lt;if-enabled-validator-tag>`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    feature gate is disabled
-   </td>
-   <td style="background-color: null">
-    `+k8s:ifOptionDisabled(FeatureX)=&lt;if-disabled-validator-tag>`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    validate each key
-   </td>
-   <td style="background-color: null">
-    `+k8s:eachKey=&lt;eachKey-validator-tag>`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    validate each value
-   </td>
-   <td style="background-color: null">
-    `+k8s:eachVal=&lt;eachVal-validator-tag>`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    uniqueness
-   </td>
-   <td style="background-color: null">
-    `+k8s:listType=&lt;type>`
-   </td>
-   <td style="background-color: null">
-    `x-kubernetes-list-type`
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    shared struct fields (subfield)
-   </td>
-   <td style="background-color: null">
-    `+k8s:subfield(subField-json-name)=&lt;subfield-validator-tag>`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td>
-    union member (Discriminated/Non-Discriminated)
-   </td>
-   <td>
-    +k8s:unionMember={"union": ""}
-   </td>
-   <td>
-    x-kubernetes-unions
-   </td>
-  </tr>
-  <tr>
-   <td>
-    union discriminator
-   </td>
-   <td>
-    +k8s:unionDiscriminator={"union": ""}
-   </td>
-   <td>
-    x-kubernetes-unions
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    immutable after set
-   </td>
-   <td style="background-color: null">
-    `+k8s:immutable`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    required once set
-   </td>
-   <td style="background-color: null">
-    `+k8s:requiredOnceSet`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    immutable(frozen) at creation
-   </td>
-   <td style="background-color: null">
-    `+k8s:frozen`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    group membership (virtual field)
-   </td>
-   <td style="background-color: null">
-    `+k8s:memberOf(group: &lt;groupname>)`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">
-    list map item reference (virtual field)
-   </td>
-   <td style="background-color: null">
-    `+k8s:listMapItem(list-map-key-field-name: value,...])`
-   </td>
-   <td style="background-color: null">
-    N/A
-   </td>
-  </tr>
-</table>
+
+| **Type of validation** | **IDL tag** | **Relative OpenAPI validation field** | **Stability Level (in 1.35 release) ** |
+| :--- | :--- | :--- | :--- |
+| string format | `+k8s:format={format name}` | `format` | Beta |
+| size limits | `+k8s:min{Length,Items}`, `+k8s:max{Length,Items}` | `min{Length,Items}`, `max{Length,Items}` | Beta |
+| numeric limits | `+k8s:minimum`, `+k8s:maximum`, `+k8s:exclusiveMinimum`, `+k8s:exclusiveMaximum` | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` | Beta |
+| required fields | `+k8s:optional`, `+k8s:required` | `required` | Beta |
+| enum values | `+k8s:enum` | `enum` | Beta |
+| Union values | `+k8s:unionMember`, `+k8s:unionDiscriminator` | `oneOf,anyOf,allOf` | Alpha |
+| forbidden values | `+k8s:forbidden` | | Alpha |
+| item | `+k8s:item` | | Alpha |
+| zeroOrOneOfMember | `+k8s:zeroOrOneOfMember` | | Alpha |
+| listType | `+k8s:listType=map`, `+k8s:listType=set`, `+k8s:listType=atomic` | `x-kubernetes-list-type` | Beta |
+| listMapKey | `+k8s:listMapKey` | `x-kubernetes-list-map-keys` | Beta |
+| Conditional (feature gate) | `+k8s:ifOptionEnabled(FeatureX)=<validator-tag>` | N/A | Alpha |
+| Conditional (feature gate) | `+k8s:ifOptionDisabled(FeatureX)=<validator-tag>` | N/A | Alpha |
+| Iterate and validate map keys | `+k8s:eachKey=<validator-tag>` | N/A | Alpha |
+| Iterate and validate map/slice values | `+k8s:eachVal=<validator-tag>` | N/A | Alpha |
+| Sub-field validation | `+k8s:subfield(field)=<validator-tag>` | N/A | Alpha |
+| Immutability (set once) | `+k8s:immutable` | N/A | Alpha |
+| Immutability (required once set) | `+k8s:requiredOnceSet` | N/A | Alpha |
+| Immutability (frozen at creation) | `+k8s:frozen` | N/A | Alpha |
+| Group membership (virtual field) | `+k8s:memberOf(group=<group>)` | N/A | Alpha |
+| List map item (virtual field) | `+k8s:listMapItem(key: value)` | N/A | Alpha |
 
 ### Supporting Declarative Validation IDL tags On Shared Struct Fields
 
@@ -1739,27 +1581,34 @@ To ensure that Declarative Validation and some of the identified potential perfo
 
 ### Graduation Criteria
 
-#### Beta
+The promotion of a tag from one stability level to the next follows a defined set of criteria to ensure quality and reliability.
 
-##### DeclarativeValidation
+#### Complex Tags
 
-*   Validation Logic Unit tests (See “unit tests” section above).  Includes validation_test.go equivalence testing, Fuzzing tests, and Test Fixture generated tests.
-    *    `validation-gen` code generator is implemented with the necessary subset of supported IDL tags for fully migrating a small number of fields from handwritten-validation to declarative validation.
-    *    `validation-gen` Unit tests
-*   Initial e2e tests completed and enabled
-*   `DeclarativeValidation` feature gate configured and appropriately plumbed through to enable proper toggling of validation logic
-*   Have annotated and enabled declarative validation initially for one full schema of a native groupversion
-*   Linter with necessary linter rules for handling zero values
+This track is for tags with complex validation logic and ratcheting. These tags begin at the **Alpha** stability level.
 
-#### GA
+This track is for tags that are always used in combination with other tags or that have complex ratcheting logic. All cross-field validations belong in this category. Additionally, for most of these tags, there is no clear alternative in the OpenAPI schema.
 
-##### DeclarativeValidation
+**Alpha to Beta Graduation Criteria:**
 
-*   `validation-gen` code generator supports the full set of necessary IDL tags for 1:1 porting of handwritten validation to declarative validation
-*   Have plumbed all previous validation_test.go unit tests to run against declarative validation schemas.
-*   All Unit and Integration tests pass with no errors or only well-understood exceptional errors sourced from a file in the repository
-*   Linter finalized with complete set of linter rules
-*   All declarative validation rules documented and published
+*   **Implementation Complete**: The validation logic is fully implemented and rigorously tested.
+*   **Leadership Confidence**: Declarative validation subproject leads are confident in the implementation.
+
+**Beta to Stable Graduation Criteria:**
+
+*   **One Release Soak**: The tag has been used in the Beta stage for at least one release cycle with no panics.
+*   **Leads Approval**: Graduation is approved by Declarative validation subproject leads.
+
+#### Straightforward Tags
+
+This track is for tags with simple, well-understood semantics, often mirroring OpenAPI validations. These tags can start at the **Beta** stability level.
+
+**Beta to Stable Graduation Criteria:**
+
+*   **One Release Soak**: The tag has been in the Beta stage for at least one release cycle.
+*   **Sufficient Usage**: The tag demonstrates sufficient usage in production.
+*   **Leads Approval**: Graduation is approved by Declarative validation subproject leads.
+
 
 ### Upgrade / Downgrade Strategy
 
