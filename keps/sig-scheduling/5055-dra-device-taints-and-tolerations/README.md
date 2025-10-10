@@ -371,8 +371,10 @@ type DeviceTaint struct {
 
     // The effect of the taint on claims that do not tolerate the taint
     // and through such claims on the pods using them.
+    //
     // Valid effects are None, NoSchedule and NoExecute. PreferNoSchedule as used for
-    // nodes is not valid here.
+    // nodes is not valid here. More effects may get added in the future.
+    // Consumers must treat unknown effects like None.
     //
     // +required
     Effect DeviceTaintEffect
@@ -381,6 +383,14 @@ type DeviceTaint struct {
     //
     // Implementing PreferNoSchedule would depend on a scoring solution for DRA.
     // It might get added as part of that.
+    //
+    // A possible future new effect is NoExecuteWithPodDisruptionBudget:
+    // honor the pod disruption budget instead of simply deleting pods.
+    // This is currently undecided, it could also be a separate field.
+    //
+    // Validation must be prepared to allow unknown enums in stored objects,
+    // which will enable adding new enums within a single release without
+    // ratcheting.
 
     // TimeAdded represents the time at which the taint was added.
     // Added automatically during create or update if not set.
