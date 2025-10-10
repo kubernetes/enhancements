@@ -371,8 +371,10 @@ type DeviceTaint struct {
 
     // The effect of the taint on claims that do not tolerate the taint
     // and through such claims on the pods using them.
+    //
     // Valid effects are None, NoSchedule and NoExecute. PreferNoSchedule as used for
-    // nodes is not valid here.
+    // nodes is not valid here. More effects may get added in the future.
+    // Consumers must treat unknown effects like None.
     //
     // +required
     Effect DeviceTaintEffect
@@ -381,6 +383,14 @@ type DeviceTaint struct {
     //
     // Implementing PreferNoSchedule would depend on a scoring solution for DRA.
     // It might get added as part of that.
+    //
+    // A possible future new effect is NoExecuteWithPodDisruptionBudget:
+    // honor the pod disruption budget instead of simply deleting pods.
+    // This is currently undecided, it could also be a separate field.
+    //
+    // Validation must be prepared to allow unknown enums in stored objects,
+    // which will enable adding new enums within a single release without
+    // ratcheting.
 
     // TimeAdded represents the time at which the taint was added.
     // Added automatically during create or update if not set.
@@ -554,7 +564,7 @@ type DeviceTaintRule struct {
     // Changing the spec automatically increments the metadata.generation number.
     Spec DeviceTaintRuleSpec
 
-    // Status provides information about what was requested in the spec.
+    // Status provides information about the effect of what was requested in the spec.
     //
     // +optional
     Status DeviceTaintRuleStatus
@@ -657,6 +667,16 @@ const DeviceTaintRuleStatusMaxConditions = 8
 The condition is meant to be used to check for completion of a triggered eviction with:
 
     kubectl wait --for=condition=EvictionInProgress=false DeviceTaintRule/my-taint-rule
+
+Users relying on this need to be aware of the potential race between scheduler
+and controller observing the new taint at different times, which can lead to
+pods still being scheduled at a time when the controller thinks that there are
+none which need to be evicted and thus sets this condition to `False`. This
+race can be made less likely to go wrong by setting this condition only after a
+certain time in the range of 5 to 10 seconds has elapsed since the
+DeviceTaintRule was created. That should be long enough to propagate the new
+DeviceTaintRule to a running scheduler. After a restart, the kube-scheduler
+first waits for cache sync before scheduling pods.
 
 Reasons are not specified as part of the API because it's not required by the
 use cases and would restrict future changes unnecessarily. For example, `reason: Idle`
@@ -771,7 +791,7 @@ they need to update or reconfigure the DRA driver. The other direction is
 fine (newer drivers work on an older Kubernetes).
 
 `effect: None` is only valid for Kubernetes >= 1.35. DeviceTaintRules
-and ResourceSliced with that value must be removed before a downgrade.
+and ResourceSlices with that value must be removed before a downgrade.
 
 ### Version Skew Strategy
 
