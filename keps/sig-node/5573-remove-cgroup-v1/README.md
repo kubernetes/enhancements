@@ -156,9 +156,13 @@ The latest release of debian "Trixie" is using [systemd 257](https://packages.de
 6. **Remove cgroup v1 code**: Removing the code is the next logic step once we stop testing it. This will clean up
 the codebase.
 
+7. **Update system-validators**: system-validator should react correctly to kubelet not starting on a cgroup v1 node. See [issue](https://github.com/kubernetes/system-validators/issues/58) for more details.
+
 ### Non-Goals
 
-NA.
+In this KEP, we will focus on the kubelet related work to remove cgroup v1.
+Projects like minikube, kubeadm, kubespray and others may need work to support this flag going to false
+but that is out of scope for this KEP.
 
 ## Proposal
 
@@ -178,6 +182,10 @@ The primary risks involve potential disruptions for users who have not yet migra
    - IBM Semeru Runtimes: jdk8u345-b01, 11.0.16.0, 17.0.4.0, 18.0.2.0 and later
    - IBM SDK Java Technology Edition Version (IBM Java): 8.0.7.15 and later
    - Third-party monitoring and security agents need to support cgroup v2
+
+3. **oom.group**: In cgroup v2, the kernel community introduced a feature to allow the Out-of-Memory (OOM) killer to terminate an entire group of processes as an indivisible unit.
+   - Users who need the cgroup v1 behavior can toggle `singleProcessOOMKill` to true on the kubelet config.
+   - This will allow the kernel to kill the process that triggers OOMs without killing the rest of the processes.
 
 **Mitigations**:
 
@@ -224,7 +232,7 @@ klog.Warning("cgroup v1 detected. cgroup v1 support has been transitioned into m
 To (deprecated):
 
 ```golang
-klog.Warning("cgroup v1 detected. cgroup v1 support is deprecated and will be removed in a future release. Please migrate to cgroup v2. More information at https://git.k8s.io/enhancements/keps/sig-node/5573-cgroup-v1-unsupported")
+klog.Warning("cgroup v2 detected. cgroup v1 support is deprecated and will be removed in a future release. Please migrate to cgroup v2. More information at https://git.k8s.io/enhancements/keps/sig-node/5573-remove-cgroup-v1")
 ```
 
 Similar updates will be made to corresponding events.
@@ -248,7 +256,7 @@ Other lanes will be removed but we will continue supporting this lane until we f
 ### Removal of cgroup v1
 
 <UNRESOLVED @haircommander>
-Once all supported releases of Kubernetes have `FailCGroupV1` set to true, we can begin the removal of the cgroup v1 support.
+Once all supported releases of Kubernetes have `FailCgroupV1` set to true, we can begin the removal of the cgroup v1 support.
 
 In this section, we should call the places where we are going to remove cgroup v1.
 </UNRESOLVED>
