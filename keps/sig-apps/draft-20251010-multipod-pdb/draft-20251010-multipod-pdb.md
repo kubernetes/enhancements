@@ -173,6 +173,8 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
+Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal would allow it to treat multi-pod groups (e.g. LeaderWorkerSet replicas) as if they were pod replicas. We would add an optional field `replicaKey` to the PDB spec, so the PDB creator may provide a label to identify groups of pods which should be handled together. In the example of LWS, this is `leaderworkerset.sigs.k8s.io/group-key`, as all pods in a leader+workers group would share the same value for this label, and thus be identified as a single replica.
+
 ## Motivation
 
 <!--
@@ -184,6 +186,8 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+The goal is to make PDBs usable for multi-pod replicas like a LWS, which has a leader and worker pods for use cases like distributed AI workloads. Currently, eviction or preemption of multiple pods may disturb pods across multiple LWS replicas, instead of the preferred outcome of evicting multiple pods from a single LWS replica.
+
 ### Goals
 
 <!--
@@ -191,12 +195,18 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+- Add `replicaKey` to the PDB spec and implment the functionality of grouping pods for measuring availability
+- Ensure all affected systems work as intended (kube-scheduler, cluster autoscaler, eviction API, any custom schedulers)
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- This feature will not affect involuntary disruptions like node failures or network partitions, only the voluntary eviction API
+
 
 ## Proposal
 
