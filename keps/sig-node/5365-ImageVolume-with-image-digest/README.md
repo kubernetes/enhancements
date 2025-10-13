@@ -99,6 +99,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -540,6 +541,9 @@ in back-to-back releases.
 
 #### Beta
 - Feature is supported by both containerd and CRI-O runtimes
+
+#### GA
+- Add a conformance test that ensures the cluster will properly set the field when expected and not set when not expected.
 
 ### Upgrade / Downgrade Strategy
 
