@@ -89,13 +89,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1: Prevent inappropriate scale downs by Cluster Autoscaler](#story-1-prevent-inappropriate-scale-downs-by-cluster-autoscaler)
     - [Story 2: Scheduler can resume its work after restart](#story-2-scheduler-can-resume-its-work-after-restart)
   - [Risks and Mitigations](#risks-and-mitigations)
-    - [NominatedNodeName can be set by other components now.](#nominatednodename-can-be-set-by-other-components-now)
     - [Confusing semantics of <code>NominatedNodeName</code>](#confusing-semantics-of-nominatednodename)
     - [Increasing the load to kube-apiserver](#increasing-the-load-to-kube-apiserver)
-    - [Confusion if <code>NominatedNodeName</code> is different from <code>NodeName</code> after all](#confusion-if-nominatednodename-is-different-from-nodename-after-all)
 - [Design Details](#design-details)
   - [The scheduler puts <code>NominatedNodeName</code>](#the-scheduler-puts-nominatednodename)
-  - [External components put <code>NominatedNodeName</code>](#external-components-put-nominatednodename)
   - [The scheduler's cache for <code>NominatedNodeName</code>](#the-schedulers-cache-for-nominatednodename)
     - [The scheduler clears <code>NominatedNodeName</code> after scheduling failure](#the-scheduler-clears-nominatednodename-after-scheduling-failure)
   - [Kube-apiserver clears <code>NominatedNodeName</code> when receiving binding requests](#kube-apiserver-clears-nominatednodename-when-receiving-binding-requests)
@@ -126,6 +123,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Non-Goals](#non-goals-1)
       - [User stories](#user-stories)
       - [Risks and Mitigations](#risks-and-mitigations-1)
+    - [Confusion if <code>NominatedNodeName</code> is different from <code>NodeName</code> after all](#confusion-if-nominatednodename-is-different-from-nodename-after-all)
       - [Design Details](#design-details-1)
       - [Test plan: Integration tests](#test-plan-integration-tests)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -264,14 +262,6 @@ We need a mechanism to be able to resume the already started work in majority of
 
 ### Risks and Mitigations
 
-#### NominatedNodeName can be set by other components now.
-
-There aren't any guardrails preventing other components from setting `NominatedNodeName` now.
-In such cases, the semantic is not well defined now and the outcome of it may not match user
-expectations.
-
-This KEP is a step towards clarifying this semantic and scheduler's behavior instead of maintaining status-quo.
-
 #### Confusing semantics of `NominatedNodeName`
 
 Up until now, `NominatedNodeName` was expressing the decision made by scheduler to put a given
@@ -296,18 +286,6 @@ If we look from consumption point of view - these are effectively the same. We w
 to expose the information, that as of now a given node is considered as a potential placement
 for a given pod. It may change, but for now that's what considered. 
 
-On top of the simple state machine above we introduce the following rules:
-- Scheduler is allowed to overwrite `NominatedNodeName` at any time in case of preemption or
-the beginning of the binding cycle.
-- No external components are expected to overwrite `NominatedNodeName` set by the scheduler (although technically there are no guardrails).
-
-Moreover:
-- Regardless of who set `NominatedNodeName`, its readers should always take that into
-consideration (e.g. ClusterAutoscaler or Karpenter when trying to scale down nodes).
-- In case of faulty components (e.g. overallocation of nodes), these decisions will
-simply be rejected by the scheduler (and the `NominatedNodeName` will be cleared before
-moving the rejected pod to unschedulable).
-
 #### Increasing the load to kube-apiserver
 
 Setting a NominatedNodeName is an additional API call that then multiple components in the system
@@ -322,19 +300,6 @@ To mitigate this problem, we:
 For cases with delayed binding, we make an argument that the additional calls are acceptable, as
 there are other calls related to those operations (e.g. PV creation, PVC binding, etc.) - so the
 overhead of setting `NNN` is a smaller percentage of the whole e2e pod startup flow.
-
-#### Confusion if `NominatedNodeName` is different from `NodeName` after all
-
-If an external component adds `NominatedNodeName`, but the scheduler picks up a different node,
-`NominatedNodeName` is just overwritten by a final decision of the scheduler.
-
-But, if an external component updates `NominatedNodeName` that is set by the scheduler, 
-the pod could end up having different `NominatedNodeName` and `NodeName`.
-
-We will update the logic so that `NominatedNodeName` field is cleared during `binding` call
-
-We believe that ensuring that `NominatedNodeName` can't be set after the pod is already bound
-is niche enough feature that doesn't justify an attempt to strengthening the validation.
 
 ## Design Details
 
@@ -377,11 +342,6 @@ We determine if each plugin is relevant to the pod by Skip status from PreFilter
 In this way, even if users have some PreBind custom plugins, they can implement `PreBindPreFlight()` appropriately 
 so that the scheduler can wisely skip setting `NominatedNodeName`, taking their custom logic into consideration.
 
-### External components put `NominatedNodeName`
-
-There aren't any restrictions preventing other components from setting NominatedNodeName as of now.
-However, we don't have any validation of how that currently works.
-
 ### The scheduler's cache for `NominatedNodeName`
 
 Here, we'll ensure that works for non-existing nodes too and if those nodes won't appear in the future, it won't leak the memory.
@@ -405,8 +365,7 @@ found the nominated node unschedulable for the pod. This logic remains unchanged
  
 ### Kube-apiserver clears `NominatedNodeName` when receiving binding requests
 
-As discussed at [Confusion if `NominatedNodeName` is different from `NodeName` after all](#confusion-if-nominatednodename-is-different-from-nodename-after-all),
-we update kube-apiserver so that it clears `NominatedNodeName` when receiving binding requests.
+We update kube-apiserver so that it clears `NominatedNodeName` when receiving binding requests.
 
 ### Test Plan
 
@@ -648,6 +607,13 @@ Unknown.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+Since SLOs can be impacted by multiple components and mechanisms in kubernetes, there is not straightforward algorithm to determine the problem. The general approach to investigating issues is described below.
+
+If kube-scheduler SLOs are not being met, we should first check if other components of kubernetes (e.g. kube-apiserver) are experiencing slowdown or increased error rates as well. If that is the case, we should find out whether there is a global issue with an already-determined cause.
+A longer turnaround in kube-apiserver handling API requests may result in rising values of `scheduling_algorithm_duration_seconds` and lower values of `schedule_attempts_total`.
+
+If we suspect that there is an ongoing problem inside kube-scheduler and that it is triggered by handling nominated node names, we should check kube-scheduler logs for failed scheduling of pods that had been waiting for preemption of victims, or for failed binding of pods that have nominated node name set - and investigate further.
+
 ## Implementation History
 
 - 7th May 2025: The initial KEP is submitted.
@@ -836,6 +802,19 @@ all nodes anyway). We claim that the additional cost of checking `NominatedNodeN
 for big clusters where the performance is critical) because it's just one iteration of Filter plugins
 (e.g., if you have 1000 nodes and 16 parallelism (default value), the scheduler needs around 62 iterations of
 Filter plugins, approximately. So, adding one iteration on top of that doesn't matter).
+
+#### Confusion if `NominatedNodeName` is different from `NodeName` after all
+
+If an external component adds `NominatedNodeName`, but the scheduler picks up a different node,
+`NominatedNodeName` is just overwritten by a final decision of the scheduler.
+
+But, if an external component updates `NominatedNodeName` that is set by the scheduler, 
+the pod could end up having different `NominatedNodeName` and `NodeName`.
+
+We will update the logic so that `NominatedNodeName` field is cleared during `binding` call
+
+We believe that ensuring that `NominatedNodeName` can't be set after the pod is already bound
+is niche enough feature that doesn't justify an attempt to strengthening the validation.
 
 ##### Design Details
 

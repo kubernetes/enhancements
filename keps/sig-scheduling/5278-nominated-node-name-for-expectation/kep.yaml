@@ -3,6 +3,7 @@ kep-number: 5278
 authors:
   - "@sanposhiho" 
   - "@wojtek-t" 
+  - "@ania-borowiec"
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-autoscaling
