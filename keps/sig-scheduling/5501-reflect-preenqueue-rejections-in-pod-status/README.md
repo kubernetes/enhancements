@@ -212,8 +212,8 @@ The delayed dispatch mechanism is crucial for filtering out this noise.
 #### Using custom Gang Scheduling implementation
 
 As a data scientist running a distributed training job, I submit a batch of Pods that must be scheduled together (a "gang").
-The custom gang scheduling logic, using a `PreEnqueue` plugin, blocks all these Pods from entering
-the queue until there are enough resources for all of them to pass the scheduling.
+The gang scheduling logic, using a `PreEnqueue` plugin, blocks pods from entering the queue
+until there are `minCount` Pods from the gang waiting to be scheduled.
 Currently, all the Pods would just be displayed as `Pending`. With this feature, each Pod's status would be
 updated with some message indicating it is waiting on other members of the gang, providing clear insight into the job's state.
 
@@ -229,6 +229,7 @@ The lack of a status condition is no worse than the current behavior.
 Furthermore, any subsequent event that causes the Pod to be re-evaluated by the `PreEnqueue` plugins
 will trigger a retry of the status patch. Exploring a more robust retry mechanism
 within the asynchronous API calls feature itself would be a beneficial future enhancement.
+However, delivering such improvement is not blocking this enhancement.
 
 #### Impact on scheduling throughput and latency
 
@@ -250,7 +251,7 @@ The API dispatcher in the scheduler could become a bottleneck.
 4. The existing, highly optimized path for the SchedulingGates plugin (status set by kube-apiserver)
    is left intact to avoid any performance regression in that scenario.
 
-5. Future work: As the scheduler evolves, introducing batched status updates
+5. Future work: As the scheduler evolves into Workload awareness, introducing per-Workload status updates
    could further mitigate the impact of many simultaneous rejections.
 
 ## Design Details
@@ -327,7 +328,7 @@ func (p *PriorityQueue) runPreEnqueuePlugins(ctx context.Context, pInfo *framewo
 			}
 			
 			// Enqueue a *delayed* PodStatusPatch with PodReasonNotReadyForScheduling and the new message.
-			// Emit an Event with the same reason and message.
+			// This delayed PodStatusPatch will also emit an Event with the same reason and message.
 			pInfo.lastPreEnqueueRejectionMessage = rejectionMessage
 			return
 		}
@@ -359,7 +360,8 @@ The following logic will be executed if any plugin rejects the Pod:
 3. If the checks pass, the scheduler proceeds:
    - It immediately updates its internal state by setting `pInfo.LastPreEnqueueRejectionMessage` to the new message.
    - It constructs the condition to patch and enqueues it with a delay into the asynchronous API dispatcher.
-   - An `Event` is emitted for the Pod with the reason `NotReadyForScheduling` and the rejection message.
+     If a previous API call for the same Pod is already enqueued, its delay will not be reset.
+     Together with an API call, an `Event` is emitted for the Pod with the reason `NotReadyForScheduling` and the rejection message.
 
 #### Success path
 
@@ -370,6 +372,7 @@ If the Pod successfully passes all `PreEnqueue` plugins:
 2. If a cached message exists (meaning the Pod was previously rejected but is now ready),
    the scheduler immediately clears its internal state by setting `pInfo.LastPreEnqueueRejectionMessage` to `""`.
    It then constructs a request to clear the condition and enqueues that request with a delay into the asynchronous API dispatcher.
+   The API dispatcher decides whether the API call will be canceled or overwritten if the previous one is already enqueued.
 
 ### Test Plan
 
@@ -402,6 +405,7 @@ This feature will be introduced in Beta, as it is an enhancement to existing sch
 #### Beta
 
 - Implement the feature behind a feature gate (`SchedulerPreEnqueuePodStatus`), enabled by default.
+  However, this gate may be disabled by default, depending on whether the `SchedulerAsyncAPICalls` gate is re-enabled or not.
 - Implement all tests from the [Test Plan](#test-plan).
 - Scheduling performance is verified using benchmarks to show no regression.
 
@@ -530,8 +534,8 @@ No
 
 Yes.
 
-- API call type: `PATCH` on `pods/status`.
-- Originating component: kube-scheduler.
+- API call types: `PATCH` on `pods/status` and `CREATE`/`PATCH` on `events`.
+  - Originating component: kube-scheduler.
   - Estimated throughput: The rate of these calls is directly proportional
     to the rate at which new Pods are processed and rejected by PreEnqueue plugins.
     In a steady state with few new pods, the throughput will be low.
@@ -549,7 +553,8 @@ No
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Yes, it will add one entry to the `.status.conditions` array of a Pod object
-when it is in a `NotReadyForScheduling` state. This increase is small and transient.
+when it is in a `NotReadyForScheduling` state. Moreover, one more event will be store for this Pod.
+This increase is small and transient.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
