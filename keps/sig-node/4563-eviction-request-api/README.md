@@ -174,7 +174,7 @@ The major issues are:
    and in issue [kubernetes/kubernetes#114877](https://github.com/kubernetes/kubernetes/issues/114877).
 2. Similar to the first point, it is difficult to use PDBs for applications that can have a variable
    number of pods; for example applications with a configured horizontal pod autoscaler (HPA). These
-   applications cannot be disrupted during a low load when they have only pod. However, it is
+   applications cannot be disrupted during a low load when they only have one pod. However, it is
    possible to disrupt the pods during a high load without experiencing application downtime. If
    the minimum number of pods is 1, PDBs cannot be used without blocking the node drain. This has
    been discussed in issue [kubernetes/kubernetes#93476](https://github.com/kubernetes/kubernetes/issues/93476).
@@ -671,8 +671,8 @@ type PodSpec struct {
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
 	// the graceful termination of a pod.
 	//
-	// The maximum length of the interceptors list is 250. The number of interceptors is limited to
-	// 50 in the 9900-10099 interval and to 200 outside of this interval.
+	// The maximum length of the interceptors list is 100. The number of interceptors is limited to
+	// 30 in the 9900-10099 interval and to 70 outside of this interval.
 	// +optional
 	// +patchMergeKey=interceptorClass
 	// +patchStrategy=merge
@@ -754,8 +754,8 @@ type EvictionRequestSpec struct {
 	// on admission. It can be populated from multiple sources:
 	// - Pod's .spec.evictionInterceptors
 	//
-	// The maximum length of the interceptors list is 300. The number of interceptors is limited to
-	// 50 in the 9900-10099 interval and to 250 outside of this interval.
+	// The maximum length of the interceptors list is 130. The number of interceptors is limited to
+	// 30 in the 9900-10099 interval and to 100 outside of this interval.
 	// This field is immutable.
 	// +optional
 	// +patchMergeKey=interceptorClass
@@ -771,7 +771,7 @@ type EvictionRequestSpec struct {
 	// the highest priority. If there is none and if the target is a pod, it is evicted using the
 	// Eviction API.
 	//
-	// The minimum value is 600 (10m) and the maximum value is 21600 (6h).
+	// The minimum value is 600 (10m) and the maximum value is 86400 (24h).
 	// The default value is 1800 (30m).
 	// This field is required and immutable.
 	// +required
@@ -997,9 +997,9 @@ type PodEvictionStatus struct {
   behavior in between a single vendor's predefined steps. And if there is a need to inject behavior,
   the priority should be increased above `10099` or below `9900` for such an interceptor class. If
   `role=controller` is not set, the range `9900-10099` cannot be used.
-- The number of the interceptors is limited to 250 for the Pod and 300 for the EvictionRequest.
-  50 slots are always reserved for the `role=controller` and other interceptors with the same
-  parent domain (interval `9900-10099`). 200 (250 for the EvictionRequest) slots are reserved for the
+- The number of the interceptors is limited to 100 for the Pod and 130 for the EvictionRequest.
+  30 slots are always reserved for the `role=controller` and other interceptors with the same
+  parent domain (interval `9900-10099`). 100 (130 for the EvictionRequest) slots are reserved for the
   rest of the general interceptors outside this interval. If there is a need for a larger number of
   interceptors, the current use case should be re-evaluated. Limiting the number of interceptors 
   ensures that the EvictionRequest cannot be blocked indefinitely by setting an abnormally large
