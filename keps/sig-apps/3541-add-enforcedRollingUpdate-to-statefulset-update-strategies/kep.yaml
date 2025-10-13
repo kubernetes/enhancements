@@ -1,4 +1,4 @@
-title: Add EnforcedRollingUpdate to StatefulSet Update Strategies
+title: Add progressDeadlineSeconds to StatefulSet RollingUpdate Strategy
 kep-number: 3541
 authors:
   - "@kerthcet"
@@ -6,18 +6,10 @@ authors:
 owning-sig: sig-apps
 status: implementable
 creation-date: 2022-09-26
-last-updated: 2025-10-07
 reviewers:
   - "@janetkuo"
 approvers:
   - "@soltysh"
-
-##### WARNING !!! ######
-# prr-approvers has been moved to its own location
-# You should create your own in keps/prod-readiness
-# Please make a copy of keps/prod-readiness/template/nnnn.yaml
-# to keps/prod-readiness/sig-xxxxx/00000.yaml (replace with kep number)
-#prr-approvers:
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -30,13 +22,13 @@ latest-milestone: "v1.35"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.35"
-  beta: "v1.36"
-  stable: "v1.37"
+  beta: ""
+  stable: ""
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: EnforcedRollingUpdateInStatefulSet
+  - name: StatefulSetProgressDeadline
     components:
       - kube-apiserver
       - kube-controller-manager
@@ -44,6 +36,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - statefulset_forced_pod_replacements_total
-  - statefulset_enforced_rolling_updates_total
-  - statefulset_update_duration_seconds
+ - statefulset_unavailable_replicas
