@@ -20,10 +20,10 @@ approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 stage: beta
-latest-milestone: "v1.34"
+latest-milestone: "v1.35"
 milestone:
   alpha: "v1.33"
-  beta: "v1.34"
+  beta: "v1.35"
 feature-gates:
   - name: KubeletEnsureSecretPulledImages
     components:
