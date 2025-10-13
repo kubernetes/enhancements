@@ -4,10 +4,11 @@ authors:
   - "@nojnhuh"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: 2025-09-19
 reviewers:
-  - TBD
+  - "@pohly"
+  - "@SergeyKanzhelev"
 approvers:
   - TBD
 
