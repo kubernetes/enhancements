@@ -39,4 +39,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - scheduler_numeric_tolerations_total
+  - scheduler_framework_extension_point_duration_seconds
+  - scheduler_plugin_evaluation_total

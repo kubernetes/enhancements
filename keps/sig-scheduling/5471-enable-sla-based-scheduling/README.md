@@ -405,9 +405,6 @@ spec:
 - **Alpha Restrictions**: When `TaintTolerationComparisonOperators=false`, the API server rejects pods using the new operators.
 
 - **Strict Validation**: Unlike existing `Equal`/`Exists` operators which accept any string values, numeric operators require valid integer strings. This may catch existing invalid configurations.
-
-- **Leading Zeros Validation**: The API validation will reject taint and toleration values that contain leading zeros (e.g., `"0950"`, `"007"`) when used with numeric operators (`Lt`, `Gt`). This ensures consistent behavior and prevents the ambiguity between string and numeric interpretations. Only values without leading zeros are accepted (e.g., `"950"`, `"7"`). Zero `0` as a value is accepted though.
-
 - **Parsing Overhead**: Each taint/toleration match with numeric operators requires integer parsing.
 
 - Invalid taints meant to be used with the new comparison operators (e.g., `node.kubernetes.io/sla=95.5` and `node.kubernetes.io/version=1`) are not detected at admission time.
@@ -621,10 +618,15 @@ All core changes must be covered by unit tests, in both Taint API, validation, a
 
 ##### Integration tests
 
-The following scenarios need to be covered in integration tests:
+Update the following integration tests to include new operators:
 
-- Feature gate's enabling/disabling
-- **Scheduler Integration Tests:** will be extended to cover the new taints cases introduced in this KEP:(test/integration/scheduler)
+1. **TestTaintTolerationFilter:** (`filters/filters_test.go`)
+2. **TestTaintTolerationScoring:** (`scoring/priorities_test.go`)
+3. **TestTaintNodeByCondition:** (`taint/taint_test.go`)
+4. **General Scheduler Tests:** (`scheduler_test.go`):
+   - Dynamic taint addition/removal
+   - Pod rescheduling after taint changes
+   - Integration with NodeAffinity
 
 ##### e2e tests
 
@@ -660,6 +662,15 @@ The existing e2e tests will be extended to cover the new taints cases introduced
   - Enable the feature gate in both API Server and Scheduler.
 - Downgrade
   - Disable the feature gate in both API Server and Scheduler
+  
+**What happens when the scheduler doesn't recognize Gt/Lt operators:**
+
+When the feature gate is disabled and the scheduler encounters a pod with `Gt`/`Lt` operator:
+
+- The toleration filter returns `false` (doesn't match)
+- Pod is considered to have untolerated taints
+- Filter returns `UnschedulableAndUnresolvable` status
+- Pod remains in Pending state.
 
 ### Version Skew Strategy
 
@@ -686,11 +697,31 @@ No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes.
+Yes, but with caveats for existing workloads using the new operators.
+
+Impact on existing pods with Gt/Lt operators when feature is disabled:
+
+1. **Already-running pods**: Continue running normally. The kubelet doesn't need to re-evaluate tolerations for running pods.
+
+2. **Unscheduled/pending pods**: 
+   - Remain in the cluster but cannot be scheduled
+   - The scheduler's TaintToleration plugin won't recognize Gt/Lt operators and will treat them as non-matching
+   - These pods will remain in Pending state with events indicating untolerated taints
+
+3. **New pod creation**: 
+   - API server validation will **reject** new pods with Gt/Lt operators
+   - Error: `spec.tolerations[].operator: Unsupported value: "Gt": supported values: "Equal", "Exists"`
+
+4. **Pod updates**:
+   - Cannot update existing pods (even those already in etcd) if they contain Gt/Lt operators
+   - Validation runs on update and will reject the unsupported operators
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-SLA toleration will be respected again.
+Extended toleration operators will be respected again:
+- Existing pods with Gt/Lt operators in etcd become valid and schedulable
+- New pods can be created with Gt/Lt operators
+- The scheduler will properly evaluate numeric comparisons
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -700,12 +731,22 @@ Tests have been added in the integration tests. See [Integration tests](#integra
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-It shouldn't impact already running workloads. It's an opt-in feature.
+**Rollout**: The feature enablement itself is safe and shouldn't impact existing workloads. It's an opt-in feature that only affects pods explicitly using Gt/Lt operators.
+
+**Rollback**: Can impact workloads if not done carefully:
+
+1. **Running pods** with Gt/Lt operators: Will continue running (safe)
+2. **Pending pods** with Gt/Lt operators: Will become stuck in Pending state, as:
+   - They remain in etcd but validation rejects them
+   - The scheduler won't recognize the operators
+   - Force deletion may be required: `kubectl delete pod <name> --force --grace-period=0`
+3. **Workload controllers** (Deployments, StatefulSets, etc.):
+   - If the pod template uses Gt/Lt operators, the controller cannot create new pods
+   - Rolling updates will fail
 
 ###### What specific metrics should inform a rollback?
 
 - `scheduler_scheduling_duration_seconds`
-- `scheduler_scheduling_attempts_total`
 - `apiserver_request_total`
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -723,10 +764,16 @@ No.
 1. **Metrics**:
 
    ```promql
-   # Number of pods using numeric tolerations
-   scheduler_numeric_tolerations_total > 0
+   # Number of pods evaluated by TaintToleration plugin
+   scheduler_plugin_evaluation_total{plugin="TaintToleration"} > 0
    
-   # Rate of numeric comparison operations
+   # Monitor rate of pods rejected by TaintToleration plugin
+   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status=~"Unschedulable.*"}[5m])
+   
+   # Rate of successful evaluations
+   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status="Success"}[5m])
+   
+   # Plugin execution duration
    rate(scheduler_framework_extension_point_duration_seconds{plugin="TaintToleration"}[5m])
    ```
 
@@ -735,20 +782,19 @@ No.
    ```bash
    # Check for pods with numeric toleration operators
    kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="Gt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="Lt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
    
-   # Count nodes with numeric taints (SLA example)
-   kubectl get nodes -o jsonpath='{range .items[*]}{.spec.taints[?(@.key=="node.kubernetes.io/sla")]}{"\n"}{end}' | wc -l
    ```
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Events
   - Event Reason: FailedScheduling
-  - Event Message: "node(s) had untolerated taint `node.kubernetes.io/sla`: `950`"
+  - Event Message: "node(s) had untolerated taint {<taint-key>: <taint-value>}" (e.g., with numeric taint)
 - [x] API .spec.taints
-  - Other field: `key: node.kubernetes.io/sla`
+  - Observe taints values on nodes
 - [x] API .spec.tolerations
-  - Other field: `node.kubernetes.io/sla`
+  - Observe tolerations with `operator: Gt` or `operator: Lt` on pods
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -756,27 +802,21 @@ No.
 
 - [x] Metrics
   - Metric name:
-    - `scheduler_scheduling_attempts_total`
     - `scheduler_framework_extension_point_duration_seconds`
+    - `scheduler_plugin_evaluation_total`
     - Components exposing the metric: `kube-scheduler`
-  - Metric name:
-    - `kube_pod_status_phase`
-    - `kube_pod_status_scheduled_time`
-    - Components exposing the metric: `kube-apiserver`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes, a new metric:
+Yes, an extension to an existing metric:
 
-- `scheduler_numeric_tolerations_total`: tracks successful pod scheduling with numeric tolerations (aggregated count, not per-evaluation).
+**Extend `scheduler_plugin_evaluation_total` with a `status` label**
 
-This metric provides visibility into:
+Currently, `scheduler_plugin_evaluation_total` tracks plugin evaluation counts with labels: `plugin`, `extension_point`, `profile`. We propose adding a `status` label (similar to `scheduler_plugin_execution_duration_seconds`) to enable monitoring of plugin outcomes, including errors.
 
-1. How frequently the numeric toleration feature is being used
-2. Overall adoption and usage patterns
-3. Per-profile usage patterns for multi-scheduler setups
+The status label will use framework status codes: `Success`, `Unschedulable`, `UnschedulableAndUnresolvable`, `Error`, etc.
 
-Note: We intentionally avoid tracking each individual numeric evaluation to prevent metric explosion in large clusters.
+ >Note: Currently, integer parsing failures for Gt/Lt operators result in the toleration not matching (returning `Unschedulable` status), similar to how label selectors behave. This means parsing errors are not distinguished from legitimate mismatches in metrics. Future enhancements could modify the implementation to return `Error` status for parsing failures to improve debuggability.
 
 In addition, the scheduler has an existing `scheduler_unschedulable_pods` metric that handles the multiple failure reasons by incrementing for each plugin that rejects a pod.
 
