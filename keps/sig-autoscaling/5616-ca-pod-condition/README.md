@@ -207,10 +207,14 @@ nitty-gritty.
 -->
 
 Introduce new pod condition type `NodeProvisioningInProgress`.
-- `NodeProvisioningInProgress: True` (with empty reason) corresponding to todays `TiggeredScaleUp` event, meaning CA decided to scale up cluster to make place for this pod.
-- `NodeProvisioningInProgress: False`  corresponding to todays `NotTriggerScaleUp` event, meaning CA couldn't find node group that can be scaled up to make this pod schedulable.
 
-In case of failure, we would change reason to `Error`. After CA runs out of scale up options (all attempted failed) we would change the condition to `NodeProvisioningInProgress: False`.
+`NodeProvisioningInProgress: True` denotes that cluster autoscaler attempts to provision node  for a pod. It would correspond to todays `TiggeredScaleUp` k8s event. In case of failure, but some options still being available, it will stay `True`, but the reason will be `ProvisioningAttemptFailed`. 
+
+`NodeProvisioningInProgress: False` means no provisiong attempted for a pod at this moment. It would correspond to todays `NotTriggerScaleUp` event.
+
+Condition won't be cleared after successful scheduling of a pod.
+
+Autoscaler-specific details could be stored in `message` field in [pod condition](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-conditions).
 
 
 ### User Stories (Optional)
@@ -224,9 +228,13 @@ bogged down.
 
 #### Story 1
 
-As a user, I want to have an easy and reliable way to investigate why my pods are stuck in the Pending phase.
+As a user, I want to be able to setup automation detecting no provisioning for a pod happening at the moment.
 
 #### Story 2
+
+*From [KEP-3990: PodTopologySpread DoNotSchedule-to-ScheduleAnyway fallback mode](https://github.com/kubernetes/enhancements/issues/3990):*
+
+Scheduler should know which unschedulable Pod(s) don't trigger creation of nodes to fall back to `ScheduleAnyway` for Pod Topology Spread.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -236,6 +244,9 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+Pod condition can't be used as a [field predicate](https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/#list-of-supported-fields) while listing relevant pods, but `status.phase==Pending` can as a server side pre-filtering. After that client side filtering can be implemented based on needs.
+
 
 ### Risks and Mitigations
 
@@ -260,33 +271,15 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-We would emit them from the same place as corresponding k8s events, which is `EventingScaleUpStatusProcessor`.
+When unschedulable pod is noticed by node autoscaler, there are two options (at each point in time):
+1. attempt to help it (`NodeProvisioningInProgress: True`)
+2. do nothing (`NodeProvisioningInProgress: False`)
 
-ScaleUpResult                 | Pod condition type & status       | Pod condition reason
-:---------------------------- | :-------------------------------- | :-------------------
-ScaleUpSuccessful             | NodeProvisioningInProgress: True  |         
-ScaleUpError                  | NodeProvisioningInProgress: True  | ...Error 
-ScaleUpNoOptionsAvailable     | NodeProvisioningInProgress: False | NoOptionsAvailable
-ScaleUpNotTried               | NodeProvisioningInProgress: False | NotTried
-ScaleUpInCooldown             | NodeProvisioningInProgress: False | InCooldown
-ScaleUpLimitedByMaxNodesTotal | NodeProvisioningInProgress: False | LimitedByMaxNodesTotal
+Transition is possible in both directions:
+- True -> False
+- False -> True
 
-We distinguish following ScaleUpErrors (`errors.AutoscalerError`):
-- CloudProviderError, which is an error related to underlying infrastructure
-- ApiCallError, which is an error related to communication with k8s API server
-- InternalError, which is an error inside Cluster Autoscaler
-- TransientError, which is an error that causes us to skip a single loop, but does not require any additional action.
-- ConfigurationError, which is an error related to bad configuration provided by a user.
-- NodeGroupDoesNotExistError, which signifies that a NodeGroupdoes not exist.
-
-And we would have correspoding reasons in new pod condition.
-
-In future we could consider using `SkippedReasons` to fill ScaleUpNoOptionsAvailable with more details, but the message would need to be aggregated somehow because they are per node group. 
-
-Some examples of `SkippedReasons`:
-- BackoffReason - "in backoff after failed scale-up"
-- MaxLimitReachedReason - "max node group size reached"
-- NotReadyReason - "not ready for scale-up"
+Pod stays with the conditions until the EOL. There is no point in clearing it, and it would be yet another kube api server call.
 
 
 ### Test Plan
@@ -528,16 +521,13 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ScaleUpObservability` with values:
-    - `EventsOnly` -  current state,
-    - `EventsAndConditions` - produce both - we could turn it on scalability tests and assess the impact on the overall performance,
-    - `ConditionsOnly` - produce only new pod conditions.
+  - Feature gate name: `NodeProvisioningInProgressCondition`
   - Components depending on the feature gate: `cluster-autoscaler`.
 
 
 ###### Does enabling the feature change any default behavior?
 
-No, by default, CA will continue to use the `EventsOnly` for the scale up observability. 
+No. 
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
