@@ -243,10 +243,13 @@ A future enhancement could incorporate https://github.com/kubernetes/autoscaler/
 We also propose that, if given node is not reporting any installed CSI drivers, we do not schedule pods that need CSI volumes to that node.
 
 The proposed change is small and a draft PR is available here - https://github.com/kubernetes/kubernetes/pull/130702
-
 This will stop too many pods crowding a node, when a new node is spun up and node is not yet reporting volume limits.
 
-But this alone is not enough to fix the underlying problem. Cluster-autoscaler must be fixed so that it is aware of attach limits of a node via CSINode object.
+Along with this, we will also enhance error reporting from scheduler when scheduling of a pod fails in `NodeVolumeLimits` plugin, due to `CSINode` related errors:
+
+
+1. When driver is missing on the node, we will return `CSIDriverMissingOnNode` error.
+2. When `CSINode` object itself is missing on the node, we will return `CSINodeMissing`.
 
 We also need to ensure that `StorageInfos` interface that is shared between CAS and scheduler is extended for `CSINode` objects, so that CAS can run scheduler plugins with templated `CSINode` objects.
 
@@ -297,6 +300,8 @@ After this proposal is implemented, simulated scheduling in CAS should work with
 which report real volume limits and hence scheduling should accurately count number of required nodes
 for pending pods.
 
+We will also update the unit tests in scheduler to handle new error conditions.
+
 <!--
 In principle every added code should have complete unit test coverage, so providing
 the exact set of tests will not bring additional value.
@@ -317,6 +322,7 @@ extending the production code to implement this enhancement.
 -->
 
 - k8s.io/autoscaler/cluster-autoscaler/core: 06/10/2025 - 77.3%
+- k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodevolumelimits/csi.go: 14/10/2025 - 78%
 
 ##### Integration tests
 
@@ -324,9 +330,21 @@ None
 
 ##### e2e tests
 
+###### Cluster AutoScaler
+
 We are planning to add e2e tests that verify behaviour of cluster autoscaler when it scales nodes for pods that require volumes.
 
 We will add tests that validate both scaling from 0 and scaling from 1 use cases.
+
+###### Kube Scheduler
+
+We will add e2e tests in k/k repo for scheduler, so as scheduler behaviour is tested for following conditions:
+
+1. When `CSINode` is reported but driver is not installed.
+2. When no `CSINode` is reported from the node at all.
+
+Please note other conditions are already tested via - https://github.com/kubernetes/kubernetes/blob/9b9cd768a05782b6cfeef62bec7696b441d7ad93/test/e2e/storage/csimock/csi_volume_limit.go#L15
+
 
 ### Graduation Criteria
 
