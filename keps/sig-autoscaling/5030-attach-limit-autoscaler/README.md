@@ -126,10 +126,6 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 2. Fix cluster-autoscaler so that it takes into account attach limits when scaling nodegroups with existing nodes.
 3. Fix kubernetes built-in scheduler so that we do not schedule pods to nodes that doesn't have CSI driver installed.
 
-While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying default enablement of scheduler change
-that prevents scheduling of pods to a node that doesn't have CSI driver installed until a release when Cluster-AutoScaler (CAS) changes have been GAed and meet N-3 version skew criteria. See - version skew section for more information.
-
-
 ### User Stories (Optional)
 
 #### Story 1
@@ -487,9 +483,6 @@ well as the [existing list] of feature gates.
   - Will enabling / disabling the feature require downtime of the control
     plane?
     Yes, it should require restart of CAS and kube-scheduler.
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
-    No, it should not require reprovisioning a node.
 
 ###### Does enabling the feature change any default behavior?
 
