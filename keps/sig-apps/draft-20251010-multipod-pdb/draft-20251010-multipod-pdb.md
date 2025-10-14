@@ -233,10 +233,6 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
-
-#### Story 2
-
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -282,7 +278,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -510,12 +506,12 @@ well as the [existing list] of feature gates.
 - [ ] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name:
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
+- [x] Other
+  - Describe the mechanism: the new field in the PDB spec will be optional
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    of a node? No
 
 ###### Does enabling the feature change any default behavior?
 
@@ -523,6 +519,8 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+It will change the behavior of the Eviction API and kube-scheduler, but should not affect any unrelated components.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -537,7 +535,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, update the PDB to remove the field.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+It will be enabled again, there should not be any disruptions.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -553,6 +555,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+No
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -716,6 +720,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -725,6 +731,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -732,6 +740,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -741,6 +751,7 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -752,6 +763,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -764,6 +776,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -776,6 +789,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No
 
 ### Troubleshooting
 
@@ -792,6 +806,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No different behavior
+
 ###### What are other known failure modes?
 
 <!--
@@ -806,6 +822,8 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+
+None that are not already part of the Eviction API
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
