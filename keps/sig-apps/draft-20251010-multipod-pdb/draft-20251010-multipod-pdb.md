@@ -205,8 +205,13 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- This feature will not affect involuntary disruptions like node failures or network partitions, only the voluntary eviction API
-
+This feature will only affect the Eviction API. The following are involuntary disruptions and do not use the Eviction API:
+- Manual pod deletion
+- Cleanup from node deletion (pod garbage collector)
+- Pod deletion from Deployments and StatefulSets
+- Node failure 
+- Kubelet node-pressure eviction
+- Taint manager deleting NoExecute tainted pods
 
 ## Proposal
 
