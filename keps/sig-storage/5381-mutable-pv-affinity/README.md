@@ -286,11 +286,13 @@ Whoever modifies the `PersistentVolume.spec.nodeAffinity` field should ensure th
 no running Pods on nodes with incompatible labels are using the PV.
 Kubernetes will not verify this. It is expensive and racy.
 
-If the incompatibility does happen, we don't guarantee that those Pods will continue to run without any issue.
+If the incompatibility does happen (i.e. someone updated nodeAffinity, making running Pods violate the new nodeAffinity),
+we don't guarantee that those Pods will continue to run without any issue.
 However, we try our best not to interrupt them:
 - For volumes that not yet present in the Node.status.volumesAttached field,
   we fail the Pods that use them, since we are sure the Pods have never been running.
   (see [Handling race condition](#handling-race-condition) below)
+- We will not detach the volume. So if the volume is actually accessible (depends on the storage provider), the Pod can continue to run.
 - For CSI drivers with `requiresRepublish` set to true, we will stop calling NodePublishVolume periodically. and an event is emitted.
 - For CSI drivers with `requiresRepublish` set to false, an event is emitted on kubelet restart. Otherwise the pod should continue to run.
 It is not re-evaluated when the pod is already running.
@@ -343,7 +345,7 @@ There is a race condition between volume modification and pod scheduling:
 5. KCM/external-attacher attaches the volume to the node, and find the affinity mismatch.
 
 If this happens, the pod will be stuck in a `ContainerCreating` state.
-Kubelet should detect this contidion and reject the pod.
+Kubelet should detect this condition and reject the pod.
 Hopefully some other controllers (StatefulSet controller) will re-create the pod and it will be scheduled to the correct node.
 
 Specifically, kubelet should reject the pod (setting pod phase to 'Failed')
@@ -585,8 +587,10 @@ enhancement:
 
 This feature involves changes to the kubelet, and APIServer. But they are not strongly coupled.
 
-an n-3 kubelet will not able to fail the mis-scheduled pods. User can still manually delete the pods. Otherwise it should be fine.
-an new kubelt can also work with old APIServer. Although this should not happen.
+An n-3 kubelet will not able to fail the mis-scheduled pods. The mis-scheduled pods will stuck at ContainerCreating status.
+If the kubelet is upgraded afterwards, it will properly fail those pods.
+User can also manually delete the pods if they don't want to upgrade kubelet soon.
+If user does not actually update the PV nodeAffinity, there will be no such mis-scheduled pods and everything should be fine.
 
 kube-scheduler is not directly affected.
 It just read the latest PV nodeAffinity for scheduling decision regardless of whether it's being updated or not.
@@ -651,9 +655,10 @@ PV `spec.nodeAffinity` becomes mutable.
 If a pod being scheduled to a node that is incompatible with the PV's nodeAffinity, the pod will fail.
 Previously, it will be stuck at `ContainerCreating` status.
 
-This should be rare, since we don't allow PV nodeAffinity to be updated,
+This should be rare before enabling this feature, since we don't allow PV nodeAffinity to be updated,
 nor CSI driver can change the topology reported from NodeGetInfo.
 So this is only possible if the user edited the node labels manually, or is running an incompatible scheduler.
+Existing workflow will unlikely be affected by this behavior change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -690,7 +695,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes. unit test will verify the validation and kubelet behavior when the feature gate is enabled or disabled.
+Will add unit test to verify the validation and kubelet behavior when the feature gate is enabled or disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -766,7 +771,15 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-See a previously Pending or ContainerCreating Pod now properly Running.
+1. nodeAffinity can now be updated for existing volumes
+2. pods that cannot be run due volume that can't be attached are now being failed by kubelet
+
+As the consequences, if a Pod is previously stuck due to out-of-date PV nodeAffinity,
+now user can update the PV to correct the nodeAffinity, and see the Pod entering Running state eventually.
+For Pods stuck in ContainerCreating due to storage provider unable to attach the volume to the scheduled node,
+The Pod will be rejected by kubelet and re-created at the correct node.
+For Pods stuck in Pending due to no suitable node available,
+scheduler will retry to schedule For Pods stuck in ContainerCreating due  Pod according to the updated nodeAffinity.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
