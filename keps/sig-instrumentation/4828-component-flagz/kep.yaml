@@ -2,6 +2,7 @@ title: Component Flagz
 kep-number: 4828
 authors:
   - "@richabanker"
+  - "@yongruilin"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-instrumentation
