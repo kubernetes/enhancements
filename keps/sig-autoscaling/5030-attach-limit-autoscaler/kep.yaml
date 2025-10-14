@@ -40,6 +40,6 @@ milestone:
 feature-gates:
   - name: VolumeLimitScaling
     components:
-      - scheduler
+      - kube-scheduler
       - autoscaler
 disable-supported: true
