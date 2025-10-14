@@ -274,16 +274,25 @@ FOR i = replicas-1 To i >= 0 DO i--
     If pod[i] needs update THEN
         wait_for_predecessors_ready(i+1 to replicas-1)
         
-        // Check if pod is in a state that prevents update
-        If pod[i] exists AND (!pod[i].Running OR !pod[i].Ready) THEN
-            // NEW: Check if podProgressTimeoutSeconds is configured and exceeded
+        // Delete old pod and create new one
+        If pod[i] exists THEN
+            delete_pod(i)
+        ENDIF
+        create_pod(i)  // New pod with updated spec
+        record_pod_creation_time(pod[i])
+        
+        // Wait for new pod to become Ready (with deadline checking)
+        LOOP until pod[i] is Ready:
             If podProgressTimeoutSeconds is configured THEN
                 elapsed = current_time - pod[i].creation_time
                 If elapsed > podProgressTimeoutSeconds THEN
                     // Deadline exceeded - delete and recreate
                     delete_pod(i)
+                    create_pod(i)
+                    record_pod_creation_time(pod[i])  // Reset timer
                     emit_event("ProgressDeadlineExceeded", pod[i])
                     set_condition("Progressing", status="False", reason="ProgressDeadlineExceeded")
+                    // Continue waiting for the recreated pod
                 ELSE
                     // Still within deadline - wait and retry
                     return  // Check again on next reconciliation
@@ -292,16 +301,7 @@ FOR i = replicas-1 To i >= 0 DO i--
                 // No deadline configured - use current behavior (wait forever)
                 return
             ENDIF
-        ENDIF
-        
-        // Proceed with normal update
-        If pod[i] exists THEN
-            delete_pod(i)
-        ENDIF
-        create_pod(i)
-        record_pod_creation_time(pod[i])  // Track for deadline
-        wait_until_ready(pod[i])  // Wait for new pod to be ready (with deadline check)
-        
+        ENDLOOP
     ENDIF
 ENDFOR
 ```
@@ -319,20 +319,8 @@ ENDFOR
 ```go
 // RollingUpdateStatefulSetStrategy is used to communicate parameter for RollingUpdateStatefulSetStrategyType.
 type RollingUpdateStatefulSetStrategy struct {
-    // Partition indicates ordinal at which the StatefulSet should be partitioned.
-    // Default value is 0.
-    // +optional
-    Partition *int32 `json:"partition,omitempty"`
-    
-    // The maximum number of pods that can be unavailable during the update.
-    // Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%).
-    // Absolute number is calculated from percentage by rounding up. This can not be 0.
-    // Defaults to 1. This field is alpha-level and is only honored by servers that enable the
-    // MaxUnavailableStatefulSet feature. The field applies to all pods in the range 0 to
-    // Replicas-1. That means if there is any unavailable pod in the range 0 to Replicas-1, it
-    // will be counted towards MaxUnavailable.
-    // +optional
-    MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+   ...
+   
     
     // NEW: PodProgressTimeoutSeconds specifies the maximum time in seconds for a pod to
     // become Ready during a rolling update before it is considered stuck and automatically
