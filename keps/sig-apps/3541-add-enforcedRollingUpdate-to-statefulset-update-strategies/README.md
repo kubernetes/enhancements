@@ -185,10 +185,11 @@ Adding `podProgressTimeoutSeconds` to StatefulSet `RollingUpdate` addresses thes
 ### Goals
 
 1. Extend `RollingUpdate` strategy with `podProgressTimeoutSeconds` field to enable timeout-based detection of stuck pods
-2. Automatically replace pods that fail to become Ready within the configured deadline
-3. Maintain sequential ordering guarantees for StatefulSet updates
-4. Provide clear status conditions and events when progress deadline is exceeded (similar to Deployments)
-5. Support both `OrderedReady` and `Parallel` pod management policies
+2. Enable pod recreation during updates when a pod needs to be updated, deleted and recreate it regardless of whether the old pod was Running/Ready (departing from current behavior where stuck pods block updates)
+3. Automatically replace pods that fail to become Ready within the configured deadline
+4. Maintain sequential ordering guarantees for StatefulSet updates
+5. Provide clear status conditions and events when progress deadline is exceeded (similar to Deployments)
+6. New behavior supports both `OrderedReady` and `Parallel` pod management policies
 
 ### Non-Goals
 
@@ -236,7 +237,7 @@ Adding `podProgressTimeoutSeconds` to StatefulSet `RollingUpdate` addresses thes
 
 #### Risk: Unintended Data Loss
 
-**Risk Description**: If `podProgressTimeoutSeconds` is misconfigured on StatefulSets with local persistent data, automatic pod replacement could cause data loss. We should document this.
+**Risk Description**: If `podProgressTimeoutSeconds` is misconfigured on StatefulSets with local persistent data, automatic pod replacement could cause data loss.
 
 **Mitigation Strategies**:
 
@@ -274,45 +275,58 @@ FOR i = replicas-1 To i >= 0 DO i--
     If pod[i] needs update THEN
         wait_for_predecessors_ready(i+1 to replicas-1)
         
-        // Delete old pod and create new one
+        // Delete old pod and create new one with updated spec
         If pod[i] exists THEN
             delete_pod(i)
         ENDIF
-        create_pod(i)  // New pod with updated spec
-        record_pod_creation_time(pod[i])
-        
-        // Wait for new pod to become Ready (with deadline checking)
-        LOOP until pod[i] is Ready:
-            If podProgressTimeoutSeconds is configured THEN
-                elapsed = current_time - pod[i].creation_time
-                If elapsed > podProgressTimeoutSeconds THEN
-                    // Deadline exceeded - delete and recreate
-                    delete_pod(i)
-                    create_pod(i)
-                    record_pod_creation_time(pod[i])  // Reset timer
-                    emit_event("ProgressDeadlineExceeded", pod[i])
-                    set_condition("Progressing", status="False", reason="ProgressDeadlineExceeded")
-                    // Continue waiting for the recreated pod
-                ELSE
-                    // Still within deadline - wait and retry
-                    return  // Check again on next reconciliation
-                ENDIF
-            ELSE
-                // No deadline configured - use current behavior (wait forever)
-                return
-            ENDIF
-        ENDLOOP
+        create_pod(i)
     ENDIF
+    
+    // Wait for pod to become Ready (checked on each reconciliation)
+    WHILE pod[i] is NOT Ready THEN
+        If podProgressTimeoutSeconds is configured THEN
+            elapsed = time.Now() - pod[i].CreationTimestamp
+            If elapsed > podProgressTimeoutSeconds THEN
+                // Deadline exceeded - delete and recreate even if already correct version
+                delete_pod(i)
+                create_pod(i)
+                emit_event("ProgressDeadlineExceeded", pod[i])
+                set_condition("Progressing", status="False", reason="ProgressDeadlineExceeded")
+            ENDIF
+        ENDIF
+        check pod[i] status
+        If pod[i] is Ready THEN
+           // Pod is Ready - continue to next pod
+           return
+        ELSE
+          // retry with backoff
+          continue
+        ENDIF
+    END WHILE
+    
 ENDFOR
 ```
 
+**Controller Restart Behavior**:
+
+The algorithm uses `pod.CreationTimestamp` to track elapsed time.
+
+If the controller restarts while waiting for a pod to become Ready:
+1. Perform the readiness check `If pod[i] is NOT Ready`
+2. Calculate elapsed time
+3. If the pod's current state:
+   - Ready: Continue to next pod (update complete)
+   - Not Ready but within timeout: Continue waiting (check again on next reconciliation)
+   - Not Ready but timeout exceeded: Delete and recreate pod
+
 **Key Differences from Current Behavior**:
 
-1. **Timeout-Based Detection**: Waits for `podProgressTimeoutSeconds` before considering a pod permanently stuck
-2. **Transient Failure Tolerance**: Network delays, slow image pulls, CI/CD pipeline delays are tolerated within the deadline
-3. **Automatic Replacement**: After deadline, pod is deleted and recreated (similar to manual `kubectl delete pod`)
-4. **Status Conditions**: Sets `Progressing=False` with `ProgressDeadlineExceeded` reason (matches Deployment behavior)
-5. **Events**: Emits clear events when deadline is exceeded for observability
+1. **Unconditional Pod Recreation:** When a pod needs to be updated, it is deleted and recreated regardless of whether the old pod was Running/Ready (current behavior blocks updates when pod is stuck)
+2. **Timeout-Based Detection:** Waits for `podProgressTimeoutSeconds` before considering a pod permanently stuck, enabling distinction between transient and permanent failures
+3. **Transient Failure Tolerance:** Network delays, slow image pulls, CI/CD pipeline delays are tolerated within the deadline
+4. **Automatic Replacement:** After deadline is exceeded, pod is deleted and recreated without manual intervention (similar to manual `kubectl delete pod`)
+5. **Status Conditions:** Sets `Progressing=False` with `ProgressDeadlineExceeded` reason (matches Deployment behavior)
+6. **Events**: Emits clear events when deadline is exceeded for observability
 
 ### API Changes
 
@@ -377,8 +391,8 @@ spec:
 The implementation requires changes to the StatefulSet controller in `pkg/controller/statefulset/stateful_set_control.go`:
 
 1. **Deadline Tracking**:
-   - Track pod creation timestamps in StatefulSet controller state
-   - On each reconciliation loop, check elapsed time since pod creation
+   - Use `pod.CreationTimestamp` to track pod creation timestamps
+   - On each reconciliation loop, calculate elapsed time: `time.Now() - pod.CreationTimestamp`
    - Compare elapsed time against `spec.updateStrategy.rollingUpdate.podProgressTimeoutSeconds`
 
 2. **Pod Update Logic Enhancement**:
