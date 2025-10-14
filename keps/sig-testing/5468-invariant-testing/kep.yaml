@@ -6,7 +6,7 @@ owning-sig: sig-testing
 participating-sigs:
   - sig-instrumentation
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2025-09-04
 reviewers:
   - "@aojea"
