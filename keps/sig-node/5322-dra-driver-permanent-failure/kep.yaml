@@ -10,7 +10,7 @@ reviewers:
   - "@pohly"
   - "@SergeyKanzhelev"
 approvers:
-  - TBD
+  - "@mrunalp"
 
 see-also:
   - "/keps/sig-scheduling/5055-dra-device-taints-and-tolerations"
