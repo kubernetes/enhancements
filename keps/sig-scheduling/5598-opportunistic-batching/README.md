@@ -278,11 +278,6 @@ The issues experienced by eCache were:
 
  We will also provide tests that evaluate different pod configurations against different node configurations and ensure that any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing testing opportunities in other areas.
 
- If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object that only has a subset
- of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would
- naturally surface new dependencies as additions to the scheduling object. However, as we expect plugin changes to be relatively 
- modest, we don't believe the complexity of making the interface changes is worth the risk today.
-
 See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 as starting point on eCache.
 
 ### Notes/Constraints/Caveats (Optional)
