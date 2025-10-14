@@ -317,8 +317,8 @@ retried:
 
 ### API
 
-The kubelet's DRA gRPC interface will be updated to allow drivers to express
-that an error is permanent with a new `permanent_error` field:
+The kubelet's DRA gRPC interface will be updated to allow drivers to
+classify errors with a new `error_type` field:
 
 ```proto
 message NodePrepareResourceResponse {
@@ -330,10 +330,17 @@ message NodePrepareResourceResponse {
     // If non-empty, preparing the ResourceClaim failed.
     // Devices are ignored in that case.
     string error = 2;
-    // When true and a non-empty error is returned, indicates that the
-    // error is permanent. Permanent errors are expected to fail
-    // consistently for a given request and should not be retried.
-    bool permanent_error = 3;
+    // When a non-empty error is returned, indicates the
+    // type of error that occurred.
+    NodePrepareResourceResponseErrorType error_type = 3;
+}
+
+enum NodePrepareResourceResponseErrorType {
+    // Unknown errors are unclassified.
+    Unknown = 0;
+    // Permanent errors are expected to fail consistently
+    // for a given request and should not be retried.
+    Permanent = 1;
 }
 ```
 
@@ -613,7 +620,7 @@ enhancement:
 
 When the kubelet is a newer version which implements this KEP and a DRA driver
 is an older version whose gRPC interface does not yet include the
-`permanent_error` field, the kubelet will observe that all errors coming from a
+`error_type` field, the kubelet will observe that all errors coming from a
 DRA driver's `NodePrepareResources` response are transient. This matches the
 current behavior where the kubelet does not yet implement this KEP.
 
