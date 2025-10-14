@@ -111,6 +111,10 @@ to be force migrated to a different node, causing a temporary spike in the CPU/M
 With the current state of implementation in the Kubernetes realm, the available workarounds to allow the cluster to be aware of the changes in the cluster's capacity is by 
 restarting the node or at-least restarting the kubelet, which does not have a certain set of best-practices to follow.
 
+One of the major drawback of current system is around timing and coupling the kubelet restart to detect the available resources. For example, in cloud environment, if a node admin can scale up the node, 
+it may hard to time the completion of resize operation based on the added capacity and following the restart of kubelet.
+Also there may exist few APIs provided by cloud SDK to perform resize operation coupling it with kubelet restart is not seamless.
+
 However, this approach does carry a few drawbacks such as
  - Introducing a downtime for the existing/to-be-scheduled workloads on the cluster until the node is available.
  - For baremetal clusters it involves significant amount time for the Nodes to be available.
@@ -121,16 +125,16 @@ However, this approach does carry a few drawbacks such as
    - https://github.com/kubernetes/kubernetes/issues/125579
    - https://github.com/kubernetes/kubernetes/issues/127793
 
+
 Hence, it is necessary to handle capacity updates gracefully across the cluster, rather than resetting the cluster components to achieve the same outcome.
 
 Also, given that the capability to live-resize a node exists in the Linux and Windows kernels, enabling the kubelet to be aware of the underlying changes in the node's compute capacity will mitigate any actions that are required to be made
 by the Kubernetes administrator.
 
 Node resource hot plugging proves advantageous in scenarios such as:
-- Efficiently managing resource demands with a limited number of nodes by increasing the capacity of existing nodes instead of provisioning new ones.
+- Efficiently managing resource demands with a limited number of nodes by increasing the capacity of existing nodes instead of provisioning new ones, which brings less overhead on the control-plane.
 - The procedure of establishing new nodes is considerably more time-intensive than expanding the capabilities of current nodes.
 - Improved inter-pod network latencies as the inter-node traffic can be reduced if more pods can be hosted on a single node.
-- Easier to manage the cluster with fewer nodes, which brings less overhead on the control-plane
 - Mitigate a few of the existing limitations/issues that are associated with a node/kubelet restart.
 
 Implementing this KEP will empower nodes to recognize and adapt to changes in their compute configurations and allow facilitating the efficient and effective deployment of pod workloads to nodes capable of meeting the required compute demands.
@@ -346,6 +350,8 @@ is lesser than the initial capacity of the node. This is only to point at the fa
 
 Once the node has transitioned to the NotReady state, it will be reverted to the ReadyState once when the node's capacity is reconfigured to match or exceed the last valid configuration.
 In this case, valid configuration refers to a state which can either be previous hot-plug capacity or the initial capacity in case there was no history of hotplug.
+
+In case of already running workloads and if there are not enough resources available to accommodate them post hot-unplug, the workload may tend to under perform or transition to "Pending" state or get migrated to a suitable node which meets the workload`s resource requirement.
 
 #### Flow Control
 
