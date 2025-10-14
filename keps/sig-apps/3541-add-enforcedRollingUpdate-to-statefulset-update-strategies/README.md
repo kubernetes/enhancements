@@ -617,11 +617,27 @@ Yes, unit and integration tests will cover feature gate enablement/disablement s
 Yes, these scenarios will be covered in unit and integration tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
-No.
+No. This feature adds new optional field `spec.updateStrategy.rollingUpdate.podProgressTimeoutSeconds`. No deprecations of existing fields or APIs nor removals of existing functionality.
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
+
+- By querying StatefulSets using kubectl:
+```sh
+kubectl get statefulsets -A -o json | \
+  jq '.items[] | select(.spec.updateStrategy.rollingUpdate.podProgressTimeoutSeconds != null) | 
+  {namespace: .metadata.namespace, name: .metadata.name, timeout: .spec.updateStrategy.rollingUpdate.podProgressTimeoutSeconds}'
+```
+- By checking StatefulSet status conditions:
+```sh
+kubectl get statefulsets -A -o json | \
+  jq '.items[] | select(.status.conditions[]? | select(.type=="Progressing" and .reason=="PodProgressTimeoutExceeded"))'
+```
+- By monitoring events:
+```sh
+kubectl get events -A --field-selector reason=PodProgressTimeoutExceeded
+```
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -629,19 +645,20 @@ No.
   - Event Reason: `PodProgressTimeoutExceeded` - emitted when a pod exceed the `podProgressTimeoutSeconds`
 - [x] API .status
   - Condition name: `PodProgressTimeoutExceeded` with status `False`
-  - Other field: `.status.updateRevision` - shows progression through update
 - [x] Metrics
   - `statefulset_unavailable_replicas` - tracks how many Statefulset replicas are unavailable
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-**Update Progression SLO**: 99% of StatefulSet updates using `podProgressTimeoutSeconds` should complete without permanent stuck states (measured over 24h periods)
+- 99% of pods that fail to become Ready are recreated within `podProgressTimeoutSeconds + 30s`  
+- 0% of pods that become Ready within `podProgressTimeoutSeconds` are deleted
+- 100% of StatefulSets without `podProgressTimeoutSeconds` behave identically to pre-feature behavior
+
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
   - Metric name: **existing** `statefulset_unavailable_replicas`
-  - Aggregation method: 
   - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -657,7 +674,11 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No.
+If the feature gate has been enabled but no StatefulSet use/set the new field, then No new API calls. Additional API calls occur when timeouts are triggered, but these are the same types of calls already made by StatefulSet controller:
+
+1. Pod Deletion (DELETE /api/v1/namespaces/{ns}/pods/{name})
+2. StatefulSet Status Update (PUT /apis/apps/v1/namespaces/{ns}/statefulsets/{name}/status)
+3. Event Creation (POST /api/v1/namespaces/{ns}/events)
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -669,65 +690,66 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+Yes, minor increases in size when feature is used. When the StatefulSet spec is configured, the object will be increased by ~40 bytes per StatefulSet, in addition of ~150 bytes per StatefulSet when condition is set (when timeout triggered).
+
+Per StatefulSet using feature:
+- Spec: +40 bytes (one-time, when configured)
+- Status: +150 bytes (when condition set)
+- Total: ~190 bytes per StatefulSet
+
+For a cluster with 1000 StatefulSets using this feature:
+- Total increase: ~190 KB
+- Impact: Negligible compared to typical etcd usage
+
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 No.
 
+- API Server Operations:
+  - GET/LIST StatefulSets: No impact (field is optional, standard deserialization)
+  - CREATE/UPDATE StatefulSets: Minimal impact (~10-20μs for validating one additional int32 field). **Impact: Negligible**
+
+- StatefulSet Controller Reconciliation:
+  - With feature enabled but not triggered: additional ~1-5μs per reconciliation loop. **Impact Negligible**
+  - With feature enabled and timeout triggered: same overhead as manual pod deletion. **Impact: None**
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 No.
 
+- Etcd Operations:
+  - Minimal increase in object size (~200 bytes per StatefulSet). **Impact: Negligible** 
+- Memory/CPU:
+  - Memory (per StatefulSet): ~8 bytes for int32 + ~16 bytes for timestamp tracking. **Impact: Negligible**
+  - CPU: timestamp comparison on each reconciliation: ~1-5μs. **Impact: Negligible** 
+- Network I/O:
+  - An additional of ~40 bytes per StatefulSet spec when field is set, and ~150 bytes per status update when condition set. **Impact: Negligible**
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No, the feature does not introduce new node resource exhaustion risks beyond existing mechanism.
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The feature behaves identically to existing StatefulSet update strategies:
+The feature behaves similar to existing controllers which depend on API server and etcd availability.
 
-- **API Server Unavailable**: StatefulSet controller cannot read/write StatefulSet or Pod objects, so all updates halt regardless of strategy
-- **etcd Unavailable**: Similar to API server unavailability - no state changes can be persisted
-- **Recovery**: When connectivity is restored, the controller resumes from the last consistent state and continues with the configured strategy
+- **API Server Unavailable**: StatefulSet controller cannot read/write StatefulSet or Pod objects, so all updates halt.
+- **etcd Unavailable**: Similar to API server unavailability, no state changes can be persisted.
 
 No special handling is required as this feature only changes the update progression logic, not the fundamental dependency on API server/etcd availability.
 
 ###### What are other known failure modes?
-
-**1. Highest Ordinal Pod Consistently Failing**
-
-- **Detection**: Metrics show `statefulset_safety_halt_total` increasing; StatefulSet status shows update stalled
-- **Mitigations**:
-  - Investigate pod logs and events for highest ordinal pod
-  - Consider reverting to previous working configuration
-  - Switch temporarily to `OnDelete` strategy for manual control
-- **Diagnostics**:
-  - `kubectl describe statefulset <name>` shows events about safety halt
-  - `kubectl describe pod <name>-<highest-ordinal>` shows pod-specific issues
-- **Testing**: Integration tests cover this scenario
-
-**2. Resource Quota Exhaustion During Forced Replacement**
-
-- **Detection**: Pods stuck in Pending state with resource quota errors
-- **Mitigations**:
-  - Increase resource quotas
-  - Reduce resource requests in StatefulSet spec
-  - Temporarily scale down other workloads
-- **Diagnostics**: Events on StatefulSet and Pods show quota-related errors
-- **Testing**: Unit tests simulate quota exhaustion scenarios
-
-**3. PVC Deletion Race Conditions**
-
-- **Detection**: New pods fail to start due to PVC conflicts
-- **Mitigations**:
-  - StatefulSet controller waits for PVC cleanup before creating new pods
-  - Implement proper PVC lifecycle management
-- **Diagnostics**: Pod events show PVC mounting errors
-- **Testing**: Integration tests cover PVC lifecycle scenarios
+N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+1. Check StatefulSet Status and Events
+2. Examine Metrics
+3. Check if `podProgressTimeoutSeconds` value is appropriate for the workload
+  
 
 ## Implementation History
 
@@ -743,9 +765,6 @@ Users need to choose appropriate `podProgressTimeoutSeconds` values:
 
 - **Too short**: May delete pods during legitimate slow starts (image pulls, initialization)
 - **Too long**: Delays recovery from permanent failures
-- **Varies by workload**: No one-size-fits-all default value (unlike Deployment's 600s default)
-
-Mitigation: Comprehensive documentation with guidance for different workload types.
 
 ### Potential for Misuse
 
@@ -814,7 +833,7 @@ spec:
 **Cons**:
 - Total downtime, since all pods deleted simultaneously
 - Loses ordering guarantees for no sequential update
-- Doesn't address the core problem, which is `automated recovery *with* ordering`
+- Doesn't address the core problem, which is `automated recovery with ordering`
 
 **Why Not Chosen as Primary Solution**: While useful for some use cases (e.g., LeaderWorkerSet), it doesn't address the primary pain point of wanting automated recovery while maintaining sequential ordering.
 
@@ -843,3 +862,4 @@ Extend `podManagementPolicy: Parallel` to automatically replace stuck pods.
 **Why Not Chosen**: Sequential ordering is a key requirement for many StatefulSet use cases.
 
 ## Infrastructure Needed (Optional)
+N/A
