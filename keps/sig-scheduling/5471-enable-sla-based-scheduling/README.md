@@ -37,6 +37,8 @@
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrade](#upgrade)
+    - [Downgrade](#downgrade)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -658,10 +660,11 @@ The existing e2e tests will be extended to cover the new taints cases introduced
 
 ### Upgrade / Downgrade Strategy
 
-- Upgrade
-  - Enable the feature gate in both API Server and Scheduler.
-- Downgrade
-  - Disable the feature gate in both API Server and Scheduler
+#### Upgrade
+  Enable the feature gate in kube-apiserver first then kube-scheduler. This ensures the API server can accept and validate pods with the new operators before the kube-scheduler tries to process them.
+
+#### Downgrade
+  Disable the feature gate in in kube-scheduler then kube-apiserver. Since we want to stop the kube-scheduler from processing the new operators first, then stop the API server from accepting new pods with those operators. This prevents the scheduler from trying to handle features the API server would reject.
   
 **What happens when the scheduler doesn't recognize Gt/Lt operators:**
 
@@ -735,8 +738,8 @@ Tests have been added in the integration tests. See [Integration tests](#integra
 
 **Rollback**: Can impact workloads if not done carefully:
 
-1. **Running pods** with Gt/Lt operators: Will continue running (safe)
-2. **Pending pods** with Gt/Lt operators: Will become stuck in Pending state, as:
+1. **Running pods** with Gt/Lt operators: continue running (safe)
+2. **Pending pods** with Gt/Lt operators: become stuck in Pending state, as:
    - They remain in etcd but validation rejects them
    - The scheduler won't recognize the operators
    - Force deletion may be required: `kubectl delete pod <name> --force --grace-period=0`
