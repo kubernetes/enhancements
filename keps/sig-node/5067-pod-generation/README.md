@@ -24,7 +24,7 @@ To get started with this template:
   appropriate SIG(s).
 * [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-* [ ] **Merge early and iterate.**
+* [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -147,12 +147,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 * [x] (R) Design details are appropriately documented
 * [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   + [x] e2e Tests for all Beta API Operations (endpoints)
-  + [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  + [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  + [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  + [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 * [x] (R) Graduation criteria is in place
-  + [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-* [ ] (R) Production readiness review completed
-* [ ] (R) Production readiness review approved
+  + [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+* [x] (R) Production readiness review completed
+* [x] (R) Production readiness review approved
 * [x] "Implementation History" section is up-to-date for milestone
 * [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 * [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -544,7 +544,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-Unit and E2E tests provide sufficient coverage for the feature. Integration tests may be added to cover any gaps that are discovered in the future. 
+Integration tests are added to cover node life cycle controller. See this commit:
+- https://github.com/kubernetes/kubernetes/pull/132912/commits/53aa4332b56faf5912d74642a976e84b6db24099
 
 ##### e2e tests
 
@@ -564,16 +565,17 @@ E2E tests will be implemented to cover the following cases:
 * Verify that deletion of a pod causes the `metadata.generation` to be incremented by 1.
 * Issue ~500 pod updates (1 every 100ms) and verify that `metadata.generation` and `status.observedGeneration` converge to the final expected value.
 * Verify that various conditions each have `observedGeneration` populated. 
-* Verify that static pods have `metadata.generation` and `observedGeneration` fields set to 1, and that
+* Verify that mirror pods have `metadata.generation` and `observedGeneration` fields set to 1, and that
 they never change.
 
 Added tests:
-`pod generation should start at 1 and increment per update`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
-`custom-set generation on new pods and graceful delete`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
-`issue 500 podspec updates and verify generation and observedGeneration eventually converge`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
-`pod rejected by kubelet should have updated generation and observedGeneration`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
-`pod observedGeneration field set in pod conditions`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
-`pod-resize-scheduler-tests`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=pod-resize-scheduler-tests
+- `pod generation should start at 1 and increment per update`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+- `custom-set generation on new pods and graceful delete`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+- `issue 500 podspec updates and verify generation and observedGeneration eventually converge`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+- `pod rejected by kubelet should have updated generation and observedGeneration`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+- `pod observedGeneration field set in pod conditions`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=Pod%20Generation
+- `pod-resize-scheduler-tests`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=pod-resize-scheduler-tests
+-`mirror pod updates`: SIG Node, https://storage.googleapis.com/k8s-triage/index.html?test=mirror%20pod%20updates
 
 
 ### Graduation Criteria
@@ -1194,6 +1196,7 @@ Major milestones might include:
 2025-01-21: initial KEP draft created
 2025-02-12: PR feedback addressed, KEP moved to "implementable" and merged
 2025-06-05: proposed promotion to beta
+2025-09-23: proposed promotion to stable
 
 ## Drawbacks
 
