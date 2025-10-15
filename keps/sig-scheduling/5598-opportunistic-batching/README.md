@@ -95,7 +95,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Update](#update)
     - [Nominate](#nominate)
   - [Opportunistic batching](#opportunistic-batching)
-  - [Comparison with Equivalence Cache (circa 2018)](#comparison-with-equivalence-cache-circa-2018)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Plugins need to keep signatures up to date](#plugins-need-to-keep-signatures-up-to-date)
@@ -109,6 +108,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -121,6 +123,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Comparison with Equivalence Cache (circa 2018)](#comparison-with-equivalence-cache-circa-2018)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -948,6 +951,10 @@ For each of them, fill in the following information by copying the below templat
 - If we have a bug in batching we could see pods scheduling on incorrect nodes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+- Check to see if pods are being batched.
+- If they are being batched, look at latencies for batched pods vs non
+- If nominated nodes are failing feasibility, check if these pods were batched.
 
 ## Implementation History
 
