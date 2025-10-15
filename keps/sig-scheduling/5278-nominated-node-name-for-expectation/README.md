@@ -395,7 +395,9 @@ to implement this enhancement.
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/scheduler`: `2025-05-28` - `81.4`
+- `k8s.io/kubernetes/pkg/scheduler`: `2025-10-15` - `70.8`
+- `k8s.io/kubernetes/pkg/registry/core/pod/storage`: `2025-10-15` - `78.8`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2025-10-15` - `85.2`
 
 ##### Integration tests
 
@@ -484,7 +486,7 @@ Pods that are processed by Permit or PreBind plugins get NominatedNodeName durin
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes.
-The feature can be disabled in Beta version by restarting the kube-scheduler and kube-apiserver with the feature-gate off.
+The feature can be disabled in Beta version by restarting the kube-scheduler and kube-apiserver with the feature-gates off.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -517,16 +519,7 @@ there'll be nothing behaving wrong in the scheduling flow, see [Version Skew Str
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-We will do the following manual test after implementing the feature:
-
-1. upgrade
-2. set NNN to non-existing node
-3. ensure it won't get cleared
-4. downgrade
-5. ensure that it gets cleared
-6. upgrade
-7. set NNN to non-existing node
-8. ensure it isn't cleared again
+TODO: update the test scenario
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
