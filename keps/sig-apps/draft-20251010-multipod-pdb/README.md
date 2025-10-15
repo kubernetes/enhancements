@@ -173,7 +173,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal would allow it to treat multi-pod groups (e.g. LeaderWorkerSet replicas) as if they were pod replicas. We would add an optional field `replicaKey` to the PDB spec, so the PDB creator may provide a label to identify groups of pods which should be handled together. In the example of LWS, this is `leaderworkerset.sigs.k8s.io/group-key`, as all pods in a leader+workers group would share the same value for this label, and thus be identified as a single replica.
+Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal would allow it to treat multi-pod groups (e.g. LeaderWorkerSet [LWS] replicas) as if they were pod replicas. We would add an optional field `replicaKey` to the PDB spec, so the PDB creator may provide a label to identify groups of pods which should be handled together. In the example of LWS, this is `leaderworkerset.sigs.k8s.io/group-key`, as all pods in a leader+workers group would share the same value for this label, and thus be identified as a single replica.
 
 ## Motivation
 
@@ -233,6 +233,25 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
+If the user is not using LWS, their process will be unaffected.
+
+Using LWS, they would create a PDB like:
+```
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lws-pdb
+spec:
+  minAvailable: 4 
+  selector:
+    matchLabels:
+      leaderworkerset.sigs.k8s.io/name: mylws
+  replicaKey:"leaderworkerset.sigs.k8s.io/group-key"
+```
+
+With LWS replicas set up, all pods in the same group will have the same value under label key `leaderworkerset.sigs.k8s.io/group-key`.
+
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -241,6 +260,13 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+#### Background on multi-pod replicas (LWS)
+
+We will take the LeaderWorkerSet (LWS) as an example of this system. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and each "worker" pod and the number of pods in the group. This is useful in cases where a leader process coordinates multiple worker processes, such as AI/ML workloads for distributed model training and inference.
+
+It works by keeping all worker pods in the same lifecycle: they are created and scheduled in parallel, and if any workers fail the group is considered failing. In this context, LWS "replicas" are not additional pods, but additional leader+workers pod groups. The user may also specify the number of worker pods within each pod group (`leaderWorkerTemplate.size`). For unique identification, each worker has an index, and each replica of the group has an index.
+
 
 ### Risks and Mitigations
 
