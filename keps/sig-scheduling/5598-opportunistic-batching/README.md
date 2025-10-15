@@ -614,7 +614,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [ X ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `SchedulerCache`
+  - Feature gate name: `SchedulerOpportunisticBatching`
   - Components depending on the feature gate: `kube-scheduler`
 
 ###### Does enabling the feature change any default behavior?
