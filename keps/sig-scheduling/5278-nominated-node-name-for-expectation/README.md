@@ -90,12 +90,14 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2: Scheduler can resume its work after restart](#story-2-scheduler-can-resume-its-work-after-restart)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Confusing semantics of <code>NominatedNodeName</code>](#confusing-semantics-of-nominatednodename)
+    - [Node nominations need to be considered together with reserving DRA resources](#node-nominations-need-to-be-considered-together-with-reserving-dra-resources)
     - [Increasing the load to kube-apiserver](#increasing-the-load-to-kube-apiserver)
 - [Design Details](#design-details)
   - [The scheduler puts <code>NominatedNodeName</code>](#the-scheduler-puts-nominatednodename)
   - [The scheduler's cache for <code>NominatedNodeName</code>](#the-schedulers-cache-for-nominatednodename)
     - [The scheduler clears <code>NominatedNodeName</code> after scheduling failure](#the-scheduler-clears-nominatednodename-after-scheduling-failure)
   - [Kube-apiserver clears <code>NominatedNodeName</code> when receiving binding requests](#kube-apiserver-clears-nominatednodename-when-receiving-binding-requests)
+  - [Handling ResourceClaim status updates](#handling-resourceclaim-status-updates)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -211,6 +213,8 @@ misunderstands the node is low-utilized (because the scheduler keeps the place o
 We can expose those internal reservations with `NominatedNodeName` so that external components can take a more appropriate action
 based on the expected pod placement.
 
+Please note that the `NominatedNodeName` can express reservation of node resources only, but some resources can be managed by the DRA plugin and be expressed using ResourceClaim allocation. In order to correctly account all the resources needed by a pod, both the nomination and ResourceClaim status update needs to be reflected in the api-server.
+
 ### Retain the scheduling decision
 
 At the binding cycle (e.g., PreBind), some plugins could handle something (e.g., volumes, devices) based on the pod's scheduling result.
@@ -284,7 +288,15 @@ probably isn't that important - the content of `NominatedNodeName` can be interp
 
 If we look from consumption point of view - these are effectively the same. We want
 to expose the information, that as of now a given node is considered as a potential placement
-for a given pod. It may change, but for now that's what considered. 
+for a given pod. It may change, but for now that's what is being considered.
+
+#### Node nominations need to be considered together with reserving DRA resources
+
+The semantics of node nomination are in fact resource reservation, either in scheduler memory or in external components (after the nomination got persisted to the api-server). Since pods consume both node resources and DRA resources, it's important to persist both at the same (or almost the same) point in time.
+
+This is consistent with the current implementation: ResourceClaim allocation is stored in status in PreBinding phase, therefore in conjunction to node nomination it effectively allows to reserve a complete set of resources (both node and DRA) to enable their correct accounting.
+
+Note that node nomination is set before WaitOnPermit phase, but ResourceClaim status gets published in PreBinding, therefore pods waiting on WaitOnPermit would have only nominations published, and not ResourceClaim statuses. This however is not considered an issue, as long as there are no in-tree plugins supporting WaitOnPermit, and the Gang Scheduling feature is starting in alpha. This means that the fix to this issue will block Gang Scheduling promotion to beta.
 
 #### Increasing the load to kube-apiserver
 
@@ -362,10 +374,16 @@ We'll ensure this scenario works correctly via tests.
 
 As of now the scheduler clears the `NominatedNodeName` field at the end of failed scheduling cycle, if it
 found the nominated node unschedulable for the pod. This logic remains unchanged.
+
+NOTE: The previous version of this KEP, that allowed external components to set `NominatedNodeName`, deliberately left the `NominatedNodeName` field unchanged after scheduling failure. With the KEP update for v1.35 this logic is being reverted, and scheduler goes back to clearing the field after scheduling failure.
  
 ### Kube-apiserver clears `NominatedNodeName` when receiving binding requests
 
 We update kube-apiserver so that it clears `NominatedNodeName` when receiving binding requests.
+
+### Handling ResourceClaim status updates
+
+Since ResourceClaim status update is complementary to node nomination (reserves resources in a similar way), it's desired that both will be set at the beginning of the PreBinding phase (before the pod starts waiting for resources to be ready for binding). The order of actions in the device management plugin is correct, however the scheduler performs the prebinding actions of different plugins sequentially. As a result it may happen that e.g. a long lasting PVC provisioning may delay exporting ResourceClaim allocation status. This is not desired, as it allows a gap in time when DRA resources are not reserved - causing problems similar to the ones originally fixed by this KEP - kubernetes/kubernetes#125491
 
 ### Test Plan
 
