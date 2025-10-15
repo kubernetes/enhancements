@@ -91,6 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Scheduler Implementation](#scheduler-implementation)
+    - [Scoring](#scoring)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -290,15 +291,13 @@ type `DeviceSubRequest`. The `DeviceSubRequest` type is similar to
 available when providing multiple alternatives. The list provided in the
 `FirstAvailable` field is considered a priority order, such that the
 scheduler will use the first entry in the list that satisfies the
-requirements. 
+requirements.
 
-DRA does not yet implement scoring, which means that
-the selected devices might not be optimal. For example, if a prioritized
-list is provided in a request, DRA might choose entry number two on node A,
-even though entry number one would meet the requirements on node B. This is
-consistent with current behavior in DRA where the first match will be chosen.
-Scoring is something that will be implemented later, with early discussions
-in https://github.com/kubernetes/enhancements/issues/4970
+DRA does not yet implement full scoring (tracked in
+https://github.com/kubernetes/enhancements/issues/4970), but we will implement
+a limited form of scoring for this feature. This is to make sure nodes which
+can satisfy a claim with higher ranked subrequests are preferred over others. The
+details are described in the [Scoring](#scoring) section.
 
 ### User Stories
 
@@ -619,13 +618,11 @@ type DeviceRequest struct {
     //
     // This field may only be set in the entries of DeviceClaim.Requests.
     //
-    // DRA does not yet implement scoring, so the scheduler will
-    // select the first set of devices that satisfies all the
-    // requests in the claim. And if the requirements can
-    // be satisfied on more than one node, other scheduling features
-    // will determine which node is chosen. This means that the set of
-    // devices allocated to a claim might not be the optimal set
-    // available to the cluster. Scoring will be implemented later.
+    // DRA does not yet implement full scoring, but it implements limited
+    // scoring so that nodes that can satisfy high ranked subrequests are
+    // preferred over others. The node ultimately chosen also depends on
+    // other scheduling features, so it is not guaranteed that the node
+    // preferred by DRA is chosen.
     //
     // +optional
     // +oneOf=deviceRequestType
@@ -898,6 +895,41 @@ prefer a node that has the initial prioritized device request, those requests
 would need a higher score, which currently is planned for beta of this feature.
 For alpha, the scheduler may still pick a node with a less preferred device, if
 there are nodes with each type of device available.
+
+#### Scoring
+
+Full support for scoring in DRA is not in scope for this feature, but we will
+implement limited scoring to make sure that nodes which can satisfy claims with
+higher ranked subrequests are preferred over others.
+
+We will implement this by letting the dynamicresources scheduler plugin implement
+the `Score` and `NormalizeScore` interfaces. 
+
+The allocation result for each node will be given a score based on the ranking of
+the chosen subrequests across all requests using the `FirstAvailable` field across
+all claims referenced by the Pod. Since the number of subrequests for each request
+is capped at 8, we will compute a score between 1 and 8 for each request, with 8
+being the best (i.e. the first option was chosen) and 1 if the 8th subrequest was
+chosen. If there are more than one request using the `FirstAvailable` field the score from
+all of them will be added up to get the score for the pod on the node.
+Since
+the score for every node is computed based on the same claims, we end up with a
+ranking of the results from all nodes.
+
+We will implement the `NormalizeScore` interface to normalize the results. We will do
+this in a way where the score for the worst node will be given a value of zero and the
+score for the best node will be given a value of 100. This is easy to compute based
+only on the available scores using the formula
+`(currentNodeScore - minScore) * 100 / (maxScore - minScore)`. This makes sure that
+all options are ranked across the full range of available values.
+
+We will give the plugin a weight of 2 since it reflects scoring based on user preference.
+
+If multiple pods are referencing a `ResourceClaim`, the allocation of devices are decided
+when the first pod is scheduled. Any later pods referencing the claim must be scheduled
+on nodes from where the allocated devices are available. But since the devices have
+already been allocated, the dynamicresources scheduler plugin will not do any scoring
+for later pods.
 
 ### Test Plan
 
