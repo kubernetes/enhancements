@@ -102,7 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [We are narrowing the feature set where batching will work](#we-are-narrowing-the-feature-set-where-batching-will-work)
     - [We don't have experience with batching in production](#we-dont-have-experience-with-batching-in-production)
 - [Design Details](#design-details)
-  - [Pod signature v1](#pod-signature-v1)
+  - [Pod signature](#pod-signature)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
