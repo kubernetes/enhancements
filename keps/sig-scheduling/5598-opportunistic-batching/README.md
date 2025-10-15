@@ -226,15 +226,12 @@ const Unsignable = ""
 // pods to enable batching and gang scheduling optimizations. If an enabled plugin that does Scoring,
 // Prescoring, Filtering or Prefiltering does not implement this interface we will turn off batching for all pods.
 // For now we leave this optional, but in the future we may make it mandatory for all filtering and scoring plugins
-// to implement the interface (but of course plugins may choose to return "unsignable" and RescoreFailed.)
+// to implement the interface (but of course plugins may choose to return "Unsignable".)
 type BatchablePlugin interface {
 	Plugin
-	// This is called before PreFilter. The return value can be:
-	// - A string that represents the signature of this pod from this plugin's perspective. All pods with the same signature should see the same feasibility and
-	//   scoring for the same set of nodes in the same state, from the perspective of this plugin.
-	// - The assertion that this pod cannot be signed by this plugin; i.e. the scoring of this pod is dependent on more than the node and the pod. This
-	//   will disable batching and gang scheduling optimizations for the given pod, hurting performance.
-	// - An internal error condition passed back through the scheduling code.
+	// This is called before PreFilter. The plugin is responsible for adding any signature components that are needed
+  // for this plugin. Alternatively, if this plugin cannot guarantee that filtering / score work can be shared 
+  // between pods of this type, it can call "Unsignable" on the signature maker.
 	SignPod(pod *v1.Pod, signature PodSignatureMaker) error
 }
 ```
@@ -315,7 +312,6 @@ See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 a
 
 ### Risks and Mitigations
 
-
 #### Plugins need to keep signatures up to date
 
 The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We believe this should be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec, but there is still risk of subtle dependencies creeping in.
@@ -371,7 +367,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[ X ] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
