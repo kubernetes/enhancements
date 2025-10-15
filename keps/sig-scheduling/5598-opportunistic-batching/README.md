@@ -611,7 +611,7 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ X ] Feature gate (also fill in values in `kep.yaml`)
+- [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `SchedulerOpportunisticBatching`
   - Components depending on the feature gate: `kube-scheduler`
 
@@ -744,7 +744,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ X ] Events
+- [X] Events
   - Event Reason: Batching disabled because some plugins do not support it.
   - Event Reason: Counts of pods that are batched vs not.
   - Event Reason: Counts of nominated nodes that are found infeasible.
@@ -774,9 +774,8 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ X ] Metrics
+- [X] Metrics
   - Metric name: Pod scheduling time
-  - [Optional] Aggregation method:
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
