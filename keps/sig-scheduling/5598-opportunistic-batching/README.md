@@ -220,7 +220,7 @@ Internally the mechanism will use an **update** operation which we will also des
 
 #### Create 
 
-The create operation will use the sorted output from the scheduling of a "canonical" pod. After copying the feasible node list from the results, it will attempt to update the results using the update operation, which we describe next. If the results can't be updated, we will just drop the information without resusing it. If we can update the results, we will keep the batch information ready for use to nominate node names for subsequent pods.
+The create operation will use the sorted output from the scheduling of a "canonical" pod. After copying the feasible node list from the results, it will attempt to update the results using the update operation, which we describe next. If the results can't be updated, we will just drop the information without reusing it. If we can update the results, we will keep the batch information ready for use to nominate node names for subsequent pods.
 
 #### Update
 
