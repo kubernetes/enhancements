@@ -187,7 +187,7 @@ Another change is the shift towards 1-pod-per-node in batch and ML environments.
  * Improve the performance of scheduling large jobs on large clusters where the constraints are simple.
  * Begin building infrastructure to support gang scheduling and other "multi-pod" scheduling mechanisms.
  * Ensure that the infrastructure we build is maintainable as we update, add and remove plugins.
- * Provide improved performance with identical results to our current scheduler for targeted workloads in this release.
+ * Provide improved performance for a targeted set of workloads in this release.
  * Provide a path where we can expand batching to apply to most or all workloads over the next few releases.
 
 ### Non-Goals
