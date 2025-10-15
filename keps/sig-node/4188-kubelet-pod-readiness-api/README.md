@@ -389,7 +389,7 @@ The API becomes available again. The API is stateless, so no recovery is needed,
 
 ###### Are there any tests for feature enablement/disablement?
 
-yes, test will demonstrate that when the feature gate is disabled, the API returns the appropriate error code.
+Yes, test will demonstrate that when the feature gate is disabled, the API returns the appropriate error code.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -403,6 +403,7 @@ Kubelet may fail to start. The new API may cause the Kubelet to crash.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+N/A.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -415,7 +416,10 @@ No.
 Look at the `pod_info_endpoint_requests_list`, `pod_info_endpoint_requests_get`, `pod_info_endpoint_requests_watch` metric exposed by the Kubelet.
 
 ###### How can someone using this feature know that it is working for their instance?
-Log entry indicating that API is ready to received the traffic will be added.
+
+Access the API - it should return the Pod information.
+
+Log entry indicating that API is ready to receive the traffic will be added.
 
 - [ ] Events
   - Event Reason:
