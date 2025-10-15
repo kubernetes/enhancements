@@ -1414,10 +1414,8 @@ The following items have been removed from the stable graduation criteria:
   lack of support for resize is now a significant missing piece of that functionality; however
   we don't believe this is a strong enough reason to block IPPR GA. We can, however, consider
   whether this should block GA of pod level resources.
-- `UpdatePodSandboxResources` is implemented by containerd & CRI-O. This is implemented by
-  CRI-O; however there was a delay on the containerd side. We still expect this to be available
-  and land in containerd 2.2, which is slated to release before kubernetes 1.35. However, we
-  do not consider it blocking because it is a very small and noncritical part of this KEP.
+- `UpdatePodSandboxResources` is implemented by containerd & CRI-O. This is going to be re-evaluated
+  in the context of pod level resources resizing.
 - Re-evaluate the following decisions:
   - Resize atomicity: Resizes will stay atomic. Allowing partial resizes adds significant complexity
     and the use case is unclear.
@@ -1775,8 +1773,9 @@ _This section must be completed when targeting beta graduation to a release._
     - document kubelet-triggered eviction for critical pods
     - update outdated notes regarding static CPU
     - correct details about instrumentation
-- 2025-09-22 - Update in-place pod resize for GA
+- 2025-10-15 - Update in-place pod resize for GA
     - Update test plan
+    - Remove `UpdatePodSandboxResources` from graduation criteria 
 
 
 ## Drawbacks
