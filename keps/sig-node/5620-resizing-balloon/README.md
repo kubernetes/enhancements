@@ -165,7 +165,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 We provide a resizable node through the use of balloon pods, which acquire, but do not use, resources to ensure that pods on 
 the node cannot consume more than the current size of the node. This allows us to effectively use IPPR to resize
 the node, in addition to using it to resize pods. To decrease the size of a given node, an agent in the system can
-upsize the balloon pod on the given node. To increase the size of a given node, an agent in the sytem can downsize 
+upsize the balloon pod on the given node. To increase the size of a given node, an agent in the system can downsize 
 the balloon pod on the given node, allowing other pods to consume more resources on the node itself.
 
 ## Motivation
@@ -189,7 +189,7 @@ Note that while this feature is superficially simlar to hotplug, it is orthogona
 
 ## Proposal
 
-We propose that Kubernetes provide an official "balloon pod" concept. Balloon pods are deployed to each node in the sytem using a daemon set controller which can be enabled or disabled by administrators on a given cluster. Balloon pods claim resources using requests, but then do not consume them. This allows the underlying infrastructure to provide only the resources that are unused by the balloons, in whatever way the infrastructure feels appropriate.
+We propose that Kubernetes provide an official "balloon pod" concept. Balloon pods are deployed to each node in the system using a daemon set controller which can be enabled or disabled by administrators on a given cluster. Balloon pods claim resources using requests, but then do not consume them. This allows the underlying infrastructure to provide only the resources that are unused by the balloons, in whatever way the infrastructure feels appropriate.
 
 To resize a given node, a scaling component can simply invoke in-place-pod-updates on the resources for the balloon pod. To "upsize" the node the component would "downsize" the balloon pod to release more resources to the pods on the node. To "downsize" the node the component would "upsize" the ballon pod to remove resources from the pool available to the pods on the node.
 
