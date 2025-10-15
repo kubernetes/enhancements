@@ -189,10 +189,11 @@ Another change is the shift towards 1-pod-per-node in batch and ML environments.
  * Ensure that the infrastructure we build is maintainable as we update, add and remove plugins.
  * Provide improved performance for a targeted set of workloads in this release.
  * Provide a path where we can expand batching to apply to most or all workloads over the next few releases.
+ * Allow users to continue to use out-of-tree plugins. For this KEP we need to ensure that out-of-tree plugins continue to work without requiring edits, although they may not be able to take advantage of the new feature without some edits.
 
 ### Non-Goals
 
- * We are not attempting to apply this optimization to all pods in this release. We will make the addition of batching transparent, but only applicable to a reduced set of workloads in v1.
+ * We are not attempting to apply this optimization to all pods in this release. We will make the addition of batching transparent, but only applicable to a reduced set of workloads in this KEP.
  * We are not adding gang scheduling of any kind in this KEP. This is purely a performance improvement without adding dependency on the Workload API [KEP-4671](https://github.com/kubernetes/enhancements/pull/5558), although we hope the work on this KEP will help us with gang scheduling as we build it.
 
 ## Proposal
@@ -203,12 +204,40 @@ See https://github.com/bwsalmon/kubernetes/pull/1 for a WIP version of the code 
 
 The pod scheduling signature is used to determine if two pods are "the same" from a scheduling perspective. In specific, what this means is that any pod with the given signature will get the same scores / feasibility results from any arbitrary set of nodes. Also, assigning a pod to a node is not going to change neither the feasibility nor scoring of other nodes. This is necessary for the cache to work, since we need to be able to reuse the previous work.
 
-Note that some pods will not have a signature, because the scoring uses not just pod and node attributes, but other pods in the system, global data about pod placement, etc. These nodes get a nil signature, and we fallback to the slow path.
+Note that some pods will not have a signature, because the scoring uses not just pod and node attributes, but other pods in the system, global data about pod placement, etc. These nodes get a nil signature, and we fallback to the existing path.
 
 To allow non in-tree plugins to construct a signature, we add a new framework function to implement. This function takes a pod and generates a signature for that plugin as a string. The signature is likely a set of attributes of the pod, or something derived from them. To construct a full signature we take the signatures of all the plugins and aggeregate them into a single string. If any plugin cannot generate a signature for a given pod (because it depends on information other than the pod and node), then we generate a "nil" signature and don't attempt to batch the pod.
 
 Initially we won't require plugins to implement the new function, but we will turn off signatures for all pods if a plugin is enabled that does not implement it. In subsequent releases we might make implementation of the function a requirement, but of course plugins are also able to say pods are unsignable. 
 
+An early proposal of the interface is included below:
+
+```
+type PodSignatureMaker interface {
+	Unsignable()
+	AddElement(elementName, sigString string)
+	AddElementFromObj(elementName string, obj any) error
+	HasElement(elementName string) bool
+}
+
+const Unsignable = ""
+
+// BatchablePlugin is an interface that should be implemented by plugins that either filter or score
+// pods to enable batching and gang scheduling optimizations. If an enabled plugin that does Scoring,
+// Prescoring, Filtering or Prefiltering does not implement this interface we will turn off batching for all pods.
+// For now we leave this optional, but in the future we may make it mandatory for all filtering and scoring plugins
+// to implement the interface (but of course plugins may choose to return "unsignable" and RescoreFailed.)
+type BatchablePlugin interface {
+	Plugin
+	// This is called before PreFilter. The return value can be:
+	// - A string that represents the signature of this pod from this plugin's perspective. All pods with the same signature should see the same feasibility and
+	//   scoring for the same set of nodes in the same state, from the perspective of this plugin.
+	// - The assertion that this pod cannot be signed by this plugin; i.e. the scoring of this pod is dependent on more than the node and the pod. This
+	//   will disable batching and gang scheduling optimizations for the given pod, hurting performance.
+	// - An internal error condition passed back through the scheduling code.
+	SignPod(pod *v1.Pod, signature PodSignatureMaker) error
+}
+```
 ### Batching mechanism
 
 The second component of this KEP is a batching mechanism. Fundamentally the batching mechanism will have two operations that can be invoked wherever they are needed:
@@ -227,14 +256,14 @@ The create operation will use the sorted output from the scheduling of a "canoni
 The update operation will attempt to update the batch information after a scheduling or nomination has taken place. In service of this updating we will introduce an optional plugin interface for "Rescoring". The rescoring interface will take the pod and the scoring information for the node we bound the pod to. The update operation will call the rescoring interface on all plugins. Each plugin can return one of three results:
 
  * **Infeasible:** If the plugin can determine another pod of this kind cannot be placed on the node, then it returns infeasible. If *any* plugin returns infeasible for the node, we will simply drop this node from the results, and save the rest for our next round.
- * **Updated:** If the plugin can update the score it will do so in the node object and return this response. If *all* plugins return updated for the node, then we can keep the node in our results and just reorder it. We will not implement this in v1, but will leave it possible for v2.
+ * **Updated:** If the plugin can update the score it will do so in the node object and return this response. If *all* plugins return updated for the node, then we can keep the node in our results and just reorder it. We will not implement this in this KEP, but will leave it possible for future KEPs.
  * **Unknown:** If the plugin does not know how to update the score / feasibility of the node it can return unknown. If a scoring / filtering plugin doesn't implement the interface we assume unknown for all calls. If *no* plugin returns infeasible, and *any* plugin returns unknown, we will drop all of the scheduling results and not attempt to reuse them.
 
-In v1 we will implement "infeasible" rescoring functions for key plugins that we know can tell (nodeports, noderesources, etc). This will effectively limit the use of batching to specific workloads we can identify as "1-pod-per-node" but will open the path for us to continually expand the cases where we can apply batching by enhancing and adding rescoring functions.
+In this KEP we will implement "infeasible" rescoring functions for key plugins that we know can tell (nodeports, noderesources, etc). This will effectively limit the use of batching to specific workloads we can identify as "1-pod-per-node" but will open the path for us to continually expand the cases where we can apply batching by enhancing and adding rescoring functions.
 
 #### Nominate
 
-The nominate operation will take a pod with a matching signature and assign its nominated node name, using the first node in the list.  Nomination will also call the update operation to update the results for use on more pods in the future. Note that nomination doesn't actually schedule the pod, but it ensures that when the pod is scheduled it will take the fast path and not re-evaluate the full set of nodes. By separately these decisions we can use the batching mechanism in multiple places, including gang scheduling.
+The nominate operation will take a pod with a matching signature and assign its nominated node name, using the first node in the list.  Nomination will also call the update operation to update the results for use on more pods in the future. Note that nomination doesn't actually schedule the pod, but it ensures that when the pod is scheduled it will take the fast path and not re-evaluate the full set of nodes. By separately these decisions we can use the batching mechanism in multiple places, including gang scheduling. This resuses our existing node nomination path, which is done entirely in memory.
 
 ### Opportunistic batching
 
@@ -310,7 +339,7 @@ Because we haven't deployed batching in production before, we are still somewhat
 
 ## Design Details
 
-### Pod signature v1
+### Pod signature
 
 The follow section outlines the attributes we are currently proposing to use as the signature for each of the 
 plugins in the scheduler. We need the plugin owners to validate that these signatures are correct, or help
@@ -321,7 +350,7 @@ It only needs to be comparable between pods on a given running scheduler instanc
 
  * DynamicResources: For now we mark a pod unsignable if it has dynamic resource claims. We should improve this in the future, since most DRA claims are node specific and we should be able to determine this with a little effort. We will attempt to pull forward at least some integration of simple DRA claims with batching into this version as well.
  * ImageLocality: We use the canonicalized image names from the Volumes as the signature.
- * InterPodAffinity: If either the PodAffinity or PodAntiAffinity fields are set, the pod is marked unsignable, otherwise an empty signature.
+ * InterPodAffinity: If either the PodAffinity or PodAntiAffinity fields are set, the pod is marked unsignable, otherwise we need to include the pod labels in the signature.
  * NodeAffinity: We use the NodeAffinity and NodeSelector fields, plus any defaults set in configuration as the signature.
  * NodeName: We use the NodeName field as the signature.
  * NodePorts: We use the results from util.GetHostPorts(pod) as the signature.
