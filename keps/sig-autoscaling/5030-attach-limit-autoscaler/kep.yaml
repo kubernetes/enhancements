@@ -15,12 +15,13 @@ reviewers:
   - "@msau42"
   - "@elmiko"
   - "@towca"
+  - "@macsko"
 approvers:
   - "@gjtempleton"
   - "@jsafrane"
   - "@msau42"
   - "@towca"
-
+  - "@macsko"
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
 
