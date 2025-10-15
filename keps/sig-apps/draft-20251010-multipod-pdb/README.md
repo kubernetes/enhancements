@@ -245,27 +245,44 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-If the user is not using LWS, their process will be unaffected.
+*Note: if the user is not using multi-pod replicas, their process will be unaffected.*
 
-Using LWS, they would create a PDB like:
-```
+#### Story 1: Distributed Workload
+
+An engineer runs distributed ML training jobs using a `LeaderWorkerSet`. Each replica of consists of one leader and multiple worker pods that run concurrently. If any pod in a group is evicted, the group fails and must be restarted.
+
+To protect a long-running job from voluntary disruptions, such as node drain for an upgrade, the user must ensure that some number of training replicas remain available. If a disruption is required, it should evict an entire replica group, rather than pods across different replicas.
+
+The user would create a PDB for `LeaderWorkerSet` pods with a `replicaKey`:
+
+```yaml
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: lws-pdb
+  name: my-training-job-pdb
 spec:
-  minAvailable: 4 
+  minAvailable: 4
   selector:
     matchLabels:
-      leaderworkerset.sigs.k8s.io/name: mylws
-  replicaKey:"leaderworkerset.sigs.k8s.io/group-key"
+      leaderworkerset.sigs.k8s.io/name: my-training-job
+  replicaKey: "leaderworkerset.sigs.k8s.io/group-key"
 ```
 
-With LWS replicas set up, all pods in the same group will have the same value under label key `leaderworkerset.sigs.k8s.io/group-key`. If the user runs `kubectl node drain`, it will use the Eviction API and the controller will
-1. Select pods matching the PDB `selector`.
-2. Group selected pods using the value of the `replicaKey` label.
-3. Evict only if the resulting number of healthy groups does not violate the PDB `minAvailable`. A group is disrupted if any of its pods is evicted.
+Upon node drain, the Eviction API will:
+1.  Select all pods matching `leaderworkerset.sigs.k8s.io/name: my-training-job`.
+2.  Group these pods into replicas based on their value for label key `leaderworkerset.sigs.k8s.io/group-key`
+3.  Determine the number of healthy replicas.
+4.  Evict only if the number of healthy replicas after eviction will be at least `minAvailable` (4). An entire group is considered disrupted if any of its pods are targeted for eviction.
+  
+This way, the job can continue running with sufficient replicas even during cluster maintenance.
 
+#### Story 2: Cluster Maintenance
+
+A cluster administrator will frequently drain nodes for upgrades, security patches, etc. The cluster may have various workloads, including `LeaderWorkerSet` with specific availability requirements.
+
+To perform node drains safely without an application owner, this user may rely on the application owner's PDB as described in Story 1. The user may `kubectl drain <node>`, and the Eviction API will automatically identify multi-pod replicas and ensure that the drain does not violate the application's `minAvailable` requirement.
+
+This allows safe maintenance without causing outages, as the drain will pause if it cannot evict certain pods. If this happens, the user may wait for the application to become healthier, or contact the application owner to resolve.
 
 ### Notes/Constraints/Caveats (Optional)
 
