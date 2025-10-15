@@ -89,7 +89,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Pod scheduling signature](#pod-scheduling-signature)
+  - [Pod scheduling signature](#pod-scheduling -signature)
   - [Batching mechanism](#batching-mechanism)
     - [Create](#create)
     - [Update](#update)
@@ -253,7 +253,9 @@ The create operation will use the sorted output from the scheduling of a "canoni
 
 #### Update
 
-The update operation will attempt to update the batch information after a scheduling or nomination has taken place. In service of this updating we will introduce an optional plugin interface for "Rescoring". The rescoring interface will take the pod and the scoring information for the node we bound the pod to. The update operation will call the rescoring interface on all plugins. Each plugin can return one of three results:
+The update operation will attempt to update the batch information after a scheduling or nomination has taken place. In service of this updating we will introduce an optional plugin interface for "Rescoring". 
+
+Our current proposed rescoring interface would take the pod and the scoring information for the node we bound the pod to. The update operation will call the rescoring interface on all plugins. Each plugin would return one of three results:
 
  * **Infeasible:** If the plugin can determine another pod of this kind cannot be placed on the node, then it returns infeasible. If *any* plugin returns infeasible for the node, we will simply drop this node from the results, and save the rest for our next round.
  * **Updated:** If the plugin can update the score it will do so in the node object and return this response. If *all* plugins return updated for the node, then we can keep the node in our results and just reorder it. We will not implement this in this KEP, but will leave it possible for future KEPs.
@@ -261,13 +263,15 @@ The update operation will attempt to update the batch information after a schedu
 
 In this KEP we will implement "infeasible" rescoring functions for key plugins that we know can tell (nodeports, noderesources, etc). This will effectively limit the use of batching to specific workloads we can identify as "1-pod-per-node" but will open the path for us to continually expand the cases where we can apply batching by enhancing and adding rescoring functions.
 
+Note that we already have logic like this for feasibility in use today for preemption, we expect to reuse that for much of the logic needed here, and might even be able to avoid a new explicit rescoring interface for this KEP.
+
 #### Nominate
 
 The nominate operation will take a pod with a matching signature and assign its nominated node name, using the first node in the list.  Nomination will also call the update operation to update the results for use on more pods in the future. Note that nomination doesn't actually schedule the pod, but it ensures that when the pod is scheduled it will take the fast path and not re-evaluate the full set of nodes. By separately these decisions we can use the batching mechanism in multiple places, including gang scheduling. This resuses our existing node nomination path, which is done entirely in memory.
 
 ### Opportunistic batching
 
-We will then apply the batching mechanism to simple cases in the current code. For example, we might simply attempt to use the batching mechanism on a pod if the previous pod had the same signature, and we have had no interruptions in our stream of pods. We will apply the batching mechanism in a limited and simple fashion to give us experience in production and provide focused value without requiring us to do significant effort before integrating gang scheduling.
+We will then apply the batching mechanism to simple cases in the current code. We will target providing incremental value with minimal code changes in this KEP, and leave the more complex integration questions to gang scheduling. This involves using the same batch state (and snapshot and potentially plugin cyclestate) across multiple pods using the batching mechanism.
 
 ### Comparison with Equivalence Cache (circa 2018)
 
