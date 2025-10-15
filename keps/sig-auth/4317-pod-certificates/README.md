@@ -15,15 +15,9 @@
     - [Issuance Flow](#issuance-flow)
     - [API Object Diff](#api-object-diff)
     - [Example certificate bundle written to the pod filesystem](#example-certificate-bundle-written-to-the-pod-filesystem)
-  - [Kubernetes API client pod certificates](#kubernetes-api-client-pod-certificates)
-    - [X.509 PodIdentity Extension](#x509-podidentity-extension)
-    - [API Server PodIdentity Extension Support](#api-server-podidentity-extension-support)
-    - [API Server Pod Client Certificate Signer](#api-server-pod-client-certificate-signer)
-    - [Client-go Enhancements](#client-go-enhancements)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
-    - [Using this feature as a third-party signer implementer](#using-this-feature-as-a-third-party-signer-implementer)
   - [Future expansion: HSM support for private keys](#future-expansion-hsm-support-for-private-keys)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -82,29 +76,10 @@ Taken together, this machinery makes it feasible to securely and automatically
 deliver X.509 certificates to every pod in a cluster, without imposing an
 unreasonable burden on application developers or cluster administrators.  
 
-As a first application of this machinery, this KEP defines additional machinery
-that allows pods to automatically receive mTLS client certificates suitable for
-authenticating to kube-apiserver, with the same attributes provided by bound
-service account tokens:
-* A PodIdentity X.509 extension to allow an X.509 certificate to carry all
-  details of a pod's identity, including its UIDs and the node it is running on.
-* A new TLS user-mapping capability in kube-apiserver to understand client
-  certificates that embed PodIdentity extensions.
-* A new PodCertificateRequest signer
-  (`kubernetes.io/kube-apiserver-client-pod`), shipped in
-  kube-controller-manager, to issue compatible client certificate to pods.
-* A new client-go configuration, `rest.InClusterPodCertificateConfig()` that can
-  be used to load a credential bundle from disk and use it to connect to
-  kube-apiserver.
-
-While this first application motivates some of the design decisions in this KEP,
-it is explicitly intended that PodCertificateRequests and PodCertificate
-projected volume sources will be useful to third-party projects that want to
-easily and securely issue X.509 certificates to workloads running in a
-Kubernetes cluster.
-
-There is a draft implementation of the design outlined in this KEP:
-https://github.com/kubernetes/kubernetes/pull/127251
+While the Pod Certificates mechanism is designed for eventual use by in-tree
+signers to deliver built-in functionality, it is explicitly intended to also be
+useful to third-party projects that want to easily and securely issue X.509
+certificates to workloads running in a Kubernetes cluster.
 
 ## Motivation
 
@@ -147,17 +122,6 @@ but they can still be extracted from a compromised workload (or compromised
 node).  Storing the private keys in an HSM closes this loophole, but will require
 an additional interface for kubelet to expose remote signing capabilities to workloads.
 
-**Be 100% compatible with software in the field today**: The primary example in
-this KEP is that the private key and certificate chain are delivered in a single
-credential-bundle file.  This is based on implementation and operation
-experience of a CSI-based certificates solution that delivered private keys and
-certificate chains in separate files, as expected by most commodity webservers
-today.  While this is an attractive idea, automatically rotating these separate
-files is fraught.  Even if both files' content is updated atomically, skewed
-reads in the workload can result in hard-to-diagnose errors if the workload
-reads the key before rotation and the certificate chain after rotation (or
-vice-versa).
-
 **Support private keys shared across multiple pods**: Sharing private keys and
 certificates across multiple pods may be required in certain applications.
 However, this use case is well-served by Secret projected volume sources.
@@ -168,15 +132,11 @@ process blocks pod startup for pods that use PodCertificate projected volume
 sources.  PodCertificateRequests do not separate the approval and issuance
 steps, unlike CertificateSigningRequests.
 
-**Standardize on using the SPIFFE SVID format in core Kubernetes**: The
-certificates issued by `kubernetes.io/kube-apiserver-client-pod` can be made
-compatible with SPIFFE in the future, since they currently don't include any
-Subject Alternate Name entries.
-
 **Support identity delegation or impersonation**: We do not intend to support
 issuing certificates that workloads can use as intermediate CA certificates in
-order to issue further certificates, nor do we intend to support one privileged
-workload minting certificates on behalf of other workloads.
+order to issue further certificates.  It is, however, possible for a privileged
+workload or human user to create PodCertificateRequests on behalf of other
+workloads.
 
 ## Design Details
 
@@ -212,6 +172,8 @@ typical X.509 CSR.  Instead, they contain:
   * Node UID
 * A requested maximum duration for the certificate lifetime.
 * The signer name from which a certificate is being requested.
+* A free-form `map[string]string` to allow pod authors to communicate additional
+  request metadata to the signer implementation.
 * (In the status subobject): An issued certificate chain, stored as a single
   PEM-formatted string.  If there is more than one issued certificate, the first
   element of the chain is assumed to be the leaf certificate, followed by any
@@ -244,8 +206,11 @@ by matching on the signer name, it should take one of the following actions:
 PodCertificateRequest validation logic will:
 * Confirm that the public key is one of the supported key types.
 * Confirm that the proof-of-possession is valid.
-* Confirm that the issued chain (if one is set) consists of valid certificates,
-  that do indeed form a chain to each other.
+* Confirm that the issued chain (if one is set) consists of valid certificates.
+* To stay ahead of tighter certifificate validation coming in future versions of Go, we also check:
+  * no DNSNames entries are empty strings
+  * no DNSNames entries contain `..` or start/end with `.`
+  * all EmailAddresses entries pass mail.ParseAddress
 * Confirm that neither or both of the certificateChain and beginRefreshAt
   timestamp are set.
 * Ensure that all fields in PodCertificateRequest.Spec are immutable.
@@ -253,21 +218,14 @@ PodCertificateRequest validation logic will:
   request has been issued, denied, or failed.
 
 The `maxExpirationSeconds` field will have the following logic:
-* kube-apiserver will be configurable with an optional maximum duration to allow
-  for certificates issued via PodCertificateRequests, specified in the
-  `--pod-certificate-request-max-duration` flag.  The syntax of this flag will
-  support setting different maximum durations for different signers, with some
-  level of wildcarding.  If a signer is not covered by the flag value,
-  kube-apiserver will assume a maximum duration of 24 hours.
-* If the creator of the PodCertificateRequest left `maxExpirationSeconds` at 0,
+* If the creator of the PodCertificateRequest left `maxExpirationSeconds` unset,
   then kube-apiserver will default it to 24 hours.
-* kube-apiserver will then truncate `maxExpirationSeconds` to the signer's
-  configured maximum duration.
-* kube-apiserver will enforce a minimum value of 3600 (1 hour) on
-  `maxExpirationseconds`.
+* kube-apiserver will enforce a minimum value of 3600 (1 hour) and a maximum
+  value of 7862400 (91 days) on `maxExpirationSeconds`.  If the signer is one of
+  the kubernetes.io reserved signer, then the maximum will be 86400 (24 hours).
 * When the signer implementation isuses a certificate into the
-  PodCertificateRequest, kube-apiserver will enforce that the issued certificate's life span is less than `maxExpirationSeconds`.
-This logic ensures that both pod authors and cluster operators have control to restrict that max TTL of certs that are being issued.
+  PodCertificateRequest, kube-apiserver will enforce that the issued
+  certificate's life span is less than `maxExpirationSeconds`.
 
 The noderestriction admission plugin checks the consistency of the information
 in created PodCertificateRequest objects:
@@ -283,7 +241,7 @@ This upholds the Kubernetes node isolation guarantee by ensuring that
 compromising a single node only results in compromises of workloads that have
 actually been scheduled onto that node.
 
-During alpha, the ability to store PodCertificate objects (and the node
+During beta, the ability to store PodCertificate objects (and the node
 restriction admission logic) will be gated by the PodCertificateRequests feature
 gate.
 
@@ -294,7 +252,7 @@ extending CertificateSigningRequest:
 1. We wanted the pod details to be legible without having to parse an ASN.1 CSR.
 2. We wanted the pod details (especially the associated node name) to be
   available for use in an informer selector.  While these could be surfaced as
-  labels on CertificateSigningRequest objects, labels mutable.
+  labels on CertificateSigningRequest objects, labels are mutable.
 3. We wanted pod details to be immutable.
 4. We wanted to avoid putting Pod Certificate-specific fields in the generic
   CertificateSigningRequest.
@@ -336,6 +294,18 @@ type PodCertificateRequest struct {
 type PodCertificateRequestSpec struct {
 	// signerName indicates the request signer.
 	SignerName string `json:"signerName" protobuf:"bytes,1,opt,name=signerName"`
+
+  // unverifiedUserAnnotations allow pod authors to pass additional information to
+  // the signer implementation.  Kubernetes does not restrict or validate this
+  // metadata in any way.
+  //
+  // Entries are subject to the same validation as object metadata annotations,
+  // with the addition that all keys must be domain-prefixed. No restrictions
+  // are placed on values, except an overall size limitation on the entire field.
+  //
+  // Signers should document the keys and values they support.  Signers should
+  // deny requests that contain keys they do not recognize.
+  UnverifiedUserAnnotations map[string]string `json:"unverifiedUserAnnotations,omitempty" protobuf:"bytes,11,opt,name=unverifiedUserAnnotations"`
 
 	// maxExpirationSeconds is the requested lifetime for the certificate.  This
   // should be treated as a maximum, as both kube-apiserver and the signer 
@@ -477,9 +447,6 @@ const (
 	PodCertificateRequestConditionTypeDenied string = "Denied"
 	// Failed indicates the signer failed to issue the certificate.
 	PodCertificateRequestConditionTypeFailed string = "Failed"
-	// SuggestedKeyType is an auxiliary condition that a signer can attach if it
-	// denied the request due to an unsupported key type.
-	PodCertificateRequestConditionTypeSuggestedKeyType string = "SuggestedKeyType"
 )
 
 // Well-known condition reasons for PodCertificateRequests
@@ -487,6 +454,11 @@ const (
 	// UnsupportedKeyType should be set on "Denied" conditions when the signer
 	// doesn't support the key type of publicKey.
 	PodCertificateRequestConditionUnsupportedKeyType string = "UnsupportedKeyType"
+
+  // InvalidUnverifiedUserAnnotations should be set on "Denied" conditions when the signer
+  // does not recognize one of the keys passed in userConfig, or if the signer
+  // otherwise considers the userConfig of the request to be invalid.
+  PodCertificateRequestConditionInvalidUserConfig string = "InvalidUnverifiedUserAnnotations"
 )
 ```
 
@@ -503,8 +475,7 @@ string that encapsulates both the key type and any parameters necessary (for
 example, RSA modulus size).  The intention is to offer a tasting menu of
 reasonable key choices, rather than offering a flexibility to a wide variety of
 parameters. Key types supported by kubelet are "RSA3072", "RSA4096",
-"ECDSAP256", "ECDSAP384", and "ED25519".  If no key type is specified, kubelet
-defaults to "ECDSAP256".
+"ECDSAP256", "ECDSAP384", and "ED25519".
 
 Once the key is generated, kubelet creates a PodCertificateRequest with the
 details of the pod that is mounting the volume.  The kubelet then waits for the
@@ -577,10 +548,25 @@ type PodCertificateProjection struct {
 	// Kubelet's generated CSRs will be addressed to this signer.
 	SignerName string `json:"signerName,omitempty" protobuf:"bytes,1,rep,name=signerName"`
 
+  // userAnnotations allow pod authors to pass additional information to
+  // the signer implementation.  Kubernetes does not restrict or validate this
+  // metadata in any way.
+  //
+  // These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
+  // the PodCertificateRequest objects that Kubelet creates.
+  //
+  // Entries are subject to the same validation as object metadata annotations,
+  // with the addition that all keys must be domain-prefixed. No restrictions
+  // are placed on values, except an overall size limitation on the entire field.
+  //
+  // Signers should document the keys and values they support.  Signers should
+  // deny requests that contain keys they do not recognize.
+  UserAnnotations map[string]string `json:"userAnnotations,omitempty" protobuf:"bytes,6,rep,name=userAnnotations"`
+
 	// The type of keypair Kubelet will generate for the pod.
 	//
 	// Valid values are "RSA3072", "RSA4096", "ECDSAP256",
-	// "ECDSAP384", and "ED25519".  If left empty, Kubelet defaults to "ECDSAP256".
+	// "ECDSAP384", and "ED25519".
 	KeyType string `json:"keyType,omitempty" protobuf:"bytes,2,rep,name=keyType"`
 
   // The maximum certificate lifetime that the application wants.
@@ -699,124 +685,6 @@ k68gmm9HQCdRI3stW7TC3lB0Cd1XSSMUISIP0g==
 -----END CERTIFICATE-----
 ```
 
-### Kubernetes API client pod certificates
-
-#### X.509 PodIdentity Extension
-
-The CNCF has an existing ASN.1 Private Enterprise Number registered for use by
-the Kubernetes project (`1.3.6.1.4.1.57683`).  In order to cleanly embed pod
-identity information into an X.509 certificate or certificate request, we can
-define a new ASN.1 OID (currently `1.3.6.1.4.1.57683.1`, though we need to
-define a management policy for the PEN) and specify that it contains the
-following DER-encoded structure:
-
-```go
-type podIdentityASN1 struct {
-	Namespace          string `asn1:"utf8,tag:0"`
-  NamespaceUID       string `asn1:"utf8,tag:1"`
-	ServiceAccountName string `asn1:"utf8,tag:2"`
-	ServiceAccountUID  string `asn1:"utf8,tag:3"`
-	PodName            string `asn1:"utf8,tag:4"`
-	PodUID             string `asn1:"utf8,tag:5"`
-	NodeName           string `asn1:"utf8,tag:6"`
-	NodeUID            string `asn1:"utf8,tag:7"`
-}
-```
-
-This extension is defined by the behavior of the go `encoding/asn1` package in
-go 1.23.  A translation to ASN.1 notation is provided for convenience, but in
-the case of conflict, the go version controls:
-```asn1
-PodIdentity SEQUENCE {
-  namespace [0] UTF8String,
-  namespaceUID [1] UTF8String,
-  serviceAccountName [2] UTF8String,
-  serviceAccountUID [3] UTF8String,
-  podName [4] UTF8String,
-  podUID [5] UTF8String,
-  nodeName [6] UTF8String,
-  nodeUID [7] UTF8String
-}
-```
-
-Utility functions for embedding and extracting this extension from `crypto/x509`
-Certificate objects are defined in `k8s.io/component-helpers/kubernetesx509`.
-
-This extension, and the utility functions for manipulating it, are developed for
-use by core Kubernetes components, although third parties could make use of
-them.  The extension should only be changed in backwards-compatible ways.
-
-#### API Server PodIdentity Extension Support
-
-The kube-apiserver is extended to authenticate TLS client certificates that
-represent service account identities in the following format:
-
-* Are signed by root certificates provided by a new `--pod-client-ca-file` flag
-  (with automatic reload when the contents of the file change),
-* Contain no SubjectAlternateName data, and
-* Contain an X.509 PodIdentity extension.
-
-These certificates are translated to an authenticator.Response that has:
-* `User.Name` set to
-  `system:serviceaccount:{PodIdentity.Namespace}:{PodIdentity.ServiceAccountName}`.
-* `User.UID` set to `PodIdentity.ServiceAccountUID`.
-* `User.Extra["authentication.kubernetes.io/pod-name"]` set to
-  `{PodIdentity.PodName}`
-* `User.Extra["authentication.kubernetes.io/pod-uid"]` set to
-  `{PodIdentity.PodUID}`
-* `User.Extra["authentication.kubernetes.io/node-name"]` set to
-  `{PodIdentity.NodeName}`
-* `User.Extra["authentication.kubernetes.io/node-uid"]` set to
-  `{PodIdentity.NodeUID}`
-* `User.Extra["authentication.kubernetes.io/credential-id"]` set to
-  `X509SHA256=<sha256-hash-of-the-certificate>`.
-
-The net effect is that authenticating via a PodIdentity-bearing cert has the
-same object-bound behavior as authenticating via a bound service account token.
-
-During Alpha, this feature will be gated by the
-`PodCertificateKubeApiserverClientAcceptance` feature gate.
-
-#### API Server Pod Client Certificate Signer
-
-The kube-controller-manager is extended to support a new certificate signer,
-`kubernetes.io/kube-apiserver-client-pod`.
-
-The controller for this signer name automatically issues certificates for
-PodCertificateRequests that are addressed to it.  It performs no additional
-validation on PodCertificateRequests beyond the validation enforced by
-kube-apiserver.
-
-The certificates it issues are meant to be understood by kube-apiserver as
-described above.  They:
-* Have a PodIdentity extension (critical) that contains the information from
-  `PodCertificateRequest.Spec`.
-* Key usages consistent with the certificate being used as a TLS client
-  certificate.
-* It uses a CA specified by a new pair of private key / root certificate flags
-  (although implementations are free to set this flag to point at the CA as
-  another signer).
-* It issues certificates that are valid for the lesser of
-  `Spec.MaxExpirationSeconds` or 24 hours, and tells Kubelet to begin refreshing
-  them at the lesser of `0.5 * Spec.MaxExpirationSeconds` or 12 hours.
-* Are backdated by 5 minutes to limit clock skew issues.
-
-During Alpha, this feature is gated by the
-`PodCertificateKubeApiserverClientIssuance` feature gate.
-
-Because kube-apiserver will interpret the PodIdentity extension as expressing an
-object binding between the presented certificate and the pod named in the
-extension, once a pod is no longer running, all certificates that were issued to
-it will become invalid.  This, along with the short lifetime of the
-certificates, removes the need for a more permanent certificate revocation
-mechanism.
-
-#### Client-go Enhancements
-
-Client-go will support a new `rest.InClusterPodCertificateConfig()`
-configuration that takes the location of a credential bundle in the filesystem,
-and picks up changes to the bundle as credential rotation occur.
-
 ### Risks and Mitigations
 
 **Scalability**: In the current design and draft implementation, kubelet holds
@@ -831,14 +699,14 @@ capability to read back the existing key from the projected volume on startup.
 
 #### Story 1
 
-I'm an application developer building a Kubernetes controller that I want to
-deploy into my cluster.  I want to make sure that my controller securely
-authenticates to kube-apiserver using mTLS.
+Several example signers built on the alpha feature set are available in the
+[mesh-examples repository](https://github.com/ahmedtd/mesh-example).
 
-I add a new projected volume to my pod, containing the information that
-client-go expects at a well-known path.  I set
-`automountServiceAccountToken=false` because I want to ensure that my pod is not
-using bearer tokens for authentication.
+I'm an application developer building an application that I want to deploy into
+my cluster.  I want my application to receive a SPIFFE client certificate that
+can be used to authenticate to an external API.
+
+I add a new projected volume to my pod:
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -853,32 +721,21 @@ spec:
     image: debian
     command: ['sleep', 'infinity']
     volumeMounts:
-    - name: kube-apiserver-client-certificate
-      mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+    - name: spiffe-credentials
+      mountPath: /run/workload-spiffe-credentials
   volumes:
-  - name: kube-apiserver-client-certificate
+  - name: spiffe-credentials
     projected:
       sources:
       - podCertificate:
-          signerName: "kubernetes.io/kube-apiserver-client-pod"
+          signerName: "row-major.net/spiffe"
+          keyType: ED25519
           credentialBundlePath: credentialbundle.pem
-      - configMap:
-          localObjectReference: kube-root-ca.crt
-          items:
-          - key: ca.crt
-            path: kube-apiserver-root-certificate.pem
-      - downwardAPI:
-          items:
-          - path: namespace
-            fieldRef:
-              apiVersion: v1
-              fieldPath: metadata.namespace
 ```
 
-I ensure that my pod uses client-go's `rest.InClusterPodCertificateConfig()`,
-and point it at the location of my credential bundle in the filesystem.
-
-#### Using this feature as a third-party signer implementer
+My application code can then read the private key and certificate chain from
+`/run/workload-spiffe-credentials/credentialbundle.pem`, and use them as an mTLS
+client certificate to authenticate to external APIs.
 
 ### Future expansion: HSM support for private keys
 
@@ -919,9 +776,6 @@ Unit test list (informed by draft implementation):
 * pkg/api/pod/util_test.go
 * pkg/apis/certificates/validation_test.go
 * pkg/apis/core/validation/validation_test.go
-* pkg/controller/certificates/authority/authority_test.go
-* pkg/controller/certificates/podcertificaterequest_controller_test.go
-* pkg/controller/certificates/signer/signer_test.go
 * pkg/kubelet/podcertificate/podcertificate_manager_test.go
 * pkg/registry/certificates/podcertificaterequest/storage/storage_test.go
 * pkg/registry/certificates/podcertificaterequest/strategy_test.go
@@ -929,9 +783,6 @@ Unit test list (informed by draft implementation):
 * plugin/pkg/admission/noderestriction/admission_test.go
 * plugin/pkg/auth/authorizer/rbac/bootstrappolicy/controller_policy_test.go
 * plugin/pkg/auth/authorizer/rbac/bootstrappolicy/policy_test.go
-* staging/src/k8s.io/apiserver/pkg/authentication/request/x509/x509_test.go
-* staging/src/k8s.io/client-go/rest/config_test.go
-* staging/src/k8s.io/component-helpers/kubernetesx509/kubernetesx509_test.go
 
 <!--
 Additionally, for Alpha try to enumerate the core package you will be touching
@@ -964,7 +815,8 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+- test/integration/podcertificaterequests/podcertificate_integration_test.go: https://storage.googleapis.com/k8s-triage/index.html?test=test%2Fintegration%2Fpodcertificaterequests%20podcertificaterequests
+- test/integration/kubelet/podcertificatemanager_integration_test.go: https://storage.googleapis.com/k8s-triage/index.html?test=test%2Fintegration%2Fkubelet%20kubelet
 
 ##### e2e tests
 
@@ -979,19 +831,31 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 -->
 
 * test/e2e/auth/projected_podcertificate.go: Checks end-to-end issuance and
-  usage of pod certificates issued by `kubernetes.io/kube-apiserver-client-pod`.
-  The test will create an agnhost pod with a mounted credential bundle, and
-  agnhost will use the credential bundle to connect to kube-apiserver.
+  usage of pod certificates issued by an example signer built into the test or
+  agnhost. The test will create a pair of agnhost pods and confirm that they can
+  establish an mTLS connection. An additional test case will confirm that
+  rotation works properly by continuing to establish connections for 20 minutes,
+  while using a signer that issues 10-minute valid certificates.
 
 ### Graduation Criteria
 
 For Alpha:
 * The feature will be gated behind feature flags and alpha API enablement.
-* An e2e test will exercise the feature in order to prevent regressions.
 * Interested users can experiment with the feature using a local Kubernetes
   distribution such as kind.
 * Interested platform providers can experiment with integrating the feature into
   their environment.
+
+For Beta:
+* Add e2e test to exercise the feature end-to-end
+* Implement out-of-tree signers for several scenarios to prove that the feature
+  is sufficient for real use cases. These scenarios should include issuing of:
+  - serving certificates
+  - issuing client certificates
+  - SPIFFE certificates (?)
+  [mesh-examples](https://github.com/ahmedtd/mesh-example).
+* Migrate kubelet implementation to use the beta API.
+* Deprecate and remove the alpha API.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -1090,54 +954,30 @@ This feature involves interaction among three components:
 * signing controllers (hosted in kube-controller-manager or elsewhere)
 
 Initially, the skews we need consider are:
-* (`kube-apiserver>=1.32`, `kubelet<1.32`, `kube-controller-manager<1.32`): If a
-  pod with a PodCertificate projected volume is created, it may get scheduled
-  onto a node where kubelet doesn't understand PodCertificate projected volumes.
-  This kubelet will be unaware of the volume, and beginning running the pod
-  without mounting any certificates.  If the application inside the pod is
-  expecting the certificates to be present, it will probably crash.
-* (`kube-apiserver>=1.32`, `kubelet<1.32`, `kube-controller-manager>=1.32`):
-  Same as the above case.
-* (`kube-apiserver>=1.32`, `kubelet>=1.32`, `kube-controller-manager<1.32`):
-  kube-apiserver will admit pod specs with PodCertificate projected volumes.
-  When scheduled, kubelet will successfully create a PodCertificateRequest
-  object for the pod.  However, these PodCertificateRequests will hang in an
-  unissued state forever, which means the pods will remain stuck at volume set
-  up. `kubernetes.io/kube-apiserver-client-pod`, kube-controller-manager will
-  not act on it.  Workloads that were trying to create these pods will be stuck
-  at pod setup.
-* (`kube-apiserver>=1.32`, `kubelet>=1.32`, `kube-controller-manager>=1.32`):
-  The feature works normally.
+* (`kube-apiserver>=1.34`, `kubelet<1.34`): If a pod with a PodCertificate
+  projected volume is created, it may get scheduled onto a node where kubelet
+  doesn't understand PodCertificate projected volumes. This kubelet will be
+  unaware of the volume, and beginning running the pod without mounting any
+  certificates.  If the application inside the pod is expecting the certificates
+  to be present, it will probably crash.
+* (`kube-apiserver>=1.34`, `kubelet>=1.34`): The feature works normally.
 
 Once the feature is launched, we need to consider feature evolution.
 
 One possible example is support for a new key type.  Supporting a new key type
-requires updates in all three components:
+requires updates in multiple components:
 * Kubelet will need support for generating keys of the new type.
 * Kube-apiserver will need support for deserializing the new key type and
   validating the proof-of-possession.
-* Kube-controller-manager (and third-party signing controllers) will need
-  support for issuing certificates to the new key type.
 
 If support for the new key type is introduced in version N, then we have the
 following skew cases:
-* (`kube-apiserver>=N`, `kubelet<N`, `kube-controller-manager<N`):
-  kube-apiserver will admit pods with PodCertificate projected volumes that
-  specify the new key type, but these pods will fail to start when actually
-  scheduled onto a node.  Kubelet will continually return an error during volume
-  set up, when it validates the specified key type against its list of supported
-  key types.
-* (`kube-apiserver>=N`, `kubelet<N`, `kube-controller-manager>=N`): Same as the
-  previous case.
-* (`kube-apiserver>=N`, `kubelet>=N`, `kube-controller-manager<N`):
-  kube-apiserver will admit pods with PodCertificate projected volumes that
-  specify the new key type.  These pods will still fail to start when scheduled
-  onto a node.  Kubelet will successfully create PodCertificateRequest objects,
-  but kube-controller-manager will continually reject them because it does not
-  understand the new key type.  Kubelet will reflect this by returning a
-  permanent error from volume set up.
-* (`kube-apiserver>=N`, `kubelet>=N`, `kube-controller-manager>=N`): No
-  problems, everything works.
+* (`kube-apiserver>=N`, `kubelet<N`): kube-apiserver will admit pods with
+  PodCertificate projected volumes that specify the new key type, but these pods
+  will fail to start when actually scheduled onto a node.  Kubelet will
+  continually return an error during volume set up, when it validates the
+  specified key type against its list of supported key types.
+* (`kube-apiserver>=N`, `kubelet>=N`): No problems, everything works.
 
 ## Production Readiness Review Questionnaire
 
@@ -1167,16 +1007,13 @@ you need any help or guidance.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-At alpha, enabling this feature in a live cluster will require the following steps.
+At beta, enabling this feature in a live cluster will require the following steps.
 
-1. Enable the certificates/v1alpha1 API.
-2. Enable the PodCertificateRequest feature gate.
-3. Enable the PodCertificateProjection feature gate.
-4. Enable the PodCertificateAPIClientCertificates feature gate.
+1. Enable the certificates/v1beta1 API.
+2. Enable the PodCertificateRequest feature gate on all kube-apiserver replicas.
+3. Enable the PodCertificateRequest feature gate on all kubelet instances.
 
-At this point, you can begin to create pods that use the features.  These steps
-can all happen at once for clusters that don't currently have any workloads that
-use PodCertificate projected volumes.
+At this point, you can begin to create pods that use the features.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1187,10 +1024,9 @@ No, no default behavior is changed.
 Yes, the feature can be disabled safely by following this procedure.
 
 1. Remove any workloads that are currently using PodCertificate projected volumes.
-2. Disable the PodCertificateAPIClientCertificates feature gate.
-3. Disable the PodCertificateProjection feature gate.
-4. Disable the PodCertificateRequest feature gate.
-5. Disable the certificates/v1alpha1 API.
+2. Disable the PodCertificateRequest feature gate on all kubelet instances
+3. Disable the PodCertificateRequest feature gate on all kube-apiserver replicas
+5. Disable the certificates/v1beta1 API.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1209,7 +1045,12 @@ layer.
 This section must be completed when targeting beta to a release.
 -->
 
+
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+If following the rollout and rollback procedures documented in the previous
+section, no failures are expected.  The only sources of failures will be a
+potentially-misbehaving signer implementation.
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
@@ -1228,6 +1069,17 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
+Enabling the feature only results in kubelet establishing watches for
+PodCertificateRequests relevant to that particular node.  This will slightly
+increase Kubelet's memory usage, and slightly increase kube-apiserver's per-node
+CPU and memory load.
+
+Nontrivial resource usage will primarily be driven by the user actually creating
+workloads that use podCertificate projections.  Things to watch for here would
+be rate of creation of PodCertificateRequests, as well as the breakdown of
+issued, failed, and denied requests.  Any problems can be addressed purely by
+deleting the offending pods or pod controllers.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -1236,11 +1088,18 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade is not tested for the Alpha to Beta transition.  Anyone evaluating the
+feature in alpha is expected to completely disable usage, then re-enable the
+beta version of the feature.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+The alpha API will be deprecated simultaneously with the beta API being
+launched.
 
 ### Monitoring Requirements
 
@@ -1259,6 +1118,35 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Operators can use the pre-existing metric `apiserver_resource_objects`, labels
+`group=certificates.k8s.io`, `resource=podcertificaterequests`.  The stream
+value will be nonzero, indicating that `kubelet` is creating
+PodCertificateRequest objects.
+
+`kubelet` will report a new metrics that shows the feature is in use:
+* `kubelet_podcertificate_states`: A gauge vector reporting the current number
+  of podCertificate projected volume sources being maintained by this kubelet
+  instance.  Facets:
+  * `signer_name`: The signer that is issuing the pod certificate.
+  * `state`:
+    * `fresh`: The certificate is up to date.
+    * `overdue_for_refresh`: The current time is more than 10 minutes past the
+      most recently issued certificate's `beginRefreshAt` timestamp.
+    * `expired`: The current time is past the most recently issued certificate's
+      `notAfter` timestamp.
+    * `failed`: The most recent issuance or refresh attempt ended with `Failed`
+      condition.
+    * `denied`: The most recent issuance or refresh attempt ended with `Denied`
+      condition.
+
+`kubelet` will emit the following events:
+* An event each time a PodCertificateRequest that this particular `kubelet`
+  instance created is moved to the "Failed" or "Denied" terminal conditions.
+* An event each time a running pod has failed to refresh a certificate more than
+  20 minutes after the indicated `beginRefreshAt` time.
+* An event each time a running pod's certificate expires without having been
+  refreshed.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1270,13 +1158,16 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+Health of initial certificate issuances can be indicated by the pod moving into
+running state.  If a pod is blocked by PodCertificateRequests being unanswered,
+failed, or denied, `kubelet` will report events indicating that volume mounting
+failed.  (This behavior exists today.)
+
+Health of certificate refresh can be inferred from the *lack* of
+`kubelet`-sourced events reporting problems with the refresh process.
+
+Additionally, the new metric `kubelet_pod_certificate_states` can show if there
+are problems issuing or refreshing certificates in the cluster.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1295,25 +1186,31 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Each signer implementation will need to set their own service level objectives
+for:
+* Elapsed time from creation of a PodCertificateRequest addressed to the signer,
+  to the PCR being moved into a terminal condition.
+* Success rate of PodCertificateRequests (counting Denied as a successful
+  resolution).
+
+Given a properly functioning signer, Kubelet's SLO is:
+* No certificate is allowed to expire, or go more than 10 minutes beyond its
+  most recent `beginRefreshAt` timestamp without being refreshed.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `kubelet_pod_certificate_states`
+    - No metric points are reported with `state=overdue_for_refresh` or `state=expired`.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+Metrics cardinality guidelines keep us from adding metrics that would help an
+operator track a malfunction back to a particular volume in a particular pod.
 
 ### Dependencies
 
@@ -1337,6 +1234,12 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+The base feature has no dependencies beyond the intrinsic dependencies of
+`kubelet` and `kube-apiserver`.  Any signer implementations will be dependent on
+how the third-party signing controller is installed into the cluster.  Any
+future built-in signing controllers will likely be implemented in
+`kube-controller-manager`.
 
 ### Scalability
 
@@ -1416,35 +1319,32 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Existing workloads with valid certificates will continue to run.  `kubelet` will
+encounter non-fatal errors when attempting to refresh certificates, but the
+existing certificates will continue to be valid until they expire.  Third-party
+signer implementations should tune their logic for certificate lifetimes and
+`beginRefreshAt` so that reasonable outage periods can be tolerated.  A good
+default choice would be for certificates to be valid for 24 hours, and begin
+refreshing them after 12 hours.  This will allow up to a 12-hour outage in
+kube-apiserver or etcd to be tolerated by existing workloads.
+
+New pods that use `podCertificate` projections will be unable to start, since
+`kubelet` will encounter a hard error when trying to create their
+PodCertificateRequests.  However, a kube-apiserver outage would, in general,
+prevent the creation of new pods as well.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+If a third party signer controller has an outage, that will affect
+`podCertificate` projections using that signer, in a similar way as the
+`kube-apiserver` outage described above.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+* 1.34 --- Launched to alpha.
+* 1.35 --- Launched to beta, with the addition of the `spec.userConfig` field.
 
 ## Drawbacks
 
@@ -1460,6 +1360,7 @@ Why should this KEP _not_ be implemented?
 * HMAC-based one-time password tokens for Pods; the token is never retransmitted, but the involved parties (Pod, kubelet, API server) have access to its cleartext, so it's not a big improvement over reused bearer tokens.
 <<[/UNRESOLVED]>>
 
+<<[UNRESOLVED built-in signers are deferred from this KEP, but this discussion belongs in the KEP that eventually ships built-in signers. ]>>
 **Using custom Relative Distinguished Names instead of a PodIdentity critical
 extension**: We considered encoding pod identity into certificates issued by
 `kubernetes.io/kube-apiserver-client-pod` as part of the `Subject` field, using
@@ -1469,9 +1370,11 @@ instead, for several reasons:
   could find no discussion in the history of those RFCs about why they are using
   extensions).
 * We think the ability to set the extension as critical might be important.
-
+<<[/UNRESOLVED]>>
 
 
 ## Infrastructure Needed (Optional)
 
-We may want to set up a formal process for managing OIDs under the existing Kubernetes Private Enterprise number.  This could be as simple as a markdown file somewhere in the Kubernetes repository.
+We may want to set up a formal process for managing OIDs under the existing
+Kubernetes Private Enterprise number.  This could be as simple as a markdown
+file somewhere in the Kubernetes repository.
