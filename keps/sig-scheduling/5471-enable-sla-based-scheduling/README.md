@@ -649,6 +649,7 @@ Update the following integration tests to include new operators:
    - Dynamic taint addition/removal
    - Pod rescheduling after taint changes
    - Integration with NodeAffinity
+   - Feature gate on/off 
 
 ##### e2e tests
 
