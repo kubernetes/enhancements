@@ -201,7 +201,7 @@ See https://github.com/bwsalmon/kubernetes/pull/1 for a WIP version of the code 
 
 ### Pod scheduling signature
 
-The pod scheduling signature is used to determine if two pods are "the same" from a scheduling perspective. In specific, what this means is that any pod with the given signature will get the same scores / feasibility results from any arbitrary set of nodes. This is necessary for the cache to work, since we need to be able to reuse the previous work.
+The pod scheduling signature is used to determine if two pods are "the same" from a scheduling perspective. In specific, what this means is that any pod with the given signature will get the same scores / feasibility results from any arbitrary set of nodes. Also, assigning a pod to a node is not going to change neither the feasibility nor scoring of other nodes. This is necessary for the cache to work, since we need to be able to reuse the previous work.
 
 Note that some pods will not have a signature, because the scoring uses not just pod and node attributes, but other pods in the system, global data about pod placement, etc. These nodes get a nil signature, and we fallback to the slow path.
 
