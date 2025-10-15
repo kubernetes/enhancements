@@ -406,7 +406,7 @@ Will add an extra function and test for plugins we touch.
 
 The code draft has first versions of most of these, will add more as we get through the discussion process.
 
-- schedule_one.go - Add test cases for opportunistic batching.
+- schedule_one_test.go - Add test cases for opportunistic batching.
 - signature_test.go - Test cases for the framework signature call and the helper class
 - signature_consistency_test.go - Test cases to ensure the signature captures all the necessary information. We will take a range of pod specs and node definitions, run them through the filtering / scoring code, then ensure that the pods with matching signatures always get equivalent results.
 - batching_test.go - Test cases for the batching mechanism, separate from the actual integration into the scheduling pipeline.
