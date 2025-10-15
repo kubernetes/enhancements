@@ -1,0 +1,46 @@
+title: Integrate CSI Volume attach limits with cluster autoscaler
+kep-number: 5030
+authors:
+  - "@gnufied"
+owning-sig: sig-autoscaling
+participating-sigs:
+  - sig-storage
+  - sig-scheduling
+  - sig-autoscaling
+status: implementable
+creation-date: 2025-01-09
+reviewers:
+  - "@gjtempleton"
+  - "@jsafrane"
+  - "@msau42"
+  - "@elmiko"
+  - "@towca"
+  - "@macsko"
+approvers:
+  - "@gjtempleton"
+  - "@jsafrane"
+  - "@msau42"
+  - "@towca"
+  - "@macsko"
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.35"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.35"
+  beta: "v1.36"
+  stable: "v1.37"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: VolumeLimitScaling
+    components:
+      - kube-scheduler
+      - autoscaler
+disable-supported: true
