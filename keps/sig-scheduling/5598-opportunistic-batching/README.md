@@ -89,7 +89,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Pod scheduling signature](#pod-scheduling -signature)
+  - [Pod scheduling signature](#pod-scheduling-signature)
   - [Batching mechanism](#batching-mechanism)
     - [Create](#create)
     - [Update](#update)
