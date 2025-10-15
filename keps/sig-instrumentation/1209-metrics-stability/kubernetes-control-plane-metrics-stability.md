@@ -235,7 +235,12 @@ some_counter 0
 ```
 Like their stable metric counterparts, deprecated metrics will be automatically registered to the metrics endpoint.
 
-On a subsequent release (when the metric's deprecatedVersion is equal to current_kubernetes_version - 1)), a deprecated metric will become a __hidden metric__. _Unlike_ their deprecated counterparts, hidden metrics will __*no longer be automatically registered*__ to the metrics endpoint (hence hidden). However, they can be explicitly enabled through a command line flag on the binary (i.e. '--show-hidden-metrics-for-version=<previous minor release>'). This is to provide cluster admins an escape hatch to properly migrate off of a deprecated metric, if they were not able to react to the earlier deprecation warnings. Hidden metrics should be deleted after one release.
+On a subsequent release, a deprecated metric will become a hidden metric. This occurs after a specific period following its announced deprecation, based on the metric's stability level:
+* STABLE metrics become hidden after a minimum of 3 releases or 9 months, whichever is longer.
+* BETA metrics become hidden after a minimum of 1 release or 4 months, whichever is longer.
+* ALPHA metrics can be hidden or removed in the same release in which they are deprecated.
+
+A hidden metric is __*no longer automatically registered*__ but can be explicitly enabled by a cluster administrator for a single release through a command line flag on the binary (i.e. '--show-hidden-metrics-for-version=<previous minor release>') before it is deleted entirely.
 
 ### Show Hidden Metrics
 As described above, admins can enable hidden metrics through a command-line flag on a specific binary.
