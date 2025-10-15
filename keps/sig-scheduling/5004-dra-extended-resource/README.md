@@ -818,7 +818,6 @@ ensure `ExtendedResourceName`s are handled by the scheduler as described in this
 - The basic scoring in NodeResourcesFit has to be implemented and that the queueing hints have to work efficiently.
 - Keep the Alpha behavior to create the special resource claim in scheduler.
 - Gather feedback from developers and surveys
-- 3 examples of vendors making use of the extensions proposed in this KEP
 - Scalability tests that mirror real-world usage as determined by user feedback
 - Additional tests are in Testgrid and linked in KEP
 - All functionality completed
@@ -922,12 +921,12 @@ One indicator are unexpected restarts of the cluster control plane components
 (kube-scheduler, apiserver) or kubelet.
 
 If the scheduler_pending_pods metric in the kube-scheduler suddenly increases, it can
-suggest that pods are no longer gettings scheduled which might be due to a problem with
+suggest that pods are no longer getting scheduled which might be due to a problem with
 the DRA scheduler plugin. Another are an increase in the number of pods that fail to start,
 as indicated by the kubelet_started_containers_errors_total metric.
 
 If the node.status.Capacity for the extended resources for the devices do not decrease to zero,
-or a pod fail to be scheduled, or run on the node, it may indicate that the device plugin driver
+or a pod fails to be scheduled, or run on the node, it may indicate that the device plugin driver
 on the node for the devices is not properly replaced by the DRA driver.
 
 In all cases further analysis of logs and pod events is needed to determine whether
@@ -1179,6 +1178,13 @@ For each of them, fill in the following information by copying the below templat
     - Mitigations: reduce the number of devices requested in one extended resource backed by DRA requests
     - Diagnostics: scheduler logs at level 5 show the reason for the scheduling failure.
     - Testing: this is known, determinstic failure mode due to defined system limit, i.e., DRA requests must be no more than 128 devices.
+
+  - [API server priority & fairness limits extended resource claim creation requests]
+    - Detection: inspect metric scheduler_resourceclaim_creates_total, and API server priority & fairness limits
+    - Mitigations: adjust API sever priority and fairness limits if too low, to allow extended resource claim creation
+    - Diagnostics: API server and scheduler logs level 5 show the reason for the extended resource claim creation failure.
+    - Testing: creating pods with DRA extended resource requests at high rate, and at the same time, API server
+      priority and fairness limit too low, could trigger extended resource claim creation failure at scheduler.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
