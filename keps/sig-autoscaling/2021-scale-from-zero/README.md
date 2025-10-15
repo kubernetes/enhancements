@@ -627,6 +627,14 @@ This section must be completed when targeting beta to a release.
 As this is a new field every usage is opt-in. In case the kubernetes version is downgraded, currently scaled to 0 workloads might need to be manually scaled to 1 as the controller would treat them as
 paused otherwise.
 
+If a rollback is planned, the following steps should be performed before downgrading the kubernetes version:
+
+1. Make sure there are no hpa objects with minReplicas=0 and maxReplicas=0. Here is a oneliner to update it to 1:
+
+    `$ kubectl get hpa --all-namespaces  --no-headers=true | awk  '{if($6==0) printf "kubectl patch hpa/%s --namespace=%s -p \"{\\\"spec\\\":{\\\"minReplicas\\\":1,\\\"maxReplicas\\\":1}}\"\n", $2, $1 }' | sh`
+2. Disable `HPAScaleToZero` feature gate
+3. Downgrade the Kubernetes version
+
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -641,6 +649,15 @@ will rollout across nodes.
 
 There are no expected side-effects when the rollout fails as the new `ScaleToZero` condition should only be enabled once the version upgraded completed.
 
+If the `kube-apiserver` has been upgraded before the `kube-controller-manager`, an HPA object has been updated to `minReplicas: 0` and the workload is already scaled down to 0 replicas, you must manually scale the workload to at least one replica.
+
+You can detect this situation in one of two ways:
+
+- Manually, by checking the HPA status and verifying that all entries show ScalingActive set to true and do not mention ScalingDisabled, or
+
+- Automatically, by using the `kube_horizontalpodautoscaler_status_condition` metric provided by [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics)
+ to ensure the `ScalingActive` condition is `true.`
+
 If an rollback is attempted, all HPAs should be updated to `minReplicas: 1` as otherwise HPA for deployments with zero replicas will be disabled until
 replicas have been raised explicitly to at least `1`.
 
@@ -651,7 +668,9 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-If workloads aren't scaled up from 0 despite the scaling condition being meet, an operator should rollback this feature and manually scale an affected workload back to `1`.
+If workloads an unexpected number of HPA entities contain a the status `ScalingActive` `false` and mention `ScalingDisable` the feature isn't working as desired and all HPA objects should be updated to > 0 again and their managed workloads should be scaled to at least 1.
+
+This condition can also be detected using the `kube_horizontalpodautoscaler_status_condition` metric provided by [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics), but reason should be manually confirmed for flagged HPA objects.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
