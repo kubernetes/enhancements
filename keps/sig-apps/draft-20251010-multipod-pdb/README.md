@@ -186,7 +186,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-The goal is to make PDBs usable for multi-pod replicas like a LWS, which has a leader and worker pods for use cases like distributed AI workloads. Currently, eviction or preemption of multiple pods may disturb pods across multiple LWS replicas, instead of the preferred outcome of evicting multiple pods from a single LWS replica.
+The goal is to make PDBs usable for multi-pod replicas like a LWS, which has a leader and worker pods for use cases like distributed AI workloads. Currently, eviction or preemption of multiple pods may disturb pods across multiple LWS replicas, instead of the preferred outcome of evicting multiple pods from a single LWS replica. For workloads like a `LeaderWorkerSet`, the health of a replica depends on the simultaneous availability of all pods within its group.
 
 ### Goals
 
@@ -195,8 +195,13 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Add `replicaKey` to the PDB spec and implment the functionality of grouping pods for measuring availability
-- Ensure all affected systems work as intended (kube-scheduler, cluster autoscaler, eviction API, any custom schedulers)
+The primary goal of this KEP is to extend the PodDisruptionBudget (PDB) to handle applications where a single logical replica is composed of multiple pods. This will allow the Eviction API to account for grouping during voluntary disruptions.
+- Define availability for pod groups: allow application owners to define disruption budgets for multi-pod replicas rather than individual pods using a label.
+- Enhance the PDB API: introduce optional field `replicaKey` to the `PodDisruptionBudget` spec. This field will specify a pod label key, and pods sharing the same value for this key will be treated as a single, atomic unit when calculating availability.
+- Update eviction logic: modify the Eviction API to use the `replicaKey` for calculating availability.
+- Maintain Compatibility: ensure that standard cluster operations that respect PDBs, such as `kubectl drain` and node draining initiated by the `cluster-autoscaler`, correctly adhere to the new group-based disruption budgets.
+- Preserve existing functionality: for backward compatibility, PDBs that do not specify the new `replicaKey` field should not have any new behavior
+- Ensure all affected systems work as intended with pod groups (kube-scheduler, cluster autoscaler, custom schedulers)
 
 ### Non-Goals
 
@@ -205,13 +210,20 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-This feature will only affect the Eviction API. The following are involuntary disruptions and do not use the Eviction API:
+This change will only affect the Eviction API. The following are involuntary disruptions and do not use the Eviction API:
 - Manual pod deletion
-- Cleanup from node deletion (pod garbage collector)
-- Pod deletion from Deployments and StatefulSets
-- Node failure 
-- Kubelet node-pressure eviction
+- Pods being deleted by their owning controller (e.g., during Deployment rollout)
+- Node failure
+- Pod cleanup due to a node being removed from the cluster
+- Evictions by the Kubelet due to node pressure (e.g. memory shortage)
 - Taint manager deleting NoExecute tainted pods
+
+This change will not affect the behavior of workload controllers for `Deployment`, `StatefulSet`, `LeaderWorkerSet`, etc.
+- The workload controller will be responsible for the `replicaKey` label on pods it manages. We will not create any system for pod labeling or validation of groups.
+- The lifecycle and recovery of a disrupted replica is the responsibility of the workload controller, we will only handle evictions.
+
+This change will not affect scheduling.
+- It is out of scope to introduce any form of gang scheduling or pod affinity rules. We only handle eviction of already-scheduled pods.
 
 ## Proposal
 
@@ -249,7 +261,10 @@ spec:
   replicaKey:"leaderworkerset.sigs.k8s.io/group-key"
 ```
 
-With LWS replicas set up, all pods in the same group will have the same value under label key `leaderworkerset.sigs.k8s.io/group-key`.
+With LWS replicas set up, all pods in the same group will have the same value under label key `leaderworkerset.sigs.k8s.io/group-key`. If the user runs `kubectl node drain`, it will use the Eviction API and the controller will
+1. Select pods matching the PDB `selector`.
+2. Group selected pods using the value of the `replicaKey` label.
+3. Evict only if the resulting number of healthy groups does not violate the PDB `minAvailable`. A group is disrupted if any of its pods is evicted.
 
 
 ### Notes/Constraints/Caveats (Optional)
@@ -267,6 +282,16 @@ We will take the LeaderWorkerSet (LWS) as an example of this system. The LWS API
 
 It works by keeping all worker pods in the same lifecycle: they are created and scheduled in parallel, and if any workers fail the group is considered failing. In this context, LWS "replicas" are not additional pods, but additional leader+workers pod groups. The user may also specify the number of worker pods within each pod group (`leaderWorkerTemplate.size`). For unique identification, each worker has an index, and each replica of the group has an index.
 
+#### Pods without the `replicaKey` label
+
+If a PDB specifies a `replicaKey` but the `selector` matches pods that are missing this label, those pods will each be treated as normal replicas (equivalent to a group with size one).
+
+#### Group Health
+
+A group is considered available only if all pods within that group are available (e.g., `Running` and `Ready`). If any pod within a group is unavailable for before an eviction is attempted, the entire group is considered unavailable. An eviction request for a pod in a healthy group may be denied if other groups are unhealthy, even if the pods in the unhealthy groups are not eviction targets.
+
+#### Labeling
+
 
 ### Risks and Mitigations
 
@@ -281,6 +306,9 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+
+- This feature relies on the workload controller (which may be `LeaderWorkerSet` or some third-party custom controller) to correctly apply `replicaKey` labels. Bugs in the controller could cause mislabeled pods and incorrect eviction decisions, possibly violating availability requirements.
+- One failing pod in a large group will make the group unavailable, so a small number of simultaneously failing pods across groups could prevent evictions and block a node drain. This is intended behavior.
 
 ## Design Details
 
