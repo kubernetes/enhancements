@@ -253,17 +253,7 @@ The create operation will use the sorted output from the scheduling of a "canoni
 
 #### Update
 
-The update operation will attempt to update the batch information after a scheduling or nomination has taken place. In service of this updating we will introduce an optional plugin interface for "Rescoring". 
-
-Our current proposed rescoring interface would take the pod and the scoring information for the node we bound the pod to. The update operation will call the rescoring interface on all plugins. Each plugin would return one of three results:
-
- * **Infeasible:** If the plugin can determine another pod of this kind cannot be placed on the node, then it returns infeasible. If *any* plugin returns infeasible for the node, we will simply drop this node from the results, and save the rest for our next round.
- * **Updated:** If the plugin can update the score it will do so in the node object and return this response. If *all* plugins return updated for the node, then we can keep the node in our results and just reorder it. We will not implement this in this KEP, but will leave it possible for future KEPs.
- * **Unknown:** If the plugin does not know how to update the score / feasibility of the node it can return unknown. If a scoring / filtering plugin doesn't implement the interface we assume unknown for all calls. If *no* plugin returns infeasible, and *any* plugin returns unknown, we will drop all of the scheduling results and not attempt to reuse them.
-
-In this KEP we will implement "infeasible" rescoring functions for key plugins that we know can tell (nodeports, noderesources, etc). This will effectively limit the use of batching to specific workloads we can identify as "1-pod-per-node" but will open the path for us to continually expand the cases where we can apply batching by enhancing and adding rescoring functions.
-
-Note that we already have logic like this for feasibility in use today for preemption, we expect to reuse that for much of the logic needed here, and might even be able to avoid a new explicit rescoring interface for this KEP.
+The update operation will attempt to update the batch information after a scheduling or nomination has taken place. Today we already have a way to re-evaluate whether a node is feasible after a pod is added using the cluster snapshot and CycleState. We will use this filter functionality here; if we determine the node we just used is no longer feasible, then we will throw it away and continue using the remainder of the data. If the node remains feasible after adding the pod, for this KEP we will throw away the batch information and "start fresh" for the next pod. As work beyond this KEP we can add similar rescoring functionality which would allow us to batch for use cases where we have more than 1 pod of a given batch that can fit on a node.
 
 #### Nominate
 
