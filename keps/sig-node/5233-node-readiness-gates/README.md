@@ -471,12 +471,6 @@ Previous kubelets that do not support the feature will simply ignore the `readin
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `NodeReadinessGates`
   - Components depending on the feature gate: kubelet, kube-apiserver, kube-controller-manager
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane? It depends. Readiness requirements are declared per node and can be disabled per node by updating the individual spec. For fleet wide disablement, the control-plane needs to be restarted.
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? No. spec update will disable the feature on the node.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -484,7 +478,7 @@ No. This feature introduces a new API field. If it's unspecified at the spec, th
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. The feature gate should be disabled in the API server and controller needs to be restarted. If nodes were created with readinessGates field, those fields will be ignored by the node controller
+Yes. The feature gate should be disabled in the API server and the API server needs to be restarted. Once disabled in the API server, the readinessGates fields will not be delivered to the controller, so no explicit controller restart is required. If nodes were created with the readinessGates field while the feature was enabled, those fields will be omitted from the Node objects returned by the API server after the feature is disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -516,7 +510,14 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-If a node has `spec.readinessGates` configured, then the workloads that do not tolerate the `node.kubernetes.io/not-ready` taint will not be scheduled on the node until the conditions are satisfied.
+An operator can determine if the feature is actively being used through the following metrics:
+
+- **Metric**: `readiness_gate_controller_nodes_managed_total` - Shows the number of nodes with `spec.readinessGates` configured. A non-zero value indicates the feature is in use.
+- **Metric**: `readiness_gate_controller_unschedulable_nodes_total` - Shows nodes currently blocked by readiness gates.
+
+Additionally, operators can check:
+- Query nodes with `spec.readinessGates` set: `kubectl get nodes -o json | jq '.items[] | select(.spec.readinessGates != null)'`
+- Identify workloads with toleration for `node.kubernetes.io/not-ready` taint, which indicates they are designed to run on nodes with readiness gates before the nodes become fully schedulable.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -537,7 +538,7 @@ If a node has `spec.readinessGates` configured, then the workloads that do not t
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 1. Metrics
-    -  Metric name: `readiness_gate_unschedulable_nodes_total` and `readiness_gate_controller_taint_removal_latency_seconds` will be added.
+    -  Metric name: `readiness_gate_controller_unschedulable_nodes_total` and `readiness_gate_controller_taint_removal_latency_seconds` will be added.
     -  [Optional] Aggregation method:
     -  Components exposing the metric: `kube-controller-manager`
 
