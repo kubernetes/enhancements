@@ -295,7 +295,7 @@ See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 a
 
 #### Plugins need to keep signatures up to date
 
-The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We believe this shouldc be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec, but there is still risk of subtle dependencies creeping in.
+The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We believe this should be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec, but there is still risk of subtle dependencies creeping in.
 
 If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object that only has a subset
 of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would naturally surface new dependencies as additions to the scheduling object. However, as we expect plugin changes to be relatively modest, we don't believe the complexity of making the interface changes is worth the risk today.
