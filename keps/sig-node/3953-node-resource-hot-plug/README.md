@@ -30,6 +30,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Handling hotplug events](#handling-hotplug-events)
     - [Flow Control for updating swap limit for containers](#flow-control-for-updating-swap-limit-for-containers)
     - [Compatibility with Cluster Autoscaler](#compatibility-with-cluster-autoscaler)
+      - [API Changes](#api-changes)
   - [Handling HotUnplug Events](#handling-hotunplug-events)
     - [Flow Control](#flow-control)
   - [Test Plan](#test-plan)
@@ -339,6 +340,18 @@ To ensure the Cluster Autoscaler acknowledges resource hotplug, the following ap
 
 Given that this KEP and autoscaler are inter-related, the above approaches were discussed in the community with relevant stakeholders, and have decided approaching this problem through the approach 1. 
 The same will be targeted around the beta graduation of this KEP
+
+##### API Changes
+
+```go
+type NodeStatus struct {
+    // ... existing fields
+	// InitialCapacity represents the total resources of a node at the time of creation.
+	// +featureGate=NodeResourceHotPlug
+	// +optional
+	InitialCapacity ResourceList `json:"initialCapacity,omitempty"`
+}
+```
 
 ### Handling HotUnplug Events
 

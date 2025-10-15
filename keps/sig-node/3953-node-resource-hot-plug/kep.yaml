@@ -8,7 +8,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2023-10-04
 reviewers:
   - "@smarterclayton"
