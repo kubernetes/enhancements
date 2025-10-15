@@ -766,7 +766,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-
+We should continue to maintain the existing scheduler SLOs.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -807,6 +807,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -925,6 +927,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The same as the scheduler does today.
+
 ###### What are other known failure modes?
 
 <!--
@@ -939,6 +943,9 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+
+- If we have a bug in batching we could see higher pod latencies or nominated nodes that fail feasibility tests.
+- If we have a bug in batching we could see pods scheduling on incorrect nodes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
