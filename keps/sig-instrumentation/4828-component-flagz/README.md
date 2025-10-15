@@ -25,10 +25,15 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Data Format and versioning](#data-format-and-versioning)
   - [Authz and authn](#authz-and-authn)
   - [Endpoint Response Format](#endpoint-response-format)
-    - [Data format : text](#data-format--text)
-    - [Request](#request)
-    - [Response fields](#response-fields)
-    - [Sample response](#sample-response)
+    - [Data format: text](#data-format-text)
+      - [Request](#request)
+      - [Response fields](#response-fields)
+      - [Sample response](#sample-response)
+    - [Data format: JSON (v1alpha1)](#data-format-json-v1alpha1)
+      - [Request](#request-1)
+      - [Response Body: <code>Flagz</code> object](#response-body-flagz-object)
+      - [Sample Response](#sample-response-1)
+  - [API Versioning and Deprecation Policy](#api-versioning-and-deprecation-policy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -149,7 +154,22 @@ We are proposing to add a new endpoint, /flagz on all core Kubernetes components
 
 ### Data Format and versioning
 
-Initially, the flagz page will exclusively support a plain text format for responses. In future, when we have established a structured schema for the response, we can support specifying a version param, like /flagz?version=2, to ensure future compatibility. Through this, we can evolve the endpoint and introduce changes to the response schema without impacting clients relying on previous versions, ensuring backward compatibility.
+The `/flagz` endpoint defaults to a `text/plain` response format, which is intended for human consumption and should not be parsed by automated tools.
+
+For programmatic access, a structured, versioned JSON format is available with an initial alpha version of `v1alpha1`. This version is not stable and is intended for feedback and iteration during the Alpha phase.
+
+- **Group**: `config.k8s.io`
+- **Version**: `v1alpha1` (initial version, subject to change)
+- **Kind**: `Flagz`
+
+To receive the structured JSON response, a client **must** explicitly request it using an `Accept` header specifying these parameters. For example:
+
+```
+GET /flagz
+Accept: application/json;as=Flagz;v=v1alpha1;g=config.k8s.io
+```
+
+This negotiation mechanism ensures clients are explicit about the exact API they want, preventing accidental dependencies on unstable or incorrect formats. If a client requests `application/json` without the required parameters, the server will respond with a `406 Not Acceptable` error.
 
 ### Authz and authn
 
@@ -157,19 +177,23 @@ Access to the endpoint will be limited to members of the `system:monitoring grou
 
 ### Endpoint Response Format
 
-#### Data format : text
+The `/flagz` endpoint supports both plain text and structured JSON formats. The default format is `text/plain`.
 
-#### Request
+#### Data format: text
+
+This format is the default and is intended for human readability.
+
+##### Request
 * Method: **GET** 
 * Endpoint: **/flagz**
-* Header: `Content-Type: text/plain`
+* Header: `Accept: text/plain` (or omitted)
 * Body: empty
 
-#### Response fields
+##### Response fields
 * **Flag Name**: The name of the command-line flag or configuration option
 * **Value**: The current value assigned to the flag at runtime
 
-#### Sample response
+##### Sample response
 
 ```
 ----------------------------
@@ -183,6 +207,78 @@ enable-garbage-collector=true
 encryption-provider-config-automatic-reload=false
 ...
 ```
+
+#### Data format: JSON (v1alpha1)
+
+This format is available in Alpha for programmatic access and must be explicitly requested. It is considered an alpha-level format.
+
+##### Request
+* Method: **GET** 
+* Endpoint: **/flagz**
+* Header: `Accept: application/json;as=Flagz;v=v1alpha1;g=config.k8s.io`
+* Body: empty
+
+##### Response Body: `Flagz` object
+
+The response is a `Flagz` object.
+
+###### Go Struct Definition
+```go
+// Flagz is the structured response for the /flagz endpoint.
+type Flagz struct {
+	// Kind is "Flagz".
+	Kind string `json:"kind"`
+	// APIVersion is the version of the object, e.g., "config.k8s.io/v1alpha1".
+	APIVersion string `json:"apiVersion"`
+
+	// Standard object's metadata.
+	// +optional
+	Metadata metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Flags contains the command-line flags and their values.
+	// The keys are the flag names and the values are the flag values,
+	// possibly with confidential values redacted.
+	// +optional
+	Flags map[string]string `json:"flags,omitempty"`
+}
+```
+
+###### JSON Structure
+```json
+{
+  "kind": "Flagz",
+  "apiVersion": "config.k8s.io/v1alpha1",
+  "metadata": {
+    "name": "<component-name>"
+  },
+  "flags": {
+    "<flag-name>": "<flag-value>",
+    ...
+  }
+}
+```
+
+##### Sample Response
+
+```json
+{
+  "kind": "Flagz",
+  "apiVersion": "config.k8s.io/v1alpha1",
+  "metadata": {
+    "name": "apiserver"
+  },
+  "flags": {
+    "default-watch-cache-size": "100",
+    "delete-collection-workers": "1",
+    "enable-garbage-collector": "true",
+    "encryption-provider-config-automatic-reload": "false"
+  }
+}
+```
+### API Versioning and Deprecation Policy
+
+The versioned `/flagz` endpoint will follow the standard [Kubernetes API deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -193,31 +289,40 @@ to implement this enhancement.
 
 ##### Unit tests
 
-- `staging/src/k8s.io/component-base/zpages/flagz`: `2024-10-08` - `100%`
+- `staging/src/k8s.io/component-base/zpages/flagz`: Unit tests will be added to cover both the plain text and structured JSON output, including serialization and content negotiation logic.
 
 ##### Integration tests
 
+- Integration tests will be added for each component to verify that the `/flagz` endpoint is correctly registered and serves both `text/plain` and the versioned `application/json` content types.
 
 ##### e2e tests
 
-- Ensure existence of the /flagz endpoint
+- E2E tests will be added to query the `/flagz` endpoint for each core component and validate the following:
+  - The endpoint is reachable and returns a `200 OK` status.
+  - Requesting with the `Accept` header for `application/json;as=Flagz;v=v1alpha1;g=config.k8s.io` returns a valid `Flagz` JSON object.
+  - The JSON response can be successfully unmarshalled.
+  - Requesting with `text/plain` or no `Accept` header returns the non-empty plain text format.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Feature implemented for apiserver
-- Ensure proper tests are in place.
+- Feature gate `ComponentFlagz` is disabled by default.
+- A structured JSON response (`config.k8s.io/v1alpha1`) is introduced for feedback, alongside the default `text/plain` format.
+- Feature is implemented for at least one component (e.g., kube-apiserver).
+- E2E tests are added for both plain text and the new JSON response format.
+- Gather feedback from users and developers on the structured format.
 
 #### Beta
 
-- Gather feedback from developers
-- Feature implemented for other Kubernetes Components
+- Feature gate `ComponentFlagz` is enabled by default.
+- The JSON response API is promoted to `v1beta1` or `v1` based on feedback and is considered stable.
+- Feature is implemented for all core Kubernetes components.
 
 #### GA
 
-- Several cycles of bake-time
+- The JSON response API is promoted to a stable `v1` version after bake-in.
+- Conformance tests are in place for the endpoint.
 
 #### Deprecation
 
