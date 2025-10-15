@@ -142,17 +142,17 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ X ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [ X ] (R) Design details are appropriately documented
+- [ X ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ X ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [ X ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [ X ] (R) Production readiness review completed
+- [ X ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -198,7 +198,7 @@ Another change is the shift towards 1-pod-per-node in batch and ML environments.
 
 ## Proposal
 
-See https://github.com/bwsalmon/kubernetes/pull/1 for a WIP version of the code (currently out of date). We discuss each of the added items: pod scheduling signature, batching mechanism and opportunistic batching in turn.
+We discuss each of the added items: pod scheduling signature, batching mechanism and opportunistic batching in turn.
 
 ### Pod scheduling signature
 
@@ -224,9 +224,10 @@ const Unsignable = ""
 
 // BatchablePlugin is an interface that should be implemented by plugins that either filter or score
 // pods to enable batching and gang scheduling optimizations. If an enabled plugin that does Scoring,
-// Prescoring, Filtering or Prefiltering does not implement this interface we will turn off batching for all pods.
-// For now we leave this optional, but in the future we may make it mandatory for all filtering and scoring plugins
-// to implement the interface (but of course plugins may choose to return "Unsignable".)
+// Prescoring, Filtering or Prefiltering does not implement this interface we will turn off batching 
+// for all pods. For now we leave this optional, but in the future we may make it mandatory for all 
+// filtering and scoring plugins to implement the interface (but of course plugins may choose to 
+// return "Unsignable".)
 type BatchablePlugin interface {
 	Plugin
 	// This is called before PreFilter. The plugin is responsible for adding any signature components that are needed
@@ -260,54 +261,6 @@ The nominate operation will take a pod with a matching signature and assign its 
 
 We will then apply the batching mechanism to simple cases in the current code. We will target providing incremental value with minimal code changes in this KEP, and leave the more complex integration questions to gang scheduling. This involves using the same batch state (and snapshot and potentially plugin cyclestate) across multiple pods using the batching mechanism.
 
-### Comparison with Equivalence Cache (circa 2018)
-
-This KEP is addressing a very similar problem to the Equivalence Cache (eCache), an approach suggested in 2018 and then retracted because it became extremely complex. While this KEP addresses a similar problem it does so in a very different way, which we believe avoids the issues experienced by the eCache
-
-The issues experienced by eCache were:
-
- * eCache performance was still O(num nodes).
- * eCache was complex
- * eCache was tightly coupled with plugins.
-
- We'll address each in turn, but at a high level the differences stem from our scope reduction in this cache, where
- we focus on simple constraints in a 1-pod-per-node world, and are comfortable extending our "race" period slightly.
-
- #### eCache performance was still O(num nodes)
-
- The eCache was caching a fundamentally different result than this cache. In the case of the eCache they were caching
- the results of a predicate p, (which is sounds like was one of a number of ops for a given plugin) for a specific pod and node.
- This meant the number of cache lookups per pod was O(num nodes * num predicates) where num predicates was O(num plugins). Because 
- the cache was so fine-grained, the cache lookups were, in many cases, more expensive than the actual computation. This also meant
- that while the cache could improve performance, it fundamentally did not remove the O(num nodes) nature of the per pod computation.
-
- In the case of this cache, we are looking up the entire host filtering and scoring for a single pod, so the number of cache lookups
- per pod is 1. We are caching the entire filtering / scoring result, so the map lookup is guaranteed to be faster even
- than just iterating over the plugins themselves, let alone the computation needed to filter / score. As the number of nodes go up,
- the fact that the cache lookup is O(1) per pod will make it an increasingly perfromant alternative to the full computation.
-
- We can cache this more granular data because we only cache for simple plugins, and in fact avoid the complex plugins entirely.
- Thus we do not need to be concerned about cross pod dependencies, meaning we do not need to try to keep detailed information 
- up-to-date. Because we assume 1-pod-per-node and some amount of "staleness" we simply need to invalidate whole hosts, rather 
- than requiring upkeep of complex predicate results required to keep the eCache functional.
-
- #### eCache was complex
-
- Because the eCache cached predicates, the logic for computing these results went into the cache as well. This meant that significant 
- amount of the plugin functionality was replicated in the cache layer. This added significant complexity to the cache, and also made 
- keeping the cache results themselves up to date complex, involving multiple pods, etc. Because the eCache only improved performance 
- for complex queries, it needed to include this complexity to provide value.
-
- In contrast, the signature used in this cache is just a subset of the pod object, without complex logic. It is static and as the pod object changes slowly, it will change slowly as well. In addition, we explicitly avoid all the complex plugins in this cache because they are rarely used. Thus we do not have the same complexity needed in the cache.
- 
- #### eCache was tightly coupled with plugins
- 
- Because a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync. Since in this cache the signature is just parts of the pod object, and the pod object is fairly stable, this makes keeping the signature up to date a much simpler task. The creation of the signature is also spread across the plugins themselves, so instead of needing to keep the cache up to date, plugin owners simply have a new function they need to manage within their plugin, which the cache only aggregates.
-
- We will also provide tests that evaluate different pod configurations against different node configurations and ensure that any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing testing opportunities in other areas.
-
-See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 as starting point on eCache.
-
 ### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
@@ -338,21 +291,21 @@ us find the correct signature.
 Note that the signature does not need to be stable across versions, or even invocations of the scheduler. 
 It only needs to be comparable between pods on a given running scheduler instance.
 
- * DynamicResources: For now we mark a pod unsignable if it has dynamic resource claims. We should improve this in the future, since most DRA claims are node specific and we should be able to determine this with a little effort. We will attempt to pull forward at least some integration of simple DRA claims with batching into this version as well.
- * ImageLocality: We use the canonicalized image names from the Volumes as the signature.
- * InterPodAffinity: If either the PodAffinity or PodAntiAffinity fields are set, the pod is marked unsignable, otherwise we need to include the pod labels in the signature.
- * NodeAffinity: We use the NodeAffinity and NodeSelector fields, plus any defaults set in configuration as the signature.
- * NodeName: We use the NodeName field as the signature.
- * NodePorts: We use the results from util.GetHostPorts(pod) as the signature.
- * NodeResourcesBalancedAllocation: We use the output of calculatePodResourceRequestList as the signature.
- * NodeResourcesFit: We use the output of the computePodResourceRequest function as the signature.
- * NodeUnschedulable: We use the Tolerations field as the signature.
- * NodeVolumeLimits: We use all Volume information except from Volumes of type ConfigMap or Secret.
- * PodTopologySpread: If the PodTopologySpead field is set, or it is not set but a default set of rules are applied, we mark the pod unsignable, otherwise it returns an empty signature. Because the plugin itself is creating the signature, it knows whether and what kind of default it will apply.
- * TaintToleration: We use the Tolerations field as the signature.
- * VolumeBinding: Same as NodeVolumeLimits.
- * VolumeRestrictions: Same as NodeVolumeLimits.
- * VolumeZone: Same as NodeVolumeLimits.
+ * **DynamicResources:** For now we mark a pod unsignable if it has dynamic resource claims. We should improve this in the future, since most DRA claims are node specific and we should be able to determine this with a little effort. We will attempt to pull forward at least some integration of simple DRA claims with batching into this version as well.
+ * **ImageLocality:** We use the canonicalized image names from the Volumes as the signature.
+ * **InterPodAffinity:** If either the PodAffinity or PodAntiAffinity fields are set, the pod is marked unsignable, otherwise we need to include the pod labels in the signature.
+ * **NodeAffinity:** We use the NodeAffinity and NodeSelector fields, plus any defaults set in configuration as the signature.
+ * **NodeName:** We use the NodeName field as the signature.
+ * **NodePorts:** We use the results from util.GetHostPorts(pod) as the signature.
+ * **NodeResourcesBalancedAllocation:** We use the output of calculatePodResourceRequestList as the signature.
+ * **NodeResourcesFit:** We use the output of the computePodResourceRequest function as the signature.
+ * **NodeUnschedulable:** We use the Tolerations field as the signature.
+ * **NodeVolumeLimits:** We use all Volume information except from Volumes of type ConfigMap or Secret.
+ * **PodTopologySpread:** If the PodTopologySpead field is set, or it is not set but a default set of rules are applied, we mark the pod unsignable, otherwise it returns an empty signature. Because the plugin itself is creating the signature, it knows whether and what kind of default it will apply.
+ * **TaintToleration:** We use the Tolerations field as the signature.
+ * **VolumeBinding:** Same as NodeVolumeLimits.
+ * **VolumeRestrictions:** Same as NodeVolumeLimits.
+ * **VolumeZone:** Same as NodeVolumeLimits.
 
 ### Test Plan
 
@@ -429,7 +382,6 @@ The code draft has first versions of most of these, will add more as we get thro
 - signature_test.go - Test cases for the framework signature call and the helper class
 - signature_consistency_test.go - Test cases to ensure the signature captures all the necessary information. We will take a range of pod specs and node definitions, run them through the filtering / scoring code, then ensure that the pods with matching signatures always get equivalent results.
 - batching_test.go - Test cases for the batching mechanism, separate from the actual integration into the scheduling pipeline.
-- rescore_test.go - Test cases for rescoring plugins and calls.
 
 ##### Integration tests
 
@@ -444,8 +396,8 @@ If integration tests are not necessary or useful, explain why.
 -->
 
 Will add a few integration tests:
- - Perf tests: Add a few tests into scheduler_perf that look at performance with the cache enabled and disabled for a few target scenarios.
- - End-to-end consistency: Add tests that run a set of pods through the scheduler end-to-end with the cache enable and disabled. Ensure the scheduling decisions are the same with the cache on or off. Hopefully use same pod spec and node definitions from the signature_consistency_test.
+ - Perf tests: Add a few tests into scheduler_perf that look at performance with batching enabled and disabled for a few target scenarios.
+ - End-to-end consistency: Add tests that run a set of pods through the scheduler end-to-end with batching enable and disabled. Ensure the scheduling decisions are the same. Hopefully use same pod spec and node definitions from the signature_consistency_test.
 
 <!--
 This question should be filled when targeting a release.
@@ -459,7 +411,8 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+<!-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+-->
 
 ##### e2e tests
 
@@ -478,7 +431,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
+ - We will run the existing scheduling e2e tests with batching enabled and disabled, to ensure they pass in both cases.
+ - We will also add e2e tests ensuring that pod configurations we expect to be batched are in fact batched.
+
+<!--
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+-->
 
 ### Graduation Criteria
 
@@ -554,6 +512,27 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 -->
+
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
+
+- All functionality completed
+- Full monitoring in place
+- Hand-done perf test runs
+- Integration tests, including signature and batching consistency testing
+- Handle common 1-pod-per-node batches: host ports and resources
+- At least 1 initial test user identified
+
+#### GA
+
+- Parameter tuning (batch sizes, etc.)
+- At least 1 test user with experience running the feature
+- Metrics showing usage / exclusions
+- Excluded: batching for non "1-pod-per-node" workloads
 
 ### Upgrade / Downgrade Strategy
 
@@ -643,7 +622,7 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No, it should not. Pods will only use the cache if they are targeted to a scheduler config with the feature enabled.
+No, it should not. Batching will improve the performance of some workloads, but should be transparent otherwise.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -699,12 +678,19 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Rollout can fail if the feature is faulty, causing pods to either no schedule or schedule incorrectly.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- Pods that fail to schedule.
+- Pods that have had a node nominated, but then found that node infeasible.
+- Pods that cannot be batched.
+- High pod scheduling time.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -720,6 +706,8 @@ are missing a bunch of machinery and tooling and can't do that now.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
+No.
+
 ### Monitoring Requirements
 
 <!--
@@ -729,6 +717,11 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
+- How often nominated nodes are found infeasible.
+- How often pods are "batched" vs not.
+- Pod throughput / latency
+- Reasons for pods to be "unbatchable" (pod affinity, pod spread, etc.)
+
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -736,6 +729,9 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+
+- We will log statistics about how often pods are batched vs not batched.
+- We will include in the pod status information about whether it was batched or not.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -748,13 +744,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [ X ] Events
+  - Event Reason: Batching disabled because some plugins do not support it.
+  - Event Reason: Counts of pods that are batched vs not.
+  - Event Reason: Counts of nominated nodes that are found infeasible.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -773,18 +766,18 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [ X ] Metrics
+  - Metric name: Pod scheduling time
   - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -902,7 +895,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-Enabling the cache will add RAM usage to store the cache. This is should be small (O(Mb)) but will be there.
+No, it should not.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -916,7 +909,7 @@ Are there any tests that were run/should be run to understand performance charac
 and validate the declared limits?
 -->
 
-It could lead to RAM exhaustion if eviction mechanisms were to fail or the cache were configured to be too large.
+No, it should not.
 
 ### Troubleshooting
 
@@ -976,6 +969,54 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### Comparison with Equivalence Cache (circa 2018)
+
+This KEP is addressing a very similar problem to the Equivalence Cache (eCache), an approach suggested in 2018 and then retracted because it became extremely complex. While this KEP addresses a similar problem it does so in a very different way, which we believe avoids the issues experienced by the eCache
+
+The issues experienced by eCache were:
+
+ * eCache performance was still O(num nodes).
+ * eCache was complex
+ * eCache was tightly coupled with plugins.
+
+ We'll address each in turn, but at a high level the differences stem from our scope reduction in this cache, where
+ we focus on simple constraints in a 1-pod-per-node world, and are comfortable extending our "race" period slightly.
+
+ #### eCache performance was still O(num nodes)
+
+ The eCache was caching a fundamentally different result than this cache. In the case of the eCache they were caching
+ the results of a predicate p, (which is sounds like was one of a number of ops for a given plugin) for a specific pod and node.
+ This meant the number of cache lookups per pod was O(num nodes * num predicates) where num predicates was O(num plugins). Because 
+ the cache was so fine-grained, the cache lookups were, in many cases, more expensive than the actual computation. This also meant
+ that while the cache could improve performance, it fundamentally did not remove the O(num nodes) nature of the per pod computation.
+
+ In the case of this cache, we are looking up the entire host filtering and scoring for a single pod, so the number of cache lookups
+ per pod is 1. We are caching the entire filtering / scoring result, so the map lookup is guaranteed to be faster even
+ than just iterating over the plugins themselves, let alone the computation needed to filter / score. As the number of nodes go up,
+ the fact that the cache lookup is O(1) per pod will make it an increasingly perfromant alternative to the full computation.
+
+ We can cache this more granular data because we only cache for simple plugins, and in fact avoid the complex plugins entirely.
+ Thus we do not need to be concerned about cross pod dependencies, meaning we do not need to try to keep detailed information 
+ up-to-date. Because we assume 1-pod-per-node and some amount of "staleness" we simply need to invalidate whole hosts, rather 
+ than requiring upkeep of complex predicate results required to keep the eCache functional.
+
+ #### eCache was complex
+
+ Because the eCache cached predicates, the logic for computing these results went into the cache as well. This meant that significant 
+ amount of the plugin functionality was replicated in the cache layer. This added significant complexity to the cache, and also made 
+ keeping the cache results themselves up to date complex, involving multiple pods, etc. Because the eCache only improved performance 
+ for complex queries, it needed to include this complexity to provide value.
+
+ In contrast, the signature used in this cache is just a subset of the pod object, without complex logic. It is static and as the pod object changes slowly, it will change slowly as well. In addition, we explicitly avoid all the complex plugins in this cache because they are rarely used. Thus we do not have the same complexity needed in the cache.
+ 
+ #### eCache was tightly coupled with plugins
+ 
+ Because a significant amount of the plugin complexity made into the eCache, it was difficult for plugin owners to keep the things in sync. Since in this cache the signature is just parts of the pod object, and the pod object is fairly stable, this makes keeping the signature up to date a much simpler task. The creation of the signature is also spread across the plugins themselves, so instead of needing to keep the cache up to date, plugin owners simply have a new function they need to manage within their plugin, which the cache only aggregates.
+
+ We will also provide tests that evaluate different pod configurations against different node configurations and ensure that any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing testing opportunities in other areas.
+
+See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 as starting point on eCache.
 
 ## Infrastructure Needed (Optional)
 
