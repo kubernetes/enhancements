@@ -39,4 +39,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TBD
+  - kube_horizontalpodautoscaler_spec_min_replicas
+  - kube_horizontalpodautoscaler_status_condition
