@@ -9,7 +9,7 @@ creation-date: 2025-10-06
 reviewers:
   - "@liggitt"
 approvers:
-  - "@dawnchen"
+  - "@dchen1107"
 
 see-also:
   - keps/sig-node/1287-in-place-update-pod-resources
