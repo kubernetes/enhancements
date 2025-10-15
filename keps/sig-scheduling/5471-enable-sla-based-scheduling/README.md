@@ -820,8 +820,6 @@ No.
 - [x] Events
   - Event Reason: FailedScheduling
   - Event Message: "node(s) had untolerated taint {<taint-key>: <taint-value>}" (e.g., with numeric taint)
-- [x] API .spec.taints
-  - Observe taints values on nodes
 - [x] API .spec.tolerations
   - Observe tolerations with `operator: Gt` or `operator: Lt` on pods
 
