@@ -197,7 +197,7 @@ The pod scheduling signature is used to determine if two pods are "the same" fro
 
 Note that some pods will not have a signature, because the scoring uses not just pod and node attributes, but other pods in the system, global data about pod placement, etc. These nodes get a nil signature, and we fallback to the slow path.
 
-To allow non in-tree plugins to construct a signature, we add a new framework function to implement. This function takes a pod and generates a signature for that plugin as a string. The signature is likely a set of attributes of the pod, or something derived from them. To construct a full signature we take the signatures of all the plugins and aggeregate them into a single string. If any plugin cannot generate a signature for a given pod (because it depends on information other than the pod and node), then we generate a "nil" signature and don't attemp to cache the pod.
+To allow non in-tree plugins to construct a signature, we add a new framework function to implement. This function takes a pod and generates a signature for that plugin as a string. The signature is likely a set of attributes of the pod, or something derived from them. To construct a full signature we take the signatures of all the plugins and aggeregate them into a single string. If any plugin cannot generate a signature for a given pod (because it depends on information other than the pod and node), then we generate a "nil" signature and don't attempt to batch the pod.
 
 Initially we won't require plugins to implement the new function, but we will turn off signatures for all pods if a plugin is enabled that does not implement it. In subsequent releases we might make implementation of the function a requirement, but of course plugins are also able to say pods are unsignable. 
 
@@ -284,9 +284,10 @@ See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 a
 
 ### Risks and Mitigations
 
+
 #### Plugins need to keep signatures up to date
 
-The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We beleive this shouldc be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec, but there is still risk of subtle dependencies creeping in.
+The cache will only work if plugin maintainers are able to keep their portion of the signature up-to-date. We believe this shouldc be doable because the logic is put into the plugin interface itself, and we are restricting it to portions of the pod spec, but there is still risk of subtle dependencies creeping in.
 
 If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object that only has a subset
 of the fields of the pod. Plugins that "opt-in" could only be given access to this reduced scheduling object, and we could then use the entire scheduling object as the signature. This would make it more or less impossible for the signature and plugins to be out of sync, and would naturally surface new dependencies as additions to the scheduling object. However, as we expect plugin changes to be relatively modest, we don't believe the complexity of making the interface changes is worth the risk today.
