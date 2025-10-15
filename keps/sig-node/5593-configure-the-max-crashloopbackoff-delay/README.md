@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-4603: Tune CrashLoopBackoff
+# KEP-5593: Configure the max CrashLoopBackOff delay
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -83,7 +83,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Existing backoff curve change: front loaded decay, lower maximum backoff](#existing-backoff-curve-change-front-loaded-decay-lower-maximum-backoff)
   - [Refactor and flat rate to 10 minutes for the backoff counter reset threshold](#refactor-and-flat-rate-to-10-minutes-for-the-backoff-counter-reset-threshold)
   - [User Stories](#user-stories)
     - [Task isolation](#task-isolation)
@@ -92,10 +91,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Front loaded decay curve, modified maximum backoff methodology](#front-loaded-decay-curve-modified-maximum-backoff-methodology)
+  - [Per node config](#per-node-config)
+  - [Implementing with KubeletConfiguration](#implementing-with-kubeletconfiguration)
   - [Refactor of recovery threshold](#refactor-of-recovery-threshold)
   - [Kubelet overhead analysis](#kubelet-overhead-analysis)
-  - [Benchmarking](#benchmarking)
   - [Relationship with Job API podFailurePolicy and backoffLimit](#relationship-with-job-api-podfailurepolicy-and-backofflimit)
   - [Relationship with ImagePullBackOff](#relationship-with-imagepullbackoff)
   - [Relationship with k/k#123602](#relationship-with-kk123602)
@@ -128,7 +127,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [On Success and the 10 minute recovery threshold](#on-success-and-the-10-minute-recovery-threshold)
       - [Related: API opt-in for flat rate/quick restarts when transitioning from <code>Succeeded</code> phase](#related-api-opt-in-for-flat-ratequick-restarts-when-transitioning-from-succeeded-phase)
       - [Related: <code>Succeeded</code> vs <code>Rapid</code>ly failing: who's getting the better deal?](#related-succeeded-vs-rapidly-failing-whos-getting-the-better-deal)
-  - [Front loaded decay with interval](#front-loaded-decay-with-interval)
+  - [Exposing per-node config as command-line flags](#exposing-per-node-config-as-command-line-flags)
   - [Late recovery](#late-recovery)
   - [More complex heuristics](#more-complex-heuristics)
 - [Appendix A](#appendix-a)
@@ -157,18 +156,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -219,18 +218,14 @@ are considered too conservative, especially in cases where the exit code was 0
 (Success) and the pod is transitioned into a "Completed" state or the expected
 length of the pod run is less than 10 minutes.
 
-This KEP proposes the following change:
-* Provide an alpha-gated change to get feedback and periodic scalability tests
-  on changes to the global initial backoff to 1s and maximum backoff to 1 minute
+This KEP proposes the following changes:
+* Provide a knob to cluster operators to configure maximum backoff down, to
+  minimum 1s, at the node level
+* Formally split backoff counter reset threshold for container restart backoff
+  behavior and maintain the current 10 minute recovery threshold
 
-![A graph showing the change in elapsed time for observed restarts with the
-CrashLoopBackOffBehavior of today, with the proposed new default, and with the
-proposed minimum per node configuration](./restarts-vs-elapsed-all.png "KEP-4603
-CrashLoopBackoff proposal comparison")
-
-Originally, this KEP included a proposal to lower the maximum CrashLoopBackOff
-duration. This has been split into [KEP-5593: Configure the max CrashLoopBackOff
-delay](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5593-configure-the-max-crashloopbackoff-delay).
+Originally, this KEP was part of the larger [KEP-4603 - Tune
+CrashLoopBackoff](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/4603-tune-crashloopbackoff/README.md)
 
 ## Motivation
 
@@ -264,32 +259,20 @@ indicate that the current behavior was not designed beyond the motivation to
 throttle misbehaving containers, and is open to reintepretation in light of user
 experiences, empirical evidence, and emerging workloads.
 
-By definition this KEP will cause pods to restart faster and more often than the
-current status quo; let it be known that such a change is desired. It is also
-the intention of the author that, to some degree, this change happens without
-the need to reconfigure workloads or expose extensive API surfaces, as
-experience shows that makes changes difficult to adopt, increases the risk for
-misconfiguration, and can make the system overly complex to reason about. That
-being said, this KEP recognizes the need of backoff times to protect node
-stability, avoiding too big of sweeping changes to backoff behavior, or setting
-unreasonable or unpredictable defaults. Therefore the approach manages the risk
-of different decay curves to node stability by providing an API surface to
-opt-in to the riskiest option, and ultimately also provides the observability
-instrumentation needed by cluster operators to model the impact of this change
-on their existing deployments.
+This KEP will allow pods to restart faster and more often than the current status
+quo; let it be known that such a change is desired. It is also the intention of
+the author that, to some degree, this change happens without the need to
+reconfigure workloads or expose extensive API surfaces, as experience shows
+that makes changes difficult to adopt, increases the risk for misconfiguration,
+and can make the system overly complex to reason about.
 
 A large number of alternatives have been discussed over the 5+ years the
 canonical tracking issue has been open, some of which imply high levels of
 sophistication for kubelet to make different decisions based on system state,
 workload specific factors, or by detecting anomalous workload behavior. While
 this KEP does not rule out those directions in the future, the proposal herein
-focuses on the simpler, easily modeled changes that are designed to address the
-most common issues observed today. It is the desire of the author that the
-observability and benchmarking improvements instrumented as part of this
-proposal can serve as a basis for pursuing those types of improvements in the
-future, including as signals for end users to represent such solutions as
-necessary. Some analysis of these alternatives are included in the Alternatives
-Considered section below for future reference.
+focuses on a simpler, easily modeled change designed to address the most common
+issues observed today.
 
 ### Goals
 
@@ -300,10 +283,6 @@ know that this has succeeded?
 
 * Improve pod restart backoff logic to better match the actual load it creates
   and meet emerging use cases
-* Quantify and expose risks to node stability resulting from decreased and/or
-  hetereogeneous backoff configurations
-* Empirically derive defaults and allowable thresholds that approximate current
-  node stability
 * Provide a simple UX that does not require changes for the majority of
   workloads
 * Must work for Jobs and sidecar containers
@@ -319,8 +298,8 @@ and make progress.
   cap risk to node stability
 * This effort is purposefully NOT implementing more complex heuristics by
   kubelet (e.g. system state, workload specific factors, or by detecting
-anomalous workload behavior) to focus on better benchmarking and observability
-  and address common use cases with easily modelled changes first
+  anomalous workload behavior) to focus on better benchmarking and
+  observability and address common use cases with easily modelled changes first
 * This effort is NOT changing the independent backoff curve for image pulls
 
 ## Proposal
@@ -334,28 +313,17 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-This design seeks to change the existing initial value for the backoff curve to
-1s to stack more retries earlier, and reduce the maximum backoff for a given
-restart from 5 minutes to 1 minute, for all restarts (`restartPolicy: OnFailure`
-and `restartPolicy: Always`).
+This KEP proposes providing an option to cluster operators to configure a lower
+maximum backoff for all containers on a specific Node, down to 1s. By default,
+the backoff delay starts at 10s and doubles with each retry up to a maximum of
+5 minutes (300s). Configuring a maximum backoff less than the 10s initial
+delay will lower the initial delay to match the maximum, allowing for more
+rapid container restarts.
 
-To derive these values, manual stress testing observing the behavior of kubelet,
-   API server, and overall cluster operations and behavior were performed. In
-addition, part of the alpha period will be dedicated entirely to systematically
-stress testing kubelet and API Server with different distributions of workloads
-utilizing the new backoff curves. During the benchmarking period in alpha,
-kubelet memory and CPU, API server latency, and pod restart latency will be
-observed and analyzed to further refine the maximum allowable restart rate for
-fully saturated nodes.
+The upper limit of the configuration will be 5 minutes (300s). With this value,
+existing behavior remains unchanged.
 
-Longer term, these
-metrics will also supply cluster operators the data necessary to better analyze
-and anticipate the change in load and node stability as a result of upgrading to
-these changes.
-
-While they are more deeply rationalized in the Alternatives Considered section,
-because they are commonly inquired about at this point, note that this proposal
-will NOT change:
+This proposal will NOT change:
 * backoff behavior for Pods transitioning from the "Success" state differently
   from those transitioning from a "Failed" state -- see [here in Alternatives
   Considered](#on-success-and-the-10-minute-recovery-threshold)
@@ -365,21 +333,20 @@ will NOT change:
   once the maximum backoff has been reached -- see
   [Alternatives](#more-complex-heuristics)
 
-
-
-### Existing backoff curve change: front loaded decay, lower maximum backoff
-
-This KEP proposes changing the existing backoff curve to load more restarts
-earlier by changing the initial value of the exponential backoff, and to retry
-periodically more often by reducing the maximum for the backoff. A number of
-alternate initial values and maximum backoff values are modelled below. This
-proposal suggests we start with a new initial value of 1s (changed from 10s
-today) and a maximum backoff of 1 minute (changed from 5 minutes today) based on
-prior research, and further analyze its impact on infrastructure during alpha. 
-
 ![A graph showing the change in elapsed time for observed restarts with the
-CrashLoopBackOffBehavior of today vs the proposed new
-default](./restarts-vs-elapsed-new-default.png "Default backoff curve change")
+CrashLoopBackOffBehavior of today vs the proposed minimum for per node
+configuration](./restarts-vs-elapsed-minimum-per-node.png "Per node minimum backoff
+curve allowed")
+
+While the complete information is saved for [Design Details](#per-node-config),
+its expedient to see the exact config proposed here:
+
+```
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+crashloopbackoff: 
+  maxSeconds: 4
+```
 
 ### Refactor and flat rate to 10 minutes for the backoff counter reset threshold
 
@@ -415,8 +382,8 @@ rescheduling of a new pod is avoided.
 #### Fast restart on failure
 
 There are AI/ML scenarios where an entire workload is delayed if one of the Pods
-is not running. Some Pods in this scenario may fail with the recoverable error -
-for example some dependency failure or be killed by infrastructure (e.g. exec
+is not running. Some Pods in this scenario may fail with a recoverable error --
+for example some dependency failure, or be killed by infrastructure (e.g. exec
 probe failures on containerd slow restart). In such cases, it is desirable to
 restart the container as fast as possible and not wait for 5 minutes of the max
 crashloop backoff timeout. With the existing max crashloop backoff timeout, a
@@ -469,61 +436,40 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-The biggest risk of this proposal is reducing the decay of the _default_
-CrashLoopBackoff: to do so too severely compromises node stability, risking the
-kubelet component to become too slow to respond and the pod lifecycle to
-increase in latency, or worse, causing entire nodes to crash if kubelet takes up
-too much CPU or memory. Since each phase transition for a Pod also has an
-accompanying API request, if the requests become rapid enough due to fast enough
-churn of Pods through CrashLoopBackoff phases, the central API server could
-become unresponsive, effectively taking down an entire cluster.
+The biggest risk of this proposal is giving operators a knob which could
+potentially compromise node stability, risking the kubelet component to become
+too slow to respond and the pod lifecycle to increase in latency. While not
+default, it is by design allowing a more severe reduction in the decay
+behavior. In the worst case, it could cause nodes to fully saturate with
+near-instantly restarting pods that will never recover, risking taking down
+nodes or at least nontrivially slowing kubelet, or increasing the API requests
+to store backoff state so significantly that the central API server is
+unresponsive and the cluster fails.
 
-Some observations and analysis were made to quantify these risks going into
-alpha. In the [Kubelet Overhead Analysis](#kubelet-overhead-analysis), the code
-paths all restarting pods go through result in 5 obvious `/pods` API server
-status updates; when observed empirically in an active cluster, while we do see
-an initial surges in `/pods` API traffic to the kubelet client side rate limit
-of ~5 QPS when deploying 110 mass crashing pods for our tests, even with
-instantly crashing pods and intantaneously restarting CrashLoopBackOff behavior,
-`/pods` API requests quickly normalized to ~2 QPS. In the same tests, runtime
-CPU usage increased by x10 and the API server CPU usage increased by 2x.
-<<[UNRESOLVED non blocking]If you were testing this on a small cluster without a lot of
-additional load, the 2x increase in apiserver cpu usage is probably not a
-particularly useful metric. Might be worth mentioning the raw numbers here
-instead.>> <<[/UNRESOLVED]>>
+With nearly trivial (when compared to pod startup metrics) max allowable
+backoffs of 1s, there is more risk to node stability expected. In this case,
+for a hypothetical node with the default maximum 110 pods each with one
+crashing container all stuck in a simultaneous 1s maximum CrashLoopBackoff, at
+its most efficient this would result in a new restart for each pod every
+second, and therefore the API requests to change the state transition would be
+expected to increase from ~550 requests/10s to 5500 requests/10s, or 10x. In
+addition, since the maximum backoff would be lowered, an ideal pod would
+continue to restart more often than today's behavior, adding 305 excess
+restarts within the first 5 minutes and 310 excess restarts every 5 minutes
+after that; each crashing pod would be contributing an excess of ~1550 pod
+state transition API requests, and fully saturated node with a full 110
+crashing pods would be adding 170,500 new pod transition API requests every
+five minutes, which is an an excess of ~568 requests/10s. <<[!UNRESOLVED non
+blocking: kubernetes default for the kubelet client rate limit and how this
+changes by machine size]>> <<[UNRESOLVED]>>
 
-By passing the proposed changes through the existing SIG-scalability tests,
-while pursuing manual and more detailed periodic benchmarking during the alpha
-period, we can increase the confidence in the changes and explore the
-possibility of reducing the values further in the future.
+The first line of defense is that the enhancement is not usable by default and
+must be opted into using a feature gate.
 
-In the meantime, during alpha, naturally the first line of defense is that the
-enhancement is not usable by default and must be opted into. Further mitigation
-is conservativism in changes to the default behavior based on prior stress
-testing.
+Beyond the feature gate, this configuration can only be modified by users with
+the permissions to modify the kubelet configuration -- in other words, a
+cluster operator persona.
 
-The alpha changes to the _default_ backoff curve were chosen because they meet
-emerging use cases and user sentiment from the canonical feature request issue
-and research by the author, AND because they are indicated to be safe changes
-based on initial benchmarking and analysis. The reduction of the initial value
-from 10s to 1s and the reduction of the backoff maximum from 5 minutes to 1
-minute introduces 
-
-* 5 excess restarts per pod in the first five minutes
-  * the first 3 excess in the first 30 seconds
-  * and the last 2 excess between 150 and 300 seconds
-  * an excess 5 restarts every five minutes compared to today given the change
-    in the backoff maximum
-
-For a hypothetical node with the default maximum 110 pods all stuck in a
-simultaneous 10s CrashLoopBackoff, at its most efficient this would result in a
-new restart for each pod every second, and API requests to the API server to
-change the state transition would increase at its fastest period from ~550
-requests/10s to ~5500 requests/10s, or 10x. In conjunction, the lowered backoff
-would continuously add 5 excess restarts every five minutes compared to today's
-behavior, so each crashing pod would be adding an excess of 25 pod state
-transition API requests, for a total of 2750 excess API requests for a node
-fully saturated with crashing pods.
 
 ## Design Details 
 
@@ -534,89 +480,82 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-### Front loaded decay curve, modified maximum backoff methodology
-As mentioned above, today the standard backoff curve is a 2x exponential decay
-starting at 10s and capping at 5 minutes, resulting in a composite of the
-standard hockey-stick exponential decay graph followed by a linear rise until
-the heat death of the universe as depicted below:
+### Per node config
 
-![A graph showing the backoff decay for a Kubernetes pod in
-CrashLoopBackoff](./crashloopbackoff-succeedingcontainer.png "CrashLoopBackoff
-decay")
+For some users in
+[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), any
+delay over 1 minute at any point is just too slow, even if it is legitimately
+crashing. A common refrain is that for independently recoverable errors,
+especially system infrastructure events or recovered external dependencies, or
+for absolutely nonnegotiably critical sidecar pods, users would rather poll more
+often or more intelligently to reduce the amount of time a workload has to wait
+to try again after a failure. In the extreme cases, users want to be able to
+configure (by container, node, or exit code) the backoff to close to 0 seconds.
+This KEP considers it out of scope to implement fully user-customizable
+behavior, and too risky without full and complete benchmarking to node stability
+to allow legitimately crashing workloads to have a backoff of 0, but it is in
+scope for the first alpha to provide users a way to opt in to a faster restart
+behavior.
 
-Remember that the backoff counter is reset if containers run longer than 10
-minutes, so in the worst case where a container always exits after 9:59:59, this
-means in the first 30 minute period, the container will restart twice. In a more
-easily digestible example used in models below, for a fast exiting container
-crashing every 10 seconds, in the first 30 minutes the container will restart
-about 10 times, with the first four restarts in the first 5 minutes.
+So why opt in by node? In fact, the initial proposal of this KEP for 1.31 was to
+opt in by Pod, to minimize the blast radius of a given Pod's worst case restart
+behavior. In 1.31 this was proposed using a new `restartPolicy` value in the Pod
+API, described in [Alternatives Considered here](#restartpolicy-rapid). Concerns
+with this approach fell into two buckets: 1. technical issues with the API
+(which could have been resolved by a different API approach), and 2. design
+issues with exposing this kind of configuration to users without holistic
+insight into cluster operations, for example, to users who might have pod
+manifest permissions in their namespace but not for other namespaces in the same
+cluster and which might be dependent on the same kubelet. For 1.32, we were
+looking to address the second issue by moving the configuration somewhere we
+could better guarantee a cluster operator type persona would have exclusive
+access to. In addition, initial manual stress testing and benchmarking indicated
+that even in the unlikely case of mass pathologically crashing and instantly
+restarting pods across an entire node, cluster operations proceeded with
+acceptable latency, disk, cpu and memory. Worker polling loops, context
+timeouts, the interaction between various other backoffs, as well as API server
+rate limiting made up the gap to the stability of the system. Therefore, to
+simplify both the implementation and the API surface, this 1.32 proposal puts
+forth that the opt-in will be configured per node via kubelet configuration.
 
-Why change the initial value of the backoff curve instead of its rate, or why
-not change the decay function entirely to other well known equations (like
-functions resulting in curves that are lienar, parabolic, sinusoidal, etc)?
+### Implementing with KubeletConfiguration
 
-Exponential decay, particularly at a rate of 2x, is commonly used for software
-retry backoff as it has the nice properties of starting restarts at a low value,
-but penalizing repeated crashes harshly, to protect primarily against
-unrecoverable failures. In contrast, we can interpret linear curves as
-penalizing every failure the same, or parabolic and sinusoidal curves as giving
-our software a "second chance" and forgiving later failures more. For a default
-restart decay curve, where the cause of the restart cannot be known, 2x
-exponential decay still models the desired properties more, as the biggest risk
-is unrecoverable failures causing "runaway" containers to overload kubelet.
+Kubelet configuration is governed by two main input points, 1) command-line flag
+based config and 2) configuration following the API specification of the
+`kubelet.config.k8s.io/v1beta1 KubeletConfiguration` Kind, which is passed to
+kubelet as a config file or, beta as of Kubernetes 1.30, a config directory
+([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)).
 
-To determine the effect in abstract of changing the initial value on current
-behavior, we modeled the change in the starting value of the decay from 10s to
-1s, 250ms, or even 25ms. 
+Since this is a per-node configuration that likely will be set on a subset of
+nodes, or potentially even differently per node, it's important that it can be
+manipulated per node. Expected use cases of this type of heterogeneity in
+configuration include
 
-!["A graph showing the decay curves for different initial values"](differentinitialvalues.png
-"Alternate CrashLoopBackoff initial values")
+* Dedicated node pool for workloads that are expected to rapidly restart
+* Config aligned with node labels/pod affinity labels for workloads that are
+  expected to rapidly restart
+* Machine size adjusted config
 
-For today's decay rate, the first restart is within the first 10s, the second
-within the first 30s, the third within the first 70s. Using those same time
-windows to compare alternate initial values, for example changing the initial
-rate to 1s, we would instead have 3 restarts in the first time window, 1 restart
-within the second time window, and two more restarts within the third time
-window. As seen below, this type of change gives us more restarts earlier, but
-even at 250ms or 25ms initial values, each approach a similar rate of restarts
-after the third time window.
+By default `KubeletConfiguration` is intended to be shared
+between nodes, but the beta feature for drop-in configuration files in a
+colocated config directory cirumvents this. In addition, `KubeletConfiguration`
+drops fields unrecognized by the current kubelet's schema, making it a good
+choice to circumvent compatibility issues with n-3 kubelets. While there is an
+argument that this could be better manipulated with a command-line flag, so
+lifecycle tooling that configures nodes can expose it more transparently, that
+was an acceptable design change given the introduction of `KubeletConfiguration`
+in the first place. In any case, the advantages to backwards and forward
+compatibility by far outweigh this consideration for the alpha period and can be
+revisted before beta.
 
-![A graph showing different exponential backoff decays for initial values of
-10s, 1s, 250ms and 25ms](initialvaluesandnumberofrestarts.png "Changes to decay
-with different initial values")
+The proposed configuration explicitly looks like this:
 
-Among these modeled initial values, we would get between 3-7 excess restarts per
-backoff lifetime, mostly within the first three time windows matching today's
-restart behavior.
-
-The above modeled values converge like this because of the harshly increasing
-rate caused by the exponential growth, but also because they grow to the same
-maximum value -- 5 minutes. By layering on alternate models for maximum backoff,
-we observe more restarts for longer:
-
-![A graph showing different exponential backoff decays for 2 initial values and
-2 different maximum backoff
-thresholds](initialvaluesandmaxonnumberofrestarts.png "Changes to decay with
-different initial and maximum backoff values")
-
-While this graph includes several variations -- initial values of 10s in red and
-pink, initial values of 1s in purple and lilac, and both of these initial values
-modeled either 60s or 30s maximum backoff -- hopefully it can impress upon the
-reader how including a reduction to maximum backoff increases the number of
-excess restarts later in the cycle. In the most extreme case modeled above, with
-initial value of 1s and a maximum backoff of 30s, there are 2 excess restarts in
-the first time window, 1 excess in the second time window, 3 excess in the
-fourth time window and 4 excess in the fifth time window for a total of 10
-excess restarts compared to today's behavior.
-
-As a first estimate for alpha in line with maximums discussed on
-[Kubernetes#57291](https://github.com/kubernetes/kubernetes/issues/57291), the
-initial curve is selected at initial=1s / max=1 minute. During the alpha period
-this will be further investigated against kubelet capacity, potentially
-targeting something closer to an initial value near 0s, and a cap of 10-30s. To
-further restrict the blast radius of this change before full and complete
-benchmarking is worked up, this is gated by its own feature gate,
-`ReduceDefaultCrashLoopBackoffDecay`.
+```
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+crashloopbackoff: 
+  maxContainerRestartPeriod: 4
+```
 
 ### Refactor of recovery threshold
 
@@ -723,58 +662,6 @@ and Container Runtime restart code paths")
  to answer question: looks like it is per runtime. need to check about leasees. also part of the value of this is to restart the sandbox.
 ```
 
-### Benchmarking
-
-Again, let it be known that by definition this KEP will cause pods to restart
-faster and more often than the current status quo and such a change is desired.
-However, to do so as safely as possible, it is required that during the alpha
-period, we reevaluate the SLIs and SLOs and benchmarks related to this change and
-expose clearly the methodology needed for cluster operators to be able to quantify the
-risk posed to their specific clusters on upgrade.
-
-To best reason about the changes in this KEP, we require the ability to
-determine, for a given percentage of heterogenity between "Succeeded"
-terminating pods, and "Failed" (aka crashing) terminating pods whose
-`restartPolicy: Always`:
- * what is the load and rate of Pod restart related API requests to the API
-   server?
- * what are the performance (memory, CPU, and pod start latency) effects on the
-   kubelet component? What about when considering the effects of different
-   plugins (e.g. CSI, CNI)
-
-Today there are alpha SLIs in Kubernetes that can observe that impact in
-aggregate:
-* Kubelet component CPU and memory
-* `kubelet_http_inflight_requests`
-* `kubelet_http_requests_duration_seconds`
-* `kubelet_http_requests_total`
-* `kubelet_pod_worker_duration_seconds`
-* `kubelet_runtime_operations_duration_seconds`
-* `kubelet_pod_start_duration_seconds`
-* `kubelet_pod_start_sli_duration_seconds`
-
-In addition, estimates given the currently suggested changes in API requests are
-included in [Risks and Mitigations](#risks-and-mitigations) and were deciding
-factors in specific changes to the backoff curves. Since the changes in this
-proposal are deterministic, this is pre-calculatable for a given heterogenity of
-quantity and rate of restarting pods.
-
-In addition, the `kube-state-metrics` project already implements
-restart-specific metadata for metrics that can be used to observe pod restart
-latency in more detail, including:
-* `kube_pod_container_status_restarts_total`
-* `kube_pod_restart_policy`
-* `kube_pod_start_time`
-* `kube_pod_created`
-
-During the alpha period, these metrics, the SIG-Scalability benchmarking tests,
-added kubelet performance tests, and manual benchmarking by the author against
-`kube-state-metrics` will be used to answer the above questions, tying together
-the container restart policy (inherited or declared), the terminal state of a
-container before restarting, and the number of container restarts, to articulate
-the observed rate and load of restart related API requests and the performance
-effects on kubelet.
-
 ### Relationship with Job API podFailurePolicy and backoffLimit
 
 Job API provides its own API surface for describing alterntive restart
@@ -824,11 +711,10 @@ from the backoff for container restarts
 ([here](https://github.com/kubernetes/kubernetes/blob/release-1.30/pkg/kubelet/kubelet.go#L855)).
 
 This KEP considers changes to ImagePullBackoff as out of scope, so during
-implementation this will keep the same backoff. This is both to reduce the
-number of variables during the benchmarking period for the restart counter, and
-because the problem space of ImagePullBackoff could likely be handled by a
-completely different pattern, as unlike with CrashLoopBackoff the types of
-errors with ImagePullBackoff are less variable and better interpretable by the
+implementation this will keep the same backoff. This is because the problem
+space of ImagePullBackoff could likely be handled by a completely different
+pattern, as unlike with CrashLoopBackoff the types of errors with
+ImagePullBackoff are less variable and better interpretable by the
 infrastructure as recoverable or non-recoverable (i.e. 404s).
 
 ### Relationship with k/k#123602
@@ -893,22 +779,6 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-This feature requires two levels of testing: the regular enhancement testing
-(described in the template below) and the stress/benchmark testing required to
-increase confidence in ongoing node stability given heterogeneous backoff timers
-and timeouts.
-
-Some stress/benchmark testing will still be developed as part of the
-implementation of this enhancement, including the kubelet_perf tests indicated
-in the e2e section below.
-
-Some of the benefit of pursuing this change in alpha is to also have the
-opportunity to run against the existing SIG-Scalability performance and
-benchmarking tests within an alpha candidate. In addition, manual benchmark
-testing with GKE clusters can be performed by the author as described in [Design
-Details](#benchmarking), and evaluated as candidates for formal, periodic
-benchmark testing in the Kubernetes testgrid.
-
 ##### Prerequisite testing updates
 
 <!--
@@ -940,11 +810,10 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-
-- `kubelet/kuberuntime/kuberuntime_manager_test`:
-  [testgrid](https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit&include-filter-by-regex=kuberuntime),
-  [latest
-  prow](https://prow.k8s.io/view/gs/kubernetes-ci-logs/logs/ci-kubernetes-coverage-unit/1843696946913480704)
+- [pkg/kubelet/kubelet_test.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/kubelet_test.go#L3728)
+  - [testgrid](https://testgrid.k8s.io/sig-release-master-blocking#ci-kubernetes-unit)
+  - [latest
+    prow](https://prow.k8s.io/view/gs/kubernetes-ci-logs/logs/ci-kubernetes-unit/1978182193507209216)
 
 ##### Integration tests
 
@@ -963,11 +832,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- k8s.io/kubernetes/test/integration/kubelet:
-  [testgrid](https://testgrid.k8s.io/sig-testing-canaries#pull-kubernetes-integration-go-canary),
-  [latest
-  prow](https://prow.k8s.io/view/gs/kubernetes-jenkins/pr-logs/directory/pull-kubernetes-integration-go-canary/1710565150676750336)
-  * test with and without feature flags enabled
+Unit and E2E tests are expected to provide sufficient coverage.
 
 ##### e2e tests
 
@@ -984,53 +849,53 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Crashlooping container that restarts some number of times (ex 10 times),
   timestamp the logs and read it back in the test, and expect the diff in those
   time stamps to be minimum the backoff, with a healthy timeout
-- k8s.io/kubernetes/test/e2e/node/kubelet_perf: new suite for a given percentage
-of heterogenity between "Succeeded" terminating pods, and crashing pods whose
-`restartPolicy: Always` or `restartPolicy: OnFailure`, 
-  - what is the load and rate of Pod restart related API requests to the API
-    server?
-  - what are the performance (memory, CPU, and pod start latency) effects on the
-    kubelet component? 
-  - With different plugins (e.g. CSI, CNI)
+  - [e2e
+    test](https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/container_restart_test.go)
+  - [k8s
+    triage](https://storage.googleapis.com/k8s-triage/index.html?pr=1&test=Container%20Restart%20%5BFeature%3ACriProxy%5D)
+  - [testgrid](https://testgrid.k8s.io/sig-node-cri-o#node-kubelet-cgroupv2-serial-crio)
+  - [latest
+    prow](https://prow.k8s.io/view/gs/kubernetes-ci-logs/logs/ci-kubernetes-node-kubelet-cgroupv2-serial-cri-o/1978150987361161216)
 
 ### Graduation Criteria
 
 #### Alpha
 
-- New `ReduceDefaultCrashLoopBackoffDecay` feature flag which, when enabled,
-  changes CrashLoopBackOff behavior (and ONLY the CrashLoopBackOff behavior) to
-  a 2x decay curve starting at 1s initial value, 1 minute maximum backoff for
-  all workloads, therefore affecting workload configured with `restartPolicy:
-  Always` or `restartPolicy: OnFailure`
-    - Requires a refactor of image pull backoff from container restart backoff
-      object
+- New `int32 crashloopbackoff.maxContainerRestartPeriod` field in 
+  `KubeletConfiguration` API, validated to a minimum of 1 and a maximum of 300,
+  used when `KubeletCrashLoopBackOffMax` feature flag enabled, to customize
+  CrashLoopBackOff per node
 - Maintain current 10 minute recovery threshold by refactoring backoff counter
   reset threshold and explicitly implementing container restart backoff behavior
   at the current 10 minute recovery threshold
 - Initial e2e tests setup and enabled
 - Initial unit tests covering new behavior
   - Especially confirming the backoff object is set properly depending on the
-feature gates set as per the [Conflict Resolution](#conflict-resolution) policy
-- Low confidence in the specific numbers/decay rate
+    feature gates set as per the [Conflict Resolution](#conflict-resolution)
+    policy
+- Test proving `KubeletConfiguration` objects will silently drop unrecognized
+  fields in the `config.validation_test` package
+  ([ref](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go)).
+    - <<[UNRESOLVED non blocking]>>Is this also the expected behavior when the feature gate
+      is disabled?<<[/UNRESOLVED]>>
+- Test coverage of proper requeue behavior; see
+  https://github.com/kubernetes/kubernetes/issues/123602
+- Actually fix https://github.com/kubernetes/kubernetes/issues/123602 if this
+  blocks the implementation, otherwise beta criteria
 
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- High confidence in the specific numbers/decay rate
-- Benchmark restart load methodology and analysis published and discussed with
-  SIG-Node
-- Discuss PLEG polling loops and its effect on specific decay rates
-- Additional e2e and benchmark tests, as identified during alpha period, are in
-  Testgrid and linked in KEP
+- Feature Enabled by Default: The KubeletCrashLoopBackOffMax feature gate is
+  enabled by default.
 
 #### GA
 
 - 2 Kubernetes releases soak in beta
-- Completely finalize the decay curves and document them thoroughly
 - Remove the feature flag code
-- Confirm the exponential backoff decay curve related tests and code are still
-  in use elsewhere and do not need to be removed
+- Conformance test added for per-node configuration
+- Benchmarking of extreme conditions (very low max backoff, large number of
+  crashing pods) to better characterize the worst-case scenarios
 
 
 <!--
@@ -1109,36 +974,65 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-For `ReduceDefaultCrashLoopBackoffDecay`:
-
 For an existing cluster, no changes are required to configuration, invocations
 or API objects to make an upgrade.
 
-To use the enhancement, the alpha feature gate is turned on. In the future when
-(/if) the feature gate is removed, no configurations would be required to be
-made, and the default behavior of the baseline backoff curve would -- by design
--- be changed.
+To make use of this enhancement, on cluster upgrade, the
+`KubeletCrashLoopBackOffMax` feature gate must first be turned on for the
+cluster. Then, if any nodes need to use a different backoff curve, their kubelet
+must be completely redeployed either in the same upgrade or after that upgrade
+with the `crashloopbackoff.maxContainerRestartPeriod` `KubeletConfiguration`
+set.
 
-To stop use of this enhancement, the entire cluster must be restarted or just
-kubelet must restart with the `ReduceDefaultCrashLoopBackoffDecay` feature gate
-turned off. Since kubelet does not cache the backoff object, on kubelet restart
-Pods will start at the beginning of their backoff curve. The exact backoff curve
-a given Pod will use will be the original one with initial value 10s.
+To stop use of this enhancement, there are two options. 
+
+On a per-node basis, nodes can be completely redeployed with
+`crashloopbackoff.maxContainerRestartPeriod` `KubeletConfiguration` unset.
+Since kubelet does not cache the backoff object, on kubelet restart they will
+start from the beginning of their backoff curve (10s).
+
+Or, the entire cluster can be restarted with the
+`KubeletCrashLoopBackOffMax` feature gate turned off. In this case, any
+Node configured with a different backoff curve will instead use
+the default backoff curve. Again, since the cluster was restarted and Pods were
+redeployed, they will not maintain prior state and will start at the beginning
+of their backoff curve.
 
 #### Conflict resolution
 
-[KEP-5593: Configure the max CrashLoopBackOff delay](https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/5593-configure-the-max-crashloopbackoff-delay) describes the addition of a
-per-node configurable max delay for CrashLoopBackOff. If this configuration is
-enabled and set, its value will take precedence over the new defaults described
-in this proposal.
+If on a given node at a given time, the per-node configured maximum backoff is
+lower than the initial value, the initial value for that node will instead be
+set to the configured maximum. For example, if `KubeletCrashLoopBackOffMax` is
+turned on and a given node is configured to a maximum of `1s`, then the
+initial value for that node will be configured to 1s. In other words, operator-
+invoked configuration will have precedence over the default if it is faster.
 
-scenario | ReduceDefaultCrashLoopBackoffDecay | EnableKubeletCrashLoopBackoffMax | Effective initial value
----------|---------|----------|---------
-_today's behavior_ | disabled | disabled | 10s
-_new default only_ | enabled | disabled | 1s
-_faster per node config_ | enabled | 2s | 2s
-_slower per node config_ | enabled | 10s | 10s
-" |  enabled | 300s | 300s
+If on a given node at a given time, the per-node configured maximum backoff is
+lower than 1 second or higher than the 300s, validation will fail and the
+kubelet will crash/be unable to start, like it does with other invalid kubelet
+configuration today.
+
+If on a given node at a given time, the per-node configured maximum backoff is
+higher than the current initial value, but within validation limits as it is
+lower than 300s, it will be honored. In other words, operator-invoked
+configuration will have precedence over the default, even if it is slower, as
+long as it is valid.
+
+If `crashloopbackoff.maxContainerRestartPeriod` `KubeletConfiguration` exists
+but `KubeletCrashLoopBackOffMax` is off, kubelet will log a warning but will
+not honor the `crashloopbackoff.maxContainerRestartPeriod`
+`KubeletConfiguration`. In other words, operator-invoked per node configuration
+will not be honored if the overall feature gate is turned off.
+
+
+scenario | KubeletCrashLoopBackOffMax | Effective initial value
+---------|---------|----------
+_today's behavior_ | disabled | 10s
+_faster per node config_ | 2s | 2s
+_slower per node config_ | 10s | 10s
+" | 11s | 11s
+" | 300s | 300s
+_invalid per node config_ | 301s | kubelet crashes
 
 
 ### Version Skew Strategy
@@ -1156,16 +1050,18 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-For the default backoff curve, no coordination must be
-done between the control plane and the nodes; all behavior changes are local to
-the kubelet component and its start up configuration. An n-3 kube-proxy, n-1
-kube-controller-manager, or n-1 kube-scheduler without this feature available is
-not affected when this feature is used, nor will different CSI or CNI
-implementations. Code paths that will be touched are exclusively in kubelet
-component.
+No coordination needs to be done between the control plane and the nodes; all
+behavior changes are local to the kubelet component and its start up
+configuration. An n-3 kube-proxy, n-1 kube-controller-manager, or n-1
+kube-scheduler without this feature available is not affected when this feature
+is used, nor will different CSI or CNIimplementations. Code paths that will be
+touched are exclusively in kubelet component.
 
 An n-3 kubelet without this feature available will behave like normal, with the
-original CrashLoopBackOff behavior.
+original CrashLoopBackOff behavior. It will drop unrecognized fields in
+`KubeletConfiguration` by default for per node config so if one is specified on
+start up in a past kubelet version, it will not break kubelet (though the
+behavior will, of course, not change).
 
 While the CRI is a consumer of the result of this change (as it will receive
 more requests to start containers), it does not need to be updated at all to
@@ -1215,7 +1111,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ReduceDefaultCrashLoopBackoffDecay`
+  - Feature gate name: `KubeletCrashLoopBackOffMax`
     - Components depending on the feature gate: `kubelet`
 
 ###### Does enabling the feature change any default behavior?
@@ -1225,17 +1121,10 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Yes, `ReduceDefaultCrashLoopBackoffDecay` changes the default backoff curve for
-exiting Pods (including sidecar containers) when `restartPolicy` is either `OnFailure`
-or `Always`.
-
-Since we currently only have anecdotal benchmarking, the alpha will implement
-more conservative modeled initial value and maximum backoff, though less
-conservative from the 1.31 proposal as initial manual data indicated faster
-maximum backoff caps were safe. The new values for all CrashLoopBackOff behavior
-for all workloads will be initial value=1s, max=60s. (See [this
-section](#front-loaded-decay-curve-modified-maximum-backoff-methodology) for
-more rationale.)
+No, by default the max crashloop backoff value will remain unchanged, even when
+the feature gate is enabled. Cluster operators must explicitly opt-in to
+behavioral changes by configuring the
+`crashloopbackoff.maxContainerRestartPeriod` `KubeletConfiguration`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1250,22 +1139,15 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, disable is supported.
+Yes, disable is supported. If `KubeletCrashLoopBackOffMax` is disabled, once
+kubelet is restarted it will initialize the default initial and maximum backoff
+values to the global defaults of 10s and 300s, respectively.
 
-If disabled, once kubelet is restarted it will initialize the default backoff to
-the prior initial value of10s, and all restart delays thereafter will be
-calculated against this equation. Since changing this configuration will at
-minimum require a restart of kubelet to take effect, restart delays will begin
-at the beginning of their backoff curve since the backoff is not cached between
-kubelet restarts.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The feature can also be reenabled.
-
-If reenabled, once kubelet is restarted it will initialize the default backoff
-again to the new initial value of 1s and maximum backoff to 1 minute, and all
-restart delays thereafter will be calculated against this equation.
+Since the backoff values are latched when kubelet is started, reenabling the
+feature will pull in whatever configured values are set.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1283,9 +1165,33 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 -->
 
 At minimum, unit tests will be included confirming the backoff object is set
-properly depending on the feature gates set as per the [Conflict
-Resolution](#conflict-resolution) policy.
+properly.
 
+In this version of the proposal, there are no API schema changes or conversions
+necessary. However it is worth nothing there is one addition to an API object,
+which is a new field in the `KubeletConfiguration` Kind. Based on manual tests
+by the author, adding an unknown field to `KubeletConfiguration` is safe and the
+unknown config field is dropped before addition to the
+`kube-system/kubelet-config` object which is its final destination (for example,
+in the case of n-3 kubelets facing a configuration introduced by this KEP).
+Ultimately this is supported by the configuratinon of a given Kind's
+`fieldValidation` strategy in API machinery
+([ref](https://github.com/kubernetes/kubernetes/blob/release-1.31/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L584))
+which, in 1.31+, is set to "warn" by default and is only valid for API objects
+and it turns out is not explicitly set as `strict` for
+`KuberntesConfiguration` object so they ultimately bypass this
+([ref](https://github.com/kubernetes/kubectl/issues/1663#issuecomment-2392453716)).
+This is not currently tested as far as I can tell in the tests for
+`KubeletConfiguration` (in either the most likely location, in
+[validation_test](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go),
+nor other tests in the [config
+package](https://github.com/kubernetes/kubernetes/tree/005f184ab631e52195ed6d129969ff3914d51c98/pkg/kubelet/apis/config))
+and discussions with other contributors indicate that while little in core
+kubernetes does strict parsing, it's not well tested. At minimum as part of this
+implementation a test covering this for `KubeletConfiguration` objects will be
+included in the `config.validation_test` package.
+
+[pkg/kubelet/apis/config/validation/validation_test.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/validation/validation_test.go#L385)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1305,7 +1211,17 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+The primary risk of this proposal is giving operators a knob which could
+potentially compromise node stability, risking the kubelet component to become
+too slow to respond and the pod lifecycle to increase in latency.
+
+All behavior changes are local to the kubelet component and its start up
+configuration, so a mix of different (or unset) max backoff durations will not
+cause issues to running workloads.
+
+Rolling back is straightforward: the operator needs to revert or update the
+`crashloopbackoff.maxContainerRestartPeriod` `KubeletConfiguration` and restart
+kubelet.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1344,7 +1260,11 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+Since the configuration is local to the kubelet, tests showing the feature gate
+enabled and disabled are sufficient for verifying correct behavior.
+[pkg/kubelet/kubelet_test.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/kubelet_test.go#L3728)
+was added for this verification.
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1352,7 +1272,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+No
 
 ### Monitoring Requirements
 
@@ -1371,7 +1291,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+N/A
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1384,16 +1304,19 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release.
 - [ ] Events
   - Event Reason: 
 - [ ] API .status
   - Condition name: 
   - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Other (treat as last resort)
+  - Details: Users will be able to observe a different restart behavior for
+    containers of crashing pods. Since the maximum duration can only be set
+    lower than the default 5 minutes, users will observe crashloopbackoff
+    capping out at the new maximum value. If the maximum value is configured
+    lower than the initial delay value (currently 10 seconds), users will
+    observe many more (and more frequent) container restarts.
 
-  <<[/UNRESOLVED]>>
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1412,7 +1335,16 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+The core risk of this feature is degradation of kubelet performance. As such,
+the focus should be on ensuring the kubelet remains healthy and performant.
+
+The time required for any pod to start up should not perceptibly increase after
+enabling this feature. The overall pod startup experience on a node must remain
+consistent with its established performance baseline.
+
+The kubelet's consumption of node resources, like CPU and memory, must remain
+stable and within reasonable bounds. It should not grow excessively or threaten
+the stability of other workloads, even when managing a high rate of pod restarts.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1420,17 +1352,16 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release.
-
-- [ ] Metrics
+- [X] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - kubelet_http_inflight_requests
+    - kubelet_http_requests_duration_seconds
+    - kubelet_http_requests_total
+    - kubelet_pod_worker_duration_seconds
+    - kubelet_runtime_operations_duration_seconds
+    - kubelet_pod_start_duration_seconds
+    - kubelet_pod_start_sli_duration_seconds
   
-<<[/UNRESOLVED]>>
-
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
@@ -1438,7 +1369,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+No
 
 ### Dependencies
 
@@ -1463,7 +1394,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+The feature described is entirely self-contained within the kubelet component.
+There are no other dependencies.
 
 ### Scalability
 
@@ -1541,14 +1473,14 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-Maybe! As containers will be restarting more, this may affect "Startup latency
+Maybe! As containers could be restarting more, this may affect "Startup latency
 of schedulable stateless pods", "Startup latency of schedule stateful pods".
-This is directly the type of SLI impact that a) the split between the default
-behavior change and the per node max CrashLoopBackOff delay configuration
-proposed in [KEP-5593 - Configure the max CrashLoopBackOff
-delay](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5593-configure-the-max-crashloopbackoff-delay/README.md)
-is trying to mitigate, and b) one of the targets of the benchmarking period
-during alpha.
+In manual benchmarking experiments on a node saturated with 110 instantly
+crashing single-container pods and a max backoff value of 0s, the
+query-per-second load on the API server increased up to 30x. No tested scenarios
+caused the API server to be completely unresponsive or affect normal operation.
+However, more comprehensive testing of extreme conditions will be required
+before this feature can graduate to GA.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1562,13 +1494,12 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-Yes! We expect more CPU usage of kubelet as it processes more restarts. In
-initial manual benchmarking tests, CPU usage of kubelet increased 2x on nodes
-saturated with 110 instantly crashing single-container pods. During the alpha
-benchmarking period, we will be quantifying that amount in fully and partially
-saturated nodes with both the new default backoff curve and the minimum per node
-backoff curve proposed in [KEP-5593 - Configure the max CrashLoopBackOff
-delay](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5593-configure-the-max-crashloopbackoff-delay/README.md).
+This depends on the configured max backoff value. We expect more CPU usage of
+kubelet as it processes more restarts, when the max backoff value is set lower
+than the initial delay value. In initial manual benchmarking tests, CPU usage of
+kubelet increased 2x on nodes saturated with 110 instantly crashing
+single-container pods and a max backoff value of 0s (which is invalid in the
+final implementation).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -1586,9 +1517,8 @@ Based on the initial benchmarking, no, which was based on manual benchmarking
 tests on nodes saturated with 110 instantly crashing single-container pods.
 However, more "normal" cases (with lower percentage of crashing pods) and even
 more pathological cases (with higher container-density Pods, sidecars, n/w
-traffic, and large image downloads) will be tested further during this alpha
-period to better articulate the risk against the most aggressive restart
-characteristics.
+traffic, and large image downloads) have not been tested with the most
+aggressive restart characteristics.
 
 ### Troubleshooting
 
@@ -1605,26 +1535,24 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+The feature continues to function normally if the API server is unavailable.
+
+The CrashLoopBackOff logic is handled entirely by the kubelet locally on the
+node and doesn't need the API server to operate. The only impact is that the
+kubelet cannot report pod status updates until the API server is back online,
+but that is outside the scope of this feature.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+Kubelet could fail to start if an invalid configuration value is supplied.
+
+Setting an extremely low backoff period could cause cascading failures leading
+to node instability. 
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-<<[UNRESOLVED beta]>> Fill out when targeting beta to a release. <<[/UNRESOLVED]>>
+Reverting the change to the configured max backoff and restarting kubelet.
+
 
 ## Implementation History
 
@@ -1650,10 +1578,9 @@ Major milestones might include:
 * 09-20-2024: Rewrite for 1.32 design focused on per-node config in place of
   `RestartPolicy: Rapid`
 * 10-02-2024: PRR added for 1.32 design
-* 10-29-2025: Split into two separate proposals. This KEP now only covers
-  the change to the default backoff curve. The per-node configuration is
-  covered in [KEP-5593 - Configure the max CrashLoopBackOff
-  delay](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5593-configure-the-max-crashloopbackoff-delay/README.md).
+* 10-29-2025: Split [KEP-4603 - Tune
+  CrashLoopBackoff](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/4603-tune-crashloopbackoff/README.md)
+  into two separate proposals.
 
 ## Drawbacks
 
@@ -1920,32 +1847,27 @@ situations, while the goal of restarting successful containers is only to get
 them to run again sometime and not penalize them with longer waits later when
 they've behaving as expected.
 
-### Front loaded decay with interval
-In an effort
-to anticipate API server stability ahead of the experiential data we can collect
-during alpha, the proposed changes are to both reduce the initial value, and include a
-step function to a higher delay cap once the decay curve triggers the same
-number of total restarts as experienced today in a 10 minute time horizon, in
-order to approximate load (though not rate) of pod restart API server requests.
+### Exposing per-node config as command-line flags
 
-In short, the current proposal is to implement a new initial
-value of 1s, and a catch-up delay of 569 seconds (almost 9.5 minutes) on the 6th
-retry.
+Command-line configuration is more easily and transparently exposed in tooling
+used to bootstrap nodes via templating. Exposed command-line configuration for
+Kubelet are defined by [`struct
+KubeletFlags`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/options/options.go#L54)
+and merged with configuration files in [`kubelet/server.go
+NewKubeletCommand`](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/server.go#L141).
+To expose configuration as a command-line flag, a new field would be added to
+the `KubeletFlags` struct to be validated in kubelet at runtime.
 
-!["A graph showing the delay interval function needed to maintain restart
-number"](controlfornumberofrestarts.png
-"Alternate CrashLoopBackoff decay")
-
-**Why not?**: If we keep the same decay rate as today (2x), no matter what the
-initial value is, the majority of the added restarts are in the beginning. Even
-if we "catch up" the delay to the total number of restarts, we expect problem
-with kubelet to happen more as a result of the faster restarts in the beginning,
-not because we spaced out later ones longer. In addition, we are only talking
-about 3-7 more restarts per backoff, even in the fastest modeled case (25ms
-initial value), which is not anticipated to be a sufficient enough hit to the
-infrastructure to warrant implementing such a contrived backoff curve.
-
-!["A graph showing the changes to restarts depending on some initial values"](initialvaluesandnumberofrestarts.png "Different CrashLoopBackoff initial values")
+**Why not?**: Per comments in the code at [this
+location](https://github.com/kubernetes/kubernetes/blob/release-1.31/cmd/kubelet/app/options/options.go#L52),
+it seems we don't want to continue to expose configuration at this location. In
+addition, since config directories for kubelet config are now in beta
+([ref](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/)),
+there is a reasonable alternative to per-node configuration using the
+`KubeletConfiguration` API object instead. By using the API, we can take
+advantage of API machinery level lifecycle, validation and guarantees, including
+that unrecognized fields will be dropped in older versions of kubelet, which is
+valuable for version skew requirements we must meet back to kubelet n-3. 
 
 ### Late recovery
 
