@@ -505,16 +505,24 @@ the two quota mechanisms above should keep track of the usages of the same
 class of devices the same way.
 
 But currently, the extended resource quota keeps track of the devices provided
-from device plugin, and DRA resource slice. The resource claim quota currently
-only keeps track of the devices provided from DRA resource slice. This must be
-enhanced to have it keep track of the devices from device plugin too.
+from device plugin, and DRA resource slice requested from pod's extended resource
+requests. The resource claim quota currently keeps track of the devices provided
+from DRA resource slice requested from resource claims.
 
-As a device can be requested by resource claim, or by extended resource, the
-cluster admin MUST create two quotas with the same limit on one class of devices
-to effectively quota the usage of that device class.
+The extended resource quota usage needs to be adjusted to account for the device
+requests from resource claims. On the other side, resource claim quota has
+alreadys accounted for the devices requests from pod's extendeded resources, as
+scheduler would create a special resource claim for the extended resource requests.
 
-For example, a cluster admin plans to allow 10 example.com/gpu devices in a
-given namespace, they MUST create the following:
+For example, before the adjustment, the quota is as below. The explicit extended
+resource quota `requests.example.com/gpu` counts 1 device (e.g. gpu-0) from
+device plugin, and 1 device (e.g. gpu-1) from DRA resource slice. The implicit
+extended resource quota `request.deviceclass.resource.kubernetes.io/mygpuclass`
+counts 1 device (e.g. gpu-2) from DRA resource slice. The resource claim quota
+`gpu.example.com.deviceclass.resource.k8s.io/devices` counts 1 device (e.g. gpu-3)
+from a pod resource claim, and 1 device (e.g. gpu-4) from a resource claim template,
+in addition it also counts gpu-1 and gpu-2 in, as scheduler generates extended
+resource claims for them.
 
 ```yaml
 apiVersion: v1
@@ -524,25 +532,49 @@ metadata:
 spec:
   hard:
     requests.example.com/gpu: 10
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 10
     gpu.example.com.deviceclass.resource.k8s.io/devices: 10
+  used:
+    requests.example.com/gpu: 2
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 1
+    gpu.example.com.deviceclass.resource.k8s.io/devices: 4
 ```
 
-Provided that the device class gpu.example.com is mapped to the extended
+Provided that the device class mygpuclass is mapped to the extended
 resource example.com/gpu.
 ```yaml
 apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: gpu.example.com
+  name: mygpusclass
 spec:
   extendedResourceName: example.com/gpu
 ```
 
-Resource Quota controller reconciles away the differences if any between the
-usage of the two quota, and ensures their usage are always kept the same. For
-that, the controller needs to have the permission to list the device classes
-in the cluster to establish the mapping between device class and extended
-resource.
+For the same example, the explicit extended resource quota `requests.example.com/gpu`
+needs to be adjusted to count in the devices requested from implicit extended resource
+(e.g. gpu-2) and from resoure claims (e.g gpu-3 and gpu-4). The implicit extended
+resource quota `request.deviceclass.resource.kubernetes.io/mygpuclass` needs to be
+adjusted to count in the devices requested from resource claims (e.g. gpu-3 and gpu-4),
+and the DRA devices requested from explicit extended resources (e.g. gpu-1), but
+not the device plugin devices (e.g. gpu-0). The adjusted quota is as below.
+
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gpu
+spec:
+  hard:
+    requests.example.com/gpu: 10
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 10
+    gpu.example.com.deviceclass.resource.k8s.io/devices: 10
+  used:
+    requests.example.com/gpu: 5
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 4
+    gpu.example.com.deviceclass.resource.k8s.io/devices: 4
+```
 
 ### Scheduling for Extended Resource backed by DRA
 
