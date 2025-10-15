@@ -20,6 +20,7 @@
     - [Scheduler Performance Regression](#scheduler-performance-regression)
     - [Edge Cases in Numeric Parsing](#edge-cases-in-numeric-parsing)
     - [Taint Misconfiguration Detection](#taint-misconfiguration-detection)
+    - [Controller Hot-Loop When Feature Gate is Disabled](#controller-hot-loop-when-feature-gate-is-disabled)
     - [Cross-SIG Impact](#cross-sig-impact)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
@@ -76,7 +77,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Extend **core/v1 Toleration** to support **numeric comparison operators** when matching **Node Taints**:
 
-- New operators: `Lt`, `Gt` (in addition to existing `Equal`/`Exists`).
+- New operators: `Lt`, `Gt` (in addition to existing `Equal`/`Exists`). These operators are already used in NodeAffinity/NodeSelector, so users are familiar with them.
 - Primary motivation: allow pods to opt‑in to nodes by `SLA/failure‑probability` values published as taints (e.g., `node.kubernetes.io/sla=950`).
 - Scheduler impact is limited to the existing TaintToleration plugin; no new stages or algorithms.
 
@@ -167,7 +168,7 @@ metadata:
   name: flexible-sla-workload
 spec:
   tolerations:
-  # Accept nodes with SLA >= 900 (SLA = 900 OR SLA > 900)
+  # Accept nodes with SLA > 900
   - key: node.kubernetes.io/sla
     operator: Equal
     value: "900"
@@ -400,18 +401,23 @@ spec:
 
 - **Integer-Only Support**: The implementation supports signed 64-bit integers only. Pod specs containing toleration values with decimal numbers (e.g., `"95.5"`) will be rejected by the API server during validation when using numeric comparison operators.
 
-- **Parsing Requirements**: The toleration value must be parseable as integers for numeric operators (`Lt`, `Gt`). If fails parsing, the toleration does not match.
+- **Parsing Requirements**: The toleration value must be parseable as integers for numeric operators (`Lt`, `Gt`). If parsing fails, the toleration does not match.
 
-  > Note: A taint like `foo=95.5:NoSchedule` is valid since taint values follow label values syntax, which allows. The numeric parsing/validation is enforced on toleration *only*.
+- **Non-Numeric Taint Values**: When a pod toleration uses `Lt` or `Gt` operators, it only matches taints with numeric values. If a node has a taint with a non-numeric value, the toleration will not match, and the pod cannot schedule on that node.
+  
+  **Example**: 
+  - Node taint: `node.kubernetes.io/sla=high:NoSchedule`
+  - Pod toleration: `{key: "node.kubernetes.io/sla", operator: "Gt", value: "900"}`
+  - **Result**: Toleration does not match and pod cannot schedule on this node
+  - The pod remains `Pending` and can schedule on other nodes with valid numeric taints
+  - The pod is not failed or rejected entirely
+
+  > Note: Taint values are not validated at node registration time. A taint like `foo=95.5:NoSchedule` or `foo=high:NoSchedule` is valid since taint values follow label value syntax. Numeric parsing and validation only occurs during scheduling when matching against tolerations with `Lt`/`Gt` operators.
 
 - **Alpha Restrictions**: When `TaintTolerationComparisonOperators=false`, the API server rejects pods using the new operators.
 
 - **Strict Validation**: Unlike existing `Equal`/`Exists` operators which accept any string values, numeric operators require valid integer strings. This may catch existing invalid configurations.
 - **Parsing Overhead**: Each taint/toleration match with numeric operators requires integer parsing.
-
-- Invalid taints meant to be used with the new comparison operators (e.g., `node.kubernetes.io/sla=95.5` and `node.kubernetes.io/version=1`) are not detected at admission time.
-
-- **Taint Misconfiguration Risk**: When nodes have taints with non-numeric values (e.g., `node.kubernetes.io/sla=high` instead of `node.kubernetes.io/sla=950`) that are intended for use with numeric operators, the misconfiguration is only detected during pod scheduling attempts, not at taint creation time. This can lead to scheduling failures that are difficult to diagnose.
 
 ### Risks and Mitigations
 
@@ -442,13 +448,27 @@ spec:
 
 #### Taint Misconfiguration Detection
 
-**Risk**: Node taints intended for numeric comparison may contain non-numeric values (e.g., `node.kubernetes.io/sla=high` instead of `node.kubernetes.io/sla=950`), causing scheduling failures that are only detected during pod placement attempts rather than at taint creation time.
+**Risk**: Node taints intended for numeric comparison may contain non-numeric values (e.g., `node.kubernetes.io/sla=high` instead of `node.kubernetes.io/sla=950`). Since taint values are not validated at node registration time, these misconfigurations are only detected during scheduling when a pod with `Lt`/`Gt` tolerations attempts to match. This can lead to pods remaining in `Pending` state without clear indication of the root cause.
 
 **Mitigation**:
 
-- Clear documentation and examples showing proper numeric taint configuration
-- Enhanced error messages in scheduling events that clearly indicate parsing failures
-- Users can use the metric to set up alerts and monitoring.
+- Pod validation: Current validation strictly enforces that only `Equal` and `Exists` operators are allowed. Users with numeric taint values today must explicitly change the operator to `Lt` or `Gt`, at which point pod-side validation will catch non-numeric toleration values and reject the pod spec before scheduling.
+
+#### Controller Hot-Loop When Feature Gate is Disabled
+
+**Risk**: If a workload controller (Deployment, StatefulSet, Job, etc.) has a pod template that uses `Lt` or `Gt` operators, and the feature gate is disabled or was disabled after being enabled, the controller will enter a hot-loop:
+
+1. Controller attempts to create a pod from the template
+2. API server validation rejects the pod with error: `Unsupported value: "Gt": supported values: "Equal", "Exists"`
+3. Controller immediately retries pod creation and this cycle repeats indefinitely
+
+This is particularly problematic during rollback/downgrade scenarios or for multi-cluster deployments where the feature gate state differs across clusters.
+
+**Mitigation**:
+
+- Before disabling the feature gate, cluster operators should identify all workloads using `Lt`/`Gt` operators via API discovery or scanning tools
+- The Upgrade/downgrade documentation should explicitly warns about this scenario and provides steps to identify affected workloads
+- The `apiserver_request_total` metric can be used to detect hot-loop conditions
 
 #### Cross-SIG Impact
 
@@ -674,6 +694,7 @@ When the feature gate is disabled and the scheduler encounters a pod with `Gt`/`
 - Pod is considered to have untolerated taints
 - Filter returns `UnschedulableAndUnresolvable` status
 - Pod remains in Pending state.
+   - Feature gate on/off test cases
 
 ### Version Skew Strategy
 
@@ -738,19 +759,24 @@ Tests have been added in the integration tests. See [Integration tests](#integra
 
 **Rollback**: Can impact workloads if not done carefully:
 
-1. **Running pods** with Gt/Lt operators: continue running (safe)
-2. **Pending pods** with Gt/Lt operators: become stuck in Pending state, as:
+1. Running pods with Gt/Lt operators: continue running (safe)
+2. Pending pods with Gt/Lt operators: become stuck in Pending state, as:
    - They remain in etcd but validation rejects them
    - The scheduler won't recognize the operators
    - Force deletion may be required: `kubectl delete pod <name> --force --grace-period=0`
-3. **Workload controllers** (Deployments, StatefulSets, etc.):
+3. Workload controllers (Deployments, StatefulSets, etc.):
    - If the pod template uses Gt/Lt operators, the controller cannot create new pods
    - Rolling updates will fail
+ 
+  **Recommended rollback procedure to prevent hot loop**:
+  1. Update identified workloads to use `Equal` or remove numeric tolerations
+  2. Delete pending pods that use `Lt`/`Gt` operators
+  3. Disable feature gate in kube-scheduler first, then kube-apiserver
 
 ###### What specific metrics should inform a rollback?
 
-- `scheduler_scheduling_duration_seconds`
-- `apiserver_request_total`
+- `scheduler_scheduling_duration_seconds`: Increased scheduling latency may indicate performance issues with numeric parsing
+- `apiserver_request_total`: Spike in validation errors may indicate controller hot-loops
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -911,4 +937,32 @@ There are many different alternatives were considered:
      - Memory/storage overhead for additional field
      - API complexity and documentation burden
 
+5.**Use Existing `Equal` Operator with Numeric Values (No New Operators):**
+   
+   Instead of introducing `Lt`/`Gt`, use the existing `Equal` operator with numeric taint values. For example:
+   - Node: `node.kubernetes.io/sla=950:NoSchedule`
+   - Pod: `{key: "node.kubernetes.io/sla", operator: "Equal", value: "950"}`
+   
+   **Pros:**
+   - No API changes needed
+   
+   **Cons:**
+   - Pods must specify exact SLA values, not ranges. A pod cannot say "accept any node with SLA > 950"
+   - Multiple tolerations required: If nodes have varying SLA values (e.g., 950, 960, 970, 980, 990), pods need separate `Equal` tolerations for each value they're willing to accept:
+     ```yaml
+     tolerations:
+     - key: node.kubernetes.io/sla
+       operator: Equal
+       value: "950"
+     - key: node.kubernetes.io/sla
+       operator: Equal
+       value: "960"
+     - key: node.kubernetes.io/sla
+       operator: Equal
+       value: "970"
+     # ... and so on
+     ```
+   - Poor semantics for "best effort" workloads since you can't easily express "I'll take any spot/preemptible node regardless of SLA" without enumerating all possible low-SLA values
+   - Changes to node SLA classification schemes require updating all pod manifests
+   
 ## Infrastructure Needed (Optional)
