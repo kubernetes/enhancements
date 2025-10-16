@@ -254,7 +254,7 @@ The create operation will use the sorted output from the scheduling of a "canoni
 
 #### Update
 
-The update operation will attempt to update the batch information after a scheduling or nomination has taken place. Today we already have a way to re-evaluate whether a node is feasible after a pod is added using the cluster snapshot and CycleState. We will use this filter functionality here; if we determine the node we just used is no longer feasible, then we will throw it away and continue using the remainder of the data. If the node remains feasible after adding the pod, for this KEP we will throw away the batch information and "start fresh" for the next pod. This is because otherwise we might keep putting a lot of pods from this workload onto the same node. But, as work beyond this KEP we can add similar rescoring functionality which would allow us to solve that problem and batch for use cases where we have more than 1 pod of a given batch that can fit on a node.
+The update operation will attempt to update the batch information after a scheduling or nomination has taken place. Today we already have a way to re-evaluate whether a node is feasible after a pod is added using the cluster snapshot and CycleState. We will use this filter functionality here; if we determine the node we just used is no longer feasible, then we will throw it away and continue using the remainder of the data. If the node remains feasible after adding the pod, for this KEP we will throw away the batch information and "start fresh" for the next pod. This is because otherwise we might keep putting a lot of pods from this workload onto the same node. But, as work beyond this KEP we can add similar rescoring functionality which would allow us to solve that problem and batch for use cases where we have more than 1 pod of a given batch that can fit on a node. If the list of nodes falls to zero we will throw away the batch information, and start fresh with the next pod; we won't assume that the next pod will not fit.
 
 #### Nominate
 
@@ -520,22 +520,26 @@ in back-to-back releases.
 
 - Feature implemented behind a feature flag
 - Initial e2e tests completed and enabled
+- Initial signature implementations for all in-tree plugins (note that some, as described in the section, will always return unsignable if the pod is configured to use them).
 
 #### Beta
 
 - All functionality completed
-- Full monitoring in place
+- A first version of monitoring
 - Hand-done perf test runs
-- Integration tests, including signature and batching consistency testing
+- Integration tests
 - Handle common 1-pod-per-node batches: host ports and resources
-- At least 1 initial test user identified
 
 #### GA
 
 - Parameter tuning (batch sizes, etc.)
+- Full monitoring in place
+- Comprehensive 
 - At least 1 test user with experience running the feature
 - Metrics showing usage / exclusions
 - Excluded: batching for non "1-pod-per-node" workloads
+- Ideally at least some support for DRA
+- Experience with initial user running on their workload(s)
 
 ### Upgrade / Downgrade Strategy
 
