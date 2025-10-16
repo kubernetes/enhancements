@@ -519,22 +519,17 @@ in back-to-back releases.
 
 - Feature implemented behind a feature flag
 - Initial signature implementations for all in-tree plugins (note that some, as described in the section, will always return unsignable if the pod is configured to use them).
-- A first version of monitoring
+- Monitoring
 - Hand-done perf test runs
 - Integration tests
 - Initial e2e tests completed and enabled
 - Handle common 1-pod-per-node batches: host ports and resources
+- Parameter tuning (batch sizes, etc.)
+- Excluded: batching for non "1-pod-per-node" workloads
 
 #### GA
 
-- Parameter tuning (batch sizes, etc.)
-- Full monitoring in place
-- Comprehensive 
 - At least 1 test user with experience running the feature
-- Metrics showing usage / exclusions
-- Excluded: batching for non "1-pod-per-node" workloads
-- Ideally at least some support for DRA
-- Experience with initial user running on their workload(s)
 
 ### Upgrade / Downgrade Strategy
 
