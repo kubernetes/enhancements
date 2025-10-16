@@ -123,6 +123,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Comparison with Equivalence Cache (circa 2018)](#comparison-with-equivalence-cache-circa-2018)
+- [Future work](#future-work)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
