@@ -25,8 +25,8 @@
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.34)](#phase-1-alpha-target-134)
-    - [Phase 2:  Beta (target 1.35)](#phase-2--beta-target-135)
+    - [Phase 1: Alpha (target 1.35)](#phase-1-alpha-target-135)
+    - [Phase 2:  Beta (target 1.36)](#phase-2--beta-target-136)
     - [GA (stable)](#ga-stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
@@ -493,7 +493,7 @@ Following scenarios need to be covered:
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.34)
+#### Phase 1: Alpha (target 1.35)
 * Feature is disabled by default. It is an opt-in feature which can be enabled by
   enabling the InPlacePodLevelResourcesVerticalScaling feature gate and by setting
   the new resources fields in PodSpec at Pod level.
@@ -504,9 +504,10 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 * Unit test coverage.
 * E2E tests.
 
-#### Phase 2:  Beta (target 1.35)
+#### Phase 2:  Beta (target 1.36)
 
 * Pod Level Resources Feature moved to beta.
+* The semantic of `UpdatePodSandboxResources` is clarified. And there is a way for container runtime to reject the resize of Pod resources via this method or by other means
 * Actual pod resource data may be cached in memory, which will be refreshed after
   each successful pod resize or for every cache-miss.
 * Coverage for upgrade->downgrade->upgrade scenarios.
@@ -522,6 +523,7 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 
 * VPA Integration of In-Place Resize moved to beta.
 * No major bugs reported for 3 months.
+* UpdatePodSandboxResources is implemented by containerd & CRI-O
 
 ### Upgrade / Downgrade Strategy
 
