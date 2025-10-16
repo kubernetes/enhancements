@@ -258,7 +258,7 @@ The update operation will attempt to update the batch information after a schedu
 
 #### Nominate
 
-The nominate operation will take a pod with a matching signature and assign its nominated node name, using the first node in the list.  Nomination will also call the update operation to update the results for use on more pods in the future. Note that nomination doesn't actually schedule the pod, but it ensures that when the pod is scheduled it will take the fast path and not re-evaluate the full set of nodes. By separately these decisions we can use the batching mechanism in multiple places, including gang scheduling. This resuses our existing node nomination path, which is done entirely in memory.
+The nominate operation will take a pod with a matching signature and assign its nominated node name, using the first node in the list.  Nomination will also call the update operation to update the results for use on more pods in the future. Note that nomination doesn't actually schedule the pod, but it ensures that when the pod is scheduled it will take the fast path and not re-evaluate the full set of nodes. By separating these decisions we can use the batching mechanism in multiple places, including gang scheduling. This reuses our existing node nomination path, which is done entirely in memory.
 
 ### Opportunistic batching
 
