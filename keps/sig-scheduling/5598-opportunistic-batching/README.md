@@ -254,7 +254,7 @@ The create operation will use the sorted output from the scheduling of a "canoni
 
 #### Update
 
-The update operation will attempt to update the batch information after a scheduling or nomination has taken place. Today we already have a way to re-evaluate whether a node is feasible after a pod is added using the cluster snapshot and CycleState. We will use this filter functionality here; if we determine the node we just used is no longer feasible, then we will throw it away and continue using the remainder of the data. If the node remains feasible after adding the pod, for this KEP we will throw away the batch information and "start fresh" for the next pod. As work beyond this KEP we can add similar rescoring functionality which would allow us to batch for use cases where we have more than 1 pod of a given batch that can fit on a node.
+The update operation will attempt to update the batch information after a scheduling or nomination has taken place. Today we already have a way to re-evaluate whether a node is feasible after a pod is added using the cluster snapshot and CycleState. We will use this filter functionality here; if we determine the node we just used is no longer feasible, then we will throw it away and continue using the remainder of the data. If the node remains feasible after adding the pod, for this KEP we will throw away the batch information and "start fresh" for the next pod. This is because otherwise we might keep putting a lot of pods from this workload onto the same node. But, as work beyond this KEP we can add similar rescoring functionality which would allow us to solve that problem and batch for use cases where we have more than 1 pod of a given batch that can fit on a node.
 
 #### Nominate
 
