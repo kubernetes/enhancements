@@ -193,9 +193,9 @@ The goal is to make PDBs usable for multi-pod replicas like a LWS, which has a l
 ```mermaid
 graph TD
     %% Define Styles for Setup Diagram
-    classDef node_box fill:#ececff,stroke:#9696ff,stroke-width:2px,color:#111
-    classDef pod_box fill:#fff,stroke:#ccc,color:#111
-    classDef replica_label fill:none,stroke:none,font-weight:bold
+    classDef node_box fill:#ececff,stroke:#9696ff,stroke-width:2px,color:#1a1a1a
+    classDef pod_box fill:#fff,stroke:#ccc,color:#1a1a1a
+    classDef replica_label fill:none,stroke:none,font-weight:bold,color:#f0f0f0
 
     subgraph "Physical Node Layout"
         direction LR
@@ -221,10 +221,14 @@ graph TD
         class R0P0,R0P1,R0P2,R1P0,R1P1,R1P2 pod_box
     end
     
-    %% Logical Groupings (defined at top level)
-    R0("Replica 0")
-    R1("Replica 1")
-    class R0,R1 replica_label
+    %% Logical Groupings (shown with links)
+    subgraph LogicalGrouping ["Logical Replica Groups"]
+        direction TB
+        style LogicalGrouping fill:none,stroke:none
+        R0("Replica 0")
+        R1("Replica 1")
+        class R0,R1 replica_label
+    end
     
     R0 -.-> R0P0
     R0 -.-> R0P1
