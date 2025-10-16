@@ -51,19 +51,19 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -507,16 +507,24 @@ the two quota mechanisms above should keep track of the usages of the same
 class of devices the same way.
 
 But currently, the extended resource quota keeps track of the devices provided
-from device plugin, and DRA resource slice. The resource claim quota currently
-only keeps track of the devices provided from DRA resource slice. This must be
-enhanced to have it keep track of the devices from device plugin too.
+from device plugin, and DRA resource slice requested from pod's extended resource
+requests. The resource claim quota currently keeps track of the devices provided
+from DRA resource slice requested from resource claims.
 
-As a device can be requested by resource claim, or by extended resource, the
-cluster admin MUST create two quotas with the same limit on one class of devices
-to effectively quota the usage of that device class.
+The extended resource quota usage needs to be adjusted to account for the device
+requests from resource claims. On the other side, resource claim quota has
+alreadys accounted for the devices requests from pod's extendeded resources, as
+scheduler would create a special resource claim for the extended resource requests.
 
-For example, a cluster admin plans to allow 10 example.com/gpu devices in a
-given namespace, they MUST create the following:
+For example, before the adjustment, the quota is as below. The explicit extended
+resource quota `requests.example.com/gpu` counts 1 device (e.g. gpu-0) from
+device plugin, and 1 device (e.g. gpu-1) from DRA resource slice. The implicit
+extended resource quota `request.deviceclass.resource.kubernetes.io/mygpuclass`
+counts 1 device (e.g. gpu-2) from DRA resource slice. The resource claim quota
+`gpu.example.com.deviceclass.resource.k8s.io/devices` counts 1 device (e.g. gpu-3)
+from a pod resource claim, and 1 device (e.g. gpu-4) from a resource claim template,
+in addition it also counts gpu-1 and gpu-2 in, as scheduler generates extended
+resource claims for them.
 
 ```yaml
 apiVersion: v1
@@ -526,25 +534,49 @@ metadata:
 spec:
   hard:
     requests.example.com/gpu: 10
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 10
     gpu.example.com.deviceclass.resource.k8s.io/devices: 10
+  used:
+    requests.example.com/gpu: 2
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 1
+    gpu.example.com.deviceclass.resource.k8s.io/devices: 4
 ```
 
-Provided that the device class gpu.example.com is mapped to the extended
+Provided that the device class mygpuclass is mapped to the extended
 resource example.com/gpu.
 ```yaml
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: DeviceClass
 metadata:
-  name: gpu.example.com
+  name: mygpusclass
 spec:
   extendedResourceName: example.com/gpu
 ```
 
-Resource Quota controller reconciles away the differences if any between the
-usage of the two quota, and ensures their usage are always kept the same. For
-that, the controller needs to have the permission to list the device classes
-in the cluster to establish the mapping between device class and extended
-resource.
+For the same example, the explicit extended resource quota `requests.example.com/gpu`
+needs to be adjusted to count in the devices requested from implicit extended resource
+(e.g. gpu-2) and from resoure claims (e.g gpu-3 and gpu-4). The implicit extended
+resource quota `request.deviceclass.resource.kubernetes.io/mygpuclass` needs to be
+adjusted to count in the devices requested from resource claims (e.g. gpu-3 and gpu-4),
+and the DRA devices requested from explicit extended resources (e.g. gpu-1), but
+not the device plugin devices (e.g. gpu-0). The adjusted quota is as below.
+
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gpu
+spec:
+  hard:
+    requests.example.com/gpu: 10
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 10
+    gpu.example.com.deviceclass.resource.k8s.io/devices: 10
+  used:
+    requests.example.com/gpu: 5
+    request.deviceclass.resource.kubernetes.io/mygpuclass: 4
+    gpu.example.com.deviceclass.resource.k8s.io/devices: 4
+```
 
 ### Scheduling for Extended Resource backed by DRA
 
@@ -601,7 +633,7 @@ extended resource backed by DRA requests.
 This registers all cluster events that might make an unschedulable pod schedulable,
 like finishing the allocation of a claim, or resource slice updates.
 
-The existing dynamicresource plugin has registered almost all the events needed or
+The existing dynamicresource plugin has registered almost all the events needed for
 extended resource backed by DRA, with one addition `framework.UpdateNodeAllocatable`
 for node action.
 
@@ -817,10 +849,9 @@ ensure `ExtendedResourceName`s are handled by the scheduler as described in this
 
 #### Beta
 
-- Reevaluate where to create the special resource claim, in scheduler or some
-  other controller, based on feedback from Alpha and the nomination concept.
+- The basic scoring in NodeResourcesFit has to be implemented and that the queueing hints have to work efficiently.
+- Keep the Alpha behavior to create the special resource claim in scheduler.
 - Gather feedback from developers and surveys
-- 3 examples of vendors making use of the extensions proposed in this KEP
 - Scalability tests that mirror real-world usage as determined by user feedback
 - Additional tests are in Testgrid and linked in KEP
 - All functionality completed
@@ -903,7 +934,16 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-Will be considered for beta.
+Workloads that do not use the DRA Extended Resource feature should not be impacted,
+since the functionality is unchanged.
+
+If the feature is being used in pods before support for it has been fully rolled out
+across the cluster, api server, scheduler in control plane, and kubelet in nodes, it
+can cause a failure to schedule pods or a failure to run the pods on the nodes.
+This will not affect already running workloads unless they have to be restarted.
+
+Device plugin drivers can be replaced with DRA drivers for the same devices on a
+per-node basis, one node at a time.
 
 ###### What specific metrics should inform a rollback?
 
@@ -911,7 +951,20 @@ Will be considered for beta.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-Will be considered for beta.
+One indicator are unexpected restarts of the cluster control plane components
+(kube-scheduler, apiserver) or kubelet.
+
+If the scheduler_pending_pods metric in the kube-scheduler suddenly increases, it can
+suggest that pods are no longer getting scheduled which might be due to a problem with
+the DRA scheduler plugin. Another are an increase in the number of pods that fail to start,
+as indicated by the kubelet_started_containers_errors_total metric.
+
+If the node.status.Capacity for the extended resources for the devices do not decrease to zero,
+or a pod fails to be scheduled, or run on the node, it may indicate that the device plugin driver
+on the node for the devices is not properly replaced by the DRA driver.
+
+In all cases further analysis of logs and pod events is needed to determine whether
+errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -920,14 +973,17 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-Will be considered for beta.
+This will be covered by automated tests before transition to beta by bringing up a KinD cluster and
+changing the feature gate for individual components.
+
+Roundtripping of API types is covered by unit tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-Will be considered for beta.
+No
 
 ### Monitoring Requirements
 
@@ -937,7 +993,6 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
-Will be considered for beta.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -946,7 +1001,14 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Will be considered for beta.
+`kube_pod_resource_limit` and `kube_pod_resource_request`
+(label: `namespace`, `pod`, `node`, `scheduler`, `priority`, **`resource`**, `unit`)
+can be used to determine if the feature is in use by workloads though it doesn't differentiate
+between extended resources backed by DRA or device plugin.
+
+We will add a new `source` label to `resourceclaim_controller_resource_claims` (label: `admin_access`, `allocated`),
+which can determine if the resource claim is created by extended resource or resource claim template.
+It should be a good metric to determine if the resource claim is created by extended resource backed by DRA.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -959,14 +1021,16 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 -->
-Will be considered for beta.
+- [x] API .status
+    - Other field: Pod's `.status.extendedResourceClaimStatus` will have a list of resource claims that are created for
+      DRA extended resources.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -984,7 +1048,11 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-Will be considered for beta.
+
+Existing DRA and kube-scheduler SLOs continue to apply and must be maintained.
+Pod scheduling duration with this feature should be as fast as existing DRA.
+Since this feature implicitly affects the filtering phase of the NodeResourcesFit plugin,
+the performance should be similar with no visible degradation compared to the baseline scheduling performance.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -998,7 +1066,42 @@ Pick one more of these and delete the rest.
 - [ ] Other (treat as last resort)
   - Details:
 -->
-Will be considered for beta.
+
+- [x] Metrics
+  Values of each label are not exhaustive; we are providing some example values that are related to this feature's SLI.
+  **Existing metrics:**
+    - Metric name: workqueue
+        - Type: Gauge/Counter (multiple workqueue metrics)
+        - Labels: `name` ("resource_claim")
+        - SLI Usage: Monitor workqueue depth and duration to detect resource claim processing bottlenecks. High depth or duration values indicate potential performance issues in resource claim handling that could affect pod scheduling times.
+    - Metric name: scheduler_pending_pods
+        - Type: Gauge
+        - Labels: `queue` ("active", "backoff", "unschedulable", "gated")
+        - SLI Usage: Track increases in 'unschedulable' queues to identify when extended resource availability is preventing pod scheduling. Sustained high values may indicate resource constraint issues or misconfigurations.
+    - Metric name: scheduler_plugin_execution_duration_seconds
+        - Type: Histogram
+        - Labels: `plugin` ("NodeResourcesFit", "DynamicResources"), `extension_point`, `status`
+        - SLI Usage: Monitor latencies for NodeResourcesFit and DynamicResources plugins to ensure the extended resource integration doesn't introduce performance regressions.
+        - We need to monitor NodeResourcesFit because this feature implicitly affects its filtering phase.
+    - Metric name: scheduler_pod_scheduling_sli_duration_seconds
+        - Type: Histogram
+        - Labels: `attempts`
+        - SLI Usage: Track end-to-end scheduling performance for pods using extended resources.
+
+**Updating metrics:**
+- Metric name: resourceclaim_controller_resource_claims
+    - Type: Gauge
+    - Labels: `admin_access`, `allocated`, `source` ("extended-resource", "resource-claim-template")
+    - SLI Usage: Monitor the ratio of allocated vs. total resource claims filtered by `source="extended-resource"` to track resource utilization. A low ratio of allocated claims may indicate DRA driver or resource claim controller issues.
+    - The `source` label is newly added. It can be determined based on the `resource.kubernetes.io/extended-resource-claim` annotation of resource claims.
+
+**New metrics:**
+- Metric name: scheduler_resourceclaim_creates_total
+    - Type: Counter
+    - Labels: `status` ("failure", "success")
+    - SLI Usage: Calculate success rate to monitor the reliability of automatic resource claim creation. High failure rates indicate potential issues with extended resource configuration.
+    - Because the resource claim is created in the scheduler PreBind phase by making k8s API call, we need a different metric from `resourceclaim_controller_creates_total`.
+    - The metric is incremented accordingly based on the API call outcome, either success or failure.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1006,7 +1109,7 @@ Will be considered for beta.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-Will be considered for beta.
+No
 
 ### Dependencies
 
@@ -1030,7 +1133,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
-No.
+The container runtime must support CDI.
+
+A third-party DRA driver is required for publishing resource information and preparing resources on a node.
+
+These are not new requirements from this feature, rather, they are required by DRA structured parameters.
 
 ### Scalability
 
@@ -1077,10 +1184,14 @@ The Troubleshooting section currently serves the `Playbook` role. We may conside
 splitting it into a dedicated `Playbook` document (potentially with some monitoring
 details). For now, we leave it here.
 -->
+The troubleshooting section in https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#troubleshooting
+still applies.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Will be considered for beta.
+The Kubernetes control plane will be down, so no new Pods get scheduled. kubelet may
+still be able to start or restart containers if it already received all the relevant
+updates (Pod, ResourceClaim, etc.).
 
 ###### What are other known failure modes?
 
@@ -1100,15 +1211,21 @@ For each of them, fill in the following information by copying the below templat
     - Detection: inspect pod status 'Pending'
     - Mitigations: reduce the number of devices requested in one extended resource backed by DRA requests
     - Diagnostics: scheduler logs at level 5 show the reason for the scheduling failure.
-    - Testing: Will be considered for beta.
+    - Testing: this is known, determinstic failure mode due to defined system limit, i.e., DRA requests must be no more than 128 devices.
+
+  - [API server priority & fairness limits extended resource claim creation requests]
+    - Detection: inspect metric scheduler_resourceclaim_creates_total, and API server priority & fairness limits
+    - Mitigations: adjust API sever priority and fairness limits if too low, to allow extended resource claim creation
+    - Diagnostics: API server and scheduler logs level 5 show the reason for the extended resource claim creation failure.
+    - Testing: creating pods with DRA extended resource requests at high rate, and at the same time, API server
+      priority and fairness limit too low, could trigger extended resource claim creation failure at scheduler.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-
-Will be considered for beta.
 
 ## Implementation History
 
 - Kubernetes 1.34: KEP accepted.
+- Kubernetes 1.35: promotion to beta.
 
 ## Drawbacks
 
