@@ -1,4 +1,4 @@
-title: Scheduling cache
+title: Opportunistic batching
 kep-number: 5598
 authors:
   - "@bwsalmon"
@@ -9,6 +9,7 @@ creation-date: 2025-10-01
 reviewers:
   - "@dom4ha"
   - "@helayoty"
+  - "@macsko"
 approvers:
   - "@wojtec-t"
   - "@sanposhiho"
@@ -25,6 +26,7 @@ latest-milestone: "v1.35"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
+  alpha: "v1.35"
   beta: "v1.35"
   stable: "v1.36"
 
@@ -35,7 +37,3 @@ feature-gates:
     components:
       - kube-scheduler
 disable-supported: true
-
-# The following PRR answers are required at beta release
-metrics:
-  - my_feature_metric
