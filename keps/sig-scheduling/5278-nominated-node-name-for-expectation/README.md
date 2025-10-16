@@ -90,6 +90,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2: Scheduler can resume its work after restart](#story-2-scheduler-can-resume-its-work-after-restart)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Confusing semantics of <code>NominatedNodeName</code>](#confusing-semantics-of-nominatednodename)
+    - [External components may set <code>NominatedNodeName</code>](#external-components-may-set-nominatednodename)
     - [Node nominations need to be considered together with reserving DRA resources](#node-nominations-need-to-be-considered-together-with-reserving-dra-resources)
     - [Increasing the load to kube-apiserver](#increasing-the-load-to-kube-apiserver)
 - [Design Details](#design-details)
@@ -290,6 +291,21 @@ If we look from consumption point of view - these are effectively the same. We w
 to expose the information, that as of now a given node is considered as a potential placement
 for a given pod. It may change, but for now that's what is being considered.
 
+#### External components may set `NominatedNodeName`
+
+Currently `NominatedNodeName` field is intended as read-only for components other than kube-scheduler. However there are no measures preventing other actors from overwriting the field. This is not considered a substantial risk to scheduling.
+
+Scheduler interprets `NominatedNodeName` as a suggestion for optimal placement for a pod. If at the beginning of a scheduling cycle NNN is set (e.g. to `N1`), the scheduler will start the scheduling attempt with trying to place the pod on `N1`. This could go two ways:
+
+A. Pod fits on `N1`. Pod is bound, after binding NNN gets cleared in api-server. The only risk here is that `N1` could not be the optimal placement for the pod.
+
+B. Pods does not fit on `N1` (or `N1` is invalid). Scheduler restarts the scheduling cycle, ignoring NNN value. Filtering, Scoring and other phases get executed, standard scheduling procedure continues. If the pod is deemed unschedulable, scheduler clears NNN field before moving the pod to unschedulable / backoff queue. The risk in this case is that the scheduler spends time trying to fit the pod on `N1` in the beginning - which is not a huge overhead compared to the entire scheduling cycle.
+
+
+If `NominatedNodeName` gets overwritten further into the scheduling cycle, or when the pod is waiting in a scheduling queue, it does not impact kube-scheduler's work.
+
+Note that this logic is not newly introduced by this KEP, it's present in kube-scheduler since v1.22 and [KEP-1923](https://github.com/kubernetes/enhancements/tree/94277fd2b7683836465e97f1f7b974ff11fa58b0/keps/sig-scheduling/1923-prefer-nominated-node).
+
 #### Node nominations need to be considered together with reserving DRA resources
 
 The semantics of node nomination are in fact resource reservation, either in scheduler memory or in external components (after the nomination got persisted to the api-server). Since pods consume both node resources and DRA resources, it's important to persist both at the same (or almost the same) point in time.
@@ -401,12 +417,19 @@ to implement this enhancement.
 
 ##### Integration tests
 
+Tests already implemented:
+[test/integration/scheduler/nominated_node_name](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler/nominated_node_name) : [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=nominated_node_name) , [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=Test_PutNominatedNodeNameInBindingCycle)
+
+Covering scenarios:
+- scheduler sets NNN before PreBind and WaitOnPermit, and does not set NNN when PreBind and Permit phases are skipped for the pod
+
+More tests are WIP https://github.com/kubernetes/kubernetes/pull/133215
+
 We're going to add these integration tests:
 - The scheduler prefers to picking up nodes based on NominatedNodeName on pods, if the nodes are available.
 - The scheduler ignores NominatedNodeName reservations on pods when it's scheduling higher priority pods.
 - The scheduler overwrites NominatedNodeName when it performs the preemption, or when it finds another spot in another node and proceeding to the binding cycle (assuming there's a PreBind plugin).
-- The scheduler puts NominatedNodeName at the beginning of binding cycles if Permit or PreBind plugin will do some work.
-  - And, the scheduler (actually kube-apiserver, when receiving a binding request) clears NominatedNodeName when the pod is actually bound.
+- And, the scheduler (actually kube-apiserver, when receiving a binding request) clears NominatedNodeName when the pod is actually bound.
 
 Also, with [scheduler-perf](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf), we'll make sure the scheduling throughputs for pods that go through Permit or PreBind don't get regress too much.
 We need to accept a small regression to some extent since there'll be a new API call to set NominatedNodeName. 
@@ -519,7 +542,17 @@ there'll be nothing behaving wrong in the scheduling flow, see [Version Skew Str
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TODO: update the test scenario
+We will do the following manual test after implementing the feature:
+
+1. upgrade
+2. request scheduling of a pod that will need a long preBinding phase (e.g. uses volumes)
+3. check that NNN gets set for that pod
+4. before binding completes, restart the scheduler with nominatedNodeNameForExpectationEnabled = false
+5. check that the pod gets scheduled and bound successfully to the same node
+6. request scheduling another pod with expected long preBinding phase
+7. check that NNN does not get set in PreBind
+8. restart the scheduler with nominatedNodeNameForExpectationEnabled = true
+9. check that the pod gets scheduled and bound on any node
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
