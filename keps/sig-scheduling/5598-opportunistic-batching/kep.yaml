@@ -4,14 +4,14 @@ authors:
   - "@bwsalmon"
 owning-sig: sig-scheduling
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2025-10-01
 reviewers:
   - "@dom4ha"
   - "@helayoty"
   - "@macsko"
-approvers:
   - "@wojtec-t"
+approvers:
   - "@sanposhiho"
 
 # The target maturity stage in the current dev cycle for this KEP.
