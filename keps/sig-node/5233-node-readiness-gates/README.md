@@ -80,13 +80,11 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 
 This proposal introduces a formal mechanism, Node Readiness Gates, to prevent workloads from being scheduled onto new nodes until all required infrastructure components are fully initialized. This applies to essential node-level components like CNI plugins, DRA/CSI drivers, and security scanners, the requirements that can typically be defined at node provisioning time.
 
-The proposal focuses on two core changes:
+For the initial Alpha implementation, this proposal focuses on leveraging the existing Kubelet's `--register-with-taints` feature to declare readiness requirements. A dedicated controller will manage the lifecycle of these taints, removing them once the corresponding node conditions are met. This allows for evaluating the core readiness gate concept without immediate API changes.
 
-1. Adding a `readinessGates` field directly to the `NodeSpec`. This provides an explicit list of `conditionTypes` that must be `True` before a node is considered fully operational.
+A new, extensible probing mechanism within the Kubelet is also proposed to be responsible for performing the health checks that produce these conditions.
 
-2. Introducing a new, extensible probing mechanism within the Kubelet responsible for performing the health checks that produce these conditions.
-
-The node is considered fully-schedulable only when these components are confirmed operational by meeting thir respective readiness conditions. This mechanism complements the existing Kubelet managed `Ready` condition by providing granular control over node-schedulability.
+The node is considered fully-schedulable only when these components are confirmed operational by meeting thier respective readiness conditions. This mechanism complements the existing Kubelet managed `Ready` condition by providing granular control over node-schedulability.
 
 ## Motivation
 
@@ -101,11 +99,10 @@ Scheduling application pods onto a node where these critical components are not 
 
 The primary goals of this KEP are to:
 
-1. Establish clear semantics using `NodeSpec` for declaring desired prerequisites (gates) and `NodeStatus` for reporting observed operational readiness (conditions) in node, aligning with Kubernetes API conventions.
-1. Define a standard API field (`spec.readinessGates`) on the Node object to specify required readiness conditions beyond the default Kubelet `Ready` state.
-1. Establish a standard pattern for gating a node's schedulability based on a set of required readiness conditions. The enforcement of these gates will be managed by a controller that applies a taint (e.g., `node.kubernetes.io/not-ready`) until all required conditions are met.
+1. Establish clear semantics for declaring desired prerequisites (gates) using initial node taints and reporting observed operational readiness via `NodeStatus` conditions, aligning with Kubernetes API conventions.
+1. Establish a standard pattern for gating a node's schedulability based on a set of required readiness conditions. The enforcement of these gates will be managed by a controller that removes taints (e.g., `readiness.k8s.io/NetworkReady`) until all required conditions are met.
 1. Centralize readiness reporting through a trusted, node-local probing mechanism (such as Kubelet or Node-Problem-Detector). This entity would be responsible for probing components and patching `node.status.Conditions`, which improves security by removing the need for multiple external agents to hold `nodes/status` patch permissions.
-1. Improve scheduling correctness by also considering the reliability of the node lifecycle by preventing application pods from being scheduled onto nodes until declared readiness gates are met. 
+1. Improve scheduling correctness (via taints mechanism) by also considering the reliability of the node lifecycle by preventing application pods from being scheduled onto nodes until declared readiness gates are met. 
 
 
 ### Non-Goals
@@ -128,10 +125,10 @@ This proposal's core idea is to make a node's transition to a fully schedulable 
 
 The mechanism works as follows:
 
-1. A Node is created with 'readiness-probes' configuration and well-defined taint(s) for holding node-scheduling - referred in this KEP as __gates__.
+1. A Node is registered with initial taints (e.g., `readiness.k8s.io/NetworkReady:NoSchedule`) that act as readiness gates, preventing scheduling of most workloads.
 2. The readiness status of essential components (like CNI plugins or CSI/DRA drivers) is reported as `Conditions` in the `NodeStatus`.
 3. These `Conditions` are updated by reliable, node-local entities (such as Node-Problem-Detector or Kubelet itself), which probe the configured components' health-endpoints and update the `/status` sub-resource.
-4. This allows a controller to gate the node's schedulability. The node is considered fully available for pod scheduling only when these custom readiness `Conditions` are met.
+4. A controller monitors for these initial taints and removes them once the corresponding readiness `Condition` becomes `True`. The node is considered fully available for pod scheduling only when these taints are removed.
 
 This approach allows critical components to directly influence when a node is ready, complementing the existing `Ready` condition with more granular, user-defined control.
 
@@ -194,35 +191,34 @@ sequenceDiagram
     participant DP as Pod (DaemonSet)
 
     Note over N: Node Bootstrap Phase
-    N->>N: Configure spec.readinessGates<br/>[network.k8s.io/CNIReady]
-    NC->>N: Add taint: node.kubernetes.io/not-ready:NoSchedule
+    N->>N: Register with initial taint:<br/>readiness.k8s.io/CNIReady:NoSchedule
     N->>N: Node marked as Ready after Kubelet and Runtime are ready.<br/>This does not signal ready for workload scheduling.
 
     Note over CNI,DS: Component Initialization
     DS->>DP: Create DaemonSet pods with tolerations
-    Note over DP: Tolerates node.kubernetes.io/not-ready taint
+    Note over DP: Tolerates readiness.k8s.io/CNIReady taint
     S->>DP: Schedule DaemonSet pods (can run on tainted node)
     CNI->>CNI: Initialize CNI components
 
     Note over NA, CNI: Node-Agent Probes for Readiness
     NA->>CNI: Probe for readiness (e.g., check health endpoint)
     CNI-->>NA: Report Ready
-    NA->>N: Patch status.conditions:<br/>network.k8s.io/CNIReady=True
+    NA->>N: Patch status.conditions:<br/>CNIReady=True
 
     Note over NC: Node Controller Evaluation
-    NC->>N: Check readinessGates vs conditions
-    alt All readiness gates satisfied
-        NC->>N: Remove taint: node.kubernetes.io/not-ready:NoSchedule
+    NC->>N: Check for readiness taints vs conditions
+    alt All readiness conditions satisfied
+        NC->>N: Remove taint: readiness.k8s.io/CNIReady:NoSchedule
         N->>N: Node becomes ready for regular scheduling
-    else Some gates still pending
+    else Some conditions still pending
         N->>N: Keep taint active
     end
 
     Note over S,P: Regular Pod Scheduling
-    alt Node ready (no not-ready taint)
+    alt Node ready (no readiness taints)
         S->>P: Schedule regular pods normally
     else Node not ready (taint present)
-        alt Pod tolerates node.kubernetes.io/not-ready
+        alt Pod tolerates readiness.k8s.io/CNIReady
             S->>P: Schedule pod (override behavior)
         else Pod has no toleration
             S->>P: Skip node, wait for readiness
@@ -230,94 +226,55 @@ sequenceDiagram
     end
 
     Note over N: Final State
-    N->>N: spec.readinessGates: [network.k8s.io/CNIReady]<br/>status.conditions: [..., CNIReady=True]<br/>taints: [] (not-ready taint removed)
+    N->>N: status.conditions: [..., CNIReady=True]<br/>taints: [] (readiness taint removed)
 ```
 
-### API Changes:
+### API Changes (Alpha)
 
-1. `NodeSpec.ReadinessGates` **(New Field)**
--  Add an optional field `readinessGates` to `NodeSpec`.
--  Type: `[]NodeReadinessGate`
--  `NodeReadinessGate` struct
+For the Alpha implementation, this KEP proposes **no changes to the Node API**. Instead of introducing a new `readinessGates` field, the mechanism will rely on the existing `--register-with-taints` Kubelet flag to declare readiness requirements at node bootstrap.
 
-```go
-// NodeReadinessGate specifies a condition that  must be true for the node to be considered fully-schedulable.
-type NodeReadinessGate {
-  // ConditionType refers to a condition in the Node's `status.Condition` array with matching type.
-  // Each conditionType must be unique within node.spec.readinessGates
-  // +required
-  ConditionType v1.NodeConditionType `json:”conditionType”`
-}
+Readiness gates will be represented by taints with a specific prefix:
 
-// NodeSpec describes the attributes that a node is created with
-type NodeSpec struct {
-  // existing fields..
+- **Taint Key Format**: `readiness.k8s.io/<ConditionType>`
+- **Taint Effect**: `NoSchedule`
 
-  // ReadinessGates give declared readiness-requirements for node. 
-  // This field is immutable. It can only be set during node creation.
-  //
-  // +featureGate=NodeReadinessGates
-  // +optional
-  ReadinessGates []NodeReadinessGate `json:"readinessGates,omitempty" patchStrategy:"merge" patchMergeKey:"conditionType"`
-}
-```
+For example, a node requiring a CNI plugin to be ready before scheduling workloads would be registered with the taint `readiness.k8s.io/CNIReady:NoSchedule`.
 
-Example Node Manifest:
+A controller will be responsible for watching nodes with taints matching this prefix. When the controller observes that the corresponding condition in `node.status.conditions` has transitioned to `status: "True"`, it will remove the taint. To prevent the taint from being re-evaluated, the controller will also add an annotation to the node indicating that the gate has been satisfied, for example `readiness.k8s.io/CNIReady: "passed"`.
 
-```yaml
-apiVersion: v1
-kind: Node
-metadata:
-  name: gpu-node-1
-spec:
-  # ... existing fields
-  readinessGates:
-    # A list of condition types that must be 'True' for the node to be considered ready.
-    - conditionType: "vendor.example.com/DeviceDriverReady"
-    - conditionType: "vendor.example.com/NetworkReady"
-```
+This approach allows the core functionality to be tested and validated in an Alpha stage without committing to a new API field.
 
-2. `NodeStatus.Conditions` **(Existing Field):**
--  This existing array would be used by Kubelet to report the status of the conditions listed in `spec.readinessGates`.
--  The external controller would add or update entries in this array, setting the type to match the gate's `conditionType`, and setting the `status` field to `"True"`, `"False"`, or `"Unknown"`, along with `reason` and `message` fields for details.
+#### Justification for Deferring a New API Field
 
-3. **API Validation:** 
--  `ConditionType` within `ReadinessGates` must be unique.
--  Each `ConditionType` must have a matching probe-configuration for Kubelet.
--  Node `readinessGates` are immutable and can be only defined by Kubelet at bootstrap time.
+While a dedicated API field like `spec.readinessGates` provides a clearer, declarative contract, the taint-based approach is a pragmatic first step for an Alpha release. It allows the community to gain experience with the readiness gates concept and the probing mechanisms with minimal initial impact on the core API.
 
-#### Justification for a new API field
-
-While Kubernetes aims to minimize changes to core APIs, a new field is justified here because the controller needs to know which of the different conditions in `node.status.conditions` to monitor.
-
-An alternative that was considered is to infer readiness-requirements from initial-taints with an assumed pattern. However, this pattern is brittle and can lead to a "taint deadlock". For instance, it will be problematic in environments when dependencies are managed by different teams/providers. Ensuring every critical daemonset tolerates every other potential readiness taint is unreliable and creates tight coupling between unrelated components.
-
-Beyond providing a scheduling contract, explicit readiness conditions serve as a critical signal for other core Kubernetes components, such as the Cluster Autoscaler, where taints fail to provide the right signal. For instance, CA will know whether storage-driver is fully ready with volume limits initialized, before scaling up. Separating this signal from taints will not block scheduling of other workloads without storage needs with taints.
-
-Without an explicit field like `spec.readinessGates`, the controller has no declarative, machine-readable way to determine the readiness contract for a given node. The readinessGates field provides a clear, simple, and discoverable contract on the Node object itself, defining exactly which conditions must be met.
+The limitations of the taint-based approach (e.g., the readiness contract is lost once the taint is removed) will inform the design and justification for a formal API field in a future Beta release. A dedicated field would provide a more robust and permanent declaration of a node's readiness requirements, which is beneficial for other components like the Cluster Autoscaler and for providing better visibility to users. However, starting without it allows for a more incremental and feedback-driven development process.
 
 ### Readiness Taint Control
 
-This KEP suggests using the well-known taint `node.kubernetes.io/not-ready:NoSchedule` already used by Kubernetes to signal node-readiness issues for semantic consistency. This taint is applied by admission control on new nodes and removed by node-controller upon Ready signal from Node.
+For the Alpha implementation, a dedicated controller will manage readiness gates defined via initial taints. The controller will watch for nodes that have taints with the `readiness.k8s.io/` prefix.
 
-Extend the node controller logic to:
-1. Observe the node readiness gates
-1. If the readiness conditions are not satisfied ensure `node.kubernetes.io/not-ready:NoSchedule` taint is present.
-1. Only after Ready condition is established and all readiness-gates are met, remove the taint.
+The controller logic is as follows:
+1. Identify nodes with one or more taints matching the key format `readiness.k8s.io/<ConditionType>`.
+2. For each identified taint, the controller will monitor the `node.status.conditions` array for a condition with a `type` that matches `<ConditionType>`.
+3. When the corresponding condition's `status` becomes `"True"`, the controller will remove the taint from the node.
+4. To ensure this is a one-time action for bootstrap, after removing the taint, the controller will add an annotation to the node (e.g., `readiness.k8s.io/<ConditionType>: "passed"`) to signify that the gate has been met and should not be evaluated again.
+
+This mechanism is focused on guaranteeing readiness at node bootstrap and does not attempt to re-taint the node if the condition later becomes `False`.
 
 #### Evaluation Logic
 
-A Node would be considered fully ready for scheduling general workloads only if:
+A Node's readiness for scheduling general workloads is determined by the absence of scheduling-blocking taints. For this mechanism, a node is fully ready when:
 
 1. The standard `Ready` condition in `node.status.conditions` has `status: "True"`.
-1. **AND** all declared gates are satisfied:
-    1. For _every_ `conditionType` listed in `node.spec.readinessGates`, there is a corresponding entry in `node.status.conditions` with `status: "True"`. If a declared gate's condition is missing from the status, the gate is considered as not satisfied.
+2. **AND** all taints with the `readiness.k8s.io/` prefix have been removed by the controller. This happens when:
+    1. For _every_ taint with key `readiness.k8s.io/<ConditionType>`, there is a corresponding entry in `node.status.conditions` with `type: "<ConditionType>"` and `status: "True"`.
 
 ### Labels for Readiness Gates
 
-To improve the integration of node readiness-gates, each gate supported by a node will be represented by a unique label within a reserved namespace: `readiness-gate.<gate-name>: true`. This approach is consistent with existing node metadata practices, such as topology labels and NFD feature discovery labels. This will enable users to be able to easily select nodes based on specific readiness gates using label selectors and node affinity rules.
+To improve the discoverability of nodes that support specific readiness gates, each gate will be represented by a unique label within a reserved namespace: `readiness.k8s.io/<gate-name>: "true"`. This approach is consistent with existing node metadata practices, such as topology labels and NFD feature discovery labels. This will enable users to easily select nodes based on specific readiness gates using label selectors and node affinity rules.
 
-Kubelet will dynamically manage these labels during node-status synchronization. Kubelet will detect the configured readiness gates and ensure corresponding labels are set and cleaned up if necessary. This ensures advertised node readiness-gates are accurate throughout the node-lifecycle.
+During startup, the Kubelet will inspect its configuration for initial taints with the `readiness.k8s.io/` prefix. For each such taint, it will add a corresponding label to the node. For example, if a node is registered with the taint `readiness.k8s.io/NetworkReady:NoSchedule`, the Kubelet will add the label `readiness.k8s.io/NetworkReady: "true"`. This ensures that the advertised readiness capabilities of the node are accurate from the beginning of its lifecycle.
 
 ### Probing Mechanisms (Optional)
 
@@ -413,15 +370,16 @@ When there is a node reboot or kubelet restart, the node will get the persisted 
 
 ##### Unit tests
 
-- API validation for the new `NodeSpec.readinessGates` field.
-- Node Controller logic for taint-management based on `status.Conditions`.
-- Verify readinessGates evaluation logic.
+- Node Controller logic for taint-management based on `status.Conditions` and `readiness.k8s.io/` taints.
+- Verify the controller's logic for adding annotations after taint removal.
 
 ##### Integration tests
 
-* Test node registration with gates defined.
-* Test pod scheduling being blocked when gates are not met.
-* Test pod scheduling succeeding when gates transition to `True`.
+* Test node registration with initial `readiness.k8s.io/` taints.
+* Test pod scheduling being blocked when readiness taints are present.
+* Test that the controller removes the readiness taint when the corresponding condition becomes `True`.
+* Test that the controller adds the correct annotation after removing the taint.
+* Test that the controller does not re-add a taint after it has been removed.
 * Test existing scenarios with standard taints eg., `not-ready:NoExecute` for node timeout.
 
 ##### e2e tests
@@ -430,16 +388,15 @@ When there is a node reboot or kubelet restart, the node will get the persisted 
 
 ### Graduation Criteria
 
-* **Alpha:**
+* **Alpha1:**
     * Feature implemented behind `NodeReadinessGates` feature gate, default `false`.
+    * Initial implementation of node-readiness-gates without api changes using bootstrap-taints.
     * Basic unit and integration tests implemented.
-    * Initial API definition (`NodeSpec.readinessGates`) available.
 
 * **Beta:**
-    * Feature gate default `true`.
+    * Investigate the API definition if required..
     * e2e tests implemented and passing consistently.
     * Scalability and performance testing performed.
-    *
 
 * **GA:**
     *
@@ -448,15 +405,15 @@ When there is a node reboot or kubelet restart, the node will get the persisted 
 
 **Upgrade:**
 
-* API server should be upgraded before the node / kubelets.
-* Existing nodes without the `readinessGates` field will be ignored by the controller. They will continue to function as before.
-* The nodes that need to be enforced with readiness control need to be provisioned with `spec.readinessGates` field. The controller will begin managing the `node.kubernetes.io/not-ready` taint on these new nodes.
+* The readiness gate controller should be deployed before nodes are configured with the initial readiness taints.
+* Existing nodes will not be affected.
+* New nodes can be provisioned with the `--register-with-taints` flag using taints prefixed with `readiness.k8s.io/`. The controller will begin managing these taints on the new nodes.
 
 **Downgrade:**
 
-* Nodes should be downgraded before the API server. Administrators must ensure no Node objects have the `readinessGates` field set.
-* When the feature gate is disabled, the API server will reject any new Node objects containing the readinessGates field.
-* The readiness gate controller will stop. It will not automatically remove any existing taints. If a downgrade is performed on a cluster with tainted nodes, those nodes will remain unschedulable until the taints are manually removed by an administrator.
+* To downgrade, the readiness gate controller should be stopped or scaled down to zero.
+* When the feature gate is disabled, the controller will stop. It will not automatically remove any existing readiness taints. If a downgrade is performed on a cluster with tainted nodes, those nodes will remain unschedulable until the taints are manually removed by an administrator.
+* Administrators must ensure that no new nodes are provisioned with the readiness taints.
 
 ### Version Skew Strategy
 
@@ -474,15 +431,15 @@ Previous kubelets that do not support the feature will simply ignore the `readin
 
 ###### Does enabling the feature change any default behavior?
 
-No. This feature introduces a new API field. If it's unspecified at the spec, the default node behavior will remain the same.
+No. This feature is opt-in. It only affects nodes that are explicitly configured with `--register-with-taints` using the `readiness.k8s.io/` prefix. Existing nodes and nodes without these taints will behave as usual.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. The feature gate should be disabled in the API server and the API server needs to be restarted. Once disabled in the API server, the readinessGates fields will not be delivered to the controller, so no explicit controller restart is required. If nodes were created with the readinessGates field while the feature was enabled, those fields will be omitted from the Node objects returned by the API server after the feature is disabled.
+Yes. The feature gate can be disabled in the kube-controller-manager, and the controller will stop processing readiness taints. If a rollback is performed, any existing readiness taints on nodes will not be removed automatically and will require manual intervention.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the feature is re-enabled, the readinessGates API field will become available again. The controller will start enforcing the readiness-conditions for the node. 
+If the feature is re-enabled, the readiness gate controller will resume watching for nodes with `readiness.k8s.io/` taints and will remove them once their corresponding conditions are met.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -510,47 +467,36 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-An operator can determine if the feature is actively being used through the following metrics:
+An operator can determine if the feature is actively being used by:
 
-- **Metric**: `readiness_gate_controller_nodes_managed_total` - Shows the number of nodes with `spec.readinessGates` configured. A non-zero value indicates the feature is in use.
-- **Metric**: `readiness_gate_controller_unschedulable_nodes_total` - Shows nodes currently blocked by readiness gates.
-
-Additionally, operators can check:
-- Query nodes with `spec.readinessGates` set: `kubectl get nodes -o json | jq '.items[] | select(.spec.readinessGates != null)'`
-- Identify workloads with toleration for `node.kubernetes.io/not-ready` taint, which indicates they are designed to run on nodes with readiness gates before the nodes become fully schedulable.
+- **Checking for readiness taints**: `kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints | grep readiness.k8s.io`
+- **Checking for passed gates via annotations**: `kubectl get nodes -o json | jq '.items[] | select(.metadata.annotations | tostring | contains("readiness.k8s.io/"))'`
+- **Monitoring controller metrics**: A non-zero value for `readiness_gate_controller_taints_removed_total` would indicate the feature is in use.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-1. Events
-    -  Event Reason:
-
-1. API .status
-    -  Condition name:
-    -  Other field:
-
-1. Other (treat as last resort)
-    -  Details: Observe newly added nodes, they should appear with the `node.kubernetes.io/not-ready` taint, and this taint should be removed once the readiness conditions listed in `spec.readinessGates` transition to `True` in `node.status.conditions`.
+1. **Taint Removal**: Observe newly added nodes. They should appear with taints like `readiness.k8s.io/NetworkReady:NoSchedule`, and these taints should be removed once the corresponding readiness conditions in `node.status.conditions` transition to `True`.
+2. **Annotations**: After a taint is removed, the controller will add a corresponding annotation (e.g., `readiness.k8s.io/NetworkReady: "passed"`) to the node.
+3. **Events**: The controller will emit events on the Node object indicating that a readiness gate has been satisfied and a taint has been removed.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-99% of nodes should have their not-ready taint removed within 10 seconds of the last required readiness condition becoming True.
+99% of nodes should have their readiness taints removed within 10 seconds of the last required readiness condition becoming True.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-1. Metrics
-    -  Metric name: `readiness_gate_controller_unschedulable_nodes_total` and `readiness_gate_controller_taint_removal_latency_seconds` will be added.
-    -  [Optional] Aggregation method:
+1. **Metrics**:
+    -  `readiness_gate_controller_nodes_unready_total`: The number of nodes currently blocked by at least one readiness taint.
+    -  `readiness_gate_controller_taint_removal_latency_seconds`: Latency from when a readiness condition becomes `True` to when the corresponding taint is removed.
     -  Components exposing the metric: `kube-controller-manager`
-
-1. Other (treat as last resort)
-    -  Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Following metrics will be added in kube-controller-manager:
--  `readiness_gate_controller_nodes_managed_total`: total number of nodes with `spec.readinessGates` defined
--  `readiness_gate_controller_unschedulable_nodes_total`: total number of nodes with `spec.readinessGates` defined and `node.kubernetes.io/not-ready` tainted
--  `readiness_gate_controller_taint_removal_latency_seconds`: taint (`node.kubernetes.io/not-ready`) removal latency in seconds.
+The following metrics will be added to `kube-controller-manager`:
+-  `readiness_gate_controller_nodes_managed_total`: Total number of nodes that have registered with at least one `readiness.k8s.io/` taint.
+-  `readiness_gate_controller_nodes_unready_total`: Total number of nodes currently tainted with at least one `readiness.k8s.io/` taint.
+-  `readiness_gate_controller_taint_removal_latency_seconds`: Latency for removing a readiness taint after its condition is met.
+-  `readiness_gate_controller_taints_removed_total`: A counter for the total number of readiness taints removed.
 
 ### Dependencies
 
@@ -562,11 +508,14 @@ This feature relies on a functioning control-plane: kube-apiserver, kube-control
 
 ###### Will enabling / using this feature result in any new API calls?
 
-A potential increase in PATCH requests to Node objects for condition updates. This is the primary scalability concern.
+Yes.
+1.  The readiness gate controller will make PATCH requests to remove taints from Node objects.
+2.  The controller will make a second PATCH request to add an annotation to the Node object after the taint is removed.
+3.  Node-local agents (like Kubelet or NPD) will make PATCH requests to update condition statuses on the Node object. This is the primary scalability concern.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Enabling this feature will introduce a new API field `readinessGates` in the node spec. Cluster autoscalers can directly pay attention to the existing `.status.conditions` on nodes to monitor the readiness gates.
+No, not for the Alpha implementation.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -574,11 +523,19 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+Yes, it will add annotations to Node objects once readiness gates are passed. For example: `readiness.k8s.io/NetworkReady: "passed"`.
+
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+It will slightly increase the time it takes for a new node to become fully schedulable, as it must wait for readiness gates to pass. This is the intended behavior.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+The new readiness gate controller in `kube-controller-manager` will have a small, fairly constant resource footprint. The node-local probing mechanisms may add a small amount of resource usage on each node, but this is expected to be negligible.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
 
 ### Troubleshooting
 
@@ -617,9 +574,16 @@ Nodes will remain in their current state (tainted or not) until the API server i
 
 Like any distributed system, one could simply allow failures and rely on retries until operations eventually succeed. However, this reactive approach stands in contrast to the proactive management offered by Node Readiness Gates. A proactive system avoids cascading failures, a risk particularly in large-scale workloads like ML training jobs. This makes readiness-gates a critical guardrail for ensuring that complex dependencies are met before scheduling begins.
 
-### Initial Taints without a Central API
+### Initial Taints (Alpha Implementation)
 
-This approach relies on the `--register-with-taints` flag to apply readiness taints during node startup. A controller discovers these taints via a `readiness.k8s.io/` prefix and manages them. While simpler, this lacks the flexibility and versioning of a dedicated API. Once the bootstrap taints are removed, the readiness requirements are lost. Additionally, it introduces operational complexity, requiring every critical DaemonSet to tolerate all potential readiness taints, which is impractical when components are managed by different teams or providers.
+For the Alpha release, this KEP adopts an approach that relies on the Kubelet's `--register-with-taints` flag to apply readiness taints during node startup. A controller discovers these taints by looking for the `readiness.k8s.io/` prefix and manages their removal as corresponding `node.status.conditions` become `True`.
+
+This approach was chosen for Alpha because it is simpler and allows the core concepts of readiness gates to be tested without requiring immediate changes to the Node API. However, it has some limitations that will be addressed in future releases:
+
+*   **Ephemeral Contract**: Once the bootstrap taints are removed, the declarative readiness requirements are lost from the node object. This makes it difficult for other components or users to know what gates a node has passed.
+*   **Operational Complexity**: It can create some operational complexity, as every critical DaemonSet that needs to run before a gate is met must be configured to tolerate all potential readiness taints on that node. This can be challenging when the components are managed by different teams or providers.
+
+These limitations provide the motivation for introducing a more formal, declarative API field like `spec.readinessGates` in a future Beta version.
 
 ### Cluster-Scoped NodeReadinessRule CRD
 
