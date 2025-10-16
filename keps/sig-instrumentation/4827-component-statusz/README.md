@@ -441,7 +441,7 @@ It will expose the statusz endpoint again
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit test will be introduced in alpha implementation.
+Unit and integration tests will be introduced in alpha implementation.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -453,7 +453,7 @@ This section must be completed when targeting beta to a release.
 
 This feature should not cause rollout failures. If it does, we can disable the feature. In the worst
 case, it is possible it could cause runtime failures, but it is highly unlikely we would not detect this
-with existing tests.
+with existing tests. The endpoint is isolated and does not affect core workloads.
 
 ###### What specific metrics should inform a rollback?
 
@@ -512,7 +512,7 @@ This is a debugging feature and not something that workloads depend on. Therefor
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-This enhancement proposes data that can be used to determine the health of the component.
+This enhancement proposes data that can be used to determine the health of the component (though this endpoint is not intended to be used for alerting.)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -528,11 +528,11 @@ No, each component's statusz is independent.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No
+Yes, enabling this feature will result in a new HTTP endpoint (/statusz) being served by each component (including apiserver). However, this is not a Kubernetes API type or resource; it is a non-resource endpoint that provides component status information for debugging and observability. No new Kubernetes API objects or resource types are introduced. 
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No.
+No, this feature does not introduce new Kubernetes API types or resources. While the statusz endpoint uses a structured JSON response with Group/Version/Kind for content negotiation and consistency, it is not a Kubernetes API object and is not managed or persisted by the API server. The GVK is used solely to provide a predictable format for clients querying the endpoint.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -562,13 +562,18 @@ statusz endpoint for apiserver will not be available if the API server itself is
 
 ###### What are other known failure modes?
 
-Overreliance on statusz for critical monitoring. We will clearly document the intended use cases and limitations of the statusz endpoint, emphasizing that it's primarily for informational and troubleshooting purposes, not real-time monitoring or alerting.
+Overreliance on statusz for critical monitoring. We will clearly document the intended use cases and limitations of the statusz endpoint, emphasizing that it's primarily for informational and troubleshooting purposes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 The feature can be disabled by setting the feature-gate to false if the performance impact of it is not tolerable.
 
 ## Implementation History
+ - v1.32: New  `/statusz` endpoint introduced for [apiserver](https://github.com/kubernetes/kubernetes/pull/125577), 
+ - v1.33: `/statusz` enablement extended to [kubelet](https://github.com/kubernetes/kubernetes/pull/128811), [scheduler](https://github.com/kubernetes/kubernetes/pull/128987), [controller-manager](https://github.com/kubernetes/kubernetes/pull/128991), and [kube-proxy](https://github.com/kubernetes/kubernetes/pull/128989)
+ - v1.34: `/statusz` response enhanced to add a `Paths` field listing down all debug endpoints available for [apiserver](https://github.com/kubernetes/kubernetes/pull/132581)
+ - v1.35: `Paths` field added for [kubelet](https://github.com/kubernetes/kubernetes/pull/133239), [scheduler](https://github.com/kubernetes/kubernetes/pull/132606), [controller-manager](https://github.com/kubernetes/kubernetes/pull/133218), and [kube-proxy](https://github.com/kubernetes/kubernetes/pull/133190)
+ 
 
 ## Drawbacks
 
