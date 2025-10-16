@@ -84,7 +84,7 @@ For the initial Alpha implementation, this proposal focuses on leveraging the ex
 
 A new, extensible probing mechanism within the Kubelet is also proposed to be responsible for performing the health checks that produce these conditions.
 
-The node is considered fully-schedulable only when these components are confirmed operational by meeting thier respective readiness conditions. This mechanism complements the existing Kubelet managed `Ready` condition by providing granular control over node-schedulability.
+The node is considered fully-schedulable only when these components are confirmed operational by meeting their respective readiness conditions. This mechanism complements the existing Kubelet managed `Ready` condition by providing granular control over node-schedulability.
 
 ## Motivation
 
