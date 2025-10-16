@@ -96,12 +96,20 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [API Changes](#api-changes)
+    - [New Downward API Selector: ResourceSliceAttributeSelector](#new-downward-api-selector-resourcesliceattributeselector)
+  - [Kubelet Implementation](#kubelet-implementation)
+  - [Usage Examples](#usage-examples)
+  - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha (v1.35)](#alpha-v135)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -193,7 +201,7 @@ This proposal introduces a new Downward API selector (`resourceSliceAttributeRef
 4. Maintains a per-Pod cache of `(claimName, requestName) -> {attribute: value}` mappings
 5. Resolves `resourceSliceAttributeRef` references when containers start
 
-Downward API references expose one attribute per reference. The kubelet resolves only the attribute explicitly referenced via `resourceSliceAttributeRef`.
+Downward API references expose one attribute per reference. The kubelet resolves only the attribute explicitly referenced via `ResourceSliceAttributeSelector`.
 
 ### User Stories (Optional)
 
@@ -251,14 +259,6 @@ type ResourceSliceAttributeSelector struct {
     // The attribute name must be present in the ResourceSlice's device attributes.
     // +required
     Attribute string `json:"attribute"`
-
-    // DeviceIndex selects which device's attribute to surface when a request
-    // is satisfied by multiple devices. When unset, attributes from all
-    // allocated devices for the request are joined in allocation order.
-    // Zero-based index into the allocation results for the matching request.
-    // Must be >= 0 if set. Bounds are validated at resolution time by the kubelet.
-    // +optional
-    DeviceIndex *int32 `json:"deviceIndex,omitempty"`
 }
 
 // In core/v1 EnvVarSource:
@@ -278,7 +278,7 @@ Validation:
 - Enforce exactly one of `fieldRef`, `resourceFieldRef`, or `resourceSliceAttributeRef` in both env and volume items
 - Validate `claimName` and `requestName` against DNS label rules
 - No API-level enumeration of attribute names; kubelet resolves attributes that exist in the matching `ResourceSlice` at runtime
-- If `deviceIndex` is set, validate it is >= 0; if unset, aggregate across all allocated devices
+
 
 ####
 
@@ -292,14 +292,14 @@ The kubelet runs a local DRA attributes controller that:
 4. Maintains Cache: Keeps a per-Pod map of `(claimName, requestName) -> {attribute: value}` with a readiness flag
 
 Resolution Semantics:
+- Prioritized List compatibility:
+  - Clients do not need to know the number of devices a priori. At container start, kubelet aggregates the attribute across all devices actually allocated for the request and joins the values with "," in allocation order. If any allocated device lacks the attribute, resolution fails and the pod start errors.
 - Cache entries are updated on claim/slice changes
 - For container environment variables, resolution happens at container start using the latest ready values
- - Attributes are not frozen at allocation time; scheduler and controllers are not involved in copying attributes
- 
-- Failure on missing data: If the `ResourceSlice` is not found, the attribute is absent, or `deviceIndex` is out of range at container start, kubelet records a warning event and returns an error to the sync loop. The pod start fails per standard semantics (e.g., `restartPolicy` governs restarts; Jobs will fail the pod).
- - Multi-device requests:
-   - When `deviceIndex` is unset, kubelet resolves the attribute across all allocated devices for the request, preserving allocation order, and joins values with a comma (",") into a single string. Devices that do not report the attribute are skipped. If no devices provide the attribute, the value is considered not ready.
-   - When `deviceIndex` is set, kubelet selects the device at that zero-based index from the allocation results and resolves the attribute for that device only. If the index is out of range or the attribute is missing on that device, the value is considered not ready.
+- Attributes are not frozen at allocation time; scheduler and controllers are not involved in copying attributes
+
+- Failure on missing data: If the `ResourceSlice` is not found, or the attribute is absent on any allocated device at container start, kubelet records a warning event and returns an error to the sync loop. The pod start fails per standard semantics (e.g., `restartPolicy` governs restarts; Jobs will fail the pod).
+- Multi-device requests: Kubelet resolves the attribute across all allocated devices for the request, preserving allocation order, and joins values with a comma (",") into a single string. If any allocated device does not report the attribute, resolution fails (pod start error).
 
 Security & RBAC:
 - Node kubelet uses NodeAuthorizer to watch/read `ResourceClaim` and `ResourceSlice` objects related to Pods scheduled to the node
@@ -329,34 +329,12 @@ spec:
           claimName: pgpu-claim
           requestName: pgpu-request
           attribute: resource.kubernetes.io/pcieRoot
-          # deviceIndex omitted -> aggregate across all devices
+          # If multiple devices are allocated for this request, values are joined with "," in allocation order.
 ```
 
  
 
-Environment Variable Example (SpecificIndex for multi-device request):
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: virt-launcher-gpu-index
-spec:
-  resourceClaims:
-  - name: pgpu-claim
-    resourceClaimName: my-physical-gpu-claim
-  containers:
-  - name: compute
-    image: virt-launcher:latest
-    env:
-    - name: PGPU_CLAIM_PCI_ROOT_INDEX1
-      valueFrom:
-        resourceSliceAttributeRef:
-          claimName: pgpu-claim
-          requestName: pgpu-request
-          attribute: resource.kubernetes.io/pcieRoot
-          deviceIndex: 1
-```
+ 
 
 ### Feature Gate
 
@@ -406,8 +384,8 @@ Integration tests will cover:
 
 - Feature gate toggling: Verify API rejects `resourceSliceAttributeRef` when feature gate is disabled
 - End-to-end resolution: Create Pod with resourceClaims, verify env vars contain correct attribute values
-- Negative cases: Missing allocation, missing `ResourceSlice`, missing attribute, invalid `deviceIndex` — expect warning event and pod start failure
- - Multi-device semantics: All-mode joining order and delimiter; SpecificIndex with valid/invalid index; missing attribute on selected device
+- Negative cases: Missing allocation, missing `ResourceSlice`, missing attribute on any allocated device — expect warning event and pod start failure
+- Multi-device semantics: Joining order and delimiter; mixed presence of attributes across allocated devices should cause failure
 
 Tests will be added to `test/integration/kubelet/` and `test/integration/dra/`.
 
@@ -430,7 +408,6 @@ Tests will be added to `test/e2e/dra/` and `test/e2e_node/downwardapi_test.go`.
 - Feature implemented behind `DRADownwardDeviceAttributes` feature gate
 - API types added: `resourceSliceAttributeRef` in `core/v1.EnvVarSource`
 - Kubelet DRA attributes controller implemented
-- Support for `resource.kubernetes.io/pcieRoot` and `dra.kubervirt.io/mdevUUID` attributes
 - Unit tests for validation, cache, and resolution logic
 - Initial integration and e2e tests completed
 - Documentation published for API usage
