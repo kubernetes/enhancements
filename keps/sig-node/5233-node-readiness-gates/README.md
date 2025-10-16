@@ -26,7 +26,6 @@
     - [Evaluation Logic](#evaluation-logic)
   - [Labels for Readiness Gates](#labels-for-readiness-gates)
   - [Probing Mechanisms (Optional)](#probing-mechanisms-optional)
-    - [Kubelet Local Probing](#kubelet-local-probing)
     - [Node Problem Detector](#node-problem-detector)
   - [Handling Ready -&gt; Not Ready Transitions](#handling-ready---not-ready-transitions)
     - [Node Readiness Transition:](#node-readiness-transition)
