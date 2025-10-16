@@ -98,7 +98,7 @@ we aim to simplify access to this information for Pods via the Downward API.
 
 ### Goals
 
-* Values from Node labels `topology.k8s.io/zone`, `topology.k8s.io/region` and `kubernetes.io/hostname` are made
+* Values from Node labels `topology.kubernetes.io/zone`, `topology.kubernetes.io/region` and `kubernetes.io/hostname` are made
   available via downward API
 * Additional node labels can be made available via downward API using admission webhooks that mutate `pods/binding`.
 
@@ -171,7 +171,7 @@ creation but not guaranteed to be immutable and thus should be treated as so.
 
 * A built-in Kubernetes admission plugin, `PodTopologyLabels` will be introduced in kube-apiserver
 * The `PodTopologyLabels` admission plugin is responsible for mutating `pods/binding` subresource, adding topology labels matching the target Node.
-* `PodTopologyLabels` admission will overwrite `topology.k8s.io/*` labels on Pods.
+* `PodTopologyLabels` admission will overwrite `topology.kubernetes.io/*` labels on Pods.
 * A feature gate, `PodTopologyLabelsAdmission` will be introduced in v1.33. Alpha and disabled by default.
 The `PodTopologyLabels` admission plugin can only be set when this feature gate is enabled.
 * The Binding REST implementation will be updated to copy all labels from `pods/binding` subresource into Pods.
@@ -222,10 +222,11 @@ E2E tests will also ensure behavior is exercised when the feature gate is enable
 - All standard topology labels can be retrieved using downward API.
 - Behavior is implemented behind a feature gate that is off by default.
 - Initial unit, integration and e2e tests completed and enabled.
+- Fix standard topology label used in PodTopologyLabels admission controller (topology.k8s.io -> topology.kubernetes.io)
 
 #### Beta
 
-TODO after Alpha.
+- Unit, integration and e2e tests
 
 #### GA
 
@@ -290,7 +291,9 @@ Tests will be added to ensure feature gate works as expected.
 
 ### Rollout, Upgrade and Rollback Planning
 
-TODO for Beta.
+Manual testing will be exercised to ensure that PodTopologyLabelsAdmission can be enabled and then disabled.
+When disabled, existing Pods with topology labels will continue to run with those labels and new Pods will no longer
+container topology labels.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -311,11 +314,9 @@ No.
 
 ### Monitoring Requirements
 
-TODO for GA.
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-N/A
+They can check if new Pods contain the `topology.kubernetes.io/*` labels.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -335,7 +336,7 @@ N/A
 
 
 - [X] Metrics
-  - Metric name: `pod_scheduling_attempts`
+  - Metric name: `pod_scheduling_attempts`, `scheduler_scheduling_attempt_duration_seconds`
   - [Optional] Aggregation method:
   - Components exposing the metric: kube-scheduler
 - [] Other (treat as last resort)
@@ -343,7 +344,7 @@ N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No, we can use `pod_scheduling_attempts`.
+No, we can use `pod_scheduling_attempts` and `scheduler_scheduling_attempt_duration_seconds`.
 
 ### Dependencies
 
@@ -391,9 +392,9 @@ Little impact as this feature is only relevant when scheduling and running Pods,
 
 ###### What are other known failure modes?
 
-Not all Kubernetes clusters have nodes that have topology labels. Requesting topology information
-via downward API in these clusters will result in Pods failing to start or empty values returned
-via downward API.
+Not all Kubernetes clusters have Nodes with topology labels. Requesting topology information
+in these clusters will result in empty values returned via downward API and some
+applications failing to start if they rely on this information.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -402,6 +403,7 @@ Revert feature gate and stop consuming downward API.
 ## Implementation History
 
 - `v1.33`: initial KEP is accepeted and alpha implementation is complete
+- `v1.34`: fix topology labels from topology.k8s.io to topology.kubernetes.io.
 
 ## Drawbacks
 
