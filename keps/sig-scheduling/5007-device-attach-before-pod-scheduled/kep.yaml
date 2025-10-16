@@ -23,7 +23,7 @@ see-also:
   - https://github.com/kubernetes/kubernetes/issues/124042#issuecomment-2548068135
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: alpha
 #|beta|stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
