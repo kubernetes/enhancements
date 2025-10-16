@@ -684,10 +684,15 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-- Pods that fail to schedule.
-- Pods that have had a node nominated, but then found that node infeasible.
-- Pods that cannot be batched.
-- High pod scheduling time.
+Existing metrics:
+  - `pod_scheduling_sli_duration_seconds`
+  - `schedule_attempts_total` - specifically unschedulable and error cases
+  - `pending_pods`
+  - `unschedulable_pods`
+
+New metrics:
+  - Pods that cannot be batched.
+  - Pod batch failure reasons
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -696,6 +701,8 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+Upgrade and downgrade should be simple due the feature being in-memory. But we will test the path before GA.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -714,11 +721,6 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-We will add metrics to identify:
-- How often nominated nodes are found infeasible.
-- How often pods are "batched" vs not.
-- Reasons for pods to be "unbatchable" (pod affinity, pod spread, etc.)
-
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -728,7 +730,6 @@ logs or events for this purpose.
 -->
 
 - We will log statistics about how often pods are batched vs not batched.
-- We will include in the pod status information about whether it was batched or not.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1034,6 +1035,10 @@ The issues experienced by eCache were:
  We will also provide tests that evaluate different pod configurations against different node configurations and ensure that any time the signatures match the results do as well. This will help us catch issues in the future, in addition to providing testing opportunities in other areas.
 
 See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 as starting point on eCache.
+
+## Future work
+
+Today we have the ability to determine if a given node would still be feasible after we added a specific pod to it. This is powerful and will be used by this feature. However, we do not have the same capability when it comes to scoring. Adding this capability would make it much easier for us to do batching (and many other things) on a wider range of workloads. This work is not required for this KEP, but would increase the number of use cases where we could apply batching.
 
 ## Infrastructure Needed (Optional)
 
