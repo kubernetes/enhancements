@@ -93,7 +93,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [DRA Scheduler Plugin Design Overview](#dra-scheduler-plugin-design-overview)
-    - [BasicDevice Enhancements](#basicdevice-enhancements)
+    - [Device Enhancements](#device-enhancements)
     - [DeviceRequestAllocationResult Enhancements](#devicerequestallocationresult-enhancements)
     - [Scheduler DRA Plugin Modifications](#scheduler-dra-plugin-modifications)
     - [PreBind Phase Timeout](#prebind-phase-timeout)
@@ -168,7 +168,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP introduces a general-purpose mechanism — BindingConditions — to improve scheduling reliability in Kubernetes environments where resource readiness is asynchronous or failure-prone.
+This KEP introduces BindingConditions, a mechanism that defers Pod binding until external resources (e.g., fabric-attached GPUs, FPGAs) are confirmed ready.
+Unlike current scheduling, which assumes immediate readiness, this feature prevents premature binding and improves reliability for asynchronous or failure-prone resources.
 
 While the original motivation for this KEP was to support fabric-attached devices in composable disaggregated infrastructure, the proposed mechanism is designed to be broadly applicable.
 BindingConditions enable the scheduler to defer Pod binding until external resources (such as attachable devices, remote accelerators, or programmable hardware) are confirmed to be ready.
@@ -201,6 +202,8 @@ While the original motivation came from fabric-attached devices, the mechanism i
 It can support other scenarios where resource readiness is asynchronous or failure-prone, such as remote accelerators or gang scheduling.
 This proposal focuses on enabling readiness-aware binding as a general scheduling enhancement.
 
+Moving to beta aims to validate the feature at scale, gather real-world feedback, and ensure integration with related components such as Cluster Autoscaler.
+
 ### Goals
 
 1. **Enable Readiness-Aware Binding**:  
@@ -221,6 +224,8 @@ This proposal focuses on enabling readiness-aware binding as a general schedulin
 
 - Defining a complete model for fabric-attached device coordination.
 - While this KEP introduces a mechanism that supports such use cases, broader architectural questions — such as how to model attachment workflows or coordinate between node-local and fabric-aware components — will be addressed in follow-up discussions.
+- Defining autoscaling strategies for fabric-attached devices (covered in future proposals).
+- Guaranteeing zero rescheduling in all failure scenarios.
 
 ## Proposal
 
@@ -229,8 +234,9 @@ This is achieved by extending the `ResourceSlice` and `DeviceRequestAllocationRe
 
 - `BindingConditions`: a list of condition keys that must be satisfied (i.e., set to `True`) before binding can proceed.
 - `BindingFailureConditions`: a list of condition keys that, if any are `True`, indicate that binding should be aborted and the Pod rescheduled.
-- `BindingTimeoutSeconds`: a timeout value (in seconds) that defines how long the scheduler should wait for all `BindingConditions` to be satisfied. If the timeout is exceeded, the allocation is cleared and the Pod is rescheduled.
-- `UsageRestrictedToNode`: a boolean field (optional) that indicates whether the scheduler should set the nodename to the ResourceClaim's nodeSelector during the scheduling process. When set to true, the scheduler records the selected node name in the claim (in the `PreBind` phase), effectively reserving the resource for that specific node. This is particularly useful for external controllers during the PreBind phase, as they can retrieve the node name from the claim and perform node-specific operations such as device attachment or preparation.
+- `BindsToNode`: a boolean field (optional) that indicates whether the scheduler should set the nodename to the ResourceClaim's nodeSelector during the scheduling process.
+  When set to true, the scheduler records the selected node name in the claim(in the `PreBind` phase), effectively reserving the resource for that specific node.
+  This is particularly useful for external controllers during the PreBind phase, as they can retrieve the node name from the claim and perform node-specific operations such as device attachment or preparation.
 
 Each entry in `BindingConditions` and `BindingFailureConditions` must be a valid Kubernetes condition type string (e.g., `dra.example.com/is-prepared`).
 These are interpreted as keys in the `.status.conditions` field of the corresponding `ResourceClaim`.
@@ -241,11 +247,14 @@ The scheduler evaluates only the `status` field of these conditions:
 - If any `BindingFailureConditions` has `status: "True"`, the binding is aborted.
 
 These fields are introduced as alpha features and require enabling the `DRADeviceBindingConditions` and `DRAResourceClaimDeviceStatus` feature gates.
-`DRAResourceClaimDeviceStatus` is required because it controls
-whether these binding conditions can be set in the ResourceClaim status.
+`DRAResourceClaimDeviceStatus` is required because it controls whether these binding conditions can be set in the ResourceClaim status.
 
 This mechanism enables readiness-aware scheduling for resources that require asynchronous preparation, such as fabric-attached devices or remote accelerators.
 It allows the scheduler to make binding decisions based on up-to-date readiness information, improving reliability and avoiding premature binding.
+
+**Beta Changes (Planned):**
+- Timeout configuration via scheduler arguments.
+- Additional improvements may be added based on alpha feedback.
 
 ### PreBind Process
 
@@ -254,7 +263,6 @@ This includes:
 
 - `BindingConditions`
 - `BindingFailureConditions`
-- `BindingTimeoutSeconds`
 
 In the `PreBind` phase, the scheduler evaluates the readiness of the selected device by checking the following:
 
@@ -265,7 +273,7 @@ In the `PreBind` phase, the scheduler evaluates the readiness of the selected de
    If any failure condition is set, the scheduler aborts the binding attempt and clears the allocation.
 
 3. **Timeout Handling**  
-   If `BindingConditions` are not all satisfied within the specified `BindingTimeoutSeconds`, the scheduler treats this as a timeout failure.
+   If `BindingConditions` are not all satisfied within the timeout, the scheduler treats this as a timeout failure.
    The allocation is cleared, and the Pod is returned to the scheduling queue for reconsideration.
 
 This mechanism ensures that Pods are only bound to nodes when the associated devices are confirmed to be ready, avoiding premature binding and improving scheduling reliability.
@@ -278,13 +286,8 @@ This coordination allows the scheduler to make informed binding decisions withou
 If device preparation fails — for example, due to fabric contention, hardware error, or controller-side timeout — the external controller (e.g., a composable DRA controller) should update the condition status in the `ResourceClaim`'s `allocationResult` to reflect the failure.
 This is typically done by setting one or more `BindingFailureConditions` to `True`.
 It should also ensure that the device is not picked again.
-It can do that by removing the device from the ResourceSlice,
-adding a [device taint](https://github.com/kubernetes/enhancements/issues/5055),
-or by changing the node selector, either at the ResourceSlice
-level or using per-device node selectors from the [partitionable devices](https://github.com/kubernetes/enhancements/issues/4815).
-There is no guarantee that the scheduler will receive those
-updates in time for the next pod scheduling cycle, but
-eventually it will.
+It can do that by removing the device from the ResourceSlice, adding a [device taint](https://github.com/kubernetes/enhancements/issues/5055), or by changing the node selector, either at the ResourceSlice level or using per-device node selectors from the [partitionable devices](https://github.com/kubernetes/enhancements/issues/4815).
+There is no guarantee that the scheduler will receive those updates in time for the next pod scheduling cycle, but eventually it will.
 
 The scheduler will detect this during the `PreBind` phase and respond by:
 
@@ -348,15 +351,13 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 - **Maximum Number of Conditions**: The maximum number of `BindingConditions` and `BindingFailureConditions` per device is limited to 4.
-This constraint ensures that the scheduler can efficiently evaluate conditions without excessive overhead
-and that the worst-case size of a ResourceSlice does not grow
-too much.
+  This constraint ensures that the scheduler can efficiently evaluate conditions without excessive overhead and that the worst-case size of a ResourceSlice does not grow too much.
 
 - **External Controller Dependency**: The effectiveness of `BindingConditions` relies on accurate and timely updates from external controllers (e.g., composable DRA controllers).
-Any delays or inaccuracies in these updates can impact scheduling reliability.
+  Any delays or inaccuracies in these updates can impact scheduling reliability.
 
 - **Error Handling**: If `BindingConditions` are not satisfied within the specified timeout, or if any `BindingFailureConditions` are set to `True`, the scheduler will clear the allocation and reschedule the Pod.
-This fallback behavior is intended as an error recovery mechanism, not the primary scheduling model.
+  This fallback behavior is intended as an error recovery mechanism, not the primary scheduling model.
 
 ### Risks and Mitigations
 
@@ -384,10 +385,11 @@ If the attachment is complete, it will pass through PreBind.
 
 **Scheduler does not guarantee to pick up the same node for the Pod after the reschedule (after binding failure)**
 
+Status: Addressed in this [KEP](https://github.com/kubernetes/enhancements/issues/5278)
+
 Basically scheduler should select the same node, however we need to consider the following scenarios:
  - In case of a failure, we might want to try a different node.
- - During rescheduling, if another pod is deployed on that node and uses the resources, the rescheduled pod might not be able to be deployed.
-   Therefore, we need logic to prioritize the rescheduled pod on that node.
+ - During rescheduling, if another pod is deployed on that node and uses the resources, the rescheduled pod might not be able to be deployed. Therefore, we need logic to prioritize the rescheduled pod on that node.
 
 [Node nomination](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/#user-exposed-information) would solve this.
 If node nomination is not available, processing flow is as follows.
@@ -399,10 +401,14 @@ This issue needs to be resolved before the beta is released.
 
 **Pods which are not bound yet (in api-server) and not unschedulable (in api-server) are not visible by cluster autoscaler, so there is a risk that the node will be turned down.**
 
+Status: Addressed in this [KEP](https://github.com/kubernetes/enhancements/issues/5278)
+
 Regarding collaboration with the Cluster Autoscaler, using node nomination can address the issue.
 This issue needs to be resolved before the beta is released.
 
 **The in-flight events cache may grow too large when waiting in PreBind.**
+
+Status: Fixed in kubernetes/kubernetes#129967.
 
 To address the PreBind concern, the solution is to modify the scheduling framework to flush the in-flight events cache before PreBind.
 This prevents issues in the scheduling queue caused by keeping pods at PreBind for an extended period.
@@ -421,74 +427,60 @@ It shows how the scheduler waits for readiness conditions to be met before proce
 This flow ensures that Pods are only bound when the associated device is confirmed to be usable.
 ![proposal](proposal.jpg)
 
-#### BasicDevice Enhancements
+#### Device Enhancements
 
-To indicate that the device is a Fabric device or other device that requires some preparation (e.g. attachment), some fields are added to the `Basic` within `Device`.
+To indicate that the device is a Fabric device or other device that requires some preparation (e.g. attachment), some fields are added to the `Device` within `ResourceSliceSpec`.
 These fields will be used by the controller that exposes the `ResourceSlice` to notify whether the device is a fabric device.
 
 ```go
-// BasicDevice represents a basic device instance.
-type BasicDevice struct {
+// Device represents one individual hardware instance that can be selected based
+// on its attributes. Besides the name, exactly one field must be set.
+type Device struct {
   ...
-	// UsageRestrictedToNode indicates if the usage of an allocation involving this device
-	// has to be limited to exactly the node that was chosen when allocating the claim.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gates.
-	//
-	// +optional
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	UsageRestrictedToNode *bool
+  // BindsToNode indicates if the usage of an allocation involving this device
+  // has to be limited to exactly the node that was chosen when allocating the claim.
+  // If set to true, the scheduler will set the ResourceClaim.Status.Allocation.NodeSelector
+  // to match the node where the allocation was made.
+  //
+  // This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+  // feature gates.
+  //
+  // +optional
+  // +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+  BindsToNode *bool
 
-	// BindingConditions defines the conditions for proceeding with binding.
-	// All of these conditions must be set in the per-device status
-	// conditions with a value of True to proceed with binding the pod to the node
-	// while scheduling the pod.
-	//
-	// The maximum number of binding conditions is 4.
-	// All entries are condition types, which means
-	// they must be labels.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gates.
-	//
-	// +optional
-	// +listType=atomic
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	BindingConditions []string
+  // BindingConditions defines the conditions for proceeding with binding.
+  // All of these conditions must be set in the per-device status
+  // conditions with a value of True to proceed with binding the pod to the node
+  // while scheduling the pod.
+  //
+  // The maximum number of binding conditions is 4.
+  // All entries are condition types, which means
+  // they must be labels.
+  //
+  // This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+  // feature gates.
+  //
+  // +optional
+  // +listType=atomic
+  // +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+  BindingConditions []string
 
-	// BindingFailureConditions defines the conditions for binding failure.
-	// They may be set in the per-device status conditions.
-	// If any is true, a binding failure occurred.
-	//
-	// The maximum number of binding conditions is 4.
-	// All entries are condition types, which means
-	// they must be labels.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gates.
-	//
-	// +optional
-	// +listType=atomic
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	BindingFailureConditions []string
-
-	// BindingTimeoutSeconds indicates the prepare timeout period.
-	// If the timeout period is exceeded before all BindingConditions reach a True state,
-	// the scheduler clears the allocation in the ResourceClaim and reschedules the Pod.
-	//
-	// The default timeout if not set is 600 seconds.
-	//
-	// No matter what timeouts were specified by the driver, the scheduler will not wait
-	// longer than 20 minutes. This may change.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gates.
-	//
-	// +optional
-	// +listType=atomic
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	BindingTimeoutSeconds *int64
+  // BindingFailureConditions defines the conditions for binding failure.
+  // They may be set in the per-device status conditions.
+  // If any is true, a binding failure occurred.
+  //
+  // The maximum number of binding conditions is 4.
+  // All entries are condition types, which means
+  // they must be labels.
+  //
+  // This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+  // feature gates.
+  //
+  // +optional
+  // +listType=atomic
+  // +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+  BindingFailureConditions []string
 }
 
 const (
@@ -508,53 +500,44 @@ For this feature, following fields are added:
 // DeviceRequestAllocationResult contains the allocation result for one request.
 type DeviceRequestAllocationResult struct {
  ...
-	// BindingConditions contains a copy of the BindingConditions
-	// from the corresponding ResourceSlice at the time of allocation.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gates.
-	//
-	// +optional
-	// +listType=atomic
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	BindingConditions []string
+  // BindingConditions contains a copy of the BindingConditions
+  // from the corresponding ResourceSlice at the time of allocation.
+  //
+  // This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+  // feature gates.
+  //
+  // +optional
+  // +listType=atomic
+  // +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+  BindingConditions []string
 
-	// BindingFailureConditions contains a copy of the BindingFailureConditions
-	// from the corresponding ResourceSlice at the time of allocation.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gates.
-	//
-	// +optional
-	// +listType=atomic
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	BindingFailureConditions []string
-
-	// BindingTimeoutSeconds contains a copy of the BindingTimeoutSeconds
-	// from the corresponding ResourceSlice at the time of allocation.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gates.
-	//
-	// +optional
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	BindingTimeoutSeconds *int64
+  // BindingFailureConditions contains a copy of the BindingFailureConditions
+  // from the corresponding ResourceSlice at the time of allocation.
+  //
+  // This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+  // feature gates.
+  //
+  // +optional
+  // +listType=atomic
+  // +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+  BindingFailureConditions []string
+  ...
 }
 ```
 
 #### Scheduler DRA Plugin Modifications
 
-When `UsageRestrictedToNode: true` is set, the scheduler DRA plugin will perform the following steps:
+When `BindsToNode: true` is set, the scheduler DRA plugin will perform the following steps:
 
 1. **Set NodeSelector in api-server**: During the `PreBind` phase, propagate the `NodeName` to the `ResourceClaim`'s `NodeSelector` to the api-server.
 
 If Conditions are present, the scheduler DRA plugin will additionally perform the following steps:
 
-2. **Copy Conditions**: Copy `UsageRestrictedToNode`, `BindingTimeout`, `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device.Basic` to `DeviceRequestAllocationResult`.
+2. **Copy Conditions**: Copy `BindingConditions` and `BindingFailureConditions` from `ResourceSlice.Device` to `DeviceRequestAllocationResult`.
 3. **Wait for Conditions**: Wait for the following conditions:
    - Wait until all conditions in the BindingConditions are `True` before proceeding to Bind.
    - If any one of the conditions in the BindingFailureConditions becomes `True`, clear the allocation in the `ResourceClaim` and reschedule the Pod.
-   - If the preparation of a device takes longer than the `BindingTimeout` period, clear the allocation in the `ResourceClaim` and reschedule the Pod.
+   - If the preparation of a device takes longer than the timeout period, clear the allocation in the `ResourceClaim` and reschedule the Pod.
 
 To support these steps, for example, a DRA driver can include the following definitions in BindingConditions or BindingFailureConditions within a ResourceSlice:
 
@@ -578,8 +561,7 @@ This issue will be addressed separately as outlined in kubernetes/kubernetes#129
 #### PreBind Phase Timeout
 
 If the device attachment is successful, we expect it to take no longer than 5 minutes.
-However, to account for potential update lags, we can set a timeout in the ResourceSlice.
-if it's not present in the ResourceSlice, the scheduler has 10 minutes as the default timeout.
+The scheduler has 10 minutes as the default timeout.
 
 Even if the conditions indicating that the device is attached or that the attachment failed are not updated, setting a timeout will prevent the scheduler from waiting indefinitely in the PreBind phase.
 
@@ -590,42 +572,39 @@ Even if the conditions indicating that the device is attached or that the attach
 // AllocationResult contains attributes of an allocated resource.
 type AllocationResult struct {
   ...
-	// AllocationTimestamp stores the time when the resources were allocated.
-	// This field is not guaranteed to be set, in which case that time is unknown.
-	//
-	// This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
-	// feature gate.
-	//
-	// +optional
-	// +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
-	AllocationTimestamp *metav1.Time
+  // AllocationTimestamp stores the time when the resources were allocated.
+  // This field is not guaranteed to be set, in which case that time is unknown.
+  //
+  // This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+  // feature gate.
+  //
+  // +optional
+  // +featureGate=DRADeviceBindingConditions,DRAResourceClaimDeviceStatus
+  AllocationTimestamp *metav1.Time
 }
 ```
 
 - **Triggering Timeout**:
-A timeout is triggered if all BindingConditions in the ResourceClaim.status.conditions do not reach status: "True" within the duration specified by BindingTimeoutSeconds.
+A timeout is triggered if all BindingConditions in ResourceClaim.status.conditions do not reach status: "True" within the duration specified in the timeout.
 
 - **Timeout Behavior**:
 When a timeout occurs:
 
-  - The scheduler aborts the binding process.
-  - The Pod remains in the Unscheduled state.
-  - The allocation in the ResourceClaim is cleared.
-  - A condition indicating timeout may be recorded in the ResourceClaim.
+  - **Trigger**: Timeout occurs if all BindingConditions remain unset within the configured duration.
+  - **Behavior**: When triggered, the scheduler aborts binding, clears the allocation, and requeues the Pod.
+  - **Default Duration**: 10 minutes (configurable via scheduler arguments).
+  - **Rationale for AllocationTimestamp**: Ensures consistent timeout handling for shared claims and multi-claim Pods.
 
 - **Timeout Duration**:
-The timeout duration is defined by the BindingTimeoutSeconds field in the ResourceSlice.
-If unspecified, a default value (e.g., 600 seconds) is used.
-The scheduler enforces a maximum wait time (e.g., 20 minutes) to prevent indefinite blocking.
+The default timeout is 10 minutes and can be configured via scheduler arguments.
 
 - **AllocationTimestamp**:
 The `AllocationTimestamp` field in the `AllocationResult` records the exact time when the resource allocation occurred—specifically, when the scheduler began waiting for the binding conditions to be satisfied.
-This timestamp is essential for implementing the timeout mechanism defined by `BindingTimeoutSeconds`, as it provides a consistent reference point for evaluating whether the timeout has expired.
 This field is particularly important in the following scenarios:
   - Multiple Pods sharing a single ResourceClaim: Since each Pod may be scheduled at a different time, it becomes ambiguous which scheduling event should serve as the basis for timeout evaluation.
-  By recording the initial allocation time, `AllocationTimestamp` ensures consistent timeout behavior across all Pods referencing the same claim.
+    By recording the initial allocation time, `AllocationTimestamp` ensures consistent timeout behavior across all Pods referencing the same claim.
   - A single Pod with multiple ResourceClaims: Each claim may have distinct readiness conditions and timeout requirements.
-  `AllocationTimestamp` allows the scheduler to manage timeouts independently for each claim, based on when its allocation began.
+    `AllocationTimestamp` allows the scheduler to manage timeouts independently for each claim, based on when its allocation began.
 
 By anchoring timeout evaluation to a well-defined point in time, `AllocationTimestamp` helps prevent Pods from being indefinitely blocked in the PreBind phase and ensures reliable scheduling behavior in complex resource configurations.
 
@@ -741,7 +720,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- Verify Pod scheduling with BindingConditions under normal, timeout, and failure scenarios.
+- Validate node nomination behavior after rescheduling.
+- Stress test with 1000 Pods waiting in PreBind to measure scheduler latency.
 
 ### Graduation Criteria
 
@@ -752,17 +733,29 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### Beta
 
 - Gather feedback from developers and surveys
+  - Feedback from CoHDI (https://github.com/CoHDI)
+    - Dynamic device scaling can be achieved using the following basic functionalities of BindingCondition:
+      - Creation of ResourceSlices with BindingCondition.
+      - Allocation of devices from ResourceSlices with BindingCondition to Pods.
+      - An external controller (e.g., dynamic-device-scaler) monitors and modifies the state of ResourceClaims allocated to Pods. This modification, specifically the setting of BindingFailureCondition, triggers Pod rescheduling.
+    - Even if a Pod experiences a scheduling timeout, no issues were detected in its subsequent operation if the conditions are met.
+    - No issues such as deadlocks have been detected within the scheduler or DRA framework.
+    - A few bugs were identified in the external controller (CoHDI component), but all of them were resolvable with fixes and do not indicate a fatal problem with the use of BindingCondition.
+    - Scenarios where devices in a ResourceSlice for a resource pool decrease were also tested, with no issues detected.
+    - Please refer [here](https://github.com/CoHDI/composable-dra-driver/tree/main/doc/Usecase_and_feedback_for_BindingCondition.md) for more details.
 - Resolve the following issues
-  - Scheduler does not guarantee to pick up the same node for the Pod after the restart
   - If Scheduler picks up another node for the Pod after the restart, devices are unnecessarily left on the original nodes
     (Composable DRA controller needs to have the function to detach a device automatically if it is not used by a Pod for a certain period of time)
   - Pods which are not bound yet (in api-server) and not unschedulable (in api-server) are not visible by cluster autoscaler, so there is a risk that the node will be turned down
-  - The in-flight events cache may grow too large when waiting in PreBind
 - Additional tests are in Testgrid and linked in KEP
+- Scheduler supports timeout configuration via command-line argument
 
 #### GA
 
-TBD
+- Feature enabled by default.
+- No major bugs reported in two consecutive releases.
+- Verified scalability in clusters with 5000+ nodes.
+- PRR approved and observability metrics in place.
 
 #### Deprecation
 <!--
@@ -786,6 +779,12 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+This feature exposes new fields such as `BindingConditions` in the
+`ResourceClaim` and `ResourceSlice`, the fields willeither be present or not.
+
+This feature uses the DRA interface and will follow the DRA upgrade/downgrade
+strategy.
+
 ### Version Skew Strategy
 
 <!--
@@ -800,6 +799,9 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This feature affects only the kube-apiserver and kube-scheduler, so there is no
+issue with version skew with other Kubernetes components.
 
 ## Production Readiness Review Questionnaire
 
@@ -845,7 +847,7 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: DRADeviceBindingConditions
-  - Components depending on the feature gate: kube-scheduler
+  - Components depending on the feature gate: kube-scheduler and kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -879,7 +881,8 @@ This feature affects only the allocation of devices during scheduling/binding.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The feature will begin working again.
-If a device that needs to be attached is selected, PreBind will wait for the device to be attached.
+If a Pod requests a resource that has BindingConditions, the Pod will wait in
+the PreBind phase until all BindingConditions are set to True.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -896,14 +899,14 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Unit tests will be written.
+Enablement/disablement of this feature is tested as part of the unit test and integration tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
-Will consider in the beta timeframe.
+
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
@@ -915,14 +918,25 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-Will consider in the beta timeframe.
+
+When this feature is enabled, if a Pod requests a resource that has
+BindingConditions, the Pod will wait in the PreBind phase until all
+BindingConditions are set to True. This means that this feature only affects the
+behavior before the Pod is scheduled, and does not affect running workloads.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-Will consider in the beta timeframe.
+
+When a timeout occurs in BindingConditions, the Pod is repeatedly re-scheduled, which leads to an increase in the `scheduler_schedule_attempts_total` metric with the label `result=unschedulable`.
+
+Additionally, since the waiting time within the Pre-Bind phase increases, the `scheduler_framework_extension_point_duration_seconds` metric - especially the higher latency histogram buckets with labels `extension_point=PreBind` and `status=1` (Error) - will show elevated counts.
+
+In all cases further analysis of logs and pod events is needed to determine whether errors are related to this feature.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 <!--
@@ -930,13 +944,17 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-Will consider in the beta timeframe.
+
+This was tested before promotion to beta, using `PRESERVE_ETCD=true hack/local-up-cluster.sh` and `test/e2e/dra/test-driver/dra-test-driver.go` (with minor customizations to enable BindingConditions). Pods using ResourceClaims started in one version could be removed by the other. When the feature is disabled, the new fields were ignored.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-Will consider in the beta timeframe.
+
+No
+
 ### Monitoring Requirements
 
 <!--
@@ -945,7 +963,7 @@ This section must be completed when targeting beta to a release.
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
-Will consider in the beta timeframe.
+
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -953,7 +971,14 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Will consider in the beta timeframe.
+
+Operators can determine if this feature is in use by workloads by checking
+the following:
+
+- Presence of elements in `ResourceClaim.status.allocation.devices.results.bindingConditions`.
+- Presence of elements in `ResourceSlice.spec.devices.bindingConditions`.
+- Existence of a "BindingConditionsPending" message in the Pod's Event logs.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -964,15 +989,12 @@ Please describe all items visible to end users below with sufficient detail so t
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
-Will consider in the beta timeframe.
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+We can confirm that the feature is working correctly for our instance by
+observing the following Pod conditions:
+
+- The Pod's Event logs show "BindingConditionsPending", and
+- The Pod's Status is "Running".
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -990,21 +1012,22 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-Will consider in the beta timeframe.
+
+We aim to ensure that the overhead introduced by the scheduler's waiting
+mechanism in the PreBind phase is minimal. While the overhead mainly depends
+on the responsiveness of external controllers (e.g., composable DRA controllers)
+in updating ResourceClaim conditions, the scheduler's internal processing time
+from detecting an updated ResourceClaim to completing the binding should be
+consistently low.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
-Will consider in the beta timeframe.
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+This can be determined by comparing the time required for binding, specifically:
+The time from "BindingConditionsPending" to "Scheduled" in the Pod's event logs.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1012,14 +1035,17 @@ Will consider in the beta timeframe.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-Will consider in the beta timeframe.
+
+No
 
 ### Dependencies
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
-Will consider in the beta timeframe.
+
+This feature depends on the Dynamic Resource Allocation feature and the
+DRAResourceClaimDeviceStatus feature gate.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
@@ -1037,6 +1063,11 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+Yes. The proper functioning and latency of this feature depend on external
+controllers (e.g., composable DRA controllers).
+This is because the scheduler expects state updates from external controllers
+to satisfy the BindingConditions and allow the schedule to complete.
 
 ### Scalability
 
@@ -1065,6 +1096,10 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+Yes, there will be additional Get() calls to ResourceClaim for communication
+with the external controller. However, these calls are executed with a
+backoff interval and are therefore negligible.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1074,6 +1109,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No, enabling this feature will not introduce new API types.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1081,6 +1118,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+Only if the external controller uses features of the cloud provider.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1090,6 +1129,25 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+Yes, enabling this feature may increase the size of existing objects such as
+ResourceSlice and ResourceClaim. Specifically, the following fields are added.
+These are considered negligible because the increase is at most about 100 bytes
+per device.
+
+**Added fields:**
+
+For each Device in ResourceSlice:
+- BindsToNode
+- BindingConditions
+- BindingFailureConditions
+
+For AllocationResult in ResourceClaim:
+- AllocationTimestamp
+
+For each DeviceRequestAllocationResult in ResourceClaim:
+- BindingConditions
+- BindingFailureConditions
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1101,6 +1159,12 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+Yes, when this feature is enabled and if devices corresponding to
+BindingConditions exists in the k8s cluster, there is a potential impact on the
+time it takes for a Pod to transition from creation to a Running state, as well
+as on Pod creation throughput. This is due to waiting for status updates from
+external controllers in the scheduler's PreBind phase.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1114,6 +1178,12 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+Yes, CPU utilization will slightly increase for evaluating BindingConditions,
+but this increase is negligible, because these operations are processed with a
+backoff interval. And the addition of fields to existing structs will also
+slightly increase memory consumption, but as mentioned in the previous item,
+its impact is negligible.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1125,6 +1195,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No, there is no such resource consumption.
 
 ### Troubleshooting
 
@@ -1141,6 +1213,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+This feature is part of the scheduler's functionality. Regardless of whether
+this feature is used or not, Pods will not be able to be scheduled.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1156,7 +1231,18 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+Failure of the external controller, or the absence of a corresponding external
+controller, will lead to a scheduling timeout, causing Pods that were waiting
+in the PreBind phase to be re-queued for scheduling.
+
+- Detection: Timeout of scheduling using the BindingConditions feature can be detected from the Pod's logs.
+- Mitigations: To prevent resources using the BindingConditions feature from being deployed, stop the controller that generates ResourceSlices with BindingConditions, and then delete those ResourceSlices.
+- Diagnostics: Depends on the implementation of external controllers corresponding to BindingConditions.
+- Testing: From the scheduler's perspective, this has been addressed through integration tests and unit tests, which confirm that timeouts do not occur under appropriate conditions and verify the behavior after a timeout occurs.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+It depends on the implementation of external controllers.
 
 ## Implementation History
 
@@ -1175,6 +1261,7 @@ Major milestones might include:
 - 2025-03: KEP revised to introduce BindingConditions as a general mechanism.
 - 2025-05: Updated KEP submitted for review.
 - 2025-06: Improve some API descriptions, and clarify that "fail and reschedule" is an anti-pattern.
+- 2025-08: Updated KEP for promotion to beta
 
 ## Drawbacks
 
