@@ -278,58 +278,28 @@ During startup, the Kubelet will inspect its configuration for initial taints wi
 
 ### Probing Mechanisms (Optional)
 
-To support `readinessGates`, there could be a privileged node-local entity to probe the component readiness continuously. Based on the probe results, the node-agent will manage the lifecycle of the corresponding `conditionType` in the node's status, patching it when there is a status change after success / failure threshold is met.
+To determine if a readiness gate is met, a privileged node-local entity must probe component readiness and report it as a `NodeCondition`. While this KEP originally considered adding a generic probing framework to the Kubelet, a more preferred approach is to leverage other components that are better suited for this task.
 
-#### Kubelet Local Probing
-
-One option is to extend Kubelet with a new, extensible probing framework to evaluate probes and publis matching NodeConditions. This design could leverage existing `v1.Probe` struct for node-readiness configuration.
-
-**Kubelet Configuration Example**
-
-```yaml
-# Hypothetical Kubelet Configuration
-nodeReadinessProbes:
-  - name: "NetworkReady"
-    conditionType: "vendor.example.com/NetworkReady"
-    probe:
-      httpGet:
-        host: "127.0.0.1"
-        port: 9090
-        path: "/healthz"
-    periodSeconds: 15
-    failureThreshold: 3
-  - name: "StorageReady"
-    conditionType: "abc.other-vendor.example.com/StorageReady"
-    probe:
-      grpc:
-        port: 19808
-    initialDelaySeconds: 20
-    periodSeconds: 10
-```
-
-**Pros:**
-
-- Integrating the readiness-probes with Kubelet gives advantages such as tighter coupling with pod-lifecycle (probing starts after kubelet is Ready).  
-- Kubelet already tracks pod status changes on the node, it will allow future possibilities to efficiently track certain critical pod-readiness as node conditions instead of polling. 
-
-**Cons**
-
-- Kubelet cannot support Exec probes, running arbitrary commands from a configuration, as it would pose a significant security risk for the primary node-agent running on the node, since these commands would run in the Kubelet's privileged context on the host.
+With the introduction of the Kubelet Pod Readiness API ([KEP-4188](https://git.k8s.io/enhancements/keps/sig-node/4188-kubelet-pod-readiness-api)), node-local agents can now get reliable readiness information for any pod on the node without querying the API server. This makes components like the Node Problem Detector an ideal choice for implementing readiness probes.
 
 #### Node Problem Detector
 
-Node-Problem-Detector is another privileged node-daemon commonly run at kubernetes nodes, that already reports NodeConditions. It is easily extensible to support probing mechanisms to monitor critical component readiness.
+Node-Problem-Detector (NPD) is a privileged node daemon commonly run on Kubernetes nodes that already reports `NodeCondition`s. It is easily extensible and is the recommended approach for implementing readiness probes.
+
+NPD can be configured to:
+1.  Watch the readiness status of critical component pods (e.g., CNI, CSI drivers) by querying the local Kubelet Pod Readiness API.
+2.  Perform other checks, such as verifying a health endpoint or checking for the existence of a device.
+3.  Based on the results of these checks, NPD can manage the lifecycle of the corresponding `conditionType` in the node's status, patching it when there is a status change after a success/failure threshold is met.
 
 **Pros:**
 
-- Cleaner and easier integration; already has established solutions for even advanced predicates such as log-counter, socket availability or systemd state.
-- Fits well with the existing Kubernetes patterns for condition reporting.
-- Avoids complexity and risk in Kubelet, while giving component owners flexibility to develop custom logic for retry / failure handling etc.
+- Leverages the existing Kubernetes patterns for condition reporting and avoids adding more complexity to the Kubelet.
+- By using the Kubelet Pod Readiness API, NPD avoids a dependency on the main API server for checking the status of critical DaemonSets, making the process more reliable.
+- Gives component owners flexibility to develop custom logic for probes, retries, and failure handling within NPD plugins.
 
 **Cons**
 
-- Primary drawback is the operational complexity, especially in managed-k8s environments where npd itself is managed as a daemonset rollout, and creates a chicken-and-egg problem, making it architecturally less suitable for NPD to be the gatekeeper in certain scenarios. Managing the rollout, configuration, and health of the NPD DaemonSet will need to be carefully planned to avoid disruptions.
-- Standalone NPD deployments need to configure longer initial-timeouts to account for kubelet readiness, consequentially causing increased latency for node readiness.
+- The primary drawback is the operational complexity of managing NPD itself, especially in managed Kubernetes environments where NPD is often deployed as a DaemonSet. This can create a chicken-and-egg problem in some scenarios, which must be managed by ensuring the NPD DaemonSet has the appropriate tolerations to run on an unready node.
 
 ### Handling Ready -> Not Ready Transitions
 
