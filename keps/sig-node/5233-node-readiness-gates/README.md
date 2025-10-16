@@ -248,7 +248,7 @@ This approach allows the core functionality to be tested and validated in an Alp
 
 While a dedicated API field like `spec.readinessGates` provides a clearer, declarative contract, the taint-based approach is a pragmatic first step for an Alpha release. It allows the community to gain experience with the readiness gates concept and the probing mechanisms with minimal initial impact on the core API.
 
-The limitations of the taint-based approach (e.g., the readiness contract is lost once the taint is removed) will inform the design and justification for a formal API field in a future Beta release. A dedicated field would provide a more robust and permanent declaration of a node's readiness requirements, which is beneficial for other components like the Cluster Autoscaler and for providing better visibility to users. However, starting without it allows for a more incremental and feedback-driven development process.
+The limitations of the taint-based approach (e.g., the readiness contract is lost once the taint is removed) will inform the design and justification for a formal API field in a future Beta release. A dedicated field would provide a more robust and permanent declaration of a node's readiness requirements. However, starting without it allows for a more incremental and feedback-driven development process.
 
 ### Readiness Taint Control
 
@@ -375,11 +375,9 @@ When there is a node reboot or kubelet restart, the node will get the persisted 
 
 ##### Integration tests
 
-* Test node registration with initial `readiness.k8s.io/` taints.
-* Test pod scheduling being blocked when readiness taints are present.
-* Test that the controller removes the readiness taint when the corresponding condition becomes `True`.
+* Test that the controller removes the readiness-taints when the corresponding condition becomes `True`.
 * Test that the controller adds the correct annotation after removing the taint.
-* Test that the controller does not re-add a taint after it has been removed.
+* Test that the controller does not re-add a readiness taint after it has been removed when the condition flaps.
 * Test existing scenarios with standard taints eg., `not-ready:NoExecute` for node timeout.
 
 ##### e2e tests
@@ -396,7 +394,7 @@ When there is a node reboot or kubelet restart, the node will get the persisted 
 * **Beta:**
     * Investigate the API definition if required..
     * e2e tests implemented and passing consistently.
-    * Scalability and performance testing performed.
+    * Scalability and performance testing performed to ensure taint removal latency meets acceptable SLO.
 
 * **GA:**
     *
@@ -531,7 +529,7 @@ It will slightly increase the time it takes for a new node to become fully sched
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-The new readiness gate controller in `kube-controller-manager` will have a small, fairly constant resource footprint. The node-local probing mechanisms may add a small amount of resource usage on each node, but this is expected to be negligible.
+The new readiness gate controller in `kube-controller-manager` will increase a resource footprint on the master nodes when enabled.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
