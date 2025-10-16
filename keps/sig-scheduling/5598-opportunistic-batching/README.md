@@ -724,9 +724,9 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
+We will add metrics to identify:
 - How often nominated nodes are found infeasible.
 - How often pods are "batched" vs not.
-- Pod throughput / latency
 - Reasons for pods to be "unbatchable" (pod affinity, pod spread, etc.)
 
 ###### How can an operator determine if the feature is in use by workloads?
@@ -751,10 +751,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [X] Events
-  - Event Reason: Batching disabled because some plugins do not support it.
-  - Event Reason: Counts of pods that are batched vs not.
-  - Event Reason: Counts of nominated nodes that are found infeasible.
+Operator can query metrics noting how many pods are batched or not. This will be a new metric added by this KEP.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -782,7 +779,7 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: Pod scheduling time
+- Metric name: `pod_scheduling_sli_duration_seconds`
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -791,6 +788,10 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+We will add new metrics to identify behavior. This includes:
+- Batched vs non-batched pods - Identify how often a pod can be batched vs not.
+- Counts of non-batching reasons - This can include plugin signatures, feasibility checks, etc.
 
 ### Dependencies
 
@@ -876,7 +877,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No, other than potentially adding a single configuration field to the scheduler config object.
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -951,8 +952,17 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-- If we have a bug in batching we could see higher pod latencies or nominated nodes that fail feasibility tests.
-- If we have a bug in batching we could see pods scheduling on incorrect nodes.
+- [Increased pod scheduling latencies]
+  - Detection: pod scheduling latencies rise.
+  - Mitigations: turn off the opportunistic batching feature.
+  - Diagnostics: look for batching failures (in metrics), look for batching related log messages.
+  - Testing: No, because it is inclear why specifically this would happen.
+
+- [Pods scheduled on incorrect nodes]
+  - Detection: pods on nodes where they should not exist (affinity rules, etc)
+  - Mitigations: turn off the opportunistic batching feature.
+  - Diagnostics: look for batching metrics, look for batching related log messages.
+  - Testing: yes, we will run tests to catch these kinds of issues before rolled out to production.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
