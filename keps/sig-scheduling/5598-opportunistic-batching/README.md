@@ -516,18 +516,14 @@ in back-to-back releases.
 - Deprecate the flag
 -->
 
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-- Initial signature implementations for all in-tree plugins (note that some, as described in the section, will always return unsignable if the pod is configured to use them).
-
 #### Beta
 
-- All functionality completed
+- Feature implemented behind a feature flag
+- Initial signature implementations for all in-tree plugins (note that some, as described in the section, will always return unsignable if the pod is configured to use them).
 - A first version of monitoring
 - Hand-done perf test runs
 - Integration tests
+- Initial e2e tests completed and enabled
 - Handle common 1-pod-per-node batches: host ports and resources
 
 #### GA
