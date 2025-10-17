@@ -107,6 +107,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Service Port](#service-port)
     - [Headlessness](#headlessness)
     - [Session Affinity](#session-affinity)
+    - [Internal Traffic Policy](#internal-traffic-policy)
+    - [Traffic Distribution](#traffic-distribution)
     - [Labels and Annotations](#labels-and-annotations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -586,6 +588,10 @@ type ServiceImportSpec struct {
   SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
   // +optional
   SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig"`
+  // +optional
+  InternalTrafficPolicy *corev1.ServiceInternalTrafficPolicy `json:"internalTrafficPolicy,omitempty"`
+  // +optional
+  TrafficDistribution *string `json:"trafficDistribution,omitempty"`
 }
 
 // ServicePort represents the port on which the service is exposed
@@ -1041,6 +1047,18 @@ policy.
 
 Session affinity affects a service as a whole for a given consumer. The derived
 service's session affinity will be decided according to the conflict resolution
+policy.
+
+#### Internal Traffic Policy
+
+Internal traffic policy affects a service as a whole for a given consumer. The derived
+service's internal traffic policy will be decided according to the conflict resolution
+policy.
+
+#### Traffic Distribution
+
+Traffic distribution affects a service as a whole for a given consumer. The derived
+service's traffic distribution will be decided according to the conflict resolution
 policy.
 
 #### Labels and Annotations
