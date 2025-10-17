@@ -203,7 +203,7 @@ know that this has succeeded?
 
 The primary goal of this KEP is to extend the PodDisruptionBudget (PDB) to handle applications where a single logical replica is composed of multiple pods. This will allow the Eviction API to account for grouping during voluntary disruptions.
 - Define availability for pod groups: allow application owners to define disruption budgets for multi-pod replicas rather than individual pods using a label.
-- Enhance the PDB API: introduce optional fields `replicaKey` and `replicaSizeKey` to the `PodDisruptionBudget` spec. `replicaKey` will specify a pod label key, and pods sharing the same value for this key will be treated as a single, atomic unit when calculating availability. `replicaSizeKey` will specify a key for the size of the group which the pod is a member of.
+- Enhance the PDB API: introduce optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey` to the `PodDisruptionBudget` spec. `replicaKey` will specify a pod label key, and pods sharing the same value for this key will be treated as a single, atomic unit when calculating availability. `replicaSizeKey` will specify a key for the size of the group which the pod is a member of. `replicaTotalKey` will be a key for the number of total desired replicas.
 - Update eviction logic: modify the Eviction API to use the `replicaKey` pod replicas for calculating availability.
 - Maintain Compatibility: ensure that standard cluster operations that respect PDBs, such as `kubectl drain` and node draining initiated by `cluster-autoscaler`, follow the group-based disruption budgets. Ensure all affected systems work as intended with pod groups (kube-scheduler, cluster autoscaler, custom schedulers).
 - Preserve existing functionality: for backward compatibility, PDBs that do not specify the new `replicaKey` field should not have any new behavior
@@ -467,6 +467,7 @@ A group is considered available only if all pods within that group are available
 - Currently, a PDB can see the `spec.replicas` field in `Deployment`, `StatefulSet`, or `ReplicaSet`. To include `LeaderWorkerSet` would require hard-coding it as another recognized kind (creating a dependency on an non-core extension), or more significant changes to allow any kind of object to be recognized.
 - We add field `replicaTotalKey` to provide the number of replicas. Unfortunately, in LWS, the `leaderworkerset.sigs.k8s.io/replicas` annotation is only in the leader pod's StatefulSet. To accomodate this, we would have to rely on the specific implementation details of LWS to extract the replicas count.
 - It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information. Once this is implemented, LWS will be compatible with `totalReplicasKey`. However, until this change is made, LWS is not able to support percentage-based PDBs.
+
 
 #### Other systems
 
