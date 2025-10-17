@@ -412,18 +412,6 @@ We will take the LeaderWorkerSet (LWS) as an example of this system. The LWS API
 
 It works by keeping all worker pods in the same lifecycle: they are created and scheduled in parallel, and if any workers fail the group is considered failing. In this context, LWS "replicas" are not additional pods, but additional leader+workers pod groups. The user may also specify the number of worker pods within each pod group (`leaderWorkerTemplate.size`). For unique identification, each worker has an index, and each replica of the group has an index.
 
-#### Pods without the `replicaKey` label
-
-If a PDB specifies a `replicaKey` but the `selector` matches pods that are missing this label, those pods will each be treated as normal replicas (equivalent to a group with size one).
-
-#### Group Health
-
-A group is considered available only if all pods within that group are available (e.g. `Running` and `Ready`). If any pod within a group is unavailable for before an eviction is attempted, the entire group is considered unavailable. An eviction request for a pod in a healthy group may be denied if other groups are unhealthy, even if the pods in the unhealthy groups are not eviction targets.
-
-#### Other systems
-While LWS is the primary use case and is given as the example in this KEP, this change is not exclusive to LWS and works with any other multi-pod replica systems which use labels.
-
-
 ### Risks and Mitigations
 
 <!--
@@ -439,7 +427,7 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 - This feature relies on the workload controller (which may be `LeaderWorkerSet` or some third-party custom controller) to correctly apply `replicaKey` labels. Bugs in the controller could cause mislabeled pods and incorrect eviction decisions, possibly violating availability requirements.
-- One failing pod in a large group will make the group unavailable, so a small number of simultaneously failing pods across groups could prevent evictions and block a node drain. This is intended behavior.
+- One failing pod in a large group will make the group unavailable, so a small number of simultaneously failing pods across groups could prevent evictions and block a node drain. This is intended behavior, but not necessarily obvious.
 
 ## Design Details
 
@@ -449,6 +437,31 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+#### Pods without the `replicaKey` label
+
+If a PDB specifies a `replicaKey`, but the `selector` matches a pod that is missing the label, the pod will be treated as an unhealthy replica with size 1, as this should only be the result of a pod which had been incorrectly labeled or somehow in a malformed group. Even if the pod is technically healthy, we mark it as unavailable so that the Eviction API does not percieve it as an additional available replica for the PDB budget, and proceed with an otherwise unsafe node drain. An empty value (e.g. `leaderworkerset.sigs.k8s.io/group-key: ""`), as it would likely be caused by an error, will be treated as unlabeled (i.e. unhealthy).
+
+#### Group Health
+
+A group is considered available only if all pods within that group are available (e.g. `Running` and `Ready`). If any pod within a group is unavailable for before an eviction is attempted, the entire group is considered unavailable. An eviction request for a pod in a healthy group may be denied if other groups are unhealthy, even if the pods in the unhealthy groups are not eviction targets.
+
+#### Missing pods from a group
+
+- If a pod is missing (not failing) from a group, we would not know that the group is unhealthy if there is no indication as to the desired replica size.
+- For this, we add `replicaSizeKey`, as the key whose value is the replica size. In LWS, `leaderworkerset.sigs.k8s.io/size` is set in all pods, and any group with an incorrect number of pods can be marked unhealthy.
+
+#### Total replicas
+
+- We will look at all selected pods at the time of checking for PDB availability, which is sufficient for an absolute number, e.g. `minAvailable=4` or `maxUnavailable=1`. For a percentage, e.g. `minAvailable=80%`, we would need to know the total number of replicas desired.
+- Currently, a PDB can see the `spec.replicas` field in `Deployment`, `StatefulSet`, or `ReplicaSet`. To include `LeaderWorkerSet` would require hard-coding it as another recognized kind (creating a dependency on an non-core extension), or more significant changes to allow any kind of object to be recognized.
+- Alternatively, we could add field `totalReplicasKey`, which would provide the number of replicas. Unfortunately, in LWS, the `leaderworkerset.sigs.k8s.io/replicas` annotation is only in the leader pod's StatefulSet. We would have to rely on the specific implementation details of LWS to extract the replicas count.
+- It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information.
+
+#### Other systems
+
+While LWS is the primary use case and is given as the example in this KEP, this change is not exclusive to LWS and works with any other multi-pod replica systems which use labels.
+
 
 ### Test Plan
 
