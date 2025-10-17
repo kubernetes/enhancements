@@ -173,7 +173,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal is to allow them to treat multi-pod groups (e.g. LeaderWorkerSet replicas) as if they were pod replicas. We would add optional field `replicaKey` to the PDB spec, specifying a label which whose value would identify groups of pods that should be handled together. In the example of LWS, this is `leaderworkerset.sigs.k8s.io/group-key`, as all pods in a leader+workers group would share the same value for this label, and thus be identified as a single replica.
+Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal is to allow them to treat multi-pod groups (e.g. LeaderWorkerSet replicas) as if they were pod replicas. We would add optional fields `replicaKey` and `replicaSizeKey` to the PDB spec. `replicaKey` to specify a label which whose value would identify groups of pods that should be handled together (i.e. all pods with the same value are considered one replica). In the example of LWS, this is `leaderworkerset.sigs.k8s.io/group-key`, as each group has a unique value which is given to all pods in it. `replicaSizeKey` is needed to provide the size of a pod group, as it would otherwise be impossible to know there is a missing pod (e.g. there are 3 healthy pods, but the intended group size is 4, so the group should be marked unhealthy).
 
 ## Motivation
 
@@ -197,11 +197,10 @@ know that this has succeeded?
 
 The primary goal of this KEP is to extend the PodDisruptionBudget (PDB) to handle applications where a single logical replica is composed of multiple pods. This will allow the Eviction API to account for grouping during voluntary disruptions.
 - Define availability for pod groups: allow application owners to define disruption budgets for multi-pod replicas rather than individual pods using a label.
-- Enhance the PDB API: introduce optional field `replicaKey` to the `PodDisruptionBudget` spec. This field will specify a pod label key, and pods sharing the same value for this key will be treated as a single, atomic unit when calculating availability.
-- Update eviction logic: modify the Eviction API to use the `replicaKey` for calculating availability.
-- Maintain Compatibility: ensure that standard cluster operations that respect PDBs, such as `kubectl drain` and node draining initiated by the `cluster-autoscaler`, correctly adhere to the new group-based disruption budgets.
+- Enhance the PDB API: introduce optional fields `replicaKey` and `replicaSizeKey` to the `PodDisruptionBudget` spec. `replicaKey` will specify a pod label key, and pods sharing the same value for this key will be treated as a single, atomic unit when calculating availability. `replicaSizeKey` will specify a key for the size of the group which the pod is a member of.
+- Update eviction logic: modify the Eviction API to use the `replicaKey` pod replicas for calculating availability.
+- Maintain Compatibility: ensure that standard cluster operations that respect PDBs, such as `kubectl drain` and node draining initiated by `cluster-autoscaler`, follow the group-based disruption budgets. Ensure all affected systems work as intended with pod groups (kube-scheduler, cluster autoscaler, custom schedulers).
 - Preserve existing functionality: for backward compatibility, PDBs that do not specify the new `replicaKey` field should not have any new behavior
-- Ensure all affected systems work as intended with pod groups (kube-scheduler, cluster autoscaler, custom schedulers)
 
 ### Non-Goals
 
@@ -219,7 +218,7 @@ This change will only affect the Eviction API. The following are involuntary dis
 - Taint manager deleting NoExecute tainted pods
 
 This change will not affect the behavior of workload controllers for `Deployment`, `StatefulSet`, `LeaderWorkerSet`, etc.
-- The workload controller will be responsible for the `replicaKey` label on pods it manages. We will not create any system for pod labeling or validation of groups.
+- The workload controller will be responsible for the `replicaKey` label and all other labels and annotations on pods it manages. We will not create any system for pod labeling or validation of groups.
 - The lifecycle and recovery of a disrupted replica is the responsibility of the workload controller, we will only handle evictions.
 
 This change will not affect scheduling.
@@ -270,6 +269,7 @@ spec:
     matchLabels:
       leaderworkerset.sigs.k8s.io/name: my-training-job
   replicaKey: "leaderworkerset.sigs.k8s.io/group-key"
+  replicaSizeKey: "leaderworkerset.sigs.k8s.io/size"
 ```
 
 Upon node drain, the Eviction API will:
@@ -346,7 +346,7 @@ Assume there are 2 LWS replicas of 3 pods each, and 3 nodes which each host 2 po
 
 To protect at least one 3-pod replica in the current system, a user could try a PDB with `minAvailable: 3`. A node drain on node B would see that there will still be 4 pods remaining afterwards, and would evict replica 0 pod 2 and replica 1 pod 0 pods from node B, failing one pod in each replica. Technically the PDB was honored, but now both replicas have a failing pod and they both fail. 
 
-After the change, a PDB with `minAvailable: 1` and `replicaKey: "leaderworkerset.sigs.k8s.io/group-key"` would identify the LWS replicas, and determine that evicting the pods in node B would cause both replicas to fail. This violates the PDB, and the node drain would safely stop before eviction.
+After the change, a PDB with `minAvailable: 1` and `replicaKey` set would identify the LWS replicas, and determine that evicting the pods in node B would cause both replicas to fail. This violates the PDB, and the node drain would safely stop before eviction.
 
 ```mermaid
 graph TD
@@ -441,6 +441,9 @@ proposal will be implemented, this is the place to discuss them.
 #### Pods without the `replicaKey` label
 
 If a PDB specifies a `replicaKey`, but the `selector` matches a pod that is missing the label, the pod will be treated as an unhealthy replica with size 1, as this should only be the result of a pod which had been incorrectly labeled or somehow in a malformed group. Even if the pod is technically healthy, we mark it as unavailable so that the Eviction API does not percieve it as an additional available replica for the PDB budget, and proceed with an otherwise unsafe node drain. An empty value (e.g. `leaderworkerset.sigs.k8s.io/group-key: ""`), as it would likely be caused by an error, will be treated as unlabeled (i.e. unhealthy).
+
+#### Labels vs. Annotations
+LWS uses a label for the group id but an annotation for the group size. When provided with `replicaKey` and `replicaSizeKey`, we will check for both labels and annotations in case other implementations of multi-pod replicas use a different label/annotation setup. If both are set and not equal, we will default to marking the pod as unhealthy.
 
 #### Group Health
 
