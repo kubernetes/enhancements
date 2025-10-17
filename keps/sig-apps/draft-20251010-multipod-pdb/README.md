@@ -188,110 +188,6 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 The goal is to make PDBs usable for multi-pod replicas like a LWS, which has a leader and worker pods for use cases like distributed AI workloads. Currently, eviction or preemption of multiple pods may disturb pods across multiple LWS replicas, instead of the preferred outcome of evicting multiple pods from a single LWS replica. For workloads like a `LeaderWorkerSet`, the health of a replica depends on the simultaneous availability of all pods within its group.
 
-### Example
-
-```mermaid
-graph TD
-    %% Define Styles for Setup Diagram
-    classDef node_box fill:#ececff,stroke:#9696ff,stroke-width:2px,color:#1a1a1a
-    classDef pod_box fill:#fff,stroke:#ccc,color:#1a1a1a
-    classDef replica_label fill:none,stroke:none,font-weight:bold,color:#f0f0f0
-
-    subgraph "Physical Node Layout"
-        direction LR
-
-        subgraph NodeA ["Node A"]
-            R0P0("Replica 0<br/>Pod 0")
-            R0P1("Replica 0<br/>Pod 1")
-        end
-        class NodeA node_box
-
-        subgraph NodeB ["Node B"]
-            R0P2("Replica 0<br/>Pod 2")
-            R1P0("Replica 1<br/>Pod 0")
-        end
-        class NodeB node_box
-
-        subgraph NodeC ["Node C"]
-            R1P1("Replica 1<br/>Pod 1")
-            R1P2("Replica 1<br/>Pod 2")
-        end
-        class NodeC node_box
-
-        class R0P0,R0P1,R0P2,R1P0,R1P1,R1P2 pod_box
-    end
-    
-    %% Logical Groupings (shown with links)
-    subgraph LogicalGrouping ["Logical Replica Groups"]
-        direction TB
-        style LogicalGrouping fill:none,stroke:none
-        R0("Replica 0")
-        R1("Replica 1")
-        class R0,R1 replica_label
-    end
-    
-    R0 -.-> R0P0
-    R0 -.-> R0P1
-    R0 -.-> R0P2
-    
-    R1 -.-> R1P0
-    R1 -.-> R1P1
-    R1 -.-> R1P2
-
-    %% Style all links (0 to 5)
-    linkStyle 0,1,2,3,4,5 stroke:#888,stroke-dasharray: 5 5,stroke-width:2px
-```
-
-Assume you have 2 replicas of 3 pods each. There are 3 nodes (A, B, C) which can each host 2 pods: node A hosts replica 0 pods 0 and 1, node B host replica 0 pod 2 and replica 1 pod 0, and node C hosts replica 1 pods 1 and 2 (see diagram). You would like a PDB to protect at least one replica, and so put `minAvailable: 3` in the PDB spec. Currently, a node drain on node B would see that there will be 4 pods remaining and evicts all pods from node B, failing a pod in both replicas, and if any pod fails in a replica, the replica fails. Technically the PDB was honored, but the intent was to keep a replica running. With this KEP, the user would declare `minAvailable: 1` and `replicaKey: "leaderworkerset.sigs.k8s.io/group-key"` in the PDB. The drain would identify the LWS replicas and determine that evicting the pods in node C would cause both replicas to fail and violate the PDB, and would safely stop before eviction.
-
-```mermaid
-graph TD
-    %% Define Styles for Flowchart Diagram
-    classDef action fill:#e6f3ff,stroke:#66b3ff,stroke-width:2px,color:#111
-    classDef decision fill:#fff0e6,stroke:#ff9933,stroke-width:2px,color:#111
-    classDef pdb_spec fill:#ffccff,stroke:#cc00cc,stroke-width:2px,color:#111
-    classDef outcome_bad fill:#fff0f0,stroke:#ffaaaa,stroke-width:2px,color:#111
-    classDef outcome_good fill:#f0fff0,stroke:#aaffaa,stroke-width:2px,color:#111
-    classDef process fill:#f0f0f0,stroke:#ccc,color:#111
-
-    StartDrain("kubectl drain<br/>node-b initiated")
-    class StartDrain action
-
-    StartDrain --> PDB_Type{Which PDB is active?}
-
-    PDB_Type -- "Traditional PDB" --> PDB_Old(PDB Spec:<br/>minAvailable 3 pods)
-    class PDB_Old pdb_spec
-
-    PDB_Type -- "Multipod PDB (with KEP)" --> PDB_New(PDB Spec:<br/>minAvailable 1 replica,<br/>replicaKey: ...group-key)
-    class PDB_New pdb_spec
-
-    %% --- Traditional PDB Flow ---
-    PDB_Old --> CalcPods(Calculate<br/>available pods)
-    class CalcPods process
-
-    CalcPods --> CheckPods{Are remaining pods<br/>>= 3?}
-    class CheckPods decision
-
-    CheckPods -- "Yes (4 >= 3)" --> DrainSuccess("Drain Proceeds:<br/>Node B pods evicted")
-    class DrainSuccess action
-
-    DrainSuccess --> AppDown("Application State:<br/><b>Both replicas fail</b><br/>(Technically PDB honored,<br/>but intent violated)")
-    class AppDown outcome_bad
-
-    %% --- Multipod PDB Flow ---
-    PDB_New --> CalcReplicas(Calculate<br/>available replicas)
-    class CalcReplicas process
-
-    CalcReplicas --> CheckReplicas{Are remaining replicas<br/>>= 1?}
-    class CheckReplicas decision
-
-    CheckReplicas -- "No (0 >= 1)" --> DrainBlocked("Drain Blocked:<br/>Eviction prevented")
-    class DrainBlocked action
-
-    DrainBlocked --> AppHealthy("Application State:<br/><b>Both replicas healthy</b><br/>(PDB intent<br/>fully protected)")
-    class AppHealthy outcome_good
-```
-
 ### Goals
 
 <!--
@@ -328,6 +224,10 @@ This change will not affect the behavior of workload controllers for `Deployment
 
 This change will not affect scheduling.
 - It is out of scope to introduce any form of gang scheduling or pod affinity rules. We only handle eviction of already-scheduled pods.
+
+Partial replica failure
+- We will assume that the replica is a single unit and can be considered failing if any pod in it is failing. In this KEP there is not a plan for systems in which the replica may still be healthy even with some percentage of pods failing.
+
 
 ## Proposal
 
@@ -388,6 +288,115 @@ To perform node drains safely without an application owner, this user may rely o
 
 This allows safe maintenance without causing outages, as the drain will pause if it cannot evict certain pods. If this happens, the user may wait for the application to become healthier, or contact the application owner to resolve.
 
+#### Setup Example
+
+```mermaid
+graph TD
+    %% Define Styles for Setup Diagram
+    classDef node_box fill:#ececff,stroke:#9696ff,stroke-width:2px,color:#1a1a1a
+    classDef pod_box fill:#fff,stroke:#ccc,color:#1a1a1a
+    classDef replica_label fill:none,stroke:none,font-weight:bold,color:#f0f0f0
+
+    subgraph "Physical Node Setup"
+        direction LR
+
+        subgraph NodeA ["Node A"]
+            R0P0("Replica 0<br/>Pod 0")
+            R0P1("Replica 0<br/>Pod 1")
+        end
+        class NodeA node_box
+
+        subgraph NodeB ["Node B"]
+            R0P2("Replica 0<br/>Pod 2")
+            R1P0("Replica 1<br/>Pod 0")
+        end
+        class NodeB node_box
+
+        subgraph NodeC ["Node C"]
+            R1P1("Replica 1<br/>Pod 1")
+            R1P2("Replica 1<br/>Pod 2")
+        end
+        class NodeC node_box
+
+        class R0P0,R0P1,R0P2,R1P0,R1P1,R1P2 pod_box
+    end
+    
+    %% Logical Groupings (shown with links)
+    subgraph LogicalGrouping ["Logical Replica Groups"]
+        direction TB
+        style LogicalGrouping fill:none,stroke:none
+        R0("Replica 0")
+        R1("Replica 1")
+        class R0,R1 replica_label
+    end
+    
+    R0 -.-> R0P0
+    R0 -.-> R0P1
+    R0 -.-> R0P2
+    
+    R1 -.-> R1P0
+    R1 -.-> R1P1
+    R1 -.-> R1P2
+
+    %% Style all links (0 to 5)
+    linkStyle 0,1,2,3,4,5 stroke:#888,stroke-dasharray: 5 5,stroke-width:2px
+```
+
+Assume there are 2 LWS replicas of 3 pods each, and 3 nodes which each host 2 pods. As in the diagram, node A hosts replica 0 pods 0 and 1, node B host replica 0 pod 2 and replica 1 pod 0, and node C hosts replica 1 pods 1 and 2. 
+
+To protect at least one 3-pod replica in the current system, a user could try a PDB with `minAvailable: 3`. A node drain on node B would see that there will still be 4 pods remaining afterwards, and would evict replica 0 pod 2 and replica 1 pod 0 pods from node B, failing one pod in each replica. Technically the PDB was honored, but now both replicas have a failing pod and they both fail. 
+
+After the change, a PDB with `minAvailable: 1` and `replicaKey: "leaderworkerset.sigs.k8s.io/group-key"` would identify the LWS replicas, and determine that evicting the pods in node B would cause both replicas to fail. This violates the PDB, and the node drain would safely stop before eviction.
+
+```mermaid
+graph TD
+    %% Define Styles for Flowchart Diagram
+    classDef action fill:#e6f3ff,stroke:#66b3ff,stroke-width:2px,color:#111
+    classDef decision fill:#fff0e6,stroke:#ff9933,stroke-width:2px,color:#111
+    classDef pdb_spec fill:#ffccff,stroke:#cc00cc,stroke-width:2px,color:#111
+    classDef outcome_bad fill:#fff0f0,stroke:#ffaaaa,stroke-width:2px,color:#111
+    classDef outcome_good fill:#f0fff0,stroke:#aaffaa,stroke-width:2px,color:#111
+    classDef process fill:#f0f0f0,stroke:#ccc,color:#111
+
+    StartDrain("kubectl drain<br/>node-b initiated")
+    class StartDrain action
+
+    StartDrain --> PDB_Type{Which PDB is active?}
+
+    PDB_Type -- "Traditional PDB" --> PDB_Old(PDB Spec:<br/>minAvailable 3 pods)
+    class PDB_Old pdb_spec
+
+    PDB_Type -- "Multipod PDB (with KEP)" --> PDB_New(PDB Spec:<br/>minAvailable 1 replica,<br/>replicaKey: ...group-key)
+    class PDB_New pdb_spec
+
+    %% --- Traditional PDB Flow ---
+    PDB_Old --> CalcPods(Calculate<br/>available pods)
+    class CalcPods process
+
+    CalcPods --> CheckPods{Are remaining pods<br/>>= 3?}
+    class CheckPods decision
+
+    CheckPods -- "Yes (4 >= 3)" --> DrainSuccess("Drain Proceeds:<br/>Node B pods evicted")
+    class DrainSuccess action
+
+    DrainSuccess --> AppDown("Application State:<br/><b>Both replicas fail</b><br/>(Technically PDB honored,<br/>but intent violated)")
+    class AppDown outcome_bad
+
+    %% --- Multipod PDB Flow ---
+    PDB_New --> CalcReplicas(Calculate<br/>available replicas)
+    class CalcReplicas process
+
+    CalcReplicas --> CheckReplicas{Are remaining replicas<br/>>= 1?}
+    class CheckReplicas decision
+
+    CheckReplicas -- "No (0 >= 1)" --> DrainBlocked("Drain Blocked:<br/>Eviction prevented")
+    class DrainBlocked action
+
+    DrainBlocked --> AppHealthy("Application State:<br/><b>Both replicas healthy</b><br/>(PDB intent<br/>fully protected)")
+    class AppHealthy outcome_good
+```
+
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -411,7 +420,8 @@ If a PDB specifies a `replicaKey` but the `selector` matches pods that are missi
 
 A group is considered available only if all pods within that group are available (e.g. `Running` and `Ready`). If any pod within a group is unavailable for before an eviction is attempted, the entire group is considered unavailable. An eviction request for a pod in a healthy group may be denied if other groups are unhealthy, even if the pods in the unhealthy groups are not eviction targets.
 
-#### Labeling
+#### Other systems
+While LWS is the primary use case and is given as the example in this KEP, this change is not exclusive to LWS and works with any other multi-pod replica systems which use labels.
 
 
 ### Risks and Mitigations
