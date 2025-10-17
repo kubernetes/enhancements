@@ -159,7 +159,7 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 This KEP strives to enable node resource hot plugging by making the kubelet to watch and retrieve machine resource information from cAdvisor's cache as and when it changes, cAdvisor's cache is already updated periodically.
 The kubelet will fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
 Moreover, this KEP aims to refine the initialization and reinitialization processes of resource managers, including the memory manager and CPU manager, to ensure their adaptability to changes in node configurations.
-With this proposal it's also necessary to recalculate and update OOMScoreAdj and swap limit for the pods that had been existing before resize. But this carries a small overhead due to recalculation of swap and OOMScoreAdj.
+With this proposal it's also necessary to recalculate and update swap limit for the pods that had been existing before resize. But this carries a small overhead due to recalculation of swap.
 
 ### User Stories
 
@@ -204,7 +204,7 @@ detect the change in compute capacity, which can bring in further complications.
     - The formula to calculate OOMScoreAdjust is `1000 - (1000*containerMemReq)/memoryCapacity`
     - With change in memoryCapacity post up-scale, The existing OOMScoreAdjust may not be inline with the
       actual OOMScoreAdjust for existing pods.
-    - Its not recommended to update the OOMScoreAdjust of a running container as OOMScoreAdjust value is set for init process(pid 1) which is 
+    - It's not recommended to update the OOMScoreAdjust of a running container as OOMScoreAdjust value is set for init process(pid 1) which is 
       responsible for running all other container's processes.
     - When we update OOMScoreAdjust for a running container, its set for container init only, and possibly processes which will be started later and
       running won't get the OOMScoreAdjust new value.
