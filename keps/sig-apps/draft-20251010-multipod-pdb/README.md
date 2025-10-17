@@ -468,6 +468,15 @@ A group is considered available only if all pods within that group are available
 - We add field `replicaTotalKey` to provide the number of replicas. Unfortunately, in LWS, the `leaderworkerset.sigs.k8s.io/replicas` annotation is only in the leader pod's StatefulSet. To accomodate this, we would have to rely on the specific implementation details of LWS to extract the replicas count.
 - It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information. Once this is implemented, LWS will be compatible with `totalReplicasKey`. However, until this change is made, LWS is not able to support percentage-based PDBs.
 
+#### Required fields
+- To use multi-pod replicas, `replicaKey` must be specified.
+
+Log a warning if:
+- `replicaSizeKey` is not specified (we will then assume that missing pods are not an issue)
+
+Error if:
+- `replicaSizeKey` or `replicaTotalKey` are specified are without `replicaKey`
+- `replicaTotalKey` is not specified and a percentage-based PDB is used
 
 #### Other systems
 
