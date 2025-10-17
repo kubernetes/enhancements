@@ -173,7 +173,13 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal is to allow them to treat multi-pod groups (e.g. LeaderWorkerSet replicas) as if they were pod replicas. We would add optional fields `replicaKey` and `replicaSizeKey` to the PDB spec. `replicaKey` to specify a label which whose value would identify groups of pods that should be handled together (i.e. all pods with the same value are considered one replica). In the example of LWS, this is `leaderworkerset.sigs.k8s.io/group-key`, as each group has a unique value which is given to all pods in it. `replicaSizeKey` is needed to provide the size of a pod group, as it would otherwise be impossible to know there is a missing pod (e.g. there are 3 healthy pods, but the intended group size is 4, so the group should be marked unhealthy).
+Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal is to allow them to treat multi-pod groups (e.g. LeaderWorkerSet replicas) as if they were pod replicas. We would add optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey` to the PDB spec.
+
+`replicaKey` will specify a label which whose value would identify groups of pods that should be handled together (i.e. all pods with the same value are considered one replica). In the example of a LeaderWorkerSet (LWS), this is `leaderworkerset.sigs.k8s.io/group-key`, as each group has a unique value which is given to all pods in the group.
+
+`replicaSizeKey` is needed to provide the size of each pod group, as it would otherwise be impossible to know there is a missing pod. For example, if we see 3 healthy pods but the intended group size is 4, the group should be marked unhealthy.
+
+`replicaTotalKey` is needed to provide the total number of desired replicas, so that we know whether a percentage-based PDB is met. For example, we don't know if two healthy replicas are sufficient for a PDB of `minAvailable: 50%` unless we know that the total desired replicas is <=4.
 
 ## Motivation
 
@@ -459,8 +465,8 @@ A group is considered available only if all pods within that group are available
 
 - We will look at all selected pods at the time of checking for PDB availability, which is sufficient for an absolute number, e.g. `minAvailable=4` or `maxUnavailable=1`. For a percentage, e.g. `minAvailable=80%`, we would need to know the total number of replicas desired.
 - Currently, a PDB can see the `spec.replicas` field in `Deployment`, `StatefulSet`, or `ReplicaSet`. To include `LeaderWorkerSet` would require hard-coding it as another recognized kind (creating a dependency on an non-core extension), or more significant changes to allow any kind of object to be recognized.
-- Alternatively, we could add field `totalReplicasKey`, which would provide the number of replicas. Unfortunately, in LWS, the `leaderworkerset.sigs.k8s.io/replicas` annotation is only in the leader pod's StatefulSet. We would have to rely on the specific implementation details of LWS to extract the replicas count.
-- It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information. Once this is implemented, we can add `totalReplicasKey`. However, until this is added, we are not able to support percentage-based PDBs.
+- We add field `replicaTotalKey` to provide the number of replicas. Unfortunately, in LWS, the `leaderworkerset.sigs.k8s.io/replicas` annotation is only in the leader pod's StatefulSet. To accomodate this, we would have to rely on the specific implementation details of LWS to extract the replicas count.
+- It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information. Once this is implemented, LWS will be compatible with `totalReplicasKey`. However, until this change is made, LWS is not able to support percentage-based PDBs.
 
 #### Other systems
 
