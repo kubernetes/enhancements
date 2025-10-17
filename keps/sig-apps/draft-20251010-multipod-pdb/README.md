@@ -451,15 +451,16 @@ A group is considered available only if all pods within that group are available
 
 #### Missing pods from a group
 
-- If a pod is missing (not failing) from a group, we would not know that the group is unhealthy if there is no indication as to the desired replica size.
-- For this, we add `replicaSizeKey`, as the key whose value is the replica size. In LWS, `leaderworkerset.sigs.k8s.io/size` is set in all pods, and any group with an incorrect number of pods can be marked unhealthy.
+- If a pod is missing (not failing) from a group, we would not know that the group is unhealthy without having the desired replica size.
+- This is why `replicaSizeKey` is needed, and specifies the key whose value is the size of the replica which a pod belongs to. In LWS, `leaderworkerset.sigs.k8s.io/size` is set in all pods.
+- Any group with an incorrect number of pods can be marked unhealthy, as if it had a failing pod.
 
-#### Total replicas
+#### Percentage of total replicas
 
 - We will look at all selected pods at the time of checking for PDB availability, which is sufficient for an absolute number, e.g. `minAvailable=4` or `maxUnavailable=1`. For a percentage, e.g. `minAvailable=80%`, we would need to know the total number of replicas desired.
 - Currently, a PDB can see the `spec.replicas` field in `Deployment`, `StatefulSet`, or `ReplicaSet`. To include `LeaderWorkerSet` would require hard-coding it as another recognized kind (creating a dependency on an non-core extension), or more significant changes to allow any kind of object to be recognized.
 - Alternatively, we could add field `totalReplicasKey`, which would provide the number of replicas. Unfortunately, in LWS, the `leaderworkerset.sigs.k8s.io/replicas` annotation is only in the leader pod's StatefulSet. We would have to rely on the specific implementation details of LWS to extract the replicas count.
-- It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information.
+- It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information. Once this is implemented, we can add `totalReplicasKey`. However, until this is added, we are not able to support percentage-based PDBs.
 
 #### Other systems
 
