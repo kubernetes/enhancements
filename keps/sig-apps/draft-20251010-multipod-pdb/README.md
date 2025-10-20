@@ -254,13 +254,13 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-*Note: if the user is not using multi-pod replicas, their process will be unaffected.*
+*If the user is not using multi-pod replicas, their process will be unaffected.*
 
 #### Story 1: Distributed Workload
 
 An engineer is running distributed ML training jobs using a `LeaderWorkerSet`. Each replica consists of one leader and multiple worker pods that run concurrently. If any pod in a group is evicted, the group fails and must be restarted.
 
-To protect a long-running job from voluntary disruptions, such as node drain for an upgrade, the user must ensure that some number of training replicas remain available. If a disruption is required, it should evict an entire replica group, rather than pods across different replicas.
+To protect a long-running job from voluntary disruptions, such as node drain for an upgrade, the user must ensure that some number of training replicas remain available. A disruption should consider evicting pods belonging to different replicas to be disrupting each of those replicas.
 
 The user would create a PDB for `LeaderWorkerSet` pods with a `replicaKey`:
 
@@ -280,11 +280,11 @@ spec:
 
 Upon node drain, the Eviction API will:
 1.  Select all pods matching `leaderworkerset.sigs.k8s.io/name: my-training-job`.
-2.  Group these pods into replicas based on their value for label key `leaderworkerset.sigs.k8s.io/group-key`
+2.  Group these pods into replicas based on their value for label `leaderworkerset.sigs.k8s.io/group-key`
 3.  Determine the number of healthy replicas.
-4.  Evict only if the number of healthy replicas after eviction will be at least `minAvailable` (4). An entire group is considered disrupted if any of its pods are targeted for eviction.
-  
-This way, the job can continue running with sufficient replicas even during cluster maintenance.
+4.  Evict only if the number of healthy replicas after eviction will be at least `minAvailable` (4), where a group is considered disrupted if any of its pods are targeted for eviction.
+
+This way, the job can be protected to run with sufficient replicas during cluster maintenance.
 
 #### Story 2: Cluster Maintenance
 
