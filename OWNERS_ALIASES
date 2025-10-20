@@ -201,6 +201,7 @@ aliases:
     - jpbetz
     - soltysh
     - wojtek-t
+    - kannon92
   prod-readiness-approvers-emeritus:
     - ehashman
   provider-aws:
