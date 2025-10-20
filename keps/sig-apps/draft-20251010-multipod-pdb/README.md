@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Multipod PDB
+# KEP-NNNN: PDB for Multi-pod Replicas
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -173,13 +173,13 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-Currently a PodDisruptionBudget (PBD) uses individual pod replicas to count availability. This proposal is to allow them to treat multi-pod groups (e.g. LeaderWorkerSet replicas) as if they were pod replicas. We would add optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey` to the PDB spec.
+A PodDisruptionBudget (PBD) ensures availability of certain number pods during voluntary disruptions (node drains). This proposal would allow PDBs to treat a group of pods (e.g. [LeaderWorkerSet](https://github.com/kubernetes-sigs/lws) replicas) as if it were an individual pod, for the purposes of measuring availability. The primary change would be to the PDB spec with new optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey`. These fields will label keys for which we will read the value given in each pod.
 
-`replicaKey` will specify a label which whose value would identify groups of pods that should be handled together (i.e. all pods with the same value are considered one replica). In the example of a LeaderWorkerSet (LWS), this is `leaderworkerset.sigs.k8s.io/group-key`, as each group has a unique value which is given to all pods in the group.
+`replicaKey` will identify groups of pods that should be handled together. All pods with the same value for this label key are considered a single replica, and a disruption to any pod within the replica is a disruption to the replica. For a LeaderWorkerSet (LWS), each group has a unique ID which is given to all pods in the group as the value for label `leaderworkerset.sigs.k8s.io/group-key`.
 
-`replicaSizeKey` is needed to provide the size of each pod group, as it would otherwise be impossible to know there is a missing pod. For example, if we see 3 healthy pods but the intended group size is 4, the group should be marked unhealthy.
+`replicaSizeKey` is needed to provide the size of each pod group. Without this, we cannot detect a missing pod. For example, if we see 3 healthy pods but the intended group size is 4, the group should be marked unhealthy.
 
-`replicaTotalKey` is needed to provide the total number of desired replicas, so that we know whether a percentage-based PDB is met. For example, we don't know if two healthy replicas are sufficient for a PDB of `minAvailable: 50%` unless we know that the total desired replicas is <=4.
+`replicaTotalKey` is needed to provide the total number of desired replicas. Without this, we cannot detect a missing replica. For example, if we see 2 healthy replicas but the intended replica count is 5, we should consider a PDB with `minAvailable: 50%` or `maxUnavailable: 1` to be violated.
 
 ## Motivation
 
