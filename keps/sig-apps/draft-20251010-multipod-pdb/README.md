@@ -173,13 +173,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-A PodDisruptionBudget (PBD) ensures availability of certain number pods during voluntary disruptions (node drains). This proposal would allow PDBs to treat a group of pods (e.g. [LeaderWorkerSet](https://github.com/kubernetes-sigs/lws) replicas) as if it were an individual pod, for the purposes of measuring availability. The primary change would be to the PDB spec with new optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey`. These fields will label keys for which we will read the value given in each pod.
-
-`replicaKey` will identify groups of pods that should be handled together. All pods with the same value for this label key are considered a single replica, and a disruption to any pod within the replica is a disruption to the replica. For a LeaderWorkerSet (LWS), each group has a unique ID which is given to all pods in the group as the value for label `leaderworkerset.sigs.k8s.io/group-key`.
-
-`replicaSizeKey` is needed to provide the size of each pod group. Without this, we cannot detect a missing pod. For example, if we see 3 healthy pods but the intended group size is 4, the group should be marked unhealthy.
-
-`replicaTotalKey` is needed to provide the total number of desired replicas. Without this, we cannot detect a missing replica. For example, if we see 2 healthy replicas but the intended replica count is 5, we should consider a PDB with `minAvailable: 50%` or `maxUnavailable: 1` to be violated.
+A PodDisruptionBudget (PBD) ensures availability of certain number pods during voluntary disruptions (node drains). This proposal would allow PDBs to treat a group of pods (e.g. [LeaderWorkerSet](https://github.com/kubernetes-sigs/lws) replicas) as if it were an individual pod, for the purposes of measuring availability. We will add new optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey` to the PDB spec to pull information about the pod group replicas from pod labels.
 
 ## Motivation
 
@@ -223,15 +217,14 @@ This change will only affect the Eviction API. The following are involuntary dis
 - Taint manager deleting NoExecute tainted pods
 
 This change will not affect the behavior of workload controllers for `Deployment`, `StatefulSet`, `LeaderWorkerSet`, etc.
-- The workload controller will be responsible for the `replicaKey` label and all other labels and annotations on pods it manages. We will not create any system for pod labeling or validation of groups.
-- The lifecycle and recovery of a disrupted replica is the responsibility of the workload controller, we will only handle evictions.
+- The workload controller will be responsible for the labels and annotations on pods it manages. This change is not responsible for pod labeling or validation of groups.
+- The lifecycle and recovery of a disrupted replica is the responsibility of the workload controller, this will only handle evictions.
 
 This change will not affect scheduling.
-- It is out of scope to introduce any form of gang scheduling or pod affinity rules. We only handle eviction of already-scheduled pods.
+- It is out of scope to introduce any form of gang scheduling or pod affinity rules. This only handles eviction of already-scheduled pods.
 
 Partial replica failure
-- We will assume that the replica is a single unit and can be considered failing if any pod in it is failing. In this KEP there is not a plan for systems in which the replica may still be healthy even with some percentage of pods failing.
-
+- Each replica is treated as a single unit and will be considered failing if any pod in it is failing. There is not currently a plan for types of replicas which are considred healthy with some percentage of pods failing.
 
 ## Proposal
 
@@ -243,6 +236,14 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
+
+The primary change would be to the PDB spec with new optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey`. These fields will label keys for which we will read the value given in each pod.
+
+`replicaKey` will identify groups of pods that should be handled together. All pods with the same value for this label key are considered a single replica, and a disruption to any pod within the replica is a disruption to the replica. For a LeaderWorkerSet (LWS), each group has a unique ID which is given to all pods in the group as the value for label `leaderworkerset.sigs.k8s.io/group-key`.
+
+`replicaSizeKey` is needed to provide the size of each pod group. Without this, we cannot detect a missing pod. For example, if we see 3 healthy pods but the intended group size is 4, the group should be marked unhealthy.
+
+`replicaTotalKey` is needed to provide the total number of desired replicas. Without this, we cannot detect a missing replica. For example, if we see 2 healthy replicas but the intended replica count is 5, we should consider a PDB with `minAvailable: 50%` or `maxUnavailable: 1` to be violated.
 
 ### User Stories (Optional)
 
