@@ -457,26 +457,25 @@ A group is considered available only if all pods within that group are available
 
 #### Missing pods from a group
 
-- If a pod is missing (not failing) from a group, we would not know that the group is unhealthy without having the desired replica size.
-- This is why `replicaSizeKey` is needed, and specifies the key whose value is the size of the replica which a pod belongs to. In LWS, `leaderworkerset.sigs.k8s.io/size` is set in all pods.
-- Any group with an incorrect number of pods can be marked unhealthy, as if it had a failing pod.
+If a pod is missing (not failing) from a group, we would not know that the group is unhealthy without having the desired replica size. This is why `replicaSizeKey` is needed, and specifies the key whose value is the size of the replica which a pod belongs to. In LWS, `leaderworkerset.sigs.k8s.io/size` is set in all pods. Any group with an incorrect number of pods can be marked unhealthy, as if it had a failing pod.
 
 #### Percentage of total replicas
 
-- We will look at all selected pods at the time of checking for PDB availability, which is sufficient for an absolute number, e.g. `minAvailable=4` or `maxUnavailable=1`. For a percentage, e.g. `minAvailable=80%`, we would need to know the total number of replicas desired.
-- Currently, a PDB can see the `spec.replicas` field in `Deployment`, `StatefulSet`, or `ReplicaSet`. To include `LeaderWorkerSet` would require hard-coding it as another recognized kind (creating a dependency on an non-core extension), or more significant changes to allow any kind of object to be recognized.
-- We add field `replicaTotalKey` to provide the number of replicas. Unfortunately, in LWS, the `leaderworkerset.sigs.k8s.io/replicas` annotation is only in the leader pod's StatefulSet. To accomodate this, we would have to rely on the specific implementation details of LWS to extract the replicas count.
-- It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information. Once this is implemented, LWS will be compatible with `totalReplicasKey`. However, until this change is made, LWS is not able to support percentage-based PDBs.
+If we only look at all selected pods to check for PDB availability, it is sufficient for an absolute number of availability, e.g. `minAvailable=4`. However, without knowing the total number of replicas desired, there could be pods missing (making them "unavailable" but not detected). This means we wouldn't know when a percentage (e.g. `minAvailable=80%`) or any `maxUnavailable` is violated.
+
+To look at total replicas desired, a PDB can see the `spec.replicas` field in `Deployment`, `StatefulSet`, or `ReplicaSet`. `LeaderWorkerSet` has this field, but we don't want to hard-code it as another recognized kind (creating a dependency on an non-core extension). It may be possible to allow any arbitrary object with a `spec.replicas` field to be recognized, currently investigating how difficult this is. 
+
+The alternative is to add field `replicaTotalKey` where each pod would have a label/annotation providing the expected number of replicas. In LWS the `leaderworkerset.sigs.k8s.io/replicas` annotation is unfortunately only in the leader pod's `StatefulSet`, and adding a process to extract the replicas count from this would rely on the specific implementation details of LWS. It would be preferred to get LWS to include the replicas annotation on all pods, allowing it to be read like the other information. Once this is implemented, LWS would be compatible with `totalReplicasKey`. However, until this change is made, LWS would be unable to support percentage-based PDBs or `maxUnavailable`.
 
 #### Required fields
-- To use multi-pod replicas, `replicaKey` must be specified.
+To use multi-pod replicas, `replicaKey` must be specified.
 
 Log a warning if:
 - `replicaSizeKey` is not specified (we will then assume that missing pods are not an issue)
+- `replicaTotalKey` is not specified and a percentage-based PDB or `maxUnavailable` is used
 
 Error if:
 - `replicaSizeKey` or `replicaTotalKey` are specified are without `replicaKey`
-- `replicaTotalKey` is not specified and a percentage-based PDB is used
 
 #### Other systems
 
