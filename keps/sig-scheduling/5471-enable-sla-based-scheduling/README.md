@@ -18,7 +18,6 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Scheduler Performance Regression](#scheduler-performance-regression)
-    - [Edge Cases in Numeric Parsing](#edge-cases-in-numeric-parsing)
     - [Taint Misconfiguration Detection](#taint-misconfiguration-detection)
     - [Controller Hot-Loop When Feature Gate is Disabled](#controller-hot-loop-when-feature-gate-is-disabled)
     - [Cross-SIG Impact](#cross-sig-impact)
@@ -69,7 +68,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -405,7 +404,7 @@ spec:
 
 - **Non-Numeric Taint Values**: When a pod toleration uses `Lt` or `Gt` operators, it only matches taints with numeric values. If a node has a taint with a non-numeric value, the toleration will not match, and the pod cannot schedule on that node.
   
-  **Example**: 
+  **Example**:
   - Node taint: `node.kubernetes.io/sla=high:NoSchedule`
   - Pod toleration: `{key: "node.kubernetes.io/sla", operator: "Gt", value: "900"}`
   - **Result**: Toleration does not match and pod cannot schedule on this node
@@ -431,20 +430,6 @@ spec:
 - Existing `Equal`/`Exists` operators execute identical code paths with no additional overhead.
 - Consider caching parsed values in scheduler data structures if performance issues arise
 - Feature gate allows disabling if performance problems occur
-
-#### Edge Cases in Numeric Parsing
-
-**Risk**: Unexpected behavior with edge cases like integer overflow, leading zeros, or malformed input could cause scheduling failures. Leading zeros in values (e.g., `"0950"`) could create user confusion about whether values are treated as strings or numbers.
-
-**Mitigation**:
-
-- Use Go's standard `strconv.ParseInt()` with well-defined error handling
-- Comprehensive unit tests covering edge cases (overflow, underflow, malformed strings, leading zeros)
-- API validation rejects pods with unparseable values rather than silently failing
-- **API validation explicitly rejects values with leading zeros** when using numeric operators to eliminate confusion
-- Clear error messages help users identify and fix configuration issues
-- Documentation clearly states that leading zeros are not permitted for numeric operators
-- **Performance validation via scheduler-perf tests** to ensure no measurable scheduling latency degradation from integer parsing overhead
 
 #### Taint Misconfiguration Detection
 
@@ -558,12 +543,6 @@ func validateTolerations(tolerations []core.Toleration, fldPath *field.Path) fie
                     toleration.Value, "value must be a valid integer for numeric operators"))
                 continue
             }
-            
-            // Reject values with leading zeros to prevent confusion
-            if len(toleration.Value) > 1 && toleration.Value[0] == '0' && toleration.Value != "0" {
-                allErrors = append(allErrors, field.Invalid(idxPath.Child("value"),
-                    toleration.Value, "leading zeros are not allowed in numeric values (use '950' instead of '0950')"))
-            }
         }
     }
     return allErrors
@@ -625,7 +604,7 @@ N/A
 
 ##### Unit tests
 
-All core changes must be covered by unit tests, in both Taint API, validation, and scheduler sides. Tests must specifically cover leading zeros behavior (e.g., `"0950"` vs `"950"`):
+All core changes must be covered by unit tests, in both Taint API, validation, and scheduler sides.
 
 - `staging/src/k8s.io/api/core/v1/toleration_test.go`: Sep-16-2025 - 66.7%
 - `staging/src/k8s.io/component-helpers/scheduling/corev1/helpers_test.go`: Sep-16-2025 - 100%
@@ -649,7 +628,7 @@ Update the following integration tests to include new operators:
    - Dynamic taint addition/removal
    - Pod rescheduling after taint changes
    - Integration with NodeAffinity
-   - Feature gate on/off 
+   - Feature gate on/off
 
 ##### e2e tests
 
@@ -682,9 +661,11 @@ The existing e2e tests will be extended to cover the new taints cases introduced
 ### Upgrade / Downgrade Strategy
 
 #### Upgrade
+
   Enable the feature gate in kube-apiserver first then kube-scheduler. This ensures the API server can accept and validate pods with the new operators before the kube-scheduler tries to process them.
 
 #### Downgrade
+
   Disable the feature gate in in kube-scheduler then kube-apiserver. Since we want to stop the kube-scheduler from processing the new operators first, then stop the API server from accepting new pods with those operators. This prevents the scheduler from trying to handle features the API server would reject.
   
 **What happens when the scheduler doesn't recognize Gt/Lt operators:**
@@ -695,7 +676,7 @@ When the feature gate is disabled and the scheduler encounters a pod with `Gt`/`
 - Pod is considered to have untolerated taints
 - Filter returns `UnschedulableAndUnresolvable` status
 - Pod remains in Pending state.
-   - Feature gate on/off test cases
+- Feature gate on/off test cases
 
 ### Version Skew Strategy
 
@@ -728,12 +709,12 @@ Impact on existing pods with Gt/Lt operators when feature is disabled:
 
 1. **Already-running pods**: Continue running normally. The kubelet doesn't need to re-evaluate tolerations for running pods.
 
-2. **Unscheduled/pending pods**: 
+2. **Unscheduled/pending pods**:
    - Remain in the cluster but cannot be scheduled
    - The scheduler's TaintToleration plugin won't recognize Gt/Lt operators and will treat them as non-matching
    - These pods will remain in Pending state with events indicating untolerated taints
 
-3. **New pod creation**: 
+3. **New pod creation**:
    - API server validation will **reject** new pods with Gt/Lt operators
    - Error: `spec.tolerations[].operator: Unsupported value: "Gt": supported values: "Equal", "Exists"`
 
@@ -744,6 +725,7 @@ Impact on existing pods with Gt/Lt operators when feature is disabled:
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Extended toleration operators will be respected again:
+
 - Existing pods with Gt/Lt operators in etcd become valid and schedulable
 - New pods can be created with Gt/Lt operators
 - The scheduler will properly evaluate numeric comparisons
@@ -768,8 +750,9 @@ Tests have been added in the integration tests. See [Integration tests](#integra
 3. Workload controllers (Deployments, StatefulSets, etc.):
    - If the pod template uses Gt/Lt operators, the controller cannot create new pods
    - Rolling updates will fail
- 
+
   **Recommended rollback procedure to prevent hot loop**:
+
   1. Update identified workloads to use `Equal` or remove numeric tolerations
   2. Delete pending pods that use `Lt`/`Gt` operators
   3. Disable feature gate in kube-scheduler first, then kube-apiserver
@@ -901,6 +884,8 @@ N/A
 ## Implementation History
 
 - 2025-08-11: Initial KEP
+- 2025-10-15: KEP for alpha is merged
+- 2025-10-20: Update checklist and remove zero leading risk to match affinity behavior as agreed
 
 ## Drawbacks
 
@@ -908,60 +893,55 @@ N/A
 
 There are many different alternatives were considered:
 
-1. **New Dedicated SLA API Resource:**  Create `SLAPolicy` CRD
-   - **Pros:** Clean separation, rich policy definitions.
-   - **Cons:** New API surface, additional complexity, breaks unified taint/toleration model.
-2. **Custom Scheduler Plugin:** Use scheduling plugin with SLA-aware logic, [placement-policy-scheduler-plugins](https://github.com/Azure/placement-policy-scheduler-plugins)
-   - **Pros:** Full scheduling control, rich logic possible
-   - **Cons:**
-     - Out-of-tree scheduler plugin to maintain and manage
-     - Doesn't leverage existing taint/toleration infrastructure.
-3. **Node Labels + Enhanced NodeAffinity:** Use labels instead of taints, extend NodeAffinity matching.
-   - **Pros:** Leverages existing label system.
-   - **Cons:**
-     - No default push-back behavior
-     - No eviction semantics
-     - Labels aren't meant for operational constraints.
+  1. **New Dedicated SLA API Resource:**  Create `SLAPolicy` CRD
+     - **Pros:** Clean separation, rich policy definitions.
+     - **Cons:** New API surface, additional complexity, breaks unified taint/toleration model.
+  2. **Custom Scheduler Plugin:** Use scheduling plugin with SLA-aware logic, [placement-policy-scheduler-plugins](https://github.com/Azure/placement-policy-scheduler-plugins)
+     - **Pros:** Full scheduling control, rich logic possible
+     - **Cons:**
+       - Out-of-tree scheduler plugin to maintain and manage
+       - Doesn't leverage existing taint/toleration infrastructure.
+  3. **Node Labels + Enhanced NodeAffinity:** Use labels instead of taints, extend NodeAffinity matching.
+     - **Pros:** Leverages existing label system.
+     - **Cons:**
+       - No default push-back behavior
+       - No eviction semantics
+       - Labels aren't meant for operational constraints.
 
-4. **Add Separate `NumValue int64` Field:** Add a dedicated numeric field alongside the existing `Value string` field in Taint/Toleration structs.
-   - **Pros:**
-     - Eliminates parsing overhead and errors
-     - Type-safe integer handling
-     - No concerns about leading zeros or malformed values
-     - Better performance for numeric comparisons
-   - **Cons:**
-     - Not aesthetically pleasing API design with dual fields
-     - Users might set wrong field or both fields accidentally
-     - Complex validation logic for field combinations
-     - Memory/storage overhead for additional field
-     - API complexity and documentation burden
+  4. **Add Separate `NumValue int64` Field:** Add a dedicated numeric field alongside the existing `Value string` field in Taint/Toleration structs.
+     - **Pros:**
+       - Eliminates parsing overhead and errors
+       - Type-safe integer handling
+       - Better performance for numeric comparisons
+     - **Cons:**
+       - Not aesthetically pleasing API design with dual fields
+       - Users might set wrong field or both fields accidentally
+       - Complex validation logic for field combinations
+       - Memory/storage overhead for additional field
+       - API complexity and documentation burden
 
-5.**Use Existing `Equal` Operator with Numeric Values (No New Operators):**
-   
-   Instead of introducing `Lt`/`Gt`, use the existing `Equal` operator with numeric taint values. For example:
-   - Node: `node.kubernetes.io/sla=950:NoSchedule`
-   - Pod: `{key: "node.kubernetes.io/sla", operator: "Equal", value: "950"}`
-   
-   **Pros:**
-   - No API changes needed
-   
-   **Cons:**
-   - Pods must specify exact SLA values, not ranges. A pod cannot say "accept any node with SLA > 950"
-   - Multiple tolerations required: If nodes have varying SLA values (e.g., 950, 960, 970, 980, 990), pods need separate `Equal` tolerations for each value they're willing to accept:
-     ```yaml
-     tolerations:
-     - key: node.kubernetes.io/sla
-       operator: Equal
-       value: "950"
-     - key: node.kubernetes.io/sla
-       operator: Equal
-       value: "960"
-     - key: node.kubernetes.io/sla
-       operator: Equal
-       value: "970"
-     # ... and so on
-     ```
-   - Poor semantics for "best effort" workloads since you can't easily express "I'll take any spot/preemptible node regardless of SLA" without enumerating all possible low-SLA values
-   - Changes to node SLA classification schemes require updating all pod manifests
-   
+  5.**Use Existing `Equal` Operator with Numeric Values (No New Operators):** Instead of introducing `Lt`/`Gt`, use the existing `Equal` operator with numeric taint values. For example:
+      1. Node: `node.kubernetes.io/sla=950:NoSchedule`
+      2. Pod: `{key: "node.kubernetes.io/sla", operator: "Equal", value: "950"}`
+     - **Pros:**
+       - No API changes needed
+     - **Cons:**
+       - Pods must specify exact SLA values, not ranges. A pod cannot say "accept any node with SLA > 950"
+       - Multiple tolerations required: If nodes have varying SLA values (e.g., 950, 960, 970, 980, 990), pods need separate `Equal` tolerations for each value they're willing to accept:
+       ```yaml
+        tolerations:
+        - key: node.kubernetes.io/sla
+          operator: Equal
+          value: "950"
+        - key: node.kubernetes.io/sla
+          operator: Equal
+          value: "960"
+        - key: node.kubernetes.io/sla
+          operator: Equal
+          value: "970"
+          ...
+       ```
+       - Poor semantics for "best effort" workloads since you can't easily express "I'll take any spot/preemptible node regardless of SLA" without enumerating all possible low-SLA values
+       - Changes to node SLA classification schemes require updating all pod manifests
+
 ## Infrastructure Needed (Optional)
