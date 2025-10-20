@@ -201,12 +201,11 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-The primary goal of this KEP is to extend the PodDisruptionBudget (PDB) to handle applications where a single logical replica is composed of multiple pods. This will allow the Eviction API to account for grouping during voluntary disruptions.
-- Define availability for pod groups: allow application owners to define disruption budgets for multi-pod replicas rather than individual pods using a label.
-- Enhance the PDB API: introduce optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey` to the `PodDisruptionBudget` spec. `replicaKey` will specify a pod label key, and pods sharing the same value for this key will be treated as a single, atomic unit when calculating availability. `replicaSizeKey` will specify a key for the size of the group which the pod is a member of. `replicaTotalKey` will be a key for the number of total desired replicas.
+- Define availability for pod groups: allow application owners to define PDBs for multi-pod replicas rather than individual pods.
+- Enhance the PDB API: introduce optional fields `replicaKey`, `replicaSizeKey`, and `replicaTotalKey` to the `PodDisruptionBudget` spec. `replicaKey` will specify a pod label key, and pods sharing the same value for this key will be treated as a single, atomic unit when calculating availability. `replicaSizeKey` will provide the size of the group which a pod is a member of, and `replicaTotalKey` provide the number of total desired replicas.
 - Update eviction logic: modify the Eviction API to use the `replicaKey` pod replicas for calculating availability.
-- Maintain Compatibility: ensure that standard cluster operations that respect PDBs, such as `kubectl drain` and node draining initiated by `cluster-autoscaler`, follow the group-based disruption budgets. Ensure all affected systems work as intended with pod groups (kube-scheduler, cluster autoscaler, custom schedulers).
-- Preserve existing functionality: for backward compatibility, PDBs that do not specify the new `replicaKey` field should not have any new behavior
+- Maintain compatibility: ensure that common cluster operations that respect PDBs, such as `kubectl drain` and node drains initiated by `cluster-autoscaler`, follow the group-based disruption budgets. All affected systems work as expected with pod groups (kube-scheduler, cluster autoscaler, custom schedulers).
+- Preserve existing functionality: for backward compatibility, PDBs that do not specify the new `replicaKey` field should not have any new behavior.
 
 ### Non-Goals
 
