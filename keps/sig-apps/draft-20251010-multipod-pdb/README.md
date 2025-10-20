@@ -260,7 +260,7 @@ bogged down.
 
 An engineer is running distributed ML training jobs using a `LeaderWorkerSet`. Each replica consists of one leader and multiple worker pods that run concurrently. If any pod in a group is evicted, the group fails and must be restarted.
 
-To protect a long-running job from voluntary disruptions, such as node drain for an upgrade, the user must ensure that some number of training replicas remain available. A disruption should consider evicting pods belonging to different replicas to be disrupting each of those replicas.
+To protect a long-running job from voluntary disruptions, such as node drain for an upgrade, this user must ensure that some number of training replicas remain available. A disruption should consider evicting pods belonging to different replicas to be disrupting each of those replicas.
 
 The user would create a PDB for `LeaderWorkerSet` pods with a `replicaKey`:
 
@@ -288,11 +288,11 @@ This way, the job can be protected to run with sufficient replicas during cluste
 
 #### Story 2: Cluster Maintenance
 
-A cluster administrator will frequently drain nodes for upgrades, security patches, etc. The cluster may have various workloads, including `LeaderWorkerSet` with specific availability requirements.
+A cluster administrator frequently drains nodes for upgrades, security patches, etc. The cluster may have various workloads, including `LeaderWorkerSet` with specific availability requirements.
 
-To perform node drains safely without an application owner, this user may rely on the application owner's PDB as described in Story 1. The user may `kubectl drain <node>`, and the Eviction API will automatically identify multi-pod replicas and ensure that the drain does not violate the application's `minAvailable` requirement.
+To perform node drains safely without contacting the application owner every time, this user may rely on the application owner's PDB as described in Story 1. The user may `kubectl drain <node>`, and the Eviction API will automatically identify multi-pod replicas and ensure that the drain does not violate the application's `minAvailable`.
 
-This allows safe maintenance without causing outages, as the drain will pause if it cannot evict certain pods. If this happens, the user may wait for the application to become healthier, or contact the application owner to resolve.
+This allows safe maintenance without causing outages, as the drain will pause if it cannot evict certain pods. If this happens, this user may wait for the application to become healthier or higher capacity, or contact the application owner to resolve.
 
 #### Setup Example
 
@@ -348,9 +348,9 @@ graph TD
     linkStyle 0,1,2,3,4,5 stroke:#888,stroke-dasharray: 5 5,stroke-width:2px
 ```
 
-Assume there are 2 LWS replicas of 3 pods each, and 3 nodes which each host 2 pods. As in the diagram, node A hosts replica 0 pods 0 and 1, node B host replica 0 pod 2 and replica 1 pod 0, and node C hosts replica 1 pods 1 and 2. 
+Assume the following setup: there are 2 LWS replicas of 3 pods each, and 3 nodes which host 2 pods each. As in the diagram, node A hosts replica 0 pods 0 and 1, node B host replica 0 pod 2 and replica 1 pod 0, and node C hosts replica 1 pods 1 and 2.
 
-To protect at least one 3-pod replica in the current system, a user could try a PDB with `minAvailable: 3`. A node drain on node B would see that there will still be 4 pods remaining afterwards, and would evict replica 0 pod 2 and replica 1 pod 0 pods from node B, failing one pod in each replica. Technically the PDB was honored, but now both replicas have a failing pod and they both fail. 
+To protect at least one 3-pod replica in the current system, a user could try a PDB with `minAvailable: 3`. A node drain on node B would see that there will still be 4 pods remaining afterwards, and would evict replica 0 pod 2 and replica 1 pod 0 pods from node B, failing one pod in each replica. Technically the PDB was honored, but now both replicas have a failing pod and they both fail.
 
 After the change, a PDB with `minAvailable: 1` and `replicaKey` set would identify the LWS replicas, and determine that evicting the pods in node B would cause both replicas to fail. This violates the PDB, and the node drain would safely stop before eviction.
 
@@ -414,9 +414,9 @@ This might be a good place to talk about core concepts and how they relate.
 
 #### Background on multi-pod replicas (LWS)
 
-We will take the LeaderWorkerSet (LWS) as an example of this system. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and each "worker" pod and the number of pods in the group. This is useful in cases where a leader process coordinates multiple worker processes, such as AI/ML workloads for distributed model training and inference.
+In this KEP, the LeaderWorkerSet (LWS) is used as the primary example of a multi-pod replica system. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and each "worker" pod and the number of pods in the group (size). This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference.
 
-It works by keeping all worker pods in the same lifecycle: they are created and scheduled in parallel, and if any workers fail the group is considered failing. In this context, LWS "replicas" are not additional pods, but additional leader+workers pod groups. The user may also specify the number of worker pods within each pod group (`leaderWorkerTemplate.size`). For unique identification, each worker has an index, and each replica of the group has an index.
+All worker pods are treated the same: they are created from the same template, operated on in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify "replicas," which are not additional pods (group size), but additional leader+workers pod groups. For unique identification, each worker has an index, and each replica of the group has an index. The pods have various labels providing information as seen in the [docs](https://lws.sigs.k8s.io/docs/reference/labels-annotations-and-environment-variables/).
 
 ### Risks and Mitigations
 
