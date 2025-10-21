@@ -99,6 +99,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Code synchronization](#code-synchronization)
       - [Individual repo history](#individual-repo-history)
       - [Reproducible builds &amp; Dependencies Management](#reproducible-builds--dependencies-management)
+      - [Lease migration strategy](#lease-migration-strategy)
     - [Risks And Mitigations](#risks-and-mitigations)
     - [Development workflow](#development-workflow)
   - [MileStone](#milestone)
@@ -525,6 +526,44 @@ Process: We will provide clear documentation outlining the steps for integration
 Ownership: The original developers will retain full ownership and control of their sidecar project.
 
 
+##### Lease migration strategy
+
+The AIO sidecar replaces the individual controller leader-election Leases with a
+single consolidated Lease. For Alpha, switching between legacy sidecars and AIO
+requires a stop-before-start procedure: all legacy controller replicas for the
+driver must terminate before AIO controllers start, and vice versa on rollback.
+Overlapping rolling updates between these deployment modes are not supported.
+Operators must also update or suspend any operator, GitOps configuration, or
+autoscaler that could recreate the old deployment.
+
+The startup migration check in csi-lib-utils will work as follows:
+
+1. Acquire and renew the consolidated Lease before starting any controllers.
+2. Inspect the `migration.csi.k8s.io/status: completed` annotation on that Lease.
+   If present, skip the initial legacy Lease check. This is only a record of a
+   previous migration, not proof that legacy sidecars cannot be running.
+3. If the marker is absent, acquire and temporarily renew all legacy Leases for
+   the controllers being replaced. The migration instructions must identify their
+   actual names and namespaces, including any driver-specific overrides. Acquire
+   them through normal leader election; do not overwrite an active holder.
+4. Only after all required Leases are held, write the completion marker, release
+   the legacy Leases, and start the controllers while retaining the consolidated
+   Lease. No controller may start after only a partial acquisition.
+5. If acquisition or recording the marker fails, or the consolidated Lease is
+   lost, do not start controllers. Release any acquired migration Leases and exit
+   with an error. Log the affected Lease and distinguish an active holder from
+   API or RBAC errors so operators can correct the cause before retrying.
+
+Acquiring the old Leases is a startup guard, not fencing: once they are released,
+a legacy sidecar could acquire them again. The stop-before-start deployment
+procedure is therefore required even when the completion marker exists, and also
+for legacy sidecars with leader election disabled. Node-local sidecars such as
+node-driver-registrar do not use this Lease migration; their replacement must
+avoid overlapping old and new instances for the same driver on each node.
+See [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) for rollback and
+marker cleanup.
+
+
 #### Risks And Mitigations
 
 - Breaking Changes Amplification: Breaking changes in one component forces the single release to be a breaking change
@@ -566,7 +605,9 @@ Tasks:
 
 1. For {external-attacher, external-provisioner, ...} split the main function
 2. For {external-attacher, external-provisioner, ...} add per sidecar specific flags
-3. Introduce the concept of global flags in the AIO sidecar 
+3. Introduce the concept of global flags in the csi-lib-utils [already merged]
+  - https://github.com/kubernetes-csi/csi-lib-utils/pull/202
+4. Modify the individual sidecar entrypoint to reuse the global flags
 
 
 > **workflow2:**
@@ -692,7 +733,7 @@ A: No. While the code for the snapshot-controller will be in the monorepo, it wi
 
 Q: How will shared resources like leader election and Kubernetes API informers be handled?
 
-A: The single binary will use a shared leader election mechanism and a shared informer for Kubernetes resources. This is a key benefit of the proposal, as it improves performance and reduces resource consumption.
+A: The single binary will use a shared leader election mechanism. Shared informer caches are deferred to a separate KEP, as described in the [informer milestone](#informer-merged), and are not part of the Alpha scope.
 
 #### Development and Release Process
 
@@ -714,6 +755,11 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+- [x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+The testing strategy for the AIO MonoRepo is primarily based on inheriting and reusing the existing test suites from the individual CSI sidecar repositories. Since the AIO sidecar consolidates the same logic into a single binary, the correctness of each controller can be validated using the same tests that were used in their respective individual repositories.
 
 ##### Prerequisite testing updates
 
@@ -722,7 +768,8 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-
+- Ensure all existing unit tests in individual sidecar repositories (external-attacher, external-provisioner, external-resizer, external-snapshotter, livenessprobe, node-driver-registrar) pass before code synchronization into the MonoRepo.
+- Verify the existing e2e test suites for the [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) driver are stable and non-flaky.
 
 ##### Unit tests
 
@@ -745,6 +792,16 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
+Unit tests are inherited from each individual sidecar repository. Since the entrypoints of existing sidecars are refactored to expose public functions that can be invoked from the AIO binary, unit tests require modifications to:
+
+- Validate the new AIO command-line flag parsing (global flags and per-controller prefixed flags).
+- Test the controller selection logic (`--controllers=attacher,provisioner,...`).
+- Ensure each controller can be initialized and run independently within the unified binary.
+- Verify the leader election integration works correctly for the consolidated process.
+- Test Lease migration with and without the completion marker, partial acquisition, active legacy holders, API/RBAC errors, and marker write failures. Verify that no controllers start on failure and acquired migration Leases are released.
+- Verify that losing the consolidated Lease prevents startup or stops active controllers, and that clearing the marker on rollback causes the next migration to repeat the legacy Lease check.
+
+All existing unit tests from individual repositories will continue to run against their respective MonoRepo components to ensure no regressions are introduced during code synchronization.
 
 ##### Integration tests
 
@@ -756,6 +813,10 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+N/A: CSI sidecars are out-of-tree components without integration tests in
+`k8s.io/kubernetes/test/integration`, so testing will be covered by unit tests and
+the AIO hostpath e2e tests below, including cross-controller behavior and Lease
+handoff against a real API server.
 
 ##### e2e tests
 
@@ -768,6 +829,22 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
+
+E2E tests are based on the [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) driver's original e2e test suite, which is the standard CSI driver used for testing sidecar compatibility with Kubernetes releases.
+
+For Alpha, the following e2e tests will be validated:
+- All existing e2e tests from individual sidecar repositories pass when run against the AIO sidecar binary deployed with the hostpath CSI driver.
+- The AIO sidecar correctly performs volume provisioning, attaching, resizing, and snapshotting operations via the hostpath driver.
+- Node driver registration works correctly when the AIO sidecar is configured with `--controllers=node-driver-registrar`.
+- Liveness probe health checks function correctly for the consolidated binary.
+- Leader election and failover behavior is validated in a multi-replica deployment.
+- Exercise legacy -> AIO -> legacy -> AIO using the documented stop-before-start procedure, including marker cleanup on rollback. Verify storage operations recover after each switch, existing mounted volumes remain usable, and old and new controller processes do not overlap.
+- With no completion marker, keep a legacy Lease actively held and verify AIO does not start controllers. After stopping all legacy replicas, verify migration succeeds through normal Lease acquisition.
+- Verify that deployment automation leaves legacy replicas stopped while AIO is running, including after an AIO restart with an existing completion marker.
+
+The e2e test infrastructure will be set up using prow jobs and GitHub Actions to run the full hostpath driver e2e suite against the AIO sidecar on every PR.
+
+
 
 ### Graduation Criteria
 
@@ -818,7 +895,44 @@ The migration follows a phased approach:
 ### Upgrade / Downgrade Strategy
 
 
-The entire switchover is relatively simple, as it does not involve a gradual upgrade of the kubernetes controller plane components and data plane component, only the yaml and image of the csi components need to be upgraded, and the rollback is achieved directly through ```kubectl rollout```.
+Alpha targets Kubernetes v1.38 and is opt-in through CSI deployment manifests,
+not a Kubernetes feature gate. Keep the CSI driver version unchanged when testing
+the sidecar migration, and retain the previous images, arguments, and RBAC for
+rollback. No PV, PVC, VolumeAttachment, or snapshot objects need to be deleted.
+
+To migrate controller sidecars to AIO:
+
+1. Update or suspend deployment automation so it cannot restore legacy replicas.
+   Stop all legacy controller replicas for the driver and wait for their processes
+   to terminate. A force-deleted Pod on an unreachable node is not proof that its
+   processes have stopped; resolve or fence that node before proceeding.
+2. Deploy AIO with the equivalent controller selection, configuration, and RBAC,
+   including access to the consolidated and legacy Leases. Allow existing Leases
+   to expire and be acquired normally rather than deleting active locks.
+3. Verify the AIO leader is running and provisioning, attaching, resizing, and
+   snapshotting work for the enabled controllers. Keep legacy replicas stopped.
+
+To roll back:
+
+1. Prevent deployment automation from recreating AIO, stop all AIO replicas, and
+   confirm their processes have terminated before starting legacy controllers.
+2. Remove the `migration.csi.k8s.io/status` annotation from the consolidated Lease
+   while AIO is stopped. Do not delete an active Lease or storage API objects.
+3. Restore the saved legacy manifests and replicas, allowing them to acquire
+   their original Leases normally, and verify storage operations recover.
+
+Reenabling AIO follows the initial migration procedure, including the legacy
+Lease check because rollback cleared the marker. Changing the set of controllers
+being migrated also requires stopping AIO and clearing the marker before a new
+migration. A plain `kubectl rollout undo` with overlapping replicas is not a safe
+substitute for these steps.
+
+For node-local sidecars, replace the old instance before starting its AIO
+replacement on each node, retaining the driver's socket and registration paths.
+Avoid changing the CSI driver itself in the same operation. Controller switchover
+temporarily pauses storage reconciliation; existing mounted-volume I/O is expected
+to continue if the CSI driver and storage backend remain healthy. Workloads that
+need new volumes, attachments, or node-side setup can be delayed during migration.
 
 ### Version Skew Strategy
 
@@ -1094,6 +1208,8 @@ For each of them, fill in the following information by copying the below templat
 
 ## Implementation History
 
+- 2024-11-10: KEP created
+- Kubernetes v1.38: Targeted for Alpha
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
