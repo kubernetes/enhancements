@@ -381,6 +381,8 @@ variables can be set by a `ClusterProfile` object. Available options include:
 * `Ignore`: ignore any `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args` or `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs` extension; no additional CLI arguments or environment variables will be set.
 * `Allow`: accept `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args` and `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs` extensions; additional CLI arguments and environment variables may be set.
 
+By default the reserved extensions should be ignored.
+
 
 #### ClusterProfile Example
 
