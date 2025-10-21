@@ -470,31 +470,57 @@ proposal will be implemented, this is the place to discuss them.
 
 #### Eviction Logic Flow
 
-The core logic change is in the PDB eviction controller.
-1.  Get all pods matching the PDB's `selector`.
-2.  Partition this pod list into two sets:
-    - `individualPods`: Pods where `spec.workloadReference` is unset or `spec.workloadReference.Name` is empty.
-    - `groupedPods`: Pods where `spec.workloadReference.Name` is set.
-3.  If `groupedPods` is empty, proceed with the existing per-pod availability calculation on `individualPods`. The PDB's `minAvailable`/`maxUnavailable` are interpreted as pod counts.
-4.  If `groupedPods` is not empty:
-    - The controller will log a warning if `individualPods` is *also* not empty, as mixing pod types in one PDB is discouraged. The calculation will proceed based *only* on the `groupedPods`.
-    - The PDB's `minAvailable`/`maxUnavailable` are now interpreted as `PodGroup` replica counts.
-    - Group the `groupedPods` by their `(spec.workloadReference.Name, spec.workloadReference.PodGroup)` tuple.
-    - For each unique `(workload, podGroup)` tuple found:
-        - Fetch the `Workload` object.
-        - Find the matching `PodGroup` in its `spec.podGroups`.
-        - Read `totalReplicas = podGroup.replicas`.
-        - Read `minSizePerReplica = podGroup.policy.gang.minCount`.
-        - Identify all pods belonging to this `PodGroup` (across all its replicas).
-        - Group *these* pods by their `spec.workloadReference.PodGroupReplicaIndex`.
-        - Count the number of "available" replicas: A replica is "available" if its count of healthy, non-evicting pods is `>= minSizePerReplica`.
-    - The "total" for the PDB calculation is the sum of `totalReplicas` for all `PodGroup`s matched by the selector.
-    - The "available" count is the sum of "available" replicas across all matched `PodGroup`s.
-5.  Compare this "available" group count against the PDB's `minAvailable` or `maxUnavailable` to decide if an eviction is allowed.
+1. Get all pods matching the PDB's `selector`.
+2. If no pods have `spec.workloadReference.Name` set, follow with the existing per-pod availability behavior.
+3. The controller will log a warning if there are also non-workload pods, as mixing pod types in one PDB is discouraged. These individual pods will be ignored.
+4. Group the pods by `spec.workloadReference.Name` and `spec.workloadReference.PodGroup`.
+5. Fetch the relevant `PodGroup` information from `Workload` objects' `spec.podGroups`: `PodGroup.replicas` (total replicas) and `PodGroup.policy.gang.minCount` (pods in each replica).
+6. Count the number of available replicas: a replica is available if its count of existing, healthy, non-evicting pods `>= minCount`.
+7. Count the total desired replicas, the sum of `replicas` for all `PodGroup`s.
+8. Compare this available group count and total against the PDB's `minAvailable` or `maxUnavailable` to decide if an eviction is allowed.
+
+```mermaid
+graph TD
+    subgraph "Eviction Logic Flow"
+        direction TB
+        
+        Start(Eviction API Triggered<br/>for a PDB) --> GetPods[Get all pods matching<br/>PDB selector]
+        
+        GetPods --> CheckWorkload{Do any pods have<br/>spec.workloadReference set?}
+        
+        %% Branch 1: Legacy Path (No Workload Pods)
+        CheckWorkload -- "No" --> LegacyLogic[Use existing<br/>per-pod logic]
+        LegacyLogic --> CalcPods[Calculate availability<br/>based on <b>individual<br/>pod</b> counts]
+        CalcPods --> DecisionLegacy{Pods meet<br/>PDB spec?}
+        DecisionLegacy -- "Yes" --> Allow[✅ Allow Eviction]
+        DecisionLegacy -- "No" --> Deny[❌ Deny Eviction]
+
+        %% Branch 2: New Path (Workload-Aware Pods)
+        CheckWorkload -- "Yes" --> WarnMixed(Log warning if<br/>mixed pod types found.<br/>Individual pods<br/>will be ignored.)
+        WarnMixed --> GroupPods[Group pods by<br/>Workload and PodGroup]
+        GroupPods --> FetchGroupInfo[Fetch PodGroup info<br/>from Workloads:<br/>- Total replicas per group<br/>- minCount per group]
+        FetchGroupInfo --> CountAvailable[Count 'available' replicas:<br/>Existing, healthy,<br/>non-evicting pods<br/>must meet minCount]
+        CountAvailable --> SumTotalReplicas[Sum total desired<br/>replicas from all<br/>matched groups]
+        SumTotalReplicas --> DecisionNew{Compare available/total<br/>group counts<br/>against PDB spec}
+        DecisionNew -- "Yes" --> Allow
+        DecisionNew -- "No" --> Deny
+    end
+
+    %% Styling (with dark text color for readability)
+    classDef decision fill:#fff0e6,stroke:#ff9933,stroke-width:2px,color:#111
+    classDef process fill:#e6f3ff,stroke:#66b3ff,stroke-width:2px,color:#111
+    classDef startEnd fill:#f0fff0,stroke:#aaffaa,stroke-width:2px,color:#111
+    classDef error fill:#fff0f0,stroke:#ffaaaa,stroke-width:2px,color:#111
+    
+    class Start,Allow,Deny startEnd
+    class Deny error
+    class GetPods,LegacyLogic,CalcPods,WarnMixed,GroupPods,FetchGroupInfo,CountAvailable,SumTotalReplicas process
+    class CheckWorkload,DecisionLegacy,DecisionNew decision
+```
 
 #### Group Health
 
-A `PodGroup` replica is considered **available** if its number of healthy, non-evicting pods is greater than or equal to its `policy.gang.minCount`.
+A `PodGroup` replica is considered available if its number of healthy, non-evicting pods is greater than or equal to its `policy.gang.minCount`.
 
 This logic inherently handles missing pods: the availability calculation is based *only* on the count of *currently healthy* pods. For example, if a replica expects 10 pods (`minCount` is 8) but only 9 pods exist (1 is missing), the replica is still considered **available** as long as 8 or 9 of those existing pods are healthy. If 3 pods are missing and only 7 healthy pods exist, the replica is **unavailable** (since 7 < 8).
 
