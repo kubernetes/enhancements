@@ -72,6 +72,7 @@ SIG Architecture for cross-cutting KEPs).
     - [External credentials Provider plugin mechanism](#external-credentials-provider-plugin-mechanism)
   - [Standardizing the Provider definition](#standardizing-the-provider-definition)
     - [Cluster Data](#cluster-data)
+      - [The <code>Extensions</code> field](#the-extensions-field)
     - [ClusterProfile Example](#clusterprofile-example)
   - [Configuring plugins in the controller](#configuring-plugins-in-the-controller)
   - [Plugin Examples](#plugin-examples)
