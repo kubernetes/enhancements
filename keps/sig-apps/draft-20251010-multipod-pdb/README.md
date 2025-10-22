@@ -197,7 +197,7 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- **Introduce an opt-in for group-based PDBs:** Add a new boolean field `usePodGroups` to the `PodDisruptionBudget.spec`.
+- **Introduce a field to enable group-based PDBs:** Add a new boolean field `usePodGroups` to the `PodDisruptionBudget.spec`.
 - **Define availability for pod groups:** Allow application owners to define PDBs for multi-pod replicas (as defined by the `Workload` API) rather than individual pods.
 - **Update eviction logic:** When `usePodGroups: true` is set on a PDB, the eviction logic will use the `Workload` and `PodGroup` definitions (linked by `pod.spec.workload.name`) for grouping and calculate availability of groups.
 - **Maintain compatibility:** Ensure that common cluster operations that respect PDBs, such as `kubectl drain` and node drains initiated by `cluster-autoscaler`, follow group-based disruption budgets when enabled.
