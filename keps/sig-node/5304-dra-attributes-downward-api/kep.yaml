@@ -9,6 +9,7 @@ creation-date: 2025-10-02
 reviewers:
   - "@johnbelamaric"
   - "@mortent"
+  - "@SergeyKanzhelev"
 approvers:
   - "@klueska"
 
@@ -36,11 +37,9 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: DRAAttributesDownwardAPI
+  - name: NA
     components:
-      - kube-apiserver
-      - kube-controller-manager
-      - kubelet
+      -
 disable-supported: true
 
 # The following PRR answers are required at beta release
