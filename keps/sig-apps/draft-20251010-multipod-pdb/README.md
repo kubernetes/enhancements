@@ -412,9 +412,9 @@ This might be a good place to talk about core concepts and how they relate.
 -->
 
 #### Background on multi-pod replicas (LWS)
-In this KEP, the LeaderWorkerSet (LWS) is used as the primary example of a multi-pod replica system. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and each "worker" pod and the number of pods in the group (size). This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference.
+A LeaderWorkerSet (LWS) the primary example of a multi-pod replica. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and for the "worker" pods. This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference.
 
-All worker pods are treated the same: they are created from the same template, operated on in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify "replicas," which are not additional pods (group size), but additional leader+workers pod groups. For unique identification, each worker has an index, and each replica of the group has an index. The pods have various labels providing information as seen in the [docs](https://lws.sigs.k8s.io/docs/reference/labels-annotations-and-environment-variables/).
+All worker pods are treated the same: they are created from the same template, scheduled in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify `replicas` for the number of leader+workers groups and `size` for the number of pods per group.
 
 #### Background on the `Workload` API
 
@@ -514,46 +514,60 @@ If `true`:
 
 ```mermaid
 graph TD
-    subgraph "Eviction Logic Flow"
-        direction TB
-        
-        Start(Eviction API Triggered<br/>for a PDB) --> CheckFlag{pdb.spec.usePodGrouping<br/>== true?}
-        class CheckFlag decision
-        
-        %% Branch 1: Legacy Path (Flag False)
-        CheckFlag -- "No (default)" --> LegacyLogic[Use existing<br/>per-pod logic]
-        LegacyLogic --> CalcPods[Calculate availability<br/>based on <b>individual<br/>pod</b> counts]
-        CalcPods --> DecisionLegacy{Pods meet<br/>PDB spec?}
-        DecisionLegacy -- "Yes" --> Allow[✅ Allow Eviction]
-        DecisionLegacy -- "No" --> Deny[❌ Deny Eviction]
-
-        %% Branch 2: New Path (Flag True)
-        CheckFlag -- "Yes" --> GetPods[Get all pods matching<br/>PDB selector]
-        GetPods --> CheckWorkload{Do any pods have<br/>spec.workloadReference set?}
-        
-        CheckWorkload -- "No" --> WarnMismatched(Log Warning:<br/>'usePodGrouping' is true<br/>but no pods have<br/>workloadReference)
-        WarnMismatched --> LegacyLogic
-
-        CheckWorkload -- "Yes" --> WarnMixed(Log warning if<br/>mixed pod types found.<br/>Individual pods<br/>will be counted as 1)
-        WarnMixed --> GroupPods[Group pods by<br/>Workload and PodGroup]
-        GroupPods --> FetchGroupInfo[Fetch PodGroup info<br/>from Workloads:<br/>- Total replicas per group<br/>- minCount per group]
-        FetchGroupInfo --> CountAvailable[Count 'available' replicas:<br/>Existing, healthy,<br/>non-evicting pods<br/>must meet minCount]
-        CountAvailable --> SumTotalReplicas[Sum total desired<br/>replicas from all<br/>matched groups]
-        SumTotalReplicas --> DecisionNew{Compare available/total<br/>group counts<br/>against PDB spec}
-        DecisionNew -- "Yes" --> Allow
-        DecisionNew -- "No" --> Deny
-    end
-
-    %% Styling (with dark text color for readability)
+    %% Define Styles
     classDef decision fill:#fff0e6,stroke:#ff9933,stroke-width:2px,color:#111
     classDef process fill:#e6f3ff,stroke:#66b3ff,stroke-width:2px,color:#111
     classDef startEnd fill:#f0fff0,stroke:#aaffaa,stroke-width:2px,color:#111
     classDef error fill:#fff0f0,stroke:#ffaaaa,stroke-width:2px,color:#111
-    
+    classDef warning fill:#fff9e6,stroke:#ffd666,stroke-width:2px,color:#111
+
+    subgraph "Group-Aware Eviction Logic Flow"
+        direction TB
+        
+        Start(Eviction API Triggered<br/>for a PDB) --> CheckFlag{"usePodGrouping: true?"}
+        
+        %% Branch 1: Legacy Path (Flag False/Unset)
+        CheckFlag -- "No (default)" --> LegacyLogic[Use existing<br/>per-pod availability logic]
+        LegacyLogic --> DecisionLegacy{"Pods meet<br/>PDB spec?"}
+        DecisionLegacy -- "Yes" --> Allow[✅ Allow Eviction]
+        DecisionLegacy -- "No" --> Deny[❌ Deny Eviction]
+
+        %% Branch 2: New Path (Flag True)
+        CheckFlag -- "Yes" --> GetPods[1. Get all pods matching<br/>PDB selector]
+        
+        GetPods --> CheckWorkloadRefs{"2. Pods with<br/>workloadReference?"}
+        
+        %% Path 2a: No workloadReference (Misconfiguration)
+        CheckWorkloadRefs -- "None" --> WarnMisconfig[3. Log Warning:<br/>'usePodGrouping: true'<br/>but no pods have<br/>workloadReference]
+        WarnMisconfig --> LegacyLogic[Fall back to<br/>per-pod logic]
+
+        %% Path 2b: Mixed pod types
+        CheckWorkloadRefs -- "Some (Mixed)" --> WarnMixed[3. Log Warning:<br/>Mixed pod types found.<br/>Treat individual pods<br/>as their own group.]
+        WarnMixed --> FindWorkloads
+
+        %% Path 2c: All pods have workloadReference
+        CheckWorkloadRefs -- "All" --> FindWorkloads[4. Find Workload object<br/>for each pod]
+
+        %% Continue Group Logic Flow
+        FindWorkloads --> FindPodGroups[5. Find PodGroup in<br/>Workload for each pod]
+        FindPodGroups --> GetGroupInfo[6. Get PodGroup<br/>replicas & minCount]
+        
+        %% --- CORRECTED LINE ---
+        GetGroupInfo --> CountAvailable["7. Count available replicas<br/>(healthy pods >= minCount)"]
+        
+        CountAvailable --> SumTotal[8. Sum total desired replicas<br/>from all PodGroups]
+        SumTotal --> DecisionNew{"9. Compare available/total<br/>group counts<br/>against PDB spec"}
+        
+        DecisionNew -- "Yes" --> Allow
+        DecisionNew -- "No" --> Deny
+    end
+
+    %% Styling
     class Start,Allow,Deny startEnd
     class Deny error
-    class GetPods,LegacyLogic,CalcPods,WarnMixed,WarnMismatched,GroupPods,FetchGroupInfo,CountAvailable,SumTotalReplicas process
-    class CheckWorkload,DecisionLegacy,DecisionNew,CheckFlag decision
+    class WarnMisconfig,WarnMixed warning
+    class GetPods,LegacyLogic,DecisionLegacy,FindWorkloads,FindPodGroups,GetGroupInfo,CountAvailable,SumTotal process
+    class CheckWorkloadRefs,DecisionNew,CheckFlag decision
 ```
 
 #### Group Health
@@ -562,7 +576,7 @@ A `PodGroup` replica is considered available if its number of existing, healthy,
 For example, if a replica expects 10 pods with `minCount: 8` but only has 9 healthy pods (1 is missing or unhealthy), the replica is still considered **available**. If 3 pods are missing or unhealthy and only 7 healthy pods exist, the replica is **unavailable**. If any pod in an available group is targeted for eviction, it would be unhealthy post-eviction and is also counted as unavailable for the PDB calculation.
 
 
-### Pods without `workloadReference`
+### Pods missing fields
 
 If a PDB's `selector` matches a pod that is missing the `spec.workloadReference` field (or its `Name` is empty), it will be treated as an individual pod. If `usePodGrouping: true` is set, this will be logged as a warning. If the PDB matches *only* individual pods, this will be equivalent to the standard per-pod logic. If a selected pod has `spec.workload.name` but no `spec.workload.podGroup`, this is a misconfiguration and it will be treated as unhealthy.
 
@@ -1211,7 +1225,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-Initially there was a plan to integrate directly with multi-pod replica systems (LWS). This would add optional field `replicaKey` to the PDB spec, so the user may provide a label which would identify pods in the same group. For LWS, all pods in a leader+workers group will share the same value for label key `leaderworkerset.sigs.k8s.io/group-key`. This would also require keys to fetch the expected replica count (otherwise we could not detect a missing replica for `maxUnavailable` or a percentage `minAvailable`) and replica size (otherwise we could not detect a missing pod making a replica unhealthy). With the `Workload` API approved and implementaiton in progress, it is better to have both PDBs and LWS integrate with this new core component.
+Initially there was a plan to integrate directly with multi-pod replica systems (LWS). This would add optional field `replicaKey` to the PDB spec, so the user may provide a label which would identify pods in the same group. For LWS, all pods in a leader+workers group will share the same value for label key `leaderworkerset.sigs.k8s.io/group-key`. This would also require keys to fetch the expected replica count (otherwise we could not detect a missing replica for `maxUnavailable` or a percentage `minAvailable`) and replica size (otherwise we could not detect a missing pod making a replica unhealthy). This would also require some changes to make the LWS [labels/annotations](https://lws.sigs.k8s.io/docs/reference/labels-annotations-and-environment-variables/) more easily avaiable. With the `Workload` API approved and implementaiton in progress, it is better to have both PDBs and LWS integrate with this new core component.
 
 In the case given in the simplified example above, there may be a way to change the eviction logic to such that the order of pod eviction preserves replicas when possible (e.g. prioritize evicting pods from the replica with the most pods in the node). However, it is simpler to understand and easier ensure intended behavior by just extending the existing PDB budget pattern. It is also unclear if this would work fully when gang scheduling is not used or the number of pods is greater than `minCount`.
 
