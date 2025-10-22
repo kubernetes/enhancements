@@ -93,15 +93,34 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Framework Implementation](#framework-implementation)
+    - [Attributes JSON Generation (NodePrepareResources)](#attributes-json-generation-nodeprepareresources)
+    - [Cleanup (NodeUnprepareResources)](#cleanup-nodeunprepareresources)
+    - [Helper Functions](#helper-functions)
+  - [Driver Integration](#driver-integration)
+  - [Workload Consumption](#workload-consumption)
+  - [Usage Examples](#usage-examples)
+    - [Example 1: Physical GPU Passthrough (KubeVirt)](#example-1-physical-gpu-passthrough-kubevirt)
+    - [Example 2: vGPU with Mediated Device](#example-2-vgpu-with-mediated-device)
+  - [Feature Gate](#feature-gate)
+  - [Feature Maturity and Rollout](#feature-maturity-and-rollout)
+    - [Alpha (v1.35)](#alpha-v135)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha (v1.35)](#alpha-v135-1)
+    - [Alpha (v1.35)](#alpha-v135-2)
+    - [Beta](#beta-1)
+    - [GA](#ga-1)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -114,6 +133,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Alternative 1: Downward API with ResourceSliceAttributeSelector (Original Design)](#alternative-1-downward-api-with-resourcesliceattributeselector-original-design)
+  - [Alternative 2: DRA Driver Extends CDI with Attributes (Driver-Specific)](#alternative-2-dra-driver-extends-cdi-with-attributes-driver-specific)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -161,181 +182,402 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes a Downward API for Dynamic Resource Allocation (DRA) device attributes, implemented entirely in the kubelet. Workloads like KubeVirt need device identifiers (e.g., PCIe bus address for physical GPUs, mediated device UUID for virtual GPUs) to configure device access inside guests. While these identifiers exist in DRA objects (`ResourceClaim`, `ResourceSlice`), they are not currently consumable via the Pod's Downward API. This proposal adds a new Downward API selector (`resourceSliceAttributeRef`) for environment variables. The kubelet will run a local DRA attributes controller that watches `ResourceClaim` and `ResourceSlice` objects, caches resolved attributes per Pod resource claim/request, and resolves `resourceSliceAttributeRef` on demand.
+This KEP proposes exposing Dynamic Resource Allocation (DRA) device attributes to workloads via CDI (Container Device
+Interface) mounts. The DRA framework will provide helper functions enabling drivers to automatically generate per-claim
+attribute JSON files and mount them into containers via CDI. Workloads like KubeVirt can read device metadata like
+PCIe bus address, or mediated device UUID, from standardized file paths without requiring custom controllers or Downward
+API changes.
 
 ## Motivation
 
-Workloads that need to interact with DRA-allocated devices (like KubeVirt virtual machines) require access to device-specific identifiers such as PCIe bus addresses or mediated device UUIDs. In order to fetch the attributes from allocated device, users first have to go to ResourceClaimStatus, find the request and device name, and then look up the resource slice with device name to get the attribute value. Ecosystem project like KubeVirt must resort to custom controllers that watch these objects and inject attributes via annotations/labels or other custom mechanisms, often leading to fragile, error-prone and racy designs.
+Workloads that need to interact with DRA-allocated devices (like KubeVirt virtual machines) require access to device
+specific metadata such as PCIe bus addresses or mediated device UUIDs. Currently, to fetch attributes from allocated
+devices, users must:
+1. Go to `ResourceClaimStatus` to find the request and device name
+2. Look up the `ResourceSlice` with the device name to get attribute values
 
-The Kubernetes Downward API provides a standard mechanism for exposing Pod and container metadata to workloads. Extending this API to support DRA device attributes would enable workloads to discover device information without requiring additional custom controllers or privileged access to the Kubernetes API.
+This complexity forces ecosystem projects like KubeVirt to build custom controllers that watch these objects and inject
+attributes via annotations/labels, leading to fragile, error-prone, and racy designs.
 
 ### Goals
 
-- Provide a stable Downward API path for device attributes associated with `pod.spec.resourceClaims[*]` requests
-- Support device attributes from `ResourceSlice` that are requested by user in pod spec
-- Maintain compatibility with existing DRA drivers without requiring changes to driver interfaces
+- Provide a mechanism for workloads to discover DRA device metadata within workload pods.
+- Minimize complexity and avoid modifications to core components like scheduler and kubelet to maintain system
+  reliability and scalability
+- Provide an easy way for DRA device authors to make the attributes discoverable inside the pod.
+- Maintain full backward compatibility with existing DRA drivers and workloads
+- Define a versioned JSON schema to enable schema evolution without breaking consumers
 
 ### Non-Goals
 
-- Expose the entirety of `ResourceClaim`/`ResourceSlice` objects in the Downward API
-- Allow arbitrary JSONPath into external objects via Downward API
-- Change or extend DRA driver interfaces
-- Support dynamic updates to device attributes after Pod container startup (for env vars)
- - Propagate or snapshot attributes from `ResourceSlice` into `ResourceClaim` at allocation time (no scheduler involvement)
+- Expose the entirety of `ResourceClaim`/`ResourceSlice` objects
+- Support dynamic updates to attributes after container start
 
 ## Proposal
 
-This proposal introduces a new Downward API selector (`resourceSliceAttributeRef`) that allows Pods to reference DRA device attributes in environment variables. The kubelet will implement a local DRA attributes controller that:
+This proposal introduces **framework-managed attribute JSON generation and CDI mounting** in the DRA kubelet plugin
+framework (`k8s.io/dynamic-resource-allocation/kubeletplugin`). Drivers opt-in by setting the `AttributesJSON(true)`
+option when starting their plugin.
 
-1. Watches Pods scheduled to the node and identifies those with `pod.spec.resourceClaims`
-2. Watches `ResourceClaim` objects in the Pod's namespace to retrieve allocation information
-3. Watches `ResourceSlice` objects for the node and driver to resolve device attributes
-4. Maintains a per-Pod cache of `(claimName, requestName) -> {attribute: value}` mappings
-5. Resolves `resourceSliceAttributeRef` references when containers start
+When enabled, the framework automatically:
+1. Generates a JSON file per claim+request containing device attributes
+2. Creates a corresponding CDI spec that mounts the attributes file into containers
+3. Appends the CDI device ID to the NodePrepareResources response
+4. Cleans up files during NodeUnprepareResources
 
-Downward API references expose one attribute per reference. The kubelet resolves only the attribute explicitly referenced via `ResourceSliceAttributeSelector`.
+The workload reads device metadata from the standardized path: `/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json`
 
 ### User Stories (Optional)
 
 #### Story 1
 
-As a KubeVirt developer, I want the virt-launcher Pod to automatically discover the PCIe root address of an allocated physical GPU via environment variables, so that it can construct the libvirt domain XML to pass through the device to the virtual machine guest without requiring a custom controller.
+As a KubeVirt developer, I want the virt-launcher Pod to automatically discover the PCIe address of an allocated
+physical GPU by reading a JSON file at a known path, so that it can construct the libvirt domain XML to pass through the
+device to the virtual machine guest without requiring a custom controller.
 
 #### Story 2
 
-As a DRA driver author, I want my driver to remain unchanged while allowing applications to consume device attributes (like `resource.kubernetes.io/pcieRoot` or `dra.kubervirt.io/mdevUUID`) through the native Kubernetes Downward API.
+As a DRA driver author, I want to enable attribute exposure with a single configuration option (`AttributesJSON(true)`)
+and let the framework handle all file generation, CDI mounting, and cleanup, so I don't need to write custom logic for
+every driver.
+
+#### Story 3
+
+As a workload developer, I want to automatically discover device attributes inside the pod without parsing
+ResourceClaim/ResourceSlice objects or calling the Kubernetes API, so my application can remain simple and portable.
 
 ### Notes/Constraints/Caveats (Optional)
 
-- Environment variables are set at container start time: Once a container starts, its environment variables are immutable. If device attributes change after container start, env vars will not reflect the change.
-- Resolution timing: Attributes are resolved at container start time (not at allocation time). There is no scheduler-side copying of attributes into `ResourceClaim`.
-- ResourceSlice churn: Resolution uses the contents of the matching `ResourceSlice` at container start. If the `ResourceSlice` (or the requested attribute) is missing at that time, kubelet records an event and fails the pod start.
-- Attribute names: Any attribute name that exists in the ResourceSlice can be referenced. 
+- **File-based, not env vars**: Attributes are exposed as JSON files mounted via CDI, not environment variables. This
+  allows for complex structured data and dynamic attribute sets.
+- **Opt-in in Alpha**: Drivers must explicitly enable `AttributesJSON(true)` the framework doesn't enable iy by default.
+- **No API changes**: Zero modifications to Kubernetes API types. This is purely a framework/driver-side implementation.
+- **File lifecycle**: Files are created during NodePrepareResources and deleted during NodeUnprepareResources.
 
 ### Risks and Mitigations
 
-Risk: Exposing device attributes might leak sensitive information.
-Mitigation: Only one attribute is exposed per reference. The NodeAuthorizer ensures kubelet only accesses ResourceClaims and ResourceSlices for Pods scheduled to that node. Attributes originate from the DRA driver via `ResourceSlice`; cluster policy should ensure sensitive data is not recorded there.
+**Risk**: Exposing device attributes might leak sensitive information.
+**Mitigation**: Attributes originate from `ResourceSlice`, which is cluster-scoped. Drivers control which attributes are
+   published. NodeAuthorizer ensures kubelet only accesses resources for scheduled Pods. Files are created with 0644
+   permissions (readable but not writable by container).
 
-Risk: Kubelet performance impact from watching ResourceClaim and ResourceSlice objects.
-Mitigation: Use shared informers with proper indexing to minimize API server load. Scope watches to node-local resources only. Monitor cache memory usage and set reasonable limits.
+**Risk**: File system clutter from orphaned attribute files.
+**Mitigation**: Framework implements cleanup in NodeUnprepareResources. On driver restart, framework can perform
+   best-effort cleanup by globbing and removing stale files.
 
-Risk: API surface expansion could make the Downward API overly complex.
-Mitigation: Keep the API minimal and type-safe with a dedicated selector; no arbitrary JSONPath. Require feature gate enablement in alpha to gather feedback before expanding.
+**Risk**: CRI runtime compatibility (not all runtimes support CDI).
+**Mitigation**: Document CDI runtime requirements clearly. For Alpha, target containerd 1.7+ and CRI-O 1.23+ which have
+   stable CDI support. Fail gracefully if CDI is not supported.
 
-Risk: Compatibility with future DRA changes.
-Mitigation: Implementation is decoupled from DRA driver interfaces. Changes to DRA object structure are handled in the kubelet controller. Attribute names are standardized and versioned.
+**Risk**: JSON schema changes could break workloads.
+**Mitigation**: In Alpha, document that schema is subject to change. In Beta, the JSON schema could potentially be
+   standardized and versioned.
 
 ## Design Details
 
-### API Changes
+### Framework Implementation
 
-#### New Downward API Selector: ResourceSliceAttributeSelector
+#### Attributes JSON Generation (NodePrepareResources)
 
-A new typed selector is introduced in `core/v1` that can be used in both environment variable sources and projected downward API volume items:
+When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources and for each claim:
+
+1. **Collect metadata from two sources (two-tier approach)**:
+   - **Tier 1 (Best-effort)**: Lookup attributes from ResourceSlice cache. If the device is not found in the cache
+     (e.g., consumable capacity, partitionable devices), a well-known `NotFound` error is returned. The `bestEffortData`
+     field will be omitted from the JSON in this case.
+   - **Tier 2 (Driver-provided)**: Use attributes explicitly returned by the driver in NodePrepareResources response.
+     Required for runtime data (network status, dynamically allocated device info). If the driver does not provide
+     metadata, the `driverProvidedData` field will be omitted from the JSON.
+   - **Both sources empty**: If both Tier 1 and Tier 2 return no data, the DeviceMetadata file is still created with
+     the claim metadata (`apiVersion`, `kind`, `metadata`) and the `requests` array containing device entries with
+     neither `bestEffortData` nor `driverProvidedData` fields. This allows workloads to confirm the device was
+     allocated even when no attributes are available. This is not treated as an error.
+
+2. **Generate DeviceMetadata JSON**:
+   The `driverProvidedData` structure mirrors `AllocatedDeviceStatus` from
+   [KEP-4817](../4817-resource-claim-device-status/README.md), providing consistency with
+   `ResourceClaim.Status.Devices`.
+
+   ```json
+   {
+     "apiVersion": "dra.k8s.io/v1alpha1",
+     "kind": "DeviceMetadata",
+     "metadata": {
+       "name": "my-claim",
+       "namespace": "default",
+       "uid": "abc-123-def-456"
+     },
+     "requests": [
+       {
+         "name": "gpu-request",
+         "devices": [
+           {
+             "name": "gpu-0",
+             "driver": "nvidia.com",
+             "pool": "node-1-gpus",
+             "bestEffortData": {
+               "attributes": {
+                 "model": "A100",
+                 "memory": "80Gi",
+                 "vendor": "nvidia"
+               }
+             },
+             "driverProvidedData": {
+               "conditions": [
+                 {
+                   "type": "Ready",
+                   "status": "True",
+                   "lastTransitionTime": "2024-01-15T10:00:00Z"
+                 }
+               ],
+               "data": {
+                 "pciBusID": "0000:00:1e.0"
+               }
+             }
+           }
+         ]
+       },
+       {
+         "name": "network-request",
+         "devices": [
+           {
+             "name": "vf-3",
+             "driver": "cni.dra.networking.x-k8s.io",
+             "pool": "node-1-sriov",
+             "bestEffortData": {
+               "attributes": {
+                 "vendor": "mellanox",
+                 "model": "ConnectX-6"
+               }
+             },
+             "driverProvidedData": {
+               "conditions": [
+                 {
+                   "type": "Ready",
+                   "status": "True",
+                   "lastTransitionTime": "2024-01-15T10:00:00Z"
+                 }
+               ],
+               "data": {
+                 "pciAddress": "0000:00:01.3",
+                 "vfIndex": 3,
+                 "mtu": 9000
+               },
+               "networkData": {
+                 "interfaceName": "net1",
+                 "addresses": ["10.10.1.2/24", "fd00::2/64"],
+                 "hwAddress": "5a:9f:d8:84:fb:51"
+               }
+             }
+           }
+         ]
+       }
+     ]
+   }
+   ```
+3. **Write metadata file**: `{attributesDir}/{driverName}-{claimNamespace}-{claimName}.json`
+4. **Generate CDI spec**:
+   ```json
+   {
+     "cdiVersion": "0.3.0",
+     "kind": "{driverName}/metadata",
+     "devices": [
+       {
+         "name": "claim-{claimNamespace}-{claimName}-metadata",
+         "containerEdits": {
+           "env": [],
+           "mounts": [
+             {
+               "hostPath": "/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json",
+               "containerPath": "/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json",
+               "options": ["ro", "bind"]
+             }
+           ]
+         }
+       }
+     ]
+   }
+   ```
+
+5. **Write CDI spec**: `{cdiDir}/{driverName}-{claimNamespace}-{claimName}-metadata.json`
+6. **Append CDI device ID**: Adds `{driverName}/metadata=claim-{claimNamespace}-{claimName}-metadata` to the device's
+   `CdiDeviceIds` in the response
+
+#### Cleanup (NodeUnprepareResources)
+
+When `AttributesJSON` is enabled, the framework removes files for the unprepared claims
+
+#### Helper Functions
+
+The `resourceslice.Controller` gains a new method:
 
 ```go
-// ResourceSliceAttributeSelector selects a DRA-resolved device attribute for a given claim+request.
-// +featureGate=DRADownwardDeviceAttributes
-// +structType=atomic
-type ResourceSliceAttributeSelector struct {
-    // ClaimName must match pod.spec.resourceClaims[].name.
-    // +required
-    ClaimName string `json:"claimName"`
-    
-    // RequestName must match the corresponding ResourceClaim.spec.devices.requests[].name.
-    // +required
-    RequestName string `json:"requestName"`
-    
-    // Attribute specifies which device attribute to expose from the ResourceSlice.
-    // The attribute name must be present in the ResourceSlice's device attributes.
-    // +required
-    Attribute string `json:"attribute"`
-}
-
-// In core/v1 EnvVarSource:
-type EnvVarSource struct {
-    // ...existing fields...
-    
-    // ResourceSliceAttributeRef selects a DRA device attribute for a given claim+request.
-    // +featureGate=DRADownwardDeviceAttributes
-    // +optional
-    ResourceSliceAttributeRef *ResourceSliceAttributeSelector `json:"resourceSliceAttributeRef,omitempty"`
-}
-
-// (Projected volume support deferred to beta)
+// LookupDeviceAttributes returns device attributes (stringified) from the controller's
+// cached ResourceSlices, filtered by pool and device name.
+func (c *Controller) LookupDeviceAttributes(poolName, deviceName string) map[string]string
 ```
 
-Validation:
-- Enforce exactly one of `fieldRef`, `resourceFieldRef`, or `resourceSliceAttributeRef` in both env and volume items
-- Validate `claimName` and `requestName` against DNS label rules
-- No API-level enumeration of attribute names; kubelet resolves attributes that exist in the matching `ResourceSlice` at runtime
+### Driver Integration
 
+Drivers enable the feature by passing options to `kubeletplugin.Start()`:
 
-####
+```go
+plugin, err := kubeletplugin.Start(ctx, driverPlugin,
+    kubeletplugin.AttributesJSON(true),
+    kubeletplugin.CDIDirectoryPath("/var/run/cdi"),
+    kubeletplugin.AttributesDirectoryPath("/var/run/dra-device-attributes"),
+)
+```
 
-### Kubelet Implementation
+### Workload Consumption
 
-The kubelet runs a local DRA attributes controller that:
-
-1. Watches Pods: Identifies Pods on the node with `pod.spec.resourceClaims` and tracks their `pod.status.resourceClaimStatuses` to discover generated ResourceClaim names
-2. Watches ResourceClaims: For each relevant claim, reads `status.allocation.devices.results[*]` and maps entries by request name
-3. Watches ResourceSlices: Resolves standardized attributes from `spec.devices[*].attributes` for the matching device name
-4. Maintains Cache: Keeps a per-Pod map of `(claimName, requestName) -> {attribute: value}` with a readiness flag
-
-Resolution Semantics:
-- Prioritized List compatibility:
-  - Clients do not need to know the number of devices a priori. At container start, kubelet aggregates the attribute across all devices actually allocated for the request and joins the values with "," in allocation order. If any allocated device lacks the attribute, resolution fails and the pod start errors.
-- Cache entries are updated on claim/slice changes
-- For container environment variables, resolution happens at container start using the latest ready values
-- Attributes are not frozen at allocation time; scheduler and controllers are not involved in copying attributes
-
-- Failure on missing data: If the `ResourceSlice` is not found, or the attribute is absent on any allocated device at container start, kubelet records a warning event and returns an error to the sync loop. The pod start fails per standard semantics (e.g., `restartPolicy` governs restarts; Jobs will fail the pod).
-- Multi-device requests: Kubelet resolves the attribute across all allocated devices for the request, preserving allocation order, and joins values with a comma (",") into a single string. If any allocated device does not report the attribute, resolution fails (pod start error).
-
-Security & RBAC:
-- Node kubelet uses NodeAuthorizer to watch/read `ResourceClaim` and `ResourceSlice` objects related to Pods scheduled to the node
-- Scope access to only necessary fields
-- No cluster-wide escalation; all data flows through node-local caches
-
-### Usage Examples
-
-Environment Variable Example (Physical GPU Passthrough):
+Workloads read attributes from the mounted file:
 
 ```yaml
 apiVersion: v1
 kind: Pod
 metadata:
-  name: virt-launcher-gpu-passthrough
+  name: virt-launcher-gpu
 spec:
   resourceClaims:
-  - name: pgpu-claim
-    resourceClaimName: my-physical-gpu-claim
+  - name: my-gpu-claim
+    resourceClaimName: physical-gpu-claim
   containers:
-  - name: compute
-    image: virt-launcher:latest
-    env:
-    - name: PGPU_CLAIM_PCI_ROOT
-      valueFrom:
-        resourceSliceAttributeRef:
-          claimName: pgpu-claim
-          requestName: pgpu-request
-          attribute: resource.kubernetes.io/pcieRoot
-          # If multiple devices are allocated for this request, values are joined with "," in allocation order.
+  - name: virt-launcher
+    image: kubevirt/virt-launcher:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # Read metadata from mounted JSON
+        METADATA_FILE="/var/run/dra-device-attributes/"$(ls /var/run/dra-device-attributes/*.json | head -1)
+        # Prefer driverProvidedData.data, fall back to bestEffortData.attributes
+        PCI_ROOT=$(jq -r '.requests[0].devices[0].driverProvidedData.data.pcieRoot //
+                         .requests[0].devices[0].bestEffortData.attributes.pcieRoot' $METADATA_FILE)
+        echo "PCI Root: $PCI_ROOT"
+        # Use PCI_ROOT to configure libvirt domain XML...
 ```
 
- 
+**File Path Convention**: `/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json`
 
- 
+Workloads can easily discover their device metadata:
+- Use shell globbing: `ls /var/run/dra-device-attributes/*.json`
+- Match by known claim name in the filename
+- Parse the `metadata.name` field in the JSON to identify the claim
+
+### Usage Examples
+
+#### Example 1: Physical GPU Passthrough (KubeVirt)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vm-with-gpu
+spec:
+  resourceClaims:
+  - name: pgpu
+    resourceClaimName: physical-gpu-claim
+  containers:
+  - name: compute
+    image: kubevirt/virt-launcher:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        METADATA=$(cat /var/run/dra-device-attributes/gpu.example.com-default-pgpu-claim.json)
+        # Prefer driver-provided data, fall back to best-effort ResourceSlice data
+        PCI_ROOT=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.data.pcieRoot //
+                                           .requests[0].devices[0].bestEffortData.attributes.pcieRoot')
+        # Generate libvirt XML with PCI passthrough using $PCI_ROOT
+        echo "<hostdev mode='subsystem' type='pci'><source><address domain='$PCI_ROOT' .../></source></hostdev>"
+```
+
+#### Example 2: vGPU with Mediated Device
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vm-with-vgpu
+spec:
+  resourceClaims:
+  - name: vgpu
+    resourceClaimName: virtual-gpu-claim
+  containers:
+  - name: compute
+    image: kubevirt/virt-launcher:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        METADATA=$(cat /var/run/dra-device-attributes/vgpu.example.com-default-virtual-gpu-claim.json)
+        # mdevUUID is typically driver-provided (created at allocation time)
+        MDEV_UUID=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.data.mdevUUID //
+                                            .requests[0].devices[0].bestEffortData.attributes.mdevUUID')
+        # Use MDEV_UUID to configure mediated device passthrough
+        echo "<hostdev mode='subsystem' type='mdev'><source><address uuid='$MDEV_UUID'/></source></hostdev>"
+```
+
+#### Example 3: Network Device (SR-IOV / DPDK)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dpdk-app
+spec:
+  resourceClaims:
+  - name: sriov-nic
+    resourceClaimName: sriov-vf-claim
+  containers:
+  - name: dpdk
+    image: dpdk-app:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        METADATA=$(cat /var/run/dra-device-attributes/cni.dra.networking.x-k8s.io-default-sriov-vf-claim.json)
+        # Network data is always driver-provided (runtime data from KEP-4817)
+        PCI_ADDR=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.data.pciAddress')
+        IFACE=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.networkData.interfaceName')
+        MAC=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.networkData.hwAddress')
+        IP=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.networkData.addresses[0]')
+        echo "Binding DPDK to PCI $PCI_ADDR, interface $IFACE, MAC $MAC, IP $IP"
+        # Initialize DPDK with the discovered device info...
+```
 
 ### Feature Gate
 
-- Name: `DRADownwardDeviceAttributes`
-- Stage: Alpha (v1.35)
-- Components: kube-apiserver, kubelet, kube-scheduler
-- Enables: 
-  - New `resourceSliceAttributeRef` selector in env vars
-  - DRA attributes controller in kubelet
+<TODO>
+
+### Feature Maturity and Rollout
+
+#### Alpha (v1.35)
+
+- Opt-in only (drivers must explicitly enable `AttributesJSON(true)`)
+- Framework implementation in `k8s.io/dynamic-resource-allocation/kubeletplugin`
+- Helper functions for attribute lookup
+- Unit tests for JSON generation, CDI spec creation, file lifecycle
+- Integration tests with test driver
+- E2E test validating file mounting and content
+- Documentation for driver authors
+- **No feature gate**: This is a framework-level opt-in, not a Kubernetes API change
+
+#### Beta
+
+- Opt-out (drivers must explicitly disable `AttributesJSON(false)`, otherwise it will be enabled by default)
+- Standardize JSON schema with versioning (`"schemaVersion": "v1beta1"`)
+- Production-ready error handling and edge cases
+- Performance benchmarks for prepare latency
+- Documentation for workload developers
+- Real-world validation from KubeVirt and other consumers
+
+#### GA
+- Always enabled
+- At least one stable consumer (e.g., KubeVirt) using attributes in production
+- Schema versioning and backward compatibility guarantees
+- Comprehensive e2e coverage including failure scenarios
 
 ### Test Plan
 
@@ -343,7 +585,7 @@ spec:
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-##### Prerequisite testing updates
+#### Prerequisite testing updates
 
 No additional prerequisite testing updates are required. Existing DRA test infrastructure will be leveraged.
 
@@ -370,39 +612,45 @@ extending the production code to implement this enhancement.
 
 - `<package>`: `<date>` - `<test coverage>`
 
-##### Integration tests
+#### Integration tests
 
 Integration tests will cover:
 
-- Feature gate toggling: Verify API rejects `resourceSliceAttributeRef` when feature gate is disabled
-- End-to-end resolution: Create Pod with resourceClaims, verify env vars contain correct attribute values
-- Negative cases: Missing allocation, missing `ResourceSlice`, missing attribute on any allocated device — expect warning event and pod start failure
-- Multi-device semantics: Joining order and delimiter; mixed presence of attributes across allocated devices should cause failure
+- **End-to-end attribute exposure**: Create Pod with resourceClaims, verify attributes JSON is generated and mounted
+- **Multiple claims**: Pod with multiple resource claims, verify separate files for each claim+request
+- **Missing attributes**: ResourceSlice with no attributes, verify empty map is written
+- **Attribute types**: Test string, bool, int, version attributes are correctly stringified
+- **Cleanup**: Verify files are removed after unprepare
+- **Opt-in behavior**: Verify files are NOT created when `AttributesJSON(false)`
 
-Tests will be added to `test/integration/kubelet/` and `test/integration/dra/`.
+Tests will be added to `test/integration/dra/`.
 
-##### e2e tests
+#### e2e tests
 
 E2E tests will validate real-world scenarios:
 
-- KubeVirt-like workload: Pod with GPU claim consumes `resource.kubernetes.io/pcieRoot` via environment variable
-- Multi-claim Pod: Pod with multiple resource claims, each with different attributes
- 
-- Feature gate disabled: Verify graceful degradation when gate is off
-- Node failure scenarios: Test behavior when kubelet restarts or node is drained
+- **Metadata file mounted**: Pod can read `/var/run/dra-device-attributes/{driver}-{namespace}-{claimName}.json`
+- **Correct content**: Verify JSON contains expected apiVersion, kind, metadata, and device attributes
+- **Multi-device request**: Verify attributes from all allocated devices are included
+- **CDI integration**: Verify CRI runtime correctly processes CDI device ID and mounts file
+- **Cleanup on delete**: Delete Pod, verify attribute files are removed from host
 
-Tests will be added to `test/e2e/dra/` and `test/e2e_node/downwardapi_test.go`.
+Tests will be added to `test/e2e/dra/dra.go`.
 
 ### Graduation Criteria
 
 #### Alpha (v1.35)
 
-- Feature implemented behind `DRADownwardDeviceAttributes` feature gate
-- API types added: `resourceSliceAttributeRef` in `core/v1.EnvVarSource`
-- Kubelet DRA attributes controller implemented
-- Unit tests for validation, cache, and resolution logic
-- Initial integration and e2e tests completed
-- Documentation published for API usage
+#### Alpha (v1.35)
+
+- [ ] Framework implementation complete with opt-in via `AttributesJSON(true)`
+- [ ] Helper functions for attribute lookup implemented
+- [ ] Unit tests for core logic (JSON generation, CDI spec creation, file lifecycle)
+- [ ] Integration tests with test driver
+- [ ] E2E test validating file mounting and content
+- [ ] Documentation for driver authors published
+- [ ] Known limitations documented (no schema standardization yet)
+
 
 #### Beta
 
@@ -415,50 +663,36 @@ TBD
 ### Upgrade / Downgrade Strategy
 
 **Upgrade:**
-- When upgrading to a release with this feature, the feature gate is disabled by default in alpha
-- Existing Pods without `resourceSliceAttributeRef` are unaffected
-- To use the feature, users must:
-  1. Enable the `DRADownwardDeviceAttributes` feature gate on kube-apiserver and kubelet
-  2. Update Pod specs to use `resourceSliceAttributeRef` in env vars or volumes
-- No changes to existing DRA drivers are required
+- No Kubernetes API changes, so upgrade is transparent to control plane
+- Framework changes are backward compatible: existing drivers without `AttributesJSON(true)` continue to work unchanged
+- Drivers can opt-in at their own pace by adding `AttributesJSON(true)` option
+- Workloads without DRA claims are unaffected
+- Workloads with DRA claims but not reading attribute files are unaffected
 
 **Downgrade:**
-- If downgrading from a version with this feature to one without it:
-- Pods using `resourceSliceAttributeRef` will fail API validation and cannot be created
-- Existing Pods with `resourceSliceAttributeRef` will continue to run but cannot be updated
-- Users should remove `resourceSliceAttributeRef` from Pod specs before downgrade
-- Feature gate can be disabled to reject new Pods with `resourceSliceAttributeRef`
-- Kubelet will ignore `resourceSliceAttributeRef` when feature gate is disabled
+- Kubelet downgrade is NOT problematic: This feature is implemented entirely in the driver plugin framework, not in
+  kubelet
+- If downgrading the *driver* existing pods with mounted attribute files will continue to run but new pods will not have
+  attribute files mounted
+
+**Rolling upgrade:**
+- Drivers can be upgraded one at a time without cluster-wide coordination
+- Pods using upgraded drivers (with `AttributesJSON(true)`) get attribute files; pods using old drivers don't
+- Node/kubelet upgrades do not affect this feature (it's driver-side only)
+- Workloads should handle missing files gracefully
 
 ### Version Skew Strategy
 
 **Control Plane and Node Coordination:**
-- This feature primarily involves the kubelet and API server
-- The API server validates `resourceSliceAttributeRef` (feature gate enabled)
-- The kubelet resolves `resourceSliceAttributeRef` at runtime
+- This feature primarily involves changes in driver hence no coordination needed between control plane and node
 
 **Version Skew Scenarios:**
 
-1. **Older kubelet (n-1, n-2, n-3) with newer API server:**
-   - API server accepts Pods with `resourceSliceAttributeRef` (if feature gate is enabled)
-   - Older kubelet without the feature will ignore `resourceSliceAttributeRef` (it is dropped during decoding)
-   - Containers still start; env vars/volumes referencing `resourceSliceAttributeRef` will not be populated
-   - **Risk**: Workloads relying on these values may misbehave
-   - **Mitigation**: Avoid relying on the field until all kubelets are upgraded; gate scheduling to upgraded nodes (e.g., using node labels/taints) or keep the feature gate disabled on the API server until nodes are updated
-
-2. **Newer kubelet with older API server:**
-   - Older API server rejects Pods with `resourceSliceAttributeRef` (unknown field)
-   - This is safe - users cannot create invalid Pods
-   - No special handling required
-
-3. **Scheduler and Controller Manager:**
-   - This feature does not require changes to scheduler or controller manager
-   - No version skew concerns with these components
+1. **Newer Driver**: pods created after this update will have attributes file
+2. **Older Driver**: pods created by this driver will not have the attributes file
 
 **Recommendation:**
-- Enable feature gate cluster-wide (API server and all kubelets) at the same time
 - Test in a non-production environment first
-- Use rolling upgrade strategy for kubelets
 
 ## Production Readiness Review Questionnaire
 
@@ -492,48 +726,37 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `DRADownwardDeviceAttributes`
-  - Components depending on the feature gate: kube-apiserver, kubelet
-  - Enabling requires restarting kube-apiserver and kubelet with `--feature-gates=DRADownwardDeviceAttributes=true`
-  - No downtime of control plane is required for enabling/disabling (rolling restart is sufficient)
-  - Kubelet restart is required on each node
+- [x] Rollout a driver with `AttributesJSON(true)`
 
 ###### Does enabling the feature change any default behavior?
 
-No. Enabling the feature gate only adds new optional API fields (`resourceSliceAttributeRef`) to `EnvVarSource`. Existing Pods and workloads are unaffected. Users must explicitly opt in by:
-1. Using `resourceSliceAttributeRef` in Pod env vars
+No. Enabling the feature adds new CDI mount points containing attributes of DRA devices in JSON format
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. The feature can be disabled by setting the feature gate to `false` and restarting the API server and kubelets.
+Yes. The feature can be disabled by rolling back to previoud driver version or a new version with `AttributesJSON(false)`
 
 **Consequences:**
-- New Pods using `resourceSliceAttributeRef` will be rejected by the API server
-- Existing running Pods with `resourceSliceAttributeRef` will continue to run, but environment variables set at container start remain unchanged
-- Pods with `resourceSliceAttributeRef` cannot be updated while feature gate is disabled
+- New Pods will not have the attributes available inside the pod
+- Existing running Pods will continue to run
 
-**Recommendation:** Before disabling, ensure no critical workloads depend on `resourceSliceAttributeRef` or migrate them to alternative mechanisms (e.g., annotations).
+**Recommendation:** Before disabling, make sure attributes consumers have an alternative mechanism to lookup the attributes
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Re-enabling the feature gate restores full functionality:
-- API server accepts Pods with `resourceSliceAttributeRef`
- 
+Re-enabling the feature restores full functionality.
+
 - New Pods will work correctly
-- Existing Pods (created while feature was disabled) are unaffected unless they already use `resourceSliceAttributeRef`
+- Existing Pods (created while feature was disabled) are unaffected.
 
 No data migration or special handling is required.
 
 ###### Are there any tests for feature enablement/disablement?
 
 Yes:
-- Unit tests will verify API validation behavior with feature gate on/off
-- Integration tests will verify:
-- Pods with `resourceSliceAttributeRef` are rejected when feature gate is disabled
-- Pods with `resourceSliceAttributeRef` are accepted when feature gate is enabled
-- Kubelet correctly resolves attributes when feature gate is enabled
-- Kubelet ignores `resourceSliceAttributeRef` when feature gate is disabled
+- Unit tests verify files are NOT created when `AttributesJSON(false)`
+- Integration tests verify opt-in behavior with framework flag toggle
+- E2E tests validate files are present with feature on, absent with feature off
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -603,10 +826,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [ ] API .status
-  - Condition name: 
-  - Other field: 
+  - Condition name:
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -684,15 +907,11 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes. 
-
-- WATCH ResourceClaim: Each kubelet will establish an informer based watch on ResourceClaim objects for Pods scheduled to its node
-- WATCH ResourceSlice: Each kubelet will establish an informer based watch on ResourceSlice objects for devices on its node
-
+NO
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No. This feature adds new fields to existing API types (`core/v1.EnvVarSource` and `resource.k8s.io/v1.DeviceRequest`) but does not introduce new API object types.
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -700,65 +919,24 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes
-  - Pod, adds a field in pod
+No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 Yes, but the impact should be minimal:
 
-- Pod startup latency: Kubelet must resolve `resourceSliceAttributeRef` values before starting containers with environment variables, but the impact of this is minimized by local informer based lookup
+- Pod startup latency: Drivers must lookup attribute values before starting containers, but the impact of this is
+  minimized by local informer based lookup
 
-- The feature does not affect existing SLIs/SLOs for clusters not using DRA or for Pods not using `resourceSliceAttributeRef`.
+- The feature does not affect existing SLIs/SLOs for clusters not using DRA or for drivers not opting-in on this feature
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Yes, but the increase should be acceptable:
-
-- Kubelet Memory:
-  - In-memory cache for attribute mappings: ~1KB per Pod with DRA claims (assumes 5 attributes × 50 bytes per attribute × 4 requests)
-  - Informer caches for ResourceClaim and ResourceSlice objects
-  - Estimated total: 5-10MB for 110 pods per node (worst case: all pods use DRA)
-
-
-- Kubelet CPU:
-  - Watch processing: Minimal, only processes updates for node-local resources
-  - Resolution: O(1) cache lookups, minimal CPU (<1% increase)
-  
-- API Server (RAM/CPU):
-  - Additional watch connections: 2 per kubelet (ResourceClaim, ResourceSlice)
-  - 5000-node cluster: 10,000 watch connections (~50-100MB RAM, negligible CPU)
-  - Mitigation: Use informer field selectors to minimize data sent over watches
-
-**Network IO:**
-- Watch streams: Incremental updates only, minimal bandwidth
-- Estimated: <10KB/s per kubelet under normal conditions
-
-These increases are within acceptable limits for modern Kubernetes clusters.
+No
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No significant risk of resource exhaustion:
-
-Sockets:
-- Kubelet opens 2 watch connections to API server (ResourceClaim, ResourceSlice)
-
-Memory:
-- Pathological case: Malicious user creates many Pods with `resourceSliceAttributeRef` to exhaust kubelet memory
-- Risk: Low. Cache size bounded by max pods per node (110) × cache entry size (~1KB) = ~110KB
-- Mitigation: Existing pod limits prevent unbounded growth; cache eviction for terminated Pods
-
-Inodes:
- 
-- Risk: Low. Limited by max volumes per pod (existing limits) and max pods per node
-- Mitigation: Existing Kubernetes limits on volumes and pods
-
-CPU:
-- Pathological case: Rapid ResourceClaim/ResourceSlice updates trigger excessive cache updates
-- Risk: Low. Updates are processed asynchronously; rate limited by API server watch semantics
-- Mitigation: malicius updates can be prevented by AP&F at apiserver level
-
-Performance tests will be added in beta to validate these assumptions under load (e.g., 110 pods/node, all using DRA).
+No significant risk of resource exhaustion.
 
 ### Troubleshooting
 
@@ -799,24 +977,99 @@ For each of them, fill in the following information by copying the below templat
 
 ## Drawbacks
 
-1. **Additional complexity in kubelet:** This feature adds a new controller to the kubelet that must watch and cache DRA objects. This increases kubelet complexity and maintenance burden.
-
-2. **API surface expansion:** Adding `resourceSliceAttributeRef` to the Downward API increases the API surface area and creates a dependency between the core API and DRA, which is still an alpha/beta feature.
-
-3. **Limited to kubelet resolution:** Unlike other Downward API fields that could theoretically be resolved by controllers, this feature requires kubelet-side resolution due to the need for node-local ResourceSlice data. This limits flexibility.
+1. **Filesystem dependency**: Unlike Downward API environment variables (which are managed by kubelet), this approach
+   requires reliable filesystem access to `/var/run/`. Failures in file writes block Pod startup.
+2. **CDI runtime requirement**: Not all CRI runtimes support CDI (or support different CDI versions). This limits
+   compatibility to newer runtimes and requires clear documentation.
+3. **Opaque file paths**: Workloads must discover filenames via globbing or parse JSON to match claim names. The
+   Downward API approach with env vars would have been more ergonomic.
+4. **No schema standardization in Alpha**: The JSON structure is subject to change. Early adopters may need to update
+   their parsers between versions.
+5. **Driver opt-in complexity**: Drivers must understand and configure multiple framework options (`AttributesJSON`,
+   `CDIDirectoryPath`, `AttributesDirectoryPath`, `ResourceSliceLister`). The Downward API approach would have been
+   transparent to drivers.
+6. **Limited discoverability**: Workloads can't easily enumerate all claims or requests; they must know the claim name
+  or glob for files. Env vars would provide named variables.
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+### Alternative 1: Downward API with ResourceSliceAttributeSelector (Original Design)
+
+**Description**: Add `resourceSliceAttributeRef` selector to `core/v1.EnvVarSource` allowing environment variables to reference DRA device attributes. Kubelet would run a local controller watching ResourceClaims and ResourceSlices to resolve attributes at container start.
+
+**Example**:
+```yaml
+env:
+- name: PGPU_PCI_ROOT
+  valueFrom:
+    resourceSliceAttributeRef:
+      claimName: pgpu-claim
+      requestName: pgpu-request
+      attribute: resource.kubernetes.io/pcieRoot
+```
+
+**Pros**:
+- Native Kubernetes API integration
+- Familiar pattern for users (consistent with Downward API)
+- Transparent to drivers (no driver changes required)
+- Type-safe API validation
+- Named environment variables (no globbing required)
+
+**Cons**:
+- Requires core API changes (longer review/approval cycle)
+- Adds complexity to kubelet (new controller, watches, caching)
+- Performance impact on API server (kubelet watches ResourceClaims/ResourceSlices cluster-wide or per-node)
+- Limited to environment variables (harder to expose complex structured data)
+- Single attribute per reference (multiple env vars needed for multiple attributes)
+
+**Why not chosen**:
+- Too invasive for Alpha; requires API review and PRR approval
+- Kubelet performance concerns with additional watches
+- Ecosystem requested CDI-based approach for flexibility and faster iteration
+
+### Alternative 2: DRA Driver Extends CDI with Attributes (Driver-Specific)
+
+**Description**: Each driver generates CDI specs with custom environment variables containing attributes. No framework involvement.
+
+**Example** (driver-generated CDI):
+```json
+{
+  "devices": [{
+    "name": "gpu-0",
+    "containerEdits": {
+      "env": [
+        "PGPU_PCI_ROOT=0000:00:1e.0",
+        "PGPU_DEVICE_ID=device-00"
+      ]
+    }
+  }]
+}
+```
+
+**Pros**:
+- No framework changes
+- Maximum driver flexibility
+- Works today with existing DRA
+
+**Cons**:
+- Every driver must implement attribute exposure independently (duplication)
+- No standardization across drivers (KubeVirt must support N different drivers)
+- Error-prone (drivers may forget to expose attributes or use inconsistent formats)
+- Hard to discover (workloads must know each driver's conventions)
+
+**Why not chosen**:
+- Poor user experience (no standard path or format)
+- High maintenance burden for ecosystem (KubeVirt, etc.)
+- Missed opportunity for framework to provide common functionality
 
 ## Infrastructure Needed (Optional)
 
 None. This feature will be developed within existing Kubernetes repositories:
-- API changes in `kubernetes/kubernetes` (staging/src/k8s.io/api)
-- Kubelet implementation in `kubernetes/kubernetes` (pkg/kubelet)
-- Tests in `kubernetes/kubernetes` (test/integration, test/e2e, test/e2e_node)
-- Documentation in `kubernetes/website`
+- Framework implementation in `kubernetes/kubernetes` (staging/src/k8s.io/dynamic-resource-allocation/kubeletplugin)
+- Helper functions in `kubernetes/kubernetes` (staging/src/k8s.io/dynamic-resource-allocation/resourceslice)
+- Tests in `kubernetes/kubernetes` (test/integration/dra, test/e2e/dra, test/e2e_node)
+- Documentation in `kubernetes/website` (concepts/scheduling-eviction/dynamic-resource-allocation)
+
+Ecosystem integration (future):
+- KubeVirt will consume attributes from JSON files (separate KEP in kubevirt/kubevirt)
+- DRA driver examples will be updated to demonstrate `AttributesJSON(true)` usage
