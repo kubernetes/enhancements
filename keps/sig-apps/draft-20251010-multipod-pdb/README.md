@@ -280,7 +280,7 @@ spec:
 ```
 
 Upon node drain, the Eviction API will:
-1.  See the PDB `my-training-job-workers-pdb` with `spec.usePodGrouping: true`.
+1.  See the PDB `my-training-job-workers-pdb` with `spec.usePodGroups: true`.
 2.  Select all pods matching the selector.
 3.  Detect that these pods have `spec.workload.name: my-training-job` and `spec.workload.podGroup: worker`.
 4.  Fetch the `Workload` object `my-training-job`.
@@ -428,9 +428,7 @@ A `Workload` object contains a list of `PodGroup`s. Each `PodGroup` defines:
 * `policy`: The scheduling policy, such as `Gang`.
 * `policy.gang.minCount`: The minimum number of pods required for one replica of that group.
 
-In the context of LWS, a LWS replica is equivalent to a PodGroup replica, and its `size` is `minCount`.
-
-This KEP assumes that a controller (like the one managing `Workload` objects) will create pods and set `pod.spec.workload.name` and `pod.spec.workload.podGroup` on each pod it creates, linking it back to the `Workload` definition. The eviction logic uses this link to read the group's requirements.
+A LWS replica is would correspond to a PodGroup replica, with its `size` being `minCount`.
 
 ### Risks and Mitigations
 
@@ -446,7 +444,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-- This feature relies on the pod's `spec.workload.name` and `spec.workload.podGroup` fields being correctly set by its managing controller. If a user sets `usePodGrouping: true` but the pods are not correctly linked to a `Workload` object, the eviction logic will fall back to per-pod counting, which may violate the application's true availability requirements (though it will prevent a drain from being blocked by misconfiguration).
+- This feature relies on the pod's `spec.workload.name` and `spec.workload.podGroup` fields being correctly set by its managing controller. If a user sets `usePodGroups: true` but the pods are not correctly linked to a `Workload` object, the eviction logic will fall back to per-pod counting, which may violate the application's true availability requirements (though it will prevent a drain from being blocked by misconfiguration).
 - One failing pod in a large group will make that group "unavailable" if it drops below its `minCount`. A small number of failing pods spread across many groups could prevent all evictions and block a node drain. This is intended behavior (as the application is unhealthy), but may be surprising to operators.
 - A PDB `selector` that matches pods from multiple different `PodGroup`s (or a mix of grouped and individual pods) may have complex or unintended behavior. Users should be advised to create separate PDBs for each distinct `PodGroup` they wish to protect.
 
@@ -485,7 +483,7 @@ type PodDisruptionBudgetSpec struct {
 	// +optional
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty" protobuf:"bytes,3,opt,name=maxUnavailable"`
 
-	// usePodGrouping indicates that availability should be calculated based on
+	// usePodGroups indicates that availability should be calculated based on
 	// pod groups defined by the Workload API (pod.spec.workloadReference).
 	// If set to true, the eviction logic will interpret minAvailable/maxUnavailable
 	// as a count of PodGroup replicas, not individual pods.
@@ -494,13 +492,13 @@ type PodDisruptionBudgetSpec struct {
 	// and a warning will be logged.
 	// Defaults to false.
 	// +optional
-	UsePodGrouping bool `json:"usePodGrouping,omitempty" protobuf:"varint,4,opt,name=usePodGrouping"`
+	usePodGroups bool `json:"usePodGroups,omitempty" protobuf:"varint,4,opt,name=usePodGroups"`
 }
 ```
 
 #### Eviction Logic Flow
 
-If `pdb.spec.usePodGrouping: false` or unset, follow the existing per-pod availability behavior.
+If `pdb.spec.usePodGroups: false` or unset, follow the existing per-pod availability behavior.
 If `true`:
 1.  Get all pods matching the PDB's `selector`.
 2.  Check if all pods have `spec.workloadReference.Name` set.
@@ -524,7 +522,7 @@ graph TD
     subgraph "Group-Aware Eviction Logic Flow"
         direction TB
         
-        Start(Eviction API Triggered<br/>for a PDB) --> CheckFlag{"usePodGrouping: true?"}
+        Start(Eviction API Triggered<br/>for a PDB) --> CheckFlag{"usePodGroups: true?"}
         
         %% Branch 1: Legacy Path (Flag False/Unset)
         CheckFlag -- "No (default)" --> LegacyLogic[Use existing<br/>per-pod availability logic]
@@ -538,7 +536,7 @@ graph TD
         GetPods --> CheckWorkloadRefs{"2. Pods with<br/>workloadReference?"}
         
         %% Path 2a: No workloadReference (Misconfiguration)
-        CheckWorkloadRefs -- "None" --> WarnMisconfig[3. Log Warning:<br/>'usePodGrouping: true'<br/>but no pods have<br/>workloadReference]
+        CheckWorkloadRefs -- "None" --> WarnMisconfig[3. Log Warning:<br/>'usePodGroups: true'<br/>but no pods have<br/>workloadReference]
         WarnMisconfig --> LegacyLogic[Fall back to<br/>per-pod logic]
 
         %% Path 2b: Mixed pod types
@@ -578,7 +576,7 @@ For example, if a replica expects 10 pods with `minCount: 8` but only has 9 heal
 
 ### Pods missing fields
 
-If a PDB's `selector` matches a pod that is missing the `spec.workloadReference` field (or its `Name` is empty), it will be treated as an individual pod. If `usePodGrouping: true` is set, this will be logged as a warning. If the PDB matches *only* individual pods, this will be equivalent to the standard per-pod logic. If a selected pod has `spec.workload.name` but no `spec.workload.podGroup`, this is a misconfiguration and it will be treated as unhealthy.
+If a PDB's `selector` matches a pod that is missing the `spec.workloadReference` field (or its `Name` is empty), it will be treated as an individual pod. If `usePodGroups: true` is set, this will be logged as a warning. If the PDB matches *only* individual pods, this will be equivalent to the standard per-pod logic. If a selected pod has `spec.workload.name` but no `spec.workload.podGroup`, this is a misconfiguration and it will be treated as unhealthy.
 
 ### Test Plan
 
@@ -654,9 +652,9 @@ This can be done with:
 -->
 
 - An integration test will be added to `test/integration/disruption` to simulate the eviction process.
-- **Test 1:** PDB with `usePodGrouping: false` (default) and `Workload`-managed pods. Verify eviction uses per-pod counting.
-- **Test 2:** PDB with `usePodGrouping: true` and `Workload`-managed pods. Verify eviction uses per-group counting and blocks when `minAvailable` groups would be violated.
-- **Test 3:** PDB with `usePodGrouping: true` but with non-`Workload` pods. Verify eviction falls back to per-pod counting and logs a warning.
+- **Test 1:** PDB with `usePodGroups: false` (default) and `Workload`-managed pods. Verify eviction uses per-pod counting.
+- **Test 2:** PDB with `usePodGroups: true` and `Workload`-managed pods. Verify eviction uses per-group counting and blocks when `minAvailable` groups would be violated.
+- **Test 3:** PDB with `usePodGroups: true` but with non-`Workload` pods. Verify eviction falls back to per-pod counting and logs a warning.
 
 ##### e2e tests
 
@@ -679,7 +677,7 @@ If e2e tests are not necessary or useful, explain why.
 
 An e2e test will be added.
 1.  Create a `Workload` with 2 `PodGroup` replicas, each with `minCount: 3`.
-2.  Create a PDB with `minAvailable: 1` and `usePodGrouping: true` selecting these pods.
+2.  Create a PDB with `minAvailable: 1` and `usePodGroups: true` selecting these pods.
 3.  Manually schedule pods such that one node drain would disrupt both groups (as in the example given earlier).
 4.  Attempt to drain the node.
 5.  Verify the drain is blocked by the PDB.
@@ -776,13 +774,13 @@ enhancement:
 -->
 
 Upgrade:
-- No changes are required. The new field `usePodGrouping` defaults to `false`, so all existing PDBs will continue to function with per-pod logic.
-- To use the feature, users must edit their PDBs to set `usePodGrouping: true`.
+- No changes are required. The new field `usePodGroups` defaults to `false`, so all existing PDBs will continue to function with per-pod logic.
+- To use the feature, users must edit their PDBs to set `usePodGroups: true`.
 
 Downgrade:
-- If a PDB was created with `usePodGrouping: true`, this field will be dropped when the API server is downgraded (as it's an unknown field).
+- If a PDB was created with `usePodGroups: true`, this field will be dropped when the API server is downgraded (as it's an unknown field).
 - The PDB will revert to per-pod logic. This is a behavior change that could violate the application's intended availability (as shown in the user story).
-- Operators should remove `usePodGrouping` on all PDBs before a downgrade.
+- Operators should remove `usePodGroups` on all PDBs before a downgrade.
 
 
 ### Version Skew Strategy
@@ -801,8 +799,8 @@ enhancement:
 -->
 
 This feature is entirely contained within the disruption controller in `kube-controller-manager` and the API server. By defaulting to false, a conflict generally reverts to the existing behavior.
-- **New API server, old KCM:** The API server will accept the `usePodGrouping` field, but the old KCM will not know about it and will ignore it, always using per-pod logic. This matches the downgrade scenario.
-- **Old API server, new KCM:** The new KCM will attempt to read the `usePodGrouping` field, but it won't exist on PDB objects. The KCM will default to `false` and use per-pod logic.
+- **New API server, old KCM:** The API server will accept the `usePodGroups` field, but the old KCM will not know about it and will ignore it, always using per-pod logic. This matches the downgrade scenario.
+- **Old API server, new KCM:** The new KCM will attempt to read the `usePodGroups` field, but it won't exist on PDB objects. The KCM will default to `false` and use per-pod logic.
 
 The feature will only be active when both the API server and `kube-controller-manager` are at the new version and the user has set the field to `true`.
 
@@ -852,7 +850,7 @@ well as the [existing list] of feature gates.
   - Feature gate name:
   - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: The feature is enabled on a per-PDB basis with `spec.usePodGrouping: true`. It is disabled by default.
+  - Describe the mechanism: The feature is enabled on a per-PDB basis with `spec.usePodGroups: true`. It is disabled by default.
   - Will enabling / disabling the feature require downtime of the control plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning of a node? No
 
@@ -919,7 +917,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-If an operator downgrades the control plane, PDBs with `usePodGrouping: true` will have that field dropped by the older API server. The PDB will silently revert to per-pod logic, which could lead to an application outage during a node drain if the operator was relying on group-based protection.
+If an operator downgrades the control plane, PDBs with `usePodGroups: true` will have that field dropped by the older API server. The PDB will silently revert to per-pod logic, which could lead to an application outage during a node drain if the operator was relying on group-based protection.
 
 ###### What specific metrics should inform a rollback?
 
@@ -966,9 +964,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-`kubectl get pdb -A -o jsonpath='{..spec.usePodGrouping}'` will show PDBs which have the field set.
+`kubectl get pdb -A -o jsonpath='{..spec.usePodGroups}'` will show PDBs which have the field set.
 
-If needed, add metric `disruption_controller_pdbs_using_pod_grouping` for the number of PDBs with `usePodGrouping: true`.
+If needed, add metric `disruption_controller_pdbs_using_pod_grouping` for the number of PDBs with `usePodGroups: true`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1027,7 +1025,7 @@ implementation difficulties, etc.).
 -->
 
 Metrics related to the disruption controller, e.g. a `disruption_controller_reconciliations_total` labeled with the replica mode (individual or pod groups).
-For catching issues, `disruption_controller_pdb_grouping_misconfig_total` for when `usePodGrouping: true` but no `workloadReference` is found on pods, triggering a fallback.
+For catching issues, `disruption_controller_pdb_grouping_misconfig_total` for when `usePodGroups: true` but no `workloadReference` is found on pods, triggering a fallback.
 
 ### Dependencies
 
@@ -1118,7 +1116,7 @@ Describe them, providing:
 
 Yes.
 - API type(s): `policy/v1.PodDisruptionBudget`
-- Estimated increase in size: One boolean field `usePodGrouping`.
+- Estimated increase in size: One boolean field `usePodGroups`.
 - Estimated amount of new objects: 0.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
