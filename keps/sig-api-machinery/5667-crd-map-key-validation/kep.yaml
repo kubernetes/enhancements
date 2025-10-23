@@ -1,0 +1,33 @@
+title: CRD Map Key Validation
+kep-number: 5667
+authors:
+  - "@jpbetz"
+owning-sig: sig-api-machinery
+status: implementable
+creation-date: 2025-10-23
+reviewers:
+  - TBD
+approvers:
+  - "@sttts"
+
+see-also:
+  - "/keps/sig-api-machinery/95-custom-resource-definitions"
+  - "/keps/sig-api-machinery/692-crd-openapi-schema"
+  - "/keps/sig-api-machinery/2896-openapi-v3"
+  - "/keps/sig-api-machinery/2876-crd-validation-expression-language"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+
+feature-gates:
+  - name: CRDPropertyNameSchemas
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
