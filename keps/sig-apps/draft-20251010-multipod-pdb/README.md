@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: PDB for Workload Replicas
+# KEP-NNNN: PDB for Multi-Pod Replicas
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -173,9 +173,11 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-The Eviction API uses PodDisruptionBudgets (PBDs) to ensure availability of a certain number or percentage of pods during voluntary disruptions. This proposal would allow eviction to treat groups of pods as if they were individual replicas for the purposes of measuring availability. We determine pod groups using the new `Workload` API in the [gang scheduling KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), where pods declare their owning workload and pod group and `Workload` objects contain information about replicas and group size. To enable this functionality, optional boolean field `usePodGroups` will be added to the PDB spec.
+Voluntary disruptions (node drains) can disrupt an application, as pods get evicted from the node. Users may create a PodDisruptionBudget (PBD) object to specify that a certain number (or percentage) of pods must remain available. If a pod eviction would violate the availability threshold given by the PDB, the disruption controller will block the eviction, protecting the availability of the application. Some applications will use `PodGroups` as defined in the new [Workload API](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), which each act as a single replica composed of multiple pods, requiring additional eviction logic to protect from disruptions. For example, in a [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) designed for distributed ML training or inference, one pod from a group being evicted would fail the entire group.
 
-*Note: as of this draft, the `Workload` API is still in progress, for this KEP we assume it is fully implemented*
+This KEP will allow the Eviction API to treat each pod group as if it were a single replica when calculating availability for a PDB. To enable this functionality, the PDB spec will have optional boolean `usePodGroups` , and if enabled, the PDB will enforce a number of *pod group replicas* that must remain available, rather than a number of *individual pod replicas* as it is now.
+
+**Note: as of this draft, the Workload API is still in progress, for this KEP we assume it is fully implemented**
 
 ## Motivation
 
@@ -188,7 +190,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-The goal of this KEP is to make PDBs more useful for pod groups, particularly with the `Workload API`. Eviction or preemption of a small number of pods across multiple multi-pod replicas could disrupt each replica, as opposed to evicting multiple pods from a single replica (only disrupting that one replica). We want to enable the Eviction API to define avaiability based on the health of pod groups, rather than individual pods.
+The goal of this KEP is to make PDBs more useful for pod groups. We want to prevent eviction or preemption of a small number of pods across multiple multi-pod replicas, as this could disrupt each replica (as opposed to evicting multiple pods from a single replica, only disrupting that one replica). This will be achieved by counting pod groups, rather than individual pods, when calculating avaiability for eviction.
 
 ### Goals
 
