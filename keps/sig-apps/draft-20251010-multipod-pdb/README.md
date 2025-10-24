@@ -188,7 +188,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-The goal is to make PDBs more useful for pod groups. For example, a multi-pod [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) replica (intended for distributed workloads like ML training and inference) will fail if any of its pods fails. Eviction or preemption of a small number of pods across multiple replicas would disrupt each replica, as opposed to evicting multiple pods from a single replica (only disrupting that one replica). We want the Eviction API to use a different definition of avalability for these cases, based on the health of pod groups rather than individual pods.
+The goal of this KEP is to make PDBs more useful for pod groups, particularly with the `Workload API`. Eviction or preemption of a small number of pods across multiple multi-pod replicas could disrupt each replica, as opposed to evicting multiple pods from a single replica (only disrupting that one replica). We want to enable the Eviction API to define avaiability based on the health of pod groups, rather than individual pods.
 
 ### Goals
 
@@ -199,7 +199,8 @@ know that this has succeeded?
 
 - **Introduce a field to enable group-based PDBs:** Add a new boolean field `usePodGroups` to the `PodDisruptionBudget.spec`.
 - **Define availability for pod groups:** Allow application owners to define PDBs for multi-pod replicas (as defined by the `Workload` API) rather than individual pods.
-- **Update eviction logic:** When `usePodGroups: true` is set on a PDB, the eviction logic will use the `Workload` and `PodGroup` definitions (linked by `pod.spec.workload.name`) for grouping and calculate availability of groups.
+- **Update eviction logic:** When `usePodGroups: true` is set in a PDB spec, the eviction logic will interpret the disruption budget given in the PDB (`minAvailable` or `maxUnavailable`) as a count of pod group replicas, rather than individual pod replicas.
+- **Integrate with Workload API:** Use the pod spec's `workload.name` and `workload.podGroup` to retrieve `Workload` objects and their `PodGroup` groupings.
 - **Maintain compatibility:** Ensure that common cluster operations that respect PDBs, such as `kubectl drain` and node drains initiated by `cluster-autoscaler`, follow group-based disruption budgets when enabled.
 - **Preserve existing functionality:** For backward compatibility, the behavior of PDBs without `usePodGroups: true` will be unchanged.
 
@@ -411,11 +412,6 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-#### Background on multi-pod replicas (LWS)
-A LeaderWorkerSet (LWS) the primary example of a multi-pod replica. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and for the "worker" pods. This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference.
-
-All worker pods are treated the same: they are created from the same template, scheduled in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify `replicas` for the number of leader+workers groups and `size` for the number of pods per group.
-
 #### Background on the `Workload` API
 
 This KEP assumes that a pod controller (like the one managing `Workload` objects) will create pods and set `pod.spec.workload.name` and `pod.spec.workload.podGroup` on each pod it creates, linking it back to the `Workload` definition. The eviction logic uses this link to read the group's requirements.
@@ -428,7 +424,10 @@ A `Workload` object contains a list of `PodGroup`s. Each `PodGroup` defines:
 * `policy`: The scheduling policy, such as `Gang`.
 * `policy.gang.minCount`: The minimum number of pods required for one replica of that group.
 
-A LWS replica is would correspond to a PodGroup replica, with its `size` being `minCount`.
+#### Background on multi-pod replicas (LeaderWorkerSet)
+
+[LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) (LWS) is the primary example of a multi-pod replica. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and for the "worker" pods. This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference. All worker pods are treated the same: they are created from the same template, scheduled in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify `replicas` for the number of leader+workers groups and `size` for the number of pods per group. A LWS replica is would correspond to a PodGroup replica, with its `size` being `minCount`.
+
 
 ### Risks and Mitigations
 
@@ -571,7 +570,7 @@ graph TD
 #### Group Health
 A `PodGroup` replica is considered available if its number of existing, healthy, non-evicting pods is greater than or equal to its `policy.gang.minCount`.
 
-For example, if a replica expects 10 pods with `minCount: 8` but only has 9 healthy pods (1 is missing or unhealthy), the replica is still considered **available**. If 3 pods are missing or unhealthy and only 7 healthy pods exist, the replica is **unavailable**. If any pod in an available group is targeted for eviction, it would be unhealthy post-eviction and is also counted as unavailable for the PDB calculation.
+For example, if a replica expects 10 pods with `minCount: 8` but only has 9 healthy pods (1 is missing or unhealthy), the replica is still considered healthy. If 3 pods are missing or unhealthy and only 7 healthy pods exist, the replica is unhealthy. If any pod in an available group is targeted for eviction, it would be unhealthy post-eviction and is also counted as unavailable for the PDB calculation.
 
 
 ### Pods missing fields
@@ -937,7 +936,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-TODO
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1227,6 +1226,7 @@ Initially there was a plan to integrate directly with multi-pod replica systems 
 
 In the case given in the simplified example above, there may be a way to change the eviction logic to such that the order of pod eviction preserves replicas when possible (e.g. prioritize evicting pods from the replica with the most pods in the node). However, it is simpler to understand and easier ensure intended behavior by just extending the existing PDB budget pattern. It is also unclear if this would work fully when gang scheduling is not used or the number of pods is greater than `minCount`.
 
+Rather than using a field in the PDB spec, it would be possible to detect if any selected pods have the Workload API enabled by checking their spec for `workload.name`. However, we want this new behavior to be something explicitly enabled. Silently changing the behavior of existing PDB fields (`minAvaiable`/`maxUnavailable`), based on context from other objects, could cause confusion and possibly unintended disruptions.
 
 ## Infrastructure Needed (Optional)
 
