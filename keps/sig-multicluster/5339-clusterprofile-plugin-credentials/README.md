@@ -72,6 +72,7 @@ SIG Architecture for cross-cutting KEPs).
     - [External credentials Provider plugin mechanism](#external-credentials-provider-plugin-mechanism)
   - [Standardizing the Provider definition](#standardizing-the-provider-definition)
     - [Cluster Data](#cluster-data)
+      - [The <code>Extensions</code> field](#the-extensions-field)
     - [ClusterProfile Example](#clusterprofile-example)
   - [Configuring plugins in the controller](#configuring-plugins-in-the-controller)
   - [Plugin Examples](#plugin-examples)
@@ -224,7 +225,8 @@ controller, applications or consumers without requiring changes. It also cannot 
 is not sensitive.
 
 The definition is as follows:
-```
+
+```golang
 type CredentialProviders struct {
   // +listType=map
   // +listMapKey=name
@@ -237,7 +239,7 @@ type CredentialsType string
 // CredentialsConfig gives more details on data that is necessary to reach out the cluster for this kind of Credentials
 type CredentialsConfig struct {
   Name string // name of the provider type
-  Cluster *Cluster // Configuration to reach the cluster (endpoints, proxy, etc) // See following section for details.
+  Cluster *Cluster // Configuration to reach the cluster (endpoints, proxy, etc) // See the sections below for details.
 }
 ```
 
@@ -290,10 +292,103 @@ In this structure, not all fields would apply, such as:
 
 * `CertificateAuthority`, which points to a file (and a ClusterProfile doesn't have a filesystem)
 
+And there are fields that require special attention:
+
+* `Extensions`, which holds additional, usually cluster-specific information, that might help authenticate with the cluster.
+
+For more information about these fields and how they are handled, see the section below:
+
+##### The `Extensions` field
+
+The `Extensions` field in the `Cluster` struct, can hold various form of data, each associated with an extension name. 
+[KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md) 
+further reserves a an extension name, `client.authentication.k8s.io/exec`, that can be used to pass cluster-specific
+information to exec plugins. Data under this specific extension name shall be parsed and populated into a `ExecConfig` 
+struct (specifically its `Config` field), which libraries such as `client-go` will read when calling an exec plugin
+for authentication purposes. The `ExecConfig` struct features a flag, `ProvideClusterInfo`, that controls whether the
+extension data can be seen by an exec plugin; if the flag is set, right before the exec plugin is invoked, `client-go`
+will save the extension data (along with other various pieces of information, such as the API server address of the
+cluster and its CA bundle), to an environment variable, `KUBERNETES_EXEC_INFO`. An exec plugin may choose to read
+the environment variable, and make use of the extension data as it sees fit.
+
+For the authentication workflow described in this KEP, users may, too, choose to specify a `client.authentication.k8s.io/exec`
+extension in the `Cluster` struct from a `ClusterProfile` API object. If the extension has been set, and the community-provided
+library is provided with an `ExecConfig` with the `ProvideClusterInfo` flag set, the library will overwrite the
+`ExecConfig.Config` field with the extension data, in consistency with the aforementioned processes. 
+
+Note also that the `Cluster` struct in the Cluster Profile API has the extension data stored in the free form
+(`runtime.RawExtension`), but the `ExecConfig.Config` field accepts only `runtime.Object` data. As the community-provided
+library has no way to know beforehand how to marshal raw data into Kubernetes objects (or in other words, the library
+does not know which scheme to use for the conversion), the library might fall back to `runtime.Unknown` objects so that
+it could bridge the gaps. No validation will be performed on the library end. It is up to the user to make sure that
+the data can be unmarshalled properly when it is saved to the `KUBERNETES_EXEC_INFO` environment variable, and that
+the data can be marshalled and processed properly by the exec plugin in use when it is being read from the same
+environment variable.
+
+###### Supplying additional CLI arguments and environment variables to the exec plugin
+
+The current `Extensions` interface for passing additional cluster-specific authentication information might not be very
+easy for users to use. The presence of the `KUBERNETES_EXEC_INFO` environment variable is purely optional; if the
+`ProvideClusterInfo` flag is unset (the default), this variable will be absent. There are a few cases where the
+variable cannot be easily set: for example, the `KUBERNETES_EXEC_INFO` environment variable does feature the CA bundle for the
+target cluster, which can potentially get quite large; depending on the target environment, it might not be OK to
+write such data as an environment variable. Exec plugins are not mandated to support this environment variable either;
+even for those that do read this environment variable, it is not guaranteed that the included extension data can be
+properly extracted.
+
+On the other hand, it is quite common for multi-cluster users to have a need for specifying cluster-specific information
+when performing the authentication workflow: the authentication solution in use by a cluster might be expecting a token of
+a specific audience, or a token from a specific identity. Most, if not all, exec plugins would expect such information
+from the CLI arguments or some environment variables. In a single-cluster setup, it is trivial to set them up, as the
+user has direct control over the `ExecConfig` struct; however, for the multi-cluster setup, since the `Cluster` struct
+does not feature any fields for additional CLI arguments or environment variables, it would be fairly difficult to achieve
+this when using the Cluster Profile API and community-provided library.
+
+To address this decifiency, we further proposes that:
+
+* this KEP reserve a name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args`, which holds
+additional CLI arguments that need to be supplied to the exec plugin when the Cluster Profile API and community-provided
+library are used for authentication.
+
+    If an extension under this name is present, the community-provided library will extract the data, and append the
+    additional arguments to the `ExecConfig` struct (specifically the `ExecConfig.Args` field) that will be used to
+    prepare the `rest.Config` output. The arguments will then be used to invoke the exec plugin.
+
+    The additional arguments shall be saved as a string array in the YAML format.
+
+    For simplicity reasons, the community-provided library will not perform any de-duplication on the CLI arguments
+    after the additional arguments are appended.
+
+* this KEP reserve another name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs`, which
+holds additional environment variables that need to be supplied upon calling the exec plugin when the Cluster Profile API
+and community-provided library are used for authentication.
+
+    If an extension under this name is present, the community-provided library will extract the data, and add the additional
+    variables to the `ExecConfig` struct (specifically the `ExecConfig.Env` field) that will be used to prepare the
+    `rest.Config` output. The variables will then be set when invoking the exec plugin.
+
+    The additional environment variables shall be represented as a string map in the YAML format.
+
+    The community-provided library will de-duplicate the list of environment variables when adding the additional variables;
+    if two entries are present under the same name, the one from the extension will prevail.
+
+###### Security concerns
+
+With the addition of newly reserved extensions, understandably there might be situations where users might want to block
+additional CLI arguments or environment variables from being set due to security reasons. To resolve this, the KEP proposes
+that the community-provided library implementation must allow users to specify whether additional CLI arguments or environment
+variables can be set by a `ClusterProfile` object. Available options include:
+
+* `Ignore`: ignore any `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args` or `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs` extension; no additional CLI arguments or environment variables will be set.
+* `Allow`: accept `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args` and `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs` extensions; additional CLI arguments and environment variables may be set.
+
+By default the reserved extensions should be ignored.
+
 
 #### ClusterProfile Example
 
 Example of a GKE ClusterProfile, which would map to a plugin providing credentials of type `google`:
+
 ```
 apiVersion: multicluster.x-k8s.io/v1alpha1
 kind: ClusterProfile
