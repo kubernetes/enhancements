@@ -492,12 +492,15 @@ Compared to labels, attributes have values of exactly one type. Quantities are d
 in the separate `capacity` map. As described later on, both sets can be used in CEL expressions to select a
 specific resource for allocation on a node.
 
-We are reserving the `kubernetes.io/` domain (and subdomains) prefix for
+We propose reserving the `kubernetes.io/` domain (and subdomains) prefix for
 attributes and capacities for standardization by the Kubernetes project. This
 reservation allows us to define common attributes that can describe hardware
-characteristics across resources from different vendors. Currently, we are
-defining one such standard attribute: `resource.kubernetes.io/pcieRoot`. Details
-on its meaning and how it should be exposed by DRA drivers are available in the
+characteristics across resources from different vendors. This KEP proposes that we maintain
+a number of such standard attributes:
+1. `resource.kubernetes.io/pcieRoot`
+2. `resource.kubernetes.io/pciBusID` 
+
+Details on their meaning and how they should be exposed by DRA drivers are available in the
 [API design section under ResourceSlice's](#resourceslice) QualifiedName
 definition.
 
@@ -1127,6 +1130,13 @@ const ResourceSliceMaxAttributesAndCapacitiesPerDevice = 32
 //     entry in sysfs (e.g., `/sys/devices/pci0000:00/0000:00:01.0/0000:01:00.0`),
 //     where the `pci<domain>:<bus>` segment at the beginning of the real path
 //     identifies the Root Complex (e.g., `pci0000:00`).
+//  2. `resource.kubernetes.io/pciBusID`: A string value in the format
+//     `<socket>:<bus>:<domain>.<function>`, referring to a PCI (Perpheral Component
+//     Interconnect) Bus Address. This attribute can be used to identify PCI devices.
+//     DRA drivers MAY determine this value by inspecting the device's entry in sysfs
+//     (e.g., `/sys/bus/pci/devices/0000:00:01.0`) where the
+//     `<socket>:<bus>:<domain>.<function>` segment at the end identifies the PCI
+//     Bus Address (e.g., `0000:00:01.0`)
 //
 // The maximum length for the DNS subdomain is 63 characters (same as
 // for driver names) and the maximum length of the C identifier
