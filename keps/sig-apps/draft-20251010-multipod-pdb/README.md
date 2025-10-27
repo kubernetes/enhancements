@@ -428,8 +428,9 @@ A `Workload` object contains a list of `PodGroup`s. Each `PodGroup` defines:
 
 #### Background on multi-pod replicas (LeaderWorkerSet)
 
-[LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) (LWS) is the primary example of a multi-pod replica. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and for the "worker" pods. This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference. All worker pods are treated the same: they are created from the same template, scheduled in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify `replicas` for the number of leader+workers groups and `size` for the number of pods per group. A LWS replica is would correspond to a PodGroup replica, with its `size` being `minCount`.
+[LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) (LWS) is the primary implementation of a multi-pod replica. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and for the "worker" pods. This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference. All worker pods are treated the same: they are created from the same template, scheduled in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify `replicas` for the number of leader+workers groups and `size` for the number of pods per group. 
 
+LWS is planned to be integrated with the Workload API ([KEP](https://docs.google.com/document/d/1QlcIBtR2KyOKYRUTGubhhxuy7NfjHs1fXMJlvdUCyhM/edit?tab=t.0#heading=h.dxr6zknxhiui)). Each LWS replica is would correspond to a PodGroup replica, with its `size` being `minCount`.
 
 ### Risks and Mitigations
 
