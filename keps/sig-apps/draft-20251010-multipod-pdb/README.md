@@ -173,9 +173,11 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-Voluntary disruptions (node drains) can disrupt an application, as pods get evicted from the node. Users may create a PodDisruptionBudget (PBD) object to specify that a certain number (or percentage) of pods must remain available. If a pod eviction would violate the availability threshold given by the PDB, the disruption controller will block the eviction, protecting the availability of the application. Some applications will use `PodGroups` as defined in the new [Workload API](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), which each act as a single replica composed of multiple pods, requiring additional eviction logic to protect from disruptions. For example, in a [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) designed for distributed ML training or inference, one pod from a group being evicted would fail the entire group.
+Voluntary disruptions (node drains) will evict pods from a node, potentially causing issues in an application that relies on having a certain one or more replicas running. To specify that a certain number (or percentage) of pods must remain available, users may create a `PodDisruptionBudget` (PBD) object and declare a `minAvailable` or `maxUnavailable` in its spec. Then, if a pod eviction would violate the availability threshold given by the PDB, the disruption controller will block the eviction and protect the availability of the application.
 
-This KEP will allow the Eviction API to treat each pod group as if it were a single replica when calculating availability for a PDB. To enable this functionality, the PDB spec will have optional boolean `usePodGroups` , and if enabled, the PDB will enforce a number of *pod group replicas* that must remain available, rather than a number of *individual pod replicas* as it is now.
+However, some applications will use `PodGroups` as defined in the new [Workload API](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), in which a group of pods acts as a single "superpod" entity (i.e., each replica is composed of multiple pods). These require more complex eviction logic to protect from disruptions. For example, in a [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) running a distributed ML training job, one pod in a group being evicted would cause the entire group to fail.
+
+This KEP will allow the Eviction API to treat each pod group as if it were a single replica when calculating availability for a PDB. To enable this new behavior, the PDB spec will have optional boolean `usePodGroups`, and if `true`, the PDB will enforce a number of *pod group replicas* that must remain available, rather than a number of *individual pod replicas* as it is now.
 
 **Note: as of this draft, the Workload API is still in progress, for this KEP we assume it is fully implemented**
 
@@ -190,7 +192,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-The goal of this KEP is to make PDBs more useful for pod groups. We want to prevent eviction or preemption of a small number of pods across multiple multi-pod replicas, as this could disrupt each replica (as opposed to evicting multiple pods from a single replica, only disrupting that one replica). This will be achieved by counting pod groups, rather than individual pods, when calculating avaiability for eviction.
+The goal of this KEP is to improve the experience of using PDBs and the Eviction API for applications with multi-pod replicas. Most importantly, eviction of a small number of pods spread across multiple multi-pod replicas could disrupt each replica. This will be prevented by new functionality for calculating avaiability for eviction based on disrupted pod groups, rather than individual pods.
 
 ### Goals
 
@@ -201,7 +203,7 @@ know that this has succeeded?
 
 - **Introduce a field to enable group-based PDBs:** Add a new boolean field `usePodGroups` to the `PodDisruptionBudget.spec`.
 - **Define availability for pod groups:** Allow application owners to define PDBs for multi-pod replicas (as defined by the `Workload` API) rather than individual pods.
-- **Update eviction logic:** When `usePodGroups: true` is set in a PDB spec, the eviction logic will interpret the disruption budget given in the PDB (`minAvailable` or `maxUnavailable`) as a count of pod group replicas, rather than individual pod replicas.
+- **Update eviction logic:** When enabled, the eviction logic will interpret the disruption budget given in the PDB (`minAvailable` or `maxUnavailable`) as a count of pod group replicas, rather than individual pod replicas.
 - **Integrate with Workload API:** Use the pod spec's `workload.name` and `workload.podGroup` to retrieve `Workload` objects and their `PodGroup` groupings.
 - **Maintain compatibility:** Ensure that common cluster operations that respect PDBs, such as `kubectl drain` and node drains initiated by `cluster-autoscaler`, follow group-based disruption budgets when enabled.
 - **Preserve existing functionality:** For backward compatibility, the behavior of PDBs without `usePodGroups: true` will be unchanged.
@@ -212,29 +214,18 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
- 
-This change will only affect the Eviction API. The following are involuntary disruptions and do not use the Eviction API:
-- Manual pod deletion
-- Pods being deleted by their owning controller (e.g. during Deployment rollout)
-- Node failure
-- Pod cleanup due to a node being removed from the cluster
-- Evictions by the Kubelet due to node pressure (e.g. memory shortage)
-- Taint manager deleting NoExecute tainted pods
 
-The only change to object definitions will be the optional field in the `PodDisruptionBudget` spec to enable the changes.
+This change will only affect the Eviction API. Involuntary disruptions do not use the Eviction API include: manual pod deletion, pods being deleted by their owner (e.g. during Deployment rollout), node failure, pod cleanup due to a node being removed from the cluster, evictions by the Kubelet due to node pressure (e.g. memory shortage), taint manager deleting NoExecute tainted pods
 
-This change will not affect the behavior of workload controllers for `Deployment`, `StatefulSet`, `Workload`, etc.
-- The workload controller will be responsible for setting the `workload.name` and `workload.podGroup` on the pods it manages.
-- The lifecycle and recovery of a disrupted replica is the responsibility of the workload controller, this will only handle evictions.
+The only change to k8s resource definitions will be the optional field in the `PodDisruptionBudget` spec to enable the changes.
 
-This change will not affect scheduling.
-- There will be no additions or changes to gang scheduling. This only handles eviction of already-scheduled pods.
+This change will not affect the behavior of controllers for `Deployment`, `StatefulSet`, `Workload`, or `LeaderWorkerSet`, which will be responsible for setting the `workload.name` and `workload.podGroup` on their managed pods. The lifecycle and recovery of a disrupted replica is the responsibility of their owning controller.
 
-Partial replica health:
--  This KEP follows the definition of multi-pod replica health from the `Workload` API, using `minCount`. A replica is considered "available" if it meets `minCount`, and "unavailable" if it does not. We are not introducing any other definition of partial health (e.g. percentage).
+There will be no additions or changes to scheduling, including gang scheduling. This only handles eviction of already-scheduled pods.
 
-Mixed workload types:
-- If a PDB has multi-pod replicas enabled, individual pods without an assigned workload will be treated as single-pod groups.
+This KEP follows the definition of multi-pod replica health using `minCount` from the `Workload` API. A replica is considered healthy if it meets `minCount` of healthy pods, and unhealthy otherwise. We are not introducing any other definition of partial health (e.g. a percentage).
+
+If a PDB has multi-pod replicas enabled, individual pods without an assigned workload will be treated as single-pod groups. We will log a warning as mixing types is not recommended, but the user is responsible for correct setup of replicas.
 
 ## Proposal
 
@@ -247,7 +238,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We propose adding a new, optional boolean field `usePodGroups` to the `PodDisruptionBudget.spec`. If this field is `false` (default) or unset, the Eviction API evaluates the PDB based on individual pod counts, preserving all existing behavior. If `true`, the Eviction API will find the `Workload` object and its `PodGroup` as specified by the Pod spec. This `PodGroup`  will define the minimum number of pods required for one replica of that group to be healthy, and how many replicas are expected. This will be used to measure availability of pod groups, and the PDB's `minAvailable` or `maxUnavailable` will be interpreted in terms of these `PodGroup` replicas, rather than individual pods.
+We will add a new optional boolean `usePodGroups` to the `PodDisruptionBudget.spec`. If this field is unset or `false` (default), the Eviction API will evaluate the PDB based on individual pod counts, preserving all existing behavior. If `true`, the Eviction API will find the `Workload` object and its `PodGroup` as specified by the Pod spec. This `PodGroup` defines the minimum number of pods required for a replica of that group to be healthy, and how many replicas are expected. Using this information, the PDB's `minAvailable` or `maxUnavailable` will be interpreted in terms of these `PodGroup` replicas, rather than individual pods.
 
 ### User Stories (Optional)
 
@@ -261,9 +252,9 @@ bogged down.
 
 #### Story 1: Distributed Workload
 
-An ML engineer is running distributed training jobs using `Workload` API. The `Workload` defines a `PodGroup` named `worker` with `replicas: 10` and `policy.gang.minCount: 8`. This means the job has 10 replicas, each consisting of at least 8 pods.
+An ML engineer is running distributed training jobs using Workload API. The `Workload` defines a `PodGroup` named `worker` with `replicas: 10` and `policy.gang.minCount: 8`. This means the job has 10 replicas, each consisting of at least 8 pods.
 
-To protect this long-running job from voluntary disruptions (like node drains), the user wants to ensure at least 9 of the 10 worker groups remain available.
+To protect this long-running job from voluntary disruptions, the user wants to ensure at least 9 of the 10 worker groups remain available.
 
 This user would create a PDB targeting the worker pods:
 
@@ -277,7 +268,7 @@ spec:
   usePodGroups: true  # <-- New field to enable
   selector:
     matchLabels:
-      # Assuming pods are labeled by the workload controller
+      # Assuming pods are labeled
       workload: my-training-job
       pod-group: worker
 ```
@@ -289,7 +280,7 @@ Upon node drain, the Eviction API will:
 4.  Fetch the `Workload` object `my-training-job`.
 5.  Find `worker` `PodGroup` in the `Workload`, which has 10 `replicas` and 8 `minSize`.
 6.  Interpreting `minAvailable: 9` as pod groups, a group is considered disrupted if evicting a pod would cause its healthy pod count to drop below 8.
-8.  The drain will proceed only if it does not cause the number of available worker groups to drop below 9.
+7.  The drain will proceed only if it does not cause the number of available worker groups to drop below 9.
 
 This way, the job is protected to run with sufficient replicas during cluster maintenance.
 
@@ -297,9 +288,9 @@ This way, the job is protected to run with sufficient replicas during cluster ma
 
 A cluster administrator frequently drains nodes for upgrades. The cluster has various workloads, including multi-pod applications defined by the `Workload` API.
 
-To perform node drains safely, the administrator relies on application owners' PDBs. When the admin issues `kubectl drain <node>`, the Eviction API uses the process above and interprets the PDBs in terms of `PodGroup` replicas, ensuring that the drain does not violate the application's group-based availability requirements.
+The admin would like to upgrade a node which is running the job from Story 1. To perform node drains safely, they rely on application owners' PDBs. When they issue `kubectl drain <node>`, the Eviction API sees the PDB and uses the process above, interpreting the disruption in terms of `PodGroup` replicas and ensuring that the drain does not violate the application's group-based availability requirements.
 
-This allows safe maintenance without causing outages, as the drain will pause if it cannot evict pods without violating a group-based PDB. It will wait for better replica health, more availability, lower requirements, or the admin may contact the application owner to resolve.
+This allows safe maintenance without causing outages, as the drain will pause if it cannot evict pods without violating a group-based PDB. It will wait for better replica health, more availability, lower PDB requirements, or the admin may contact the application owner to resolve the block.
 
 #### Simplified Setup Example
 
@@ -331,7 +322,9 @@ graph TD
     class P0A,P0B,P1A,P1B pod_box
 ```
 
-In this simplified setup, the node being drained contains two replicas, each with two pods (there may be more nodes and replicas which we can ignore). The PDB wants at most one replica unavailable. Currently, the user might try `minUnavailable: 2` (one two-pod replica unavailable). The node drain would start, and could evict a pod from replica 0 and a pod from replica 1 before pausing (as there are only 2 pods left). This would disrupt both replicas. With the new changes, a PDB with `usePodGroups: true` and `minUnavailable: 1` (one replica unavailable) would pause before evicting a pod from the second replica, protecting one of the replicas as intended.
+In this setup, the node being drained contains two replicas, each with two pods (there may be more nodes and replicas which we can ignore). The PDB wants at most one replica unavailable. Currently, the user might try `minUnavailable: 2` (one two-pod replica unavailable). The node drain would start, and could evict a pod from replica 0 and a pod from replica 1 before pausing (as there are only 2 pods left). This would disrupt both replicas. With the new changes, a PDB with `usePodGroups: true` and `minUnavailable: 1` (one replica unavailable) would pause before evicting a pod from the second replica, protecting one of the replicas as intended.
+
+In a real cluster, there may be additional nodes or replicas, pods from other jobs sharing those nodes, etc.
 
 
 ```mermaid
@@ -446,8 +439,8 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-- This feature relies on the pod's `spec.workload.name` and `spec.workload.podGroup` fields being correctly set by its managing controller. If a user sets `usePodGroups: true` but the pods are not correctly linked to a `Workload` object, the eviction logic will fall back to per-pod counting, which may violate the application's true availability requirements (though it will prevent a drain from being blocked by misconfiguration).
-- One failing pod in a large group will make that group "unavailable" if it drops below its `minCount`. A small number of failing pods spread across many groups could prevent all evictions and block a node drain. This is intended behavior (as the application is unhealthy), but may be surprising to operators.
+- This feature relies on the pod's `spec.workload.name` and `spec.workload.podGroup` fields being correctly set by its managing controller. If a user sets `usePodGroups: true` but the pods are not correctly linked to a `Workload` object, the eviction logic will fall back to per-pod counting to prevent a drain from being blocked by misconfiguration, which may violate the application's intended availability requirements.
+- One failing pod in a large group will make that group unhealthy if it drops below its `minCount`. In this way, a small number of failing pods spread across many replicas could prevent all evictions and block node drains. This is intended behavior (as the application is unhealthy), but may be surprising to operators.
 - A PDB `selector` that matches pods from multiple different `PodGroup`s (or a mix of grouped and individual pods) may have complex or unintended behavior. Users should be advised to create separate PDBs for each distinct `PodGroup` they wish to protect.
 
 ## Design Details
@@ -467,22 +460,15 @@ We will add a new field to `PodDisruptionBudgetSpec` in `pkg/apis/policy/v1/type
 // PodDisruptionBudgetSpec defines the desired state of PodDisruptionBudget
 type PodDisruptionBudgetSpec struct {
 	// An eviction is allowed if at least "minAvailable" pods selected by
-	// "selector" will still be available after the eviction, i.e. even in the
-	// absence of the evicted pod.  So, "minAvailable" is a safety threshold,
-	// an absolute number or a percentage.
-	// +optional
+	// ...
 	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty" protobuf:"bytes,1,opt,name=minAvailable"`
 
 	// Label query over pods whose evictions are managed by the disruption
-	// budget.
-	// +optional
+	// ...
 	Selector *metav1.LabelSelector `json:"selector,omitempty" protobuf:"bytes,2,opt,name=selector"`
 
 	// An eviction is allowed if at most "maxUnavailable" pods selected by
-	// "selector" are unavailable after the eviction, i.e. even in the
-	// presence of the evicted pod.  So, "maxUnavailable" is a safety threshold,
-	// an absolute number or a percentage.
-	// +optional
+	// ...
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty" protobuf:"bytes,3,opt,name=maxUnavailable"`
 
 	// usePodGroups indicates that availability should be calculated based on
@@ -571,9 +557,9 @@ graph TD
 ```
 
 #### Group Health
-A `PodGroup` replica is considered available if its number of existing, healthy, non-evicting pods is greater than or equal to its `policy.gang.minCount`.
+A `PodGroup` replica is considered healthy if its number of existing, healthy, non-evicting pods is greater than or equal to its `policy.gang.minCount`.
 
-For example, if a replica expects 10 pods with `minCount: 8` but only has 9 healthy pods (1 is missing or unhealthy), the replica is still considered healthy. If 3 pods are missing or unhealthy and only 7 healthy pods exist, the replica is unhealthy. If any pod in an available group is targeted for eviction, it would be unhealthy post-eviction and is also counted as unavailable for the PDB calculation.
+For example, if a replica is intended to have 10 pods and has `minCount: 8` but only has 9 healthy pods (1 is missing or unhealthy), the replica is still considered healthy. If 3 pods were missing or unhealthy so only 7 healthy pods were found, the replica would be unhealthy. If any pod in a healthy group is targeted for eviction, it would be unhealthy post-eviction and is also counted as unhealthy for the PDB calculation.
 
 
 ### Pods missing fields
