@@ -73,6 +73,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Update related to KEP-5440](#update-related-to-kep-5440)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -274,6 +275,15 @@ for which a Job can be *continuously* active before which it is terminated.
 When a Job is suspended or created in the suspended state, a "Suspended" event
 is recorded. Similarly, when a Job is resumed from its suspended state, a
 "Resumed" event is recorded.
+
+### Update related to KEP-5440
+
+As part of the [KEP5440](https://github.com/kubernetes/kubernetes/pull/132441) we also clear
+the `status.startTime` field when the Job is suspeded. This will help to eliminate the need
+for overriding the `status.startTime` field, except for the rare cases where the Job is
+resumed immdiately after suspension.
+It will also help to eliminate over time the workaround in Kueue to clear the `status.startTime`,
+see [here](https://github.com/kubernetes-sigs/kueue/blob/eb8a0e8c5c60d5771c593cca2fe9f7be0ea5b122/pkg/controller/jobs/job/job_controller.go#L184-L192).
 
 ### Test Plan
 

@@ -88,6 +88,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Update related to KEP-5440](#update-related-to-kep-5440)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
@@ -326,6 +327,14 @@ node selector, tolerations, annotations and labels.
 
 The condition we will check to verify that the job has never been unsuspended before is 
 `Job.Spec.Suspend=true && Job.Status.StartTime=nil`.
+
+### Update related to KEP-5440
+
+As part of the [KEP5440](https://github.com/kubernetes/kubernetes/pull/132441) we adjust
+the condition to be `.spec.suspend=true && hasJobSuspendedCondition(job.status) &&.status.active=0`
+which is more flexible as it allows to mutate the Job after it was started, but got suspended.
+This possibility is already used in the Kueue project, and the check had to be workarounded by clearing
+the `status.startTime`, see [here](https://github.com/kubernetes-sigs/kueue/blob/eb8a0e8c5c60d5771c593cca2fe9f7be0ea5b122/pkg/controller/jobs/job/job_controller.go#L184-L192).
 
 <!--
 This section should contain enough information that the specifics of your
