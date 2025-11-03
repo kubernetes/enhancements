@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [DRA Support](#dra-support)
   - [Resuming on running workloads](#resuming-on-running-workloads)
+  - [Related changes](#related-changes)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
@@ -298,6 +299,18 @@ In this work, we want to relax this solution to enable #story-3.
 Users would be able to suspend a running workload, and change the resources on the suspended job.
 It is important to note that when a running Job is suspended, any of its active Pods will be terminated.
 This is a critical detail for any user or controller implementing this workflow.
+
+For that reason we only allow mutability of the PodTemplate when all Pods are already marked for deletion,
+ie. the Job has the "Suspended" condition and the "status.Active" equals 0.
+
+### Related changes
+
+As part of this KEP we also modify the condition for the mutability of the suspended Jobs which check that
+`Job.Status.StartTime=nil`. While this check has the similar intention of making sure that there are no
+Pods running with the old template, it is not ideal as it needs to be workaround by Kueue [here](https://github.com/kubernetes-sigs/kueue/blob/a5ce091a74e6e46e91a0c49e8a5942e64154d90b/pkg/controller/jobs/job/job_controller.go#L185-L192).
+
+Finally, the changes above allow to also clear that "status.startTime" when suspending a Job, avoiding the
+need to clean the field explicitly in the Kueue project.
 
 ### Test Plan
 

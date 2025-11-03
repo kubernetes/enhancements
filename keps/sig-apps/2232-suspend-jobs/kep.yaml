@@ -15,6 +15,10 @@ approvers:
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
 
+see-also:
+  - "/keps/sig-apps/5440-mutable-job-pod-resource-updates"
+  - "/keps/sig-scheduling/2926-job-muable-scheduling-directives"
+
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
