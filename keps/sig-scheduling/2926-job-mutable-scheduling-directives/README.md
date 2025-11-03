@@ -330,11 +330,11 @@ The condition we will check to verify that the job has never been unsuspended be
 
 ### Update related to KEP-5440
 
-As part of the [KEP5440](https://github.com/kubernetes/kubernetes/pull/132441) we adjust
-the condition to be `.spec.suspend=true && hasJobSuspendedCondition(job.status) &&.status.active=0`
+As part of the [KEP-5440](https://github.com/kubernetes/enhancements/issues/5440) we adjust
+the condition to be `Job.Spec.Suspend=true && hasCondition(Job.Status, "JobSuspended") && Job.Status.Active=0`
 which is more flexible as it allows to mutate the Job after it was started, but got suspended.
 This possibility is already used in the Kueue project, and the check had to be workarounded by clearing
-the `status.startTime`, see [here](https://github.com/kubernetes-sigs/kueue/blob/eb8a0e8c5c60d5771c593cca2fe9f7be0ea5b122/pkg/controller/jobs/job/job_controller.go#L184-L192).
+the `Job.Status.StartTime`, see [here](https://github.com/kubernetes-sigs/kueue/blob/eb8a0e8c5c60d5771c593cca2fe9f7be0ea5b122/pkg/controller/jobs/job/job_controller.go#L184-L192).
 
 <!--
 This section should contain enough information that the specifics of your

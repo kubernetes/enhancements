@@ -278,11 +278,11 @@ is recorded. Similarly, when a Job is resumed from its suspended state, a
 
 ### Update related to KEP-5440
 
-As part of the [KEP5440](https://github.com/kubernetes/kubernetes/pull/132441) we also clear
-the `status.startTime` field when the Job is suspeded. This will help to eliminate the need
-for overriding the `status.startTime` field, except for the rare cases where the Job is
+As part of the [KEP-5440](https://github.com/kubernetes/enhancements/issues/5440) we also clear
+the `Status.StartTime` field when the Job is suspended. This will help to eliminate the need
+for overriding the `Status.StartTime` field, except for the rare cases where the Job is
 resumed immdiately after suspension.
-It will also help to eliminate over time the workaround in Kueue to clear the `status.startTime`,
+It will also help to eliminate over time the workaround in Kueue to clear the `Status.StartTime`,
 see [here](https://github.com/kubernetes-sigs/kueue/blob/eb8a0e8c5c60d5771c593cca2fe9f7be0ea5b122/pkg/controller/jobs/job/job_controller.go#L184-L192).
 
 ### Test Plan
