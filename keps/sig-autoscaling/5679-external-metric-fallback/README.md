@@ -384,7 +384,20 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- Tests for Fallback Configuration:
+  - Verify failureThreshold validation (must be > 0)
+  - Verify validation is skipped when feature gate is disabled
+- Tests for Failure Tracking and Activation:
+  - Verify `consecutiveFailureCount` increments on failure and resets on success
+  - Verify fallback activates when threshold is reached
+  - Verify fallbackActive status field updates correctly
+- Tests for Replica Calculation:
+  - Verify `GetExternalMetricReplicas` and `GetExternalPerPodMetricReplicas` functions use fallback values when conditions are met
+  - Verify replica calculations respect min/max constraints with fallback values
+  - Verify correct behavior with multiple external metrics (independent failure tracking)
+  
+- `/pkg/controller/podautoscaler`: 05 Nov 2025 - 89.1%
+- `/pkg/controller/podautoscaler/metrics`: 05 Nov 2025 - 89.9%
 
 ##### Integration tests
 
@@ -403,7 +416,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- <test>: <link to test coverage>
+N/A, the feature is tested using unit tests and e2e tests.
 
 ##### e2e tests
 
@@ -959,10 +972,6 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
-- Check if issue affects only HPAs with fallback configured also check `horizontal_pod_autoscaler_controller_reconciliation_duration_seconds` and `horizontal_pod_autoscaler_fallback_active_total` metrics
-- Review HPA events: kubectl describe hpa <name>
-- Verify external metrics provider health
-- Temporarily remove fallback configuration from affected HPAs if needed
 
 ## Drawbacks
 
