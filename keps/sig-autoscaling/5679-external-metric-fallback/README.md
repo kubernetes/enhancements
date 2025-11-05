@@ -104,9 +104,9 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
@@ -959,6 +959,19 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check `horizontal_pod_autoscaler_controller_reconciliation_duration_seconds` and `horizontal_pod_autoscaler_fallback_active` to identify if issues correlate with HPAs using fallback. If problems are observed:
+
+- Check if the issue only affects HPAs with fallback configured
+- Verify if multiple external metrics are failing simultaneously (check `horizontal_pod_autoscaler_external_metric_retrieval_failures_total`)
+- Review HPA events: kubectl describe hpa <name> to see fallback activation events
+- Check external metrics provider health and connectivity
+
+For problematic HPAs, you can:
+
+- Temporarily remove the fallback field to revert to default behavior (HPA holds current scale on metric failure)
+- Adjust `failureThreshold` to prevent premature fallback activation
+- Review and adjust fallback values if scaling behavior is inappropriate
 
 ## Implementation History
 
