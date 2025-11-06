@@ -142,27 +142,37 @@ Unlike in-cluster resource metrics (CPU, memory) served by metrics-server, which
 
 ## Motivation
 
-The Horizontal Pod Autoscaler (HPA) is a critical component for scaling Kubernetes 
-workloads based on resource utilization or custom metrics. However, the current 
-implementation depends entirely on the availability of the resource metrics API 
-or custom metrics API to make scaling decisions. If these APIs experience 
-downtime or degradation, the HPA cannot take any scaling actions, leaving 
-workloads potentially overprovisioned, underprovisioned, or entirely unmanaged.
+The Horizontal Pod Autoscaler (HPA) supports scaling workloads based on external metrics—metrics that originate from systems outside the Kubernetes cluster's control. These external systems include:
 
-In contrast, other autoscalers like [KEDA](https://keda.sh/) already provide mechanisms to define 
-fallback strategies in the event of metric retrieval failures. These strategies 
-mitigate the impact of API unavailability, enabling the autoscaler to maintain 
-a functional scaling strategy even when metrics are temporarily inaccessible.
+- Cloud provider APIs (e.g., AWS CloudWatch, Azure Monitor, GCP Monitoring)
+- Third-party monitoring systems (e.g., Datadog, New Relic, Prometheus running externally)
+- Message brokers and queues (e.g., AWS SQS, RabbitMQ, Kafka)
+- Application-specific metrics services
 
-By allowing users to configure fallback behavior in HPA, this proposal aims to 
-reduce the criticality of the metrics APIs and improve the overall robustness 
-of the autoscaling system. This change allows users to define safe scaling 
-actions, both as scaling to a predefined maximum or holding the current scale 
-(current behavior), ensuring workloads remain operational and better aligned 
-with user-defined requirements during unexpected disruptions.
+Unlike in-cluster resource metrics (CPU, memory served by metrics-server) or custom/object metrics (served by in-cluster custom metrics APIs), external metrics are inherently less reliable because they depend on systems outside the cluster operator's direct control. These external systems may experience:
 
-Additionally, the community has also expressed interest in addressing this
-limitation in the past. ([#109214](https://github.com/kubernetes/kubernetes/issues/109214))
+- Network connectivity issues between the cluster and the external service
+- Rate limiting or throttling
+- Service outages or degraded performance
+- Authentication/authorization failures
+- Regional or availability zone failures
+
+When external metrics become unavailable, the HPA cannot make informed scaling decisions. Currently, the HPA simply maintains the current replica count and waits for metrics to become available again. This behavior can lead to:
+
+- Workloads stuck at insufficient scale during traffic spikes when metrics are unavailable
+- Inability to respond to critical business events (e.g., growing queue depth, increasing error rates)
+- Production incidents caused by external metrics provider outages
+- Over-dependence on the reliability of external systems for critical autoscaling functionality
+Other autoscalers in the ecosystem, such as [KEDA](https://keda.sh/), already provide fallback mechanisms for external metrics to mitigate these availability issues. By allowing users to configure fallback behavior for external metrics in HPA, this proposal aims to:
+
+- Reduce the criticality of external metrics providers on cluster workload scaling
+- Improve the overall robustness of autoscaling for workloads that depend on external signals
+- Enable users to define safe, conservative scaling actions when external metrics are temporarily unavailable
+- Maintain workload availability and performance during external metrics provider disruptions
+
+This enhancement allows users to specify substitute metric values that the HPA should use after a configurable number of consecutive failures to retrieve an external metric. The fallback value is fed into the existing HPA scaling algorithm, respecting all configured constraints (min/max replicas, behavior policies, etc.), ensuring predictable and safe scaling decisions even when external metrics are unavailable.
+
+The community has previously expressed interest in addressing this limitation [#109214](https://github.com/kubernetes/kubernetes/issues/109214).
 
 ### Goals
 
