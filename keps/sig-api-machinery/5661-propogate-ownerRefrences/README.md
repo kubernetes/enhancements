@@ -83,25 +83,26 @@ This proposal introduces support for propagating non-controller `ownerReferences
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+When controllers such as ReplicaSets, StatefulSets, or Jobs create Pods, they automatically assign an `ownerReference` with `controller: true`, establishing a primary control relationship between the controller and its Pods. This ensures correct garbage collection and lifecycle management.
+However, the current behavior in `GetPodFromTemplate` discards any `ownerReferences` defined within the `PodTemplateSpec`. This omission prevents workload authors and higher-level systems from expressing additional “belongs-to” or “associated-with” relationships between Pods and other Kubernetes objects.
+In many real-world use cases, Pods are not only managed by a single controller but also conceptually part of broader systems or experiments. For example, a workflow engine, deployment manager, or AI experiment runner might want to associate Pods with higher-level grouping objects for tracking, cleanup, or visibility. Without support for propagating `ownerReferences` (with `controller: false`), these relationships must be maintained out-of-band, leading to fragmented ownership semantics and operational complexity.
+Allowing propagation of non-controller `ownerReferences` from a `PodTemplateSpec` to the created Pods closes this gap. It enables declarative, consistent, and introspectable relationships between Pods and other Kubernetes objects, while maintaining the invariant that each Pod has only one controller owner.
 
 ### Goals
 
-- Allow controllers to optionally propagate `OwnerReferences` from PodTemplateSpec to Pods.
-- Preserve compatibility and avoid changing existing controllerRef semantics.
-- Ensure validation and GC behavior remain consistent.
+- Enable propagation of non-controller `ownerReferences` defined in a `PodTemplateSpec` to the Pods created from it.
+- Allow workload authors and higher-level systems to declaratively establish additional ownership or association relationships between Pods and other Kubernetes objects.
+- Maintain consistent garbage collection and lifecycle semantics — Pods should still have exactly one controller owner (`controller: true`) but may include additional non-controller owners.
+- Ensure this propagation logic is implemented in a controlled, backward-compatible manner within `GetPodFromTemplate` and related controller utilities.
+- Provide visibility and traceability across Kubernetes APIs by allowing users and tools to inspect extended ownership relationships directly via the `metadata.ownerReferences` field.
 
 ### Non-Goals
 
-- Changing the controllerRef model or GC rules.
-- Allowing multiple `isController: true` references.
+- Changing or relaxing the rule that a Pod may have only one ownerReference with `controller: true`.
+- Introducing any new garbage collection behaviors or modifying existing GC rules in Kubernetes.
+- Propagating arbitrary metadata or fields other than `ownerReferences` from templates.
+- Redefining how higher-level controllers (e.g., ReplicaSet, StatefulSet, Job) determine pod ownership or reconcile pods.
+- Automatically inferring or generating non-controller owner references—only explicit entries in the `PodTemplateSpec` should be propagated.
 
 ## Proposal
 
@@ -112,14 +113,6 @@ Currently, any ownerReferences defined within the PodTemplateSpec are dropped du
 This proposal aims to modify GetPodFromTemplate() to propagate non-controller ownerReferences from the PodTemplateSpec to the resulting Pods, while preserving existing controller behavior.
 
 This enhancement allows workload and extension authors to declaratively define additional ownership relationships for Pods—enabling better integration with higher-level controllers, custom schedulers, and resource management systems—without altering existing controller semantics.
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
 
 ### User Stories (Optional)
 
@@ -145,43 +138,111 @@ This might be a good place to talk about core concepts and how they relate.
 
 ### Risks and Mitigations
 
-- Risk: Pods might be GCed prematurely if a propagated owner is deleted.
-  Mitigation: Require explicit opt-in via a feature gate and flag.
-- Risk: Validation failures if multiple `controller: true` refs exist.
-  Mitigation: Automatically drop template controller refs or reject via admission.
-- Risk: GC propagation may delay cleanup.
-  Mitigation: Document behavior and encourage careful usage.
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+### 1. Pods may be garbage collected earlier than expected
 
-How will security be reviewed, and by whom?
+**Risk:**  
+If a propagated non-controller owner is deleted, its dependent Pods may be garbage collected prematurely.
 
-How will UX be reviewed, and by whom?
+**Mitigation:**  
+This behavior will only be enabled when the `PropagateOwnerReferences` feature gate is set to `true`. Documentation and release notes will clearly describe the ownership propagation semantics so that controllers and users can opt in with full understanding of GC effects.
 
-Consider including folks who also work outside the SIG or subproject.
--->
+---
+
+### 2. Validation errors from multiple `isController: true` references
+
+**Risk:**  
+If the `PodTemplateSpec` includes an `ownerReference` marked as `isController: true`, it will conflict with the `controllerRef` that the controller sets, causing Pod creation to fail validation.
+
+**Mitigation:**  
+The implementation will automatically ignore or drop any template `ownerReference` with `isController: true` to preserve existing validation guarantees. The feature will strictly propagate only non-controller owner references.
+
+---
+
+### 3. Changes in GC propagation delaying cleanup
+
+**Risk:**  
+If Pods now have additional non-controller `ownerReferences`, the garbage collector may delay their deletion until all referenced owners are deleted, potentially prolonging Pod lifecycle.
+
+**Mitigation:**  
+The behavior will be documented clearly as part of feature usage guidelines. Because this propagation is purely additive and opt-in, existing controllers will not experience changed GC timing unless they explicitly use this feature.
+
+---
+
+### 4. Compatibility and rollout risk
+
+**Risk:**  
+Unintended behavior could occur in workloads that reuse `PodTemplateSpec`s across controllers or rely on implicit cleanup semantics.
+
+**Mitigation:**  
+- The feature is introduced behind a feature gate (`PropagateOwnerReferences`) and will start in **alpha**, allowing cluster operators to safely test and disable it if needed.  
+- Extensive unit and integration tests will ensure compatibility with garbage collection and `controllerRef` validation logic.
 
 ## Design Details
 
-The GetPodFromTemplate() function in pkg/controller/controller_utils.go will be updated to merge ownerReferences from the provided PodTemplateSpec into the generated Pod object.
-Currently, the function initializes a new v1.Pod with labels, annotations, finalizers, and a generated name, but it discards any existing ownerReferences.
+### Overview
 
-With the PropagateOwnerReferences feature gate enabled:
+The existing `GetPodFromTemplate()` function, located in `pkg/controller/controller_utils.go`, is a shared utility used by multiple workload controllers (e.g., Deployment, ReplicaSet, Job) to create `Pod` objects from a `PodTemplateSpec`.  
+Currently, this helper copies labels, annotations, and finalizers from the template but **discards any existing `OwnerReferences`** defined in the `PodTemplateSpec`.  
+As a result, only the controller’s own `controllerRef` is attached to the created `Pod`, preventing workload authors from expressing additional ownership relationships.
 
-- The function will copy all ownerReferences from template.ObjectMeta.OwnerReferences where isController is false.
-- These entries will be appended to the Pod’s OwnerReferences list, after the controllerRef (if present).
-- If the template contains an ownerReference with isController: true, it will be ignored to prevent validation conflicts.
-- No other behavior in Pod creation, garbage collection, or controller ownership resolution will change.
-The resulting behavior preserves the existing controller–Pod relationship while allowing additional non-controller ownership links to be propagated declaratively.
-Feature-gated implementation ensures that clusters can safely opt in and out during the alpha phase.
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+### Proposed Change
+
+When the `PropagateOwnerReferences` feature gate is enabled, `GetPodFromTemplate()` will be modified to **merge non-controller `OwnerReferences`** from the `PodTemplateSpec` into the generated `Pod`.
+
+The proposed logic is as follows:
+
+1. Preserve existing behavior for labels, annotations, finalizers, and the controller’s `controllerRef`.  
+2. From the `template.ObjectMeta.OwnerReferences` list, **filter out any references where `isController: true`**.  
+3. Append all remaining non-controller `OwnerReferences` to the Pod’s `OwnerReferences` list after adding the controllerRef (if provided).  
+4. If the feature gate is disabled, or no additional owner references exist, the function behaves exactly as before.
+
+This ensures that:
+- The Pod continues to have **exactly one controller** (the parent controllerRef).  
+- Additional ownership links (e.g., grouping by a higher-level object or logical hierarchy) can be declared safely.  
+- Garbage Collection (GC) and validation semantics remain unchanged for existing workloads.
+
+### Example Behavior
+
+Given a `PodTemplateSpec` like this:
+
+```yaml
+metadata:
+  ownerReferences:
+    - apiVersion: "batch/v1"
+      kind: "JobGroup"
+      name: "analytics-job-group"
+      uid: "abcd-1234"
+      controller: false
+```
+
+When the controller creates a `Pod` using `GetPodFromTemplate()` with controllerRef pointing to the `Job`, the resulting `Pod` will include both references:
+
+```yaml
+  metadata:
+    ownerReferences:
+      - apiVersion: "batch/v1"
+        kind: "Job"
+        name: "data-job"
+        uid: "xyz-789"
+        controller: true
+      - apiVersion: "batch/v1"
+        kind: "JobGroup"
+        name: "analytics-job-group"
+        uid: "abcd-1234"
+        controller: false
+```
+
+This allows tools, schedulers, and GC to recognize both the direct controller relationship and the broader group membership defined by the workload author.
+
+### Feature Gate
+
+The change will be gated by a new alpha feature gate:
+```go
+PropagateOwnerReferences: {
+    Default: false,
+    PreRelease: featuregate.Alpha,
+}
+```
 
 ### Test Plan
 
