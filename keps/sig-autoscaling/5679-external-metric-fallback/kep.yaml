@@ -7,9 +7,9 @@ owning-sig: sig-autoscaling
 status: provisional
 creation-date: 2025-04-11
 reviewers:
-  - TBD
+  - "@jackfrancis"
 approvers:
-  - TBD
+  - "@jackfrancis"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
