@@ -350,6 +350,20 @@ type ExternalMetricStatus struct {
 }
 ```
 
+Add a new `HorizontalPodAutoscalerConditionType`:
+
+```golang
+const (
+    // ExternalMetricFallbackActive indicates that one or more external metrics
+    // are currently using fallback values due to retrieval failures.
+    // Status will be:
+    // - "True" if any external metric is in fallback state
+    // - "False" if no external metrics are in fallback state
+    // - "Unknown" if the controller cannot determine the state
+    ExternalMetricFallbackActive ConditionType = "ExternalMetricFallbackActive"
+)
+```
+
 ### Test Plan
 
 <!--
@@ -447,6 +461,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 We will add the following e2e autoscaling tests:
 
 - External metric failure triggers fallback after threshold is reached, using configured replica count
+- HPA status condition `ExternalMetricFallbackActive` is set to True when fallback activates
 - Success in retrieving external metric resets the failure count and resumes normal scaling
 - HPA uses max() of healthy metric calculations and fallback replica counts
 - Fallback respects HPA min/max replica constraints
@@ -755,6 +770,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 Users can confirm that the feature is active and functioning by inspecting the status fields exposed by the controller. Specifically:
+- Check the HPA condition to verify if `ExternalMetricFallbackActive` is currently active
 - Check `.status.currentMetrics[].external.fallbackActive` to verify if fallback is currently active
 - Check `.status.currentMetrics[].external.consecutiveFailureCount` to see the current failure count
 
