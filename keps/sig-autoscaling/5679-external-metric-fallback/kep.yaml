@@ -36,5 +36,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - horizontal_pod_autoscaler_fallback_active
-  - horizontal_pod_autoscaler_external_metric_retrieval_failures_total
+  - TBD
