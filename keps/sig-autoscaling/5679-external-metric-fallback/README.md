@@ -170,6 +170,20 @@ Other autoscalers in the ecosystem, such as [KEDA](https://keda.sh/), already pr
 - Enable users to define safe, conservative scaling actions when external metrics are temporarily unavailable
 - Maintain workload availability and performance during external metrics provider disruptions
 
+**Why Duration-Based Instead of Count-Based:**
+
+Different Kubernetes providers and configurations may poll external metrics at different frequencies. The HPA reconciliation loop typically runs every 15 seconds by default (configurable via `--horizontal-pod-autoscaler-sync-period`), but this can vary between clusters. A count-based threshold (e.g., "3 failures") would result in inconsistent behavior:
+- In a cluster polling every 15s: 3 failures = 45 seconds
+- In a cluster polling every 30s: 3 failures = 90 seconds
+- If polling frequency changes, behavior changes unexpectedly
+
+A duration-based threshold provides consistent, predictable behavior regardless of:
+- HPA controller reconciliation frequency
+- Kubernetes provider configurations
+- Cluster-specific settings
+
+The duration is measured from the first consecutive failure, ensuring consistent and understandable semantics: "activate fallback if the metric has been failing for at least X minutes."
+
 This enhancement allows users to specify a desired replica count that the HPA should use after a configurable number of consecutive failures to retrieve an external metric. The fallback replica count is treated as the desired replica count from that metric and combined with other metrics using the HPA's standard multi-metric algorithm (taking the maximum), respecting all configured constraints (min/max replicas, behavior policies, etc.), ensuring predictable and safe scaling decisions even when external metrics are unavailable.
 
 The community has previously expressed interest in addressing this limitation [#109214](https://github.com/kubernetes/kubernetes/issues/109214).
@@ -194,33 +208,15 @@ The community has previously expressed interest in addressing this limitation [#
 
 Add optional fallback configuration to the [ExternalMetricSource](https://github.com/kubernetes/kubernetes/blob/48c56e04e0bc2cdc33eb67ee36ca69eba96b5d0b/staging/src/k8s.io/api/autoscaling/v2/types.go#L343) type, allowing users to specify:
 
-1. A failure threshold (number of consecutive failures before activating fallback)
+1. A failure duration (how long the metric must be continuously failing before activating fallback)
 2. A substitute metric value to use when the threshold is exceeded
-
-This approach:
-- **Maintains the HPA algorithm**: Fallback provides a metric value, not a fixed replica count
-- **Is per-metric**: Each external metric can have its own fallback configuration
-- **Provides visibility**: Status shows which metrics are in fallback state
-- **Is conservative**: Only applies to external metrics, which are inherently out-of-cluster
-
-### User Stories
-
-#### Story 1: SaaS Application Scaling on Queue Depth
-
-I run a SaaS application that scales based on a cloud provider's message queue depth (external metric). Occasionally, the cloud provider's metrics API experiences brief outages (5-10 minutes). During these outages, my HPA cannot scale, and customer requests queue up. 
-
-## Proposal
-
-Add optional fallback configuration to the `ExternalMetricSource` type, allowing users to specify:
-
-1. A failure threshold (number of consecutive failures before activating fallback)
-2. A desired replica count to use when the threshold is exceeded
 
 This approach:
 - **Works with the HPA algorithm**: Fallback provides a desired replica count for that metric, which is combined with other metrics using the standard HPA multi-metric approach (taking the maximum)
 - **Is per-metric**: Each external metric can have its own fallback configuration
 - **Provides visibility**: Status shows which metrics are in fallback state
 - **Is conservative**: Only applies to external metrics, which are inherently out-of-cluster
+- **Is consistent**: Duration-based thresholds behave the same across different Kubernetes configurations and reconciliation frequencies
 
 ### User Stories
 
@@ -239,7 +235,7 @@ metrics:
       type: AverageValue
       averageValue: "30"
     fallback:
-      failureThreshold: 3
+      failureDuration: 3m # Activate fallback after 3 minutes of consecutive failures
       replicas: 10  # Scale to 10 replicas to handle presumed backlog
 ```
 
@@ -259,7 +255,7 @@ metrics:
       type: Value
       value: "0.01"  # 1% error rate
     fallback:
-      failureThreshold: 3
+      failureDuration: 5m  # Activate after 5 minutes
       replicas: 15  # Scale to 15 replicas assuming higher load
 - type: External
   external:
@@ -269,7 +265,7 @@ metrics:
       type: Value
       value: "200"
     fallback:
-      failureThreshold: 3
+      failureDuration: 3m  # Activate after 3 minutes
       replicas: 12  # Scale to 12 replicas assuming higher load
 ```
 
@@ -278,9 +274,16 @@ If only one metric fails, the HPA continues using the healthy metric while treat
 ### Risks and Mitigations
 
 - Risk: Users configure inappropriate fallback replica counts
-  - Mitigation: Documentation with best practices; validation ensures replicas > 0; HPA min/max constraints still apply
-- Risk: Complexity in understanding which metric is in fallback
-  - Mitigation: Per-metric status clearly shows fallback state and failure count
+  - Mitigation: Documentation with best practices; validation ensures replicas > 0; HPA min/max constraints still apply; users should consider peak load scenarios when setting fallback values
+
+- Risk: Users configure failureDuration too short, causing premature fallback activation
+  - Mitigation: Default value of 3 minutes provides reasonable buffer; validation enforces minimum values; documentation recommends considering normal metric provider latency and transient failures
+  
+- Risk: Users configure failureDuration too long, delaying necessary scaling during outages
+  - Mitigation: Documentation provides guidance on balancing between avoiding false positives and responding quickly to genuine outages; recommend 3-5 minutes for most use cases
+  
+- Risk: Complexity in understanding which metric is in fallback and why
+  - Mitigation: Per-metric status clearly shows fallback state, `firstFailureTime` timestamp, and current `fallbackReplicas` value; events are generated when fallback activates with clear messaging including duration and timestamp
 
 ## Design Details
 
@@ -289,11 +292,12 @@ Add a new `ExternalMetricFallback` type and include it in `ExternalMetricSource`
 ```golang
 // ExternalMetricFallback defines fallback behavior when an external metric cannot be retrieved
 type ExternalMetricFallback struct {
-    // failureThreshold is the number of consecutive failures retrieving this metric
-    // before the fallback value is used. Must be greater than 0.
+    // failureDuration is the duration for which the external metric must be continuously
+    // failing before the fallback value is used. The duration is measured from the first
+    // consecutive failure. Must be greater than 0.
     // +optional
-    // +kubebuilder:default=3
-    FailureThreshold *int32 `json:"failureThreshold,omitempty"`
+    // +kubebuilder:default="3m"
+    FailureDuration *metav1.Duration `json:"failureDuration,omitempty"`
     
     // replicas is the desired replica count to use when the external metric cannot be retrieved.
     // This value is treated as the desired replica count from this metric.
@@ -338,10 +342,10 @@ type ExternalMetricStatus struct {
   // +optional
   FallbackActive bool `json:"fallbackActive,omitempty"`
   
-  // consecutiveFailureCount tracks the number of consecutive failures retrieving this metric.
-  // Reset to 0 on successful retrieval.
+  // firstFailureTime is the timestamp of the first consecutive failure retrieving this metric.
+  // Reset to nil on successful retrieval. Used to calculate if failureDuration has been exceeded.
   // +optional
-  ConsecutiveFailureCount int32 `json:"consecutiveFailureCount,omitempty"`
+  FirstFailureTime *metav1.Time `json:"firstFailureTime,omitempty"`
 
   // fallbackReplicas is the replica count being used while fallback is active.
   // Only populated when fallbackActive is true.
@@ -415,8 +419,9 @@ extending the production code to implement this enhancement.
   - Verify failureThreshold validation (must be > 0)
   - Verify replicas validation (must be > 0)
 - Tests for Failure Tracking and Activation:
-  - Verify `consecutiveFailureCount` increments on failure and resets on success
-  - Verify fallback activates when threshold is reached
+  - Verify `firstFailureTime` is set on first failure and persists through consecutive failures
+  - Verify `firstFailureTime` is cleared on successful metric retrieval
+  - Verify fallback activates when current time exceeds `firstFailureTime` + `failureDuration`
   - Verify fallbackActive status field updates correctly
 - Tests for Replica Calculation:
   - Verify fallback returns the configured replica count when threshold is exceeded
@@ -465,7 +470,7 @@ We will add the following e2e autoscaling tests:
 - Success in retrieving external metric resets the failure count and resumes normal scaling
 - HPA uses max() of healthy metric calculations and fallback replica counts
 - Fallback respects HPA min/max replica constraints
-- Status correctly reflects which metrics are in fallback state
+- Status correctly reflects which metrics are in fallback state and shows `firstFailureTime`
 - With multiple external metrics in fallback, HPA uses the maximum fallback replica count
 
 ### Graduation Criteria
@@ -560,20 +565,25 @@ When the feature gate is enabled:
 - Existing HPAs continue to work unchanged
 - External metrics without `fallback` configuration behave as they do today (no scaling when unavailable)
 - Users can add `fallback` configuration to external metrics in their HPAs
-- The controller begins tracking per-metric `consecutiveFailureCount` for external metrics with fallback configured, starting from 0
-- The `fallbackActive` and `consecutiveFailureCount` status fields are populated for external metrics
+- The controller begins tracking per-metric `firstFailureTime` for external metrics with fallback configured
+  - On the first failure, `firstFailureTime` is set to the current timestamp
+  - On subsequent failures, the timestamp is preserved to track failure duration
+  - On success, `firstFailureTime` is cleared (set to nil)
+- The `fallbackActive`, `firstFailureTime`, and `fallbackReplicas` status fields are populated for external metrics with fallback configured
+- Fallback activates when `(current time - firstFailureTime) >= failureDuration`
 
 #### Downgrade
 
 When the feature gate is disabled:
 - The `fallback` field in `ExternalMetricSource` is ignored by the controller
-- The `fallbackActive` and `consecutiveFailureCount` status fields are not updated (remain at last values but are not used)
+- The `fallbackActive`, `firstFailureTime`, and `fallbackReplicas` status fields are not updated (remain at last values but are not used)
 - All external metrics revert to current behavior: HPA cannot scale based on them when they're unavailable
 - Any HPAs currently using fallback values will:
   - Maintain their current replica count
   - Stop using fallback values
   - Resume normal metric-based scaling when external metrics become available again
 - No disruption to running workloads (pods are not restarted)
+- The `firstFailureTime` timestamp remains in the status but is not evaluated or updated
 
 All logic related to fallback evaluation, failure counting, and status updates is gated by the `HPAExternalMetricFallback` feature gate.
 
@@ -655,7 +665,8 @@ When fallback is configured and activated, the failing metric contributes its co
 Yes. If the feature gate is disabled:
 - All `fallback` configurations in HPA specs are ignored by the controller
 - External metrics revert to current behavior: HPA cannot scale based on them when they're unavailable
-- The `fallbackActive` and `consecutiveFailureCount` status fields stop being updated
+- The `fallbackActive`, `firstFailureTime`, and `fallbackReplicas` status fields stop being updated
+  - These fields remain in the HPA status at their last values but are not evaluated or modified
 - HPAs maintain their current replica count at the time of rollback
 - No pods are restarted or disrupted
 
@@ -665,12 +676,13 @@ To disable, restart `kube-controller-manager` and `kube-apiserver` with the feat
 
 When the feature is re-enabled:
 - Any HPAs with `fallback` configured on external metrics will resume fallback behavior
-- The controller immediately begins tracking `consecutiveFailureCount` for each external metric with fallback, starting from 0
+- The controller clears any stale `firstFailureTime` timestamps and starts fresh
 - If external metrics are failing at re-enablement:
-  - Failure counts increment on each reconciliation loop
-  - Once the configured `failureThreshold` is reached, fallback values are used
+  - On the first failure, `firstFailureTime` is set to the current timestamp
+  - The failure duration is calculated as `(current time - firstFailureTime)`
+  - Once the configured `failureDuration` has elapsed, fallback values are used
   - The `fallbackActive` status field is set to `true` for affected metrics
-- HPAs resume using substitute metric values for scaling decisions when external metrics are unavailable and thresholds are exceeded
+- HPAs resume using the static replicas stanza for scaling decisions when external metrics are unavailable and thresholds are exceeded
 
 Existing HPAs without `fallback` configuration are not affected by re-enabling the feature and continue with default behavior.
 
@@ -772,11 +784,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 Users can confirm that the feature is active and functioning by inspecting the status fields exposed by the controller. Specifically:
 - Check the HPA condition to verify if `ExternalMetricFallbackActive` is currently active
 - Check `.status.currentMetrics[].external.fallbackActive` to verify if fallback is currently active
-- Check `.status.currentMetrics[].external.consecutiveFailureCount` to see the current failure count
+- Check `.status.currentMetrics[].external.firstFailureTime` to see when failures started
 
 Moreover, users can verify the feature is working properly through events on the HPA object:
-- When fallback activates: Normal `ExternalMetricFallbackActivated` "Fallback activated for external metric 'queue_depth' after 3 consecutive failures, using fallback replica count: 10"
-
+- When fallback activates: Normal `ExternalMetricFallbackActivated` "Fallback activated for external metric 'queue_depth' after 3m0s of consecutive failures, using fallback replica count: 10"
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -809,19 +820,13 @@ This feature doesn't fundamentally change how the HPA controller operates; it ad
 - `horizontal_pod_autoscaler_controller_metric_computation_duration_seconds` - tracks metric computation time including fallback evaluation
 - `horizontal_pod_autoscaler_controller_metric_computation_total` - counts metric computations with error status
 
-Additionally, the new feature-specific metrics provide health indicators:
-- `horizontal_pod_autoscaler_fallback_active` - indicates which external metrics are currently using fallback values
-- `horizontal_pod_autoscaler_external_metric_retrieval_failures_total` - monitors external metric retrieval failures
-
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 <!--
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-The following new metrics will be added to the kube-controller-manager to improve observability of the fallback feature:
-- `horizontal_pod_autoscaler_fallback_active` (Gauge) - Indicates whether a specific external metric is currently using its fallback value.
-- `horizontal_pod_autoscaler_external_metric_retrieval_failures_total` (Count) - Counts the number of consecutive failures when retrieving an external metric (resets to 0 on success).
+No.
 
 ### Dependencies
 
@@ -904,7 +909,14 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-Yes, HorizontalPodAutoscaler objects will increase in size when fallback is configured:
+Yes, `HorizontalPodAutoscaler` objects will increase in size when fallback is configured:
+- Spec increase: ~150 bytes per external metric with fallback configured:
+  - `failureDuration`: ~40 bytes (field name + duration string like "3m")
+  - `replicas`: ~20 bytes (int32)
+- Status increase: ~80 bytes per external metric:
+  - `fallbackActive`: ~30 bytes (boolean field)
+  - `firstFailureTime`: ~70 bytes (timestamp field + RFC3339 string like "2024-01-15T10:23:45Z")
+  - `fallbackReplicas`: ~30 bytes (optional int32 pointer)
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -916,13 +928,12 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-Yes, `HorizontalPodAutoscaler` objects will increase in size when fallback is configured:
-- Spec increase: ~150 bytes per external metric with fallback configured:
-  - failureThreshold: ~30 bytes
-  - value or averageValue: ~50 bytes (resource.Quantity)
-- Status increase: ~80 bytes per external metric:
-  - fallbackActive: ~30 bytes (boolean field)
-  - consecutiveFailureCount: ~50 bytes (int32 field)
+
+No. The feature adds minimal computational overhead to the existing HPA reconciliation loop. The fallback logic is integrated into the existing metric retrieval and evaluation process:
+1. Attempt to retrieve external metric (already happens)
+2. On failure: check/update `firstFailureTime` (new, minimal overhead)
+3. Evaluate if fallback should activate (new, simple comparison)
+4. Return either real metric or fallback replica count (already happens for other metric types)
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -968,12 +979,12 @@ details). For now, we leave it here.
 If the API server and/or etcd becomes unavailable, the entire HPA controller functionality will be impacted, not just this feature. The HPA controller will not be able to:
 - Retrieve HPA objects
 - Get external metrics (or any metrics)
-- Update HPA status (including `fallbackActive` and `consecutiveFailureCount` fields)
+- Update HPA status (including `fallbackActive`, `firstFailureTime`, and `fallbackReplicas` fields)
 - Apply scaling decisions
 
 Therefore, no autoscaling decisions can be made during this period, regardless of whether fallback is configured. The feature itself doesn't introduce any new failure modes with respect to API server or etcd availability - it's dependent on these components being available just like the rest of the HPA controller's functionality.
 
-Once API server and etcd access is restored, the HPA controller will resume normal operation. The in-memory failure counts will reset, and if external metrics are still failing, the failure count will increment again until reaching the threshold to reactivate fallback.
+Once API server and etcd access is restored, the HPA controller will resume normal operation. The in-memory failure counts will reset, if external metrics are still failing and `firstFailureTime` is perseved the controller will use that timestamp to calculate 
 
 ###### What are other known failure modes?
 
@@ -992,10 +1003,9 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Check `horizontal_pod_autoscaler_controller_reconciliation_duration_seconds` and `horizontal_pod_autoscaler_fallback_active` to identify if issues correlate with HPAs using fallback. If problems are observed:
+Check `horizontal_pod_autoscaler_controller_reconciliation_duration_seconds` to identify if issues correlate with HPAs using fallback. If problems are observed:
 
 - Check if the issue only affects HPAs with fallback configured
-- Verify if multiple external metrics are failing simultaneously (check `horizontal_pod_autoscaler_external_metric_retrieval_failures_total`)
 - Review HPA events: kubectl describe hpa <name> to see fallback activation events
 - Check external metrics provider health and connectivity
 
