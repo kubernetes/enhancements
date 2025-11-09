@@ -163,7 +163,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-When using kubernetes to run big data jobs such as Spark and Flink, the Driver(JobManager for Flink) pod of each job will list and watch all subtasks of this job (background 1). When there are hundreds of jobs running in the cluster, the apiserver will face lots of pressure pushing pod add, update, delete events to them. When there are thousands, it may not be able to push the pod creation events to the scheduler in time, causing the pod scheduling speed to lag behind the creation speed, resulting in the cluster's pods not being able to be scheduled in time and the cluster utilization rate being reduced. This KEP proposes a solution to create a job name label index in the apiserver cache to greatly improve the efficiency of processing pod watch events.
+When using kubernetes to run big data jobs such as Spark and Flink, the Driver(JobManager for Flink) pod of each job will list and watch all subtasks of this job (background 1). When there are hundreds of jobs running in the cluster, the apiserver will face lots of pressure pushing pod add, update, delete events to them. When there are thousands, it may not be able to push the pod creation events to the scheduler in time, causing the pod scheduling speed to lag behind the creation speed, resulting in the cluster's pods not being able to be scheduled in time and the cluster utilization rate being reduced. This KEP proposes a general solution that allows cluster administrators to declare custom label indices in the apiserver cache, which will greatly improve the efficiency of processing pod's and other resource's watch events.
 
 ## Motivation
 
@@ -208,12 +208,13 @@ The same improvements may apply to any other workloads as well if they also list
 
 ### Non-Goals
 
-- Improve the efficiency of processing pod events with none label selectors.
+- Improve the efficiency of processing pod events with none label selectors. With custom label indexes by this KEP and apiserver built-in field indexes, such as ```spec.nodeName``` for pod, we might consider support declaring custom field selectors if these are not enough.
 - Improve the memory usage of apiserver. Since we add more indexes to apiserver, it expects to increase the memory usage.
+- Improve the efficiency of processing CRD objects in apiserver. Only built-in types are supported and CRDs are not supported by this KEP.
 
 ## Proposal
 
-Since the apiserver has a watch index of `spec.nodeName` in cacher of pod storage, we also want to add an applicationId index. Considering that the label name may differ in different scenarios, such as `metadata.labels.app` of Flink or `metadata.labels.spark-app-selector` of Spark, this KEP propose to add indexes to apiserver cacher based on certain configurable labels, so that the pod event of each job can query the matching watchers in the cacher's dispatchEvent, without having to broadcast to a large number of unmatched cacheWatchers first and then filter them out by cacheWatcher.
+Since the apiserver already maintains a watch index on ```spec.nodeName``` within the pod storage cacher, we propose to introduce a custom, configurable label index. Given that the relevant label name varies across scenarios, for example, metadata.labels.app for Flink or metadata.labels.spark-app-selector for Spark, this KEP suggests adding indexes to the apiserver cacher based on specified configurable labels. This will allow the pod events for each job to be precisely matched with the correct watchers in the cacher's dispatchEvent process, thereby eliminating the need to broadcast the event to a large number of unmatched cacheWatchers that must then filter it out.
 
 ### User Stories (Optional)
 
@@ -267,12 +268,14 @@ In reality, a single filter condition, such as nodeName or applicationId, can al
 Considering that label names may be different in different scenarios, such as app label name in Flink and spark-app-selector label name in Spark, this feature will add a commandline parameter to the apiserver, allowing different label names to be configured as the trigger index of the apiserver cacher.
 
 ```
---index-labels. Index labels settings for some resources (pods, nodes, etc.), comma separated. The individual setting format: resource[.group]#labelName1;labelName2, where resource is lowercase plural (no version), group is omitted for resources of apiVersion v1 (the legacy core API) and included for others, and labelName is a string. It takes effect when watch-cache and feature gate CacherLabelIndex are enabled. In addition to built-in indexes such as pod.spec.nodeName, apiserver cacher will create additional indexes for these labels to speed up list and watch requests.
+--index-labels. Index labels settings for some resources (pods, nodes, etc.), comma separated. The individual setting format: resource[.group]#labelName, where resource is lowercase plural (no version), group is omitted for resources of apiVersion v1 (the legacy core API) and included for others, and labelName is a string. It takes effect when watch-cache is enabled. In addition to built-in indexes such as pod.spec.nodeName, apiserver cacher will create additional indexes for these labels to speed up list and watch requests.
 
 # e.g. for spark
 --index-labels=pods#spark-app-selector
 # e.g. for spark and flink
---index-labels=pods#spark-app-selector;app
+--index-labels=pods#spark-app-selector,pods#app
+# e.g. for pod label indexes for spark and flink and node label index
+--index-labels=pods#spark-app-selector,pods#app,nodes#zone
 ```
 
 ### Changes of register trigger index and cache index to resource storage
