@@ -325,7 +325,7 @@ library proposed in this KEP.
 To address the deficiencies above, we further propose that:
 
 * this KEP reserves a name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args`, which holds
-additional CLI arguments that need to be supplied to the exec plugin when the Cluster Profile API and community-provided
+additional CLI arguments that would be supplied to the exec plugin when the Cluster Profile API and community-provided
 library are used for authentication.
 
   If an extension under this name is present, the community-provided library will extract the data, and append the
@@ -338,7 +338,7 @@ library are used for authentication.
   after the additional arguments are appended.
 
 * this KEP reserves another name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs`, which
-holds additional environment variables that need to be supplied upon calling the exec plugin when the Cluster Profile API
+holds additional environment variables that would be supplied upon calling the exec plugin when the Cluster Profile API
 and community-provided library are used for authentication.
 
   If an extension under this name is present, the community-provided library will extract the data, and add the additional
