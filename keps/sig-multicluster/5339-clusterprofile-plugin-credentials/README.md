@@ -296,10 +296,10 @@ In this structure, not all fields would apply, such as:
 
 Some credential providers require cluster-specific, non-secret parameters (for example, a `clusterName`) in order to obtain credentials. To standardize how this information is conveyed from a `ClusterProfile` to a plugin, the library follows the existing convention defined by the client authentication API:
 
-- Optional: when a plugin needs per-cluster, non-secret config, set an extension entry with `name: client.authentication.k8s.io/exec` under `Cluster.extensions`.
-- The library reads only the `extension` field of that entry and passes it through verbatim to `ExecCredential.Spec.Cluster.Config`.
-- The content must be non-secret and cluster-specific. Controller- or environment-specific data must not be placed here.
-- Plugins may read values (e.g. `clusterName`) from `ExecCredential.Spec.Cluster.Config`.
+> Optional: when a plugin needs per-cluster, non-secret config, set an extension entry with `name: client.authentication.k8s.io/exec` under `Cluster.extensions`.
+> The library reads only the `extension` field of that entry and passes it through verbatim to `ExecCredential.Spec.Cluster.Config`.
+> The content must be non-secret and cluster-specific. Controller- or environment-specific data must not be placed here.
+> Plugins may read values (e.g. `clusterName`) from `ExecCredential.Spec.Cluster.Config`.
 
 Reference: [client.authentication.k8s.io/v1 Cluster: `config` sourced from `extensions[client.authentication.k8s.io/exec]`](https://kubernetes.io/docs/reference/config-api/client-authentication.v1/#client-authentication-k8s-io-v1beta1-Cluster)
 
