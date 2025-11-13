@@ -769,6 +769,7 @@ The following conditions are well defined:
 |-----------|-----------|-------------|-------------------|
 | Missing or otherwise invalid argument | 3 INVALID_ARGUMENT | Indicates that a required argument field was not specified or an argument value is invalid | The caller should correct the error and resubmit the call. |
 | Invalid `base_snapshot` or `target_snapshot` | 5 NOT_FOUND | Indicates that the snapshots specified were not found. | The caller should re-check that these objects exist. |
+| Changed block tracking is not enabled | 9 FAILED_PRECONDITION | Changed block tracking has not been enabled in the underlying storage subsystem. | The caller should perform a full backup instead. The operation would proceed if changed block tracking was enabled in the storage subsystem, but how this is to be accomplished is beyond the scope of this specification. |
 | Invalid `starting_offset` | 11 OUT_OF_RANGE | The starting offset exceeds the volume size. | The caller should specify a `starting_offset` less than the volume's size. |
 
 ### Kubernetes Components
@@ -858,12 +859,30 @@ message GetMetadataAllocatedRequest {
 message GetMetadataDeltaRequest {
   string security_token = 1;
   string namespace = 2;
-  string base_snapshot_name = 3;
+  string base_snapshot_id = 3;
   string target_snapshot_name = 4;
   int64 starting_offset = 5;
   int32 max_results = 6;
 }
 ```
+The `GetMetadataDeltaRequest` requires that the invoking backup
+application provide the **CSI snapshot handle** of the base snapshot
+against which changes are to be computed, and **not the name** of the base
+`VolumeSnapshot` object.
+The invoking backup application should fetch this value from the
+`Status.SnapshotHandle` field of the `VolumeSnapshotContent` object
+associated with the base `VolumeSnapshot` object.
+This supports storage infrastructures that do not require that
+the base `VolumeSnapshot` object exist in the cluster in order to generate
+changed block metadata against a later `VolumeSnapshot`.
+
+> Note: It is the backup application's responsibility to determine if the
+underlying CSI driver provides this support.
+If it does, the backup application should take that into consideration in
+its snapshot retention policy, and should save the CSI snapshot handle
+somewhere for future use if it deletes the `VolumeSnapshot` object 
+immediately after it has performed a backup.
+
 The full specification of the Kubernetes SnapshotMetadata API will be
 published in the source code repository of the
 [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar).
