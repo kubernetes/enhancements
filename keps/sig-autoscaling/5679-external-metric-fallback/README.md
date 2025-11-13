@@ -423,7 +423,7 @@ extending the production code to implement this enhancement.
 -->
 
 - Tests for Fallback Configuration:
-  - Verify failureThreshold validation (must be > 0)
+  - Verify failureDuration validation (must be > 0)
   - Verify replicas validation (must be > 0)
 - Tests for Failure Tracking and Activation:
   - Verify `firstFailureTime` is set on first failure and persists through consecutive failures
@@ -728,10 +728,12 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-Rollout failures are unlikely to impact running workloads. If enabled during external metrics failures, HPAs with fallback configured might change scaling decisions after the failureThreshold is reached. This is mitigated by:
+Rollout failures are unlikely to impact running workloads. If enabled during external metrics failures, HPAs with fallback configured might change scaling decisions after `failureDuration` (default: 3m) has elapsed. This is mitigated by:
 - The HPA's min/max replica constraints
-- The failure threshold requirement (default: 3) before activation
+- The `failureDuration` buffer before activation
 - Gradual HPA scaling behavior
+- Scale-up/scale-down stabilization windows
+
 On rollback, HPAs maintain their current replica count and stop using fallback values. No pods are restarted.
 
 ###### What specific metrics should inform a rollback?
