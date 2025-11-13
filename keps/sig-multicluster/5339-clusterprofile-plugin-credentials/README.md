@@ -72,6 +72,7 @@ SIG Architecture for cross-cutting KEPs).
     - [External credentials Provider plugin mechanism](#external-credentials-provider-plugin-mechanism)
   - [Standardizing the Provider definition](#standardizing-the-provider-definition)
     - [Cluster Data](#cluster-data)
+    - [Passing plugin configuration via extensions](#passing-plugin-configuration-via-extensions)
     - [ClusterProfile Example](#clusterprofile-example)
   - [Configuring plugins in the controller](#configuring-plugins-in-the-controller)
   - [Plugin Examples](#plugin-examples)
@@ -208,7 +209,8 @@ The library implementation flow is expected to be as follows:
 1. Build the endpoint details of the cluster by reading properties of the ClusterProfile
 2. Call the CredentialsExternalProviders, following the same flow defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md)
   (giving the ability to reuse the code in [client-go's exec package](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159))
-3. Build the rest.Config and return it to the caller
+3. If the `Cluster` includes an `extensions` entry named `client.authentication.k8s.io/exec`, pass its `extension` object through to `ExecCredential.Spec.Cluster.Config` as plugin configuration.
+4. Build the rest.Config and return it to the caller
 
 #### External credentials Provider plugin mechanism
 
@@ -290,10 +292,30 @@ In this structure, not all fields would apply, such as:
 
 * `CertificateAuthority`, which points to a file (and a ClusterProfile doesn't have a filesystem)
 
+#### Passing plugin configuration via extensions
+
+Some credential providers require cluster-specific, non-secret parameters (for example, a `clusterName`) in order to obtain credentials. To standardize how this information is conveyed from a `ClusterProfile` to a plugin, the library follows the existing convention defined by the client authentication API:
+
+> Optional: when a plugin needs per-cluster, non-secret config, set an extension entry with `name: client.authentication.k8s.io/exec` under `Cluster.extensions`.
+> The library reads only the `extension` field of that entry and passes it through verbatim to `ExecCredential.Spec.Cluster.Config`.
+> The content must be non-secret and cluster-specific. Controller- or environment-specific data must not be placed here.
+> Plugins may read values (e.g. `clusterName`) from `ExecCredential.Spec.Cluster.Config`.
+
+Reference: [client.authentication.k8s.io/v1 Cluster: `config` sourced from `extensions[client.authentication.k8s.io/exec]`](https://kubernetes.io/docs/reference/config-api/client-authentication.v1/#client-authentication-k8s-io-v1beta1-Cluster)
+
+Example (embedded in `ClusterProfile.status.credentialProviders[].cluster`):
+
+```
+extensions:
+- name: client.authentication.k8s.io/exec
+  extension:
+    clusterName: spoke-1
+```
 
 #### ClusterProfile Example
 
 Example of a GKE ClusterProfile, which would map to a plugin providing credentials of type `google`:
+
 ```
 apiVersion: multicluster.x-k8s.io/v1alpha1
 kind: ClusterProfile
@@ -315,6 +337,29 @@ status:
   - name: google
     cluster:
       server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
+```
+
+Example of a SecretReader ClusterProfile using the `extensions` convention to pass `clusterName` to the plugin:
+
+```
+apiVersion: multicluster.x-k8s.io/v1alpha1
+kind: ClusterProfile
+metadata:
+  name: my-cluster-1
+spec:
+  displayName: my-cluster-1
+  clusterManager:
+    name: inhouse-manager
+status:
+  credentialProviders:
+  - name: secretreader
+    cluster:
+      server: https://<spoke-server>
+      certificate-authority-data: <BASE64_CA>
+      extensions:
+      - name: client.authentication.k8s.io/exec
+        extension:
+          clusterName: spoke-1
 ```
 
 
@@ -350,7 +395,7 @@ version of the code and structures to convey the idea and not be an implementati
 
 This plugin assumes the controller is aware of the list of clusters ahead of time and has created secrets for them in its namespace.
 It simply reads the token from the secret mapped to the cluster specifically for this controller. Note that namespace comes from the
-controller config while clusterName comes from the clusterProfile.
+controller config while `clusterName` is read by the plugin from `ExecCredential.Spec.Cluster.Config`, which the library populates from the `Cluster.extensions` entry named `client.authentication.k8s.io/exec`.
 
 ```
 func GetToken(namespace, clusterName string) string {
