@@ -25,7 +25,7 @@ NOCOLOR:=\\033[0m
 
 ##@ KEPs
 
-.PHONY: update-toc verify-toc verify-metadata
+.PHONY: update-toc verify-toc verify-metadata verify-prr-template
 
 update-toc: ## Updates KEP Table of Contents.
 	${REPO_ROOT}/hack/update-toc.sh
@@ -35,6 +35,9 @@ verify-toc: ## Verifies the Table of Contents is in the correct format.
 
 verify-metadata: ## Verifies the KEP metadata is valid yaml.
 	${REPO_ROOT}/hack/verify-kep-metadata.sh
+
+verify-prr-template: ## Verifies KEPs have complete Production Readiness Review sections.
+	${REPO_ROOT}/hack/verify-prr-template.py
 
 ##@ Verify
 
@@ -50,7 +53,7 @@ verify: ## Runs all verification tests.
 	${REPO_ROOT}/hack/verify.sh
 
 # TODO(lint): Uncomment verify-shellcheck once we finish shellchecking the repo.
-verify: tools verify-boilerplate verify-build verify-golangci-lint verify-go-mod #verify-shellcheck ## Runs verification scripts to ensure correct execution
+verify: tools verify-boilerplate verify-build verify-golangci-lint verify-go-mod verify-prr-template #verify-shellcheck ## Runs verification scripts to ensure correct execution
 
 verify-boilerplate: ## Runs the file header check
 	${REPO_ROOT}/hack/verify-boilerplate.sh
