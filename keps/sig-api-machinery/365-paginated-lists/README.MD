@@ -431,9 +431,9 @@ No - clients have to explicitly opt-in for pagination.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes - by disabing the feature gate.
+Yes - by disabling the feature gate.
 
-###### What happens if we reenable the feature if it was previously rolled back?
+###### What happens if we re-enable the feature if it was previously rolled back?
 
 Clients will be able to request paginated LIST requests.
 
@@ -529,7 +529,7 @@ No - thanks to pagination we should actually reduce API call latencies.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-In should reduce RAM usage on etcd ane kube-apiserver.
+In should reduce RAM usage on etcd and kube-apiserver.
 
 ### Troubleshooting
 
