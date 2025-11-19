@@ -17,10 +17,10 @@
   - [API Changes](#api-changes)
   - [Implementation Overview](#implementation-overview)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Prerequisite Testing Updates](#prerequisite-testing-updates)
+    - [Unit Tests](#unit-tests)
+    - [Integration Tests](#integration-tests)
+    - [E2E Tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -42,6 +42,7 @@
   - [Alternative 3: Service Mesh Integration](#alternative-3-service-mesh-integration)
   - [Alternative 4: API Server Proxy](#alternative-4-api-server-proxy)
 - [Infrastructure Needed](#infrastructure-needed)
+- [References](#references)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -52,9 +53,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [ ] E2E Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA E2E tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA E2E tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
@@ -230,25 +231,33 @@ The implementation builds upon the existing port-forward infrastructure with the
 
 **4. Flow Diagram:**
 
-```
-Reverse Port-Forward Flow:
+```mermaid
+sequenceDiagram
+    participant User
+    participant kubectl
+    participant APIServer as API Server
+    participant kubelet
+    participant Pod
 
-1. Setup Phase:
-   kubectl --reverse → kubelet → creates listener in pod namespace
+    Note over User,Pod: Setup Phase
+    User->>kubectl: port-forward --reverse pod 8080:80
+    kubectl->>APIServer: Establish streaming connection
+    APIServer->>kubelet: Forward port-forward request
+    kubelet->>Pod: Create listener on port 8080 in pod netns
 
-2. Connection Phase:
-   pod process → connects to localhost:REMOTE_PORT
-              ↓
-   listener in pod namespace → forwards to kubelet
-                             ↓
-   kubelet → streams connection to kubectl (via WebSocket/HTTP2)
-          ↓
-   kubectl → connects to localhost:LOCAL_PORT
-          ↓
-   local service receives connection
+    Note over User,Pod: Connection Phase
+    Pod->>Pod: Process connects to localhost:8080
+    Pod->>kubelet: Connection received
+    kubelet->>kubectl: Stream new connection
+    kubectl->>User: Connect to localhost:80
 
-3. Data Transfer:
-   Bidirectional streaming between local service ↔ kubectl ↔ kubelet ↔ pod
+    Note over User,Pod: Data Transfer
+    User->>kubectl: Send data
+    kubectl->>kubelet: Forward data
+    kubelet->>Pod: Deliver to pod
+    Pod->>kubelet: Response data
+    kubelet->>kubectl: Forward response
+    kubectl->>User: Deliver response
 ```
 
 **5. Implementation Components:**
@@ -273,30 +282,46 @@ Reverse Port-Forward Flow:
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-##### Prerequisite testing updates
+#### Prerequisite Testing Updates
 
 - Ensure existing port-forward tests are not affected by the changes
 - Add test coverage for the new protocol messages
 - Verify backward compatibility with clusters not supporting reverse port-forward
 
-##### Unit tests
+#### Unit Tests
 
-- `k8s.io/kubectl/pkg/cmd/portforward`: 2025-01-18 - (baseline + new reverse mode tests)
-  - Port spec parsing for reverse mode
+**Existing Test Infrastructure:**
+
+Test stubs for reverse port-forward have been prepared in `k8s.io/kubectl/pkg/cmd/portforward/portforward_test.go`:
+- `TestReversePortForwardFlagParsing`: Tests `--reverse` flag parsing
+- `TestReversePortSpecificationSyntax`: Tests port specification format validation
+- `TestReversePortForwardValidation`: Tests validation logic for reverse mode
+- `TestReverseForwardModeConflict`: Tests that forward/reverse modes cannot be mixed
+- `TestPortRangeValidation`: Port range validation helper tests
+
+These tests are currently skipped (waiting for implementation) and will be enabled during alpha implementation.
+
+**Required Unit Test Coverage:**
+
+- `k8s.io/kubectl/pkg/cmd/portforward`:
+  - Port spec parsing for reverse mode (REMOTE:LOCAL format)
   - Reverse connection handling logic
   - Error handling for reverse-specific failures
+  - Flag validation (`--reverse` with various port specs)
+  - Port range validation (1-65535 for remote, 0-65535 for local)
 
-- `k8s.io/kubernetes/pkg/kubelet/cri/streaming/portforward`: 2025-01-18 - (baseline + new reverse protocol tests)
+- `k8s.io/kubernetes/pkg/kubelet/cri/streaming/portforward`:
   - Reverse mode protocol handshake
   - Connection multiplexing
   - Listener cleanup on disconnect
+  - Error handling for port conflicts
 
-- `k8s.io/kubernetes/pkg/kubelet`: 2025-01-18 - (baseline + new namespace listener tests)
+- `k8s.io/kubernetes/pkg/kubelet`:
   - Pod network namespace listener creation
   - Port conflict detection
-  - Resource cleanup
+  - Resource cleanup on connection termination
 
-##### Integration tests
+#### Integration Tests
 
 - Test reverse port-forward with real kubelet and pod
 - Test multiple concurrent reverse connections
@@ -307,7 +332,7 @@ to implement this enhancement.
 
 Integration test location: `test/integration/kubectl/portforward_reverse_test.go`
 
-##### e2e tests
+#### E2E Tests
 
 - End-to-end reverse port-forward test with real cluster
   - Create pod with simple client application
@@ -327,7 +352,8 @@ E2E test location: `test/e2e/kubectl/portforward.go` (extend existing tests)
 
 - Feature implemented behind `KubectlReversePortForward` feature gate
 - Basic functionality working (single port, single connection)
-- Unit tests for kubectl and kubelet components
+- Unit tests for kubectl and kubelet components (test infrastructure already prepared)
+- Enable and complete existing test stubs in `portforward_test.go`
 - Initial e2e tests completed
 - Documentation drafted
 
@@ -386,7 +412,7 @@ The feature will handle version skew gracefully:
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [X] Feature gate (also fill in values in `kep.yaml`)
+- [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `KubectlReversePortForward`
   - Components depending on the feature gate:
     - kubelet
@@ -574,6 +600,7 @@ No persistent state is stored in etcd for reverse port-forward sessions. The fea
 - 2016-01-27: Original feature request filed as [#20227](https://github.com/kubernetes/kubernetes/issues/20227)
 - 2017-12-18: Initial PoC implementation as [#57320](https://github.com/kubernetes/kubernetes/pull/57320)
 - 2025-11-18: KEP created
+- 2025-11-19: Test infrastructure prepared in `portforward_test.go` with comprehensive test stubs
 - TBD: Alpha implementation targeting v1.34
 - TBD: Beta implementation targeting v1.35
 - TBD: GA implementation targeting v1.36
