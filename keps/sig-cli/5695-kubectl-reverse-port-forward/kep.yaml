@@ -42,5 +42,8 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - kubectl_portforward_reverse_active_connections
+  - kubectl_portforward_reverse_connection_duration_seconds
   - kubectl_portforward_reverse_connections_total
   - kubectl_portforward_reverse_errors_total
+  - kubelet_portforward_reverse_listeners_active

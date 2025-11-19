@@ -263,7 +263,7 @@ sequenceDiagram
 **5. Implementation Components:**
 
 - **Port Listener**: Create a TCP listener in the pod's network namespace
-  - Native Go implementation using netns library.
+  - Native Go implementation using a Go network namespace library (such as [vishvananda/netns](https://github.com/vishvananda/netns)).
   - This avoids external dependencies like `socat` or `nsenter` and provides better error handling and resource control.
 
 - **Connection Multiplexing**: Handle multiple concurrent connections over a single WebSocket/HTTP2 stream
@@ -562,38 +562,236 @@ Limits will be documented and configurable.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The feature depends on the API server. The `kubectl port-forward` command establishes a connection to the API server, which proxies the connection to the Kubelet. If the API server becomes unavailable, the connection will be dropped and the reverse port-forward session will terminate.
+- This feature fails when the API server is unavailable. The reverse port-forward connection
+  is proxied through the API server. If the API server is unavailable, the reverse port-forward
+  functionality does not work (this applies to the legacy forward port-forward as well,
+  so there is no detectable difference in this scenario).
 
-No persistent state is stored in etcd for reverse port-forward sessions. The feature behaves identically to existing forward port-forward in this regard: connections are ephemeral and exist only in memory.
+- No persistent state is stored in etcd for reverse port-forward sessions. The feature behaves
+  identically to existing forward port-forward in this regard: connections are ephemeral and
+  exist only in memory. If the API server becomes unavailable during an active session, the
+  connection will be dropped and the reverse port-forward session will terminate immediately.
 
 ###### What are other known failure modes?
 
-1. **Port Already in Use**
-   - Detection: Error message during reverse port-forward setup
-   - Mitigation: User selects different port
-   - Diagnostics: "port %d already in use in pod %s"
-   - Testing: Unit and integration tests cover this case
+- **Failure Mode**: Port already in use in the target pod's network namespace.
+  When attempting to create a reverse port-forward to a port that is already bound
+  in the pod, the operation will fail.
+    - Detection: Error message during reverse port-forward setup: `Error from server: error creating reverse port-forward listener: port %d already in use`
+    - Mitigations: User should select a different remote port that is not in use in the pod.
+      Use `kubectl exec <pod> -- netstat -tlnp` or `ss -tlnp` to check which ports are in use.
+    - Diagnostics: kubectl will display the error immediately upon attempting to establish
+      the reverse port-forward. Kubelet logs will show listener creation failure with detailed
+      error information at log level 4 or higher (`--v=4`).
+    - Testing: Unit and integration tests cover this case by attempting to bind to the same
+      port twice.
 
-2. **Local Port Unreachable**
-   - Detection: Connection errors logged by kubectl
-   - Mitigation: User ensures local service is running
-   - Diagnostics: "cannot connect to local port %d: connection refused"
-   - Testing: E2E tests cover this scenario
+- **Failure Mode**: Local port unreachable or local service not listening.
+  When a pod attempts to connect through the reverse tunnel, but the local port
+  on the user's machine has no service listening or the service is unreachable.
+    - Detection: Connection errors logged by kubectl when pod initiates connection.
+      The pod will receive connection refused errors when attempting to connect.
+    - Mitigations: User must ensure local service is running and listening on the specified
+      port before the pod attempts to connect. Use `netstat -tlnp | grep <port>` or
+      `lsof -i :<port>` to verify local service is listening.
+    - Diagnostics: kubectl logs will show `dial tcp 127.0.0.1:<port>: connect: connection refused`.
+      From within the pod, connection attempts will fail with connection timeouts or refused errors.
+    - Testing: E2E tests cover this scenario by establishing reverse port-forward without
+      a local listener, then attempting connections from the pod.
 
-3. **Network Namespace Access Failure**
-   - Detection: Error during listener creation
-   - Mitigation: Check kubelet permissions and container runtime
-   - Diagnostics: "cannot access network namespace for pod %s"
-   - Testing: Integration tests with permission restrictions
+- **Failure Mode**: Network namespace access failure in the pod.
+  The kubelet cannot access the pod's network namespace to create the listener,
+  typically due to permission issues or container runtime problems.
+    - Detection: Error during listener creation: `cannot access network namespace for pod <name>`
+    - Mitigations: Check kubelet has proper permissions to access container network namespaces.
+      Verify the container runtime (containerd/CRI-O) is functioning correctly. Check SELinux/AppArmor
+      policies are not blocking namespace operations.
+    - Diagnostics: Kubelet logs will show detailed error with stack trace at log level 4 or higher.
+      Use `kubectl describe pod <name>` to check pod status and runtime errors.
+    - Testing: Integration tests with permission restrictions simulate this failure mode.
+
+- **Failure Mode**: Feature gate disabled but user attempts reverse port-forward.
+  During alpha/beta phases, if the feature gate is disabled on the kubelet,
+  reverse port-forward attempts will fail.
+    - Detection: Error message from kubectl: `reverse port-forwarding is not supported by this cluster (requires feature gate KubectlReversePortForward)`
+    - Mitigations: Enable the feature gate on kubelet: `--feature-gates=KubectlReversePortForward=true`
+    - Diagnostics: Protocol negotiation will fail during initial handshake. Kubectl will
+      receive a clear error message indicating the feature is not supported.
+    - Testing: Integration tests verify error messages when feature gate is disabled.
+
+- **Failure Mode**: Connection limit exhaustion from malicious or buggy pod.
+  A pod opens more concurrent connections than the configured limit (default: 10).
+    - Detection: New connection attempts fail with error: `reverse port-forward connection limit reached`
+    - Mitigations: This is intentional rate limiting to prevent resource exhaustion. User can
+      wait for existing connections to close, or adjust the limit if appropriate for their use case.
+    - Diagnostics: Metric `kubectl_portforward_reverse_connections_rejected_total{reason="limit"}` will increment.
+      kubectl will log connection rejections at verbose log levels.
+    - Testing: Load tests verify connection limits are enforced correctly.
+
+- **Failure Mode**: Network policy or firewall blocking kubectl-to-API-server communication.
+  Network policies or firewalls prevent kubectl from establishing streaming connection to API server.
+    - Detection: kubectl command hangs during connection establishment or fails with timeout.
+    - Mitigations: Check network connectivity: `curl -k https://<api-server>:6443/healthz`.
+      Verify kubeconfig is correct and credentials are valid. Check for network policies
+      blocking egress from the client machine or ingress to the API server.
+    - Diagnostics: kubectl with verbose logging (`-v=7`) will show HTTP connection attempts
+      and timeout errors. Connection attempts will eventually timeout with `connection timeout` errors.
+    - Testing: Manual tests with network policies verify error messages and behavior.
+
+- **Failure Mode**: Version skew between kubectl and kubelet.
+  A new kubectl with reverse port-forward support communicating with an old kubelet
+  that does not support the feature.
+    - Detection: kubectl displays clear error: `reverse port-forwarding requires kubelet version >= v1.34, but kubelet version is v1.33`
+    - Mitigations: Upgrade kubelet to a version supporting reverse port-forward, or use
+      forward port-forward if appropriate for the use case.
+    - Diagnostics: Protocol negotiation during handshake will indicate version incompatibility.
+      kubectl will parse kubelet version from handshake response.
+    - Testing: Integration tests verify version detection and clear error messages with
+      old kubelet versions.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check kubectl logs for connection errors
-2. Check kubelet logs for listener creation failures
-3. Review metrics for error patterns
-4. Verify feature gate is enabled if running < GA
-5. Check network connectivity between kubectl and kubelet
-6. Verify pod is running and healthy
+- **Step 1**: Check if the feature is actually being used with reverse mode by running
+  kubectl with verbose logging to see the mode and connection details.
+
+For `kubectl port-forward --reverse`:
+
+```bash
+# Run simple reverse port-forward command with higher verbosity to see relevant logging.
+# Look for successful connection upgrade with response 101 Switching Protocols and
+# reverse mode indication in the logs.
+# Example: kubectl port-forward --reverse -v=7 <POD> <REMOTE_PORT>:<LOCAL_PORT>
+
+$ kubectl port-forward --reverse -v=7 nginx 8080:8080
+...
+I0120 10:15:23.456789 12345 round_trippers.go:463] POST https://127.0.0.1:6443/api/v1/namespaces/default/pods/nginx/portforward
+I0120 10:15:23.456790 12345 round_trippers.go:469] Request Headers:
+I0120 10:15:23.456791 12345 round_trippers.go:473]     X-Stream-Protocol-Version: portforward.k8s.io
+I0120 10:15:23.456792 12345 round_trippers.go:473]     X-Reverse-Port-Forward: true
+...
+I0120 10:15:23.478123 12345 round_trippers.go:574] Response Status: 101 Switching Protocols in 21 milliseconds
+I0120 10:15:23.478234 12345 portforward.go:234] Reverse port-forward mode enabled
+I0120 10:15:23.478345 12345 portforward.go:245] Created listener in pod on port 8080
+Forwarding from 0.0.0.0:8080 in pod -> localhost:8080
+```
+
+- **Step 2**: Verify the local service is actually listening on the specified port:
+
+```bash
+# Check if local service is listening
+$ netstat -tlnp | grep 8080
+# or
+$ lsof -i :8080
+# or
+$ ss -tlnp | grep 8080
+
+# If no service is listening, start your local service first:
+$ python -m http.server 8080  # example local service
+```
+
+- **Step 3**: From within the pod, verify the listener was created and test connectivity:
+
+```bash
+# Check if port is listening in pod
+$ kubectl exec nginx -- netstat -tln | grep 8080
+tcp        0      0 0.0.0.0:8080           0.0.0.0:*               LISTEN
+
+# Test connection from within pod
+$ kubectl exec nginx -- curl -v http://localhost:8080
+# Should successfully connect to your local service
+```
+
+- **Step 4**: Check kubelet logs for listener creation and connection handling:
+
+```bash
+# View kubelet logs on the node running the pod
+$ journalctl -u kubelet -f --since "5 minutes ago" | grep "reverse\|portforward"
+
+# Look for messages like:
+# "Created reverse port-forward listener on port 8080 for pod nginx"
+# "Accepted connection from pod to reverse port-forward port 8080"
+# "Error creating listener: port already in use"
+```
+
+- **Step 5**: Review metrics to identify patterns:
+
+```bash
+# Check reverse port-forward metrics from API server/kubelet
+$ curl -s http://localhost:10255/metrics | grep portforward_reverse
+
+# Key metrics to examine:
+# kubectl_portforward_reverse_connections_total{status="success"}
+# kubectl_portforward_reverse_connections_total{status="failure"}
+# kubectl_portforward_reverse_errors_total{error_type="port_conflict"}
+# kubectl_portforward_reverse_errors_total{error_type="local_unreachable"}
+# kubectl_portforward_reverse_connection_duration_seconds
+# kubelet_portforward_reverse_listeners_active
+```
+
+- **Step 6**: Verify feature gate is enabled (for pre-GA releases):
+
+```bash
+# Check if feature gate is enabled on kubelet
+$ kubectl get --raw /api/v1/nodes/<node-name>/proxy/configz | jq '.featureGates'
+
+# Should show:
+# {
+#   "KubectlReversePortForward": true
+# }
+
+# If disabled, enable it in kubelet configuration or command line:
+$ kubelet --feature-gates=KubectlReversePortForward=true ...
+```
+
+- **Step 7**: Test with a simple end-to-end scenario to isolate the problem:
+
+```bash
+# Terminal 1: Start simple local HTTP server
+$ python3 -m http.server 9999
+Serving HTTP on 0.0.0.0 port 9999 ...
+
+# Terminal 2: Start reverse port-forward with verbose logging
+$ kubectl port-forward --reverse -v=9 nginx 9999:9999
+
+# Terminal 3: Test from within pod
+$ kubectl exec -it nginx -- bash
+root@nginx:/# curl http://localhost:9999
+# Should see HTTP response from local Python server
+# Terminal 1 should show: "GET / HTTP/1.1" 200 -
+
+# If this works, the feature is functional - investigate specific application issues
+# If this fails, check the error messages from steps above
+```
+
+- **Step 8**: Verify pod and network connectivity:
+
+```bash
+# Check pod is running and healthy
+$ kubectl get pod nginx -o wide
+$ kubectl describe pod nginx
+
+# Check kubelet is healthy on the node
+$ kubectl get nodes
+$ kubectl describe node <node-name>
+
+# Verify API server connectivity
+$ kubectl cluster-info
+$ curl -k https://<api-server>:6443/healthz
+```
+
+- **Step 9**: If all else fails, disable the feature and use forward port-forward
+  to verify base functionality:
+
+```bash
+# Test with regular forward port-forward to verify base infrastructure works
+$ kubectl port-forward nginx 8080:80
+
+# In another terminal
+$ curl http://localhost:8080
+
+# If forward port-forward works but reverse doesn't, the issue is specific
+# to the reverse port-forward implementation - collect logs and file a bug
+```
 
 ## Implementation History
 
