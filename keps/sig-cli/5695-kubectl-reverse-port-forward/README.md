@@ -9,7 +9,7 @@
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Story 1: Local Development with Remote Debugging](#story-1-local-development-with-remote-debugging)
-    - [Story 2: Testing Webhooks in Development](#story-2-testing-webhooks-in-development)
+    - [Story 2: Testing Sidecar Proxy with Local Policy Service](#story-2-testing-sidecar-proxy-with-local-policy-service)
     - [Story 3: Database Migration from Local Tools](#story-3-database-migration-from-local-tools)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -107,9 +107,15 @@ These workarounds add complexity, security concerns, and maintenance overhead. A
 Add a new flag `--reverse` (or `-R`) to the `kubectl port-forward` command that reverses the direction of the port forwarding. When this flag is used, kubectl will:
 
 1. Establish a connection to the kubelet running the target pod
-2. Create a listener in the pod's network namespace on the specified remote port
-3. Forward incoming connections from that port back to kubectl
-4. kubectl will then forward these connections to the specified local port
+2. kubelet coordinates with the container runtime (containerd/cri-o) via CRI streaming API
+3. The container runtime creates a listener in the pod's network namespace on the specified remote port
+4. Forward incoming connections from that port back through the runtime → kubelet → kubectl
+5. kubectl then forwards these connections to the specified local port
+
+**Note**: This involves changes across multiple layers:
+- kubectl: Connection handling and local port forwarding
+- kubelet: Reverse mode protocol support in the port-forward API
+- Container runtime (containerd/cri-o): Network namespace listener creation and stream multiplexing
 
 ### User Stories
 
@@ -125,22 +131,24 @@ python -m http.server 8080
 # In another terminal, expose it to the pod
 kubectl port-forward --reverse mypod 8080:8080
 
-# Now the pod can access http://localhost:8080 which goes to my local machine
+# Now applications in the pod can connect to localhost:8080
+# Those connections get tunneled back to your local machine's port 8080
 ```
 
-#### Story 2: Testing Webhooks in Development
+#### Story 2: Testing Sidecar Proxy with Local Policy Service
 
-As a developer working on a Kubernetes admission webhook, I want my webhook running locally to receive requests from the API server running in my development cluster, so that I can rapidly iterate on webhook logic without repeatedly building and deploying container images.
+As a developer working on a service mesh configuration, I want my application pod's sidecar proxy to call my locally running policy/auth service, so that I can test authorization rules without deploying them to the cluster.
 
 **Example:**
 ```bash
-# Run webhook locally
-./my-webhook --port 9443
+# Run local policy service
+./policy-server --port 8181
 
-# Expose it to the API server pod
-kubectl port-forward --reverse -n kube-system api-server-pod 9443:9443
+# Expose it to the sidecar proxy
+kubectl port-forward --reverse mypod 8181:8181
 
-# Now the API server can call https://localhost:9443 for webhook validation
+# Now the sidecar proxy can call http://localhost:8181 for policy decisions
+# while the main application container continues to run in the cluster
 ```
 
 #### Story 3: Database Migration from Local Tools
@@ -219,7 +227,7 @@ The implementation builds upon the existing port-forward infrastructure with the
 
 **2. Kubelet Changes** (`pkg/kubelet/`):
 - Extend PortForward API to support reverse mode
-- Implement pod network namespace listener creation using `socat` or native Go listeners
+- Implement pod network namespace listener creation using native Go listeners
 - Handle incoming pod connections and stream them to kubectl
 - Clean up listeners when kubectl disconnects
 
@@ -229,7 +237,25 @@ The implementation builds upon the existing port-forward infrastructure with the
   - Connection establishment notifications (pod → kubectl direction)
   - Bidirectional data streams
 
-**4. Flow Diagram:**
+**4. Container Runtime Changes** (External repositories):
+
+Changes required in container runtimes to support reverse port-forwarding:
+
+**containerd** (`containerd/containerd`):
+- Modify streaming server ([`internal/cri/streamingserver/server.go`](https://github.com/containerd/containerd/blob/main/internal/cri/streamingserver/server.go))
+- Add reverse port-forward handler endpoint
+- Implement network namespace listener creation
+- Handle bidirectional streaming for reverse connections
+
+**cri-o** (`cri-o/cri-o`):
+- Modify port forward implementation ([`server/container_portforward.go`](https://github.com/cri-o/cri-o/blob/main/server/container_portforward.go))
+- Add reverse mode support to port forward handler
+- Implement listener in container network namespace
+- Stream reverse connections back to kubelet
+
+**Note**: This KEP requires coordinated changes across multiple projects (kubernetes, containerd, cri-o). Implementation will need agreement and collaboration from runtime maintainers.
+
+**5. Flow Diagram:**
 
 ```mermaid
 sequenceDiagram
@@ -260,7 +286,7 @@ sequenceDiagram
     kubectl->>User: Deliver response
 ```
 
-**5. Implementation Components:**
+**6. Implementation Components:**
 
 - **Port Listener**: Create a TCP listener in the pod's network namespace
   - Native Go implementation using a Go network namespace library (such as [vishvananda/netns](https://github.com/vishvananda/netns)).
