@@ -81,7 +81,8 @@ result=0
 kep_readmes=()
 while IFS= read -r changed_file
 do
-    if [[ "$changed_file" == "keps"*"README.md" ]]; then
+    # make sure to ignore the template kep itself, we don't want to self-diff
+    if [[ "$changed_file" == "keps"*"README.md" ]] && [[ "$changed_file" != "keps/NNNN-kep-template/README.md" ]]; then
         kep_readmes+=("$changed_file")
     fi
 done < <(git diff-tree --no-commit-id --name-only -r "${base}".."${target}")
