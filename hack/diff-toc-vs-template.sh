@@ -81,8 +81,15 @@ base="$(git rev-parse --verify "${base}")"
 
 echo "base: $base  target: $target"
 
+readonly template_readme='keps/NNNN-kep-template/README.md'
+
 # get TOC for template
-template_toc=$(mdtoc 'keps/NNNN-kep-template/README.md')
+readonly mdtoc_options=(
+    # make sure to include all headings for this purpose even if we
+    # wouldn't surface them in the checked-in toc in update-toc.sh
+    '--max-depth' '100'
+)
+template_toc=$(mdtoc "${mdtoc_options[@]}" "${template_readme}")
 
 result=0
 # get KEP README files changed in the diff
@@ -90,13 +97,13 @@ kep_readmes=()
 while IFS= read -r changed_file
 do
     # make sure to ignore the template kep itself, we don't want to self-diff
-    if [[ "$changed_file" == "keps"*"README.md" ]] && [[ "$changed_file" != "keps/NNNN-kep-template/README.md" ]]; then
-        kep_readmes+=("$changed_file")
+    if [[ "${changed_file}" == "keps"*"README.md" ]] && [[ "${changed_file}" != "${template_readme}" ]]; then
+        kep_readmes+=("${changed_file}")
     fi
 done < <(git diff-tree --no-commit-id --name-only -r "${base}".."${target}")
 
 for kep_readme in "${kep_readmes[@]}"; do
-    kep_toc=$(mdtoc "${kep_readme}")
+    kep_toc=$(mdtoc "${mdtoc_options[@]}" "${kep_readme}")
     echo >&2 "Diffing table of contents for $kep_readme:"
     # diff only removals versus the template
     # we don't care about _additional_ headings in the KEP
