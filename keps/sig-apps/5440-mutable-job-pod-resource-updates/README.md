@@ -341,7 +341,8 @@ In this case, a running job will be suspended and the pods will go to a terminat
 
 #### e2e tests
 
-Integration tests offer enough coverage.
+- When a job is suspended with feature gate enabled, resources are able to be mutated.
+- When a running job is suspended, mutations are also allowed.
 
 ### Graduation Criteria
 
@@ -422,7 +423,7 @@ This could also be used to monitor the rollout of this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be done after beta. In 1.36, we will perform the following test:
+The following scenarios were verified on a Kind 1.35 cluster.
 
 - create a kind cluster with feature gate off
   - verify suspend and patching of resources is forbidden
@@ -528,7 +529,9 @@ N/A.
 
 ## Implementation History
 
-- July 3rd: draft of KEP
+- July 3rd, 2025: draft of KEP
+- For 1.35, KEP went in for alpha and the implementation also made it into 1.35.
+- 1.36, promote to beta.
 
 ## Drawbacks
 
