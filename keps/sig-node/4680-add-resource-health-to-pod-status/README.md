@@ -478,7 +478,7 @@ Planned tests will cover the user-visible behavior of the feature:
 
 #### Beta
 
-The following requirements must be met for Beta graduation in v1.35:
+The following requirements must be met for Beta graduation in v1.36:
 
 - Complete e2e tests coverage
 - **Device Health for Terminated Pods** ([Issue #132978](https://github.com/kubernetes/kubernetes/issues/132978)):
