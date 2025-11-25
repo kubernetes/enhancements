@@ -1084,6 +1084,8 @@ in back-to-back releases.
   custom CBOR behaviors.
 - All Kubernetes components have opted out of automatic transcoding to JSON for FieldsV1 and
   RawExtension.
+- List object encoding supports "true" streaming (i.e. buffer size is not proportional to output
+  size).
 
 #### GA
 
