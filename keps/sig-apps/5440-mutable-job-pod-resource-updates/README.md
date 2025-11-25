@@ -529,6 +529,8 @@ N/A.
 ## Implementation History
 
 - July 3rd: draft of KEP
+- For 1.35, KEP went in for alpha and the implementation also made it into 1.35.
+- 1.36, promote to beta.
 
 ## Drawbacks
 
