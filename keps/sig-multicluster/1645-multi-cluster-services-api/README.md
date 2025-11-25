@@ -107,6 +107,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Service Port](#service-port)
     - [Headlessness](#headlessness)
     - [Session Affinity](#session-affinity)
+    - [Internal Traffic Policy](#internal-traffic-policy)
+    - [Traffic Distribution](#traffic-distribution)
     - [Labels and Annotations](#labels-and-annotations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -477,8 +479,9 @@ ensure that a name is shared by multiple services within the namespace if and
 only if they are instances of the same service.
 
 Most information about the service, including ports, backends, topology and
-session affinity, will continue to be stored in the `Service` objects, which
-are each name mapped to a `ServiceExport`. This does not apply for labels and
+session affinity, internal traffic policy, and traffic distribution
+will continue to be stored in the `Service` objects, which are each name
+mapped to a `ServiceExport`. This does not apply for labels and
 annotations which are stored in `ServiceExport` directly in `spec.exportedLabels`
 and `spec.exportedAnnotations`. Exporting labels and annotations is optionally
 supported by MCS-API implementations. If supported, annotations or labels must
@@ -586,6 +589,12 @@ type ServiceImportSpec struct {
   SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
   // +optional
   SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig"`
+  // +optional
+  InternalTrafficPolicy *corev1.ServiceInternalTrafficPolicy `json:"internalTrafficPolicy,omitempty"`
+  // The possible TrafficDistribution values should match what can be similarly
+  // defined in a Service, see https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+  // +optional
+  TrafficDistribution *string `json:"trafficDistribution,omitempty"`
 }
 
 // ServicePort represents the port on which the service is exposed
@@ -1041,6 +1050,18 @@ policy.
 
 Session affinity affects a service as a whole for a given consumer. The derived
 service's session affinity will be decided according to the conflict resolution
+policy.
+
+#### Internal Traffic Policy
+
+Internal traffic policy affects a service as a whole for a given consumer. The derived
+service's internal traffic policy will be decided according to the conflict resolution
+policy.
+
+#### Traffic Distribution
+
+Traffic distribution affects a service as a whole for a given consumer. The derived
+service's traffic distribution will be decided according to the conflict resolution
 policy.
 
 #### Labels and Annotations
