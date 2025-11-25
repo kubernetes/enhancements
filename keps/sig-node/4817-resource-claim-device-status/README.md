@@ -298,29 +298,31 @@ to be reported only once in the slice, a device is being identified  by
 
 ### Write Permission
 
-To prevent unauthorized or accidental modifications by entities that do not 
-have access to a particular resource, a `ValidatingAdmissionPolicy` will be 
-created to validate the entities attempting to update the devices in the 
-`ResourceClaim.Status`.
+To prevent unauthorized or accidental modifications by entities that do not
+have access to a particular resource, a synthetic check in a `drivers` resource
+will validate the entities attempting to update the devices in the `ResourceClaim.Status`.
 
-The `ValidatingAdmissionPolicy` will restrict `ResourceClaim.Status.Devices` 
-to be set only during updates, as the object will have first to be created and 
-allocated, then configured inside the pods. It will also restrict the 
-`ResourceClaim.Status.Devices` to be set only for when the `ResourceClaim` is 
-allocated to a node. Additionally, the allocated node where the `ResourceClaim` 
-is assigned will be used to check if the user/entity updating the 
-`ResourceClaim.Status.Devices` is running on the same node.
+The new synthetic check will restrict `ResourceClaim.Status.Devices`
+to be set only during updates, as the object will have first to be created and
+allocated, then configured inside the pods. It will also restrict the
+`ResourceClaim.Status.Devices` to be set only for when the `ResourceClaim` is
+allocated to a node. Additionally, the allocated node where the `ResourceClaim`
+is assigned will be used to check if the user/entity updating the
+`ResourceClaim.Status.Devices` is running on the same node. If the user/entity is
+not a node component it is assumed to be a cluster wide controller and will be able
+to update any allocated ResourceClaim. Cluster wide controllers are also able to use
+a wildcard `*` as a resource name to be able to update any driver.
 
-The allocated node for the `ResourceClaim` must be unique in the form of 
+The allocated node for the `ResourceClaim` must be unique in the form of
 `nodeSelector.nodeSelectorTerms[0].matchFields[0].values[0] = <NodeName>` and
 `nodeSelector.nodeSelectorTerms[0].matchFields[0].key = metadata.name` and
 `nodeSelector.nodeSelectorTerms[0].matchFields[0].operator = In`. Without this
-unique format, the update of the devices in the status will be rejected.
+unique format, the update of the devices in the status will fallback. to cluster wide authorization.
 
-Here is a `ResourceClaim` allocated on a node. This would only work for now if 
-exactly one node is set:
+Here is a `ResourceClaim` allocated on a node:
+
 ```yaml
-apiVersion: resource.k8s.io/v1alpha3
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
   ...
@@ -339,46 +341,33 @@ status:
   ...
 ```
 
-Here is an example of how the `ValidatingAdmissionPolicy` could look like:
+Here is an example of how the `ClusterRole` could look like for a driver running in a node:
+
 ```yaml
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
 metadata:
-  name: "resourceclaim-device-status-update"
-spec:
-  failurePolicy: Fail
-  matchConstraints:
-    resourceRules:
-    - apiGroups: ["resource.k8s.io"]
-      apiVersions: ["*"]
-      operations: ["UPDATE"]
-      resources: ["resourceclaims"]
-  matchConditions:
-    - name: 'device-status-update'
-      expression: >- # Validation only for objects with their .status.devices updated.
-        object.status.devices != oldObject.status.devices
-  validations:
-  - expression: >- # User node must be the same node as the one where the ResourceClaim is allocated.
-      variables.userNodeName != variables.objectNodeName
-    messageExpression: >-
-      "User '" + request.userInfo.username + "' on node '" + variables.userNodeName + "' is not allowed to update the .status.devices of a ResourceClaim allocated on node '" + variables.objectNodeName + "'."
-    reason: Forbidden
-  variables:
-  - name: userNodeName
-    expression: >-
-      request.userInfo.extra[?'authentication.kubernetes.io/node-name'][0].orValue('')
-  - name: objectNodeName
-    expression: >-
-      object.status.allocation.nodeSelector.nodeSelectorTerms[0].matchFields[0].values[0].orValue('')
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicyBinding
+  name: my-driver-status-updater
+rules:
+- apiGroups: ["resource.k8s.io"]
+  resources: ["drivers"]
+  verbs:     ["update-device-status"]
+  resourceNames: ["my-driver.example.com"]
+```
+
+Here is an example of how the `ClusterRole` could look like for a controller that
+updates multiple drivers:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
 metadata:
-  name: "resourceclaim-device-status-update-binding"
-spec:
-  policyName: "resourceclaim-device-status-update"
-  validationActions: [Deny]
+  name: my-driver-status-updater
+rules:
+- apiGroups: ["resource.k8s.io"]
+  resources: ["drivers"]
+  verbs:     ["update-device-status"]
+  resourceNames: ["*"]
 ```
 
 ### Test Plan
@@ -409,18 +398,17 @@ Coverage:
     * With the feature gate enabled, the field exists in the `ResourceClaim`.
     * With the feature gate disabled, the field does not exist in the
       `ResourceClaim`.
-    * With the feature gate enabled, the `ValidatingAdmissionPolicy` exists and
-      restricts the write access of the `ResourceClaim.Status.Devices`.
+    * With the feature gate enabled, the rbac restricts the write access of the `ResourceClaim.Status.Devices`.
 
 ##### e2e tests
 
 The [DRA test driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
-will be extended to support the new  `ResourceClaim.Status.Devices` field and to 
+will be extended to support the new  `ResourceClaim.Status.Devices` field and to
 populate it with data related to the device configured in the pod.
 
 A new network DRA Driver will be implemented (or extended from the existing DRA 
 test driver) to support networking type of devices and report their 
-network status.
+network status and validate the rbac permissions are respected.
 
 ### Graduation Criteria
 
