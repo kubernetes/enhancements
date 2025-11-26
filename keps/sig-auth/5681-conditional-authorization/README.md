@@ -4,36 +4,41 @@
 - Contributor: Micah Hausler, AWS
 
 <!-- toc -->
-- [Summary](#summary)
-  - [Initial Design Resources](#initial-design-resources)
+- [Abstract](#abstract)
+  - [Example Use Cases](#example-use-cases)
   - [Goals](#goals)
   - [Non-goals](#non-goals)
-  - [Requirements](#requirements)
-  - [Example Use Cases](#example-use-cases)
-- [Proposal](#proposal)
-  - [Introduction to partial evaluation and why it is useful to solve this problem](#introduction-to-partial-evaluation-and-why-it-is-useful-to-solve-this-problem)
+- [Background and Major Considered Alternatives](#background-and-major-considered-alternatives)
+  - [Why not just give authorizers access to request and stored objects?](#why-not-just-give-authorizers-access-to-request-and-stored-objects)
+  - [Why not just use <code>ValidatingAdmissionPolicies</code>?](#why-not-just-use-validatingadmissionpolicies)
+  - [What is partial evaluation?](#what-is-partial-evaluation)
   - [Why propagate the conditions with the request?](#why-propagate-the-conditions-with-the-request)
+  - [Glossary](#glossary)
+- [Proposal](#proposal)
+  - [Technical Requirements](#technical-requirements)
+  - [Core interface changes](#core-interface-changes)
   - [Condition and ConditionSet data model](#condition-and-conditionset-data-model)
-  - [Conditional Authorizer interfaces and the AuthorizationConditionsEnforcer admission controller](#conditional-authorizer-interfaces-and-the-authorizationconditionsenforcer-admission-controller)
   - [Computing a concrete decision from a ConditionSet](#computing-a-concrete-decision-from-a-conditionset)
   - [Computing a concrete decision from a conditional authorization chain](#computing-a-concrete-decision-from-a-conditional-authorization-chain)
-  - [Changes to (Self)SubjectAccessReview](#changes-to-selfsubjectaccessreview)
-  - [Changes to the Webhook Authorizer](#changes-to-the-webhook-authorizer)
+  - [<code>AuthorizationConditionsEnforcer</code> admission controller](#authorizationconditionsenforcer-admission-controller)
+  - [Changes to <code>(Self)SubjectAccessReview</code>](#changes-to-selfsubjectaccessreview)
+  - [Supporting webhooks through the <code>AuthorizationConditionsReview</code> API](#supporting-webhooks-through-the-authorizationconditionsreview-api)
+  - [Built-in CEL conditions evaluator](#built-in-cel-conditions-evaluator)
   - [Node authorizer](#node-authorizer)
   - [Feature availability and version skew](#feature-availability-and-version-skew)
   - [Compound Authorization for Connectible Resources](#compound-authorization-for-connectible-resources)
   - [Compound Authorization for update/patch → create](#compound-authorization-for-updatepatch--create)
   - [Constrained Impersonation through Conditional Authorization](#constrained-impersonation-through-conditional-authorization)
-- [Built-in CEL conditions evaluator](#built-in-cel-conditions-evaluator)
+  - [Future addition sketch: Conditional Reads](#future-addition-sketch-conditional-reads)
 - [Open Questions](#open-questions)
-- [Alternatives Considered, Detailed Decision Log](#alternatives-considered-detailed-decision-log)
-  - [Let the API server indicate that it supports conditional authorization](#let-the-api-server-indicate-that-it-supports-conditional-authorization)
-  - [Resolve the conditions until a concrete response in the union authorizer](#resolve-the-conditions-until-a-concrete-response-in-the-union-authorizer)
+- [TODOs](#todos)
+- [Alternatives Considered](#alternatives-considered)
   - [Expose all conditions in AdmissionReview, and have admission plugins “acknowledge” the conditions](#expose-all-conditions-in-admissionreview-and-have-admission-plugins-acknowledge-the-conditions)
   - [Propagate an API server-generated request UID to both authorization and admission](#propagate-an-api-server-generated-request-uid-to-both-authorization-and-admission)
   - [Only one ConditionSet exposed as part of SubjectAccessReview status](#only-one-conditionset-exposed-as-part-of-subjectaccessreview-status)
   - [Require the client to annotate its write request with field or label selectors](#require-the-client-to-annotate-its-write-request-with-field-or-label-selectors)
   - [Extract label and field selectors from the request and current object in etcd, and supply that to the authorization process](#extract-label-and-field-selectors-from-the-request-and-current-object-in-etcd-and-supply-that-to-the-authorization-process)
+- [Appendix A: Further resources](#appendix-a-further-resources)
 <!-- /toc -->
 
 ## Abstract
@@ -69,18 +74,15 @@ evaluate conditions.
 This KEP aims to provide generalized framework for multiple previous features,
 KEPs and issues:
 
--
-  [DRA AdminAccess](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/5018-dra-adminaccess):
+- [DRA AdminAccess](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/5018-dra-adminaccess):
   "Deny creates and updates to `ResourceClaim`s with
   `.spec.devices[*].adminAccess=true`, unless
   `namespaceObject.metadata.labels["resource.kubernetes.io/admin-access"] == "true"`"
--
-  [Fine-grained Kubelet API Authorization](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2862-fine-grained-kubelet-authz/README.md):
+- [Fine-grained Kubelet API Authorization](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2862-fine-grained-kubelet-authz/README.md):
   "Allow a node agent to proxy requests to nodes through the API server, but
   only to scrape readonly information from a path starting with `/pods/`, not to
   exec into pods"
--
-  [Constrained Impersonation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/5284-constrained-impersonation):
+- [Constrained Impersonation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/5284-constrained-impersonation):
   "Allow node agent `csi-driver-foo` to only impersonate the node it is running
   on to `get pods`"
 - Requiring presence of certain labels or fields: [#44703](https://github.com/kubernetes/kubernetes/issues/44703)
@@ -185,7 +187,7 @@ reason:
    just propagating the objects to each authorizer, and the authorizer might
    spend more time examining the object earlier.
 
-### Why not just use ValidatingAdmissionPolicies?
+### Why not just use `ValidatingAdmissionPolicies`?
 
 The observant reader might notice that some of the
 [use cases](#example-use-cases) can already be achieved today with the
@@ -907,7 +909,7 @@ be a case where the feature would be enabled, but there would be no enforcement.
 The validating admission controller operates on a fully-mutated request object
 just like other validating admission controllers, by design.
 
-### Changes to (Self)SubjectAccessReview
+### Changes to `(Self)SubjectAccessReview`
 
 One of the core goals of this KEP is to make it easier also for users subject to
 authorization policies that span authorization and admission understand what
@@ -1105,6 +1107,42 @@ table:
 | :---- | :---- | :---- |
 | Condition Type Not Supported by Builtin Condition Evaluators | Authorize() + EvaluateConditions() | EvaluateConditions() |
 | Condition Type Supported | Authorize() | Neither |
+
+### Built-in CEL conditions evaluator
+
+The most logical alternative for Kubernetes to provide as a builtin primitive is
+a CEL conditions evaluator. Such a conditions evaluator could re-use most of the
+CEL infrastructure that Kubernetes already has, and provide a unified model for
+those that already are familiar with `ValidatingAdmissionPolicies`. This means
+that a wide variety of authorizers could author CEL-typed conditions, and let
+the API server evaluate them without a need for a second webhook. RBAC++ could
+use this as well.
+
+However, this evaluator could evolve with distinct maturity guarantees than the
+core conditional authorization feature.
+
+The observant reader noticed that `Decision.Evaluate` takes a list of
+`BuiltinConditionSetEvaluator` as input, which allow evaluating the conditions
+in-process, without potentially sending webhooks back to the authorizer. A
+`BuiltinConditionSetEvaluator` is just a normal `ConditionSetEvaluator`, but
+scoped to just a set of supported types:
+
+```go
+package authorizer
+
+type BuiltinConditionSetEvaluator interface {
+    ConditionSetEvaluator
+    // SupportedConditionTypes defines the condition types that the builtin
+    // evaluator can assign truth values to in-process.
+    SupportedConditionTypes() sets.Set[ConditionType]
+}
+```
+
+To avoid having to parse the AST from a string (which is relatively expensive),
+there could be an optimized mode in which the CEL evaluator can evaluate a
+binary-encoded AST directly, to get performance on par with e.g.
+`ValidatingAdmissionPolicy`, which also executes pre-compiled CEL programs.
+
 
 ### Node authorizer
 
@@ -1368,41 +1406,6 @@ another KEP is expected for that eventually (if people like the idea), but I
 felt it is good to mention the sketch up-front here so that reviewers have an
 idea how conditional authorization can become usable for both reads and writes,
 eventually.
-
-## Built-in CEL conditions evaluator
-
-The most logical alternative for Kubernetes to provide as a builtin primitive is
-a CEL conditions evaluator. Such a conditions evaluator could re-use most of the
-CEL infrastructure that Kubernetes already has, and provide a unified model for
-those that already are familiar with `ValidatingAdmissionPolicies`. This means
-that a wide variety of authorizers could author CEL-typed conditions, and let
-the API server evaluate them without a need for a second webhook. RBAC++ could
-use this as well.
-
-However, this evaluator could evolve with distinct maturity guarantees than the
-core conditional authorization feature.
-
-The observant reader noticed that `Decision.Evaluate` takes a list of
-`BuiltinConditionSetEvaluator` as input, which allow evaluating the conditions
-in-process, without potentially sending webhooks back to the authorizer. A
-`BuiltinConditionSetEvaluator` is just a normal `ConditionSetEvaluator`, but
-scoped to just a set of supported types:
-
-```go
-package authorizer
-
-type BuiltinConditionSetEvaluator interface {
-    ConditionSetEvaluator
-    // SupportedConditionTypes defines the condition types that the builtin
-    // evaluator can assign truth values to in-process.
-    SupportedConditionTypes() sets.Set[ConditionType]
-}
-```
-
-To avoid having to parse the AST from a string (which is relatively expensive),
-there could be an optimized mode in which the CEL evaluator can evaluate a
-binary-encoded AST directly, to get performance on par with e.g.
-`ValidatingAdmissionPolicy`, which also executes pre-compiled CEL programs.
 
 ## Open Questions
 
