@@ -2,10 +2,9 @@ title: kubectl reverse port-forward
 kep-number: 5695
 authors:
   - "@willianpaixao"
-owning-sig: sig-cli
+owning-sig: sig-node
 participating-sigs:
   - sig-cli
-  - sig-node
   - sig-api-machinery
 status: provisional
 creation-date: 2025-11-18
