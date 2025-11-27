@@ -29,7 +29,6 @@
   - [Compound Authorization for Connectible Resources](#compound-authorization-for-connectible-resources)
   - [Compound Authorization for update/patch → create](#compound-authorization-for-updatepatch--create)
   - [Constrained Impersonation through Conditional Authorization](#constrained-impersonation-through-conditional-authorization)
-  - [Future addition sketch: Conditional Reads](#future-addition-sketch-conditional-reads)
 - [Open Questions](#open-questions)
 - [TODOs](#todos)
 - [Alternatives Considered](#alternatives-considered)
@@ -39,6 +38,7 @@
   - [Require the client to annotate its write request with field or label selectors](#require-the-client-to-annotate-its-write-request-with-field-or-label-selectors)
   - [Extract label and field selectors from the request and current object in etcd, and supply that to the authorization process](#extract-label-and-field-selectors-from-the-request-and-current-object-in-etcd-and-supply-that-to-the-authorization-process)
 - [Appendix A: Further resources](#appendix-a-further-resources)
+- [Appendix B: Future addition sketch: Conditional Reads](#appendix-b-future-addition-sketch-conditional-reads)
 <!-- /toc -->
 
 ## Abstract
@@ -1283,7 +1283,130 @@ KEP, but also other types of expressions, for instance:
   - The current Constrained Impersonation KEP does not allow distinguishing what
     the impersonator can do for what target user.
 
-### Future addition sketch: Conditional Reads
+## Open Questions
+
+- What are quantitative performance requirements for this feature?  
+  - Faster than a second webhook? On par with builtin, prebuilt VAP policies?  
+- How expressive do we let the CEL environment be? Should it e.g. include
+  `namespaceObject`?
+- Do we need to configure conversion of native objects into some
+  specifically-requested version like VAP, or do we just use the raw object in
+  the admission controller?
+- What are the most important metrics that should be added?  
+- Are there specific GVRs we don't want to let be conditionally authorized?  
+- If there is increasing communication between k8s and e.g. webhook authorizers,
+  would it be more performant to keep a bidirectional gRPC open at all times,
+  and use that for comms, similar to ServiceAccount issuing and KMS
+  implementations?
+
+## TODOs
+
+- TODO: Expand on this point of conditional vs composite authorization
+- TODO: Add more wording on ReferenceGrants
+- TODO: One might be able to infer the admission-time operation through whether
+  only the request object is available (create), or both the stored and request
+  object is (update)?
+
+## Alternatives Considered
+
+### Expose all conditions in AdmissionReview, and have admission plugins “acknowledge” the conditions
+
+The SIG Auth meeting of September 4, 2025 concluded that this feature should
+support also condition types that are not built into Kubernetes. Thus does there
+need to be some way to evaluate the not-natively-supported conditions in the
+admission phase. The most logical way, would be to add some fields to
+AdmissionReview, and thus let admission webhooks let the API server know
+(*besides* the AdmissionReview's primary response.allowed field) what the
+conditions evaluated to.
+
+However, this turned out to be unnecessarily complicated in practice, when
+taking the idea further. Should all conditions from potentially every authorizer
+in the chain be sent to every admission webhook? Probably not.
+
+Can an admission webhook choose to evaluate individual conditions of some
+specific authorizer, or does the admission webhook need to evaluate all
+conditions produced by a certain authorizer at once, returning the result of the
+whole condition set according to the defined semantics? The latter solution is
+much simpler for both users and implementers to understand, so probably the
+latter.
+
+However, then, how can one know that a certain admission webhook has the right
+to acknowledge a certain authorizer's conditions? What if the conditional
+authorizer is controlled by the cloud provider or infrastructure team, but a
+(malicious) user dynamically registers its own admission webhook that wants to
+acknowledge the conditions from the cloud provider's authorizer? What happens if
+there are multiple (dynamically registered) admission webhooks that evaluated
+the same input data (conditions+request body) to two different outputs?
+
+These questions led us to realize that the safest initial plan is to require a
+1:1 mapping between the authorizer (registered through
+`AuthorizationConfiguration`) and the authorizer's condition enforcer. As normal
+users anyways cannot dynamically register authorizers, there is no need to
+dynamically register authorizer condition enforcers either for normal users.
+Thus is the most logical place to register the authorizer's condition enforcer,
+in the same place the authorizer is defined in `AuthorizationConfiguration`.
+
+In other words, only the authorizer itself can evaluate its own conditions in
+the admission phase, and all at once only (as a set), not partially.
+
+### Propagate an API server-generated request UID to both authorization and admission
+
+This would have helped solve the atomicity concern, but it is not a full
+long-term solution, as it still relies on people setting up webhooks.
+
+### Only one ConditionSet exposed as part of SubjectAccessReview status
+
+However, if only one condition set is exposed, it might be impossible for a user
+to understand what conditions it is subject to for a given request through a
+(Self/Local/Standard) SubjectAccessReview, as the first conditional response
+might be just a “deny dangerous operations”-type of conditional response.
+
+The user should thus see all conditional allows and denies until there is an
+unconditional response.
+
+### Require the client to annotate its write request with field or label selectors
+
+This would be a breaking change for clients, as whenever conditional authorizers
+would hit production usage, every client would need to annotate its every
+request with all selectors “just in case” some authorizer would make use of it,
+to higher the chances of getting authorized. This could duplicate a fair amount
+of the request data.
+
+The other problem is updates: would the selector apply only to the request
+object, only to the stored one, or both at once.
+
+### Extract label and field selectors from the request and current object in etcd, and supply that to the authorization process
+
+If the client was not required to send all this data, but the API server would
+decode the object to extract “just” label and field selectors, the DoS vector
+occurs, where a malicious party could send huge requests with bogus data, that
+the API server would decode before authorization takes place. In addition, would
+this make the authorization process state-dependent (if the selector would need
+to apply to both the request and stored object), something which is considered
+an explicit anti-pattern.
+
+## Appendix A: Further resources
+
+- SIG Auth meeting June 4, 2025:
+  [meeting notes](https://docs.google.com/document/d/1woLGRoONE3EBVx-wTb4pvp4CI7tmLZ6lS26VTbosLKM/edit?tab=t.0#heading=h.2p3xwolypqkm),
+  [video](https://youtu.be/Clg-rz9qlUA?si=Ay4Dddd-iJRnC89R),
+  [slides](https://speakerdeck.com/luxas/conditional-authorization-for-kubernetes-sig-auth-presentation)
+- SIG Auth Deep Dive on Conditional Authorization Sept 4, 2025:
+  [meeting notes](https://docs.google.com/document/d/1woLGRoONE3EBVx-wTb4pvp4CI7tmLZ6lS26VTbosLKM/edit?tab=t.0#heading=h.147ygvibasgh),
+  [video](https://zoom.us/rec/share/24DwlfWfrP7UZEMtkpk1XvpNP_sQuRrE7FQxKoJDRRbJ-vJTBarrEermV2-XSD5p.LSzKv2wS797xMYTs),
+  [slides](https://speakerdeck.com/luxas/conditional-authorization-sig-auth-deep-dive)
+- KubeCon Atlanta talk Nov 13, 2025:
+  [slides](https://speakerdeck.com/luxas/tools-and-strategies-for-making-the-most-of-kubernetes-access-control),
+  [video](https://youtu.be/JBM0PRyDaPs?si=kACoiZj_iOHQGSrY)
+- Proof of Concept Policy Author Interface implementation: [upbound/kubernetes-cedar-authorizer](https://github.com/upbound/kubernetes-cedar-authorizer)
+- Proof of Concept Kubernetes implementation:
+  [luxas/conditional_authz_4](https://github.com/kubernetes/kubernetes/compare/master...luxas:kubernetes:conditional_authz_4?expand=1)
+  branch
+- Lucas
+  [Master's thesis](https://github.com/luxas/research/blob/main/msc_thesis.pdf)
+  with detailed design information
+
+## Appendix B: Future addition sketch: Conditional Reads
 
 Together with the
 [Authorize with Selectors KEP](https://github.com/kubernetes/enhancements/blob/2871b58880f5629f948b4ef50bffec0d1a677eeb/keps/sig-auth/4601-authorize-with-selectors/README.md),
@@ -1406,123 +1529,3 @@ another KEP is expected for that eventually (if people like the idea), but I
 felt it is good to mention the sketch up-front here so that reviewers have an
 idea how conditional authorization can become usable for both reads and writes,
 eventually.
-
-## Open Questions
-
-- What are quantitative performance requirements for this feature?  
-  - Faster than a second webhook? On par with builtin, prebuilt VAP policies?  
-- How expressive do we let the CEL environment be? Should it e.g. include
-  `namespaceObject`?
-- Do we need to configure conversion of native objects into some
-  specifically-requested version like VAP, or do we just use the raw object in
-  the admission controller?
-- What are the most important metrics that should be added?  
-- Are there specific GVRs we don't want to let be conditionally authorized?  
-- If there is increasing communication between k8s and e.g. webhook authorizers,
-  would it be more performant to keep a bidirectional gRPC open at all times,
-  and use that for comms, similar to ServiceAccount issuing and KMS
-  implementations?
-
-## TODOs
-
-- TODO: Expand on this point of conditional vs composite authorization
-- TODO: Add more wording on ReferenceGrants
-- TODO: One might be able to infer the admission-time operation through whether
-  only the request object is available (create), or both the stored and request
-  object is (update)?
-
-## Alternatives Considered
-
-### Expose all conditions in AdmissionReview, and have admission plugins “acknowledge” the conditions
-
-The SIG Auth meeting of September 4, 2025 concluded that this feature should
-support also condition types that are not built into Kubernetes. Thus does there
-need to be some way to evaluate the not-natively-supported conditions in the
-admission phase. The most logical way, would be to add some fields to
-AdmissionReview, and thus let admission webhooks let the API server know
-(*besides* the AdmissionReview's primary response.allowed field) what the
-conditions evaluated to.
-
-However, this turned out to be unnecessarily complicated in practice, when
-taking the idea further. Should all conditions from potentially every authorizer
-in the chain be sent to every admission webhook? Probably not.
-
-Can an admission webhook choose to evaluate individual conditions of some
-specific authorizer, or does the admission webhook need to evaluate all
-conditions produced by a certain authorizer at once, returning the result of the
-whole condition set according to the defined semantics? The latter solution is
-much simpler for both users and implementers to understand, so probably the
-latter.
-
-However, then, how can one know that a certain admission webhook has the right
-to acknowledge a certain authorizer's conditions? What if the conditional
-authorizer is controlled by the cloud provider or infrastructure team, but a
-(malicious) user dynamically registers its own admission webhook that wants to
-acknowledge the conditions from the cloud provider's authorizer? What happens if
-there are multiple (dynamically registered) admission webhooks that evaluated
-the same input data (conditions+request body) to two different outputs?
-
-These questions led us to realize that the safest initial plan is to require a
-1:1 mapping between the authorizer (registered through
-`AuthorizationConfiguration`) and the authorizer's condition enforcer. As normal
-users anyways cannot dynamically register authorizers, there is no need to
-dynamically register authorizer condition enforcers either for normal users.
-Thus is the most logical place to register the authorizer's condition enforcer,
-in the same place the authorizer is defined in `AuthorizationConfiguration`.
-
-In other words, only the authorizer itself can evaluate its own conditions in
-the admission phase, and all at once only (as a set), not partially.
-
-### Propagate an API server-generated request UID to both authorization and admission
-
-This would have helped solve the atomicity concern, but it is not a full
-long-term solution, as it still relies on people setting up webhooks.
-
-### Only one ConditionSet exposed as part of SubjectAccessReview status
-
-However, if only one condition set is exposed, it might be impossible for a user
-to understand what conditions it is subject to for a given request through a
-(Self/Local/Standard) SubjectAccessReview, as the first conditional response
-might be just a “deny dangerous operations”-type of conditional response.
-
-The user should thus see all conditional allows and denies until there is an
-unconditional response.
-
-### Require the client to annotate its write request with field or label selectors
-
-This would be a breaking change for clients, as whenever conditional authorizers
-would hit production usage, every client would need to annotate its every
-request with all selectors “just in case” some authorizer would make use of it,
-to higher the chances of getting authorized. This could duplicate a fair amount
-of the request data.
-
-The other problem is updates: would the selector apply only to the request
-object, only to the stored one, or both at once.
-
-### Extract label and field selectors from the request and current object in etcd, and supply that to the authorization process
-
-If the client was not required to send all this data, but the API server would
-decode the object to extract “just” label and field selectors, the DoS vector
-occurs, where a malicious party could send huge requests with bogus data, that
-the API server would decode before authorization takes place. In addition, would
-this make the authorization process state-dependent (if the selector would need
-to apply to both the request and stored object), something which is considered
-an explicit anti-pattern.
-
-## Appendix A: Further resources
-
-- SIG Auth meeting June 4, 2025:
-  [meeting notes](https://docs.google.com/document/d/1woLGRoONE3EBVx-wTb4pvp4CI7tmLZ6lS26VTbosLKM/edit?tab=t.0#heading=h.2p3xwolypqkm),
-  [video](https://youtu.be/Clg-rz9qlUA?si=Ay4Dddd-iJRnC89R),
-  [slides](https://speakerdeck.com/luxas/conditional-authorization-for-kubernetes-sig-auth-presentation)
-- SIG Auth Deep Dive on Conditional Authorization Sept 4, 2025:
-  [meeting notes](https://docs.google.com/document/d/1woLGRoONE3EBVx-wTb4pvp4CI7tmLZ6lS26VTbosLKM/edit?tab=t.0#heading=h.147ygvibasgh),
-  [video](https://zoom.us/rec/share/24DwlfWfrP7UZEMtkpk1XvpNP_sQuRrE7FQxKoJDRRbJ-vJTBarrEermV2-XSD5p.LSzKv2wS797xMYTs),
-  [slides](https://speakerdeck.com/luxas/conditional-authorization-sig-auth-deep-dive)
-- KubeCon Atlanta talk Nov 13, 2025:
-  [slides](https://speakerdeck.com/luxas/tools-and-strategies-for-making-the-most-of-kubernetes-access-control),
-  video TODO
-- Proof of Concept Policy Author Interface implementation: [upbound/kubernetes-cedar-authorizer](https://github.com/upbound/kubernetes-cedar-authorizer)
-- Proof of Concept Kubernetes implementation:
-  [luxas/conditional_authz_4](https://github.com/kubernetes/kubernetes/compare/master...luxas:kubernetes:conditional_authz_4?expand=1)
-  branch
