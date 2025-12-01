@@ -18,29 +18,11 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-# keep in sync with hack/verify-toc.sh
-# TODO: dedupe
-TOOL_VERSION=v1.1.0
-
 # cd to the root path
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "${ROOT}"
 
-# create a temporary directory
-TMP_DIR=$(mktemp -d)
-# cleanup
-exitHandler() (
-  echo "Cleaning up..."
-  rm -rf "${TMP_DIR}"
-)
-trap exitHandler EXIT
-# Perform go install in a temp dir as we are not tracking this version in a go
-# module.
-# If we do the go install in the repo, it will create/update go.mod and go.sum.
-cd "${TMP_DIR}"
-GO111MODULE=on GOBIN="${TMP_DIR}" go install "sigs.k8s.io/mdtoc@${TOOL_VERSION}"
-export PATH="${TMP_DIR}:${PATH}"
-cd "${ROOT}"
+MDTOC=(go tool -modfile="${ROOT}/hack/tools/mdtoc/go.mod" mdtoc)
 
 # Identify KEP files changed by the PR:
 # default from prow env if unset from args
@@ -89,7 +71,7 @@ readonly mdtoc_options=(
     # wouldn't surface them in the checked-in toc in update-toc.sh
     '--max-depth' '100'
 )
-template_toc=$(mdtoc "${mdtoc_options[@]}" "${template_readme}")
+template_toc=$("${MDTOC[@]}" "${mdtoc_options[@]}" "${template_readme}")
 
 result=0
 # get KEP README files changed in the diff
@@ -103,7 +85,7 @@ do
 done < <(git diff-tree --no-commit-id --name-only -r "${base}".."${target}")
 
 for kep_readme in "${kep_readmes[@]}"; do
-    kep_toc=$(mdtoc "${mdtoc_options[@]}" "${kep_readme}")
+    kep_toc=$("${MDTOC[@]}" "${mdtoc_options[@]}" "${kep_readme}")
     echo >&2 "Diffing table of contents for $kep_readme:"
     # diff only removals versus the template
     # we don't care about _additional_ headings in the KEP
