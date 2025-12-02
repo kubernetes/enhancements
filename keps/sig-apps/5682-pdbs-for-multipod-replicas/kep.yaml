@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
   - sig-scheduling
+  - sig-autoscaling
   - sig-node
 status: provisional #provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
 creation-date: 2025-10-28
