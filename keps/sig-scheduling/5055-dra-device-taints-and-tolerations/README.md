@@ -122,7 +122,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
@@ -130,8 +130,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -174,8 +174,7 @@ ResourceClaim.
 
 ### Non-Goals
 
-- Not part of the plan for alpha: developing a kubectl command for managing device taints.
-  This may be reconsidered.
+- Not part of the plan for this KEP: developing a kubectl command for managing device taints.
 
 ## Proposal
 
@@ -240,8 +239,7 @@ Without a kubectl extension similar to `kubectl taint nodes`, the user
 experience for admins will be a bit challenging. They need to decide how to
 identify the device (by name or with a CEL expression), manually create a
 DeviceTaintRule with a unique name, then remember to remove that
-DeviceTaintRule again. For beta, support in `kubectl` for common
-operations may be needed.
+DeviceTaintRule again.
 
 Users might be tempted to tolerate taints to get their pods running. They do
 that at their own risk. Depending on the taint, the application then may not
