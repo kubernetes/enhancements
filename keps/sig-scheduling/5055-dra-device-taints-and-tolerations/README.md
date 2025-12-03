@@ -122,7 +122,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
@@ -130,8 +130,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -174,8 +174,7 @@ ResourceClaim.
 
 ### Non-Goals
 
-- Not part of the plan for alpha: developing a kubectl command for managing device taints.
-  This may be reconsidered.
+- Not part of the plan for this KEP: developing a kubectl command for managing device taints.
 
 ## Proposal
 
@@ -230,18 +229,22 @@ scheduled either.
 ### Risks and Mitigations
 
 A device can be identified by its names (`<driver name>/<pool name>/<device
-name>`) and/or by its attributes (for example, a unique ID). It was a conscious
+name>`). It was a conscious
 decision for core DRA to not require that the name is tied to one particular
-hardware instance to support hot-swapping. Admins might favor using the names
-whereas health monitoring might prefer to be specific and use a vendor-defined
-unique ID. Both are supported, which creates additional complexity.
+hardware instance to support hot-swapping. Admins are expected to prefer the names.
+Health monitoring might prefer to be specific and use a vendor-defined
+unique ID attribute. However, supporting this consistently in a DeviceTaintRule
+turned out to be hard because the attributes of an allocated device are not
+guaranteed to be available (ResourceSlice might have been deleted) and therefore
+selecting devices by attributes in a DeviceTaintRule is not possible. Vendors
+which want to be very specific about which device incarnation is unhealthy
+have to use taints in ResourceSlices.
 
 Without a kubectl extension similar to `kubectl taint nodes`, the user
 experience for admins will be a bit challenging. They need to decide how to
 identify the device (by name or with a CEL expression), manually create a
 DeviceTaintRule with a unique name, then remember to remove that
-DeviceTaintRule again. For beta, support in `kubectl` for common
-operations may be needed.
+DeviceTaintRule again.
 
 Users might be tempted to tolerate taints to get their pods running. They do
 that at their own risk. Depending on the taint, the application then may not
@@ -392,8 +395,12 @@ type DeviceTaint struct {
     // which will enable adding new enums within a single release without
     // ratcheting.
 
-    // TimeAdded represents the time at which the taint was added.
+    // TimeAdded represents the time at which the taint was added or
+    // (only in a DeviceTaintRule) the effect was modified.
     // Added automatically during create or update if not set.
+    // In addition, in a DeviceTaintRule a value provided during
+    // an update gets replaced with the current time if the provided
+    // value is the same as the old one and the new effect is different.
     //
     // +optional
     TimeAdded *metav1.Time
@@ -532,22 +539,22 @@ would be repetitive work. Instead, a
 reacts to informer events for ResourceSlice and DeviceTaintRule and
 maintains a set of updated slices which also contain the taints
 set via a DeviceTaintRule.
-
 The tracker provides the API of an informer and thus can be used as a
-replacement for a ResourceSlice informer. In the initial implementation
-it produced ResourceSlices with additional taints added to the `Device` struct.
-With that approach consumers are unable to determine which DeviceTaintRule
-status they need to update (see below).
+replacement for a ResourceSlice informer.
 
-Therefore the tracker gets changed to use the types from
-`k8s.io/dynamic-resource-allocation/api` to represent ResourceSlices. The
-difference compared to the `k8s.io/resource/v1` Go types are:
+This approach is sufficient for the scheduler (only needs to know about
+which devices are unusable), but not for the controller:
+- It also needs to know the DeviceTaintRule so that it can update the status.
+- It needs to handle allocated devices where a DeviceTaintRule causes
+  eviction when there is no ResourceSlice where the taint could be added.
 
-- Usage of `unique.Handle[String]` = `api.UniqueString` to speed up certain
-  string comparisons - this had turned out to improve scheduling performance.
-  It is less relevant for device taints.
-- `api.TrackedDeviceTaint` extends `DeviceTaint` with a pointer back to
-  the `DeviceTaintRule` for updating the status (if applicable).
+Therefore since 1.35 the controller keeps track of DeviceTaintRules itself.
+
+Supporting DeviceTaintRules depends on quite a bit of additional code (tracker
+in the kube-scheduler, an entire controller in kube-controller-manager). To
+support disabling that code in case of problems without having to disable the
+entire support for device taints, support for DeviceTaintRules is guarded by a
+separate DRADeviceTaintRule feature gate.
 
 ```Go
 // DeviceTaintRule adds one taint to all devices which match the selector.
@@ -590,13 +597,6 @@ type DeviceTaintRuleSpec struct {
 // The empty selector matches all devices. Without a selector, no devices
 // are matched.
 type DeviceTaintSelector struct {
-    // If DeviceClassName is set, the selectors defined there must be
-    // satisfied by a device to be selected. This field corresponds
-    // to class.metadata.name.
-    //
-    // +optional
-    DeviceClassName *string
-
     // If driver is set, only devices from that driver are selected.
     // This fields corresponds to slice.spec.driver.
     //
@@ -623,14 +623,6 @@ type DeviceTaintSelector struct {
     //
     // +optional
     Device *string
-
-    // Selectors contains the same selection criteria as a ResourceClaim.
-    // Currently, CEL expressions are supported. All of these selectors
-    // must be satisfied.
-    //
-    // +optional
-    // +listType=atomic
-    Selectors []DeviceSelector
 }
 
 // DeviceTaintRuleStatus provides information about the effect of the DeviceTaintRule.
@@ -716,11 +708,34 @@ v1.32.0:
 - `k8s.io/kubernetes/pkg/apis/resource/validation`: 98.6%
 - `k8s.io/kubernetes/pkg/controller/tainteviction`: 81.8%
 
+<!--
+Generated with:
+
+go test -cover ./pkg/apis/resource/validation  ./staging/src/k8s.io/dynamic-resource-allocation/structured ./staging/src/k8s.io/dynamic-resource-allocation/resourceslice/tracker ./pkg/controller/devicetainteviction | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+
+-->
+
 v1.33.0:
 
+- `k8s.io/dynamic-resource-allocation/resourceslice/tracker`: 65.8%
 - `k8s.io/dynamic-resource-allocation/structured`: 91.3%
 - `k8s.io/kubernetes/pkg/apis/resource/validation`: 97.8%
 - `k8s.io/kubernetes/pkg/controller/devicetainteviction`: 89.9%
+
+
+<!--
+Generated with:
+
+go test -cover ./pkg/apis/resource/validation  ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental ./staging/src/k8s.io/dynamic-resource-allocation/resourceslice/tracker ./pkg/controller/devicetainteviction | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+
+-->
+
+v1.35.0-rc.0:
+
+- `k8s.io/dynamic-resource-allocation/resourceslice/tracker`: 62.1%
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: 93.7%
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: 96.8%
+- `k8s.io/kubernetes/pkg/controller/devicetainteviction`: 87.9%
 
 Test cases that are worth calling out:
 
@@ -738,8 +753,13 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-Integration tests for the new eviction manager will be useful to ensure that
-permissions are correct.
+An integration test for the new eviction controller is useful to ensure that
+permissions are correct. It also covers evicting a higher number of pods than
+what would be possible in an E2E test.
+
+- source code: https://github.com/kubernetes/kubernetes/blob/v1.35.0-rc.0/test/integration/dra/device_taints_test.go
+- job: https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=dra.dra
+- triage: https://storage.googleapis.com/k8s-triage/index.html?text=EvictCluster&job=integration&test=dra
 
 ##### e2e tests
 
@@ -757,6 +777,10 @@ Useful E2E tests are checking that the scheduler really honors taints during
 scheduling. Adding a taint in a ResourceSlice must evict a running pod. Same
 for adding a taint through a DeviceTaintRule. A toleration for a NoExecute
 taint must allow a pod to run.
+
+- source code: https://github.com/kubernetes/kubernetes/blob/496077da56dceb7a68c4715a01670e2a5fa582e8/test/e2e/dra/dra.go#L1968-L2084
+- job: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all&include-filter-by-regex=DRADeviceTaints
+- triage: https://storage.googleapis.com/k8s-triage/index.html?test=DRADeviceTaints
 
 ### Graduation Criteria
 
@@ -818,6 +842,11 @@ updates.
     - kube-apiserver
     - kube-scheduler
     - kube-controller-manager
+  - Feature gate name: DRADeviceTaintRules
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-scheduler
+    - kube-controller-manager
 - [X] Other
   - Describe the mechanism: resource.k8s.io/v1alpha3 API group
   - Will enabling / disabling the feature require downtime of the control
@@ -844,42 +873,38 @@ This will be covered through unit tests for the apiserver and scheduler.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+If components restart, then work like pod scheduling and eviction continues
+normally once they are back.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+During a partial rollout (feature enabled on at least one API server before it
+is also enabled in kube-scheduler and kube-controller-manager) a user or DRA
+driver might taint devices before the rest of the control plane catches up. For
+NoExecute, the pods will get evicted eventually. For NoSchedule, pods keep
+running.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+The normal health metrics of the control plane components need to be monitored
+to determine if performance deteriorates.
+
+If the `scheduler_pending_pods` metric in the kube-scheduler suddenly
+increases, then perhaps scheduling no longer works as intended.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Automated upgrade/downgrade testing verifies that:
+- A DeviceTaintRule created before a downgrade prevents pod scheduling after a downgrade.
+- A pod which gets scheduled because of a toleration is kept running after an upgrade.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -898,6 +923,13 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Usage of DeviceTaintRules can be seen in the apiserver's
+`apiserver_resource_objects` metric with labels `group=resource.k8s.io` and
+`resource=devicetaintrules`.
+
+Usage of taints in ResourceSlices and tolerations in ResourceClaims can
+only be observed by inspecting objects.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -909,13 +941,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] API DeviceTaintRule.Status
+  - Condition name: EvictionInProgress
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -934,25 +961,23 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+As for normal pod scheduling of pods using ResourceClaims there is no SLO for
+scheduling with taints.
+
+Pod eviction is a best-effort deletion of pods. The goal is that it deletes all
+affected pods eventually, with no performance guarantees.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric names: `device_taint_eviction_controller_pod_deletions_total`,
+    `device_taint_eviction_controller_pod_deletion_duration_seconds`,
+    `workqueue_*` with name="device-taint-eviction-controller"
+  - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No.
 
 ### Dependencies
 
@@ -962,26 +987,11 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No.
 
 ### Scalability
 
-Applying taints to devices scales with `number of DeviceTaintRules` *
-`number of devices` when CEL selectors need to be evaluated. Without them,
-filtering scales with `number of DeviceTaintRules` * `number of
+Applying taints to devices scales with `number of DeviceTaintRules` * `number of
 ResourceSlices` but then may still need to compare device names and of course
 modify selected devices.
 
@@ -1031,18 +1041,9 @@ No, because the feature is not used on nodes.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+Work is halted while the API server or etcd are unavailable and resumes when they come back.
 
 ###### What are other known failure modes?
 
@@ -1059,11 +1060,15 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+None known at this point.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
 - 1.33: first KEP revision and implementation
+- 1.35: revised alpha with `effect: None` and DeviceTaintRule status
+- 1.36: graduation to beta (tentative)
 
 ## Drawbacks
 
