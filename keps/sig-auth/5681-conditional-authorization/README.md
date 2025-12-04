@@ -128,8 +128,13 @@ A non-exhaustive list, in addition to the ones mentioned above:
   satisfies some specific conditions
 - Let users discover what conditions they are subject to through
   `(Self)SubjectAccessReview`
-- Initially support write and connect requests, with options to expand coverage
-  to read[^2] and impersonate verbs later.
+- Initially support enforcement of write and connect requests in the
+  `k8s.io/apiserver` `WithAuthorization` HTTP filter, with options to expand
+  coverage to read[^2] and impersonate verbs later. However, conditions can be
+  returned for any verb in `SubjectAccessReview` responses, so extensions can be
+  built arbitrarily on top. For instance, aggregated API servers can choose to
+  enforce conditions on whatever custom verbs it wants, and authorizer can
+  return conditions for any verb it likes.
 - Allow conditions to be expressed in both transparent, analyzable forms (like
   Cedar or CEL), or opaque ones (like just `policy16`)
 - Support expressing both “Allow” and “Deny” effect conditions.
@@ -457,9 +462,9 @@ some authorizer, is a map from an authorizer-scoped identifier to a condition.
 With this proposal, the `Decision` logical enum gets a new `Conditional`
 variant, that has a `ConditionSet` associated with it.
 
-Let `ConditionsData` be the term for the data unknown at authorization time
+Let `ConditionData` be the term for the data unknown at authorization time
 (request, stored object and request options). A condition is a deterministic
-function `condition: ConditionsData → Boolean`. Note that the condition is only
+function `condition: ConditionData → Boolean`. Note that the condition is only
 a function of the unknown data; already-known data should be constants of the
 condition (see the [partial evaluation section](#what-is-partial-evaluation) for
 an example). A condition also has an *effect*, which controls if evaluation to
@@ -473,7 +478,7 @@ expose field-selectable fields in the expression model given to the policy
 author.
 
 Evaluating a `ConditionSet` is a deterministic function
-`evaluate: ConditionSet x ConditionsData → (Decision - {Conditional})`. Note
+`evaluate: ConditionSet x ConditionData → (Decision - {Conditional})`. Note
 that conditions evaluation *should not* have access to the policy store; this is
 by design, as it makes this two-stage mechanism *atomic*, just like it would
 have been if it could have been evaluated directly.
@@ -575,7 +580,7 @@ func (d Decision) CanBecomeAllowed() bool {}
 //
 // Might be an expensive operation, as authorizers might webhook to evaluate
 // its conditions.
-func (d Decision) Evaluate(ctx context.Context, data ConditionsData, builtinConditionSetEvaluators ...BuiltinConditionSetEvaluator) (Decision, error)
+func (d Decision) Evaluate(ctx context.Context, data ConditionData, builtinConditionSetEvaluators ...BuiltinConditionSetEvaluator) (Decision, error)
 
 // AllConditionSets returns an ordered list of all (including lazily-evaluated)
 // authorizers' decisions, until a concrete decision is reached.
@@ -615,6 +620,7 @@ package authorizer // k8s.io/apiserver/pkg/authorization/authorizer
 // (or we bake that data into GetObject(), or add another field)
 type ConditionData interface {
     // GetOperation is the operation being performed
+    // TODO: For impersonation requests, we might make this IMPERSONATE, if we want/need.
     GetOperation() string
     // GetOperationOptions is the options for the operation being performed
     GetOperationOptions() runtime.Object
@@ -812,9 +818,9 @@ evaluation error would trigger fail-closed short circuiting to `Deny` or `NoOpin
 ### Computing a concrete decision from a conditional authorization chain
 
 It is now known how to evaluate a *single* `ConditionSet` together with the
-`ConditionsData` into a single, aggregate concrete decision, the
+`ConditionData` into a single, aggregate concrete decision, the
 same decision that the authorizer would have immediately returned, if it had
-direct access to the `ConditionsData`. Next, we discuss the semantics of
+direct access to the `ConditionData`. Next, we discuss the semantics of
 multiple authorizers chained after each other (i.e. the
 [union](https://pkg.go.dev/k8s.io/apiserver/pkg/authorization/union)
 authorizer), in the light of conditional authorization.
@@ -837,14 +843,16 @@ would evaluate into a `NoOpinion`.
 
 The `WithAuthorization` HTTP filter makes sure that the current request supports
 conditional authorization, and that the decision can become allowed (that is,
-the decision is a concrete or conditional allow) before proceeding.[^4] The returned
-`Decision` is propagated using the context to the validating admission phase,
-just like `UserInfo` and `RequestInfo` is today.
+the decision is a concrete or conditional allow) before proceeding.[^4] The
+returned `Decision` is propagated using the context to the validating admission
+phase, just like `UserInfo` and `RequestInfo` is today. Warning: Any aggregated
+API server **MUST** use `kube-apiserver` as its first authorizer; any other
+behavior is unsafe and with undefined behavior.
 
 [^4]: Note that this also holds for `kube-apiserver` forwarding requests to an
 aggregated API server. This is safe to do, even if the conditions do not
 propagate directly from `kube-apiserver` to the aggregated API server, as the
-aggregated API server must be configured to use `kube-apiserver` as a webhook
+aggregated API server **must be configured** to use `kube-apiserver` as a webhook
 authorizer, and thus get the same conditions for enforcement through that route.
 
 However, if no `effect=Allow` condition is present in a returned `ConditionSet`,
@@ -908,6 +916,10 @@ be a case where the feature would be enabled, but there would be no enforcement.
 
 The validating admission controller operates on a fully-mutated request object
 just like other validating admission controllers, by design.
+
+It is proposed that the `AuthorizationConditionsEnforcer` is the first
+validating admission plugin to run; such that e.g. no validating webhooks need
+to execute unnecessarily.
 
 ### Changes to `(Self)SubjectAccessReview`
 
@@ -1037,7 +1049,7 @@ type AuthorizationConditionsRequest struct {
     // the request in the authorization phase.
     ConditionSet authorizationv1.SubjectAccessReviewConditionSet `json:"conditionSet,omitempty"`
 
-    // All fields present in the ConditionsData interface, not exhaustively listed
+    // All fields present in the ConditionData interface, not exhaustively listed
     // in this KEP for brevity.
 }
 
@@ -1143,7 +1155,6 @@ there could be an optimized mode in which the CEL evaluator can evaluate a
 binary-encoded AST directly, to get performance on par with e.g.
 `ValidatingAdmissionPolicy`, which also executes pre-compiled CEL programs.
 
-
 ### Node authorizer
 
 The Node authorizer was the first conditional authorizer in that it had both an
@@ -1184,8 +1195,8 @@ Conditional authorization is available when all of the following criteria are me
 
 | Version skew matrix | Old API server | New API server |
 | :---- | :---- | :---- |
-| Old webhook | Never conditions | Conditions never returned from webhook, ok. |
-| New webhook | Conditions might be returned, but API server ignores them => NoOpinion | Conditions respected |
+| Old webhook | Conditions never returned | Conditions never returned from webhooks |
+| New webhook | Webhook respects `ConditionsModeNone` and never returns a conditional response | Conditions respected if asked for |
 
 ### Compound Authorization for Connectible Resources
 
@@ -1282,6 +1293,14 @@ KEP, but also other types of expressions, for instance:
   but the same ServiceAccount can impersonate `bob` for any action"
   - The current Constrained Impersonation KEP does not allow distinguishing what
     the impersonator can do for what target user.
+
+For clarity: note that a non-goal of this is to allow expressing predicates over
+the request/stored object when authorizing impersonation requests. It could be
+done, but would add a lot of complexity that I do not see needed at the moment.
+In other words, with this proposal, it is *not* (initially at least) possible to
+say "allow user `ai-agent-foo` to impersonate user `lucas` to
+`create serviceaccounts/token`, but only when
+`.spec.audiences.contains("foo")`".
 
 ## Open Questions
 
@@ -1384,6 +1403,33 @@ the API server would decode before authorization takes place. In addition, would
 this make the authorization process state-dependent (if the selector would need
 to apply to both the request and stored object), something which is considered
 an explicit anti-pattern.
+
+### Do nothing, force implementers to implement all of this out of tree
+
+Pros:
+
+- No extra code is added to Kubernetes.
+
+Drawbacks:
+
+- Authorizers would need to fold a conditional allow into a concrete `Allow` in
+  authorization responses. This is confusing, and could easily be misunderstood,
+  for example composite authorization of `update` requests turning into
+  `create`s would not respect conditions, which could be unsafe and unexpected.
+- Likewise, Constrained Impersonation could not be made more expressive.
+- Requires the cluster administrator to install a validating webhook that never
+  can become deleted (which normal admission webhooks can).
+- Users would not see their conditions in the `SelfSAR`, and e.g. conditional
+  read policies (see below) would be more or less impossible to discover.
+- Two webhooks are always needed for every request, even if the condition could
+  be expressed in CEL, which in theory would not require a webhook.
+- Evaluation of policies is not atomic across authorization and admission
+  phases. A full re-evaluation of all policies need to be done twice.
+- Only one conditional authorizer could effectively be supported, instead of
+  many in this framework.
+- Without a clear framework on how to do this (with reference implementations),
+  the risk of wrong or incompatible implementations is higher.
+- Kubernetes could not use this itself, even though it could be useful.
 
 ## Appendix A: Further resources
 
