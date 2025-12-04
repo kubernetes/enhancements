@@ -319,7 +319,7 @@ extensions:
     clusterName: spoke-1
 ```
 
-In practice, however, there exists certain scenarios where setting the reserved `client.authentication.k8s.io/exec` extension
+In practice, however, there exist certain scenarios where setting the reserved `client.authentication.k8s.io/exec` extension
 to pass cluster-specific data might not be appropriate: libraries such as `client/go` will eventually save the extension data
 (along with other information, including the CA bundles for a cluster) to an environment variable, `KUBERNETES_EXEC_INFO`,
 which exec plugins can read; however:
@@ -337,7 +337,7 @@ difficult to handle gracefully for the community-provided library proposed in th
 To address the deficiencies above, we further propose that:
 
 * this KEP reserves a name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args`, which holds
-additional CLI arguments that would be supplied to the exec plugin when the Cluster Profile API and community-provided
+additional CLI arguments that would be supplied to the exec plugin when the ClusterProfile API and community-provided
 library are used for authentication.
 
   If an extension under this name is present, the community-provided library will extract the data, and append the
@@ -350,7 +350,7 @@ library are used for authentication.
   after the additional arguments are appended.
 
 * this KEP reserves another name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs`, which
-holds additional environment variables that would be supplied upon calling the exec plugin when the Cluster Profile API
+holds additional environment variables that would be supplied upon calling the exec plugin when the ClusterProfile API
 and community-provided library are used for authentication.
 
   If an extension under this name is present, the community-provided library will extract the data, and add the additional
