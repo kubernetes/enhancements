@@ -143,6 +143,10 @@ and many others) and bring the true value for every Kubernetes user.
   (e.g. caused by hardware failures)
 - Design rescheduling for workloads that will be preempted (rescheduling will
   be addressed in a separate dedicated KEP)
+- Change the preemption principle of avoiding preemption if a workload/pod can be scheduled without it.
+  If we decide to change that it will be addressed in a dedicated KEP.
+- Propose any tradeoff between preemption and cluster scale-up.
+- Design workload-level preemption triggerred by external schedulers
 
 ## Proposal
 
@@ -248,6 +252,10 @@ unit being an arbitrary group of pods, in majority of real world usecases this i
 with the scheduling unit. In other words, the group of pods that should be preempted together matches
 a group that was initially scheduled together as a gang.
 
+Trying to formalize it, we define `WorkloadPortion` as one of {all pods in a PodGroup replica or
+a single pod}. With that definition both scheduling unit and preemption units can only be
+`WorkloadPortions`.
+
 In the future, we may want to support usecases when a single scheduling unit consists of multiple
 preemption groups, but we leave that usecase as a future extension (it can be addressed when we
 decide to extend Workload API with PodSubGroup concept - for more details see
@@ -257,12 +265,25 @@ be larger than scheduling unit.
 Based on that, we will extend the the existing `GangSchedulingPolicy` as following:
 
 ```golang
+// PreemptionMode describes the mode in which a PodGroup can be preempted.
+// +enum
+type PreemptionMode string
+
+const (
+  // PreemptionModePod means that individual pods can be preempted independently.
+  PreemptionModePod = "Pod"
+  // PreemptionModePodGroup means that the whole PodGroup replica needs to be
+  // preempted together.
+  PreemptionModePodGroup = "PodGroup"
+)
+
 type GangSchedulingPolicy struct {
     // Existing field(s).
 
-    // IsGangPreemptable defines whether all pods from this group should
-    // be preempted in all-or-nothing fashion.
-    IsGangPreemtable *bool
+    // PreemptionMode defines the mode in which a given PodGroup can be preempted.
+    // One of Pod, PodGroup.
+    // Defaults to Pod if unset.
+    PreemptionMode *PreemptionMode
 }
 ```
 
@@ -317,30 +338,78 @@ object (Workload, PodGroup, PodSubGroup, ...) corresponding to this pod.
 
 
 There is one direct implication of the above - the `pod.Spec.PriorityClassName` and `pod.Spec.Priority`
-may no longer reflect the actual pod priority. This can be misleading to users.
+may no longer reflect the actual pod priority, which could be misleading to users.
 
 ```
 <<[UNRESOLVED priority divergence]>>
 There are several options we can approach it (from least to most invasive):
-- Explain via documentation
-- Validating that if a pod is referencing a workload, `pod.Spec.PriorityClassName` equals
-  `workload.Spec.PriorityClassName`. However, `Workload` object potentially may not exist
-  yet on pod creation.
-- Making `pod.Spec.PriorityClassName` and `pod.Spec.Priority` mutable fields and having a
-  controller responsible for reconciling these. However, that doesn't fully address the
-  problems as divergence between the pod and PodTemplate in true workload object could also
-  be misleading.
+- Describe the possible divergence via documentation
+- Expose the information about divergence in the API.
+  This would require introducing a new `Conditions` field in `workload.Status` and introducing
+  a dedicated condition like `PodsNotMatchingPriority` that will be set by either kube-scheduler
+  or a new workload-controller whenever it observes pods referencing a given `Workload` object
+  which priority doesn't match the priority of the workload object.
+- Introducing an admission to validate that if a pod is referencing a workload object, its
+  `pod.Spec.PriorityClassName` equals `workload.Spec.PriorityClassName`. However, we allow creating
+  pods before the workload object, and there don't see, to be an easy way to avoid races.
+- Making `pod.Spec.PriorityClassName` and `pod.Spec.Priority` mutable fields and having a new
+  workload controller responsible for reconciling these. However, that could introduce another
+  divergence between the priority of pods and the priority defined in the PodTemplate in true
+  workload objects which would introduce a similar level of confusion to users.
 
-The validation option seems like the best option, if we can address the problem of not-yet
-existing `Workload` object (reversed validation?).
+If we could address the race in validations, that seems like a desired option. However,
+I don't see an easy option for it.
+Given that, we suggest to proceed with just exposing the information about divergence in the
+Workload status (second option) and potentially improving it later.
 <<[/UNRESOLVED]>>
 ```
 
-The similar argument holds for preemption priority, but we argue that its mutable nature
-makes it infeasible for reconciling this information back to pod for scalability reasons
-(we can absolutely handle frequent updates to `Workload.Spec.PreemptionPriorityClassName`
-but we can't handle updating potentially hundreds of thousands of pods within that workload
-that frequently). In this case, we limit ourselves to documentation.
+It's worth mentioning here, that we want to introduce the same defaulting rules for
+`workload.Spec.PriorityClassName` that we have for pods. Namely, if `PriorityClassName` is unset
+and there exists PriorityClass marked as `globalDefault`, we default it to that value.
+This consistency will allow us to properly handle when users are not setting neither pods
+nor workload priorities.
+Similarly, we will ensure that `PriorityClass.preemptionPolicy` works exactly the same way for
+workloads as for pods. Such level of consistency would make adoption of Workload API much easier.
+
+Moving to `PreemptionPriorityClassName`, the same issue of confusion holds (the actual priority
+set at the pod level may not reflect priority used for preemption). We argue that its mutable
+nature makes it infeasible for reconsiling this information back to pods for scalability reasons
+(we can absolutely handle frequent updates to `Workload.Spec.PreemptionPriorityClassName`,
+but we can't handle updating potentially hundreds or thousands of pods within that workload
+that frequently). So in this case, we limit ourselves to documentation.
+
+```
+<<[UNRESOLVED preemption cycles]>>
+If we would allow for arbitrary relation between scheduling priority and preemption policy,
+we could hit an infinite cycle of preemption. Consider an example when:
+- workload A has scheduling priority `high` and preemption policy `low`
+- workload B has scheduling priority `high` and preemption policy `low`
+In such case, workload A can preempt workload B (`high` > `low`), but then workload B can
+also preempt workload A. This is definitely not desired.
+We can avoid the infinite cycle by ensuring that `scheduling priority <= preemption priority`.
+
+However, this also opens a question if we should allow for setting arbitrary high preemption
+priority for low scheduling priority workloads. Arguably we can claim that scheduling priority
+should be the ultimate truth and if there is a workload with higher priority it should be
+able to preempt it.
+So the alternative model that we can consider is to instead adding the concept of preemption
+priority, introduce a concept of "preemption cost". In such a model, the workload with
+higher priority can always preempt lower priority ones, but if we need to choose between
+two workloads to preempt, such preemption cost may result in choosing the one with higher
+priority amongst these two. Consider the following example:
+- we want to schedule workload A with scheduling priority `high`
+- it needs to preempt one of the already running workloads
+- workload B has scheduling priority `med` but preemption cost `low`
+- workload C has scheduling priority `low` but preemption cost `high`
+In such case, the preemption cost would result in choosing workload B for preemption. But
+if it gets recreated, it will preempt workload C causing unnecessary cascading preemption.
+This is the reason why a cost-based model was discarded.
+
+So for now, we suggest introducing only additional validation of scheduling priority to be
+not higher then preemption policy.
+<<[/UNRESOLVED]>>
+```
 
 ```
 <<[UNRESOLVED priority status]>>
@@ -356,6 +425,7 @@ We should introduce/describe `workload.status` to reflect:
 We start with describing at the high-level how existing pod-level preemption algorithm works.
 Below, we will show how to generalize it to workloads.
 
+If a pod P can be scheduled without triggering preemption, we don't consider preemption at all.
 To check if a pod P can be scheduled on a given node with preemption we:
 
 1. Identify the list of potential victims - all running pods with priority lower than the new pod P.
@@ -368,8 +438,8 @@ To check if a pod P can be scheduled on a given node with preemption we:
 1. From remaining potential victims, we start to reprieve pods starting from the highest priority
    and working down until the set of remaining victims still keeps the node feasible.
 
-Once we compute the feasibility and list of victims for all nodes, we score that and choose the
-best options.
+Once we find enough nodes feasible for preemption and list of victims for them, we score that and
+choose the best options.
 
 The above algorithm achieves our principles, as by eliminating highest priority pods first, it
 effectively tries to minimize the cascading preemptions later.
@@ -380,61 +450,86 @@ moving to the level of `Workload`, but also no longer operating at the level of 
 We need to look at the cluster as a whole. With that in mind, keeping the algorithm efficient
 becomes a challenge, thus we modify to the approach below.
 
-To check if a workload W can be scheduled on a given cluster with preemption we:
+At the same time, we need to support four cases:
+- individual pod as preemptor, individual pod(s) as victim(s)
+- individual pod as preemptor, pod group(s) (and individual pod(s)) as victim(s)
+- pod group as preemptor, individual pod(s) as victim(s)
+- pod group as preemptor, pod group(s) (and individual pod(s)) as victim(s)
 
-1. Identify the list of potential victims:
-   - all running workloads with (preemption) priority lower than the new workload W
-   - all individual pods (not being part of workloads) with priority lower than the new workload W
+To achieve that, we don't want to multiply preemption algorithms and rather want to have a
+unified high-level approach (with potential minor tweaks per option).
 
-1. If removing all the potential victims would not make the new workload W schedulable,
-   the workload is unschedulable even with preemption.
+To check if a given preemptor (either (gang) PodGroup G or an individual pod P) can be scheduled
+with preemption:
 
-```
-<<[UNRESOLVED PodDisruptionBudget violations]>>
-How critical is reprieving workloads and pods violating PodDisruptionBudgets? We no longer can
-afford full workload scheduling trying to reprieve every individual pod and workload.
+1. Split the cluster into mutually-exclusive domains where a preemptor will be put:
+   - for pod P, it will always be individual nodes
+   - for pod group G, we will start with just one "whole cluster"; eventually once we will have
+     topology-aware scheduling, we will most probably inject some domain-based split here
 
-We could consider finding the first one that can't be reprieved using binary search, but if we
-can't reprieve any of those, learning about that would require O(N) full workload schedulings
-with N being number of workload/pods violating PDB.
-<<[/UNRESOLVED]>>
-```
+1. For every domain computed above run the following points:
 
-1. For remaining potential victims, using binary search across priorities find the minimal priority P
-   for which scheduling the new workload W doesn't require preempting any workloads and/or pods with
-   priority higher than P. This allows to reduce the potential cascading preemptions later.
+   1. Identify the list of all potential victims in that domain:
+      - all running workloads with (preemption) priority lower then preemptor priority; note that
+        some pods from that workload may be running outside of currently considered domain D - they
+        need to contribute to scoring, but they won't contribute to feasibility of domain D.
+      - all individual pods with priority lower the preemptor priority
 
-```
-<<[UNRESOLVED minimizing preemptions]>>
-The following algorithm is by far no optimal, but is simple to reason about and I would suggest it as
-a starting point:
-- assume that all potential victims on the list are removed and schedule the new workload W
-- go over the remaining potential victims starting from the highest priority and check if these can
-  be placed in the place they are currently running; if so remove from the potential victims
+   1. If removing all potential victims would not make the preemptor schedulable, the preemptor
+      is unschedulable with preemption in currently considered domain D.
 
-As a bonus we may consider few potential placements of the new workload W here and choose the one that
-somehow optimizes the number of victims. But that will become more critical once we get to
-Topology-Aware-Scheduling and I would leave that optimization until then.
-<<[/UNRESOLVED]>>
-```
+   1. Sort all the potential victims to reflect their "importance" (from the most important to the
+      least ones). Tentatively, the function will sort first by their priority, and within a single
+      priority prioritizing workloads over individual pods.
 
-```
-<<[UNRESOLVED sharing algorithms]>>
-The remaining question is to what extent we want to unify the preemption mechanism across
-pod-triggerred (existing algorithm) and workload-triggerred preemption.
+   1. Perform best-effort reprieval of workloads and pods violating PodDisruptionBudgets. We achieve
+      it but scheduling and assuming the preemptor (assuming that all potential victims are removed),
+      and then iterating over potential victims that would violate PodDisruptionBudget to check if
+      these can be placed in the exact same place they are running now. If they can we simply leave
+      them where they are running now and remove from the potential victims list.
 
-It might be tempting to start with a dedicated new implementation to reduce the risk. But the above
-proposal was structured such way to facilitate sharing:
-- once the new workload W is placed, going over the remaining potential victims and trying to
-  place them where they are currently running, is pretty much exactly what the current algorithm is
-  doing
-- considering "few potential placements" in the pod-triggerred case can be used as "try every node"
-  so effectively it's also the existing algorithm (just viewed from a slightly different angle
+      ```
+      <<[UNRESOLVED PodDisruptionBudget violations]>>
+      The above reprieval works identically to current algorithm if the domain D is a single node.
+      For larger domains, different placements of a preemptor are potentially possible and may result
+      in potentially different sets of victims violating PodDisruptionBudgets to remain feasible.
+      This means that the above algorithm is not optimizing for minimizing the number of victims that
+      would violate their PodDisruptionBudgets.
+      However, we claim that algorithm optimizing for it would be extremely expensive computationally
+      and propose to stick with this simple version at least for a foreseable future.
+      <<[/UNRESOLVED]
+      ```
 
-So I would actually argue to we should refactor the existing preemption code and use that in both
-cases.
-<<[/UNRESOLVED]
-```
+   1. For the remaining potential victims, using binary search across priorities find the minimal
+      priority N for which scheduling the preemptor can be achieved without preempting any victims
+      with priority higher than N. This allows to reduce the potential cascaiding preemptions later.
+
+   1. Eliminate all victims from the potential victims list that have priority higher than N.
+
+   1. Schedule and assume the preemptor (assuming that all remaining potential victims are removed).
+
+   1. Iterate over the list of potential victims (in the order achieved with sorting above) checking
+      if they can be placed where they are currently running. If so assume it back and remove from
+      potential victims list.
+
+   ```
+   <<[UNRESOLVED minimizing preemptions]>>
+   The above algorithm is definitely non optimal, but is (a) compatible with the current pod-based
+   algorithm (b) computationally feasible (c) simple to reason about.
+   As a result, I suggest that we proceed with it at least as a starting point.
+
+   As a bonus we may consider few potential placements of the preemptor and choose the one that
+   somehow optimizes the number of victims. However, that will appear to be more critical once we
+   get to Topology-Aware-Scheduling and I would leave that improvement until then.
+   <<[/UNRESOLVED]>>
+   ```
+
+1. We score scheduling decisions for each of the domains and choose the best one. The exact criteria
+   for that will be figured out during the implementation phase.
+
+It's worth noting that as structured, this algorithm addresses all four cases mentioned above that
+we want to support and is compatible with the current pod-based preemption algorithm. This means
+we will be able to achieve in-place replacement with relatively localized changes.
 
 ### Delayed preemption
 
@@ -445,15 +540,21 @@ Should we leave it as part of this KEP or should this be moved to the Gang-Sched
 ```
 
 As part of minimizing preemptions goal, arguably the most important thing to do is to avoid unnecessary
-preemptions. However, this is not true for the current gang scheduling implementation.
-In the current implementation, preemption is triggered in the `PostFiler`. However, it's entirely
-possible that a given pod may actually not even proceed to binding, because we can't schedule the
-whole gang. In such case, the preemption ended up being a completely unnecessary disruption.
+preemptions. However, with the current model of preemption when preemption is triggered immediately
+after the victims are decided (in `PostFilter`) doesn't achieve this goal. The reason for that is
+that the proposed placement (nomination) can actually appear to be invalid and not be proceeded with.
+In such case we will not even proceed to binding and the preemption will be completely unnessary
+disruption.
+Note that this problem already exists in the current gang scheduling implementation. A given gang may
+not proceed with binding if the `minCount` pods from it can't be scheduled. But the preemptions are
+currently triggerred immediately after choosing a place for individual pods. So similarly as above,
+we may end up with completely unnecessary disruptions.
 
 We will address it with what we call `delayed preemption` mechanism as following:
 
 1. We will modify the `DefaultPreemption` plugin to just compute preemptions, without actuating those.
    At this point these should only be stored in kube-scheduler's memory.
+   We advice maintainers of custom PostFilter implementations to do the same.
 
 ```
 <<[UNRESOLVED storing victims]>>
