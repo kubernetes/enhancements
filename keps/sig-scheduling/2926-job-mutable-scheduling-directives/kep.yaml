@@ -16,6 +16,7 @@ approvers:
 
 see-also:
   - "/keps/sig-apps/2232-suspend-jobs"
+  - "/keps/sig-apps/5440-mutable-job-pod-resource-updates"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

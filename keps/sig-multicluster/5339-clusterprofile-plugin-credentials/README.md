@@ -72,7 +72,7 @@ SIG Architecture for cross-cutting KEPs).
     - [External credentials Provider plugin mechanism](#external-credentials-provider-plugin-mechanism)
   - [Standardizing the Provider definition](#standardizing-the-provider-definition)
     - [Cluster Data](#cluster-data)
-      - [The <code>Extensions</code> field](#the-extensions-field)
+    - [Passing plugin configuration via extensions](#passing-plugin-configuration-via-extensions)
     - [ClusterProfile Example](#clusterprofile-example)
   - [Configuring plugins in the controller](#configuring-plugins-in-the-controller)
   - [Plugin Examples](#plugin-examples)
@@ -209,7 +209,8 @@ The library implementation flow is expected to be as follows:
 1. Build the endpoint details of the cluster by reading properties of the ClusterProfile
 2. Call the CredentialsExternalProviders, following the same flow defined in [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md)
   (giving the ability to reuse the code in [client-go's exec package](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159))
-3. Build the rest.Config and return it to the caller
+3. If the `Cluster` includes an `extensions` entry named `client.authentication.k8s.io/exec`, pass its `extension` object through to `ExecCredential.Spec.Cluster.Config` as plugin configuration.
+4. Build the rest.Config and return it to the caller
 
 #### External credentials Provider plugin mechanism
 
@@ -298,29 +299,40 @@ And there are fields that require special attention:
 
 For more information about these fields and how they are handled, see the section below:
 
-##### The `Extensions` field
+#### Passing plugin configuration via extensions
 
-The `Extensions` field in the `Cluster` struct, can hold various forms of data, each associated with an extension name. 
-This interface can help ClusterProfile users to pass additional information (often cluster-specific) that can help
-facilitate the authentication process, such as expected token audiences, target identities, etc.
+Some credential providers require cluster-specific, non-secret parameters (for example, a `clusterName`) in order to obtain credentials. To standardize how this information is conveyed from a `ClusterProfile` to a plugin, the library follows the existing convention defined by the client authentication API:
 
-At this moment, [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md)
-has reserved an extension name, `client.authentication.k8s.io/exec`, for passing cluster-specific
-information to exec plugins. Data under this extension will eventually be saved, along with other inputs such as the
-API server address and its CA bundle, to an environment variable, `KUBERNETES_EXEC_INFO`, for an exec plugin to consume.
-In practice, however, we have seen some challenges when following this pattern in certain scenarios, such as:
+> Optional: when a plugin needs per-cluster, non-secret config, set an extension entry with `name: client.authentication.k8s.io/exec` under `Cluster.extensions`.
+> The library reads only the `extension` field of that entry and passes it through verbatim to `ExecCredential.Spec.Cluster.Config`.
+> The content must be non-secret and cluster-specific. Controller- or environment-specific data must not be placed here.
+> Plugins may read values (e.g. `clusterName`) from `ExecCredential.Spec.Cluster.Config`.
+
+Reference: [client.authentication.k8s.io/v1 Cluster: `config` sourced from `extensions[client.authentication.k8s.io/exec]`](https://kubernetes.io/docs/reference/config-api/client-authentication.v1/#client-authentication-k8s-io-v1beta1-Cluster)
+
+Example (embedded in `ClusterProfile.status.credentialProviders[].cluster`):
+
+```
+extensions:
+- name: client.authentication.k8s.io/exec
+  extension:
+    clusterName: spoke-1
+```
+
+In practice, however, there exists certain scenarios where setting the reserved `client.authentication.k8s.io/exec` extension
+to pass cluster-specific data might not be appropriate: libraries such as `client/go` will eventually save the extension data
+(along with other information, including the CA bundles for a cluster) to an environment variable, `KUBERNETES_EXEC_INFO`,
+which exec plugins can read; however:
 
 * some exec plugins might be expecting inputs from CLI arguments or plugin-specific environment variables directly; they
 might not read the `KUBERNETES_EXEC_INFO` environment variable at all, or might make only limited use of the environment
 variable.
 * it might not be proper to set the `KUBERNETES_EXEC_INFO` environment variable in the target environment: for example,
 `KUBERNETES_EXEC_INFO` includes CA bundles for a cluster and its size might exceed length limitations in the environment.
-* the `Cluster` struct in the Cluster Profile API has the extension data stored in the free form
-(`runtime.RawExtension`); the `ExecConfig` struct is expected to source its `Config` field from the extension data, which
-`client-go` or similar libraries will process further and eventually save as part of the `KUBERNETES_EXEC_INFO`
-environment variable. The `ExecConfig.Config` field, however, accepts only `runtime.Object` data. This brings about
-possible marshalling/unmarshalling complications, which could be difficult to handle gracefully for the community-provided
-library proposed in this KEP.
+* the `client.authentication.k8s.io/exec` extension keeps the data in the free form, `runtime.RawExtension`; before it is 
+saved to the `KUBERNETES_EXEC_INFO` environment variable, `client/go` will pass it to the `ExecConfig.Config` struct first,
+which accepts only `runtime.Object` data. This brings about possible marshalling/unmarshalling complications, which could be
+difficult to handle gracefully for the community-provided library proposed in this KEP.
 
 To address the deficiencies above, we further propose that:
 
@@ -388,29 +400,58 @@ status:
 
 Below are some examples that feature the use of extensions in ClusterProfiles:
 
-```
-apiVersion: multicluster.x-k8s.io/v1alpha1
-kind: ClusterProfile
-metadata:
- name: my-on-prem-cluster
-spec: ...
-status:
-  ...
-  credentialProviders:
-  - name: spire-agent
-    cluster:
-      server: https://my-on-prem-k8s.example.dev
-      ...
-      extensions:
-      - name: "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args"
-        extension:
-        - "-audience"
-        - "https://my-on-prem-k8s.example.dev"
-```
+* This example uses the reserved `client.authentication.k8s.io/exec` extension to pass cluster names to a plugin of the
+secret reader type:
 
-This ClusterProfile hints that when the `spire-agent` credential provider is used, it should be called with
-additional CLI arguments `-audience https://my-on-prem-k8s.example.dev` as the cluster's authentication solution
-is expecting tokens with this specific audience for security reasons.
+  ```yaml
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+    name: my-cluster-1
+  spec:
+    displayName: my-cluster-1
+    clusterManager:
+      name: inhouse-manager
+  status:
+    credentialProviders:
+    - name: secretreader
+      cluster:
+        server: https://<spoke-server>
+        certificate-authority-data: <BASE64_CA>
+        extensions:
+        - name: client.authentication.k8s.io/exec
+          extension:
+            clusterName: spoke-1
+  ```
+
+* This example uses the "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args" extension to pass additional
+CLI arguments (`-audience https://my-on-prem-k8s.example.dev`) to the exec plugin when the `spire-agent` credential
+provider is used, as the cluster's authentication solution is expecting tokens with this specific audience for
+security reasons.
+
+  ```
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+    name: my-on-prem-cluster
+  spec: ...
+  status:
+    ...
+    credentialProviders:
+    - name: spire-agent
+      cluster:
+        server: https://my-on-prem-k8s.example.dev
+        ...
+        extensions:
+        - name: "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args"
+          extension:
+          - "-audience"
+          - "https://my-on-prem-k8s.example.dev"
+  ```
+
+* This example uses the "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs" extension to pass
+additional environment variables `CLIENT_ID` and `TENANT_ID` to the exec plugin when the `kubelogin` credential
+provider is used; these entries can help the exec plugin exchange for cluster-specific access tokens.
 
 ```
 apiVersion: multicluster.x-k8s.io/v1alpha1
@@ -431,10 +472,6 @@ status:
           "CLIENT_ID": "my-client-id"
           "TENANT_ID": "my-tenant-id"
 ```
-
-This ClusterProfile hints that when the `kubelogin` credential provider is used, it should be called with
-additional environment variables `CLIENT_ID` and `TENANT_ID`; these entries can help the exec plugin exchange
-for cluster-specific access tokens.
 
 ### Configuring plugins in the controller
 
@@ -475,7 +512,7 @@ version of the code and structures to convey the idea and not be an implementati
 
 This plugin assumes the controller is aware of the list of clusters ahead of time and has created secrets for them in its namespace.
 It simply reads the token from the secret mapped to the cluster specifically for this controller. Note that namespace comes from the
-controller config while clusterName comes from the clusterProfile.
+controller config while `clusterName` is read by the plugin from `ExecCredential.Spec.Cluster.Config`, which the library populates from the `Cluster.extensions` entry named `client.authentication.k8s.io/exec`.
 
 ```
 func GetToken(namespace, clusterName string) string {

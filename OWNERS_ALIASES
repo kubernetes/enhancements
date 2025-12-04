@@ -120,6 +120,7 @@ aliases:
     - xmcqueen
   sig-ui-leads:
     - floreks
+    - joaquimrocha
     - maciaszczykm
     - shu-mutou
   sig-windows-leads:
@@ -201,6 +202,7 @@ aliases:
     - jpbetz
     - soltysh
     - wojtek-t
+    - kannon92
   prod-readiness-approvers-emeritus:
     - ehashman
   provider-aws:
