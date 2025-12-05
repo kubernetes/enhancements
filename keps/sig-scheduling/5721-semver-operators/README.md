@@ -62,7 +62,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement introduces Semantic Versioning (SemVer) comparison capabilities to Kubernetes scheduling. Similar to how KEP-5471 introduces integer operators (`Lt`, `Gt`) for Tolerations, this KEP adds `SemverLt`, `SemverGt`, and `SemverEq` operators to both **core/v1 Toleration** and **core/v1 NodeAffinity**. 
+This enhancement introduces Semantic Versioning (SemVer) comparison capabilities to Kubernetes scheduling. Similar to how KEP-5471 introduces integer operators (Lt, Gt) for Tolerations, this KEP adds `SemverLt`, `SemverGt`, and `SemverEq` operators to both **core/v1 Toleration** and **core/v1 NodeAffinity**. This enables granular control over workload placement based on versioned node attributes (e.g., Kubelet version, driver versions) without requiring manual enumeration of all target versions.
 
 ## Motivation
 
@@ -159,13 +159,15 @@ spec:
 
 ### Notes/Constraints/Caveats (Optional)
 
-- **SemVer-Only Support**: The implementation will only support versioining comparisons based on SemVer specifications, other versioining schemes will be rejected by the API server during validation.
+- **SemVer-Only Support**: The implementation will only support versioning comparisons based on SemVer specifications, other versioinversioninging schemes will be rejected by the API server during validation.
 
 - **Node Affinity Single Element Requirement**: The implementation will validate that if the semantic version operators are used for node affinity, then NodeSelector values array must contain only one element, similar to the behavior of `Gt` and `Lt`.
 
 - **Toleration Parsing Requirements**: The toleration value must be parseable as Semantic Versions for SemVer operators (`SemverLt`, `SemverGt`, `SemverEq`). If parsing fails, the toleration does not match.
 
 - **Node Affinity Parsing Requirements**: The node affinity value must be parseable as Semantic Versions for SemVer operators (`SemverLt`, `SemverGt`, `SemverEq`). If parsing fails, node affinity matching rule does not match
+
+- **Semver Tolerated Parsing**: The implementation will use `semver.ParseTolerant` to parse semver values which currently trims spaces, removes a "v" prefix, adds a 0 patch number to versions with only major and minor components specified, and removes leading 0s.
 
 - **Non-Version Taint Values**: When a pod toleration uses `SemverLt`, `SemverGt`, or `SemverEq` operators, it only matches taints with SemVer values. If a node has a taint with a non-SemVer value, the toleration will not match, and the pod cannot schedule on that node.
   
@@ -178,7 +180,7 @@ spec:
 
 - **Non-Version Affinity Values**: When a pod node affinity uses `SemverLt`, `SemverGt`, or `SemverEq` operators, either Label value in case of `MatchExpression` or Node field value in case of `MatchFields` must be semver parsable, otherwise the pod will not match scheduling requirements on these nodes.
 
-- **Alpha Restrictions**: When `AffinityTaintTolerationSemverComparisonOperatorss=false`, the API server rejects pods using the new operators in tolerations matching, and in node affinity matching.
+- **Alpha Restrictions**: When `AffinityTaintTolerationSemverComparisonOperators=false`, the API server rejects pods using the new operators in tolerations matching, and in node affinity matching.
 
 - **Parsing Overhead**: Each taint/toleration or affinity rule match with semver operators requires semver parsing.
 
@@ -333,12 +335,12 @@ Result: The Pod tolerates Node B (2.0 > 1.5) but does not tolerate Node A. There
 
 ```go
 const (
-    // AffinityTaintTolerationSemverComparisonOperatorss enables semver comparison operators (SemverLt, SemverGt, SemverEq) for tolerations and node affinity
-    AffinityTaintTolerationSemverComparisonOperatorss featuregate.Feature = "AffinityTaintTolerationSemverComparisonOperatorss"
+    // AffinityTaintTolerationSemverComparisonOperators enables semver comparison operators (SemverLt, SemverGt, SemverEq) for tolerations and node affinity
+    AffinityTaintTolerationSemverComparisonOperators featuregate.Feature = "AffinityTaintTolerationSemverComparisonOperators"
 )
 
 var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-    AffinityTaintTolerationSemverComparisonOperatorss: {Default: false, PreRelease: featuregate.Alpha},
+    AffinityTaintTolerationSemverComparisonOperators: {Default: false, PreRelease: featuregate.Alpha},
 }
 ```
 
@@ -554,7 +556,7 @@ The existing e2e tests will be extended to cover the new taints cases and new af
 
 #### Alpha
 
-- Feature implemented behind `AffinityTaintTolerationSemverComparisonOperatorss` feature gate (disabled by default)
+- Feature implemented behind `AffinityTaintTolerationSemverComparisonOperators` feature gate (disabled by default)
 - API validation for version operators in place
 - Taint/toleration matching logic supports `SemverLt`, `SemverGt`, `SemverEq` operators  
 - Node affinity matching logic supports `SemverLt`, `SemverGt`, `SemverEq` operators  
@@ -611,7 +613,7 @@ Whoever enabled the feature manually would take the risk of component like kube-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `AffinityTaintTolerationSemverComparisonOperatorss`
+  - Feature gate name: `AffinityTaintTolerationSemverComparisonOperators`
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
