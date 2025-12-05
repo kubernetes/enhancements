@@ -14,6 +14,12 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - ["API Changes"](#api-changes)
+  - ["Semantics"](#semantics)
+  - ["Implementation"](#implementation)
+    - ["Feature Gate Definition"](#feature-gate-definition)
+    - ["API Validation"](#api-validation)
+    - ["Scheduler Logic"](#scheduler-logic)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -96,8 +102,8 @@ spec:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
-        - matchFields:
-          - key: "status.nodeInfo.kubeletVersion"
+        - matchExpressions:
+          - key: "node.kubernetes.io/kubelet-version"
             operator: SemverGt
             values: ["v1.31.99"]
 ```
@@ -236,9 +242,9 @@ const (
 	TolerationOpEqual  TolerationOperator = "Equal"
 
   // New semver comparison operators (feature-gated)
-    TolerationOpSemverLt TolerationOperator = "SemverLt"    // Version Less than
-    TolerationOpSemverGt TolerationOperator = "SemverGt"    // Version Greater than
-    TolerationOpSemverEq TolerationOperator = "SemverEq"    // Version Equals to
+  TolerationOpSemverLt TolerationOperator = "SemverLt"    // Version Less than
+  TolerationOpSemverGt TolerationOperator = "SemverGt"    // Version Greater than
+  TolerationOpSemverEq TolerationOperator = "SemverEq"    // Version Equals to
 )
 ```
 
@@ -336,6 +342,164 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 }
 ```
 
+#### API Validation
+
+**File**: `pkg/apis/core/validation/validation.go`
+
+- Adding comparison operator check option
+```go
+// PodValidationOptions contains the different settings for pod validation
+type PodValidationOptions struct {
+	....
+	// Allow taint toleration comparison operators (SemverGt, SemverLt, SemverEq)
+	AllowAffinityTolerationComparisonOperators bool
+```
+
+- Validate tolerant spec
+```go
+func validateTolerations(tolerations []core.Toleration, fldPath *field.Path) field.ErrorList {
+  ...
+case core.TolerationOpSemverEq, core.TolerationOpSemverGt, core.TolerationOpSemverLt:
+			if !opts.AllowAffinityTolerationComparisonOperators {
+				validValues := []core.TolerationOperator{core.TolerationOpEqual, core.TolerationOpExists, core.TolerationOpLt, core.TolerationOpGt}
+				allErrors = append(allErrors, field.NotSupported(idxPath.Child("operator"), toleration.Operator, validValues))
+				break
+			}
+			// non-strictly validate semver version by using semver.ParseTolerant
+			if _, err := semver.ParseTolerant(toleration.Value); err != nil {
+				allErrors = append(allErrors, field.Invalid(idxPath.Child("value"), toleration.Value, err.Error()))
+			}
+      ...
+```
+
+- Validate node affinity spec
+
+```go
+// ValidateNodeSelectorRequirement tests that the specified NodeSelectorRequirement fields has valid data
+func ValidateNodeSelectorRequirement(rq core.NodeSelectorRequirement, allowInvalidLabelValueInRequiredNodeAffinity bool, fldPath *field.Path, opts PodValidationOptions) field.ErrorList {
+	allErrs := field.ErrorList{}
+	switch rq.Operator {
+    ...
+    case core.NodeSelectorOpSemverEq, core.NodeSelectorOpSemverGt, core.NodeSelectorOpSemverLt:
+        if !opts.AllowAffinityTolerationComparisonOperators {
+          validValues := []core.TolerationOperator{core.TolerationOpEqual, core.TolerationOpExists, core.TolerationOpLt, core.TolerationOpGt}
+          allErrs = append(allErrs, field.NotSupported(fldPath.Child("operator"), rq.Operator, validValues))
+          break
+        }
+        if len(rq.Values) != 1 {
+          allErrs = append(allErrs, field.Required(fldPath.Child("values"), "must be specified single value when `operator` is 'SemverLt' or 'SemverGt' or 'SemverEq'"))
+        }
+        // non-strictly validate semver version by using semver.ParseTolerant
+        if _, err := semver.ParseTolerant(rq.Values[0]); err != nil {
+          allErrs = append(allErrs, field.Invalid(fldPath.Child("values"), rq.Values, err.Error()))
+        }
+        ....
+  }
+```
+
+#### Scheduler Logic
+
+1. Toleration Logic
+
+**File**: `staging/src/k8s.io/component-helpers/scheduling/corev1/helpers.go`
+
+
+```go
+func (t *Toleration) ToleratesTaint(logger klog.Logger, taint *Taint, enableComparisonOperators, enableSemverComparisonOperators bool) bool {
+	....
+	case TolerationOpLt, TolerationOpGt:
+		// If comparison operators are disabled, this toleration doesn't match
+		if !enableComparisonOperators {
+			return false
+		}
+		return compareNumericValues(logger, t.Value, taint.Value, t.Operator)
+	case TolerationOpSemverLt, TolerationOpSemverGt, TolerationOpSemverEq:
+		// If Semver comparison operators are disabled, this toleration doesn't match
+		if !enableSemverComparisonOperators {
+			return false
+		}
+		return compareSemVerValues(logger, t.Value, taint.Value, t.Operator)
+	default:
+		return false
+	}
+}
+
+// compareSemVerValues performs Semver comparison between toleration and taint values
+func compareSemVerValues(logger klog.Logger, tolerationVal, taintVal string, op TolerationOperator) bool {
+
+	tolerationVersion, err := semver.ParseTolerant(tolerationVal)
+	if err != nil {
+		logger.Error(err, "failed to parse tolartion value as semantic version", "toleration", tolerationVal)
+		return false
+	}
+
+	taintVersion, err := semver.ParseTolerant(taintVal)
+	if err != nil {
+		logger.Error(err, "failed to parse taint value as semantic version", "taint", taintVal)
+	}
+
+	switch op {
+	case TolerationOpSemverEq:
+		return taintVersion.EQ(tolerationVersion)
+	case TolerationOpSemverGt:
+		return taintVersion.GT(tolerationVersion)
+	case TolerationOpSemverLt:
+		return taintVersion.LT(tolerationVersion)
+	default:
+		return false
+	}
+}
+```
+2. Node Affinity Logic for MatchExpressions
+
+```go
+// Matches returns true if the Requirement matches the input Labels.
+// There is a match in the following cases:
+....
+//  6. The operator is VersionGreaterThanOperator or VersionLessThanOperator or VersionEqualThanOperator, and Labels has
+//     the Requirement's key and the corresponding value satisfies semver comparison.
+func (r *Requirement) Matches(ls Labels) bool {
+	switch r.operator {
+	...
+	case selection.VersionEquals, selection.VersionGreaterThan, selection.VersionLessThan:
+		if !utilfeature.DefaultFeatureGate.Enabled(features.AffinityTaintTolerationSemverComparisonOperators) {
+			return false
+		}
+
+		val, exists := ls.Lookup(r.key)
+		if !exists {
+			return false
+		}
+
+		lsVersion, err := semver.ParseTolerant(val)
+		if err != nil {
+			klog.V(10).Infof("Parse semver failed for value %+v in label %+v, %+v", val, ls, err)
+			return false
+		}
+
+		// There should be only one strValue in r.strValues, and can be converted to a semver.
+		if len(r.strValues) != 1 {
+			klog.V(10).Infof("Invalid values count %+v of requirement %#v, for 'SemverGt', 'SemverLt', `SemverEq` operators, exactly one value is required", len(r.strValues), r)
+			return false
+		}
+
+		var rVersion semver.Version
+		for i := range r.strValues {
+			rVersion, err = semver.ParseTolerant(r.strValues[i])
+			if err != nil {
+				klog.V(10).Infof("Parse semver failed for value %+v in requirement %#v, for 'SemverGt', 'SemverLt', `SemverEq` operators, the value must be a semver", r.strValues[i], r)
+				return false
+			}
+		}
+
+		return (r.operator == selection.VersionGreaterThan && lsVersion.GT(rVersion)) || (r.operator == selection.VersionLessThan && lsVersion.LT(rVersion)) || (r.operator == selection.VersionEquals && lsVersion.EQ(rVersion))
+	default:
+		return false
+	}
+}
+```
+
+
 ### Test Plan
 
 <!--
@@ -362,71 +526,29 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
-
 ##### Integration tests
 
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
+Update the following integration tests to include new operators:
 
-If integration tests are not necessary or useful, explain why.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+1. **TestTaintTolerationFilter:** (`filters/filters_test.go`)
+2. **TestTaintTolerationScoring:** (`scoring/priorities_test.go`)
+3. **TestTaintNodeByCondition:** (`taint/taint_test.go`)
+4. **TestNodeSelectorRequirementsAsSelector**: (`nodeaffinity/nodeaffinity_test.go`)
+5. **TestPreferredSchedulingTermsScore**: (`nodeaffinity/nodeaffinity_test.go`)
+6. **TestPodMatchesNodeSelectorAndAffinityTerms**: (`nodeaffinity/nodeaffinity_test.go`)
+7. **TestNodeSelectorMatch**: (`nodeaffinity/nodeaffinity_test.go`)
+4. **General Scheduler Tests:** (`scheduler_test.go`):
+   - Dynamic taint addition/removal
+   - Pod rescheduling after taint changes
+   - Integration with NodeAffinity
+   - Feature gate on/off 
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+The existing e2e tests will be extended to cover the new taints cases and new affinity cases introduced in this KEP:
 
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- **Node Taints e2e Tests:** (test/e2e/node/taints.go)
+- **Scheduler Taints e2e Tests:** (test/e2e/scheduling)
 
 ### Graduation Criteria
 
@@ -457,7 +579,7 @@ If e2e tests are not necessary or useful, explain why.
 #### Downgrade
   Disable the feature gate in in kube-scheduler then kube-apiserver. Since we want to stop the kube-scheduler from processing the new operators first, then stop the API server from accepting new pods with those operators. This prevents the scheduler from trying to handle features the API server would reject.
   
-**What happens when the scheduler doesn't recognize SemverGt/SemverLt/SemverEq operators:**
+**What happens when the scheduler doesn't recognize SemverGt/SemverLt/SemverEq operators for tolerations:**
 
 When the feature gate is disabled and the scheduler encounters a pod with `SemverGt`/`SemverLt`/`SemverEq` operator:
 
@@ -466,6 +588,13 @@ When the feature gate is disabled and the scheduler encounters a pod with `Semve
 - Filter returns `UnschedulableAndUnresolvable` status
 - Pod remains in Pending state.
    - Feature gate on/off test cases
+
+**What happens when the scheduler doesn't recognize SemverGt/SemverLt/SemverEq operators for nodeAffinity:**
+
+When the feature gate is disabled and the scheduler encounters a pod with `SemverGt`/`SemverLt`/`SemverEq` operator:
+- The affinity match function returns `false` (doesn't match)
+- In case of `requiredDuringSchedulingIgnoredDuringExecution` the pod will remain in pending state.
+- In case of `preferredDuringSchedulingIgnoredDuringExecution` The pod will successfully schedule . However, the specific term containing the SemVer operator will evaluate to false and contribute 0 points to the node's score.
 
 ### Version Skew Strategy
 
@@ -501,12 +630,14 @@ Impact on existing pods with `SemverGt`/`SemverLt`/`SemverEq` operators when fea
 
 2. **Unscheduled/pending pods**: 
    - Remain in the cluster but cannot be scheduled
-   - The scheduler's TaintToleration plugin won't recognize `SemverGt`/`SemverLt`/`SemverEq` operators and will treat them as non-matching
+   - In case of Tolerations:
+   - The scheduler's TaintToleration or NodeAffinity plugin won't recognize `SemverGt`/`SemverLt`/`SemverEq` operators and will treat them as non-matching
    - These pods will remain in Pending state with events indicating untolerated taints
 
 3. **New pod creation**: 
    - API server validation will **reject** new pods with Gt/Lt operators
-   - Error: `spec.tolerations[].operator: Unsupported value: "SemverGt": supported values: "Equal", "Exists"`
+   - Error in case of tolerations: `spec.tolerations[].operator: Unsupported value: "SemverGt": supported values: "Equal", "Exists"`
+   - Error in case of affinity: `spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator: Invalid value: "SemverEq": not a valid selector operator`
 
 4. **Pod updates**:
    - Cannot update existing pods (even those already in etcd) if they contain `SemverGt`/`SemverLt`/`SemverEq` operators
@@ -572,15 +703,35 @@ No.
 
 ### Monitoring Requirements
 
-
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+1. **Metrics**:
+
+   ```promql
+   # Number of pods evaluated by TaintToleration plugin
+   scheduler_plugin_evaluation_total{plugin="TaintToleration"} > 0
+   
+   # Monitor rate of pods rejected by TaintToleration plugin
+   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status=~"Unschedulable.*"}[5m])
+   
+   # Rate of successful evaluations
+   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status="Success"}[5m])
+   
+   # Plugin execution duration
+   rate(scheduler_framework_extension_point_duration_seconds{plugin="TaintToleration"}[5m])
+   ```
+
+2. **API Queries**:
+
+   ```bash
+   # Check for pods with numeric toleration operators
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="SemverGt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="SemverLt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="SemverEq")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions[?(@.operator=="SemverGt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions[?(@.operator=="SemverEq")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions[?(@.operator=="SemverLt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
+   ```
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -618,44 +769,32 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `scheduler_framework_extension_point_duration_seconds`
+    - `scheduler_plugin_evaluation_total`
+    - Components exposing the metric: `kube-scheduler`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+Yes, an extension to an existing metric:
+
+**Extend `scheduler_plugin_evaluation_total` with a `status` label**
+
+Currently, `scheduler_plugin_evaluation_total` tracks plugin evaluation counts with labels: `plugin`, `extension_point`, `profile`. We propose adding a `status` label (similar to `scheduler_plugin_execution_duration_seconds`) to enable monitoring of plugin outcomes, including errors.
+
+The status label will use framework status codes: `Success`, `Unschedulable`, `UnschedulableAndUnresolvable`, `Error`, etc.
+
+ >Note: Currently, integer parsing failures for Gt/Lt operators result in the toleration not matching (returning `Unschedulable` status), similar to how label selectors behave. This means parsing errors are not distinguished from legitimate mismatches in metrics. Future enhancements could modify the implementation to return `Error` status for parsing failures to improve debuggability.
+
+In addition, the scheduler has an existing `scheduler_unschedulable_pods` metric that handles the multiple failure reasons by incrementing for each plugin that rejects a pod.
 
 ### Dependencies
 
-N/A
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+N/A
 
 ### Scalability
 
@@ -677,14 +816,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+Potentially yes, but the impact should be **minimal**. The semver toleration operators as well as node affinity operators could slightly increase time for operations covered by existing SLIs/SLOs due to semver parsing overhead and validation overhead.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
