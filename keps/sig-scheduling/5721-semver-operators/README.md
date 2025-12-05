@@ -295,13 +295,15 @@ const (
 
 ### Semantics
 
-1. Node Affinity (NodeSelector)
+1. Node Affinity
 
 - When `SemverGt`, `SemverLt`, or `SemverEq` are used as the `NodeSelectorOperator`, The values array must contain exactly one element. If the values array is empty or contains multiple strings, the Pod is rejected during validation.
 
 - The single value is parsed as a Semantic Version. If the parsing fails, the requirement evaluates to false (does not match).
 
-2. Tolerations (`PreferNoSchedule`)
+- For `preferredDuringSchedulingIgnoredDuringExecution` the `weight` is added to the score If the node label or node field satisfies the SemVer comparison. Otherwise 0 will be added to the score if a mismatch.
+
+2. Tolerations
 
 - For Taints with the `PreferNoSchedule` effect, the SemVer operators determine whether the taint is tolerated during the scoring phase:
 
