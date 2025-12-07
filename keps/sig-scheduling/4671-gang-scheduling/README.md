@@ -134,7 +134,7 @@ apiVersion: v1
 kind: Pod
 spec:
   ...
-  workload:
+  workloadRef:
     name: job-1
   ...
 ```
@@ -151,8 +151,9 @@ spec:
   completionMode: Indexed
   template:
     spec:
-      workload:
+      workloadRef:
         name: job-1
+        podGroup: pg1
       restartPolicy: OnFailure
       containers:
       - name: ml-worker
@@ -173,7 +174,7 @@ The `Workload` core resource will be introduced. A `Workload` does not create an
 
  It does not affect pod creation by Job or any other controller.  A sample resource looks like this:
 ```yaml
-apiVersion: scheduling/v1alpha1   
+apiVersion: scheduling.k8s.io/v1alpha1
 kind: Workload
 metadata:
   namespace: ns-1
@@ -222,7 +223,7 @@ usecases. You can read more about it in the [extended proposal] document.
 ### Naming
 
 * `Workload` is the resource Kind.
-* `scheduling` is the ApiGroup.
+* `scheduling.k8s.io` is the ApiGroup.
 * `spec.workload` is the name of the new field in pod.
 * Within a Workload there is a list of groups of pods. Each group represents a top-level division of pods within a Workload.  Each group can be independently gang scheduled (or not use gang scheduling). This group is named `PodGroup`.
 * In a future , we expect that this group can optionally specify further subdivision into sub groups.  Each sub-group can have an index.  The indexes go from 0 to N, without repeats or gaps. These subgroups are called `PodSubGroup`.
@@ -265,7 +266,7 @@ treat it as a blocker.
 The example below shows how this could look like for with the following `Workload` object:
 
 ```yaml
-apiVersion: scheduling/v1alpha1   
+apiVersion: scheduling.k8s.io/v1alpha1
 kind: Workload
 metadata:
   name: jobset
@@ -285,10 +286,10 @@ metadata:
   name: jobset-job-1-abc123
 spec:
   ...
-  workload:
+  workloadRef:
     name: jobset
     podGroup: job-1
-    podGroupReplicaIndex: 2
+    podGroupReplicaKey: key-2
   ...
 
 ```
