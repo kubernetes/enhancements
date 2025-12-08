@@ -505,9 +505,9 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
 - `.spec.heartbeatDeadlineSeconds` should be set to a reasonable value. It is recommended to leave
   it at the default value of 1800 (30m) to allow for potential interceptor disruptions.
 - `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation.
-- `.spec.interceptors` value will be resolved on the EvictionRequest admission from the pod and
-  should ideally not be set by the requester. This is done to maintain consistent
-  `.spec.interceptors` field resolution across different requesters.
+- `.spec.interceptors` value will be resolved on the EvictionRequest admission from the pod's
+  `.spec.evictionInterceptors and must not be set by the requester. This is done to ensure the
+  predictability of the eviction request process
 
 If the eviction request already exists for this pod, the requester should still add itself to the
 `.spec.requesters`. This has the following advantages:
@@ -694,6 +694,7 @@ type PodSpec struct {
 	//
 	// The maximum length of the interceptors list is 100. The number of interceptors is limited to
 	// 30 in the 9900-10099 interval and to 70 outside of this interval.
+	// This field is immutable.
 	// +optional
 	// +patchMergeKey=interceptorClass
 	// +patchStrategy=merge
@@ -771,9 +772,9 @@ type EvictionRequestSpec struct {
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
 	// the graceful eviction of a target (e.g. termination of a pod).
 	//
-	// This field does not need to be set and is resolved when the EvictionRequest object is created
-	// on admission. It can be populated from multiple sources:
-	// - Pod's .spec.evictionInterceptors
+	// This field must not be set upon creation. Instead, it is resolved when the EvictionRequest
+	// object is created upon admission. The field is populated from Pod's
+	// .spec.evictionInterceptors.
 	//
 	// The maximum length of the interceptors list is 130. The number of interceptors is limited to
 	// 30 in the 9900-10099 interval and to 100 outside of this interval.
@@ -1058,7 +1059,7 @@ references in the future.
 
 `.spec.interceptors` are populated from pod's `.spec.evictionInterceptors` (see
 [Interceptor](#interceptor) and [Pod and EvictionRequest API](#pod-and-evictionrequest-api)).
-This list is merged with `.spec.interceptors` of the EvictionRequest.
+This field must not be set by the requester creating this EvictionRequest.
 
 The pod labels are merged with the EvictionRequest labels (pod labels have a preference) to allow
 for custom label selectors when observing the eviction requests.
@@ -1101,10 +1102,11 @@ type, `Soft`, we can keep the field immutable for now.
 always scoped to a specific instance of a target/pod. If the pod is immediately recreated with the
 same name, but a different UID, a new EvictionRequest object should be created
 
-`.spec.interceptors` is only set by the Eviction Requester and during the EvictionRequest object
-create admission. We do not allow subsequent changes to this field to ensure the predictability of
-the eviction request process. Also, late registration of the interceptor could go unnoticed and be
-preempted by the eviction request controller, resulting in the premature eviction of the pod.
+`.spec.interceptors` is only set during the EvictionRequest object create admission. We do not allow
+subsequent changes to this field to ensure the predictability of the eviction request process. For
+example, this allows requesters to predict which pods have which interceptors, if any. Also, late
+registration of the interceptor could go unnoticed and be preempted by the eviction request
+controller, resulting in the premature eviction of the pod.
 
 `.spec.heartbeatDeadlineSeconds` could be made mutable, but we choose not to do that to make the
 integration easier on the interceptor side. That is, if the interceptor observes the deadline it can
