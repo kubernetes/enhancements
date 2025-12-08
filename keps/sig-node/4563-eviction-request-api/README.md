@@ -276,12 +276,12 @@ eviction of a pod from a node. It creates a contract between the eviction reques
 the interceptor (described later). The contract is enforced by the eviction request controller, the
 API type and the API admission.
 
-Pods will carry a new field `.spec.evictionInterceptors`, which specifies which interceptors are
+Pods will carry a new field `.spec.evictionInterceptors`, which specifies a list of interceptors
 involved in their lifecycle. This would allow multiple actors to take an action before the pod is
-terminated. Each interceptor has a priority, and only one at a time may progress with the eviction.
-If there is no interceptor, or the last interceptor (lowest priority) has finished without
-terminating the pod, the eviction request controller will attempt to evict the pod using the
-existing API-initiated eviction.
+terminated. Only one interceptor may progress with the eviction at a time. The interceptor with the
+highest index is executed first. If there is no interceptor, or the last interceptor (index 0) has
+finished without terminating the pod, the eviction request controller will attempt to evict the pod
+using the existing API-initiated eviction.
 
 Multiple requesters can request the eviction of the same pod, and optionally withdraw their request
 in certain scenarios
@@ -547,7 +547,7 @@ evicting/intercepting (either partially or fully) by adding itself to the
 `.spec.evictionInterceptors` field of the pod. This list is then added to the
 [EvictionRequest](#pod-and-evictionrequest-api)) on admission.
 
-The Interceptor type should set the `interceptorClass`, `priority` and `role`  fields. For more
+The Interceptor type should set the `interceptorClass field. For more
 details see [Pod and EvictionRequest API](#pod-and-evictionrequest-api) and
 [Remarks on Interceptors](#remarks-on-interceptors).
 
@@ -565,19 +565,10 @@ metadata:
     ...
     evictionInterceptors:
       - interceptorClass: fallback-interceptor.rescue-company.com
-        priority: 2000
       - interceptorClass: replicaset.apps.k8s.io
-        priority: 10000
-        role: controller
       - interceptorClass: deployment.apps.k8s.io
-        priority: 10001
-        role: higher-level-controller
       - interceptorClass: sensitive-workload-operator.fruit-company.com
-        priority: 11000
-        role: knowledgeable-app-specific
       - interceptorClass: horizontalpodautoscaler.autoscaling.k8s.io
-        priority: 12000
-        role: hpa
 ```
 
 The interceptor should observe the eviction request objects that match the pods that the interceptor
@@ -588,8 +579,8 @@ no `Complete=True` condition in `.status.conditions`.
 
 If the interceptor is not interested in intercepting/evicting the pod anymore, it should set
 `.status.activeInterceptorCompleted=true`. If the interceptor is unable to respond to the eviction
-request, the `.spec.heartbeatDeadlineSeconds` will timeout and control of the eviction process will
-be passed to the next interceptor with the highest priority. If there is none, the pod will get
+request, the `.spec.heartbeatDeadlineSeconds` will time out and control of the eviction process will
+be passed to the next interceptor at the lower list index. If there is none, the pod will get
 evicted by the eviction request controller.
 
 If the interceptor is interested in intercepting/evicting the pod it should look at
@@ -644,16 +635,15 @@ solely by the user deploying the application and resolved by creating a PDB.
 The interceptor classes and their priorities are populated from pod's `.spec.evictionInterceptors`
 into the `.spec.interceptors` on [EvictionRequest Validation and Admission](#evictionrequest-validation-and-admission).
 
-The eviction request controller reconciles EvictionRequests and picks the highest priority
+The eviction request controller reconciles EvictionRequests and first picks the highest index
 interceptor from `.spec.interceptors` and sets its `interceptorClass` to the
-`.status.activeInterceptorClass`. If there are interceptors with the same priority, the interceptor
-whose class comes first in the alphabetical higher domain order, will be picked.
+`.status.activeInterceptorClass`.
 
 If `.status.activeInterceptorCompleted` is true and the pod exists
 or `.spec.heartbeatDeadlineSeconds` has elapsed since `.status.heartbeatTime`, then the eviction
-request controller sets `status.activeInterceptorClass` to the next highest priority interceptor
-from `.spec.interceptors`. During the switch to the new interceptor, the eviction request controller
-will also
+request controller sets `status.activeInterceptorClass` to the next interceptor at the lower list
+index from `.spec.interceptors`. During the switch to the new interceptor, the eviction request
+controller will also
 - Set `.status.activeInterceptorCompleted` field to false.
 - Update`.status.heartbeatTime` to the present time.
 - Set `.status.expectedInterceptorFinishTime` to nil.
@@ -690,10 +680,10 @@ type PodSpec struct {
 	...
 	// EvictionInterceptors reference interceptors that respond to EvictionRequests.
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
-	// the graceful termination of a pod.
+	// the graceful termination of a pod. The interceptors are chosen in reverse order of the list.
+	// In other words, the interceptor with the highest index runs first.
 	//
-	// The maximum length of the interceptors list is 100. The number of interceptors is limited to
-	// 30 in the 9900-10099 interval and to 70 outside of this interval.
+	// The maximum length of the interceptors list is 100.
 	// This field is immutable.
 	// +optional
 	// +patchMergeKey=interceptorClass
@@ -770,14 +760,14 @@ type EvictionRequestSpec struct {
 
 	// Interceptors reference interceptors that respond to this eviction request.
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
-	// the graceful eviction of a target (e.g. termination of a pod).
+	// the graceful eviction of a target (e.g. termination of a pod). The interceptors are chosen in
+	// reverse order of the list. In other words, the interceptor with the highest index runs first.
 	//
 	// This field must not be set upon creation. Instead, it is resolved when the EvictionRequest
 	// object is created upon admission. The field is populated from Pod's
 	// .spec.evictionInterceptors.
 	//
-	// The maximum length of the interceptors list is 130. The number of interceptors is limited to
-	// 30 in the 9900-10099 interval and to 100 outside of this interval.
+	// The maximum length of the interceptors list is 100.
 	// This field is immutable.
 	// +optional
 	// +patchMergeKey=interceptorClass
@@ -789,9 +779,9 @@ type EvictionRequestSpec struct {
 	// HeartbeatDeadlineSeconds is a maximum amount of time that an interceptor should take to
 	// periodically report on an eviction progress by updating the .status.heartbeatTime.
 	// If the .status.heartbeatTime is not updated within the duration of
-	// HeartbeatDeadlineSeconds, the eviction request is passed over to the next interceptor with
-	// the highest priority. If there is none and if the target is a pod, it is evicted using the
-	// Eviction API.
+	// HeartbeatDeadlineSeconds, the eviction request is passed over to the next interceptor at a
+	// lower index. If there is none and if the target is a pod, it is evicted using the Eviction
+	// API.
 	//
 	// The minimum value is 600 (10m) and the maximum value is 86400 (24h).
 	// The default value is 1800 (30m).
@@ -859,34 +849,6 @@ type Interceptor struct {
 	// This field is required.
 	// +required
 	InterceptorClass string `json:"interceptorClass" protobuf:"bytes,1,opt,name=interceptorClass"`
-
-	// Priority for this InterceptorClass. Higher priorities are selected first by the eviction
-	// request controller. If there are interceptors with the same priority, the interceptor whose
-	// class comes first in the alphabetical higher domain order, will be picked. This
-	// means that the top domain labels are compared alphabetically first, followed by the lower
-	// domain labels.  
-	//
-	// The interceptor that is the managing controller should set the value of
-	// this field to 10000 to allow both for preemption or fallback registration by other
-	// interceptors. Priority 10000 cannot be duplicated.
-	//
-	// Priorities 9900-10099 are reserved for interceptors with a class that has the same parent
-	// domain as the controller interceptor. This interval cannot be used until the controller
-	// interceptor is set. 
-	//
-	// The minimum value is 0 and the maximum value is 100000.
-	// The intervals 0-999, 5000-5999, 20000-20999 and 99000-100000 are reserved for classes with
-	// *.k8s.io suffix.
-	// This field is required.
-	// +required
-	Priority int32 `json:"priority" protobuf:"varint,2,opt,name=priority"`
-
-	// Role of the interceptor. The "controller" value is reserved for the managing controller of
-	// the target (e.g. a pod). The role can send additional signal to other interceptors if they
-	// should preempt this interceptor or not.
-	// The priority must be set to 10000 when a "controller" value is specified.
-	// +optional
-	Role *string `json:"role,omitempty" protobuf:"bytes,3,opt,name=role"`
 }
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
@@ -1001,35 +963,14 @@ type PodEvictionStatus struct {
 
 #### Remarks on Interceptors
 
-- `controller` interceptor should always set a `priority=10000` and `role=controller`. There should
-  only be one of this priority.
-- Other interceptors should set `priority` according to their own need. Higher priorities are selected
-  first by the eviction request controller. They can use the `controller` interceptor as a
-  reference point, if they want to be run before or after the `controller` interceptor. They can
-  also observe pod's `.spec.evictionInterceptors` field and detect what other interceptors have
-  been registered for the eviction process. `role` is optional and can be used as a signal to other
-  interceptors. The `controller` value is reserved for pod controllers, but otherwise there is no
-  guidance on how the third party interceptors should name their role.
-- Priorities in the `9900-10099` interval should be reserved for the sibling and descendant
-  domains of the controller role. This means that `interceptorClass=replicaset.apps.k8s.io` with a
-  `role=controller` has a parent domain `apps.k8s.io` and any domain with that parent is allowed in
-  this interval. For example `deployment.apps.k8s.io` or `customfeature.replicaset.apps.k8s.io`.
-  This can be used by a controller that has its logic split between multiple components
-  (e.g. ReplicaSet + Deployment), and it ensures that 3rd party controllers cannot inject their
-  behavior in between a single vendor's predefined steps. And if there is a need to inject behavior,
-  the priority should be increased above `10099` or below `9900` for such an interceptor class. If
-  `role=controller` is not set, the range `9900-10099` cannot be used.
-- The number of the interceptors is limited to 100 for the Pod and 130 for the EvictionRequest.
-  30 slots are always reserved for the `role=controller` and other interceptors with the same
-  parent domain (interval `9900-10099`). 100 (130 for the EvictionRequest) slots are reserved for the
-  rest of the general interceptors outside this interval. If there is a need for a larger number of
-  interceptors, the current use case should be re-evaluated. Limiting the number of interceptors 
-  ensures that the EvictionRequest cannot be blocked indefinitely by setting an abnormally large
-  number of these interceptors on a pod.
+- Other interceptors should insert themselves into the `.spec.evictionInterceptors` according to
+  their own needs. Higher index interceptors are selected first by the eviction request controller. 
+- The number of the interceptors is limited to 100 for the Pod and for the EvictionRequest. If there
+  is a need for a larger number of interceptors, the current use case should be re-evaluated.
+  Limiting the number of interceptors ensures that the EvictionRequest cannot be blocked
+  indefinitely by setting an abnormally large number of these interceptors on a pod.
 - To prevent misuse, we will maintain a list of allowed `*.k8s.io` interceptor classes. And reject
   any classes with `k8s.io` suffix outside the main Kubernetes project on admission.
-- There is a set of intervals reserved for interceptor classes with `*.k8s.io` suffix to allow for
-  future k8s features and make sure we do not conflict with the ecosystem.
 
 
 #### EvictionRequest Validation and Admission
@@ -1066,10 +1007,10 @@ for custom label selectors when observing the eviction requests.
 
 `.status.activeInterceptorClass` should be empty on creation as its selection should be left on the
 eviction request controller. To strengthen the validation, we should check that it is possible to
-set only the highest priority interceptor in the beginning. After that it is possible to set only
-the next interceptor and so on. We can also condition this transition according to the other fields.
-`.status.activeInterceptorCompleted` should be true or `.status.heartbeatTime` has exceeded the
-deadline.
+set only the highest index from the interceptor list in the beginning. After that, it is possible to
+set only the next interceptor at a lower index and so on. We can also condition this transition
+according to the other fields. `.status.activeInterceptorCompleted` should be true or
+`.status.heartbeatTime` has exceeded the deadline.
 
 `.status.evictionRequestCancellationPolicy` is defaulted to `Allow` on creation. Its resolution
 should then be left to interceptors.
@@ -1163,11 +1104,7 @@ metadata:
     ...
     evictionInterceptors:
       - interceptorClass: actor-a.k8s.io
-        priority: 10000
-        role: controller
       - interceptorClass: actor-b.k8s.io
-        priority: 11000
-        role: notifier-with-delay
 ```
 
 #### Multiple Dynamic Requesters and No EvictionRequest Cancellation
@@ -1284,8 +1221,6 @@ To correctly orchestrate these steps, replica set controller should set an inter
 ```yaml
     evictionInterceptors:
       - interceptorClass: replicaset.apps.k8s.io
-        priority: 10000
-        role: controller
 ```
 
 And not delete these pods until it becomes the active interceptor.
@@ -1310,12 +1245,9 @@ its pods include
 ```yaml
 evictionInterceptors:
   - interceptorClass: deployment.apps.k8s.io
-    priority: 10001
-    role: deployment-controller
 ```
 
-We can assume that these pods also have a replica set interceptor set to
-`priority=10000` and `role=controller`.
+We can assume that these pods also have a replica set interceptor set to a lower index.
 
 The controller should observe the EvictionRequest objects that correspond to the pods that the
 controller manages. It should start the eviction logic when it observes that the
@@ -1359,16 +1291,16 @@ should be `False`.
 We can use a Deployment with positive `.spec.strategy.rollingUpdate.maxSurge` field to prevent any
 disruption for the underlying application. By scaling up first before terminating the pods.
 
-1. A set of pods A of an application P are created with a Deployment controller interceptor
-   (priority 10001) and a ReplicaSet controller interceptor (priority 10000).
+1. A set of pods A of an application P are created with a Deployment controller interceptor and a
+   ReplicaSet controller interceptor.
    Application P is a PostgresSQL instance that can have 1-n pods and requires no loss of
    availability.
 2. A node drain controller starts draining a node Z and makes it unschedulable.
 3. The node drain controller creates an EvictionRequests for a subset B of pods A to evict them from
    a node.
-4. The eviction request controller designates the deployment controller as the interceptor based on
-   the highest priority by updating `.status.activeInterceptorClass`. No action (termination) is
-   taken on the pods yet.
+4. The eviction request controller designates the deployment controller as the interceptor (highest
+   index) by updating `.status.activeInterceptorClass`. No action (termination) is taken on the pods
+   yet.
 5. The deployment controller creates a set of surge pods C to compensate for the future loss of
    availability of pods B. The new pods are created by temporarily surging the `.spec.replicas`
    count of the underlying replica sets up to the value of deployments `maxSurge`.
@@ -1407,8 +1339,8 @@ of high index pods and PVCs could be provisioned until the lower index pods can 
 the lower index pods are migrated, the higher index pods could be scaled down and removed.
 
 Another alternative is for the application to implement its own interceptor and register it as a
-high-priority interceptor on the application pods. It can then intercept the EvictionRequest objects
-and ensure graceful pod removal without any application disruption.
+interceptor on the application pods. It can then intercept the EvictionRequest objects and ensure
+graceful pod removal without any application disruption.
 
 #### DaemonSet and Static Pods
 
@@ -1447,9 +1379,9 @@ have different scaling approaches to HPA. This could be resolved with an opt-in 
 the interceptor priority to each HPA object.The HPA controller would then mark the workload pods
 with its interceptor class and a priority.
 
-- By default, we could set a lower priority than controllers, which have a default priority of
-  `10000`. We would prefer the controller's behaviour. For example, Deployment's `.spec.maxSurge`
-  would be preferred over HPA. Otherwise, HPA might scale less or more than `.spec.maxSurge`.
+- By default, we could set a lower index than controllers to prefer the controller's behaviour.
+  For example, Deployment's `.spec.maxSurge` would be preferred over HPA. Otherwise, HPA might scale
+  less or more than `.spec.maxSurge`.
 - If the HPA scaling logic is preferred, a user could set a higher priority on the HPA object.
 
 
@@ -1458,18 +1390,17 @@ with its interceptor class and a priority.
 We can use HPA running 1 pod to prevent a disruption for the underlying application. By scaling up
 first before terminating the pods.
 
-1. A single pod A of application W is created with a ReplicaSet controller interceptor
-   (priority 10000). Application W is a webserver that is scaled dynamically according to the
-   traffic. If there is a low traffic, HPA scales down the number of pods to 1. The application
-   should not lose availability when its single replica gets disrupted.
-2. The Deployment and its pods are controlled/scaled by the HPA. The HPA sets an interceptor
-   (higher priority, e.g. 11000) on all of these pods.
+1. A single pod A of application W is created with a ReplicaSet controller interceptor. Application
+   W is a webserver that is scaled dynamically according to the traffic. If there is a low traffic,
+   HPA scales down the number of pods to 1. The application should not lose availability when its
+   single replica gets disrupted.
+2. The Deployment and its pods are controlled/scaled by the HPA. The HPA sets an interceptor at a
+   higher index on all of these pods.
 3. A node drain controller starts draining a node Z and makes it unschedulable.
 4. The node drain controller creates an EvictionRequest for the only pod of application W to evict
    it from a node.
-5. The eviction request controller designates the HPA as the interceptor based on the highest
-   priority by updating `.status.activeInterceptorClass`. No action (termination) is taken on the
-   single pod yet.
+5. The eviction request controller designates the HPA as the interceptor by updating
+   `.status.activeInterceptorClass`. No action (termination) is taken on the single pod yet.
 6. The HPA controller creates a single surge pod B to compensate for the future loss of
    availability of pod A. The new pod is created by temporarily scaling up the deployment.
 7. Pod B is scheduled on a new schedulable node that is not under the node drain.
@@ -1495,15 +1426,15 @@ immediate upscaling.
 
 HPA Downscaling example:
 
-1. Pods of application A are created with a Deployment controller interceptor (priority 10001) and
-   a ReplicaSet controller interceptor (priority 10000).
-2. The Deployment and its pods are controlled/scaled by the HPA. The HPA sets an interceptor (higher
-   priority, e.g. 11000) on all of these pods.
+1. Pods of application A are created with a Deployment controller interceptor (index 1) and
+   a ReplicaSet controller interceptor (index 0).
+2. The Deployment and its pods are controlled/scaled by the HPA. The HPA sets an interceptor
+   (index 2) on all of these pods.
 3. A subset of pods from application A are chosen by the HPA to be scaled down. This may be done in
    a collaboration with another component responsible for resolving the scheduling constraints.
 4. The HPA creates EvictionRequest objects for these chosen pods.
 5. The eviction request controller designates the HPA as the interceptor based on the highest
-   priority. No action (termination) is taken on the pods yet.
+   index. No action (termination) is taken on the pods yet.
 6. The HPA downscales the Deployment workload.
 7. The HPA sets `ActiveInterceptorCompleted=true` on its own eviction requests.
 8. The eviction request controller designates the deployment controller as the next interceptor by
