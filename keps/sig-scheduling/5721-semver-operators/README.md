@@ -12,6 +12,7 @@
     - [Story 2 — Tolerate running workloads on nodes with older versions of CNI](#story-2--tolerate-running-workloads-on-nodes-with-older-versions-of-cni)
     - [Story 3 — Container Runtime version based scheduling for sensitive pods](#story-3--container-runtime-version-based-scheduling-for-sensitive-pods)
     - [Story 4 — Persistent Volume node affinity based on kernel version](#story-4--persistent-volume-node-affinity-based-on-kernel-version)
+    - [Story 5 — Dynamic Resource Allocation (DRA) device selection based on driver version](#story-5--dynamic-resource-allocation-dra-device-selection-based-on-driver-version)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Scheduler Performance Regression](#scheduler-performance-regression)
@@ -75,7 +76,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement introduces Semantic Versioning (SemVer) comparison capabilities to Kubernetes scheduling and storage. Similar to how KEP-5471 introduces integer operators (Lt, Gt) for Tolerations, this KEP adds `SemverLt`, `SemverGt`, and `SemverEq` operators to **core/v1 Toleration**, **core/v1 NodeAffinity**, and **core/v1 PersistentVolume NodeAffinity**. This enables granular control over workload placement and volume attachment based on versioned node attributes (e.g., Kubelet version, kernel version, driver versions) without requiring manual enumeration of all target versions.
+This enhancement introduces Semantic Versioning (SemVer) comparison capabilities to Kubernetes scheduling and storage. Similar to how KEP-5471 introduces integer operators (Lt, Gt) for Tolerations, this KEP adds `SemverLt`, `SemverGt`, and `SemverEq` operators to **core/v1 Toleration**, **core/v1 NodeAffinity**, **core/v1 PersistentVolume NodeAffinity**, and **Dynamic Resource Allocation (DRA) NodeSelectors** (both `ResourceSlice.spec.nodeSelector` and device-level `ResourceSlice.spec.devices[].basic.allNodes/nodeSelector`). This enables granular control over workload placement, volume attachment, and DRA device selection based on versioned node attributes (e.g., Kubelet version, kernel version, driver versions) without requiring manual enumeration of all target versions.
 
 ## Motivation
 
@@ -196,6 +197,74 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: advanced-storage
 ```
+
+#### Story 5 — Dynamic Resource Allocation (DRA) device selection based on driver version
+
+As a cluster operator managing GPU workloads, I am using Dynamic Resource Allocation (DRA) to allocate GPU devices to pods. My cluster has nodes with different GPU driver versions, and some workloads require specific driver features only available in newer versions. I want to use semver operators in ResourceSlice node selectors to ensure devices are only considered available on nodes with compatible driver versions.
+
+**Example Configuration (ResourceSlice-level nodeSelector):**
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceSlice
+metadata:
+  name: gpu-slice-node-1
+spec:
+  nodeName: node-1
+  driver: gpu.example.com
+  pool:
+    name: gpu-pool
+    resourceSliceCount: 1
+  nodeSelector:
+    nodeSelectorTerms:
+    - matchExpressions:
+      - key: "gpu.example.com/driver-version"
+        operator: "SemverGt"
+        values: ["535.0.0"]
+  devices:
+  - name: gpu-0
+    basic:
+      attributes:
+        gpu.example.com/memory:
+          string: "24Gi"
+```
+
+**Example Configuration (Device-level nodeSelector):**
+
+DRA also supports per-device node selectors via `spec.devices[].basic.nodeSelector`, allowing fine-grained control over which nodes specific devices can be allocated to:
+
+```yaml
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceSlice
+metadata:
+  name: gpu-slice-mixed-versions
+spec:
+  driver: gpu.example.com
+  pool:
+    name: gpu-pool
+    resourceSliceCount: 1
+  devices:
+  - name: gpu-0
+    basic:
+      attributes:
+        gpu.example.com/memory:
+          string: "24Gi"
+      nodeSelector:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: "node.kubernetes.io/kernel-version"
+            operator: "SemverGt"
+            values: ["5.15.0"]
+  - name: gpu-1
+    basic:
+      attributes:
+        gpu.example.com/memory:
+          string: "16Gi"
+      # This device has less strict requirements
+      allNodes: true
+```
+
+This ensures that GPU devices in this ResourceSlice are only considered for allocation when the node meets the version requirements, enabling workloads that require newer CUDA features or kernel capabilities to be scheduled appropriately.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -756,7 +825,16 @@ pkg/scheduler/framework/plugins/volumebinding/
 
 ##### Additional changes
 
-Since the `dynamicresources.go` is also calling `NewLazyErrorNodeSelector()`:
+**Dynamic Resource Allocation (DRA) Support**
+
+The semver comparison operators are also supported in Dynamic Resource Allocation (DRA) through the `ResourceSlice` API. DRA uses `NodeSelector` in two places within ResourceSlice:
+
+1. **ResourceSlice-level nodeSelector** (`ResourceSlice.spec.nodeSelector`): Applies to all devices in the slice
+2. **Device-level nodeSelector** (`ResourceSlice.spec.devices[].basic.nodeSelector`): Applies to individual devices
+
+Both use the same `core/v1.NodeSelector` type as PersistentVolume node affinity. This means DRA resources can leverage semver operators for device selection based on version attributes at both the slice level and individual device level.
+
+Since the `dynamicresources.go` plugin calls `NewLazyErrorNodeSelector()`:
 
 ```
 From DynamicResources Plugin (dynamicresources.go:446):
@@ -766,7 +844,13 @@ From DynamicResources Plugin (dynamicresources.go:446):
                 └─> nodeSelectorRequirementsAsSelector()
 ```
 
-Then the implementation will have to add the featuregate option back to the `DynamicResources` plugin, however it wont be utilized since the feature only targets NodeAffinity.
+The implementation passes the feature gate option to the `DynamicResources` plugin, enabling semver operators (`SemverGt`, `SemverLt`, `SemverEq`) to be used in:
+- `ResourceSlice.spec.nodeSelector.nodeSelectorTerms[].matchExpressions`
+- `ResourceSlice.spec.devices[].basic.nodeSelector.nodeSelectorTerms[].matchExpressions`
+
+This allows DRA drivers to specify version-based node constraints for their devices, such as requiring specific GPU driver versions, kernel versions, or firmware versions for device allocation.
+
+**Note:** `AllocationResult` is not affected by this KEP as it is part of `ResourceClaimStatus` (a status field, not a spec field) and reports allocation results rather than specifying constraints.
 
 ### Test Plan
 
@@ -799,19 +883,146 @@ The following unit test files include coverage for semver comparison operators:
 1. **pkg/api/pod/util_test.go**
    - `TestAllowTaintTolerationNodeAffinitySemverComparisonOperators`: Tests feature gate enabled/disabled scenarios and backward compatibility for pods using semver operators in tolerations and node affinity
 
+```sh
+/usr/local/go/bin/go test -timeout 30s -run ^TestAllowTaintTolerationNodeAffinitySemverComparisonOperators$ k8s.io/kubernetes/pkg/api/pod | grep -E "(PASS|FAIL)"
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_nil_old_pod_spec
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_nil_old_pod_spec (0.01s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_without_semver_operators
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_without_semver_operators (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_with_SemverEq_operator_in_toleration
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_with_SemverEq_operator_in_toleration (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_nil_old_pod_spec
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_nil_old_pod_spec (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_semver_operators
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_semver_operators (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverEq_operator_in_toleration
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverEq_operator_in_toleration (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_operator_in_toleration
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_operator_in_toleration (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_operator_in_toleration
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_operator_in_toleration (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_mixed_operators_including_SemverEq
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_mixed_operators_including_SemverEq (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_in_preferred_node_affinity
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_in_preferred_node_affinity (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_in_required_node_affinity
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_in_required_node_affinity (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_node_affinity
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_node_affinity (0.00s)
+=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_empty_old_pod_spec
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_empty_old_pod_spec (0.00s)
+--- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators (0.02s)
+PASS
+ok      k8s.io/kubernetes/pkg/api/pod   0.035s
+```
+
 2. **pkg/apis/core/validation/validation_test.go**
    - Tests for validating semver operators in pod specifications
    - Tests for validating semver operators in PersistentVolume specifications
    - Tests for PersistentVolume validation backward compatibility
 
-3. **staging/src/k8s.io/api/core/v1/toleration_test.go**
+```sh
+go test ./pkg/apis/core/validation/ -v 2>&1 | grep -E "semver" | grep -E "(PASS|FAIL)"
+    --- PASS: TestSemverTolerationsWithFeatureGate/SemverEq_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverTolerationsWithFeatureGate/SemverGt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverTolerationsWithFeatureGate/SemverLt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverTolerationsWithFeatureGate/SemverEq_operator_with_invalid_semver_value_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverTolerationsWithFeatureGate/SemverLt_operator_with_missing_patch_semver_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverEq_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverGt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverLt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
+    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverEq_operator_with_invalid_semver_value_and_feature_gate_enabled (0.00s)
+```
+
+3. **pkg/apis/resource/validation/validation_test.go**
+   - Tests for validating semver operators in DRA ResourceSliceSpec in NodeSelector and perDevice NodeSelector
+   - Tests for Validating semver operators in DRA AllocationResult of ClaimStatusUpdate
+```sh
+go test ./pkg/apis/resource/validation/ -v 2>&1 | grep -E "semver" | grep -E "(PASS|FAIL)"
+    --- PASS: TestValidateClaimStatusUpdate/required-single-semver-value-in-allocation-nodeselector (0.00s)
+    --- PASS: TestValidateClaimStatusUpdate/invalid-semver-operator-in-allocation-nodeselector (0.00s)
+    --- PASS: TestValidateClaimStatusUpdate/empty-semver-value-in-allocation-nodeselector (0.00s)
+    --- PASS: TestValidateClaimStatusUpdate/good-semver-prerelease-version-in-allocation-nodeselector (0.00s)
+    --- PASS: TestValidateClaimStatusUpdate/semver-operator-in-allocation-matchfields (0.00s)
+    --- PASS: TestValidateClaimStatusUpdate/bad-semver-value-in-allocation-nodeselector (0.00s)
+    --- PASS: TestValidateClaimStatusUpdate/good-semver-operators-in-allocation-nodeselector (0.00s)
+    --- PASS: TestValidateResourceSlice/invalid-semver-operator-in-basicdevice-matchexpression (0.00s)
+    --- PASS: TestValidateResourceSlice/good-semver-prerelease-version (0.00s)
+    --- PASS: TestValidateResourceSlice/semver-operator-in-matchfields (0.00s)
+    --- PASS: TestValidateResourceSlice/invalid-semver-operator-in-matchexpression (0.00s)
+    --- PASS: TestValidateResourceSlice/good-semver-operators-in-matchexpression (0.00s)
+    --- PASS: TestValidateResourceSlice/bad-semver-value-in-matchexpression (0.00s)
+    --- PASS: TestValidateResourceSlice/bad-semver-value-in-basicdevice-matchexpression (0.00s)
+    --- PASS: TestValidateResourceSlice/empty-semver-value (0.00s)
+    --- PASS: TestValidateResourceSlice/required-single-semver-value (0.00s)
+    --- PASS: TestValidateResourceSlice/good-semver-operators-in-basicdevice-matchexpression (0.00s)
+    --- PASS: TestValidateResourceSlice/semver-operator-in-basicdevice-matchfields (0.00s)
+    --- PASS: TestValidateResourceSlice/required-single-semver-value-in-basicdevice-matchexpression (0.00s)
+```
+
+4. **staging/src/k8s.io/api/core/v1/toleration_test.go**
    - Tests for `compareSemVerValues` function with various version formats
    - Tests for toleration matching with semver operators
 
-4. **staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/nodeaffinity_test.go**
+```sh
+go test -v  ./staging/src/k8s.io/api/core/v1/ | grep -i semver | grep -E "(PASS|FAIL)"
+--- PASS: TestCompareSemVerValues (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_equal_versions,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_different_versions,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_different_patch_versions,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_with_v_prefix,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_mixed_v_prefix,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_taint_version_greater,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_taint_version_less,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_equal_versions,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_patch_version_greater,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_minor_version_greater,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_taint_version_less,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_taint_version_greater,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_equal_versions,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_patch_version_less,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_invalid_toleration_value,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_empty_toleration_value,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_missing_patch_toleration_semver,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_invalid_taint_value,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_empty_taint_value,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_invalid_taint_value,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_missing_patch_taint_semver,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/Equal_operator_(unsupported_for_semver_comparison),_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/Exists_operator_(unsupported_for_semver_comparison),_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/Gt_operator_(unsupported_for_semver_comparison),_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_versions_with_pre-release,_equal,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_versions_with_different_pre-release,_expect_false (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_pre-release_version_comparison,_expect_true (0.00s)
+    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_release_vs_pre-release,_expect_true (0.00s)
+```
+5. **staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/nodeaffinity_test.go**
    - Tests for node affinity matching with semver operators
    - Tests for version comparison edge cases
 
+```sh
+go test -v -timeout 30s  ./staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/ | grep -i semver | grep -E "(PASS|FAIL)"
+--- PASS: TestNodeSelectorSemverOperators (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_with_matching_version_-_feature_enabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_with_non-matching_version_-_feature_enabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_with_greater_version_-_feature_enabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_with_lesser_version_-_feature_enabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverLt_operator_with_lesser_version_-_feature_enabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverLt_operator_with_greater_version_-_feature_enabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_-_feature_disabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_-_feature_disabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverLt_operator_-_feature_disabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_with_v_prefix_-_feature_enabled (0.00s)
+    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_with_pre-release_versions_-_feature_enabled (0.00s)
+--- PASS: TestPreferredSchedulingTermsSemverOperators (0.00s)
+    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverEq_operator_in_preferred_scheduling_term_-_feature_enabled (0.00s)
+    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverGt_operator_in_preferred_scheduling_term_-_feature_enabled (0.00s)
+    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverLt_operator_in_preferred_scheduling_term_-_feature_enabled (0.00s)
+    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverEq_operator_in_preferred_scheduling_term_-_feature_disabled (0.00s)
+    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverGt_operator_in_preferred_scheduling_term_-_feature_disabled (0.00s)
+    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverLt_operator_in_preferred_scheduling_term_-_feature_disabled (0.00s)
+```
 ##### Integration tests
 
 Update the following integration tests to include new operators:
