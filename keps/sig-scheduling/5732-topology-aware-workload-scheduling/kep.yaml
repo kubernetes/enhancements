@@ -7,9 +7,13 @@ participating-sigs:
 status: provisional
 creation-date: 2025-12-10
 reviewers:
-  -
+  - sanposhiho
+  - dom4ha
+  - macsko
+  - wojtek-t
 approvers:
-  -
+  - sanposhiho
+  - dom4ha
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
