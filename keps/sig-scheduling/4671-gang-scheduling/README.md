@@ -128,7 +128,7 @@ The following are non-goals for this KEP but will probably soon appear to be goa
 
 ## Proposal
 
-The `spec.workload` field will be added to the Pod resource.  A sample pod with this new field looks like this:
+The `spec.workloadRef` field will be added to the Pod resource.  A sample pod with this new field looks like this:
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -136,6 +136,7 @@ spec:
   ...
   workloadRef:
     name: job-1
+    podGroup: pg1
   ...
 ```
 
@@ -224,35 +225,64 @@ usecases. You can read more about it in the [extended proposal] document.
 
 * `Workload` is the resource Kind.
 * `scheduling.k8s.io` is the ApiGroup.
-* `spec.workload` is the name of the new field in pod.
+* `spec.workloadRef` is the name of the new field in pod.
 * Within a Workload there is a list of groups of pods. Each group represents a top-level division of pods within a Workload.  Each group can be independently gang scheduled (or not use gang scheduling). This group is named `PodGroup`.
 * In a future , we expect that this group can optionally specify further subdivision into sub groups.  Each sub-group can have an index.  The indexes go from 0 to N, without repeats or gaps. These subgroups are called `PodSubGroup`.
 * In subsequent KEPs, we expect that a sub-group can optionally specify further subdivision into pod equivalence classes.  All pods in a pod equivalence class have the same values for all fields that affect scheduling feasibility.  These pod equivalence classes are called `PodSet`.
 
 ### Associating Pod into PodGroups
 
-When a `Workload` consists of a single group of pods needing Gang Scheduling, it is clear which pods belong to the group from the `spec.workload.name` field of the pod.  However `Workload` supports listing multiple list items, and a list item can represent a single group, or a set of identical replica groups.
+When a `Workload` consists of a single group of pods needing Gang Scheduling, it is clear which pods belong to the group from the `spec.workloadRef.name` field of the pod.  However `Workload` supports listing multiple list items, and a list item can represent a single group, or a set of identical replica groups.
 In these cases, there needs to be additional information to indicate which group a pod belongs to.
 
-We proposed to extend the newly introduced `pod.spec.workload` field with additional information
-to include that information. More specifically, the `pod.spec.workload` field is of type `WorkloadReference`
+We proposed to extend the newly introduced `pod.spec.workloadRef` field with additional information
+to include that information. More specifically, the `pod.spec.workloadRef` field is of type `WorkloadReference`
 and is defined as following:
 
 ```go
-// WorkloadReference identifies the Workload object and PodGroup membership
-// that a Pod belongs to. The scheduler uses this information to enforce
-// gang scheduling semantics.
-type WorkloadReference struct {
-    // Name defines the name of the Workload object this pod belongs to.
-    Name string
+type PodSpec struct {
+	...
+	// WorkloadRef provides a reference to the Workload object that this Pod belongs to.
+	// This field is used by the scheduler to identify the PodGroup and apply the
+	// correct group scheduling policies. The Workload object referenced
+	// by this field may not exist at the time the Pod is created.
+	// This field is immutable, but a Workload object with the same name
+	// may be recreated with different policies. Doing this during pod scheduling
+	// may result in the placement not conforming to the expected policies.
+	//
+	// +featureGate=GenericWorkload
+	// +optional
+	WorkloadRef *WorkloadReference
+}
 
-    // PodGroup defines the name of the PodGroup within a Workload this pod belongs to.
-    PodGroup string
-    // PodGroupReplicaIndex is the replica index of the PodGroup that this pod
-    // belong to when the workload is running ReplicatedGangMode. In this mode,
-    // a workload may create multiple identical PodGroups.
-    // For workload in a different mode, this field is unset.
-    PodGroupReplicaIndex string
+// WorkloadReference identifies the Workload object and PodGroup membership
+// that a Pod belongs to. The scheduler uses this information to apply
+// workload-aware scheduling semantics.
+type WorkloadReference struct {
+	// Name defines the name of the Workload object this Pod belongs to.
+	// Workload must be in the same namespace as the Pod.
+	// If it doesn't match any existing Workload, the Pod will remain unschedulable
+	// until a Workload object is created and observed by the kube-scheduler.
+	// It must be a DNS subdomain.
+	//
+	// +required
+	Name string
+
+	// PodGroup is the name of the PodGroup within the Workload that this Pod
+	// belongs to. If it doesn't match any existing PodGroup within the Workload,
+	// the Pod will remain unschedulable until the Workload object is recreated
+	// and observed by the kube-scheduler. It must be a DNS label.
+	//
+	// +required
+	PodGroup string
+
+	// PodGroupReplicaKey specifies the replica key of the PodGroup to which this
+	// Pod belongs. It is used to distinguish pods belonging to different replicas
+	// of the same pod group. The pod group policy is applied separately to each replica.
+	// When set, it must be a DNS label.
+	//
+	// +optional
+	PodGroupReplicaKey string
 }
 ```
 
@@ -273,7 +303,6 @@ metadata:
 spec:
   podGroups:
     - name: "job-1"
-      replicas: 4
       policy:
         gang:
           minCount: 100
@@ -291,7 +320,6 @@ spec:
     podGroup: job-1
     podGroupReplicaKey: key-2
   ...
-
 ```
 
 We decided for this option because it is more succinct and makes the role of a pod clear just
@@ -312,77 +340,114 @@ to identify pods belonging to it. However, with this pattern:
 
 The `Workload` type will be defined with the following structure:
 ```go
+// Workload allows for expressing scheduling constraints that should be used
+// when managing lifecycle of workloads from scheduling perspective,
+// including scheduling, preemption, eviction and other phases.
 type Workload struct {
 	metav1.TypeMeta
+	// Standard object's metadata.
+	// Name must be a DNS subdomain.
+	//
+	// +optional
 	metav1.ObjectMeta
+
+	// Spec defines the desired behavior of a Workload.
+	//
+	// +required
 	Spec WorkloadSpec
-	Status WorkloadStatus
 }
 
-// WorkloadSpec describes a workload in a portable way that scheduler and related
-// tools can understand.  
+// WorkloadMaxPodGroups is the maximum number of pod groups per Workload.
+const WorkloadMaxPodGroups = 8
+
+// WorkloadSpec defines the desired state of a Workload.
 type WorkloadSpec struct {
-    // ControllerRef points to the true workload, e.g. Deployment.
-    // It is optional to set and is intended to make this mapping easier for
-    // things like CLI tools.
-    // This field is immutable.
-    ControllerRef *v1.ObjectReference
+	// ControllerRef is an optional reference to the controlling object, such as a
+	// Deployment or Job. This field is intended for use by tools like CLIs
+	// to provide a link back to the original workload definition.
+	// When set, it cannot be changed.
+	//
+	// +optional
+	ControllerRef *TypedLocalObjectReference
 
-    // PodGroups is a list of groups of pods.
-    // Each group may request gang scheduling.
-    PodGroups []PodGroup 
+	// PodGroups is the list of pod groups that make up the Workload.
+	// The maximum number of pod groups is 8. This field is immutable.
+	//
+	// +required
+	// +listType=map
+	// +listMapKey=name
+	PodGroups []PodGroup
 }
 
-// PodGroup is a group of pods that may contain multiple shapes (PodSets) and may contain
-// multiple dense indexes (PodSubGroups) and which can optionally be replicated in a variable
-// number of identical copies.
+// TypedLocalObjectReference allows to reference typed object inside the same namespace.
+type TypedLocalObjectReference struct {
+	// APIGroup is the group for the resource being referenced.
+	// If APIGroup is empty, the specified Kind must be in the core API group.
+	// For any other third-party types, setting APIGroup is required.
+	// It must be a DNS subdomain.
+	//
+	// +optional
+	APIGroup string
+	// Kind is the type of resource being referenced.
+	// It must be a path segment name.
+	//
+	// +required
+	Kind string
+	// Name is the name of resource being referenced.
+	// It must be a path segment name.
+	//
+	// +required
+	Name string
+}
+
+// PodGroup represents a set of pods with a common scheduling policy.
 type PodGroup struct {
-    Name *string
+	// Name is a unique identifier for the PodGroup within the Workload.
+	// It must be a DNS label. This field is immutable.
+	//
+	// +required
+	Name string
 
-    // Number of identical instances of PodGroup that are part of the Workload.
-    // Defaults to 1.
-    Replicas int
-
-    // Policy defines the configuration of the PodGroup to enable different
-    // scheduling policies.
-    Policy PodGroupPolicy
+	// Policy defines the scheduling policy for this PodGroup.
+	//
+	// +required
+	Policy PodGroupPolicy
 }
 
-// PodGroupPolicy defines scheduling configuration of a PodGroup.
+// PodGroupPolicy defines the scheduling configuration for a PodGroup.
 type PodGroupPolicy struct {
-    // Kind indicates which of the other fields is non-empty.
-    // Required.
-    // +unionDiscriminator
-    Kind PodGroupPolicyKind
+	// Basic specifies that the pods in this group should be scheduled using
+	// standard Kubernetes scheduling behavior.
+	//
+	// +optional
+	// +oneOf=PolicySelection
+	Basic *BasicSchedulingPolicy
 
-    // Default scheduling policy (default Kubernetes behavior).
-    Default *DefaultSchedulingPolicy
-
-    // Gang scheduling policy (all-or-nothing scheduling semantics)
-    Gang *GangSchedulingPolicy
+	// Gang specifies that the pods in this group should be scheduled using
+	// all-or-nothing semantics.
+	//
+	// +optional
+	// +oneOf=PolicySelection
+	Gang *GangSchedulingPolicy
 }
 
-type PodGroupPolicyKind string
-
-// Supported PodGroupPolicy kinds.
-const (
-    PodGroupPolicyKindDefault PodGroupPolicyKind = "Default"
-    PodGroupPolicyKindGang    PodGroupPolicyKind = "Gang"
-)
-
-// DefaultSchedulingPolicy represents default scheduling behavior.
-type DefaultSchedulingPolicy struct {
-    // For now this is effectively just a marker type.
+// BasicSchedulingPolicy indicates that standard Kubernetes
+// scheduling behavior should be used.
+type BasicSchedulingPolicy struct {
+	// This is intentionally empty. Its presence indicates that the basic
+	// scheduling policy should be applied. In the future, new fields may appear,
+	// describing such constraints on a pod group level without "all or nothing"
+	// (gang) scheduling.
 }
 
-// GangSchedulingPolicy represents options for how gang scheduling of one
-// PodGroup should be handled.
+// GangSchedulingPolicy defines the parameters for gang scheduling.
 type GangSchedulingPolicy struct {
-    MinCount *int
-}
-
-type WorkloadStatus struct {
-  // Necessary status fields TBD.
+	// MinCount is the minimum number of pods that must be schedulable or scheduled
+	// at the same time for the scheduler to admit the entire group.
+	// It must be a positive integer.
+	//
+	// +required
+	MinCount int32
 }
 ```
 
@@ -591,13 +656,13 @@ This KEP effectively boils down to two separate functionalities:
 
 When user upgrades the cluster to the version that supports these two features:
 - they can start using the new API by creating Workload objects and linking pods to it via
-  explicitly specifying their new `spec.workload` field
+  explicitly specifying their new `spec.workloadRef` field
 - scheduler automatically uses the new extensions and tries to schedule all pods from a given
   gang in a scheduling group based on the defined `Workload` objects
 
 When user downgrades the cluster to the version that no longer supports these two features:
 - the `Workload` objects can no longer be created (the existing ones are not removed though)
-- the `spec.workload` field can no longer be set on the Pods (the already set fields continue
+- the `spec.workloadRef` field can no longer be set on the Pods (the already set fields continue
   to be set though)
 - scheduler reverts to the original behavior of scheduling one pod at a time ignoring
   existence of `Workload` objects and pods being linked to them
@@ -673,7 +738,7 @@ those are not yet created automatically behind the scenes.
 Yes. The GangScheduling features gate need to be switched off to disabled gang scheduling
 functionality.
 If additionally the API changes needs to be disabled, the GenericWorkload feature gate needs to
-also be disabled. However, the content of `spec.workload` fields in Pod objects will not be
+also be disabled. However, the content of `spec.workloadRef` fields in Pod objects will not be
 cleared, as well as the existing Workload objects will not be deleted.
 
 
@@ -842,7 +907,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes. New field (spec.workload) is added to the Pod API:
+Yes. New field (spec.workloadRef) is added to the Pod API:
   - API type: Pod
   - Estimated increase in size: XX-XXX bytes per object (depending on the final choice described
     in the Associating Pod into PodGroups section above).
