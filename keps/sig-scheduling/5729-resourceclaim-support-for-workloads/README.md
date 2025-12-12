@@ -10,26 +10,26 @@ updates.
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [X] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [X] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [X] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [X] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
 - [ ] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [X] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5729: DRA: ResourceClaim Support for Workloads
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -173,6 +173,11 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
+This enhancement describes additions to the [Workload API][kep-4671] that
+reference ResourceClaimTemplates which replicate into one ResourceClaim per
+instance of a PodGroup. Pods can then reference these generated ResourceClaims
+to share resources with other Pods in the same PodGroup.
+
 ## Motivation
 
 <!--
@@ -184,6 +189,33 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+AI/ML workloads are particularly sensitive to network latency and bandwidth
+between closely related Pods. Certain groups of Pods must be placed as closely
+together as possible to achieve maximum performance.
+
+["Modeling Topology and Multi-Node Logical Devices"][dra-topology-model]
+describes where existing mechanisms like Pod and Node affinity break down for
+these use cases and how Dynamic Resource Allocation (DRA) can fulfill those
+requirements by scheduling Pods within strict topological boundaries:
+
+- A ResourceSlice lists "devices" which represent nested topological units and
+  form a tree of arbitrary depth. These units could be as small as a single
+  host or as large as an entire datacenter, or perhaps even larger.
+- A ResourceClaim requests one of these topological units. Pods which reference
+  that same ResourceClaim are scheduled within the same topological boundary.
+
+Large-scale workloads orchestrated by specialized APIs like JobSet and
+LeaderWorkerSet cannot currently practically express granular topological
+constraints with the current Kubernetes APIs. Today, ResourceClaims to be
+shared by multiple Pods must be created one by one, and referenced by name in
+the Pod spec. Those APIs which define replicable groups of Pods are left to
+manage shared ResourceClaims themselves.
+
+The Workload API defines a common representation of these related sets of Pods
+as a PodGroup. Associating ResourceClaimTemplates with PodGroups allows
+Kubernetes to manage the lifecycle of the generated ResourceClaims generically
+for all types implementing the Workload API.
+
 ### Goals
 
 <!--
@@ -191,12 +223,21 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+- Allow users to express sets of DRA resources to be replicated for each
+  instance of a PodGroup, and shared by each Pod in the PodGroup.
+- Automatically create and delete PodGroups' ResourceClaims as needed.
+- Reduce the burden of each true workload controller implementing per-PodGroup
+  ResourceClaim generation separately (e.g. JobSet, LWS).
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- Define how the scheduler processes ResourceClaims to fulfill gang scheduling
+  (See [KEP-5732](https://kep.k8s.io/5732)).
 
 ## Proposal
 
@@ -828,3 +869,7 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+
+[kep-4671]: https://kep.k8s.io/4671
+[dra-topology-model]: https://docs.google.com/document/d/1Fg9ughIRMtt1HmDqiGWV-w9OKdrcKf_PsH4TjuP8Y40/edit?usp=sharing
