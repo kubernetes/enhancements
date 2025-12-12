@@ -5,7 +5,7 @@ authors:
   - "@yuqi-zhang"
   - "@sohankunkerkar"
 owning-sig: sig-node
-status: implementable
+status: implemented
 creation-date: 2023-05-04
 last-updated: 2024-09-30
 reviewers:
