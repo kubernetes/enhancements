@@ -27,7 +27,7 @@
   - [Eviction Requester](#eviction-requester-1)
   - [Interceptor](#interceptor)
   - [Eviction Request Controller](#eviction-request-controller-1)
-    - [Interceptor Class Selection](#interceptor-class-selection)
+    - [Interceptor Selection](#interceptor-selection)
     - [Eviction](#eviction)
   - [Pod and EvictionRequest API](#pod-and-evictionrequest-api)
     - [Remarks on Interceptors](#remarks-on-interceptors)
@@ -547,7 +547,7 @@ evicting/intercepting (either partially or fully) by adding itself to the
 `.spec.evictionInterceptors` field of the pod. This list is then added to the
 [EvictionRequest](#pod-and-evictionrequest-api)) on admission.
 
-The Interceptor type should set the `interceptorClass field. For more
+The Interceptor type should set the `name field. For more
 details see [Pod and EvictionRequest API](#pod-and-evictionrequest-api) and
 [Remarks on Interceptors](#remarks-on-interceptors).
 
@@ -564,17 +564,17 @@ metadata:
   spec:
     ...
     evictionInterceptors:
-      - interceptorClass: fallback-interceptor.rescue-company.com
-      - interceptorClass: replicaset.apps.k8s.io
-      - interceptorClass: deployment.apps.k8s.io
-      - interceptorClass: sensitive-workload-operator.fruit-company.com
-      - interceptorClass: horizontalpodautoscaler.autoscaling.k8s.io
+      - name: fallback-interceptor.rescue-company.com
+      - name: replicaset.apps.k8s.io
+      - name: deployment.apps.k8s.io
+      - name: sensitive-workload-operator.fruit-company.com
+      - name: horizontalpodautoscaler.autoscaling.k8s.io
 ```
 
 The interceptor should observe the eviction request objects that match the pods that the interceptor
 manages (e.g. through a labelSelector or ownerReferences). It should start the eviction process only
-if it observes the `.status.activeInterceptorClass` in the EvictionRequest object that matches the
-`interceptorClass` it previously set in the pod's `.spec.evictionInterceptors`. And also if there is
+if it observes the `.status.activeInterceptorName` in the EvictionRequest object that matches the
+`name` it previously set in the pod's `.spec.evictionInterceptors`. And also if there is
 no `Complete=True` condition in `.status.conditions`.
 
 If the interceptor is not interested in intercepting/evicting the pod anymore, it should set
@@ -589,7 +589,7 @@ duration. For example, if `.spec.heartbeatDeadlineSeconds` is set to the default
 it may update the status every 3 minutes. The status updates should look as follows:
 - Check that it supports the `.spec.type`. Please note that the only supported eviction request type
   is `Soft` for now.
-- Check that `.status.activeInterceptorClass` still matches the `interceptorClass` previously set
+- Check that `.status.activeInterceptorName` still matches the `name` previously set
   in the pod's `.spec.evictionInterceptors`. and that `.status.activeInterceptorCompleted` is still
   false. If one of these is not correct and the eviction process is still not complete, it should
   abort the eviction process or output an error (e.g. via an event).
@@ -630,18 +630,18 @@ solely by the user deploying the application and resolved by creating a PDB.
 [Eviction Request Controller](#eviction-request-controller) section provides a general overview.
 
 
-#### Interceptor Class Selection
+#### Interceptor Selection
 
-The interceptor classes and their priorities are populated from pod's `.spec.evictionInterceptors`
+Interceptors are populated from pod's `.spec.evictionInterceptors`
 into the `.spec.interceptors` on [EvictionRequest Validation and Admission](#evictionrequest-validation-and-admission).
 
 The eviction request controller reconciles EvictionRequests and first picks the highest index
-interceptor from `.spec.interceptors` and sets its `interceptorClass` to the
-`.status.activeInterceptorClass`.
+interceptor from `.spec.interceptors` and sets its `name` to the
+`.status.activeInterceptorName`.
 
 If `.status.activeInterceptorCompleted` is true and the pod exists
 or `.spec.heartbeatDeadlineSeconds` has elapsed since `.status.heartbeatTime`, then the eviction
-request controller sets `status.activeInterceptorClass` to the next interceptor at the lower list
+request controller sets `status.activeInterceptorName` to the next interceptor at the lower list
 index from `.spec.interceptors`. During the switch to the new interceptor, the eviction request
 controller will also
 - Set `.status.activeInterceptorCompleted` field to false.
@@ -655,7 +655,7 @@ The eviction request controller will observe EvictionRequests and evict pods tha
 terminated by calling the eviction API endpoint.
 
 Pods that are unable to be terminated:
-- EvictionRequest's `.status.activeInterceptorClass` field is empty.
+- EvictionRequest's `.status.activeInterceptorName` field is empty.
 - EvictionRequest's `.status.activeInterceptorCompleted` field is true and there is no other
   interceptor to select.
 - EvictionRequest's `.spec.heartbeatDeadlineSeconds` has elapsed since
@@ -686,11 +686,11 @@ type PodSpec struct {
 	// The maximum length of the interceptors list is 100.
 	// This field is immutable.
 	// +optional
-	// +patchMergeKey=interceptorClass
+	// +patchMergeKey=name
 	// +patchStrategy=merge
 	// +listType=map
-	// +listMapKey=interceptorClass
-	EvictionInterceptors []Interceptor `json:"evictionInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"interceptorClass" protobuf:"bytes,42,rep,name=evictionInterceptors"`
+	// +listMapKey=name
+	EvictionInterceptors []Interceptor `json:"evictionInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,42,rep,name=evictionInterceptors"`
 }
 
 // EvictionRequest defines an eviction request
@@ -755,7 +755,7 @@ type EvictionRequestSpec struct {
 	// +patchMergeKey=name
 	// +patchStrategy=merge
 	// +listType=map
-	// +listMapKey=interceptorClass
+	// +listMapKey=name
 	Requesters []Requester `json:"requesters,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=requesters"`
 
 	// Interceptors reference interceptors that respond to this eviction request.
@@ -770,11 +770,11 @@ type EvictionRequestSpec struct {
 	// The maximum length of the interceptors list is 100.
 	// This field is immutable.
 	// +optional
-	// +patchMergeKey=interceptorClass
+	// +patchMergeKey=name
 	// +patchStrategy=merge
 	// +listType=map
-	// +listMapKey=interceptorClass
-	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"interceptorClass" protobuf:"bytes,4,rep,name=interceptors"`
+	// +listMapKey=name
+	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=interceptors"`
 
 	// HeartbeatDeadlineSeconds is a maximum amount of time that an interceptor should take to
 	// periodically report on an eviction progress by updating the .status.heartbeatTime.
@@ -833,7 +833,7 @@ type LocalPodReference struct {
 type Requester struct {
     // Name must be RFC-1123 DNS subdomain identifying the requester (e.g.
     // foo.example.com).
-    // Name of the requester.
+	// This field must be unique for each requester.
     // This field is required.
     // +required
     Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
@@ -843,12 +843,12 @@ type Requester struct {
 // Interceptors should observe and communicate through the EvictionRequest API to help with
 // the graceful eviction of a target (e.g. termination of a pod).
 type Interceptor struct {
-	// InterceptorClass must be RFC-1123 DNS subdomain identifying the interceptor (e.g.
+	// Name must be RFC-1123 DNS subdomain identifying the interceptor (e.g.
 	// bar.example.com).
 	// This field must be unique for each interceptor.
 	// This field is required.
 	// +required
-	InterceptorClass string `json:"interceptorClass" protobuf:"bytes,1,opt,name=interceptorClass"`
+	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
 }
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
@@ -870,14 +870,14 @@ type EvictionRequestStatus struct {
 	// +kubebuilder:validation:MaxLength=32768
 	Message string `json:"message" protobuf:"bytes,2,opt,name=message"`
 
-	// Interceptors of the ActiveInterceptorClass can adopt this eviction request by updating the
+	// Interceptors of the ActiveInterceptorName can adopt this eviction request by updating the
 	// HeartbeatTime or orphan/complete it by setting ActiveInterceptorCompleted to true.
 	// This field is managed by Kubernetes. It is cleared once the eviction request has completed.
 	// +optional
-	ActiveInterceptorClass *string `json:"activeInterceptorClass,omitempty" protobuf:"bytes,3,opt,name=activeInterceptorClass"`
+	ActiveInterceptorName *string `json:"activeInterceptorName,omitempty" protobuf:"bytes,3,opt,name=activeInterceptorName"`
 
 	// ActiveInterceptorCompleted should be set to true when the interceptor of the
-	// ActiveInterceptorClass has either fully or partially completed, which may have resulted in
+	// ActiveInterceptorName has either fully or partially completed, which may have resulted in
 	// target eviction (e.g. pod termination).
 	// This field can also be set to true if no interceptor is available.
 	// If this field is true and no additional interceptor is available:
@@ -886,7 +886,7 @@ type EvictionRequestStatus struct {
 	ActiveInterceptorCompleted bool `json:"activeInterceptorCompleted,omitempty" protobuf:"varint,4,opt,name=activeInterceptorCompleted"`
 
 	// ExpectedInterceptorFinishTime is the time at which the eviction process step is expected to
-	// end for the current interceptor and its class.
+	// end for the active interceptor.
 	// May be empty if no estimate can be made.
 	// +optional
 	ExpectedInterceptorFinishTime *metav1.Time `json:"expectedInterceptorFinishTime,omitempty" protobuf:"bytes,5,opt,name=expectedInterceptorFinishTime"`
@@ -969,8 +969,8 @@ type PodEvictionStatus struct {
   is a need for a larger number of interceptors, the current use case should be re-evaluated.
   Limiting the number of interceptors ensures that the EvictionRequest cannot be blocked
   indefinitely by setting an abnormally large number of these interceptors on a pod.
-- To prevent misuse, we will maintain a list of allowed `*.k8s.io` interceptor classes. And reject
-  any classes with `k8s.io` suffix outside the main Kubernetes project on admission.
+- To prevent misuse, we will maintain a list of allowed `*.k8s.io` interceptor names. And reject
+  any names with `k8s.io` suffix outside the main Kubernetes project on admission.
 
 
 #### EvictionRequest Validation and Admission
@@ -1005,7 +1005,7 @@ This field must not be set by the requester creating this EvictionRequest.
 The pod labels are merged with the EvictionRequest labels (pod labels have a preference) to allow
 for custom label selectors when observing the eviction requests.
 
-`.status.activeInterceptorClass` should be empty on creation as its selection should be left on the
+`.status.activeInterceptorName` should be empty on creation as its selection should be left on the
 eviction request controller. To strengthen the validation, we should check that it is possible to
 set only the highest index from the interceptor list in the beginning. After that, it is possible to
 set only the next interceptor at a lower index and so on. We can also condition this transition
@@ -1103,8 +1103,8 @@ metadata:
   spec:
     ...
     evictionInterceptors:
-      - interceptorClass: actor-a.k8s.io
-      - interceptorClass: actor-b.k8s.io
+      - name: actor-a.k8s.io
+      - name: actor-b.k8s.io
 ```
 
 #### Multiple Dynamic Requesters and No EvictionRequest Cancellation
@@ -1116,7 +1116,7 @@ metadata:
    create an EvictionRequest (named after the pod's UID) for this pod, but the EvictionRequest
    already exists. It sets the `descheduling.avalanche.io` value to the `.spec.requesters`.
 4. The eviction request controller designates Actor B as the next interceptor by updating
-   `.status.activeInterceptorClass`.
+   `.status.activeInterceptorName`.
 5. Actor B updates the EvictionRequest status and also sets
    `.status.evictionRequestCancellationPolicy=Allow`.
 6. Actor B begins notifying users of application P that the application will experience
@@ -1129,7 +1129,7 @@ metadata:
 10. Actor B sets `ActiveInterceptorCompleted=true` on the eviction requests of pod p-1, which is
     ready to be deleted.
 11. The eviction request controller designates Actor A as the next interceptor by updating
-    `.status.activeInterceptorClass`.
+    `.status.activeInterceptorName`.
 12. Actor A updates the EvictionRequest status and ensures that
    `.status.evictionRequestCancellationPolicy=Allow`
 13. Actor A deletes the p-1 pod.
@@ -1142,7 +1142,7 @@ metadata:
 2. The node drain controller creates an EvictionRequest for the only pod p-1 of application P to
    evict it from a node. It sets the `nodemaintenance.k8s.io` value to the `.spec.requesters`.
 3. The eviction request controller designates Actor B as the next interceptor by updating
-   `.status.activeInterceptorClass`.
+   `.status.activeInterceptorName`.
 4. Actor B updates the EvictionRequest status and also sets
    `.status.evictionRequestCancellationPolicy=Allow`.
 5. Actor B begins notifying users of application P that the application will experience
@@ -1163,7 +1163,7 @@ metadata:
    evict it from a node. It sets the
    `nodemaintenance.k8s.io` value to the `.spec.requesters`.
 3. The eviction request controller designates Actor B as the next interceptor by updating
-   `.status.activeInterceptorClass`.
+   `.status.activeInterceptorName`.
 4. Actor B updates the EvictionRequest status and also sets
    `.status.evictionRequestCancellationPolicy=Forbid` to prevent the EvictionRequest from deletion
    (enforced by API Admission).
@@ -1176,7 +1176,7 @@ metadata:
 8. Actor B sets `ActiveInterceptorCompleted=true` on the eviction requests of pod p-1, which is
     ready to be deleted.
 9. The eviction request controller designates Actor A as the next interceptor by updating
-    `.status.activeInterceptorClass`.
+    `.status.activeInterceptorName`.
 10. Actor A updates the EvictionRequest status and ensures that
     `.status.evictionRequestCancellationPolicy=Forbid`. Alternatively, it could also change it to
     `Allow` at this point, if it was just there, to ensure that Actor B's logic is atomic
@@ -1220,7 +1220,7 @@ To correctly orchestrate these steps, replica set controller should set an inter
 
 ```yaml
     evictionInterceptors:
-      - interceptorClass: replicaset.apps.k8s.io
+      - name: replicaset.apps.k8s.io
 ```
 
 And not delete these pods until it becomes the active interceptor.
@@ -1244,14 +1244,14 @@ its pods include
 
 ```yaml
 evictionInterceptors:
-  - interceptorClass: deployment.apps.k8s.io
+  - name: deployment.apps.k8s.io
 ```
 
 We can assume that these pods also have a replica set interceptor set to a lower index.
 
 The controller should observe the EvictionRequest objects that correspond to the pods that the
 controller manages. It should start the eviction logic when it observes that the
-`.status.activeInterceptorClass` field of the EvictionRequest is equal to `deployment.apps.k8s.io`.
+`.status.activeInterceptorName` field of the EvictionRequest is equal to `deployment.apps.k8s.io`.
 
 It should check to see that the Deployment object still supports eviction request, and if not, it
 should set `.status.activeInterceptorCompleted=true`.
@@ -1299,7 +1299,7 @@ disruption for the underlying application. By scaling up first before terminatin
 3. The node drain controller creates an EvictionRequests for a subset B of pods A to evict them from
    a node.
 4. The eviction request controller designates the deployment controller as the interceptor (highest
-   index) by updating `.status.activeInterceptorClass`. No action (termination) is taken on the pods
+   index) by updating `.status.activeInterceptorName`. No action (termination) is taken on the pods
    yet.
 5. The deployment controller creates a set of surge pods C to compensate for the future loss of
    availability of pods B. The new pods are created by temporarily surging the `.spec.replicas`
@@ -1310,7 +1310,7 @@ disruption for the underlying application. By scaling up first before terminatin
 9. The deployment controller sets `ActiveInterceptorCompleted=true` on the eviction requests of
    pods B that are ready to be deleted.
 10. The eviction request controller designates the replica set controller as the next interceptor by
-    updating `.status.activeInterceptorClass`.
+    updating `.status.activeInterceptorName`.
 11. The replica set controller deletes the pods to which an EvictionRequest object has been
     assigned, preserving the availability of the application.
 
@@ -1377,7 +1377,7 @@ This has the following benefits:
 HPA could get into the conflict with the pod controller (e.g. Deployment). Different controllers
 have different scaling approaches to HPA. This could be resolved with an opt-in behavior, by setting
 the interceptor priority to each HPA object.The HPA controller would then mark the workload pods
-with its interceptor class and a priority.
+with its interceptor at the appropriate `.spec.evictionInterceptors` list index (priority).
 
 - By default, we could set a lower index than controllers to prefer the controller's behaviour.
   For example, Deployment's `.spec.maxSurge` would be preferred over HPA. Otherwise, HPA might scale
@@ -1400,7 +1400,7 @@ first before terminating the pods.
 4. The node drain controller creates an EvictionRequest for the only pod of application W to evict
    it from a node.
 5. The eviction request controller designates the HPA as the interceptor by updating
-   `.status.activeInterceptorClass`. No action (termination) is taken on the single pod yet.
+   `.status.activeInterceptorName`. No action (termination) is taken on the single pod yet.
 6. The HPA controller creates a single surge pod B to compensate for the future loss of
    availability of pod A. The new pod is created by temporarily scaling up the deployment.
 7. Pod B is scheduled on a new schedulable node that is not under the node drain.
@@ -1409,7 +1409,7 @@ first before terminating the pods.
 10. The HPA sets `ActiveInterceptorCompleted=true` on the eviction requests of pod A, which is ready
     to be deleted.
 11. The eviction request controller designates the replica set controller as the next interceptor by
-    updating `.status.activeInterceptorClass`.
+    updating `.status.activeInterceptorName`.
 12. The replica set controller deletes the pods to which an EvictionRequest object has been
     assigned, preserving the availability of the webserver.
 
@@ -1438,12 +1438,12 @@ HPA Downscaling example:
 6. The HPA downscales the Deployment workload.
 7. The HPA sets `ActiveInterceptorCompleted=true` on its own eviction requests.
 8. The eviction request controller designates the deployment controller as the next interceptor by
-   updating `.status.activeInterceptorClass`.
+   updating `.status.activeInterceptorName`.
 9. The deployment controller subsequently scales down the underlying ReplicaSet(s).
 10. The deployment controller sets `ActiveInterceptorCompleted=true` on the eviction requests of
     pods that are ready to be deleted.
 11. The eviction request controller designates the replica set controller as the next interceptor by
-    updating `.status.activeInterceptorClass`.
+    updating `.status.activeInterceptorName`.
 12. The replica set controller deletes the pods to which an EvictionRequest object has been
     assigned, preserving the scheduling constraints.
 
@@ -1568,7 +1568,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 - Test all the interactions between the eviction request controller and the interceptor.
 - Test that the eviction of the pod happens if there is no interceptor or the interceptor stops
   responding.
-- Test switching between different interceptors/classes and resetting the EvictionRequest status.
+- Test switching between different interceptors and resetting the EvictionRequest status.
 - Test that the EvictionRequest has the `Complete=True` condition when the pod is terminated,
 
 ##### e2e tests
@@ -1937,11 +1937,11 @@ There are multiple issues with this approach:
 
 We could support annotations in the Pod object that encode the `.spec.evictionInterceptors`
 information. For example, the value could be stored as
-`interceptor.evictionrequest.coordination.k8s.io/priority_${INTERCEPTOR_CLASS}: ${PRIORITY}/${ROLE}`.
+`interceptor.evictionrequest.coordination.k8s.io/priority_${INTERCEPTOR_NAME}: ${PRIORITY}/${ROLE}`.
 
 This was originally considered because it does not require changes to the Pod API. Unfortunately,
 there are major drawbacks:
-- The length of the INTERCEPTOR_CLASS is limited to 63 characters.
+- The length of the INTERCEPTOR_NAME is limited to 63 characters.
 - Validation is difficult as there are many constraints.
 -  This API is difficult or impossible to extend in the future.
 
