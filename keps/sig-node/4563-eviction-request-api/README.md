@@ -63,6 +63,7 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Alpha2](#alpha2)
     - [Beta](#beta)
     - [GA](#ga)
     - [Deprecation](#deprecation)
@@ -1596,11 +1597,19 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Feature implemented behind a feature flag.
 - Unit, integration and e2e tests implemented and passing.
 
+#### Alpha2
+
+- Consider various kinds of alternative ordering or dependency tracking of the interceptors. For
+  example, use numeric priorities or roles.
+- Evaluate the relationship between the EvictionRequest API and Pod Deletion.
+
 #### Beta
 
 - Feature gate enabled by default.
 - Unit, integration and e2e tests passing.
 - Manual test for upgrade->downgrade->upgrade path will be performed.
+- Add support for the eviction of the Workload Resource (a group of pods). More in [Workload API Support](#workload-api-support).
+- Re-evaluate the immutability of `.spec.evictionInterceptors`.
 - Asses the state of the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212)
   and other components interested in using the EvictionRequest API.
 - Re-evaluate whether adding additional metrics and events would be helpful. And update the KEP
