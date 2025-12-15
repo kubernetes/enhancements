@@ -49,6 +49,7 @@
     - [New Targets Types](#new-targets-types)
     - [New EvictionRequest Types and Synchronization of Pod Termination Mechanisms](#new-evictionrequest-types-and-synchronization-of-pod-termination-mechanisms)
     - [Workload API Support](#workload-api-support)
+    - [Preemption Support](#preemption-support)
   - [Adoption](#adoption)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -1321,6 +1322,41 @@ observe/intercept the EvictionRequest, other interceptors might not do so. It mi
 treat Workload evictions as a syntactic sugar and transform such EvictionRequest into n number of
 Pod targeted EvictionRequests. The number n would depend on the policies mentioned above.
 
+#### Preemption Support
+
+Adding EvictionRequest support to pod preemption is an important part of the disruption story.
+Currently, the scheduler first scores and sorts nodes that are targets for preemption. The scoring
+considers number of attributes such as violating PDBs, pod priority observations, number of pods and
+their start time. Then, a number of pods are selected to be preempted by a new pod. The selection
+logic prefers pods that are not protected by PDBs, but cannot guarantee it. If there are not enough
+pods to be preempted on the node, PDBs will be violated.
+
+We could prefer nodes with pods that don't have interceptors. However, it is difficult to compare
+pods that have interceptors. One solution would be to track the `expectedInterceptorFinishTime` in
+the pod's `.spec.evictionInterceptors` for each interceptor. Another option would be to track some
+kind of weight. This is useful for other simulation purposes (e.g. node drain) as well.
+
+If we have to disrupt a pod with interceptors, we would like to give a guarantee to a preemptor pod
+when it would run. We cannot block pod deletion in order to maintain backward compatibility. There
+are two non-competing options
+
+1. Add support for a new EvictionRequest type, such as `SoftWithDeadline` as discussed in
+   [New EvictionRequest Types and Synchronization of Pod Termination Mechanisms](#new-evictionrequest-types-and-synchronization-of-pod-termination-mechanisms) that would
+   override `Soft` EvictionRequests. Then, preemption would create an EvictionRequest with a maximum
+   eviction time for all interceptors instead of a DELETE request. The deadline could be a hardcoded
+   value or based on the pod's `TerminationGracePeriodSeconds`.
+2. Introduce a new `preemptionPolicy` called `PreemptLowerPriorityViaEvictionRequest` that would
+   allow preemptor pods to specify that they are okay with lower-priority pods taking longer to
+   leave the node. This opt-in behavior would allow users to provide graceful eviction guarantees to
+   lower-priority pods.
+3. Add `preemptionPriorityClassName` or `disruptionPriorityClassName` field to the pod's
+   `.spec.evictionInterceptors`. This would allow critical workloads and interceptors to set a
+   higher priority during preemption, which would override the pod's `.spec.priority`. During
+   preemption, we would still need options 1. or 2. though.
+
+The best-effort PDB preemption should remain the same as is it is today, since EvictionRequest works
+on top of the PDB API. We would now also prefer nodes and pods without interceptors.
+
 ### Adoption
 
 This feature does not introduce any breaking changes to the way the current API-initiated eviction
@@ -1455,6 +1491,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Manual test for upgrade->downgrade->upgrade path will be performed.
 - Add support for the eviction of the Workload Resource (a group of pods). More in [Workload API Support](#workload-api-support).
 - Re-evaluate the immutability of `.spec.evictionInterceptors`.
+- Consider [Preemption Support](#preemption-support).
 - Asses the state of the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212)
   and other components interested in using the EvictionRequest API.
 - Re-evaluate whether adding additional metrics and events would be helpful. And update the KEP
