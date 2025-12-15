@@ -44,14 +44,7 @@
     - [Single Dynamic Requester and EvictionRequest Cancellation](#single-dynamic-requester-and-evictionrequest-cancellation)
     - [Single Dynamic Requester and Forbidden EvictionRequest Cancellation](#single-dynamic-requester-and-forbidden-evictionrequest-cancellation)
   - [Follow-up Design Details for Kubernetes Workloads](#follow-up-design-details-for-kubernetes-workloads)
-    - [ReplicaSet Controller](#replicaset-controller)
-    - [Deployment Controller](#deployment-controller)
-      - [Deployment Pod Surge Example](#deployment-pod-surge-example)
-    - [StatefulSet Controller](#statefulset-controller)
-    - [DaemonSet and Static Pods](#daemonset-and-static-pods)
-    - [HorizontalPodAutoscaler](#horizontalpodautoscaler)
-      - [HorizontalPodAutoscaler Pod Surge Example](#horizontalpodautoscaler-pod-surge-example)
-    - [Descheduling and Downscaling](#descheduling-and-downscaling)
+    - [Pod Surge Example](#pod-surge-example)
   - [Future Improvements](#future-improvements)
     - [New Targets Types](#new-targets-types)
     - [New EvictionRequest Types and Synchronization of Pod Termination Mechanisms](#new-evictionrequest-types-and-synchronization-of-pod-termination-mechanisms)
@@ -288,17 +281,14 @@ Multiple requesters can request the eviction of the same pod, and optionally wit
 in certain scenarios
 ([EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples)).
 
-We can think of EvictionRequest as a managed and safer alternative to eviction.
+We can think of EvictionRequest as a managed and safer alternative to eviction. For instance, it can
+be used to scale up a workload before terminating the pods. See the [Pod Surge Example](#pod-surge-example)
+based on the [EvictionRequest Process](#evictionrequest-process).
 
-See some practical use cases for this feature:
-1. Ability to upscale first before terminating the pods with a Deployment: [Deployment Pod Surge Example](#deployment-pod-surge-example)
-   based on the [EvictionRequest Process](#evictionrequest-process).
-2. Ability to upscale first before terminating the pods with HPA: [HorizontalPodAutoscaler Pod Surge Example](#horizontalpodautoscaler-pod-surge-example)
-   based on the [EvictionRequest Process](#evictionrequest-process).
-3. Ability to select which pods to terminate when downscaling an application: [Descheduling and Downscaling](#descheduling-and-downscaling)
-
-[Future Improvements](#future-improvements) and [Adoption](#adoption) also hold important
-considerations for the evolution of this feature.
+The following items provide further information on the evolution and adoption of this feature:
+- [Follow-up Design Details for Kubernetes Workloads](#follow-up-design-details-for-kubernetes-workloads)
+- [Future Improvements](#future-improvements)
+- [Adoption](#adoption)
 
 ### Eviction Requester
 
@@ -534,17 +524,9 @@ to decide if the EvictionRequest should be deleted/garbage collected.
 There can be multiple interceptors for a single pod, which can be given control of the eviction
 process by the eviction request controller.
 
-We can distinguish 4 different kinds of interceptors:
-- `partial`: it handles only a part of the eviction process (e.g. releasing one kind of resource).
-  This interceptor should not terminate the pod.
-- `knowledgeable`: has more knowledge (e.g. specific to the deployed application) about how to
-  handle a more graceful eviction than the controller of the pod (e.g. StatefulSet, Deployment).
-  This can result in the termination of the pod.
-- `controller`: handles full graceful eviction in a generic way and should result in a pod
-  termination. It can be preempted by a `knowledgeable` interceptor.
-- `fallback`: can handle eviction if all previous interceptors have failed. This means that
-  `knowledgeable` or `controller` interceptors have either reported no progress, or are simply not
-  implemented for the target pod.
+Interceptors can range from partial, which perform limited cleanup without terminating the pod, to
+controllers and higher-level controllers, which can terminate the pod gracefully. Generic fallback
+interceptors can be used if all other concrete ones fail or are unavailable.
 
 First, the interceptor should register itself with all the pods it is interested in
 evicting/intercepting (either partially or fully) by adding itself to the
@@ -1197,105 +1179,37 @@ eviction request process.
 
 - ReplicaSet and ReplicationController partial support is considered. The full eviction logic should
   be implemented by a higher level workload such as Deployments. ReplicaSets are intended to be a
-  simple primitive without any sophisticated scaling logic.
-- Deployment support is considered.
-- StatefulSet support is considered.
-- DaemonSet support is considered, but will be explored as a part of the
-  [Declarative Node Maintenance KEP](https://github.com/kubernetes/enhancements/pull/4213), as its
-  pods should not be disrupted/evicted during normal operation.
+  simple primitive without any sophisticated scaling logic. It could prefer the deletion of pods
+  with associated EvictionRequest objects during scale-down and expose an eviction interceptor on
+  its pods to defer pod deletion. This could then be used by higher-level components for
+  rebalancing pods.
+- Deployment support is considered. This could guarantee zero application disruption by scaling up
+  before pod termination for rolling updates with a positive `.spec.strategy.rollingUpdate.maxSurge`
+  field. When acting as the active interceptor, it could create surge pods, wait for them to become
+  available and coordinates safe pod deletion via ReplicaSets. It would also update the
+  EvictionRequest status throughout the eviction process. Support for other strategies and
+  configurations could be considered on an opt-in basis.
+- StatefulSet support is considered. Instead of deleting pods, it could create EvictionRequests to
+  offer more safety and gracefulness for its pods. Improving availability through custom scaling
+  could also be done, but would have to be implemented as part of a new `.spec.updateStrategy` or
+  other additional configuration.
+- DaemonSet support is considered. DaemonSet pods could be terminated by an EvictionRequest, but
+  they cannot simply be disrupted during normal operation because they can run critical services. We
+  can identify important scenarios such as Graceful Node Shutdown and Node Maintenance, and improve
+  the observability of these scenarios to support DaemonSet eviction.
 - Jobs/CronJobs are not yet considered, because jobs should not normally run critical workloads
   that require eviction request and should therefore leave the node quickly and not block its drain.
   If required, custom interceptors can be implemented to support custom eviction logic for
   specialized types of jobs.
 
-#### ReplicaSet Controller
+#### Pod Surge Example
 
-Active response to EvictionRequest objects cannot be implemented without first analysing the owner
-of a pod and its capabilities. For example, not all deployment strategy configurations can simply
-utilize EvictionRequests without a loss of availability. This is also true for other owners.
-Therefore, it does not make sense to impose such a responsibility on the replication controller
-(e.g., by introducing new fields). Instead, deployments and other controllers should advertise the
-interceptor capabilities on ReplicaSet pods via the `.spec.evictionInterceptors` field and 
-implement/perform the eviction logic.
+We can use a Deployment with a positive `.spec.strategy.rollingUpdate.maxSurge` field to prevent any
+disruption for the underlying application. This involves scaling up first before terminating the
+pods. 
 
-To facilitate the eviction request of high-level workloads and to take advantage of the
-EvictionRequest feature passively, the replicaset controller can prefer the deletion of pods with
-corresponding EvictionRequest objects during a ReplicaSet scale down.
-
-To correctly orchestrate these steps, replica set controller should set an interceptor on its pods:
-
-```yaml
-    evictionInterceptors:
-      - name: replicaset.apps.k8s.io
-```
-
-And not delete these pods until it becomes the active interceptor.
-
-#### Deployment Controller
-
-The deployment controller must first decide whether a particular Deployment supports eviction
-requests according to the deployment strategy.
-- `Recreate` strategy deletes all the pods at once during rollouts, and supporting the eviction
-  request provides no benefit over simple eviction.
-- `Rolling` update strategy with `MaxSurge` should always support eviction requests.
-- `Rolling` update strategy with `MaxUnavailable` eviction request support can have certain
-  advantages and disadvantages. It can reduce the pod disruption when the number of evicted pods is
-  greater than the `MaxUnavailable` field. Unfortunately, in some cases the pods may be covered by
-  PDBs and the pod disruptions may exceed the expected number. Therefore, we would need to introduce
-  a new field (e.g. `.spec.evictionRequestStrategy`) that would provide the ability to opt into this
-  behavior.
-
-If the controller evaluates that there is a support for the EvictionRequest it should make sure that
-its pods include
-
-```yaml
-evictionInterceptors:
-  - name: deployment.apps.k8s.io
-```
-
-We can assume that these pods also have a replica set interceptor set to a lower index.
-
-The controller should observe the EvictionRequest objects that correspond to the pods that the
-controller manages. It should start the eviction logic when it observes that the
-`.status.activeInterceptorName` field of the EvictionRequest is equal to `deployment.apps.k8s.io`.
-
-It should check to see that the Deployment object still supports eviction request, and if not, it
-should set `.status.activeInterceptorCompleted=true`.
-
-The implementation should then proceed by periodically updating all assigned EvictionRequest object
-with progress, as described in the [Interceptor](#interceptor) section.
-
-The eviction logic is strategy specific.
-
-If the Deployment has a `.spec.strategy.rollingUpdate.maxSurge` value, the controller will create
-surge pods by scaling up the ReplicaSet(s). If the node is under the maintenance, the new pods will
-not be scheduled on that node because the `.spec.unschedulable` node field would be set to true. As
-soon as the surge pods become available, the deployment controller will scale down the
-ReplicaSet(s). The replica set controller will then in turn delete the pods with matching
-EvictionRequest objects.
-
-If the eviction request ends and is prematurely deleted before the surge process has a chance to
-complete, the deployment controller will scale down the ReplicaSet which will then remove the extra
-pods that were created during the surge.
-
-Regardless of the Deployment strategy, if the Deployment is scaled down during an eviction request,
-the ReplicaSet is scaled down and the pods with matching EvictionRequests can be terminated
-immediately by the replicaset controller.
-
-For observability, we could add the `.status.ReplicasToEvict` field to Deployments to signal how
-many replicas are in a need of eviction. If this field has a positive value, it could also indicate
-that an interceptor other than the deployment controller has taken the responsibility for the
-eviction request and there is no work for the deployment controller to do. It could also mean that
-pods are being evicted by the eviction request controller if the deployment controller has not
-responded. We could also add a new condition called `EvictionRequestInProgress` that would become
-`True` if there is at least one pod that is being evicted by the deployment controller or by another
-interceptor. If there is no interceptor and the pods are being evicted, the value of the condition
-should be `False`.
-
-##### Deployment Pod Surge Example
-
-We can use a Deployment with positive `.spec.strategy.rollingUpdate.maxSurge` field to prevent any
-disruption for the underlying application. By scaling up first before terminating the pods.
+This example can also be applied to other direct or higher level controllers
+(e.g. HorizontalPodAutoscaler) with the ability to create surge pods.
 
 1. A set of pods A of an application P are created with a Deployment controller interceptor and a
    ReplicaSet controller interceptor.
@@ -1319,142 +1233,6 @@ disruption for the underlying application. By scaling up first before terminatin
     updating `.status.activeInterceptorName`.
 11. The replica set controller deletes the pods to which an EvictionRequest object has been
     assigned, preserving the availability of the application.
-
-#### StatefulSet Controller
-
-The statefulset controller must first decide whether a particular StatefulSet supports the eviction
-request according to the stateful set update strategy.
-- `OnDelete` strategy is a legacy behavior that does not delete pods and waits for a manual
-  deletion. We cannot provide an eviction strategy for these.
-- `RollingUpdate` update strategy with `MaxUnavailable` eviction request support can have certain
-  advantages and disadvantages. It can reduce the pod disruption if the number of evicted pods
-  is greater than the `MaxUnavailable` field. Unfortunately, in some cases the stateful set pods
-  may be covered by PDBs, and the pod disruptions might exceed the expected maximum number of
-  disruptions. Therefore, we would need to introduce a new field
-  (e.g., `.spec.evictionRequestStrategy`) that would provide the ability to opt into this behavior.
-
-The eviction logic is similar to that of the [Deployment Controller](#deployment-controller). Except
-that it is conditioned by the presence of the `.spec.updateStrategy.rollingUpdate.MaxUnavailable`
-field and the `.spec.evictionRequestStrategy` field. Instead of the pod surge, we will delete pods
-from the highest index to the lowest according to the `MaxUnavailable` field. Then we wait for the
-new pods to become available, before deleting the next batch of pods until there is no
-EvictionRequest object.
-
-One alternative is to implement the `MaxSurge` feature for StatefulSets. For example a surge number
-of high index pods and PVCs could be provisioned until the lower index pods can be recreated. Once
-the lower index pods are migrated, the higher index pods could be scaled down and removed.
-
-Another alternative is for the application to implement its own interceptor and register it as a
-interceptor on the application pods. It can then intercept the EvictionRequest objects and ensure
-graceful pod removal without any application disruption.
-
-#### DaemonSet and Static Pods
-
-DaemonSet pods and mirror/static pods can potentially be terminated by EvictionRequest, but cannot
-be simply evicted because they can run critical services.
-- The daemonset controller can be made EvictionRequest aware and graceful terminate pods on nodes
-  under NodeMaintenance (proposed feature in [Declarative Node Maintenance KEP](https://github.com/kubernetes/enhancements/pull/4213)). The
-  NodeMaintenance would be used by the daemonset controller as a scheduling hint to not restart the
-  pods on a node.
-- An application with access to a node's filesystem could observe the EvictionRequest of a mirror
-  pod and remove the static pod manifest from the node, resulting in static pod termination.
-- Kubelet could be made aware of the static pods EvictionRequests and allow their termination in
-  certain scenarios (e.g., during the final phase of node maintenance).
-
-#### HorizontalPodAutoscaler
-
-A new feature could be added to HPA, to temporarily increase the amount of pods during a disruption.
-
-Upon detecting an eviction request of pods under the HPA workload, the HPA would increase the number
-of replicas by the number of eviction requests. It would become an interceptor and reconcile the
-EvictionRequest status until these new pods become ready. Then it would set
-`.status.activeInterceptorCompleted` to `true` to allow the eviction request controller to evict
-these pods. After the evicted pods terminate and the EvictionRequest objects have a `Complete=True`
-condition, HPA can decrease the number of pods required by the workload to the original number.
-
-This has the following benefits:
-- 1 replica applications can run on the cluster without losing any availability during a disruption.
-  This allows running applications in scenarios where HA is not possible or necessary.
-- No PDB is required anymore to ensure a minimum availability. No 3rd part PDB spec reconciliation
-  is necessary. HPA applications will never lose any availability due to EvictionRequests. The
-  availability can still be lost by other means. We expect that all components will eventually move
-  to the EvictionRequest API instead of using a raw eviction API.
-
-HPA could get into the conflict with the pod controller (e.g. Deployment). Different controllers
-have different scaling approaches to HPA. This could be resolved with an opt-in behavior, by setting
-the interceptor priority to each HPA object.The HPA controller would then mark the workload pods
-with its interceptor at the appropriate `.spec.evictionInterceptors` list index (priority).
-
-- By default, we could set a lower index than controllers to prefer the controller's behaviour.
-  For example, Deployment's `.spec.maxSurge` would be preferred over HPA. Otherwise, HPA might scale
-  less or more than `.spec.maxSurge`.
-- If the HPA scaling logic is preferred, a user could set a higher priority on the HPA object.
-
-
-##### HorizontalPodAutoscaler Pod Surge Example
-
-We can use HPA running 1 pod to prevent a disruption for the underlying application. By scaling up
-first before terminating the pods.
-
-1. A single pod A of application W is created with a ReplicaSet controller interceptor. Application
-   W is a webserver that is scaled dynamically according to the traffic. If there is a low traffic,
-   HPA scales down the number of pods to 1. The application should not lose availability when its
-   single replica gets disrupted.
-2. The Deployment and its pods are controlled/scaled by the HPA. The HPA sets an interceptor at a
-   higher index on all of these pods.
-3. A node drain controller starts draining a node Z and makes it unschedulable.
-4. The node drain controller creates an EvictionRequest for the only pod of application W to evict
-   it from a node.
-5. The eviction request controller designates the HPA as the interceptor by updating
-   `.status.activeInterceptorName`. No action (termination) is taken on the single pod yet.
-6. The HPA controller creates a single surge pod B to compensate for the future loss of
-   availability of pod A. The new pod is created by temporarily scaling up the deployment.
-7. Pod B is scheduled on a new schedulable node that is not under the node drain.
-8. Pod B becomes available.
-9. The HPA scales the surging deployment back down to 1 replica.
-10. The HPA sets `ActiveInterceptorCompleted=true` on the eviction requests of pod A, which is ready
-    to be deleted.
-11. The eviction request controller designates the replica set controller as the next interceptor by
-    updating `.status.activeInterceptorName`.
-12. The replica set controller deletes the pods to which an EvictionRequest object has been
-    assigned, preserving the availability of the webserver.
-
-
-#### Descheduling and Downscaling
-
-We can use the EvictionRequest API to deschedule a set of pods controlled by a
-Deployment/ReplicaSet. This is useful when we want to remove a set of pods from a node, either for
-node maintenance reasons or to rebalance the pods across additional nodes.
-
-If set up correctly, the deployment controller will first scale up its pods to achieve this. In
-order to support any de/scheduling constraints during downscaling, we should temporarily disable an
-immediate upscaling.
-
-HPA Downscaling example:
-
-1. Pods of application A are created with a Deployment controller interceptor (index 1) and
-   a ReplicaSet controller interceptor (index 0).
-2. The Deployment and its pods are controlled/scaled by the HPA. The HPA sets an interceptor
-   (index 2) on all of these pods.
-3. A subset of pods from application A are chosen by the HPA to be scaled down. This may be done in
-   a collaboration with another component responsible for resolving the scheduling constraints.
-4. The HPA creates EvictionRequest objects for these chosen pods.
-5. The eviction request controller designates the HPA as the interceptor based on the highest
-   index. No action (termination) is taken on the pods yet.
-6. The HPA downscales the Deployment workload.
-7. The HPA sets `ActiveInterceptorCompleted=true` on its own eviction requests.
-8. The eviction request controller designates the deployment controller as the next interceptor by
-   updating `.status.activeInterceptorName`.
-9. The deployment controller subsequently scales down the underlying ReplicaSet(s).
-10. The deployment controller sets `ActiveInterceptorCompleted=true` on the eviction requests of
-    pods that are ready to be deleted.
-11. The eviction request controller designates the replica set controller as the next interceptor by
-    updating `.status.activeInterceptorName`.
-12. The replica set controller deletes the pods to which an EvictionRequest object has been
-    assigned, preserving the scheduling constraints.
-
-The same can be done by any descheduling controller (instead of an HPA) to re-balance a set of Pods
-to comply with de/scheduling rules.
 
 ### Future Improvements
 
@@ -1513,7 +1291,7 @@ EvictionRequests is also important. The main advantages are observability and gr
 guarantees.
 - Core controllers can gradually adopt this feature. The deployment controller can particularly use
 this feature to upscale first before terminating the pods of the Deployment
-([Deployment Pod Surge Example](#deployment-pod-surge-example)). As mentioned in the motivation
+([Pod Surge Example](#pod-surge-example)). As mentioned in the motivation
 section,users requested this feature to improve pod availability and safety. It should bring in
 immediate benefit to clusters using Deployments during node drain scenarios without requiring any
 action from users. 
