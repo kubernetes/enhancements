@@ -524,6 +524,9 @@ the eviction request controller will set a Complete condition to .status.conditi
 interceptor has set `.status.evictionRequestCancellationPolicy` to `Forbid`, the eviction process
 cannot be cancelled, and the eviction request controller will wait for the interceptor to finish.
 
+It can observe the `Complete` condition ([EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion))
+to decide if the EvictionRequest should be deleted/garbage collected.
+
 ### Interceptor
 
 [Pod and Interceptor](#pod-and-interceptor) section provides a general overview.
@@ -588,8 +591,10 @@ If the interceptor is interested in intercepting/evicting the pod it should look
 `.spec.heartbeatDeadlineSeconds` and make sure to update the status periodically in less than that
 duration. For example, if `.spec.heartbeatDeadlineSeconds` is set to the default value of 1800 (30m),
 it may update the status every 3 minutes. The status updates should look as follows:
-- Check that it supports the `.spec.type`. Please note that the only supported eviction request type
-  is `Soft` for now.
+- Verify that it supports the `.spec.type`. Please note that the only supported eviction request
+  type is `Soft` for now.
+- Verify that the `.spec.target` is the desired target (e.g., there is a correct pod in the
+  `.spec.target.podRef`)
 - Check that `.status.activeInterceptorName` still matches the `name` previously set
   in the pod's `.spec.evictionInterceptors`. and that `.status.activeInterceptorCompleted` is still
   false. If one of these is not correct and the eviction process is still not complete, it should
