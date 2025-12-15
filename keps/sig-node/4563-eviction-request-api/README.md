@@ -513,17 +513,9 @@ to decide if the EvictionRequest should be deleted/garbage collected.
 There can be multiple interceptors for a single pod, which can be given control of the eviction
 process by the eviction request controller.
 
-We can distinguish 4 different kinds of interceptors:
-- `partial`: it handles only a part of the eviction process (e.g. releasing one kind of resource).
-  This interceptor should not terminate the pod.
-- `knowledgeable`: has more knowledge (e.g. specific to the deployed application) about how to
-  handle a more graceful eviction than the controller of the pod (e.g. StatefulSet, Deployment).
-  This can result in the termination of the pod.
-- `controller`: handles full graceful eviction in a generic way and should result in a pod
-  termination. It can be preempted by a `knowledgeable` interceptor.
-- `fallback`: can handle eviction if all previous interceptors have failed. This means that
-  `knowledgeable` or `controller` interceptors have either reported no progress, or are simply not
-  implemented for the target pod.
+Interceptors can range from partial, which perform limited cleanup without terminating the pod, to
+controllers and higher-level controllers, which can terminate the pod gracefully. Generic fallback
+interceptors can be used if all other concrete ones fail or are unavailable.
 
 First, the interceptor should register itself with all the pods it is interested in
 evicting/intercepting (either partially or fully) by adding itself to the
