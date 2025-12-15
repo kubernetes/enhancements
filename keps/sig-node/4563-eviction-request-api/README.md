@@ -345,7 +345,7 @@ coincide with the deletion of the pod (evict or delete call). In some scenarios,
 terminated (e.g. by a remote call) if the pod `restartPolicy` allows it, to preserve the pod data
 for further processing or debugging.
 
-The interceptor can also choose whether it handles EvictionRequest cancellation. See
+The interceptor can also choose whether it accepts EvictionRequest cancellation. See
 [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples) for details.
 
 We should discourage the creation of preventive EvictionRequests, so that they do not end up as
@@ -592,11 +592,11 @@ status updates should look as follows:
 - Set `.status.heartbeatTime` to the present time to signal that the eviction request is not
   stuck.
 - Update the `.status.evictionRequestCancellationPolicy` field if needed. This field might have been
-  set by the previous interceptor. This field should be set to `Forbid` if the current eviction
+  set by a previous interceptor. This field should be set to `Forbid` if the current eviction 
   request process of the pod cannot be stopped/cancelled. This will block any DELETE requests on the
-  EvictionRequest object. If the interceptor supports eviction request cancellation, it should make
-  sure that this field is set to `Allow`, and it should be aware that the EvictionRequest object can
-  be deleted at any time. See
+  EvictionRequest object. The `Forbid` policy cannot be reverted. If the interceptor supports
+  eviction request cancellation, it should leave the field's value as `Allow`; however, it should
+  be aware that the EvictionRequest object can be deleted at any time. See
   [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples) for details.
 - Update `.status.expectedInterceptorFinishTime` if a reasonable estimation can be made of how long
   the eviction process will take for the current interceptor. This can be modified later to change
@@ -917,8 +917,7 @@ type EvictionRequestStatus struct {
 	// to cancel (delete) the eviction request.
 	// When this value is Forbid, DELETE requests of this EvictionRequest object will not be accepted
 	// while the target (e.g. a pod) exists.
-	// This field is not reset by the eviction request controller when selecting an interceptor.
-	// Changes to this field should always be reconciled by the active interceptor.
+	// It is not possible to revert Forbid policy.
 	//
 	// Valid policies are Allow and Forbid.
 	// The default value is Allow.
@@ -1122,7 +1121,7 @@ metadata:
    already exists. It sets the `descheduling.avalanche.io` value to the `.spec.requesters`.
 4. The eviction request controller designates Actor B as the next interceptor by updating
    `.status.activeInterceptorName`.
-5. Actor B updates the EvictionRequest status and also sets
+5. Actor B updates the EvictionRequest status and checks that
    `.status.evictionRequestCancellationPolicy=Allow`.
 6. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
@@ -1135,7 +1134,7 @@ metadata:
     ready to be deleted.
 11. The eviction request controller designates Actor A as the next interceptor by updating
     `.status.activeInterceptorName`.
-12. Actor A updates the EvictionRequest status and ensures that
+12. Actor A updates the EvictionRequest status and checks that
    `.status.evictionRequestCancellationPolicy=Allow`
 13. Actor A deletes the p-1 pod.
 14. Once the pod terminates, the eviction request controller sets `Complete` condition to `True`. 
@@ -1148,7 +1147,7 @@ metadata:
    evict it from a node. It sets the `nodemaintenance.k8s.io` value to the `.spec.requesters`.
 3. The eviction request controller designates Actor B as the next interceptor by updating
    `.status.activeInterceptorName`.
-4. Actor B updates the EvictionRequest status and also sets
+4. Actor B updates the EvictionRequest status and checks that
    `.status.evictionRequestCancellationPolicy=Allow`.
 5. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
@@ -1179,12 +1178,12 @@ metadata:
 7. According to the `.status.evictionRequestCancellationPolicy=Forbid`, the node drain controller
    cannot remove the `nodemaintenance.k8s.io` from the `.spec.requesters` due to API validation.
 8. Actor B sets `ActiveInterceptorCompleted=true` on the eviction requests of pod p-1, which is
-    ready to be deleted.
+   ready to be deleted.
 9. The eviction request controller designates Actor A as the next interceptor by updating
-    `.status.activeInterceptorName`.
-10. Actor A updates the EvictionRequest status and ensures that
-    `.status.evictionRequestCancellationPolicy=Forbid`. Alternatively, it could also change it to
-    `Allow` at this point, if it was just there, to ensure that Actor B's logic is atomic
+   `.status.activeInterceptorName`.
+10. Actor A updates the EvictionRequest status and checks that the previous interceptor set
+    `.status.evictionRequestCancellationPolicy=Forbid`. It cannot change the value and must respect
+    the previous interceptor, which may have already made irreversible changes.
 11. Actor A deletes the p-1 pod.
 12. Once the pod terminates, the eviction request controller sets `Complete` condition to `True`.
 13. The node drain controller can delete the EvictionRequest.
@@ -1566,7 +1565,7 @@ No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes it can be rolled backed by disabling the feature gate, but it will cancel any pending eviction
+Yes it can be rolled backed by disabling the feature gate, but it will disable any pending eviction
 requests. This means that pods that have been requested to be evicted, will continue to run. Also,
 any component that depends on the EvictionRequest API (e.g. eviction requester, interceptor) will
 also stop working or will not operate correctly.
