@@ -96,6 +96,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [API](#api)
+    - [Workload](#workload)
+    - [Pod](#pod)
+    - [Example](#example)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -294,6 +298,203 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+### API
+
+The following API changes will be made:
+
+- The Workload API will be updated to include references from PodGroups to
+  ResourceClaimTemplates.
+- The Pod API will be updated to include references to claims listed in its
+  Workload.
+
+#### Workload
+
+The Workload API changes are modeled after the existing Pod API to reference
+ResourceClaims, adding a `resourceClaims` field to the elements of the
+`podGroups` array:
+
+```go
+type PodGroup struct {
+	...
+
+	// ResourceClaims defines which ResourceClaims may be shared among Pods in
+	// the group. Pods must reference these claims in order to consume the
+	// allocated devices.
+	//
+	// This is an alpha-level field and requires that the
+	// WorkloadPodGroupResourceClaimTemplate feature gate is enabled.
+	//
+	// This field is immutable.
+	//
+	// +patchMergeKey=name
+	// +patchStrategy=merge,retainKeys
+	// +listType=map
+	// +listMapKey=name
+	// +featureGate=WorkloadPodGroupResourceClaimTemplate
+	// +optional
+	ResourceClaims []WorkloadResourceClaim `json:"resourceClaims,omitempty"`
+}
+
+// WorkloadResourceClaim references exactly one ResourceClaimTemplate which is
+// then turned into a ResourceClaim for the PodGroup.
+//
+// It includes a name that uniquely identifies the ResourceClaimTemplate
+// inside the PodGroup. Pods that need access to the ResourceClaim reference it
+// with this name.
+type WorkloadResourceClaim struct {
+	// Name uniquely identifies this resource claim within the PodGroup.
+	// This must be a DNS_LABEL.
+	Name string `json:"name"`
+
+	// ResourceClaimTemplateName is the name of a ResourceClaimTemplate object
+	// in the same namespace as this Workload.
+	//
+	// The template will be used to create a new ResourceClaim, which will be
+	// available to this PodGroup. When all pods in the group are deleted, the
+	// ResourceClaim will also be deleted.
+	//
+	// This field is immutable and no changes will be made to the corresponding
+	// ResourceClaim by the control plane after creating the ResourceClaim.
+	//
+	// +required
+	ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
+}
+```
+
+#### Pod
+
+When a PodGroup includes a ResourceClaimTemplate, the `name` of the claim in
+the PodGroup can be used on Pods in the group to associate the group instance's
+dedicated ResourceClaim. This complements existing references to ResourceClaims
+and ResourceClaimTemplates.
+
+```go
+// PodResourceClaim references exactly one ResourceClaim, either directly,
+// by naming a ResourceClaimTemplate which is then turned into a ResourceClaim
+// for the pod, or by naming a claim made for a Workload's PodGroup.
+//
+// It adds a name to it that uniquely identifies the ResourceClaim inside the Pod.
+// Containers that need access to the ResourceClaim reference it with this name.
+type PodResourceClaim struct {
+	...
+
+	// WorkloadPodGroupResourceClaim refers to the name of a claim associated
+	// with this pod's PodGroup.
+	//
+	// Exactly one of ResourceClaimName, ResourceClaimTemplateName, and
+	// WorkloadPodGroupResourceClaim must be set.
+	WorkloadPodGroupResourceClaim *string `json:"workloadPodGroupResourceClaim,omitempty"`
+}
+```
+
+#### Example
+
+The following example demonstrates the relationships between the new fields.
+
+Here, a Workload organizes Pods managed by two different Deployments into two
+different PodGroups. Each group refers to the same ResourceClaimTemplate,
+`wl-claim-template`. This single ResourceClaimTemplate forms the basis of two
+different ResourceClaims which will be created by the ResourceClaim controller:
+one for each PodGroup. The Pod templates in the Deployments include a reference
+to the claim listed for the PodGroup, which ultimately resolves to its
+PodGroup's ResourceClaim. The result is that with a single
+ResourceClaimTemplate, Pods in the same group all share the exact same
+allocated device, while Pods in the other group use a equivalent, but
+separately allocated, device.
+
+```yaml
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: Workload
+metadata:
+  name: my-workload
+  namespace: default
+spec:
+  podGroups:
+  - name: group-1
+    policy:
+      basic: {}
+    resourceClaims:
+    - name: wl-claim
+      resourceClaimTemplateName: wl-claim-template
+  - name: group-2
+    policy:
+      basic: {}
+    resourceClaims:
+    - name: wl-claim
+      resourceClaimTemplateName: wl-claim-template
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: wl-claim-template
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+      - name: my-device
+        exactly:
+          deviceClassName: example
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wl-claim-example-1
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wl-claim-example-1
+  template:
+    metadata:
+      labels:
+        app: wl-claim-example-1
+    spec:
+      containers:
+      - name: pause
+        image: "registry.k8s.io/pause:3.6"
+        resources:
+          claims:
+          - name: resource-1
+      resourceClaims:
+      - name: resource-1
+        workloadPodGroupResourceClaim: wl-claim
+      workloadRef:
+        name: my-workload
+        podGroup: group-1
+        podGroupReplicaKey: "1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wl-claim-example-2
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wl-claim-example-2
+  template:
+    metadata:
+      labels:
+        app: wl-claim-example-2
+    spec:
+      containers:
+      - name: pause
+        image: "registry.k8s.io/pause:3.6"
+        resources:
+          claims:
+          - name: resource-1
+      resourceClaims:
+      - name: resource-1
+        workloadPodGroupResourceClaim: wl-claim
+      workloadRef:
+        name: my-workload
+        podGroup: group-2
+        podGroupReplicaKey: "1"
+```
 
 ### Test Plan
 
