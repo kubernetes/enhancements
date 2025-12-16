@@ -458,6 +458,39 @@ not be split into two. A `LeaderWorkerSet` is a good example of it, where a sing
 of a single leader and `N` workers and that forms a scheduling (and runtime unit), but workload as a whole
 may consist of a number of such replicas.
 
+#### Basic Policy Extension
+
+While Gang Scheduling focuses on atomic, all-or-nothing scheduling, there is a significant class
+of batch workloads that requires best-effort optimization without
+the strict blocking semantics of a gang.
+
+Currently, the `Basic` policy is a no-op. We propose extending the `Basic` policy
+to accept a `desiredCount` field. This feature will be gated behind a separate
+feature gate (`WorkloadBasicPolicyDesiredCount`) to decouple it from the core Gang Scheduling graduation path.
+
+```go
+// BasicSchedulingPolicy indicates that standard Kubernetes
+// scheduling behavior should be used.
+type BasicSchedulingPolicy struct {
+	// DesiredCount is the expected number of pods that will belong to this
+	// PodGroup. This field is a hint to the scheduler to help it make better
+	// placement decisions for the group as a whole.
+	//
+	// Unlike gang's minCount, this field does not block scheduling. If the number
+	// of available pods is less than desiredCount, the scheduler can still attempt
+	// to schedule the available pods, but will optimistically try to select a
+	// placement that can accommodate the future pods.
+	//
+	// +optional
+	DesiredCount *int32
+}
+```
+
+This field allows users to express their "true" workloads more easily
+and enables the scheduler to optimize the placement of such pod groups by taking the desired state
+into account. Ideally, the scheduler should prefer placements that can accommodate
+the full `desiredCount`, even if not all pods are created yet.
+
 ### Scheduler Changes
 
 The kube-scheduler will be watching for `Workload` objects (using informers) and will use them to map pods
@@ -724,6 +757,11 @@ optional. In the `Beta` timeframe, we may opportunistically apply this cycle to
 `Basic` pod groups to leverage the batching performance benefits, but the
 "all-or-nothing" (`minCount`) checks will be skipped; i.e., we will try to
 schedule as many pods from such PodGroup as possible.
+
+If the `Basic` policy has `desiredCount` set, the Workload Scheduling Cycle
+may utilize this value to simulate the full group size during feasibility checks.
+Note that the implementation of this specific logic might follow in a Beta stage
+of this API field.
 
 #### Delayed Preemption
 
