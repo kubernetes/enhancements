@@ -1086,6 +1086,7 @@ in back-to-back releases.
   RawExtension.
 - Collection (i.e. List) object encoding supports "true" streaming (i.e. buffer size is not
   proportional to output size).
+- Structured endpoints like discovery, statusz, flagz, etc., support CBOR.
 
 #### GA
 
