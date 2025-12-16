@@ -102,11 +102,11 @@ Groups while maintaining compatibility with the scheduler's existing ecosystem.
 
 Distributed workloads, particularly those driving the current AI/ML era, often
 require high-bandwidth and low-latency communication between multiple pods to
-function efficiently. While the [KEP-4671: Workload API] makes the first step
-towards managing these applications as cohesive units, it primarily establishes
-the API structure. For workloads sensitive to inter-pod communication, simply
-grouping pods is insufficient; their physical placement within the cluster's
-network topology is a decisive factor in their performance.
+function efficiently. While the [KEP-4671: Workload API](https://kep.k8s.io/4671)
+makes the first step towards managing these applications as cohesive units, it
+primarily establishes the API structure. For workloads sensitive to inter-pod
+communication, simply grouping pods is insufficient; their physical placement
+within the cluster's network topology is a decisive factor in their performance.
 
 In this KEP, we propose an algorithm for topology-aware and DRA-aware scheduling
 that operates directly within the Kubernetes kube-scheduler. The core objective
@@ -137,15 +137,16 @@ need for external dependencies.
 
 ### Goals
 
-- To enhance kube-scheduler to perform topology-aware and DRA-aware scheduling
-  for multi-pod workloads, as defined by the Workload API (KEP-4671).
+- To enhance kube-scheduler to be able to perform topology-aware and DRA-aware
+  scheduling for multi-pod workloads, as defined by the Workload API
+  ([KEP-4671](https://kep.k8s.io/4671)).
 - To optimize the placement of distributed workloads by co-locating pods based
   on network topology and DRA resource availability.
 - To introduce new extension points and phases within the Kubernetes scheduler
   framework to support the concept of "Placements" (candidate sets of nodes
   and DRA resources).
 - To define the required changes to the Workload API (KEP-4671) to support
-  scheduling constraints.
+  Topology scheduling constraints.
 - To leverage the scheduler's existing pod-level filtering and scoring logic
   within the evaluation of each Placement.
 - To provide a flexible framework extensible by plugins for various topology
@@ -153,6 +154,10 @@ need for external dependencies.
 
 ### Non-Goals
 
+- To define the required changes to the Workload API (KEP-4671) to support
+  ResourceClaims for DRA-aware workload scheduling. These changes will be
+  proposed in a separate KEP:
+  [KEP-5729: DRA: ResourceClaim Support for Workloads](https://github.com/kubernetes/enhancements/pull/5736)
 - To replace the functionality of external workload queueing and admission
   control systems like Kueue. This proposal focuses on the in-scheduler
   placement decision for a single Workload at a time.
@@ -245,10 +250,6 @@ type PodGroupSchedulingConstraints struct {
     // TopologyConstraints specifies desired topological placements for all pods
     // within this PodGroup.
     TopologyConstraints []TopologyConstraint
-
-    // DRAConstraints specifies constraints on how Dynamic Resources are allocated
-    // across the PodGroup.
-    DRAConstraints []DRAConstraint
 }
 
 // TopologyConstraint describes a desired topological colocation for all pods in the PodGroup.
@@ -259,22 +260,15 @@ type TopologyConstraint struct {
     // Examples: "topology.kubernetes.io/rack"
     Level string
 }
-
-// DRAConstraint provides constraints on how specific DRA claims across the group should
-// be fulfilled.
-type DRAConstraint struct {
-    // ResourceClaimName specifies the name of a specific ResourceClaim
-    // within the PodGroup's pods that this constraint applies to.
-    ResourceClaimName *string
-
-    // ResourceClaimTemplateName specifies the name of a ResourceClaimTemplate.
-    // This applies to all ResourceClaim instances generated from this template.
-    ResourceClaimTemplateName *string
-}
 ```
 
-Note: For the initial alpha scope, only a single TopologyConstraint or
-DRAConstraint will be supported.
+The Workload API changes for DRA-aware scheduling, including the definition of
+DRA constraints, are out of scope for the alpha version of this KEP. These changes
+will be defined in a separate KEP: 
+[KEP-5729: DRA: ResourceClaim Support for Workloads](https://github.com/kubernetes/enhancements/pull/5736).
+
+Note: For the initial alpha scope, only a single TopologyConstraint will be
+supported.
 
 ### Scheduling Framework Extensions
 
@@ -421,7 +415,7 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
 - **Input:** PodGroupInfo.
 
 - **Action:** Iterate over distinct values of the topology label (TAS) or
-  available ResourceSlices (DRA).
+  available Devices (DRA).
 
 - **Output:** A list of Placement objects.
 
@@ -465,19 +459,36 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
 ### Scheduler Plugins
 
 **TopologyPlacementPlugin (New)** Implements `PlacementGenerator`. Generates
-Placements based on distinct values of the designated node label (TAS) .
-
-**DRAPlugin (Extension)** Extended to implement `PlacementGenerator` and
-`PlacementState`.
-
-- **Generator:** Returns Placements derived from available ResourceSlices
-  satisfying shared claims.
-
-- **State:** Temporarily assigns AllocationResults to ResourceClaims during
-  the Assume phase.
+Placements based on distinct values of the designated node label (TAS).
 
 **PlacementBinPackingPlugin (New)** Implements `PlacementScorer`. Scores
 Placements to maximize utilization (tightest fit) and minimize fragmentation.
+
+**DRATestPlugin (New)** Implements `PlacementGenerator` and `PlacementState`
+and is used only for testing the algorithm's support for DRA-aware scheduling.
+
+- **Generator:** Returns Placements derived from available Devices satisfying
+  claims shared by all Pods within a PodGroup.
+
+- **State:** Temporarily assigns AllocationResults to Devices during the
+  Assume phase.
+
+### Beta Extensions
+
+The beta version of this KEP will introduce full support for DRA-aware workload
+scheduling. This enhancement will enable the scheduler to consider DRA claims
+defined by users when making placement decisions, ensuring that workloads are
+placed on nodes that can satisfy their resource requirements. This will be
+achieved by using the API to be defined in 
+[KEP-5729: DRA: ResourceClaim Support for Workloads](https://github.com/kubernetes/enhancements/pull/5736).
+
+The implementation will build upon the extension points introduced in the
+alpha version of this feature and the `DRATestPlugin` implementation.
+Specifically, the `DRAPlugin` will be enhanced to generate placements based
+on the ResourceClaim objects associated with the PodGroup. The plugin will
+interact with the DRA framework to ensure that the selected placement can
+satisfy the resource requirements of the workload, as expressed in its
+ResourceClaim.
 
 ### Potential Future Extensions
 
@@ -526,15 +537,15 @@ necessary to implement this enhancement.
 - Algorithm Logic: Test the sequential processing of Placements and the
   selection logic based on scores.
 
-- DRA Integration: specific tests for DRAConstraint resolution.
+- DRA Integration: specific tests for DRATestPlugin plugin.
 
 #### Integration tests
 
 - Topology Awareness: Verify that pods with TopologyConstraint are correctly
   co-located on nodes sharing the label.
 
-- DRA Awareness: Verify that pods with DRAConstraint are bound to shared
-  ResourceSlices.
+- DRA Awareness: Verify that pods with shared ResourceClaims are bound to shared
+  Devices.
 
 - Infeasibility: Verify that Workloads remain pending if no Placement
   satisfies the constraints.
