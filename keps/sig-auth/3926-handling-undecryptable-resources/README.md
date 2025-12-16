@@ -89,10 +89,15 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Current state](#current-state)
-    - [Retrieving a failing resource](#retrieving-a-failing-resource)
-    - [Deleting a failing resource](#deleting-a-failing-resource)
-    - [Protecting unconditional deletion](#protecting-unconditional-deletion)
+  - [Background](#background)
+  - [Proposed Solution](#proposed-solution)
+    - [New Error Status for Read Failures](#new-error-status-for-read-failures)
+    - [New Delete Option for Undecryptable Resources](#new-delete-option-for-undecryptable-resources)
+    - [Admission Control for Unconditional Deletion](#admission-control-for-unconditional-deletion)
+  - [Implementation Considerations](#implementation-considerations)
+    - [Watch Event Propagation and Client Recovery](#watch-event-propagation-and-client-recovery)
+    - [Design Principles](#design-principles)
+    - [Alternative Approaches Considered](#alternative-approaches-considered)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -100,6 +105,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
+      - [Testing Requirements](#testing-requirements)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -531,7 +538,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-New tests will be added to prove:
+Alpha:
 - resources that are encrypted and are decryptable can still be deleted as before
 - resources that are malformed throw the new error on read
 - resources that are malformed cannot be removed if the user lacks required
@@ -540,6 +547,15 @@ New tests will be added to prove:
   and uses the new DeleteOption
 - if there are too many malformed resources in a return of a LIST action, the
   error will be truncated
+
+Beta (see also [Testing Requirements](#testing-requirements)):
+- list error aggregation
+  ([#129129](https://github.com/kubernetes/kubernetes/pull/129129) - open)
+- delete handler with unsafe deletion flow
+  ([#128726](https://github.com/kubernetes/kubernetes/pull/128726) - open)
+- deserialization failure via bit-flip (not just encryption failure)
+- deletion works for CRDs
+- KAS health recovery after deleting all corrupt objects
 
 ##### e2e tests
 
