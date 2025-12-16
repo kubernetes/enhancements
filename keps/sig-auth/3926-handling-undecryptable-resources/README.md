@@ -455,6 +455,24 @@ individual watch streams during an inherently abnormal situation.
 
 #### Alternative Approaches Considered
 
+We considered using shallow object representations to enhance error or delete events,
+enabling targeted removal of the corrupt object from client caches without triggering
+a full re-list:
+
+1. **`DeletedFinalStateUnknown`**: A client-go type used when the final state of
+   a deleted object is unknown. This approach failed because `DeletedFinalStateUnknown`
+   does not implement `runtime.Object`, which is required by the watch cache.
+
+2. **`PartialObjectMetadata`**: A Kubernetes type containing only object metadata.
+   This failed because the watch cache's `getAttrsFunc` performs type assertions
+   to the specific resource type (e.g., `*api.Secret`), which `PartialObjectMetadata`
+   cannot satisfy.
+
+3. **Type Identity Object**: Creating an empty object of the correct type via
+   `newFunc()` and copying only essential metadata (namespace, name, resourceVersion,
+   UID). While technically feasible, the added complexity was not justified given
+   the design principles outlined above.
+
 ### Test Plan
 
 <!--
