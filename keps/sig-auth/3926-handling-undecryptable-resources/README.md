@@ -413,6 +413,46 @@ The unconditional deletion admission:
 
 #### Watch Event Propagation and Client Recovery
 
+When a corrupt object is deleted from etcd, the kube-apiserver's watch cache
+cannot transform or decode the object's previous value. This triggers a
+deliberate recovery sequence:
+
+1. **Error Detection**: The etcd3 watcher fails to transform/decode the deleted
+   object's data and generates a `watch.Error` event with `StatusReasonStoreReadError`.
+
+2. **Cacher Reset**: The Cacher's internal Reflector receives this error, causing
+   `ListAndWatch()` to return. After a brief delay, the Cacher reinitializes by
+   calling `terminateAllWatchers()` followed by a fresh LIST from etcd.
+
+3. **Client Disconnection**: All active watch connections for that resource type
+   are terminated. Clients see their watch channels close without receiving the
+   original error event.
+
+4. **Client Recovery**: Disconnected clients attempt to resume watching from their
+   last known `resourceVersion`. The server rejects this with a "too old resource
+   version" error, forcing clients to perform a fresh LIST and rebuild their
+   local caches.
+
+#### Design Principles
+
+The following principles, agreed upon by SIG API Machinery, guide this enhancement:
+
+1. **Watch history cannot be preserved** when a corrupt object exists. Since the
+   object's data cannot be decrypted or decoded, we have no access to the correct
+   previous object state required for a semantically valid DELETE event.
+
+2. **Performance degradation is acceptable** during the remediation window. The
+   temporary increase in API server load from client re-lists is an accepted
+   tradeoff for restoring cluster health.
+
+3. **Recovery priorities** (in order):
+   - Remove the corrupt data from storage
+   - Restore kube-apiserver to a healthy state
+   - Allow clients to converge eventually
+
+This approach favors eventual consistency and cluster recovery over preserving
+individual watch streams during an inherently abnormal situation.
+
 #### Alternative Approaches Considered
 
 ### Test Plan
