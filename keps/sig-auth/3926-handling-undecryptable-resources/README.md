@@ -302,7 +302,7 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
-### Current state
+### Background
 
 The encryption/decryption for encryption at rest is implemented via transformers
 that get applied to a resource in code that handles resource read/write from etcd3
@@ -319,7 +319,9 @@ The code example 2. above shows that currently, when reading a resource fails, w
 lose all the context about the resource and a non-wrapping, generic internal error
 is returned.
 
-#### Retrieving a failing resource
+### Proposed Solution
+
+#### New Error Status for Read Failures
 
 The current API errors don't appear to include an error status specific to storage. Therefore
 a new status should be introduced - `StatusReasonStoreReadError`.
@@ -357,7 +359,7 @@ StatusCause{
 ```
 
 
-#### Deleting a failing resource
+#### New Delete Option for Undecryptable Resources
 
 Deleting a resource is a rather complicated process:
 1. a resource might represent an actual process running on a host (Pod)
@@ -397,7 +399,7 @@ type DeleteOptions struct {
 }
 ```
 
-#### Protecting unconditional deletion
+#### Admission Control for Unconditional Deletion
 
 A "delete" verb on a resource is not usually considered a privileged action. As the previous
 section explains, deletion of a resource might carry unexpected consequences. Unconditional
@@ -406,6 +408,12 @@ deletions should therefore have their own extra admission.
 The unconditional deletion admission:
 1. checks if a "delete" request contains the `IgnoreStoreReadErrorWithClusterBreakingPotential` option
 2. if it does, it checks the RBAC of the request's user for the `delete-ignore-read-errors` verb of the given resource
+
+### Implementation Considerations
+
+#### Watch Event Propagation and Client Recovery
+
+#### Alternative Approaches Considered
 
 ### Test Plan
 
@@ -557,6 +565,8 @@ in back-to-back releases.
 
 - Error type is implemented
 - Deletion of malformed etcd objects and its admission can be enabled via a feature flag
+
+#### Beta
 
 ### Upgrade / Downgrade Strategy
 
