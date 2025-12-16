@@ -255,6 +255,7 @@ type PodGroupSchedulingConstraints struct {
 type TopologyConstraint struct {
     // Level specifies the key of the node label representing the topology domain.
     // All pods within the PodGroup must be colocated within the same domain instance.
+    // Different replicas of the PodGroup can land on different domain instances.
     // Examples: "topology.kubernetes.io/rack"
     Level string
 }
@@ -297,11 +298,15 @@ type PodGroupInfo struct {
     // This is relevant for PodGroups that have more than one replica.
     PodGroupReplicaIndex int
 
+    // PodSets is a list of PodSet objects within this PodGroup.
+    PodSets []*PodSetInfo
+
     // -- Add other fields below for future extensions --
 }
 
 // PodSetInfo holds information about a specific PodSet within a PodGroup,
 // primarily the list of Pods.
+// Pods within a PodSet must be homogeneous (using the sementic defined in KEP-5598).
 // This struct is designed to be extensible with more fields in the future.
 type PodSetInfo struct {
     // Pods is a list of Pod objects belonging to this PodSet.
@@ -310,21 +315,23 @@ type PodSetInfo struct {
     // -- Add other fields below for future extensions --
 }
 
-// Placement represents a candidate domain for scheduling a PodSet.
+// Placement represents a candidate domain for scheduling a PodGroup.
 // It defines a set of nodes and/or proposed Dynamic Resource Allocation (DRA)
-// resource bindings necessary to satisfy the PodSet's requirements within that domain.
+// resource bindings necessary to satisfy the PodGroup's requirements within that domain.
+// Placement is valid only in the context of a given PodGroup for a single cycle of
+// workload scheduling.
 type Placement struct {
     // NodeAffinity specifies the node constraints for this Placement.
     // For Topology this is derived from topology labels (e.g., all nodes with label
     // 'topology-rack: rack-1').
     // For DRA, this Affinity would be constructed based on nodeSelector from
     // DRA's AllocationResult from DRAAllocations.
-    // All pods within the PodSet, when being evaluated against this Placement,
+    // All pods within the PodGroup, when being evaluated against this Placement,
     // are restricted to the nodes matching this NodeAffinity.
     NodeAffinity *corev1.NodeAffinity
 
     // DRAAllocations details the proposed DRA resource assignments for
-    // the ResourceClaims made by the PodSet. This field is primarily used
+    // the ResourceClaims made by the PodGroup. This field is primarily used
     // by DRA-aware plugins.
     DRAAllocations []DraClaimAllocation
 }
@@ -333,8 +340,8 @@ type Placement struct {
 // device allocations. These allocations are tentative and used by the scheduler's
 // AssumePlacement phase to simulate resource commitment.
 type DraClaimAllocation struct {
-    // ResourceClaimName is the name of the ResourceClaim within the PodSet's context
-    // that these allocations are intended to satisfy.
+    // ResourceClaimName is the name of the ResourceClaim within the PodGroup's
+    // context that these allocations are intended to satisfy.
     ResourceClaimName string
 
     // Allocation contains DRA AllocationResult structures, specifying devices
@@ -354,10 +361,10 @@ type DraClaimAllocation struct {
 type PlacementGenerator interface {
     Name() string
 
-    // GeneratePlacements generates a list of potential Placements for the given PodGroup and PodSet.
+    // GeneratePlacements generates a list of potential Placements for the given PodGroup.
     // Each Placement represents a candidate set of resources (e.g., nodes matching a selector)
-    // and potential DRA allocations where the PodSet might be scheduled.
-    GeneratePlacements(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, podSet *PodSetInfo, parentPlacements []*Placement) ([]*Placement, *framework.Status)
+    // and potential DRA allocations where the PodGroup might be scheduled.
+    GeneratePlacements(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, parentPlacements []*Placement) ([]*Placement, *framework.Status)
 }
 ```
 
@@ -371,21 +378,21 @@ type PlacementState interface {
     Name() string
 
     // AssumePlacement temporarily configures the scheduling context to evaluate the feasibility
-    // of the given Placement for the PodGroup and PodSet.
-    AssumePlacement(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, podSet *PodSetInfo, placement *Placement) *framework.Status
+    // of the given Placement for the PodGroup.
+    AssumePlacement(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, placement *Placement) *framework.Status
 
     // RevertPlacement reverts the temporary scheduling context changes made by AssumePlacement.
     // This should be called after the evaluation of a Placement is complete to restore
     // the scheduler's state and allow other Placements to be considered.
-    RevertPlacement(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, podSet *PodSetInfo, placement *Placement) *framework.Status
+    RevertPlacement(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, placement *Placement) *framework.Status
 }
 ```
 
 **PlacementScorer:** Scores feasible placements to select the best one.
 
 ```go
-// PodSetAssignment represents the assignment of pods to nodes within a PodSet for a specific Placement.
-type PodSetAssignment struct {
+// PodGroupAssignment represents the assignment of pods to nodes within a PodGroup for a specific Placement.
+type PodGroupAssignment struct {
     // PodToNodeMap maps a Pod name (string) to a Node name (string).
     PodToNodeMap map[string]string
 }
@@ -396,12 +403,12 @@ type PlacementScorer interface {
 
     // ScorePlacement calculates a score for a given Placement. This function is called in Phase 3
     // (Placement Scoring and Selection) only for Placements that have been deemed feasible
-    // for all pods in the PodSet during Phase 2. The PodSetAssignment indicates the
+    // for all pods in the PodGroup during Phase 2. The PodGroupAssignment indicates the
     // node assigned to each pod within this Placement. The returned score is a float64,
     // with higher scores generally indicating more preferable Placements.
     // Plugins can implement various scoring strategies, such as bin packing to minimize
     // resource fragmentation.
-    ScorePlacement(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, podSet *PodSetInfo, placement *Placement, podsAssignment *PodSetAssignment) (float64, *framework.Status)
+    ScorePlacement(ctx context.Context, state *framework.CycleState, podGroup *PodGroupInfo, placement *Placement, podsAssignment *PodGroupAssignment) (float64, *framework.Status)
 }
 ```
 
@@ -411,7 +418,7 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
 
 #### Phase 1: Candidate Placement Generation
 
-- **Input:** PodGroupInfo and PodSetInfo.
+- **Input:** PodGroupInfo.
 
 - **Action:** Iterate over distinct values of the topology label (TAS) or
   available ResourceSlices (DRA).
@@ -428,7 +435,7 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
   1. Call `AssumePlacement` (binds context to the specific node selector/DRA
      resources).
 
-  2. Iterate through every pod in the PodSet.
+  2. Iterate through every pod in the PodGroup.
 
   3. Run standard Pod-level Filter and Score.
 
@@ -439,9 +446,9 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
   6. Call `RevertPlacement`.
 
 - **Potential Optimization:** Pre-filtering can check aggregate resources
-  before running the full simulation.
+  requested by PodGroup Pods before running the full simulation.
 
-- **Heterogeneous PodGroup Handling**: Sequential Processing will be used
+- **Heterogeneous PodGroup Handling**: Sequential processing will be used
   initially. Pods are processed sequentially; if any fail, the placement is
   rejected.
 
@@ -451,7 +458,9 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
 
 - **Selection:** Select the Placement with the highest score.
 
-- **Binding:** Proceed to bind pods to the assigned nodes and resources.
+- **Binding:** Proceed to bind pods to the assigned nodes and resources using
+  pod-by-pod scheduling logic with each pod prebound to the selected node
+  by seting `nominatedNodeName` value.
 
 ### Scheduler Plugins
 
@@ -470,10 +479,10 @@ Placements based on distinct values of the designated node label (TAS) .
 **PlacementBinPackingPlugin (New)** Implements `PlacementScorer`. Scores
 Placements to maximize utilization (tightest fit) and minimize fragmentation.
 
-### Potential Future Extensions (Beta Candidates)
+### Potential Future Extensions
 
-The following features are out of scope for the initial Alpha implementation but
-are considered for future releases (post-1.36):
+The following features are out of scope for this KEP but are considered for
+future separate KEPs improving and extending the proposed functionality:
 
 1. **Prioritized Placement Scheduling:** Allowing a set of preferred placements
    with fallbacks (e.g., prefer Rack, fallback to Block). This would introduce
@@ -493,6 +502,10 @@ are considered for future releases (post-1.36):
 5. **Explicit Topology Definition:** Using a Custom Resource (NodeTopology) to
    define and alias topology levels, removing the need for users to know exact
    node label keys.
+
+6. **Feasible Placements Limit:** Adding an option to provide a limit on the
+   number of feasible Placements which need to be found before moving to
+   Phase 3: Placement Scoring and Selection.
 
 ### Test Plan
 
