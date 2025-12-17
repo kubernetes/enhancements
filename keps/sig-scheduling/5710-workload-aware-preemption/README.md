@@ -547,7 +547,7 @@ In such case we will not even proceed to binding and the preemption will be comp
 disruption.
 Note that this problem already exists in the current gang scheduling implementation. A given gang may
 not proceed with binding if the `minCount` pods from it can't be scheduled. But the preemptions are
-currently triggerred immediately after choosing a place for individual pods. So similarly as above,
+currently triggered immediately after choosing a place for individual pods. So similarly as above,
 we may end up with completely unnecessary disruptions.
 
 We will address it with what we call `delayed preemption` mechanism as following:
@@ -571,18 +571,42 @@ The last one would probably allow for the best unification.
 <<[/UNRESOLVED]>>
 ```
 
-1. Introduce a new extension point to the Plugins - tentatively call it: `GetResources`.
-   Initially, it will only be implemented by the `DefaultPreemption` plugin and it will
-   actuate the preemptions. Longer term, the exact same mechanism can be used to provision
-   the new capacity (nodes, devices, ...) in the cluster.
+1. Introduce a new extension point to the Plugins - tentatively call it `PermitDisruption`.
+   The idea behind it can be thought as an extension of scheduling vs binding cycle - we
+   want to introduce a clear distinction between places where potentially disruptive decisions
+   should be made from where these should be actuated.
+   In particular, PostFilter should remain the point where preemption decisions should be
+   made, but their actuation should be moved to the new `PermitDisruption`.
 
-1. Extend `SchedulingFramework` with two new steps: `RunGetResourcesPlugins` and
-   `WaitForGetResources`. These will be called immediately after `WaitOnPermit` phase and
-   before running `RunPreBindPlugins`. The `RunGetResourcesPlugins` will simply be calling
-   `GetResources` methods from all plugins implementing it. And `WaitForGetResources` will
-   work similarly to `WaitOnPermit`, serving as a barrier to ensure all the resources are
-   already available to use. The implementation will work similarly to `WaitOnPermit` to
-   ensure that `GetResources` was executed for all pods from within a `PodGroup`.
+1. The framework implementation will be adjusted in a way that `PermitDisruption` plugins
+   will be called whenever `schedulingCycle` fails. The input to this plugin will include
+   the `nomination` for this pod.
+
+   For individual pod (not being part of a workload) `PermitDisruption` will be implemented
+   by the `DefaultPreemption` plugin and will simply actuate the previously computed
+   preemption victims for a given pod.
+
+   For pods being part of a workload, `PermitDisruptions` will be implemented by the already
+   existing `GangScheduling` plugin. The implemention will be a sibling to the existing
+   `Permit` extension point - the plugin will be waiting for at least `gang.minPods` to be
+   successfully nominated (or assumed) and only after satisfying this condition the preemptions
+   will be actuated.
+   Note that as part of this change, we should treat an arbitrary preemption victim as effectively
+   blocking any pod to be scheduled. While this isn't a hard requirement, it doesn't introduce
+   restrictions of already assumed pods if a different placement can be found in subsequent
+   scheduling cycles.
+
+1. To reduce the number of unnessary preemptions, in case a preemption has already been triggerred
+   and the already nominated placement remains valid, no new preemptions can be triggerred.
+   In other words, a different placement can be chosen in a subsequent scheduling phases only if
+   it doesn't require additional preemptions or the previously chosen placements is no longer
+   feasible (e.g. because higher priority pods were scheduled in the meantime).
+
+The rationale behind the above design is to maintain the current scheduling property where preemption
+doesn't result in a commitment for a particular placement. If a different possible placement appears
+in the meantime (e.g. due to other pods terminating or new nodes appearing), subsequent scheduling
+attempts may pick it up, improving the end-to-end scheduling latency. Returning pods to scheduling
+queue if these need to wait for preemption to become schedulable maintains that property.
 
 [Kubernetes Scheduling Races Handling]: https://docs.google.com/document/d/1VdE-yCre69q1hEFt-yxL4PBKt9qOjVtasOmN-XK12XU/edit?resourcekey=0-KJc-YvU5zheMz92uUOWm4w
 
