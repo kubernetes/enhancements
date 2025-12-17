@@ -492,7 +492,10 @@ a hint to influence the `IPs` and `ipFamilies` of the ServiceImport object.
 The exact mechanism for determining those fields is implementation-defined.
 If `ipFamilies` is set on the ServiceImport object, it must not have duplicated
 families (for instance `ipFamilies: [IPv4, IPv4]` is not valid) and the IPs
-should eventually be in the same order as what is defined in `ipFamilies`.
+should eventually be in the same order as what is defined in `ipFamilies`. If
+conflicting `ipFamilies` are found among the constituent Services, implementations
+must raise an `IPFamilyConflict` condition when this might result in network
+traffic reaching only a subset of the backends depending on the IP protocol used.
 
 Also note that even in a dual stack cluster regular Services are by default SingleStack
 which might default to IPv4 or IPv6 depending on the cluster configuration and there
@@ -1029,7 +1032,9 @@ The conflict will be resolved by assigning precedence based on each
 A derived service will be accessible with the clusterset IP at the ports
 dictated by child services. If the external properties of service ports for a
 set of exported services don’t match, the clusterset service will expose the
-union of service ports declared on its constituent services.
+union of service ports declared on its constituent services and raise a `PortConflict`
+conflict condition. In that case, network traffic to a conflicting port should
+only be directed to endpoints from constituent services that actually expose the port.
 
 Like regular services, the resulting ports must respect two rules:
 - Have no duplicated names (including unnamed/empty name)
