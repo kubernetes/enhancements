@@ -223,10 +223,10 @@ requests will be rejected with 429 http code similarly to watch requests.
 Given we're changing the existing behavior, there is a risk of breaking some
 clients. To mitigate it, we will introduce all the logic behind two separate
 feature gates [to allow for disablement if needed]:
-- WatchCacheInitializationPostStartHook (Beta, disabled by default):
+- WatchCacheInitializationPostStartHook (Beta, enabled by default since 1.36):
   handling the logic of the new post-start hook. There is a risk of
   kube-apiserver not initializing if this hook has issues, hence it started
-  as Beta disabled by default. Plan is to enable it by default after getting some production data.
+  as Beta disabled by default. By 1.36 we managed to collect enough production data to justify enabling it by default.
 - ResilientWatchCacheInitialization (Beta, enabled by default since 1.31):
   Handles the changes to returning 429 errors instead of keeping the requests hanging.
   The risk is visibly lower (and 429 errors were already returned
