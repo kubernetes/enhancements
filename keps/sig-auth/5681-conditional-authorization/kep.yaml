@@ -1,0 +1,32 @@
+title: Conditional Authorization
+kep-number: 5681
+authors:
+  - "@luxas"
+  - "@micahhausler"
+owning-sig: sig-auth
+status: provisional
+creation-date: 2025-11-05
+reviewers:
+  - "@deads2k"
+  - "@enj"
+  - "@liggitt"
+approvers:
+  - "@deads2k"
+  - "@enj"
+  - "@liggitt"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+
+feature-gates:
+  - name: ConditionalAuthorization
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: {}
