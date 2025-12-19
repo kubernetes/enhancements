@@ -566,9 +566,9 @@ using a secret if possible. Here are the three approaches:
 
 #### Pull Model with Work API
 The ClusterInventory Consumer can leverage the [Work API](https://multicluster.sigs.k8s.io/concepts/work-api/) so that
-the work API agent on the Member Cluster can *pull* the necessary objects from the management cluster where the ClusterInventory 
+the work API agent on the Member Cluster can *pull* the necessary objects from the hub cluster where the ClusterInventory 
 Consumer operates to the Member Cluster. This approach allows the Cluster Manager to manage the RBAC for each Consumer on the 
-management cluster, ensuring that their access is restricted to the corresponding namespaces of the ClusterProfile objects.
+hub cluster, ensuring that their access is restricted to the corresponding namespaces of the ClusterProfile objects.
 
 #### Push Model with Identity Federation (Recommended)
 The ClusterInventory consumer can utilize identity federation mechanisms, such as [Azure Workload Identity Federation](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation)
