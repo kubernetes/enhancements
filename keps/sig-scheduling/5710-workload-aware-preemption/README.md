@@ -572,48 +572,43 @@ we may end up with completely unnecessary disruptions.
 We will address it with what we call `delayed preemption` mechanism as following:
 
 1. We will modify the `DefaultPreemption` plugin to just compute preemptions, without actuating those.
-   At this point these should only be stored in kube-scheduler's memory.
    We advice maintainers of custom PostFilter implementations to do the same.
 
-```
-<<[UNRESOLVED storing victims]>>
-Decide how exactly victims should be stored. Potential options:
-1. New field in the pod like `pod.Spec.PreemptionTargets` if it gets introduces by
-   [Kubernetes Scheduling Races Handling] (without writing it to kube-apiserver).
-1. New field in the workload object (delayed preemption will not bring much value in
-   case of scheduling individual pods, though there would be significant benefit from
-   unification, so probably this isn't ideal option).
-1. Storing it in private kube-scheduler' structures (PodInfo for individual pods and
-   WorkloadInfo (new structure) for workload preemption).
+1. We will extend the `PostFilterResult` to include a set of victims (in addition to the existing
+   NominationInfo). This will allow us to clearly decouple the computation from actuation.
 
-The last one would probably allow for the best unification.
-<<[/UNRESOLVED]>>
-```
+   We believe that while custom plugins may want to provide their custom logic for preemption logic,
+   the actuation logic can actually be standardized and implemented directly as part of the framework.
+   If that appears not being true, we will introduce a new plugin extension point (tentatively called
+   Preempt) that will be responsible for actuation. However, for now we don't see evidence for this
+   being needed.
 
-1. Introduce a new extension point to the Plugins - tentatively call it `PermitDisruption`.
-   The idea behind it can be thought as an extension of scheduling vs binding cycle - we
-   want to introduce a clear distinction between places where potentially disruptive decisions
-   should be made from where these should be actuated.
-   In particular, PostFilter should remain the point where preemption decisions should be
-   made, but their actuation should be moved to the new `PermitDisruption`.
+1. For individual pods (not being part of a workload), we will adjust the scheduling framework
+   implementation of `schedulingCycle` to actuate preemptions of returned victims if calling
+   `PostFilter` plugins resulted in finding a feasible placement.
 
-1. The framework implementation will be adjusted in a way that `PermitDisruption` plugins
-   will be called whenever `schedulingCycle` fails. The input to this plugin will include
-   the `nomination` for this pod.
+1. For pods being part of a workload, we will rely on the introduction of `WorkloadSchedulingCycle`
+   described in [KEP-5730]. We still have two subcases here:
 
-   For individual pod (not being part of a workload) `PermitDisruption` will be implemented
-   by the `DefaultPreemption` plugin and will simply actuate the previously computed
-   preemption victims for a given pod.
+   1. In a legacy case (without workload-aware preemption), we call PostFilter individually for
+      every pod from a PodGroup. However, the victims computed for already the already processed
+      pods may affect placement decisions for the next pods.
+      To accomodate for that, if a set of victims was returned from a `PostFilter` in addition
+      to keeping them for further actuation we will additionally store them in a `CycleState`.
+      More precisely, the `CycleState` will be storing a new entry containing a map from
+      a nodeName to a list of victims that were already chosen.
+      With that, the `DefaultPreemption` plugin will be extended to remove all already chosen
+      victims from a given node, before processing a give node.
 
-   For pods being part of a workload, `PermitDisruptions` will be implemented by the already
-   existing `GangScheduling` plugin. The implemention will be a sibling to the existing
-   `Permit` extension point - the plugin will be waiting for at least `gang.minPods` to be
-   successfully nominated (or assumed) and only after satisfying this condition the preemptions
-   will be actuated.
-   Note that as part of this change, we should treat an arbitrary preemption victim as effectively
-   blocking any pod to be scheduled. While this isn't a hard requirement, it doesn't introduce
-   restrictions of already assumed pods if a different placement can be found in subsequent
-   scheduling cycles.
+   1. In the target case (with workload-aware preemption), we will have no longer be processing
+      pods individually, so the additional mutations of `CycleState` should not be needed.
+
+1. In both above cases, we will introduce an additional step to the scheduling algorithm at the
+   end. If we managed to find a feasible placement for the PodGroup, we will simply take all
+   the victims and actuate their preemption. If a feasible placement was not found, the victims
+   will be dropped.
+   In both cases, the scheduling of the whole PodGroup (all its pods) will be marked as
+   unschedulable and got back to the scheduling queue.
 
 1. To reduce the number of unnessary preemptions, in case a preemption has already been triggerred
    and the already nominated placement remains valid, no new preemptions can be triggerred.
@@ -627,9 +622,17 @@ in the meantime (e.g. due to other pods terminating or new nodes appearing), sub
 attempts may pick it up, improving the end-to-end scheduling latency. Returning pods to scheduling
 queue if these need to wait for preemption to become schedulable maintains that property.
 
+We acknowledge the two limitations of the above approach: (a) dependency on the introduction of
+`WorkloadSchedulingCycle` (delayed preemption will not work if workload pods will not be processed
+by `WorkloadSchedulingCycle`) and (b) the fact that the placement computed in
+`WorkloadSchedulingCycle` may be invalidate in pod-by-pod scheduling later. However the simplicity
+of the approach and target architecture outweigh these limitations.
+
 [Kubernetes Scheduling Races Handling]: https://docs.google.com/document/d/1VdE-yCre69q1hEFt-yxL4PBKt9qOjVtasOmN-XK12XU/edit?resourcekey=0-KJc-YvU5zheMz92uUOWm4w
 
 [API Design For Gang and Workload-Aware Scheduling]: https://tiny.cc/hvhs001
+
+[KEP-5730]: https://github.com/kubernetes/enhancements/pull/5730
 
 ### Potential future extensions
 
