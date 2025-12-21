@@ -415,7 +415,7 @@ Probes and labels are be stripped from Pod copies.
 In order to maintain backwards compatibility the `legacy` profile will be the default profile until 1.35.
 When `--profile` is not specified `kubectl debug` will print a warning about the upcoming change in behavior.
 
-Including 1.35 and upwards, `general` will be the default profile. `legacy` profile will entirely be removed in 1.38.
+From 1.36, `general` will be the default profile. `legacy` profile will entirely be removed in 1.39.
 
 #### Future Improvements
 
