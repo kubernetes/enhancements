@@ -455,7 +455,7 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
 
 - **Binding:** Proceed to bind pods to the assigned nodes and resources using
   pod-by-pod scheduling logic with each pod prebound to the selected node
-  by seting `nominatedNodeName` value.
+  by setting `nominatedNodeName` value.
 
 ### Scheduler Plugins
 
@@ -507,7 +507,7 @@ future separate KEPs improving and extending the proposed functionality:
    Block -> Rack). This would involve iterative placement generation and a
    Parent field in the Placement struct.
 
-4. **Pod Group Replicas Support:** Optimizing scheduling for identical
+4. **Pod Group Replicas Optimization:** Optimizing scheduling for identical
    PodGroups (replicas) by scheduling the maximum feasible number of replicas
    within a single placement pass.
 
@@ -565,11 +565,12 @@ necessary to implement this enhancement.
 
 - Feature implemented behind a feature flag.
 - PodGroupSchedulingConstraints API defined.
-- Basic topology (Node Label) and DRA constraints working.
+- Basic topology (Node Label) working.
 - Initial unit and integration tests.
 
 #### Beta
 
+- DRA constraints working.
 - Support for "Potential Future Extensions" (Prioritized placement, etc.)
   evaluated.
 - Scalability tests on large clusters with high placement counts.
