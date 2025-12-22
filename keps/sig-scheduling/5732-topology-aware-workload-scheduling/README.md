@@ -513,7 +513,7 @@ future separate KEPs improving and extending the proposed functionality:
 
 5. **Explicit Topology Definition:** Using a Custom Resource (NodeTopology) to
    define and alias topology levels, removing the need for users to know exact
-   node label keys.
+   node label keys and opening addtional optimization and validation options.
 
 6. **Feasible Placements Limit:** Adding an option to provide a limit on the
    number of feasible Placements which need to be found before moving to
