@@ -1,0 +1,40 @@
+title: DRA Resource Availability Visibility
+kep-number: 5677
+authors:
+  - "@nmn3m"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+  - sig-cli
+
+status: provisional
+creation-date: 2025-12-20
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-node/4381-dra-structured-parameters"
+  - "/keps/sig-scheduling/5075-dra-consumable-capacity"
+  - "/keps/sig-node/3063-dynamic-resource-allocation"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+
+feature-gates:
+  - name: DRAResourceAvailabilityVisibility
+    components:
+      - kube-controller-manager
+      - kube-scheduler
+      - kubectl
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - dra_resourceslice_status_update_duration_seconds
+  - dra_resourceslice_status_update_errors_total
