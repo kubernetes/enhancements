@@ -1,0 +1,14 @@
+title: Label selector Quota Scope for ResourceQuota
+kep-number: 5752
+authors:
+  - "@trofimovdals"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-scheduling
+  - sig-api-machinery
+status: provisional
+creation-date: 2025-12-25
+reviewers:
+  - TBD
+approvers:
+  - TBD
