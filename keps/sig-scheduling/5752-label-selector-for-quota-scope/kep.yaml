@@ -9,6 +9,8 @@ participating-sigs:
 status: provisional
 creation-date: 2025-12-25
 reviewers:
-  - TBD
+  - "@macsko"
+  - "@dom4ha"
 approvers:
-  - TBD
+  - "@macsko"
+  - "@dom4ha"
