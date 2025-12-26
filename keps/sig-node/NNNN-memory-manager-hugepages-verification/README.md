@@ -17,10 +17,10 @@
   - [cadvisor Changes](#cadvisor-changes)
   - [Memory Manager Changes](#memory-manager-changes)
   - [Test Plan](#test-plan)
-    - [Prerequisite testing updates](#prerequisite-testing-updates)
-    - [Unit tests](#unit-tests)
-    - [Integration tests](#integration-tests)
-    - [e2e tests](#e2e-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -37,6 +37,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Alternative 1: Track all pod hugepage usage](#alternative-1-track-all-pod-hugepage-usage)
+  - [Alternative 2: Query sysfs directly in Memory Manager](#alternative-2-query-sysfs-directly-in-memory-manager)
+  - [Alternative 3: Scheduler-level hugepage awareness](#alternative-3-scheduler-level-hugepage-awareness)
 <!-- /toc -->
 
 ## Release Signoff Checklist
