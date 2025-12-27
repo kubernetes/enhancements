@@ -17,11 +17,18 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Implementation Overview](#implementation-overview)
-  - [cadvisor Changes](#cadvisor-changes)
+  - [Implementation Approaches](#implementation-approaches)
+    - [Option A: Direct sysfs Reading in Memory Manager](#option-a-direct-sysfs-reading-in-memory-manager)
+    - [Option B: Add Fresh-Read Method to cadvisor](#option-b-add-fresh-read-method-to-cadvisor)
+  - [sysfs Interface](#sysfs-interface)
   - [Memory Manager Changes](#memory-manager-changes)
   - [Integration with Topology Manager](#integration-with-topology-manager)
   - [Interaction with CPU Manager](#interaction-with-cpu-manager)
   - [Observability](#observability)
+    - [Metrics](#metrics)
+    - [Events](#events)
+    - [Kubelet Logs](#kubelet-logs)
+    - [Alerting Recommendations](#alerting-recommendations)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -44,8 +51,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Alternative 1: Track all pod hugepage usage](#alternative-1-track-all-pod-hugepage-usage)
-  - [Alternative 2: Query sysfs directly in Memory Manager](#alternative-2-query-sysfs-directly-in-memory-manager)
-  - [Alternative 3: Scheduler-level hugepage awareness](#alternative-3-scheduler-level-hugepage-awareness)
+  - [Alternative 2: Scheduler-level hugepage awareness](#alternative-2-scheduler-level-hugepage-awareness)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -144,14 +150,14 @@ Memory Manager wasn't tracking.
 ## Proposal
 
 Enhance the Memory Manager's Static policy to verify actual hugepage availability
-by querying sysfs during pod admission. This involves:
+by querying sysfs during pod admission:
 
-1. **cadvisor enhancement**: Add a `FreePages` field to `HugePagesInfo` struct
-   that reports free hugepages per NUMA node, read from sysfs
+**Memory Manager enhancement**: During `Allocate()` in the Static policy,
+verify that OS-reported free hugepages (read from sysfs) meets or exceeds the
+requested amount before admitting the pod.
 
-2. **Memory Manager enhancement**: During `Allocate()` in the Static policy,
-   verify that OS-reported free hugepages meet or exceed the requested amount
-   before admitting the pod
+See [Implementation Approaches](#implementation-approaches) for options on how
+the sysfs reading is performed.
 
 ### Current Admission Flow
 
@@ -257,55 +263,61 @@ Job B can be rescheduled to another node with sufficient hugepages.
 
 ### Implementation Overview
 
-The implementation consists of two parts:
+The core enhancement is adding a `verifyOSHugepagesAvailability()` function to
+the Memory Manager's Static policy, called during `Allocate()`. This function
+reads fresh hugepage availability and rejects pods when insufficient.
 
-1. **cadvisor**: Add `FreePages uint64` field to `HugePagesInfo` struct, populated
-   from sysfs. Also expose a method to read current free hugepages on-demand.
+### Implementation Approaches
 
-2. **kubelet Memory Manager**: Add `verifyOSHugepagesAvailability()` function
-   called during `Allocate()` that reads **fresh** hugepage availability from sysfs.
+There are two approaches for reading free hugepages:
 
-**Important**: cadvisor's `GetMachineInfo()` is called once at startup and cached.
-The `FreePages` field in cached machine info would be stale. Therefore, verification
-must read sysfs directly during each `Allocate()` call, not rely on cached values.
-We will add a `GetCurrentHugepagesInfo()` method to cadvisor's `Manager` interface
-that performs a fresh sysfs read.
+#### Option A: Direct sysfs Reading in Memory Manager
 
-### cadvisor Changes
+Read sysfs directly in the Memory Manager without cadvisor changes.
 
-**Struct update**:
-```go
-type HugePagesInfo struct {
-    // huge page size (in kB)
-    PageSize uint64 `json:"page_size"`
-    // number of huge pages
-    NumPages uint64 `json:"num_pages"`
-    // number of free huge pages
-    FreePages uint64 `json:"free_pages"`
-}
-```
+**Pros:**
+- No external dependencies on critical admission path
+- Simple implementation (~10 lines of sysfs reading)
+- Faster to implement and merge (single repo)
+- Memory Manager already reads memory topology from sysfs (precedent)
 
-**New method on Manager interface**:
-```go
-// GetCurrentHugepagesInfo returns fresh hugepage info per NUMA node by reading sysfs.
-// This is separate from GetMachineInfo() which returns cached startup data.
-func (m *manager) GetCurrentHugepagesInfo() (map[int][]HugePagesInfo, error)
-```
+**Cons:**
+- Duplicates sysfs reading logic (though trivial)
+- Other cadvisor consumers don't benefit
 
-The `FreePages` field is populated by reading from:
+#### Option B: Add Fresh-Read Method to cadvisor
+
+Add `GetCurrentHugepagesInfo()` method to cadvisor that reads sysfs on-demand.
+
+**Note**: cadvisor's existing `GetMachineInfo()` is cached at startup, so simply
+adding a `FreePages` field there would be stale. A new method for fresh reads
+would be required.
+
+**Pros:**
+- Single source of truth for hugepage info
+- Benefits other cadvisor consumers
+- Cleaner abstraction
+
+**Cons:**
+- Cross-repo dependency (cadvisor PR must merge first)
+- Adds API surface to cadvisor
+- Longer timeline
+
+The choice between options should be made during KEP review based on
+maintainability preferences and timeline considerations.
+
+### sysfs Interface
+
+Regardless of approach, free hugepages are read from:
 ```
 /sys/devices/system/node/node<N>/hugepages/hugepages-<size>kB/free_hugepages
 ```
 
 **Note on reserved hugepages**: Linux tracks `resv_hugepages` (reserved but not
-yet faulted). For this implementation, we use `free_hugepages` directly because:
+yet faulted). We use `free_hugepages` directly because:
 - Reserved pages are committed to specific processes
 - A new pod cannot use reserved pages
 - `free_hugepages` accurately reflects what's available for new allocations
-
-**Note**: Since sysfs is always available on Linux systems with hugepages configured,
-we use a simple `uint64` rather than a pointer. A value of 0 means zero free
-hugepages are available.
 
 ### Memory Manager Changes
 
@@ -317,7 +329,7 @@ func (p *staticPolicy) verifyOSHugepagesAvailability(
     pod *v1.Pod,
     container *v1.Container,
 ) error {
-    // 1. Call cadvisor's GetCurrentHugepagesInfo() to get fresh sysfs data
+    // 1. Read free hugepages directly from sysfs for each NUMA node
     // 2. For each hugepage size requested by the container:
     //    a. Sum free hugepages across candidateNUMANodes only
     //    b. Compare against the requested amount
@@ -421,7 +433,7 @@ to implement this enhancement.
 ##### Prerequisite testing updates
 
 - Existing Memory Manager unit tests cover allocation logic
-- cadvisor tests cover sysfs reading functionality
+- For Option B: cadvisor tests cover sysfs reading functionality
 
 ##### Unit tests
 
@@ -435,7 +447,7 @@ to implement this enhancement.
 
 ##### Integration tests
 
-- Test Memory Manager with mocked cadvisor returning various FreePages values
+- Test Memory Manager with mocked hugepage availability (sysfs or cadvisor depending on chosen approach)
 - Test admission flow with hugepage verification enabled/disabled
 
 ##### e2e tests
@@ -483,12 +495,11 @@ will correctly verify against current OS hugepage availability.
 
 ### Version Skew Strategy
 
-The feature is entirely within the kubelet and depends on cadvisor (vendored).
-No control plane or cross-component version skew concerns.
+The feature is entirely within the kubelet. No control plane or cross-component
+version skew concerns.
 
-Since cadvisor is vendored into kubelet, the kubelet and cadvisor versions are
-always synchronized. The `FreePages` field will be available when the feature
-gate is enabled.
+- **Option A**: No version skew concerns (direct sysfs reading)
+- **Option B**: Since cadvisor is vendored into kubelet, versions are synchronized
 
 ## Production Readiness Review Questionnaire
 
@@ -547,8 +558,9 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- Feature gate is enabled
-- Pods request hugepages resources
+- Feature gate `MemoryManagerHugepagesVerification` is enabled
+- Metric `memory_manager_hugepages_verification_total` is incrementing (indicates verification checks are being performed)
+- Pods with Guaranteed QoS requesting hugepages resources are being scheduled
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -590,16 +602,16 @@ Additional metrics that could be added in Beta:
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-- cadvisor (bundled with kubelet)
-  - Usage: Provides machine info including hugepage free counts
-  - Impact of outage: Verification skipped, graceful degradation
-  - Impact of degraded performance: Slightly increased admission latency
+Depends on the implementation approach chosen (see [Implementation Approaches](#implementation-approaches)):
+
+- **Option A (Direct sysfs)**: No external dependencies. Reads directly from Linux sysfs.
+- **Option B (cadvisor)**: Depends on cadvisor (bundled with kubelet) for fresh hugepage reads.
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No new API calls. The feature reads from local sysfs and cadvisor machine info.
+No new API calls. The feature reads from local sysfs files.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -653,10 +665,10 @@ No impact. The feature operates entirely within kubelet using local sysfs.
 ## Implementation History
 
 - 2024-12-24: Initial KEP draft
-- 2024-12-27: KEP updated based on reviewer feedback
+- 2024-12-27: KEP updated based on reviewer feedback; added implementation options
 - Enhancement issue: https://github.com/kubernetes/enhancements/issues/5759
 - Related issue: https://github.com/kubernetes/kubernetes/issues/134395
-- cadvisor PR: https://github.com/google/cadvisor/pull/3804
+- cadvisor PR (for Option B): https://github.com/google/cadvisor/pull/3804 (draft)
 
 ## Drawbacks
 
@@ -675,16 +687,7 @@ Extend Memory Manager to track hugepage usage by Burstable and BestEffort pods.
 - Would not catch external (non-Kubernetes) hugepage consumers
 - Changes the scope and purpose of Memory Manager
 
-### Alternative 2: Query sysfs directly in Memory Manager
-
-Read sysfs directly in Memory Manager without cadvisor changes.
-
-**Rejected because**:
-- Duplicates sysfs reading logic already in cadvisor
-- cadvisor already provides machine info abstraction
-- Adding to cadvisor benefits other consumers of machine info
-
-### Alternative 3: Scheduler-level hugepage awareness
+### Alternative 2: Scheduler-level hugepage awareness
 
 Add hugepage availability awareness to the Kubernetes scheduler.
 
