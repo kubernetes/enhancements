@@ -1,5 +1,5 @@
 title: Memory Manager Hugepages Availability Verification
-kep-number: NNNN
+kep-number: 5759
 authors:
   - "@srikalyan"
 owning-sig: sig-node
@@ -20,13 +20,13 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.33"
+latest-milestone: "v1.36"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.33"
-  beta: "v1.34"
-  stable: "v1.35"
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -38,5 +38,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - memory_manager_hugepages_verification_total
   - memory_manager_hugepages_verification_failures_total
   - memory_manager_hugepages_verification_latency_seconds
