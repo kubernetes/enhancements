@@ -341,7 +341,8 @@ In this case, a running job will be suspended and the pods will go to a terminat
 
 #### e2e tests
 
-Integration tests offer enough coverage.
+- When a job is suspended with feature gate enabled, resources are able to be mutated.
+- When a running job is suspended, mutations are also allowed.
 
 ### Graduation Criteria
 
