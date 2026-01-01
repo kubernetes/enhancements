@@ -1,0 +1,37 @@
+title: DRA for Native Resources
+kep-number: 5517
+authors:
+  - "@pravk03"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-scheduling
+
+creation-date: "2025-12-22"
+reviewers: 
+  - '@johnbelamaric'
+  - '@kad'
+  - '@ffromani'
+  - '@catblade'
+  - '@dom4ha'
+  - '@macsko'
+approvers:
+- '@johnbelamaric'
+- '@kad'
+- '@dchen1107'
+- '@dom4ha'
+- '@macsko'
+status: implementable
+stage: alpha
+latest-milestone: "v1.36"
+milestone:
+  alpha: "v1.36"
+
+feature-gates:
+  - name: DRANativeResources
+    components:
+      - kube-scheduler
+      - kube-apiserver
+disable-supported: true
+
+metrics: []
