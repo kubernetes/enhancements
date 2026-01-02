@@ -1,6 +1,6 @@
 module k8s.io/enhancements
 
-go 1.17
+go 1.25
 
 require (
 	github.com/blang/semver/v4 v4.0.0
