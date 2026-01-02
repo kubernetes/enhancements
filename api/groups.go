@@ -19,7 +19,7 @@ package api
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -144,7 +144,7 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 		)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "reading owners aliases")
 	}
