@@ -423,7 +423,7 @@ This could also be used to monitor the rollout of this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be done after beta. In 1.36, we will perform the following test:
+The following scenarios were verified on a Kind 1.35 cluster.
 
 - create a kind cluster with feature gate off
   - verify suspend and patching of resources is forbidden
