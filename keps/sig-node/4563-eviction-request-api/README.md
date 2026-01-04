@@ -18,6 +18,7 @@
     - [Story 4](#story-4)
     - [Story 5](#story-5)
     - [Story 6](#story-6)
+    - [Story 7](#story-7)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Disruptive Eviction](#disruptive-eviction)
@@ -427,6 +428,26 @@ I want to downscale such a Deployment so that these constraints are preserved an
 correctly balanced across the nodes.
 
 #### Story 6
+
+As a cluster admin or application owner, I know that the cost of evicting particular workload can be
+quite high in terms of lost progress of stateful workloads, losing loaded memory structures and
+temporary data mounted in emptyDirs. For example, ML trainings/inference or long-running
+computational jobs with no application-based checkpoint would experience downtime during the node
+drain.
+Checkpointing could solve these issues and also contribute to a faster container startup for evicted
+workloads in the serverless mode. It could also be used in alongside rescheduling to improve pod
+placement (e.g. to a different rack).
+
+Checkpoint and restore could also be used to implement seamless live migration without experiencing
+any downtime or data/state loss.
+
+To support the required functionality, I need a mechanism that would trigger checkpointing and delay
+pod termination/eviction until the checkpointing orchestration has completed. Current eviction
+mechanisms either call the eviction API or send a DELETE request and
+`pod.spec.terminationGracePeriodSeconds` is inadequate to predict the amount of the time that
+checkpointing would take.
+
+#### Story 7
 
 As an application owner, I want to trigger the termination of my pods with `restartPolicy=Never` by
 means other than pod deletion. I want to keep the pod object present for tracking and debugging
