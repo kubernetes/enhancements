@@ -1307,8 +1307,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-E2e tests for partitionable devices have been added
-[here](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra).
+E2e tests have been added for the Partitionable Devices feature:
+
+- source code: https://github.com/kubernetes/kubernetes/blob/b2ac9e206fdd912f35f2ab5b3c5b5243303ba14b/test/e2e/dra/dra.go#L1789-L1867
+- job: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all&include-filter-by-regex=DRAPartitionableDevices
+- triage: https://storage.googleapis.com/k8s-triage/index.html?test=DRAPartitionableDevices
 
 ### Graduation Criteria
 
@@ -1568,7 +1571,11 @@ should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable.
+
 ###### What are other known failure modes?
+
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
