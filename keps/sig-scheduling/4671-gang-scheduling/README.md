@@ -125,6 +125,7 @@ The following are non-goals for this KEP but will probably soon appear to be goa
 - Address the problem of premature preemptions in case the higher priority workloads does not
   eventually schedule.
 
+See [Future plans](#future-plans) for more details.
 
 ## Proposal
 
@@ -463,8 +464,9 @@ may consist of a number of such replicas.
 While Gang Scheduling focuses on atomic, all-or-nothing scheduling, there is a significant class
 of workloads that requires best-effort optimization without the strict blocking semantics of a gang.
 
-Currently, the `Basic` policy is a no-op. We propose extending the `Basic` policy
-to accept a `desiredCount` field. This feature will be gated behind a separate
+In the first alpha version of the Workload API, the `Basic` policy was a no-op.
+We propose extending the `Basic` policy to accept a `desiredCount` field.
+This feature will be gated behind a separate
 feature gate (`WorkloadBasicPolicyDesiredCount`) to decouple it from the core Gang Scheduling graduation path.
 
 ```go
@@ -746,11 +748,9 @@ The list and configuration of plugins used by this algorithm will be the same as
      nominated nodes in their own, pod-by-pod cycles. If a pod selects a
      different node than its nomination during the individual cycle, the
      gang remains valid as long as `minCount` is satisfied globally (enforced at `WaitOnPermit`).
-
-     In the pod-by-pod cycle, the preemption made by the workload pods will be forbidden. 
-     Otherwise, it may complicate reasoning about the workload scheduling cycle and workload-aware preemption.
-     When preemption is necessary, the gang will be retried after timing out at WaitOnPermit,
-     and all necessary preemptions will be simulated in the next workload scheduling cycle.
+     The `minCount` check can consider the number of pods that have passed the Workload Scheduling Cycle
+     to ensure that Pods are not waiting unnecessarily when some have been rejected
+     but other new pods have been added to the cluster.
 
      In the pod-by-pod cycle, preemption initiated by the workload pods will be forbidden.
      Allowing it would complicate reasoning about the consistency of the
@@ -845,6 +845,7 @@ or a timeout occurs), the scheduler must handle the failure efficiently.
 
 When the cycle fails, the scheduler rejects the entire group.
 * All Pods in the group are moved back to the scheduling queue.
+  Their status is updated the event with failure reason is sent.
 * Crucially, any `.status.nominatedNodeName` entries set during the failed attempt
   (or from previous cycles) must be cleared. This ensures that the resources
   tentatively reserved for this gang are immediately released for other workloads.
@@ -868,6 +869,12 @@ has made that specific Pod potentially schedulable).
 While checking a single Pod does not guarantee the *whole* gang can fit,
 calculating gang-level schedulability inside the event handler can be difficult at the moment.
 Therefore, we optimistically retry the Workload Scheduling Cycle if any member's condition improves.
+
+It might be beneficial to retry the pod group without being triggered by any cluster event.
+Ideally, this would involve scrambling the pods and subgroups within the group that have the same priority.
+This could be useful because the pods could be scheduled without any cluster changes
+when considered in a different order.
+
 
 ### Test Plan
 
