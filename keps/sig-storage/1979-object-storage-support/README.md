@@ -32,6 +32,7 @@
     - [Attaching Bucket Information to Pods](#attaching-bucket-information-to-pods)
   - [COSI API Reference](#cosi-api-reference)
     - [Annotations and finalizers](#annotations-and-finalizers)
+    - [Conditions](#conditions)
     - [Bucket](#bucket)
     - [BucketClaim](#bucketclaim)
     - [BucketClass](#bucketclass)
@@ -537,6 +538,40 @@ Annotations:
 Finalizers:
 - `objectstorage.k8s.io/protection`: applied to BucketClaims, Buckets, BucketAccesses, and BucketAccess Secrets to prevent them from being deleted until COSI has cleaned up intermediate and underlying resources
 
+#### Conditions
+
+COSI defines the following conditions for its resource statuses.
+Behavior and requirements shared by COSI multiple resources is noted here.
+Not all conditions are used for all resources.
+
+- `Provisioned` indicates whether the backend resource (bucket/access) was provisioned successfully by the driver.
+  - `Unknown` initially.
+  - `True` when a driver successfully provisions a resource.
+  - `False` when COSI determines that the resource can't be provisioned (or is definitively and permanently lost).
+  - Because an RPC call to a driver may occasionally fail when the resource is still present in the backend,
+    this value is not transitioned from `True` to another state unless there is a definite, permanent change/loss.
+  - For issues after initial provisioning (this=`True`), an admin (or user) will need to use other conditions below
+    to determine what action(s) are needed to resolve an issue.
+
+- `ResourcesValidated` indicates whether the Kubernetes resource(s) are valid.
+  - `Unknown` initially.
+  - `Unknown` while COSI is waiting on referenced resources to exist.
+  - `True` when the resource (and its referenced resource(s)) are valid.
+  - `False` when a resource (or its referenced resource(s)) are invalid or become degraded.
+  - This condition is needed to provide feedback about resource degradation that might happen after `Provisioned` is successful.
+  - A degraded resource may have lost info that COSI needs to initiate further RPC calls.
+  - E.g., a referenced resource goes missing.
+
+- `ProvisionFailed` indicates when driver provisioning fails.
+  - `Unknown` initially.
+  - `False` when driver provisioning returns OK via RPC.
+  - `True` when driver provisioning returns non-OK via RPC.
+  - This condition is needed to provide feedback about driver or backend issues that might happen after `Provisioned` is successful.
+  - E.g., this may help an admin diagnose a temporary DNS issue or a permanent backend data loss that the driver couldn't programmatically determine.
+
+Note: Kubernetes API issues (e.g., update conflicts, rate limiting) are reported as Events.
+They aren't as important to capture permanently as conditions.
+
 #### Bucket
 
 Resource to represent a Bucket in an OSP. Bucket is cluster-scoped.
@@ -580,8 +615,8 @@ Bucket {
   }
 
   Status BucketStatus {
-    // ReadyToUse is a boolean condition to reflect the successful creation of a bucket.
-    ReadyToUse bool
+    // Conditions - described below
+    Conditions []metav1.Condition
 
     // BucketID is the unique ID of the bucket in the OSP. This field will be populated by COSI once
     // the ID in the OSP is known.
@@ -596,10 +631,6 @@ Bucket {
     // BucketAccess Secret. e.g., COSI_S3_ENDPOINT, COSI_AZURE_STORAGE_ACCOUNT
     // This is opaque and should not contain any sensitive data.
     BucketInfo map[string]string
-
-    // Error holds the most recent error message, with a timestamp.
-    // This is cleared when provisioning is successful.
-    Error *TimestampedError
   }
 }
 
@@ -618,6 +649,16 @@ For user familiarity, the info is rendered in the [BucketAccess Secret Data](#bu
 
 Once created, a Bucket object is immutable, except for fields specifically noted:
 - `DeletionPolicy` is mutable to allow Admins to change to `Retain` policy after creation.
+
+Conditions:
+- `Provisioned` - Indicates the backend bucket was created and should exist (or not).
+  - `Unknown` if provisioning fails with retryable resource or RPC error.
+  - `False` if provisioning fails with a non-retryable RPC error or non-recoverable resource error.
+  - `True` when RPC call for bucket create/getinfo returns OK.
+- `ResourcesValidated` - Indicates Bucket spec validity.
+  - E.g., Bucket spec becomes degraded after provisioning (though this is unlikely).
+- `ProvisionFailed` - Records results of latest RPC bucket create/getinfo.
+  - E.g., driver auth expired (easily resolvable), or backend data was lost (requires restoring from backup).
 
 #### BucketClaim
 
@@ -643,8 +684,8 @@ BucketClaim {
   }
 
   Status BucketClaimStatus {
-    // ReadyToUse indicates that the bucket is ready for consumption by workloads.
-    ReadyToUse bool
+    // Conditions - described below
+    Conditions []metav1.Condition
 
     // BoundBucketName is the name of the provisioned Bucket in response to this BucketClaim. It is
     // generated and set by the COSI controller before making the creation request to the OSP backend.
@@ -654,12 +695,19 @@ BucketClaim {
     // to access this BucketClaim using any of the values given here.
     // Possible values: S3, Azure, GCS
     Protocols []Protocol
-
-    // Error holds the most recent error message, with a timestamp.
-    // This is cleared when provisioning is successful.
-    Error *TimestampedError
   }
 ```
+
+Conditions:
+- `Provisioned` - Indicates the backend bucket was created and should exist (or not).
+  - `Unknown` while waiting on corresponding Bucket to provision
+  - `True`/`False`: Copied from the corresponding Bucket resource's `True`/`False` status (do not copy `Unknown` status).
+- `ResourcesValidated` - Indicates validity of BucketClaim, referenced BucketClass, and corresponding Bucket.
+  - `Unknown` when BucketClass is not present (waiting) while provisioning
+  - `False` if BucketClass is invalid while provisioning
+  - `False` when Claim is/becomes degraded
+  - `False` when the corresponding Bucket reports `ResourcesValidated=False`
+- `ProvisionFailed` - Mirrors what the corresponding Bucket status reports.
 
 #### BucketClass
 
@@ -689,6 +737,8 @@ BucketClass {
   }
 }
 ```
+
+Conditions: None.
 
 #### BucketAccess
 
@@ -781,8 +831,8 @@ BucketAccess {
   }
 
   Status BucketAccessStatus {
-    // ReadyToUse indicates the successful grant of privileges to access the bucket.
-    ReadyToUse bool
+    // Conditions - described below
+    Conditions []metav1.Condition
 
     // AccountID is the unique ID for the account in the OSP. It will be populated by the COSI
     // sidecar once access has been successfully granted.
@@ -807,10 +857,6 @@ BucketAccess {
     // BucketAccess provisioning. These parameters are kept to ensure the BucketAccess can be
     // modified/deleted even after BucketAccessClass mutation/deletion.
     Parameters map[string]string
-
-    // Error holds the most recent error message, with a timestamp.
-    // This is cleared when provisioning is successful.
-    Error *TimestampedError
   }
 ```
 
@@ -819,6 +865,18 @@ The Secret will contain endpoint, credentials, and other information needed to a
 The same Secret should be referenced by Pods to access the OSP bucket.
 
 In the future, sharing buckets across namespaces can be allowed by adding a namespace field to BucketClaimReference.
+
+Conditions:
+- `Provisioned` - Indicates the backend access was created and should exist (or not).
+- `ResourcesValidated` - Indicates validity of BucketAccess, BucketAccessClass, referenced BucketClaims, and referenced access Secrets.
+  - `Unknown` when BucketAccessClass or BucketClaim reference(s) are not present (waiting) while provisioning.
+  - `False` when BucketAccessClass is invalid while provisioning.
+  - `False` when BucketClaim references are/become invalid.
+  - `False` when referenced BucketClaim(s) go missing after provisioning.
+  - `False` when access Secrets cannot be written to.
+  - `False` if BucketAccess spec/status is/becomes internally inconsistent (degraded).
+- `ProvisionFailed` - Records results of latest RPC access create.
+  - E.g., driver auth expired (easily resolvable), or backend auth was lost (requires new access provisioning).
 
 #### BucketAccessClass
 
@@ -860,6 +918,8 @@ BucketAccessClass {
   }
 }
 ```
+
+Conditions: None.
 
 #### BucketAccess Secret data
 
