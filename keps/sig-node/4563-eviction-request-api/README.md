@@ -1402,7 +1402,8 @@ action from users.
   custom solution that facilitates coordination between the applications and their drain logic. This
   was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=aCclWRYrkSU&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
   They created a PoC for the EvictionRequest API ([recording](https://youtu.be/uhJ16dCVYBk?list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D&t=2321))
-  and would like to use it even if it isn't accepted by Kubernetes.
+  and would like to use it even if it isn't accepted by Kubernetes. The PoC implementation can be
+  found at https://github.com/uMetalooper/k8s-eviction-controller.
 - NVIDIA is interested in using EvictionRequest API as part of the NodeMaintenance feature. They
   have an in-house system and would like to use more advanced Kubernetes features to replace some of
   their own. This was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=Yn7Dp57VQD4&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
@@ -1491,7 +1492,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Add support for the eviction of the Workload Resource (a group of pods). More in [Workload API Support](#workload-api-support).
 - Re-evaluate the immutability of `.spec.evictionInterceptors`.
 - Consider [Preemption Support](#preemption-support).
-- Asses the state of the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212)
+- Asses the state of the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212),
+  and [Specialized Lifecycle Management ](https://github.com/kubernetes/enhancements/issues/5683),
   and other components interested in using the EvictionRequest API.
 - Re-evaluate whether adding additional metrics and events would be helpful. And update the KEP
   with existing ones.
@@ -1604,16 +1606,16 @@ the feature.
 
 A manual test will be performed, as follows:
 
-1. Create a cluster in 1.30.
-2. Upgrade to 1.31.
+1. Create a cluster in 1.35.
+2. Upgrade to 1.36.
 3. Create an EvictionRequest A and pod A. Observe that the EvictionRequest evicts the pod and
    terminates it. Observe that the EvictionRequest has `Complete=True` condition at the end.
 4. Create an EvictionRequest B, pod B and PDB B targeting the pod B with `maxUnavailable=0`. Observe
    that the EvictionRequest increases the `.status.podEvictionStatus.failedAPIEvictionCounter`, but
    does not evict the pod.
-5. Downgrade to 1.30.
+5. Downgrade to 1.35.
 6. Delete PDB B. Observe that the pod B keeps running without any termination.
-7. Upgrade to 1.31.
+7. Upgrade to 1.36.
 8. Observe that the EvictionRequest B evicts pod B and terminates it. Observe that the
    EvictionRequest B has `Complete=True` condition at the end.
 
