@@ -1493,7 +1493,13 @@ The feature is in use by workloads if any of those devices have been allocated t
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Existing DRA and related SLOs continue to apply.
+As for normal pod scheduling of pods using ResourceClaims, there is no SLO for scheduling with
+partitionable devices.
+
+Since using the feature means more work is needed to determine if a device can be allocated,
+we expect pod scheduling to be slower when this feature is used. Also, this feature is likely
+to result in a higher number of devices listed in a resource pool, which also is likely to mean
+the allocator needs to do more work to select devices.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1578,6 +1584,8 @@ See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dr
 See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A since this feature does not come with an SLO.
 
 ## Implementation History
 
