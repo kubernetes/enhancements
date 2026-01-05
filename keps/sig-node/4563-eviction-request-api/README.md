@@ -1394,7 +1394,8 @@ action from users.
   custom solution that facilitates coordination between the applications and their drain logic. This
   was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=aCclWRYrkSU&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
   They created a PoC for the EvictionRequest API ([recording](https://youtu.be/uhJ16dCVYBk?list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D&t=2321))
-  and would like to use it even if it isn't accepted by Kubernetes.
+  and would like to use it even if it isn't accepted by Kubernetes. The PoC implementation can be
+  found at https://github.com/uMetalooper/k8s-eviction-controller.
 - NVIDIA is interested in using EvictionRequest API as part of the NodeMaintenance feature. They
   have an in-house system and would like to use more advanced Kubernetes features to replace some of
   their own. This was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=Yn7Dp57VQD4&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
