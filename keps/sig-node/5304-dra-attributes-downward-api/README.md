@@ -183,10 +183,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes exposing Dynamic Resource Allocation (DRA) device attributes to workloads via CDI (Container Device
-Interface) mounts. The DRA framework will provide helper functions enabling drivers to automatically generate per-claim
-attribute JSON files and mount them into containers via CDI. Workloads like KubeVirt can read device metadata like
-PCIe bus address, or mediated device UUID, from standardized file paths without requiring custom controllers or Downward
-API changes.
+Interface) mounts. The DRA framework will provide helper functions (`MetadataWriter`) enabling drivers to write
+schema-validated device metadata to per-claim JSON files, which are mounted into containers via CDI. Workloads like
+KubeVirt can read device metadata like PCIe bus address, or mediated device UUID, from standardized file paths without
+requiring custom controllers or Downward API changes.
 
 ## Motivation
 
@@ -201,12 +201,11 @@ attributes via annotations/labels, leading to fragile, error-prone, and racy des
 
 ### Goals
 
-- Provide a mechanism for workloads to discover DRA device metadata within workload pods.
+- Provide an easy way for DRA device authors to make the attributes discoverable inside the pod.
 - Minimize complexity and avoid modifications to core components like scheduler and kubelet to maintain system
   reliability and scalability
-- Provide an easy way for DRA device authors to make the attributes discoverable inside the pod.
 - Maintain full backward compatibility with existing DRA drivers and workloads
-- Define a versioned JSON schema to enable schema evolution without breaking consumers
+- Define a versioned JSON schema to ensure compatibility within versions and clear migration paths across versions
 
 ### Non-Goals
 
@@ -215,36 +214,38 @@ attributes via annotations/labels, leading to fragile, error-prone, and racy des
 
 ## Proposal
 
-This proposal introduces **framework-managed attribute JSON generation and CDI mounting** in the DRA kubelet plugin
+This proposal introduces **framework-assisted attribute exposure via CDI mounting** in the DRA kubelet plugin
 framework (`k8s.io/dynamic-resource-allocation/kubeletplugin`). Drivers opt-in by setting the `AttributesJSON(true)`
 option when starting their plugin.
 
-When enabled, the framework automatically:
-1. Generates a JSON file per claim+request containing device attributes
-2. Creates a corresponding CDI spec that mounts the attributes file into containers
-3. Appends the CDI device ID to the NodePrepareResources response
-4. Cleans up files during NodeUnprepareResources
+When enabled, the framework:
+1. Creates the directory structure and `.supported/{driverName}` capability marker
+2. Provides a `MetadataWriter` helper for drivers to write schema-validated metadata
+3. Generates CDI specs that mount the attributes directory into containers
+4. Appends the CDI device ID to the NodePrepareResources response
+5. Cleans up files during NodeUnprepareResources
 
-The workload reads device metadata from the standardized path: `/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json`
+Drivers call `WriteDeviceMetadata` to write device attributes (can be called during NodePrepareResources or later).
+The workload reads device metadata from the standardized path: `/var/run/dra-device-attributes/{claimNamespace}-{claimName}/metadata.json`
 
 ### User Stories (Optional)
 
 #### Story 1
 
-As a KubeVirt developer, I want the virt-launcher Pod to automatically discover the PCIe address of an allocated
-physical GPU by reading a JSON file at a known path, so that it can construct the libvirt domain XML to pass through the
-device to the virtual machine guest without requiring a custom controller.
+As a workload developer (e.g., KubeVirt), I want to automatically discover device attributes (like PCIe addresses) by
+reading a JSON file at a known path, so my application can configure devices without parsing ResourceClaim/ResourceSlice
+objects, calling the Kubernetes API, or requiring custom controllers.
 
 #### Story 2
 
-As a DRA driver author, I want to enable attribute exposure with a single configuration option (`AttributesJSON(true)`)
-and let the framework handle all file generation, CDI mounting, and cleanup, so I don't need to write custom logic for
-every driver.
+As a DRA driver author, I want to use framework-provided helpers (`WriteDeviceMetadata`) to expose device attributes
+in a standardized format, with the framework handling schema validation, directory structure, CDI mounting, and
+cleanup, so I only need to provide the metadata content.
 
 #### Story 3
 
-As a workload developer, I want to automatically discover device attributes inside the pod without parsing
-ResourceClaim/ResourceSlice objects or calling the Kubernetes API, so my application can remain simple and portable.
+As a telco CNF developer, I want network device metadata (PCI address, interface name, IPs, MTU) to be available
+inside my container, so my DPDK application can discover and bind to the correct devices without custom controllers.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -257,9 +258,8 @@ ResourceClaim/ResourceSlice objects or calling the Kubernetes API, so my applica
 ### Risks and Mitigations
 
 **Risk**: Exposing device attributes might leak sensitive information.
-**Mitigation**: Attributes originate from `ResourceSlice`, which is cluster-scoped. Drivers control which attributes are
-   published. NodeAuthorizer ensures kubelet only accesses resources for scheduled Pods. Files are created with 0644
-   permissions (readable but not writable by container).
+**Mitigation**: Drivers control which attributes are published via the `WriteDeviceMetadata` helper. Files are created
+   with 0644 permissions (readable but not writable by container). Drivers should only expose non-sensitive metadata.
 
 **Risk**: File system clutter from orphaned attribute files.
 **Mitigation**: Framework implements cleanup in NodeUnprepareResources. On driver restart, framework can perform
@@ -277,24 +277,21 @@ ResourceClaim/ResourceSlice objects or calling the Kubernetes API, so my applica
 
 ### Framework Implementation
 
-#### Attributes JSON Generation (NodePrepareResources)
+#### Attributes JSON Generation
 
-When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources and for each claim:
+When `AttributesJSON` is enabled, the framework:
 
-1. **Collect metadata from two sources (two-tier approach)**:
-   - **Tier 1 (Best-effort)**: Lookup attributes from ResourceSlice cache. If the device is not found in the cache
-     (e.g., consumable capacity, partitionable devices), a well-known `NotFound` error is returned. The `bestEffortData`
-     field will be omitted from the JSON in this case.
-   - **Tier 2 (Driver-provided)**: Use attributes explicitly returned by the driver in NodePrepareResources response.
-     Required for runtime data (network status, dynamically allocated device info). If the driver does not provide
-     metadata, the `driverProvidedData` field will be omitted from the JSON.
-   - **Both sources empty**: If both Tier 1 and Tier 2 return no data, the DeviceMetadata file is still created with
-     the claim metadata (`apiVersion`, `kind`, `metadata`) and the `requests` array containing device entries with
-     neither `bestEffortData` nor `driverProvidedData` fields. This allows workloads to confirm the device was
-     allocated even when no attributes are available. This is not treated as an error.
+1. **Sets up directory structure**: Creates the attributes directory and `.supported/{driverName}` marker
+2. **Provides MetadataWriter**: Makes the `WriteDeviceMetadata` helper available to the driver
+3. **Generates CDI spec**: Creates CDI spec that mounts the attributes directory into containers
+4. **Handles cleanup**: Removes claim directories during NodeUnprepareResources
 
-2. **Generate DeviceMetadata JSON**:
-   The `driverProvidedData` structure mirrors `AllocatedDeviceStatus` from
+The driver calls `WriteDeviceMetadata` to write device attributes. This can happen during `NodePrepareResources`
+or later (e.g., from NRI hooks for network devices). The framework validates the schema and manages the generation
+number automatically.
+
+**DeviceMetadata JSON Schema**:
+   The device structure mirrors `AllocatedDeviceStatus` from
    [KEP-4817](../4817-resource-claim-device-status/README.md), providing consistency with
    `ResourceClaim.Status.Devices`.
 
@@ -305,7 +302,8 @@ When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources 
      "metadata": {
        "name": "my-claim",
        "namespace": "default",
-       "uid": "abc-123-def-456"
+       "uid": "abc-123-def-456",
+       "generation": 1
      },
      "requests": [
        {
@@ -313,26 +311,20 @@ When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources 
          "devices": [
            {
              "name": "gpu-0",
-             "driver": "nvidia.com",
+             "driver": "example.com",
              "pool": "node-1-gpus",
-             "bestEffortData": {
-               "attributes": {
-                 "model": "A100",
-                 "memory": "80Gi",
-                 "vendor": "nvidia"
+             "conditions": [
+               {
+                 "type": "Ready",
+                 "status": "True",
+                 "lastTransitionTime": "2024-01-15T10:00:00Z"
                }
-             },
-             "driverProvidedData": {
-               "conditions": [
-                 {
-                   "type": "Ready",
-                   "status": "True",
-                   "lastTransitionTime": "2024-01-15T10:00:00Z"
-                 }
-               ],
-               "data": {
-                 "pciBusID": "0000:00:1e.0"
-               }
+             ],
+             "data": {
+               "model": "A100",
+               "memory": "80Gi",
+               "vendor": "nvidia",
+               "resource.kubernetes.io/pciBusID": "0000:00:1e.0"
              }
            }
          ]
@@ -344,30 +336,24 @@ When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources 
              "name": "vf-3",
              "driver": "cni.dra.networking.x-k8s.io",
              "pool": "node-1-sriov",
-             "bestEffortData": {
-               "attributes": {
-                 "vendor": "mellanox",
-                 "model": "ConnectX-6"
+             "conditions": [
+               {
+                 "type": "Ready",
+                 "status": "True",
+                 "lastTransitionTime": "2024-01-15T10:00:00Z"
                }
+             ],
+             "data": {
+               "vendor": "mellanox",
+               "model": "ConnectX-6",
+               "resource.kubernetes.io/pciBusID": "0000:00:01.3",
+               "vfIndex": 3,
+               "mtu": 9000
              },
-             "driverProvidedData": {
-               "conditions": [
-                 {
-                   "type": "Ready",
-                   "status": "True",
-                   "lastTransitionTime": "2024-01-15T10:00:00Z"
-                 }
-               ],
-               "data": {
-                 "pciAddress": "0000:00:01.3",
-                 "vfIndex": 3,
-                 "mtu": 9000
-               },
-               "networkData": {
-                 "interfaceName": "net1",
-                 "addresses": ["10.10.1.2/24", "fd00::2/64"],
-                 "hwAddress": "5a:9f:d8:84:fb:51"
-               }
+             "networkData": {
+               "interfaceName": "net1",
+               "addresses": ["10.10.1.2/24", "fd00::2/64"],
+               "hwAddress": "5a:9f:d8:84:fb:51"
              }
            }
          ]
@@ -375,7 +361,9 @@ When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources 
      ]
    }
    ```
-3. **Write metadata file**: `{attributesDir}/{driverName}-{claimNamespace}-{claimName}.json`
+3. **Write claim directory and files**:
+   - `{attributesDir}/{claimNamespace}-{claimName}/driverNames` (contains driver names, one per line)
+   - `{attributesDir}/{claimNamespace}-{claimName}/metadata.json` (device attributes)
 4. **Generate CDI spec**:
    ```json
    {
@@ -388,8 +376,8 @@ When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources 
            "env": [],
            "mounts": [
              {
-               "hostPath": "/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json",
-               "containerPath": "/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json",
+               "hostPath": "/var/run/dra-device-attributes",
+               "containerPath": "/var/run/dra-device-attributes",
                "options": ["ro", "bind"]
              }
            ]
@@ -398,8 +386,10 @@ When `AttributesJSON` is enabled, the framework intercepts NodePrepareResources 
      ]
    }
    ```
+   Note: The entire attributes directory is mounted so workloads can access both the per-claim directories
+   and the `.supported/` driver capability markers.
 
-5. **Write CDI spec**: `{cdiDir}/{driverName}-{claimNamespace}-{claimName}-metadata.json`
+5. **Write CDI spec**: `{cdiDir}/{claimNamespace}-{claimName}-metadata.json`
 6. **Append CDI device ID**: Adds `{driverName}/metadata=claim-{claimNamespace}-{claimName}-metadata` to the device's
    `CdiDeviceIds` in the response
 
@@ -409,13 +399,59 @@ When `AttributesJSON` is enabled, the framework removes files for the unprepared
 
 #### Helper Functions
 
-The `resourceslice.Controller` gains a new method:
+The framework provides a `MetadataWriter` interface for drivers to write device metadata:
 
 ```go
-// LookupDeviceAttributes returns device attributes (stringified) from the controller's
-// cached ResourceSlices, filtered by pool and device name.
-func (c *Controller) LookupDeviceAttributes(poolName, deviceName string) map[string]string
+// MetadataWriter is implemented by the framework and provided to drivers.
+// Drivers receive this when calling kubeletplugin.Start() with AttributesJSON(true).
+type MetadataWriter interface {
+    // WriteDeviceMetadata validates the schema and writes metadata to the correct path.
+    // The generation number is automatically incremented on updates.
+    WriteDeviceMetadata(claimNamespace, claimName string, metadata *DeviceMetadata) error
+}
+
+// DeviceMetadata is the schema for the metadata.json file.
+// Uses standard Kubernetes API types for consistency.
+type DeviceMetadata struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+    Requests          []Request `json:"requests"`
+}
+
+// Note: metav1.ObjectMeta includes Name, Namespace, UID, Generation and other
+// standard Kubernetes metadata fields. The framework manages the Generation field.
+
+type Request struct {
+    Name    string   `json:"name"`
+    Devices []Device `json:"devices"`
+}
+
+type Device struct {
+    Name        string            `json:"name"`
+    Driver      string            `json:"driver"`
+    Pool        string            `json:"pool"`
+    Conditions  []Condition       `json:"conditions,omitempty"`
+    Data        map[string]any    `json:"data,omitempty"`
+    NetworkData *NetworkData      `json:"networkData,omitempty"`
+}
+
+type Condition struct {
+    Type               string `json:"type"`
+    Status             string `json:"status"`
+    LastTransitionTime string `json:"lastTransitionTime,omitempty"`
+}
+
+type NetworkData struct {
+    InterfaceName string   `json:"interfaceName,omitempty"`
+    Addresses     []string `json:"addresses,omitempty"`
+    HWAddress     string   `json:"hwAddress,omitempty"`
+}
 ```
+
+The framework:
+- Validates the metadata against the schema before writing
+- Automatically manages the `generation` number (increments on updates, starts at 1 for new files)
+- Writes to the correct path: `{attributesDir}/{claimNamespace}-{claimName}/metadata.json`
 
 ### Driver Integration
 
@@ -425,9 +461,141 @@ Drivers enable the feature by passing options to `kubeletplugin.Start()`:
 plugin, err := kubeletplugin.Start(ctx, driverPlugin,
     kubeletplugin.AttributesJSON(true),
     kubeletplugin.CDIDirectoryPath("/var/run/cdi"),
-    kubeletplugin.AttributesDirectoryPath("/var/run/dra-device-attributes"),
+    kubeletplugin.AttributesDirectoryPath(getAttributesDir()),
 )
+
+// The plugin provides the MetadataWriter implementation
+metadataWriter := plugin.MetadataWriter()  // Returns kubeletplugin.MetadataWriter
+
+// getAttributesDir returns the attributes directory from environment variable
+// or falls back to the default path.
+func getAttributesDir() string {
+    if dir := os.Getenv("DRA_ATTRIBUTES_DIR"); dir != "" {
+        return dir
+    }
+    return "/var/run/dra-device-attributes"
+}
 ```
+
+The `DRA_ATTRIBUTES_DIR` environment variable allows drivers to override the default attributes directory
+(`/var/run/dra-device-attributes`) if needed for custom deployments.
+
+**Writing Metadata**: Drivers use the framework-provided `MetadataWriter` to write device metadata:
+
+```go
+func (d *Driver) NodePrepareResources(ctx context.Context, req *drapb.NodePrepareResourcesRequest) (*drapb.NodePrepareResourcesResponse, error) {
+    // ... allocate devices, discover PCI addresses, etc. ...
+    
+    // Write metadata using framework helper (schema validated, generation auto-managed)
+    // d.metadataWriter was obtained from plugin.MetadataWriter() at startup
+    err := d.metadataWriter.WriteDeviceMetadata(claim.Namespace, claim.Name, &kubeletplugin.DeviceMetadata{
+        TypeMeta: metav1.TypeMeta{
+            APIVersion: "dra.k8s.io/v1alpha1",
+            Kind:       "DeviceMetadata",
+        },
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      claim.Name,
+            Namespace: claim.Namespace,
+            UID:       types.UID(claim.UID),
+        },
+        Requests: buildRequestsMetadata(allocatedDevices),
+    })
+    
+    return resp, nil
+}
+```
+
+**Late-arriving data**: Drivers can call `WriteDeviceMetadata` at any time, including after pod start
+(e.g., from NRI hooks when network information becomes available). The generation number is automatically
+incremented on each write.
+
+### Directory Structure and Driver Capability
+
+When `AttributesJSON(true)` is enabled, the framework creates the following directory structure:
+
+```
+/var/run/dra-device-attributes/
+├── .supported/
+│   ├── example.com                           # Marker: driver supports attribute exposure
+│   └── cni.dra.networking.x-k8s.io          # Marker: driver supports attribute exposure
+├── default-my-gpu-claim/
+│   ├── driverNames                          # Contains: "example.com" (one driver per line)
+│   └── metadata.json                        # Device attributes
+└── default-sriov-nic/
+    ├── driverNames                          # Contains: "cni.dra.networking.x-k8s.io" (one driver per line)
+    └── metadata.json                        # Device attributes (may arrive later for network devices)
+```
+
+**Per-claim directory**: `/var/run/dra-device-attributes/{claimNamespace}-{claimName}/`
+- `driverNames`: File containing driver names handling this claim (one per line, since a claim can have multiple requests fulfilled by different drivers)
+- `metadata.json`: Device metadata (may arrive after pod start for some device types)
+
+**Driver capability markers**: `/var/run/dra-device-attributes/.supported/{driverName}`
+- Created when a driver has `AttributesJSON(true)` enabled
+- Allows workloads to verify the driver supports this feature
+
+**Workload discovery flow:**
+
+1. Read `{claimNamespace}-{claimName}/driverNames` → discover which drivers handle the claim
+2. For each driver, check `.supported/{driverName}` → verify driver supports attribute exposure
+3. If all drivers support it, wait for `metadata.json` to appear (may already exist or arrive later)
+
+```bash
+# Example: Discover drivers, check capability, wait for metadata
+CLAIM_NS="default"
+CLAIM_NAME="my-gpu-claim"
+CLAIM_DIR="/var/run/dra-device-attributes/${CLAIM_NS}-${CLAIM_NAME}"
+
+# Step 1: Get driver names (one per line)
+DRIVERS=$(cat "${CLAIM_DIR}/driverNames")
+
+# Step 2: Check if all drivers support attributes
+ALL_SUPPORTED=true
+for DRIVER in $DRIVERS; do
+    if [ ! -f "/var/run/dra-device-attributes/.supported/${DRIVER}" ]; then
+        echo "Driver $DRIVER does not support attribute exposure"
+        ALL_SUPPORTED=false
+    fi
+done
+
+# Step 3: Wait for metadata.json if all drivers support it
+if [ "$ALL_SUPPORTED" = true ]; then
+    echo "All drivers support attributes, waiting for metadata..."
+    timeout 30 bash -c "until [ -f '${CLAIM_DIR}/metadata.json' ]; do sleep 1; done"
+    cat "${CLAIM_DIR}/metadata.json"
+fi
+```
+
+This structure enables:
+- **Driver capability discovery** without knowing driver names upfront
+- **Clear error handling**: marker exists but no metadata = bug; no marker = unsupported
+- **Late-arriving data**: network devices can populate `metadata.json` after pod start via NRI
+
+### Metadata Generation Number
+
+The `metadata.generation` field is incremented each time the driver updates the metadata file. This allows
+workloads to detect when metadata has changed:
+
+```bash
+# Example: Poll for metadata updates
+CLAIM_DIR="/var/run/dra-device-attributes/default-sriov-nic"
+LAST_GEN=0
+
+while true; do
+    if [ -f "${CLAIM_DIR}/metadata.json" ]; then
+        CURRENT_GEN=$(jq -r '.metadata.generation' "${CLAIM_DIR}/metadata.json")
+        if [ "$CURRENT_GEN" != "$LAST_GEN" ]; then
+            echo "Metadata updated (generation: $CURRENT_GEN)"
+            # Process new metadata...
+            LAST_GEN=$CURRENT_GEN
+        fi
+    fi
+    sleep 1
+done
+```
+
+The framework's `WriteDeviceMetadata` helper automatically increments the generation number when updating
+an existing file, or sets it to `1` for new files.
 
 ### Workload Consumption
 
@@ -450,20 +618,18 @@ spec:
       - -c
       - |
         # Read metadata from mounted JSON
-        METADATA_FILE="/var/run/dra-device-attributes/"$(ls /var/run/dra-device-attributes/*.json | head -1)
-        # Prefer driverProvidedData.data, fall back to bestEffortData.attributes
-        PCI_ROOT=$(jq -r '.requests[0].devices[0].driverProvidedData.data.pcieRoot //
-                         .requests[0].devices[0].bestEffortData.attributes.pcieRoot' $METADATA_FILE)
-        echo "PCI Root: $PCI_ROOT"
-        # Use PCI_ROOT to configure libvirt domain XML...
+        CLAIM_DIR="/var/run/dra-device-attributes/default-physical-gpu-claim"
+        PCI_BUS_ID=$(jq -r '.requests[0].devices[0].data["resource.kubernetes.io/pciBusID"]' "${CLAIM_DIR}/metadata.json")
+        echo "PCI Bus ID: $PCI_BUS_ID"
+        # Use PCI_BUS_ID to configure libvirt domain XML...
 ```
 
-**File Path Convention**: `/var/run/dra-device-attributes/{driverName}-{claimNamespace}-{claimName}.json`
+**Directory Convention**: `/var/run/dra-device-attributes/{claimNamespace}-{claimName}/`
 
 Workloads can easily discover their device metadata:
-- Use shell globbing: `ls /var/run/dra-device-attributes/*.json`
-- Match by known claim name in the filename
-- Parse the `metadata.name` field in the JSON to identify the claim
+- List claim directories: `ls -d /var/run/dra-device-attributes/*/`
+- Access by known claim: `/var/run/dra-device-attributes/{namespace}-{claimName}/metadata.json`
+- Check driver names: `cat /var/run/dra-device-attributes/{namespace}-{claimName}/driverNames`
 
 ### Usage Examples
 
@@ -485,12 +651,10 @@ spec:
       - /bin/sh
       - -c
       - |
-        METADATA=$(cat /var/run/dra-device-attributes/gpu.example.com-default-pgpu-claim.json)
-        # Prefer driver-provided data, fall back to best-effort ResourceSlice data
-        PCI_ROOT=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.data.pcieRoot //
-                                           .requests[0].devices[0].bestEffortData.attributes.pcieRoot')
-        # Generate libvirt XML with PCI passthrough using $PCI_ROOT
-        echo "<hostdev mode='subsystem' type='pci'><source><address domain='$PCI_ROOT' .../></source></hostdev>"
+        METADATA=$(cat /var/run/dra-device-attributes/default-physical-gpu-claim/metadata.json)
+        PCI_BUS_ID=$(echo $METADATA | jq -r '.requests[0].devices[0].data["resource.kubernetes.io/pciBusID"]')
+        # Generate libvirt XML with PCI passthrough using $PCI_BUS_ID
+        echo "<hostdev mode='subsystem' type='pci'><source><address domain='$PCI_BUS_ID' .../></source></hostdev>"
 ```
 
 #### Example 2: vGPU with Mediated Device
@@ -511,10 +675,8 @@ spec:
       - /bin/sh
       - -c
       - |
-        METADATA=$(cat /var/run/dra-device-attributes/vgpu.example.com-default-virtual-gpu-claim.json)
-        # mdevUUID is typically driver-provided (created at allocation time)
-        MDEV_UUID=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.data.mdevUUID //
-                                            .requests[0].devices[0].bestEffortData.attributes.mdevUUID')
+        METADATA=$(cat /var/run/dra-device-attributes/default-virtual-gpu-claim/metadata.json)
+        MDEV_UUID=$(echo $METADATA | jq -r '.requests[0].devices[0].data.mdevUUID')
         # Use MDEV_UUID to configure mediated device passthrough
         echo "<hostdev mode='subsystem' type='mdev'><source><address uuid='$MDEV_UUID'/></source></hostdev>"
 ```
@@ -537,13 +699,12 @@ spec:
       - /bin/sh
       - -c
       - |
-        METADATA=$(cat /var/run/dra-device-attributes/cni.dra.networking.x-k8s.io-default-sriov-vf-claim.json)
-        # Network data is always driver-provided (runtime data from KEP-4817)
-        PCI_ADDR=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.data.pciAddress')
-        IFACE=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.networkData.interfaceName')
-        MAC=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.networkData.hwAddress')
-        IP=$(echo $METADATA | jq -r '.requests[0].devices[0].driverProvidedData.networkData.addresses[0]')
-        echo "Binding DPDK to PCI $PCI_ADDR, interface $IFACE, MAC $MAC, IP $IP"
+        METADATA=$(cat /var/run/dra-device-attributes/default-sriov-vf-claim/metadata.json)
+        PCI_BUS_ID=$(echo $METADATA | jq -r '.requests[0].devices[0].data["resource.kubernetes.io/pciBusID"]')
+        IFACE=$(echo $METADATA | jq -r '.requests[0].devices[0].networkData.interfaceName')
+        MAC=$(echo $METADATA | jq -r '.requests[0].devices[0].networkData.hwAddress')
+        IP=$(echo $METADATA | jq -r '.requests[0].devices[0].networkData.addresses[0]')
+        echo "Binding DPDK to PCI $PCI_BUS_ID, interface $IFACE, MAC $MAC, IP $IP"
         # Initialize DPDK with the discovered device info...
 ```
 
@@ -617,11 +778,13 @@ extending the production code to implement this enhancement.
 Integration tests will cover:
 
 - **End-to-end attribute exposure**: Create Pod with resourceClaims, verify attributes JSON is generated and mounted
-- **Multiple claims**: Pod with multiple resource claims, verify separate files for each claim+request
-- **Missing attributes**: ResourceSlice with no attributes, verify empty map is written
-- **Attribute types**: Test string, bool, int, version attributes are correctly stringified
+- **Multiple claims**: Pod with multiple resource claims, verify separate directories for each claim
+- **Empty metadata**: Driver writes no attributes, verify file is created with claim metadata only
+- **Attribute types**: Test string, bool, int, version attributes are correctly written
+- **Generation number**: Verify generation increments on metadata updates
 - **Cleanup**: Verify files are removed after unprepare
 - **Opt-in behavior**: Verify files are NOT created when `AttributesJSON(false)`
+- **Driver capability marker**: Verify `.supported/{driverName}` marker is created
 
 Tests will be added to `test/integration/dra/`.
 
@@ -629,7 +792,7 @@ Tests will be added to `test/integration/dra/`.
 
 E2E tests will validate real-world scenarios:
 
-- **Metadata file mounted**: Pod can read `/var/run/dra-device-attributes/{driver}-{namespace}-{claimName}.json`
+- **Metadata file mounted**: Pod can read `/var/run/dra-device-attributes/{namespace}-{claimName}/metadata.json`
 - **Correct content**: Verify JSON contains expected apiVersion, kind, metadata, and device attributes
 - **Multi-device request**: Verify attributes from all allocated devices are included
 - **CDI integration**: Verify CRI runtime correctly processes CDI device ID and mounts file
@@ -925,8 +1088,8 @@ No
 
 Yes, but the impact should be minimal:
 
-- Pod startup latency: Drivers must lookup attribute values before starting containers, but the impact of this is
-  minimized by local informer based lookup
+- Pod startup latency: Drivers write metadata files during NodePrepareResources, adding a small I/O overhead.
+  The framework's schema validation and file writes are lightweight operations.
 
 - The feature does not affect existing SLIs/SLOs for clusters not using DRA or for drivers not opting-in on this feature
 
@@ -985,9 +1148,8 @@ For each of them, fill in the following information by copying the below templat
    Downward API approach with env vars would have been more ergonomic.
 4. **No schema standardization in Alpha**: The JSON structure is subject to change. Early adopters may need to update
    their parsers between versions.
-5. **Driver opt-in complexity**: Drivers must understand and configure multiple framework options (`AttributesJSON`,
-   `CDIDirectoryPath`, `AttributesDirectoryPath`, `ResourceSliceLister`). The Downward API approach would have been
-   transparent to drivers.
+5. **Driver implementation required**: Drivers must call the `WriteDeviceMetadata` helper to provide metadata.
+   The Downward API approach would have been transparent to drivers.
 6. **Limited discoverability**: Workloads can't easily enumerate all claims or requests; they must know the claim name
   or glob for files. Env vars would provide named variables.
 
@@ -1000,12 +1162,12 @@ For each of them, fill in the following information by copying the below templat
 **Example**:
 ```yaml
 env:
-- name: PGPU_PCI_ROOT
+- name: PGPU_PCI_BUS_ID
   valueFrom:
     resourceSliceAttributeRef:
       claimName: pgpu-claim
       requestName: pgpu-request
-      attribute: resource.kubernetes.io/pcieRoot
+      attribute: resource.kubernetes.io/pciBusID
 ```
 
 **Pros**:
@@ -1038,7 +1200,7 @@ env:
     "name": "gpu-0",
     "containerEdits": {
       "env": [
-        "PGPU_PCI_ROOT=0000:00:1e.0",
+        "PGPU_PCI_BUS_ID=0000:00:1e.0",
         "PGPU_DEVICE_ID=device-00"
       ]
     }
@@ -1066,7 +1228,6 @@ env:
 
 None. This feature will be developed within existing Kubernetes repositories:
 - Framework implementation in `kubernetes/kubernetes` (staging/src/k8s.io/dynamic-resource-allocation/kubeletplugin)
-- Helper functions in `kubernetes/kubernetes` (staging/src/k8s.io/dynamic-resource-allocation/resourceslice)
 - Tests in `kubernetes/kubernetes` (test/integration/dra, test/e2e/dra, test/e2e_node)
 - Documentation in `kubernetes/website` (concepts/scheduling-eviction/dynamic-resource-allocation)
 
