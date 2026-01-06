@@ -240,8 +240,9 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Define how the scheduler processes ResourceClaims to fulfill gang scheduling
-  (See [KEP-5732](https://kep.k8s.io/5732)).
+- Influence scheduling based on the ResourceClaimTemplates and ResourceClaims
+  associated with a Workload or its Pods (See
+  [KEP-5732](https://kep.k8s.io/5732)).
 
 ## Proposal
 
