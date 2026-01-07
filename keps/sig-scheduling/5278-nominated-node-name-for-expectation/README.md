@@ -390,6 +390,7 @@ We'll ensure this scenario works correctly via tests.
 
 As of now the scheduler clears the `NominatedNodeName` field at the end of failed scheduling cycle, if it
 found the nominated node unschedulable for the pod. This logic remains unchanged.
+If an error occurs during the binding cycle, `NominatedNodeName` will not be cleared.
 
 NOTE: The previous version of this KEP, that allowed external components to set `NominatedNodeName`, deliberately left the `NominatedNodeName` field unchanged after scheduling failure. With the KEP update for v1.35 this logic is being reverted, and scheduler goes back to clearing the field after scheduling failure.
  
