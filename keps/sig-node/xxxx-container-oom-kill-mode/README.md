@@ -712,6 +712,12 @@ TBD
 
   Rejected: Annotations are not the proper place for functional configuration
 
+- **NRI plugin**: Provide an NRI plugin that sets `memory.oom.group` for target containers
+  Rejected: Requires node-level plugin deployment and runtime support, adds operational complexity, and is not portable across clusters.
+
+- **Privileged init container**: Configure `memory.oom.group` from a privileged init container
+  Rejected: Requires privileged access, is fragile across runtimes, and bypasses Kubernetes API validation.
+
 - **Extend existing Resources field**:
 
   ```yaml
@@ -740,4 +746,3 @@ None
 [^3]: https://github.com/kubernetes/kubernetes/pull/122813#issuecomment-1953290374
 
 [^4]: https://github.com/kubernetes/kubernetes/pull/117793#issuecomment-1551382249
-
