@@ -19,10 +19,10 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/pkg/yaml"
 )
@@ -51,7 +51,7 @@ type PRRApproval struct {
 func (prr *PRRApproval) Validate() error {
 	v := validator.New()
 	if err := v.Struct(prr); err != nil {
-		return errors.Wrap(err, "running validation")
+		return fmt.Errorf("running validation: %w", err)
 	}
 
 	return nil
@@ -128,17 +128,17 @@ func (p *PRRHandler) Parse(in io.Reader) (*PRRApproval, error) {
 
 	approval := &PRRApproval{}
 	if err := scanner.Err(); err != nil {
-		return approval, errors.Wrap(err, "reading file")
+		return approval, fmt.Errorf("reading file: %w", err)
 	}
 
 	if err := yaml.UnmarshalStrict(body.Bytes(), &approval); err != nil {
-		p.Errors = append(p.Errors, errors.Wrap(err, "error unmarshalling YAML"))
-		return approval, errors.Wrap(err, "unmarshalling YAML")
+		p.Errors = append(p.Errors, fmt.Errorf("error unmarshalling YAML: %w", err))
+		return approval, fmt.Errorf("unmarshalling YAML: %w", err)
 	}
 
 	if valErr := approval.Validate(); valErr != nil {
-		p.Errors = append(p.Errors, errors.Wrap(valErr, "validating PRR"))
-		return approval, errors.Wrap(valErr, "validating PRR")
+		p.Errors = append(p.Errors, fmt.Errorf("validating PRR: %w", valErr))
+		return approval, fmt.Errorf("validating PRR: %w", valErr)
 	}
 
 	return approval, nil

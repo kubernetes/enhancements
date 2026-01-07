@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
 	"k8s.io/enhancements/pkg/output"
@@ -115,7 +114,7 @@ func addQuery(topLevel *cobra.Command) {
 func runQuery(opts *repo.QueryOpts) error {
 	rc, err := repo.New(rootOpts.RepoPath)
 	if err != nil {
-		return errors.Wrap(err, "creating repo client")
+		return fmt.Errorf("creating repo client: %w", err)
 	}
 	rc.TokenPath = rootOpts.TokenPath
 
