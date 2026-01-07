@@ -100,6 +100,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Workload](#workload)
     - [Pod](#pod)
     - [Example](#example)
+  - [ResourceClaim Lifecycle](#resourceclaim-lifecycle)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -496,6 +497,46 @@ spec:
         podGroup: group-2
         podGroupReplicaKey: "1"
 ```
+
+### ResourceClaim Lifecycle
+
+The ResourceClaim controller run by kube-controller-manager will be updated to
+manage the lifecycle of ResourceClaims associated with PodGroups like it
+already does for per-Pod ResourceClaims from ResourceClaimTemplates. In short,
+ResourceClaims will be created once the first Pod in the PodGroup is created
+and deleted when all Pods in the PodGroup have either been deleted or reached a
+terminal status.
+
+ResourceClaims created from ResourceClaimTemplates for a PodGroup replica can
+be mapped to Pods in the group with the following metadata:
+
+- `metadata.ownerReferences`: A reference to the Workload object from the Pod's
+  `spec.workloadRef.name`
+- `metadata.annotations."resource.kubernetes.io/workload-pod-group-name"`: The
+  name of the PodGroup from the Pod's `spec.workloadRef.podGroup`
+- `metadata.annotations."resource.kubernetes.io/workload-pod-group-replica"`:
+  The ID for this particular PodGroup replica from the Pod's
+  `spec.workloadRef.podGroupReplicaKey`
+
+Like the existing `resource.kubernetes.io/pod-claim-name` annotation, these
+annotations are only meant for internal use by kube-controller-manager and will
+not be documented as part of the public API.
+
+When the ResourceClaim controller reconciles a Pod with a claim referencing a
+`workloadPodGroupResourceClaim`, it will check for any existing ResourceClaims
+associated with the Pod's PodGroup. If a claim already exists for the PodGroup,
+it will be added to the Pod's `status.resourceClaimStatuses`. If no such claim
+exists, the controller will create one and add it to the Pod's `status`.
+
+The generated ResourceClaim will already be reconciled when Pods for which it
+is allocated are deleted or terminate. That reconciliation logic will be
+updated to including deleting ResourceClaims generated for a PodGroup when all
+Pods in the group have either been deleted or terminated. The controller will
+identify the PodGroup by the ResourceClaim's owning Workload and the PodGroup's
+name and replica key stored in annotations. Then it will map that
+`<workload>/<podgroup>/<replicakey>` key to a list of Pods using a new index on
+the existing Pod informer. When that list is empty or contains only terminated
+Pods when the ResourceClaim is reconciled, the ResourceClaim will be deleted.
 
 ### Test Plan
 
