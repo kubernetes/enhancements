@@ -366,7 +366,7 @@ StatusCause{
 ```
 
 
-#### New Delete Option for Malformed Resources
+#### New Delete Option for Corrupt Objects
 
 Deleting a resource is a rather complicated process:
 1. a resource might represent an actual process running on a host (Pod)
