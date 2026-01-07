@@ -18,7 +18,6 @@ package repo_test
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,7 +70,7 @@ func TestWriteKep(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			tempDir, err := ioutil.TempDir("", "")
+			tempDir, err := os.MkdirTemp("", "")
 			mkErr := os.MkdirAll(
 				filepath.Join(
 					tempDir,
@@ -123,7 +122,7 @@ func TestWriteKep(t *testing.T) {
 
 			c := newTestClient(t, repoPath)
 
-			b, err := ioutil.ReadFile(tc.kepFile)
+			b, err := os.ReadFile(tc.kepFile)
 			require.NoError(t, err)
 
 			var p api.Proposal
@@ -135,11 +134,11 @@ func TestWriteKep(t *testing.T) {
 
 			err = c.r.WriteKEP(&p)
 
-			files, readErr := ioutil.ReadDir(c.r.ProposalPath)
+			files, readErr := os.ReadDir(c.r.ProposalPath)
 			require.Nil(t, readErr)
 
 			for _, f := range files {
-				t.Logf(f.Name())
+				t.Log(f.Name())
 			}
 
 			if tc.expectError {
@@ -196,7 +195,7 @@ func (tc *testClient) addTemplate(file string) {
 		file,
 	)
 
-	data, err := ioutil.ReadFile(src)
+	data, err := os.ReadFile(src)
 	if err != nil {
 		tc.T.Fatal(err)
 	}
@@ -209,7 +208,7 @@ func (tc *testClient) addTemplate(file string) {
 
 	dest := filepath.Join(dirPath, file)
 	tc.T.Logf("Writing %s to %s", file, dest)
-	err = ioutil.WriteFile(dest, data, os.ModePerm)
+	err = os.WriteFile(dest, data, os.ModePerm)
 	if err != nil {
 		tc.T.Fatal(err)
 	}

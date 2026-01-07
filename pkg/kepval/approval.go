@@ -79,9 +79,7 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 		return errors.New("PRR approver cannot be empty")
 	}
 
-	if strings.HasPrefix(stagePRRApprover, "@") {
-		stagePRRApprover = strings.TrimPrefix(stagePRRApprover, "@")
-	}
+	stagePRRApprover = strings.TrimPrefix(stagePRRApprover, "@")
 
 	validApprover := api.IsOneOf(stagePRRApprover, h.PRRApprovers)
 	if !validApprover {
