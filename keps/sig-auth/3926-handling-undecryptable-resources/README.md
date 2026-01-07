@@ -366,7 +366,7 @@ StatusCause{
 ```
 
 
-#### New Delete Option for Undecryptable Resources
+#### New Delete Option for Malformed Resources
 
 Deleting a resource is a rather complicated process:
 1. a resource might represent an actual process running on a host (Pod)
