@@ -642,7 +642,6 @@ in back-to-back releases.
 
 - Feature enabled by default
 - Dry-run support for unsafe corrupt object deletion
-  ([#134037](https://github.com/kubernetes/kubernetes/pull/134037) - open)
 - Comprehensive test coverage as outlined in the [Integration tests > Beta](#integration-tests) section.
 
 ### Upgrade / Downgrade Strategy
