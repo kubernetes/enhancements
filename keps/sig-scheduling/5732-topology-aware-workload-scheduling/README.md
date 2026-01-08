@@ -95,8 +95,8 @@ decisions before committing resources.
 
 This design introduces specific extensions to the Kubernetes Workload API to
 support `TopologyConstraints` and `DRAConstraints`, defines new interfaces
-within the Scheduling Framework (`PlacementGenerator`, `PlacementState`,
-`PlacementScorer`), and details the algorithmic flow required to schedule Pod
+within the Scheduling Framework (`PlacementGeneratorPlugin`, `PlacementStatePlugin`,
+`PlacementScorerPlugin`), and details the algorithmic flow required to schedule Pod
 Groups while maintaining compatibility with the scheduler's existing ecosystem.
 
 ## Motivation
@@ -349,11 +349,11 @@ type DraClaimAllocation struct {
 
 #### 2. New Plugin Interfaces
 
-**PlacementGenerator:** Generates candidate placements based on constraints.
+**PlacementGeneratorPlugin:** Generates candidate placements based on constraints.
 
 ```go
-// PlacementGenerator is an interface for plugins that generate candidate Placements.
-type PlacementGenerator interface {
+// PlacementGeneratorPlugin is an interface for plugins that generate candidate Placements.
+type PlacementGeneratorPlugin interface {
     Name() string
 
     // GeneratePlacements generates a list of potential Placements for the given PodGroup.
@@ -363,13 +363,13 @@ type PlacementGenerator interface {
 }
 ```
 
-**PlacementState:** Manages state changes (simulating binding) during
+**PlacementStatePlugin:** Manages state changes (simulating binding) during
 feasibility checks.
 
 ```go
-// PlacementState is an interface for plugins that manage state changes
+// PlacementStatePlugin is an interface for plugins that manage state changes
 // when a Placement is being considered.
-type PlacementState interface {
+type PlacementStatePlugin interface {
     Name() string
 
     // AssumePlacement temporarily configures the scheduling context to evaluate the feasibility
@@ -383,7 +383,7 @@ type PlacementState interface {
 }
 ```
 
-**PlacementScorer:** Scores feasible placements to select the best one.
+**PlacementScorerPlugin:** Scores feasible placements to select the best one.
 
 ```go
 // PodGroupAssignment represents the assignment of pods to nodes within a PodGroup for a specific Placement.
@@ -392,8 +392,8 @@ type PodGroupAssignment struct {
     PodToNodeMap map[string]string
 }
 
-// PlacementScorer is an interface for plugins that score feasible Placements.
-type PlacementScorer interface {
+// PlacementScorerPlugin is an interface for plugins that score feasible Placements.
+type PlacementScorerPlugin interface {
     Name() string
 
     // ScorePlacement calculates a score for a given Placement. This function is called in Phase 3
@@ -459,13 +459,13 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
 
 ### Scheduler Plugins
 
-**TopologyPlacementPlugin (New)** Implements `PlacementGenerator`. Generates
+**TopologyPlacementPlugin (New)** Implements `PlacementGeneratorPlugin`. Generates
 Placements based on distinct values of the designated node label (TAS).
 
-**PlacementBinPackingPlugin (New)** Implements `PlacementScorer`. Scores
+**PlacementBinPackingPlugin (New)** Implements `PlacementScorerPlugin`. Scores
 Placements to maximize utilization (tightest fit) and minimize fragmentation.
 
-**DRATestPlugin (New)** Implements `PlacementGenerator` and `PlacementState`
+**DRATestPlugin (New)** Implements `PlacementGeneratorPlugin` and `PlacementStatePlugin`
 and is used only for testing the algorithm's support for DRA-aware scheduling.
 
 - **Generator:** Returns Placements derived from available Devices satisfying
@@ -529,10 +529,10 @@ necessary to implement this enhancement.
 
 #### Unit tests
 
-- PlacementGenerator: Test generation of placements for various topology
+- PlacementGeneratorPlugin: Test generation of placements for various topology
   labels and DRA ResourceSlices.
 
-- PlacementState: Verify AssumePlacement and RevertPlacement correctly modify
+- PlacementStatePlugin: Verify AssumePlacement and RevertPlacement correctly modify
   and restore the CycleState.
 
 - Algorithm Logic: Test the sequential processing of Placements and the
