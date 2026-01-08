@@ -548,11 +548,9 @@ Alpha:
 - if there are too many malformed resources in a return of a LIST action, the
   error will be truncated
 
-Beta (see also [Testing Requirements](#testing-requirements)):
+Beta:
 - list error aggregation
-  ([#129129](https://github.com/kubernetes/kubernetes/pull/129129) - open)
 - delete handler with unsafe deletion flow
-  ([#128726](https://github.com/kubernetes/kubernetes/pull/128726) - open)
 - deserialization failure via bit-flip (not just encryption failure)
 - deletion works for CRDs
 - KAS health recovery after deleting all corrupt objects
@@ -645,31 +643,7 @@ in back-to-back releases.
 - Feature enabled by default
 - Dry-run support for unsafe corrupt object deletion
   ([#134037](https://github.com/kubernetes/kubernetes/pull/134037) - open)
-- Comprehensive test coverage as outlined below
-
-##### Testing Requirements
-
-The following PRs and integration tests are required:
-
-- Test to verify list error aggregation
-  ([#129129](https://github.com/kubernetes/kubernetes/pull/129129) - open)
-- Test the delete handler with unsafe deletion flow
-  ([#128726](https://github.com/kubernetes/kubernetes/pull/128726) - open)
-
-Additional integration tests must be added:
-
-- **Deserialization failure via bit-flip**: Simulate data corruption (not just
-  encryption failure) to verify the feature handles general deserialization
-  errors.
-
-- **Deletion works for CRDs**: Verify that corrupt custom resource instances
-  can be deleted using the same mechanism as built-in resources.
-
-- **KAS health recovery**: After deleting all corrupt objects, verify that:
-  - Corrupt objects are removed from storage
-  - kube-apiserver returns to a healthy state
-  - Re-list operations eventually succeed
-  - Informers return to steady-state
+- Comprehensive test coverage as outlined in the [Integration tests > Beta](#integration-tests) section.
 
 ### Upgrade / Downgrade Strategy
 
