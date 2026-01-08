@@ -428,7 +428,7 @@ deliberate recovery sequence:
    object's data and generates a `watch.Error` event with `StatusReasonStoreReadError`.
 
 2. **Cacher Reset**: The Cacher's internal Reflector receives this error, causing
-   `ListAndWatch()` to return. After a brief delay, the Cacher reinitializes by
+   `ListAndWatch()` to stop. After a brief delay, the Cacher reinitializes by
    calling `terminateAllWatchers()` followed by a fresh LIST from etcd.
 
 3. **Client Disconnection**: All active watch connections for that resource type
