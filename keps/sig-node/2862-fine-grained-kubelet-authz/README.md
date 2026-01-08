@@ -644,26 +644,26 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-If workloads are using non fine-grained permissions.
+If workloads are using non finegrained permissions.
 
 |Scenario| Result |
 | -------|--------|
 | Upgrade both kubelet and kube-apiserver so that feature gate is enabled in both. | workloads and kube-apiserver are able to reach kubelet|
 | Upgrade only kubelet to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
-| Upgrade only kube-apiserver to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+| Updrade only kube-apiserver to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
 | Rollback both kubelet and kube-apiserver so that feature gate is disabled in both. | workloads and kube-apiserver are able to reach kubelet|
 | Rollback only kubelet to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
 | Rollback only kube-apiserver to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
 
-If workloads are using fine-grained permissions.
+If workloads are using finegrained permissions.
 
 |Scenario| Result |
 | -------|--------|
 | Upgrade both kubelet and kube-apiserver so that feature gate is enabled in both. | workloads and kube-apiserver are able to reach kubelet|
 | Upgrade only kubelet to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
-| Upgrade only kube-apiserver to enable the feature-gate | workloads won't be able to reach kubelet unless they revert to using coarse-grained permissions but kube-apiserver is able to reach kubelet |
-| Rollback both kubelet and kube-apiserver so that feature gate is disabled in both. | workloads won't be authorized by kubelet unless coarse-grained permissions are also granted, but kube-apiserver is able to reach kubelet|
-| Rollback only kubelet to disable the feature-gate | workloads won't be authorized by kubelet unless coarse-grained permissions are also granted, but kube-apiserver is able to reach kubelet |
+| Updrade only kube-apiserver to enable the feature-gate | workloads wont be able to reach kubelet unless they revert to using coarse-grained permissions but kube-apiserver is able to reach kubelet |
+| Rollback both kubelet and kube-apiserver so that feature gate is disabled in both. | workloads wont be able to reach kubelet unless they revert to using coarse-grained permissions but kube-apiserver is able to reach kubelet|
+| Rollback only kubelet to disable the feature-gate | workloads wont be able to reach kubelet unless they revert to coarse-grained permissions but kube-apiserver is able to reach kubelet |
 | Rollback only kube-apiserver to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
 
 
@@ -682,12 +682,12 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-If webhook authorization is not enabled for the kubelet then nothing changes. But if webhook authorization is enabled
+If RBAC is not enabled for kubelet API then nothing changes. But if RBAC is enabled
 for the kubelet API then older (n-3) kubelets that don't support this feature
 will use only coarse-grained RBAC verbs so workload authors would need to make
 sure that they grant the coarse-grained permissions to their workloads when
-trying to communicate with these kubelets. Unless the workload is only granted the new
-fine-grained permission no changes are required to communicate with older kubelets.
+trying to communicate with these kubelets. Unless the workload uses the new
+fine-grained permission no chnages are required to communicate with older kubelets.
 
 ## Production Readiness Review Questionnaire
 
@@ -1169,6 +1169,9 @@ Major milestones might include:
 2024-10-17: Alpha Code implementation [PR](https://github.com/kubernetes/kubernetes/pull/126347) merged.
 
 2024-10-22: Alpha Documentation [PR](https://github.com/kubernetes/website/pull/48412) merged.
+2025-01-22: KEP graduated to BETA [PR](https://github.com/kubernetes/enhancements/pull/5016)
+2025-01-27: BETA code implementation [PR](https://github.com/kubernetes/kubernetes/pull/129656) merged.
+2025-03-29: BETA documentation [PR](https://github.com/kubernetes/website/pull/49578) merged.
 
 2025-01-22: KEP graduated to BETA [PR](https://github.com/kubernetes/enhancements/pull/5016)
 
