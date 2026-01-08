@@ -130,20 +130,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -644,6 +644,29 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+If workloads are using non finegrained permissions.
+
+|Scenario| Result |
+| -------|--------|
+| Upgrade both kubelet and kube-apiserver so that feature gate is enabled in both. | workloads and kube-apiserver are able to reach kubelet|
+| Upgrade only kubelet to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+| Updrade only kube-apiserver to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+| Rollback both kubelet and kube-apiserver so that feature gate is disabled in both. | workloads and kube-apiserver are able to reach kubelet|
+| Rollback only kubelet to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+| Rollback only kube-apiserver to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+
+If workloads are using finegrained permissions.
+
+|Scenario| Result |
+| -------|--------|
+| Upgrade both kubelet and kube-apiserver so that feature gate is enabled in both. | workloads and kube-apiserver are able to reach kubelet|
+| Upgrade only kubelet to enable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+| Updrade only kube-apiserver to enable the feature-gate | workloads wont be able to reach kubelet unless they revert to using coarse-grained permissions but kube-apiserver is able to reach kubelet |
+| Rollback both kubelet and kube-apiserver so that feature gate is disabled in both. | workloads wont be able to reach kubelet unless they revert to using coarse-grained permissions but kube-apiserver is able to reach kubelet|
+| Rollback only kubelet to disable the feature-gate | workloads wont be able to reach kubelet unless they revert to coarse-grained permissions but kube-apiserver is able to reach kubelet |
+| Rollback only kube-apiserver to disable the feature-gate | workloads and kube-apiserver are able to reach kubelet |
+
+
 ### Version Skew Strategy
 
 <!--
@@ -658,6 +681,13 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+If RBAC is not enabled for kubelet API then nothing changes. But if RBAC is enabled
+for the kubelet API then older (n-3) kubelets that don't support this feature
+will use only coarse-grained RBAC verbs so workload authors would need to make
+sure that they grant the coarse-grained permissions to their workloads when
+trying to communicate with these kubelets. Unless the workload uses the new
+fine-grained permission no chnages are required to communicate with older kubelets.
 
 ## Production Readiness Review Questionnaire
 
@@ -1135,8 +1165,16 @@ Major milestones might include:
 -->
 
 2024-09-28: [KEP-2862](https://github.com/kubernetes/enhancements/pull/4760) merged as implementable and PRR approved for ALPHA.
+
 2024-10-17: Alpha Code implementation [PR](https://github.com/kubernetes/kubernetes/pull/126347) merged.
+
 2024-10-22: Alpha Documentation [PR](https://github.com/kubernetes/website/pull/48412) merged.
+
+2025-01-22: KEP graduated to BETA [PR](https://github.com/kubernetes/enhancements/pull/5016)
+
+2025-01-27: BETA code implementation [PR](https://github.com/kubernetes/kubernetes/pull/129656) merged.
+
+2025-03-29: BETA documentation [PR](https://github.com/kubernetes/website/pull/49578) merged.
 
 ## Drawbacks
 
