@@ -239,7 +239,7 @@ However, this impact is mitigated by several factors:
 * These pods are expected to be retried quickly after the Workload Scheduling Cycle because
   their initial timestamps are preserved. This places them near the head of the active queue,
   minimizing the duration they remain in the "nominated but not assumed" state.
-* While higher-priority or long-standing pods might interleave and be scheduled before the gang pods,
+* While higher-priority or long-standing (equal priority) pods might interleave and be scheduled before the gang pods,
   the overall window of time where these nominations are active is expected to be short enough
   to prevent severe degradation.
 
@@ -750,11 +750,18 @@ The list and configuration of plugins used by this algorithm will be the same as
    reducing overall scheduling time.
 
    * If a pod fits, it is temporarily assumed and reserved on the selected node.
+  
    * If a pod cannot fit, the scheduler tries preemption by running
      the `PostFilter` extension point.
      *Note: With workload-aware preemption this phase will be replaced by a workload-level algorithm
      that will be run after trying to schedule all pod group's pods.*
-     * If preemption is successful, the pod is temporarily assumed and reserved on the selected node.
+
+     * If calculated preemption is successful, the pod is temporarily assumed and reserved on the selected node.
+       Victim pods are not preempted yet, but just marked as nominated for removal.
+       Subsequent pods from this group won't see victims on the nodes in this workload cycle.
+       [Delayed Preemption](#delayed-preemption) feature is used to delay the actuation
+       until after all group's pods are considered.
+
      * If preemption fails, the pod is considered unscheduled for this cycle.
        However, the scheduling of subsequent pods continues as long as
        the `minCount` constraint remains satisfiable. The processing can also be
@@ -767,10 +774,12 @@ The list and configuration of plugins used by this algorithm will be the same as
 4. The scheduler checks if the number of schedulable (including those after delayed preemption)
    Pods meets the `minCount`.
 
-   * If `schedulableCount >= minCount`, the cycle succeeds. Pods are nominated to their chosen nodes,
-    are pushed to the active queue and will soon attempt to be scheduled on their
-     nominated nodes in their own, pod-by-pod cycles. If a pod selects a
-     different node than its nomination during the individual cycle, the
+   * If `schedulableCount >= minCount`, the cycle succeeds. If preemptions are needed,
+     all nominated victims are removed as described in [Delayed Preemption](#delayed-preemption).
+     Next, pods are nominated to their chosen nodes, pushed to the active queue,
+     and will soon attempt to be scheduled on their nominated nodes in their own, pod-by-pod cycles.
+     
+     If a pod selects a different node than its nomination during the individual cycle, the
      gang remains valid as long as `minCount` is satisfied globally (enforced at `WaitOnPermit`).
      The `minCount` check can consider the number of pods that have passed the Workload Scheduling Cycle
      to ensure that Pods are not waiting unnecessarily when some have been rejected
@@ -782,7 +791,8 @@ The list and configuration of plugins used by this algorithm will be the same as
      (e.g., the nominated node is no longer valid), the gang will time out at `WaitOnPermit`
      and all necessary preemptions will be simulated again in the next Workload Scheduling Cycle.
 
-   * If `schedulableCount < minCount`, the cycle fails. Pods go through traditional failure handlers
+   * If `schedulableCount < minCount`, the cycle fails. Preemptions computed but not actuated
+     during this cycle are discarded. Pods go through traditional failure handlers
      and nominations for them are cleared to ensure the other workloads (pod groups)
      can be attempted on that place. See *Failure Handling*.
 
@@ -836,26 +846,77 @@ of this API field.
 
 #### Delayed Preemption
 
-A critical requirement for moving Gang Scheduling to Beta is the integration
-with *Delayed Preemption*.
+A critical requirement for moving Gang Scheduling to Beta is the integration with *Delayed Preemption*,
+which allows the scheduler to avoid unnecessary preemptions. However, the current model of preemption,
+when preemption is triggered immediately
+after the victims are decided (in `PostFilter`), doesn't achieve this goal. The reason for that is
+that the proposed placement (nomination) can actually appear to be invalid and not proceed.
+In such cases, we will not even proceed to binding and the preemption will be completely unnecessary
+disruption.
 
-Standard Kubernetes preemption is eager: when a `PostFilter` selects victims to preempt,
-they are deleted immediately. For Gang Scheduling, this behavior is risky and can lead to
-*partial preemption application*, meaning we might do some unnecessary preemptions
-when the gang, ultimately, won't fit. Delayed Preemption solves this by separating the
-*selection* of victims from the *execution* of preemption.
+Note that this problem already exists in the current gang scheduling implementation. A given gang may
+not proceed with binding if the `minCount` pods from it can't be scheduled. But, the preemptions are
+currently triggered immediately after choosing a place for individual pods. So similarly as above,
+we may end up with completely unnecessary disruptions.
 
-1. During the Workload Scheduling Cycle loop, the scheduler calculates necessary
-   preemptions for all Pods in the gang (Step 3 of Scheduling Algorithm).
+We will address it with what we call *delayed preemption* mechanism as following:
 
-2. At the end of the Workload Scheduling Cycle:
-   * If the quorum is met, the scheduler actuates the preemptions,
-     initiating the removal of victims from the cluster.
-   * If the quorum is not met, the preemption is aborted. No victims are deleted.
-     The gang returns to the queue.
+1. We will modify the `DefaultPreemption` plugin to just compute preemptions, without actuating them.
+   We advise maintainers of custom `PostFilter` implementations to do the same.
 
-Read more about the proposal in
-[KEP-5710: Workload Aware Preemption](https://github.com/kubernetes/enhancements/pull/5711) PR.
+2. We will extend the `PostFilterResult` to include a set of victims (in addition to the existing
+   `NominationInfo`). This will allow us to clearly decouple the computation from actuation.
+
+   We believe that while custom plugins may want to provide their custom preemption logic,
+   the actuation logic can actually be standardized and implemented directly as part of the framework.
+   If that proves incorrect, we will introduce a new plugin extension point (tentatively called
+   `Preempt`) that will be responsible for actuation. However, for now we don't see evidence for this
+   being needed.
+
+3. For individual pods (not being part of a workload), we will adjust the scheduling framework
+   implementation of `schedulingCycle` to actuate preemptions of returned victims if calling
+   `PostFilter` plugins resulted in finding a feasible placement.
+
+4. For pods being part of a workload, we will rely on the Workload Scheduling Cycle.
+   We still have two subcases here:
+
+   1. In the legacy case (without workload-aware preemption), we call `PostFilter` individually for
+      every pod from a PodGroup. However, the victims computed for already the already processed
+      pods may affect placement decisions for the next pods.
+      To accommodate for that, if a set of victims was returned from a `PostFilter` in addition
+      to keeping them for further actuation, we will additionally store them in `CycleState`.
+      More precisely, the `CycleState` will store a new entry containing a map from
+      a `nodeName` to a list of victims that were already chosen.
+      With that, the `DefaultPreemption` plugin will be extended to remove all already chosen
+      victims from a given node before processing that node.
+
+   2. In the target case (with workload-aware preemption), we will have no longer be processing
+      pods individually, so the additional mutations of `CycleState` should not be needed.
+
+5. In both above cases, we will introduce an additional step to the scheduling algorithm at the
+   end. If we managed to find a feasible placement for the PodGroup, we will simply take all
+   the victims and actuate their preemption. If a feasible placement was not found, the victims
+   will be dropped. In both cases, the scheduling of the whole PodGroup (all its pods)
+   will be marked as unschedulable and got back to the scheduling queue.
+
+6. To reduce the number of unnessary preemptions, in case a preemption has already been triggerred
+   and the already nominated placement remains valid, no new preemptions can be triggerred.
+   In other words, a different placement can be chosen in a subsequent (workload) scheduling cycles only if
+   it doesn't require additional preemptions or the previously chosen placement is no longer
+   feasible (e.g. because higher priority pods were scheduled in the meantime).
+
+The rationale behind the above design is to maintain the current scheduling property where preemption
+doesn't result in a commitment for a particular placement. If a different possible placement appears
+in the meantime (e.g. due to other pods terminating or new nodes appearing), subsequent scheduling
+attempts may pick it up, improving the end-to-end scheduling latency. Returning pods to scheduling
+queue if these need to wait for preemption to become schedulable maintains that property.
+
+We acknowledge the two limitations of the above approach: (a) dependency on the introduction of
+Workload Scheduling Cycle (delayed preemption will not work if workload pods will not be processed
+by Workload Scheduling Cycle) and (b) the fact that the placement computed in
+Workload Scheduling Cycle may be invalidated in pod-by-pod scheduling later.
+However, those features should be used together,
+and the simplicity of the approach and target architecture outweigh these limitations.
 
 #### Workload-aware Preemption
 
@@ -1078,6 +1139,9 @@ This section must be completed when targeting alpha to a release.
     - kube-apiserver
     - kube-scheduler
   - Feature gate name: GangScheduling
+  - Components depending on the feature gate:
+    - kube-scheduler
+  - Feature gate name: DelayedPreemption
   - Components depending on the feature gate:
     - kube-scheduler
   - Feature gate name: WorkloadBasicPolicyDesiredCount

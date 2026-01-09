@@ -51,6 +51,9 @@ feature-gates:
   - name: GangScheduling
     components:
       - kube-scheduler
+  - name: DelayedPreemption
+    components:
+      - kube-scheduler
   - name: WorkloadBasicPolicyDesiredCount
     components:
       - kube-apiserver
