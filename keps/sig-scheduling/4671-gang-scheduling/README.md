@@ -256,6 +256,8 @@ However, this impact is mitigated by several factors:
   the overall window of time where these nominations are active is expected to be short enough
   to prevent severe degradation.
 
+The real impact will be verified hrough scalability tests (scheduler-perf benchmark).
+
 ## Design Details
 
 ### Naming
@@ -787,11 +789,22 @@ The list and configuration of plugins used by this algorithm will be the same as
 4. The scheduler checks if the number of schedulable (including those after delayed preemption)
    Pods meets the `minCount`.
 
-   * If `schedulableCount >= minCount`, the cycle succeeds. If preemptions are needed,
-     all nominated victims are removed as described in [Delayed Preemption](#delayed-preemption).
-     Next, pods are nominated to their chosen nodes, pushed to the active queue,
-     and will soon attempt to be scheduled on their nominated nodes in their own, pod-by-pod cycles.
-     
+   * If `schedulableCount >= minCount`, the cycle succeeds.
+  
+     * If preemptions are needed: The removal of all nominated victims is actuated
+       as described in [Delayed Preemption](#delayed-preemption).
+       The pods are nominated to their chosen nodes but are moved to the unschedulable queue,
+       waiting for victim removal to complete. They can be moved back to the active queue
+       and retried even before the victims are fully removed, but they must pass through
+       the Workload Scheduling Cycle again. Crucially, initiating *new* preemptions
+       will be forbidden during this retry. This ensures that the pod group
+       can be scheduled in a different location if resources become available earlier,
+       but cannot cause additional disruption to do so.
+
+     * If preemptions are not needed: Pods are nominated to their chosen nodes,
+       pushed directly to the active queue, and will soon attempt to be scheduled
+       on their nominated nodes in their own, pod-by-pod cycles.
+
      If a pod selects a different node than its nomination during the individual cycle, the
      gang remains valid as long as `minCount` is satisfied globally (enforced at `WaitOnPermit`).
      The `minCount` check can consider the number of pods that have passed the Workload Scheduling Cycle
@@ -801,8 +814,9 @@ The list and configuration of plugins used by this algorithm will be the same as
      In the pod-by-pod cycle, preemption initiated by the workload pods will be forbidden.
      Allowing it would complicate reasoning about the consistency of the
      Workload Scheduling Cycle and Workload-Aware Preemption. If preemption is necessary
-     (e.g., the nominated node is no longer valid), the gang will time out at `WaitOnPermit`
-     and all necessary preemptions will be simulated again in the next Workload Scheduling Cycle.
+     (e.g., the nominated node is no longer valid), the gang will either time out
+     or be instantly rejected (when the `minCount` cannot be satisfied) at `WaitOnPermit` and all necessary preemptions
+     will be simulated again in the next Workload Scheduling Cycle.
 
    * If `schedulableCount < minCount`, the cycle fails. Preemptions computed but not actuated
      during this cycle are discarded. Pods go through traditional failure handlers
@@ -1030,12 +1044,27 @@ This can be done with:
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 -->
 
-We will create integration test(s) to ensure basic functionalities of gang-scheduling including:
+Initially, we created integration tests to ensure the basic functionalities of gang scheduling including:
+
 - Pods linked to the non-existing workload are not scheduled
 - Pods get unblocked when workload is created and observed by scheduler
 - Pods are not scheduled if there is no space for the whole gang
+  
+With Workload Scheduling Cycle and Delayed Preemption features, we will significantly expand test coverage to verify:
 
-In Beta, we will add tests to verify that deadlocks are not happening.
+- Pods referencing a `Workload` (both gang and basic policies) are correctly processed via the Workload Scheduling Cycle.
+- `PodGroup` queuing ensures that all available members are retrieved and processed correctly.
+- Deadlocks and livelocks do not occur when multiple gangs compete for resources or interleave with standard pods.
+- Delayed Preemption works correctly for pod-by-pod (non-workload) scheduling.
+- Delayed Preemption ensures atomicity, i.e., victims are deleted only if the scheduler determines the entire gang can fit,
+  otherwise, the cycle aborts with zero disruption.
+- Failed pod groups are requeued correctly and retry successfully when resources become available.
+
+We will also benchmark the performance impact of these changes to measure:
+
+- The scheduling throughput of the workload scheduling, including gang and basic policies and preemptions.
+- The performance impact on standard pod scheduling when there are many nominated pods,
+  for scenarios mentioned in the [NominatedNodeName impact on filtering performance](#nominatednodename-impact-on-filtering-performance).
 
 ##### e2e tests
 
