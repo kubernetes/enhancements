@@ -123,7 +123,7 @@ As a cluster administrator, I want to enable user namespaces for my control plan
 
 If either the container runtime or the underlying container runtime does not support this feature, the container will fail to be created. To mitigate this issue, we will keep this feature in the alpha stage until mainstream container runtimes (containerd/runc) and mainstream underlying container runtimes (runc/crun) both support it, before promoting it to beta.
 
-Users might upgrade the container runtime to a newer version on some nodes first, but pods could still be scheduled onto nodes that do not support this feature. In such cases, users can leverage [Node Declared Features](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features) to avoid this problem.
+Users might upgrade the container runtime to a newer version on some nodes first, but pods could still be scheduled onto nodes that do not support this feature. In such cases, users can leverage [Node Declared Features](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features) to avoid this problem. Specifically, the new `UserNamespacesHostNetwork` field in CRI-API's `RuntimeHandlerFeatures` will allow the kubelet to report whether the node supports this combination, enabling the scheduler to make informed placement decisions.
 
 
 ## Design Details
@@ -131,6 +131,8 @@ Users might upgrade the container runtime to a newer version on some nodes first
 The core design change is very simple: in the apiserver's Pod validation logic, locate the code block that prevents the `hostNetwork: true` and `hostUsers: false` combination, and wrap it in a conditional that only executes the validation if the `UserNamespacesHostNetworkSupport` feature gate is disabled.
 
 And add a parameter to `PodValidationOptions` so that if the `UserNamespacesHostNetworkSupport` feature gate is disabled, and the pod has already used the combination of `hostNetwork: true` and `hostUsers: false`, then we should allow updates the pod.
+
+To ensure pods are not scheduled to nodes that do not support this combination, we will add a new field `UserNamespacesHostNetwork` to the CRI-API's `RuntimeHandlerFeatures`. If the CRI implementation supports the combination of user namespaces and `hostNetwork`, this field will be set to `true`. This allows the kubelet to report node capabilities via Node Declared Features, enabling the scheduler to avoid placing such pods on unsupported nodes.
 
 ### Test Plan
 
@@ -181,6 +183,8 @@ A newer kube-apiserver with this feature enabled will accept such a Pod.
 
 An older kubelet will still get the Pod definition from the kube-apiserver. 
 It will attempt to create the Pod, if the container runtime version is too old and doesn't support this combination, the pod will be stuck in the ContainerCreating state.
+
+To mitigate scheduling issues in mixed-version clusters, the kubelet will use the `UserNamespacesHostNetwork` field from CRI-API's `RuntimeHandlerFeatures` to report node capabilities via Node Declared Features. This allows the scheduler to avoid placing pods requiring this combination on nodes that do not support it, even in version-skew scenarios.
 
 ## Production Readiness Review Questionnaire
 
@@ -373,6 +377,7 @@ N/A
 ## Implementation History
 
 * 2025-10-03: Initial proposal
+* 2025-12-18: Add implementation content for v1.36
 
 ## Drawbacks
 
