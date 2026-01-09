@@ -359,13 +359,11 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-This proposal intends to rely on the K8s [Service Topology API] for topology
-aware routing, but that API is currently in flux. As a result this proposal is
-only suited to same-region multi-cluster services until the topology API
-progresses.
-
-[Service Topology API]:
-    https://kubernetes.io/docs/concepts/services-networking/service-topology/
+While standard Services traffic policies and traffic distribution have been
+integrated and work across clusters (for instance PreferSameZone across clusters
+sharing the same zone), we do not yet have multi-cluster specific traffic
+distribution control. This is planned to be addressed in its own KEP that will
+complement this specification.
 
 ### Risks and Mitigations
 
@@ -1126,6 +1124,8 @@ when drafting this test plan.
 - Scalability/performance testing, understanding impact on cluster-local service
   scalability.
 - [Cluster ID KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid) is GA, with at least one other multi-cluster use case.
+- A conformance report program for MCS-API has been created to document the
+  conformance level of the various implementations.
 
 <!--
 **Note:** *Not required until targeted at a release.*
