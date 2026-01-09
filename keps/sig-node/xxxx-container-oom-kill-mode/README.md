@@ -105,13 +105,10 @@ The transition to cgroup v2's default group kill behavior has had significant pr
 
 These reports led to [PR #122813](https://github.com/kubernetes/kubernetes/pull/122813), which attempted to add a kubelet flag but was closed after community discussion concluded that container-level configuration was the proper solution[^3]. The consensus was that node-level configuration cannot adequately address the needs of heterogeneous workloads.
 
-This KEP also deprecates the `singleProcessOOMKill` kubelet flag for removal in v1.38 (GA). Container-level configuration provides better granularity and eliminates the complexity of maintaining both node-level and container-level settings.
-
 ### Goals
 
 - Add a per-container `oomKillMode` field to allow container-level OOM behavior configuration
 - Maintain full backward compatibility with the existing `singleProcessOOMKill` kubelet configuration during migration
-- Deprecate and remove `singleProcessOOMKill` kubelet flag by v1.38 (GA) to simplify configuration
 
 ### Non-Goals
 
@@ -124,12 +121,10 @@ Add an `oomKillMode` field to the Container specification in the core v1 API. Th
 ### Why Container-level Configuration?
 
 1. **Granular Control**: Different containers in the same pod may have different OOM requirements:
-
    - A sidecar container might benefit from single-process kills
    - The main application container might require group kills for consistency
 
 2. **Natural Alignment**: OOM behavior is inherently a container-level concern:
-
    - Memory limits are set per container
    - OOMScoreAdj is calculated per container based on QoS
    - cgroups are managed at the container level
@@ -189,7 +184,7 @@ The existing `EphemeralContainer` struct will gain the same optional field so th
 The OOM kill behavior follows this precedence:
 
 1. **Container-level `oomKillMode`** (highest priority) - if explicitly set
-2. **Kubelet `singleProcessOOMKill` flag** - node-level default(Temporary measures during migration)
+2. **Kubelet `singleProcessOOMKill` flag** - node-level default when `oomKillMode` is unset and the flag is set
 3. **System default** - cgroup v2 defaults to group kill, cgroup v1 defaults to single process
 
 This hierarchy ensures backward compatibility while enabling smooth migration from node-level to container-specific configuration.
@@ -204,44 +199,14 @@ Multi-process web servers (PHP-FPM, Python Gunicorn/uWSGI, Ruby Unicorn) run a m
 
 Databases like PostgreSQL require all processes to be killed together on OOM to ensure data consistency. Partial kills could leave the database in an inconsistent state.
 
-### Deprecation of singleProcessOOMKill Flag
-
-The `singleProcessOOMKill` kubelet flag will be removed in v1.38 (GA).
-
-#### Timeline
-
-- **v1.35 (Alpha)**: Deprecation announced in release notes and documentation
-- **v1.36 (Beta)**: Warning logs added when flag is used
-  ```
-  WARNING: Flag --single-process-oom-kill is deprecated and will be removed in v1.38.
-  Please migrate to container.oomKillMode field.
-  ```
-- **v1.38 (GA)**: Flag removed entirely
-
-#### Migration Guide
-
-Users currently using `--single-process-oom-kill` should:
-
-1. **Identify affected workloads**: Determine which containers rely on single-process OOM behavior
-2. **Add explicit configuration**: Set `oomKillMode: Single` for containers needing this behavior
-3. **Test migration**: Deploy with both flag and container field during transition
-4. **Remove flag**: Before v1.38, remove the kubelet flag from node configuration
-
-Example migration:
-
 ```yaml
-# Before (v1.34)
-# kubelet --single-process-oom-kill=true
-
-# After (v1.35+)
 apiVersion: v1
 kind: Pod
 spec:
   containers:
     - name: multi-process-app
       oomKillMode: Single # Explicitly set for containers needing it
-    - name: database
-      # No setting needed - will use default (Group)
+    - name: database # No setting needed - will use the node default
 ```
 
 ### Notes/Constraints/Caveats
@@ -249,7 +214,6 @@ spec:
 - **cgroup v1 limitations**: On systems using cgroup v1, the `Group` mode cannot be enforced as cgroup v1 lacks the `memory.oom.group` mechanism. Kubelet will fail container creation with a clear event if `Group` is requested on such nodes, prompting the workload to be rescheduled on cgroup v2 capacity.
 - **Windows incompatibility**: This feature is Linux-specific. Pods that target Windows nodes (`spec.os.name=windows`) and set `oomKillMode` will be rejected during admission with a validation error.
 - **Container runtime support**: Requires container runtime support for setting `memory.oom.group`. Most modern runtimes (containerd, CRI-O) support this on cgroup v2.
-- **Existing behavior**: Containers without this field specified will continue to use the kubelet's node-level configuration until v1.38, ensuring zero impact on existing workloads during migration.
 
 ### Risks and Mitigations
 
@@ -264,10 +228,6 @@ spec:
 **Risk**: Performance impact from additional cgroup configuration.
 
 - **Mitigation**: The setting is applied once at container creation, no runtime overhead.
-
-**Risk**: Breaking change for users relying on `singleProcessOOMKill` flag.
-
-- **Mitigation**: 3-release deprecation period (v1.35-v1.37), clear migration guide, warning logs in v1.36+, container-level config available before removal.
 
 ## Design Details
 
@@ -304,11 +264,11 @@ func (m *kubeGenericRuntimeManager) generateLinuxContainerResources(
 ) *runtimeapi.LinuxContainerResources {
     // ... existing code ...
 
-    // v1.36+: Warn about deprecated flag
+    // Optional info when a node-level default is configured
     if utilfeature.DefaultFeatureGate.Enabled(features.ContainerOOMKillMode) &&
        m.singleProcessOOMKill != nil {
-        klog.Warning("Flag --single-process-oom-kill is deprecated and will be removed in v1.38. " +
-                    "Please migrate to pod.spec.containers.oomKillMode field.")
+        klog.V(2).Info("Using kubelet --single-process-oom-kill as node-level default; " +
+                       "container oomKillMode overrides when set.")
     }
 
     // Determine OOM kill behavior
@@ -329,15 +289,12 @@ func (m *kubeGenericRuntimeManager) generateLinuxContainerResources(
             }
         }
     } else {
-        // Fall back to kubelet configuration (v1.35-v1.37)
-        // After v1.38, default to cgroup v2 behavior (group kill)
+        // Fall back to kubelet configuration when set; otherwise use system default
         if utilfeature.DefaultFeatureGate.Enabled(features.ContainerOOMKillMode) &&
-           !utilfeature.DefaultFeatureGate.Enabled(features.LegacyKubeletFlags) {
-            // v1.38+: Flag removed, use cgroup default
-            useGroupKill = isCgroup2UnifiedMode()
-        } else {
-            // v1.35-v1.37: Still support the flag
+           m.singleProcessOOMKill != nil {
             useGroupKill = isCgroup2UnifiedMode() && !ptr.Deref(m.singleProcessOOMKill, false)
+        } else {
+            useGroupKill = isCgroup2UnifiedMode()
         }
     }
 
@@ -499,7 +456,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - [ ] Documentation of the feature in k/website
 - [ ] Integration with existing `singleProcessOOMKill` flag verified
 - [ ] Feature works with containerd and CRI-O runtimes
-- [ ] Deprecation of `singleProcessOOMKill` announced in release notes
+- [ ] Documentation clarifies precedence between container-level config and the kubelet flag
 
 #### Beta (v1.36)
 
@@ -510,13 +467,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   - cgroup v1 fallback scenarios
 - [ ] No critical bugs reported during Alpha (1 release cycle)
 - [ ] kubectl support for displaying effective OOM mode in `describe pod`
-- [ ] Warning logs implemented for `singleProcessOOMKill` usage
 
 #### GA (v1.38)
 
 - [ ] Feature in Beta for at least 2 releases (v1.36, v1.37)
 - [ ] Feature gate locked to enabled
-- [ ] singleProcessOOMKill` kubelet flag removed
+- [ ] Re-evaluate deprecation status of `singleProcessOOMKill` based on adoption and feedback
 
 ### Upgrade / Downgrade Strategy
 
@@ -588,7 +544,7 @@ Will be tested in Beta phase with cluster upgrade/downgrade scenarios.
 
 ###### Is the rollout accompanied by any deprecations and/or removals?
 
-Yes, the `singleProcessOOMKill` kubelet flag will be deprecated in v1.35 and removed in v1.38.
+No immediate removals. The `singleProcessOOMKill` kubelet flag remains supported as a node-level default.
 
 ### Monitoring Requirements
 
