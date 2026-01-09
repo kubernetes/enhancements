@@ -219,6 +219,29 @@ We try to mitigate it by an extensive analysis of usecases and already sketching
 how we envision the direction in which the API will need to evolve to support further
 usecases. You can read more about it in the [extended proposal] document.
 
+#### NominatedNodeName impact on filtering performance
+
+Using `.status.nominatedNodeName` as an output of the Workload Scheduling Cycle
+can impact the performance of the standard pod-by-pod scheduling cycle.
+Whenever the scheduler filters a node, it must temporarily add nominated pods
+(with equal or higher priority) to the cached NodeInfo. In large clusters,
+the number of such operations multiplied by the scheduling throughput can yield to a visible overhead.
+If the latency between the end of the Workload Scheduling Cycle
+and the actual processing of those pods is high, the number of unrelated pods
+having to consider such nomination also increases.
+
+However, this impact is mitigated by several factors:
+* Nominations are temporary. As soon as workload-scheduled pods pass
+  their individual scheduling cycle and are assumed, what cleans the in-memory nominations.
+* For the workload pods themselves, the performance impact is negligible.
+  They will typically only execute filters for the single node they are nominated to,
+  rather than evaluating the entire cluster.
+* These pods are expected to be retried quickly after the Workload Scheduling Cycle because
+  their initial timestamps are preserved. This places them near the head of the active queue,
+  minimizing the duration they remain in the "nominated but not assumed" state.
+* While higher-priority or long-standing pods might interleave and be scheduled before the gang pods,
+  the overall window of time where these nominations are active is expected to be short enough
+  to prevent severe degradation.
 
 ## Design Details
 
@@ -726,11 +749,12 @@ The list and configuration of plugins used by this algorithm will be the same as
    It also utilizes the Opportunistic Batching feature where possible,
    reducing overall scheduling time.
 
-   * If a pod fits, it is tentatively nominated.
+   * If a pod fits, it is temporarily assumed and reserved on the selected node.
    * If a pod cannot fit, the scheduler tries preemption by running
-     the `PostFilter` extension point. *Note:* With workload-aware preemption
-     this phase will be replaced by a workload-level algorithm.
-     * If preemption is successful, the pod is nominated on the selected node.
+     the `PostFilter` extension point.
+     *Note: With workload-aware preemption this phase will be replaced by a workload-level algorithm
+     that will be run after trying to schedule all pod group's pods.*
+     * If preemption is successful, the pod is temporarily assumed and reserved on the selected node.
      * If preemption fails, the pod is considered unscheduled for this cycle.
        However, the scheduling of subsequent pods continues as long as
        the `minCount` constraint remains satisfiable. The processing can also be
@@ -743,8 +767,8 @@ The list and configuration of plugins used by this algorithm will be the same as
 4. The scheduler checks if the number of schedulable (including those after delayed preemption)
    Pods meets the `minCount`.
 
-   * If `schedulableCount >= minCount`, the cycle succeeds. Pods are pushed
-     to the active queue and will soon attempt to be scheduled on their
+   * If `schedulableCount >= minCount`, the cycle succeeds. Pods are nominated to their chosen nodes,
+    are pushed to the active queue and will soon attempt to be scheduled on their
      nominated nodes in their own, pod-by-pod cycles. If a pod selects a
      different node than its nomination during the individual cycle, the
      gang remains valid as long as `minCount` is satisfied globally (enforced at `WaitOnPermit`).
@@ -789,6 +813,14 @@ a single-cycle workload scheduling phase. As long as PodGroups consist of homoge
 opportunistic batching itself will provide significant improvements.
 Future features like Topology Aware Scheduling can further improve other subsets of use cases.
 
+Moreover, this default algorithm relies on specific sorting and may fail to find
+a valid placement that could have been discovered by processing the group's pods
+in a different order. While resolving this limitation could be desirable,
+implementing a generalized solver for arbitrary constraints would introduce excessive complexity
+for the default implementation. The current proposal addresses the vast majority of standard use cases
+(homogeneous workloads). Future improvements for this should be delivered via specialized algorithms
+based on specific `PodGroup` constraints, such as Topology Aware Scheduling (TAS).
+
 #### Interaction with Basic Policy
 
 For pod groups using the `Basic` policy, the Workload Scheduling Cycle is
@@ -830,7 +862,7 @@ Read more about the proposal in
 Workload-aware preemption ([KEP-5710](https://kep.k8s.io/5710)) aims to
 enable preemption for a whole pod group at once. In the context of this cycle,
 it means that if the cycle determines preemption for a single pod is necessary,
-it won't run the `PostFilter` phase, but defer that to the end of the scheduling phase,
+it won't run the `PostFilter` phase, but defer that to the end of the workload scheduling phase,
 running a new, single workload-aware preemption step.
 
 Read more about the proposal in
@@ -855,9 +887,10 @@ When the cycle fails, the scheduler rejects the entire group.
 Backoff mechanism has to be applied for a pod group similarly as we do for individual pods.
 For Beta, we will apply the standard Pod backoff logic to the group.
 
-At the same time, we can consider increasing the maximum backoff default value
-as the current 10 seconds proven to be too low in larger clusters,
-so this might be the case for workloads.
+At the same time, we should consider increasing the maximum backoff duration for pod groups
+The current default of 10 seconds has proven insufficient in large clusters,
+so this might be the case for workloads. Crucially, because the Workload Scheduling Cycle can take a significant
+amount of time, retrying it too frequently risks starving individual pods.
 
 3. Retries
 
