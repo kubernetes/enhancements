@@ -113,6 +113,7 @@ These reports led to [PR #122813](https://github.com/kubernetes/kubernetes/pull/
 ### Non-Goals
 
 - Provide cgroups v1 and Windows support
+- Pod-level/WholePod OOM behavior is out of scope; we may revisit it based on demand and feedback from operators.
 
 ## Proposal
 
