@@ -28,6 +28,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -170,7 +173,9 @@ Disruption itself is never desired and this defines our core principles.
 While cascading preemptions are inevitable in some cases (e.g. if high priority preemptor workload
 has very strict placement requirements), in general if there are multiple options of scheduling
 a higher priority workload with preemptions, with some of them being expected to cause cascading
-preemptions and others not, the later should be chosen.
+preemptions and others not, we will try to choose the later. However, due to computational
+cost of searching the potential space, this is not a hard rule, but rather a goal that we will
+try to optimize for.
 
 ### High-level approach
 
@@ -185,10 +190,9 @@ pieces of the solution and discuss them in more detail in the following sections
 1. We extend the `Workload API` to allow for defining the priority of a workload. Again, we
    start simple and assume that individual `PodGroups` within a `Workload` has to share the
    same priority. We may decide to relax that assumption in the future follow-up enhancement.
-1. However, we start with separating the concepts of scheduling and preemption priorities from
-   the very beginning. The first one is simple generalization of pod priority concept. The
-   later reflects the consequences of preemption and will eventually allow us for dynamic
-   adjustments of those consequences over time.
+1. We start simple by just defining a single static priority used for scheduling and preemption
+   While we envision both splitting them into two in the future or making it mutable, both of
+   these can be achieved later in backward-compatible way.
 1. We start with a simple sub-optimal preemption algorithm that is based on the existing
    pod preemption algorithm used by kube-scheduler.
 1. We introduce a mechanism of "delayed preemption" to postpone actuation of preemption
@@ -242,7 +246,7 @@ This might be a good place to talk about core concepts and how they relate.
    will be evolving it. How can we ensure that we will not put ourselves into a corner.
 
    Mitigation: We enumerate potential extensions after the detailed design and briefly sketch
-   how the proposed design can be extended to accomodate these.
+   how the proposed design can be extended to accommodate these.
 
 1. Incompatible scheduler profiles - different scheduling profiles may enable different sets of
    plugins and if only subset of profiles enable `GangScheduling` plugin (responsible also for
@@ -251,14 +255,6 @@ This might be a good place to talk about core concepts and how they relate.
    Mitigation: We will document that `GangScheduling` plugin has to be enabled in all profiles
    or the logic will need to be reimplemented by other custom plugins. Eventually we may consider
    builtin validation, but we make it out of scope for this KEP.
-
-1. Blocking preemptions - by setting very high preemption priority despite having relatively low
-   scheduling priority one can make their low-priority workload effectively non-preemptable.
-
-   Mitigation: We will recomend cluster administrators to configure additional admission to
-   prevent such cases (e.g. preemption priority cannot be higher than X from scheduling priority
-   or preemption priority can be different than scheduling priority only for a subset of
-   scheduling priorities).
 
 1. Scalability - finding the optimal set of workloads/pods to preempt is computationally expensive
    problem, however we need to ensure it can be used even in the largest Kubernetes clusters.
@@ -289,32 +285,32 @@ be larger than scheduling unit.
 Based on that, we will extend the the existing `GangSchedulingPolicy` as following:
 
 ```golang
-// PreemptionMode describes the mode in which a PodGroup can be preempted.
+// DisruptionMode describes the mode in which a PodGroup can be disrupted (e.g. preempted).
 // +enum
-type PreemptionMode string
-
-<<[UNRESOLVED PremptionMode vs DisruptionMode]>>
-Should we rename it to DisruptionMode to allow reusing it e.g. in the EvictionRequest API?
-<<[/UNRESOLVED]>>
+type DisruptionMode string
 
 const (
-  // PreemptionModePod means that individual pods can be preempted independently.
+  // DisruptionModePod means that individual pods can be disrupted or preempted independently.
   // It doesn't depend on exact set of Pods currently running in this PodGroup.
-  PreemptionModePod = "Pod"
-  // PreemptionModePodGroup means that the whole PodGroup replica needs to be
+  DisruptionModePod = "Pod"
+  // DisruptionModePodGroup means that the whole PodGroup replica needs to be disrupted or
   // preempted together.
-  PreemptionModePodGroup = "PodGroup"
+  DisruptionModePodGroup = "PodGroup"
 )
 
 type GangSchedulingPolicy struct {
     // Existing field(s).
 
-    // PreemptionMode defines the mode in which a given PodGroup can be preempted.
+    // DisruptionMode defines the mode in which a given PodGroup can be disrupted.
     // One of Pod, PodGroup.
     // Defaults to Pod if unset.
     PreemptionMode *PreemptionMode
 }
 ```
+
+While the `PreemptionMode` might seem the more natural name here, we envision that the same
+concept can be later used in `Eviction` API and other usecases, so we already start with a more
+generic name to avoid future confusion.
 
 ### Workload priorities
 
@@ -337,6 +333,7 @@ that should be used for preemption. So in the ideal world a workload owner shoul
 
 However, while we believe that all of these are eventually needed, we start simpler by:
 - assuming all PodGroups within a Workload have the same scheduling and preemption priorities
+- starting with just a single priority for scheduling and preemption.
 - starting with static preemption priority (mutability brings additional complexity that is
   purely additive and thus should be added in a follow-up KEP)
 
@@ -356,13 +353,6 @@ type WorkloadSpec struct {
     //
     // This field is immutable.
     PriorityClassName *string
-
-    // PreemptionPriorityClassName, if specified, indicates the workload's
-    // priority that should be used when attempting to preempt this workload.
-    // If not specified, it will default to PriorityClassName.
-    //
-    // This field is immutable.
-    PreemptionPriorityClassName *string
 }
 ```
 
@@ -403,34 +393,11 @@ It's worth mentioning here, that we want to introduce the same defaulting rules 
 and there exists PriorityClass marked as `globalDefault`, we default it to that value.
 This consistency will allow us to properly handle cases when users set neither pods
 nor workload priorities.
-Similarly, we will ensure that `PriorityClass.preemptionPolicy` works exactly the same way for
-workloads as for pods. Such level of consistency would make adoption of Workload API much easier.
-
-Moving to `PreemptionPriorityClassName`, the same issue of confusion holds (the actual priority
-set at the pod level may not reflect priority used for preemption). We argue that its eventually
-mutable nature makes it infeasible for reconciling this information back to pods for scalability
-reasons (we can absolutely handle frequent updates to `Workload.Spec.PreemptionPriorityClassName`,
-but we can't handle updating potentially hundreds or thousands of pods within that workload
-that frequently). So in this case, we limit ourselves to documentation.
-
-There is one more issue we need to address. Consider an example where:
-- workload A has scheduling priority `high` and preemption priority `low`
-- workload B has scheduling priority `high` and preemption priority `low`
-In such case, workload A can preempt workload B (`high` > `low`), but then workload B can also
-preempt workload A, leading to infinite cycle of preemptions.
-The simplest solution to avoid it is to introduce an additional constraint that preemption
-priority cannot be lower then scheduling priority. This ensures that if a given workload X was
-preempted by workload Y (scheduling(Y) > preemption(X)), it will not be able to preempt back
-workload Y because preemption(Y) >= scheduling(Y) > preemption(X) >= scheduling(X). This will
-work fine even if we make preemption priority mutable.
-So address that we will extend additional the `Priority` admission plugin to validate that
-`spec.Priority <= spec.PreemptionPriority`.
 
 Given that components operate on integer priorities, we will introduce a corresponding fields
 that reflect priority and preemption priority of a workload (similarly to how it's done in
 Pod API). However, since these are derivatives of the fields introduced above and to allow
-future mutability of `PreemptionPriorityClassName`, we propose introducing them as as part
-of status:
+future mutability, we propose introducing them as as part of status:
 
 ```golang
 type WorkloadStatus struct {
@@ -438,12 +405,6 @@ type WorkloadStatus struct {
     // The higher value, the higher the priority.
     // This field is populated from the PriorityClassName.
     Priority *int32
-
-    // PreemptionPriority reflects the priority of the workload when it is
-    // considered for preemption.
-    // The higher value, the higher the priority.
-    // This field is populated from the PreemptionPriorityClassName.
-    PreemptionPriority *int32
 }
 ```
 
@@ -510,10 +471,11 @@ with preemption:
       priority prioritizing workloads over individual pods.
 
    1. Perform best-effort reprieval of workloads and pods violating PodDisruptionBudgets. We achieve
-      it but scheduling and assuming the preemptor (assuming that all potential victims are removed),
-      and then iterating over potential victims that would violate PodDisruptionBudget to check if
-      these can be placed in the exact same place they are running now. If they can we simply leave
-      them where they are running now and remove from the potential victims list.
+      it by scheduling and temporarily adding the preemptor to `nodeInfo` structure (assuming that
+      all potential victims are removed), and then iterating over potential victims that would violate
+      PodDisruptionBudget to check if these can be placed in the exact same place they are running now.
+      If they can we simply leave them where they are running now and remove from the potential victims
+      list.
 
       For domain D being a single node (current pod-based preemption), the above algorithm works
       identically to the current algorithm. For larger domains, different placements of a preemptor
@@ -593,7 +555,7 @@ We will address it with what we call `delayed preemption` mechanism as following
    1. In a legacy case (without workload-aware preemption), we call PostFilter individually for
       every pod from a PodGroup. However, the victims computed for already the already processed
       pods may affect placement decisions for the next pods.
-      To accomodate for that, if a set of victims was returned from a `PostFilter` in addition
+      To accommodate for that, if a set of victims was returned from a `PostFilter` in addition
       to keeping them for further actuation we will additionally store them in a `CycleState`.
       More precisely, the `CycleState` will be storing a new entry containing a map from
       a nodeName to a list of victims that were already chosen.
@@ -666,21 +628,36 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    leader. The enum-based `PreemptionMode` allows for introducing more sophisticated policies
    (e.g. only a subset of `PodSubGroups` can be preempted).
 
+1. Dynamic preemption priority
+
+   As described above, the preemption priority of a running workload may actually vary over
+   time. In such case, the controller owning a given workload may want to adjust its priority
+   over time to reflect its important and cost of preemption.
+   There are two primary extensions that we can do to achieve that:
+
+   1. Make `PriorityClassName` mutable over time
+   1. Add a new `PreemptionPriorityClassName` field that will be used when considering a given
+      PodGroup for preemption (potentially also making it mutable).
+
+   We believe that at least one of these (potentially both) will be needed in the future, but
+   these all can be achieved in a purely additive way. Mutability is about relaxing validation
+   and defining the semantics for how the mutations are consumed. An `PreemptionPriority` can
+   also be added in backward-compatible way - if unset it just defaults to scheduling priority
+   but a user has now an ability to overwrite it.
+
+   In the later case, we will also need to avoid preemption cycle, which can be achieved by an
+   additional constraint that preemption prioryt cannot be lower then scheduling priority. This
+   ensures that if a given workload X was preempted by workload Y (scheduling(Y) > preemption(X)),
+   it will not be able to preempt back workload Y because
+   preemption(Y) >= scheduling(Y) > preemption(X) >= scheduling(X). This will work fine even if
+   we make preemption priority mutable.
+
+   However, given an ability to achieve both of these in backward compatible way later, we leave
+   those for future extensions.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -761,78 +738,22 @@ If e2e tests are not necessary or useful, explain why.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- The API & feature is implemented behind the feature flag
+- Base integration test showing preemption of whole PodGroup in the `PodGroup` mode
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- All functionality completed
-- All security enforcement completed
-- All monitoring requirements completed
-- All testing requirements completed
-- All known pre-release issues and gaps resolved
-
-**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+- Decision whether we support mutability of Priority for Beta
+- Extended performance benchmarks to ensure satisfying scalability & performance
+- E2E test that can then be promoted to conformance
+- All known issues resolved
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
+- TBD in for Beta release
 
-**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-<!--
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
 
 ### Upgrade / Downgrade Strategy
 
