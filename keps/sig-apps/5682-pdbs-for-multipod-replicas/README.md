@@ -173,14 +173,11 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-Voluntary disruptions (node drains) will evict pods from a node, potentially causing issues in an application that relies on having a certain one or more replicas running. To specify that a certain number (or percentage) of pods must remain available, users may create a `PodDisruptionBudget` (PBD) object and declare a `minAvailable` or `maxUnavailable` in its spec.
-Then, if a pod eviction would violate the availability threshold given by the PDB, the disruption controller will block the eviction and protect the availability of the application.
+Voluntary disruptions (node drains) will evict pods from a node. This can cause issues if an application requires keeping a certain number of pods running. To specify a number or percentage of pods which must remain available, users can create a `PodDisruptionBudget` (PDB) object and set fields `minAvailable` or `maxUnavailable` in its spec. Then, if a pod eviction would violate the availability threshold set by the PDB, the disruption controller will block the eviction and protect the availability of the application.
 
-However, some applications will use `PodGroups` as defined in the new [Workload API](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), in which a group of pods acts as a single "superpod" entity (i.e., each replica is composed of multiple pods).
-These require more complex eviction logic to protect from disruptions. For example, in a [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) running a distributed ML training job, one pod in a group being evicted would cause the entire group to fail.
+However, some applications use `PodGroups` as defined in the new [Workload API](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), in which a group of pods acts as a single entity like a "superpod." These applications require more complex eviction logic to protect availability, as each replica is composed of multiple pods. For example, in a [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) running a distributed ML training job, one pod in a group being evicted would cause the job being run by the group to fail, rendering the entire group useless.
 
-This KEP will allow the Eviction API to treat each pod group as if it were a single replica when calculating availability for a PDB. To enable this new behavior, the PDB spec will have optional string field `calculationPolicy`.
-If this is set to `Workload`, the PDB will enforce a number of *pod group replicas* that must remain available, rather than a number of *individual pod replicas* as it is now. If set to `Pod` (or unset), the existing behavior is preserved.
+This KEP proposes that the Eviction API treat each pod group as if it were a single replica when calculating availability for a PDB. To enable this new behavior, the PDB spec will have optional string field `budgetScope`. If set to `Pod` (or unset), the existing behavior is preserved. If set to `Workload`, the PDB will enforce a number of *pod group replicas* that must remain available, rather than a number of *individual pod replicas* as it is now.  Ihe PDB status will be updated to report both pod-level and replica-level health, ensuring compatibility with existing monitoring tools. New status conditions will also be introduced for visibility of scope-related configuration errors.
 
 ## Motivation
 
@@ -193,9 +190,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
-The goal of this KEP is to improve the experience of using PDBs and the Eviction API for applications with multi-pod replicas.
-Most importantly, eviction of a small number of pods spread across multiple multi-pod replicas could disrupt each replica.
-This will be prevented by new functionality for calculating availability for eviction based on disrupted pod groups, rather than individual pods.
+The goal of this KEP is to improve the experience of using PDBs and the Eviction API for applications with multi-pod replicas. Most importantly, eviction of a small number of pods spread across multiple multi-pod replicas could disrupt each replica. This will be prevented by new functionality for calculating availability for eviction based on disrupted pod groups, rather than individual pods.
 
 ### Goals
 
@@ -204,12 +199,12 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- **Introduce a field to enable group-based PDBs:** Add a new string field `calculationPolicy` to the `PodDisruptionBudget.spec`.
-- **Define availability for pod groups:** Allow application owners to define PDBs for multi-pod replicas (as defined by the `Workload` API) rather than individual pods.
-- **Update eviction logic:** When enabled, the eviction logic will interpret the disruption budget given in the PDB (`minAvailable` or `maxUnavailable`) as a count of pod group replicas, rather than individual pod replicas.
+- **Introduce fields to enable group-based PDBs:** Add a new optional string field `budgetScope` to the `PodDisruptionBudget.spec`.
+- **Support replica-scoped observability:** Expose new status fields to reflect the health of pod groups, ensuring existing pod-scoped status fields remain accurate for current monitoring systems.
+- **Update eviction logic:** When enabled, interpret the disruption budget (`minAvailable` or `maxUnavailable`) as a count of pod group replicas, allowing the eviction of individual pods only if their group's health is preserved or  budgeted for.
 - **Integrate with Workload API:** Use the pod spec's `workload.name` and `workload.podGroup` to retrieve `Workload` objects and their `PodGroup` groupings.
 - **Maintain compatibility:** Ensure that common cluster operations that respect PDBs, such as `kubectl drain` and node drains initiated by `cluster-autoscaler`, follow group-based disruption budgets when enabled.
-- **Preserve existing functionality:** For backward compatibility, the behavior of PDBs where `calculationPolicy` is `Pod` (or unset) will be unchanged.
+- **Preserve existing functionality:** For backward compatibility, the behavior of PDBs where `budgetScope` is `Pod` (or unset) will be unchanged.
 
 ### Non-Goals
 
@@ -218,17 +213,12 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-This change will only affect the Eviction API. Involuntary disruptions do not use the Eviction API include: manual pod deletion, pods being deleted by their owner (e.g. during Deployment rollout), node failure, pod cleanup due to a node being removed from the cluster, evictions by the Kubelet due to node pressure (e.g. memory shortage), taint manager deleting NoExecute tainted pods
-
-The only change to k8s resource definitions will be the optional field in the `PodDisruptionBudget` spec to enable the changes.
-
-This change will not affect the behavior of controllers for `Deployment`, `StatefulSet`, `Workload`, or `LeaderWorkerSet`, which will be responsible for setting the `workload.name` and `workload.podGroup` on their managed pods. The lifecycle and recovery of a disrupted replica is the responsibility of their owning controller.
-
-There will be no additions or changes to scheduling, including gang scheduling. This only handles eviction of already-scheduled pods.
-
-This KEP follows the definition of multi-pod replica health using `minCount` from the `Workload` API. A replica is considered healthy if it meets `minCount` of healthy pods, and unhealthy otherwise. We are not introducing any other definition of partial health (e.g. a percentage).
-
-If a PDB has multi-pod replicas enabled, individual pods without an assigned workload will be treated as single-pod groups. We will log a warning as mixing types is not recommended, but the user is responsible for correct setup of replicas.
+- **Involuntary disruptions:** This change only affects the Eviction API (voluntary disruptions). It does not handle involuntary disruptions such as node failure, manual pod deletion, Kubelet pressure evictions, or Taint Manager evictions.
+- **Workload controller behavior:** This change will not affect how controllers (Deployment, StatefulSet, LeaderWorkerSet) manage the lifecycle or recovery of pods. We assume these controllers correctly set `workload.name` and `workload.podGroup` on pods they manage.
+- **Scheduling:** There will be no changes to the scheduler or gang scheduling logic. This KEP only concerns eviction of already-scheduled pods.
+- **Health definitions:** We will not introduce new definitions of partial replica health (e.g. percentages). We follow the Workload API definition: a replica is healthy if and only if `healthy_pods` >= `minCount`.
+- **Mixed scopes:** We will not support PDBs that select a combination of Workload-managed pods and independent pods when `budgetScope` is set to `Workload`. For safety (i.e. no unintended evictions), any pods missing a workload reference will be treated as unhealthy rather than as a separate healthy replica.
+- **Other objects:** We will not modify the Pod spec, Workload API, or any other resources other than `PodDisruptionBudget`.
 
 ## Proposal
 
@@ -241,11 +231,27 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-We will add a new optional string `calculationPolicy` to the `PodDisruptionBudget.spec`.
-- If this field is unset or `Pod` (default), the Eviction API will evaluate the PDB based on individual pod counts, preserving all existing behavior.
-- If `Workload`, the Eviction API will find the `Workload` object and its `PodGroup` as specified by the Pod specs.
+We will update the Eviction API to support group-aware disruption budgets.
 
-This `PodGroup` defines the minimum number of pods required for a replica of that group to be healthy, and how many replicas are expected. Using this information, the PDB's `minAvailable` or `maxUnavailable` will be interpreted in terms of these `PodGroup` replicas, rather than individual pods.
+#### Spec Update
+
+We will add a new optional string `budgetScope` to `PodDisruptionBudget.spec`.
+
+If unset or `Pod` (default), the Eviction API evaluates the PDB based on individual pod counts, preserving all existing behavior.
+
+If `Workload`, the PDB's `minAvailable` or `maxUnavailable` fields are interpreted as a count of PodGroup replicas (as defined by the Workload API) rather than individual pods.
+
+#### Status Update
+
+We will add new fields to `PodDisruptionBudget.status` (e.g., `CurrentHealthyReplicas`) to explicitly report the health of pod groups. This ensures that:
+
+The PDB reports how many groups are healthy.
+
+Existing fields like `CurrentHealthy` continue to report pod counts, preventing issues in existing monitoring dashboards.
+
+#### Logic Update
+
+When `budgetScope` is `Workload`, the Eviction API will fetch the Workload object referenced by the target pods. It will use the PodGroup `minCount` to determine if a replica is healthy. If pods are missing a workload reference, they will be treated as unhealthy to prevent unintended evictions from proceeding.
 
 ### User Stories (Optional)
 
@@ -272,7 +278,7 @@ metadata:
   name: my-training-job-workers-pdb
 spec:
   minAvailable: 9
-  calculationPolicy: Workload  # <-- New field to enable group counting
+  budgetScope: Workload  # <-- New field to enable group counting
   selector:
     matchLabels:
       # Assuming pods are labeled
@@ -281,13 +287,13 @@ spec:
 ```
 
 Upon node drain, the Eviction API will:
-1.  See the PDB `my-training-job-workers-pdb` with `spec.calculationPolicy: Workload`.
+1.  See the PDB `my-training-job-workers-pdb` with `spec.budgetScope: Workload`.
 2.  Select all pods matching the selector.
 3.  Detect that these pods have `spec.workload.name: my-training-job` and `spec.workload.podGroup: worker`.
 4.  Fetch the `Workload` object `my-training-job`.
-5.  Find `worker` `PodGroup` in the `Workload`, which has 10 `replicas` and 8 `minSize`.
-6.  Interpreting `minAvailable: 9` as pod groups, a group is considered disrupted if evicting a pod would cause its healthy pod count to drop below 8.
-7.  The drain will proceed only if it does not cause the number of available worker groups to drop below 9.
+5.  Find `worker` `PodGroup` in the `Workload`, which has 10 `replicas` and 8 `minCount`.
+6.  Interpreting `minAvailable: 9` as requiring 9 healthy pod groups. A group is considered disrupted if evicting a pod would cause its healthy pod count to drop below 8.
+7.  The drain will proceed only if it leaves at least 9 healthy worker groups.
 
 This way, the job is protected to run with sufficient replicas during cluster maintenance.
 
@@ -298,6 +304,26 @@ A cluster administrator frequently drains nodes for upgrades. The cluster has va
 The admin would like to upgrade a node which is running the job from Story 1. To perform node drains safely, they rely on application owners' PDBs. When they issue `kubectl drain <node>`, the Eviction API sees the PDB and uses the process above, interpreting the disruption in terms of `PodGroup` replicas and ensuring that the drain does not violate the application's group-based availability requirements.
 
 This allows safe maintenance without causing outages, as the drain will pause if it cannot evict pods without violating a group-based PDB. It will wait for better replica health, more availability, lower PDB requirements, or the admin may contact the application owner to resolve the block.
+
+#### Story 3: Troubleshooting Configuration
+
+An operator creates a PDB with `budgetScope: Workload` but forgets to label their pods with the workload reference. When they run `kubectl get pdb`, they see:
+
+```yaml
+status:
+  currentHealthy: 50
+  expectedReplicas: 0
+  conditions:
+  - type: DisruptionAllowed
+    status: "True"
+    reason: SufficientPods
+  - type: BudgetConfigured
+    status: "False"
+    reason: MissingWorkloadReference
+    message: "The PDB scope is set to 'Workload', but pods are missing the workload reference."
+```
+
+They will notice there are healthy pods but 0 expected replicas, and see the `BudgetConfigured` condition. This will allow them to debug and fix the missing pod labels.
 
 #### Simplified Setup Example
 
@@ -329,7 +355,7 @@ graph TD
     class P0A,P0B,P1A,P1B pod_box
 ```
 
-In this setup, the node being drained contains two replicas, each with two pods (there may be more nodes and replicas which we can ignore). The PDB wants at most one replica unavailable. Currently, the user might try `minUnavailable: 2` (one two-pod replica unavailable). The node drain would start, and could evict a pod from replica 0 and a pod from replica 1 before pausing (as there are only 2 pods left). This would disrupt both replicas. With the new changes, a PDB with `calculationPolicy: Workload` and `minUnavailable: 1` (one replica unavailable) would pause before evicting a pod from the second replica, protecting one of the replicas as intended.
+In this setup, the node being drained contains two replicas, each with two pods (there may be more nodes and replicas which we can ignore). The PDB wants at most one replica unavailable. Currently, the user might try `maxUnavailable: 2` (one two-pod replica unavailable). The node drain would start, and could evict a pod from replica 0 and a pod from replica 1 before pausing (as there are only 2 pods left). This would disrupt both replicas. With the new changes, a PDB with `budgetScope: Workload` and `maxUnavailable: 1` (one replica unavailable) would pause before evicting a pod from the second replica, protecting one of the replicas as intended.
 
 In a real cluster, there may be additional nodes or replicas, pods from other jobs sharing those nodes, etc.
 
@@ -352,7 +378,7 @@ graph TD
     class PDB_Type decision
 
     %% --- Path 1: Traditional PDB ---
-    PDB_Type -- "Traditional PDB" --> PDB_Old(PDB Spec:<br/><b>maxUnavailable: 2 pods</b><br/>calculationPolicy: Pod)
+    PDB_Type -- "Traditional PDB" --> PDB_Old(PDB Spec:<br/><b>maxUnavailable: 2 pods</b><br/>budgetScope: Pod)
     class PDB_Old pdb_spec
     
     PDB_Old --> TryEvictP0A("Try to evict Pod 0A<br/>(from Replica 0)")
@@ -380,7 +406,7 @@ graph TD
     class AppDown outcome_bad
 
     %% --- Path 2: Group-Aware PDB (KEP) ---
-    PDB_Type -- "Group-Aware PDB (KEP)" --> PDB_New(PDB Spec:<br/><b>maxUnavailable: 1 group</b><br/>calculationPolicy: Workload)
+    PDB_Type -- "Group-Aware PDB (KEP)" --> PDB_New(PDB Spec:<br/><b>maxUnavailable: 1 group</b><br/>budgetScope: Workload)
     class PDB_New pdb_spec
 
     PDB_New --> TryEvictP0A_New("Try to evict Pod 0A<br/>(from Replica 0)")
@@ -430,7 +456,7 @@ A `Workload` object contains a list of `PodGroup`s. Each `PodGroup` defines:
 
 [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/overview/) (LWS) is the primary implementation of a multi-pod replica. The LWS API allows users to manage a group of pods together as if they were a single pod, by specifying a template for a "leader" pod and for the "worker" pods. This is useful in cases where a leader process coordinates multiple worker processes, particularly in AI/ML distributed workloads for model training and inference. All worker pods are treated the same: they are created from the same template, scheduled in parallel, and if any workers fail the group is considered failing. A LeaderWorkerSet object will specify `replicas` for the number of leader+workers groups and `size` for the number of pods per group. 
 
-LWS is planned to be integrated with the Workload API ([KEP](https://docs.google.com/document/d/1QlcIBtR2KyOKYRUTGubhhxuy7NfjHs1fXMJlvdUCyhM/edit?tab=t.0#heading=h.dxr6zknxhiui)). Each LWS replica is would correspond to a PodGroup replica, with its `size` being `minCount`.
+LWS is planned to be integrated with the Workload API ([KEP](https://docs.google.com/document/d/1QlcIBtR2KyOKYRUTGubhhxuy7NfjHs1fXMJlvdUCyhM/edit?tab=t.0#heading=h.dxr6zknxhiui)). Each LWS replica would correspond to a PodGroup replica, with its `size` being `minCount`.
 
 ### Risks and Mitigations
 
@@ -446,9 +472,25 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-- This feature relies on the pod's `spec.workload.name` and `spec.workload.podGroup` fields being correctly set by its managing controller. If a user sets `calculationPolicy: Workload` but the pods are not correctly linked to a `Workload` object, the eviction logic will fall back to per-pod counting to prevent a drain from being blocked by misconfiguration, which may violate the application's intended availability requirements.
-- One failing pod in a large group will make that group unhealthy if it drops below its `minCount`. In this way, a small number of failing pods spread across many replicas could prevent all evictions and block node drains. This is intended behavior (as the application is unhealthy), but may be surprising to operators.
-- A PDB `selector` that matches pods from multiple different `PodGroup`s (or a mix of grouped and individual pods) may have complex or unintended behavior. Users should be advised to create separate PDBs for each distinct `PodGroup` they wish to protect.
+#### Misconfiguration:
+This feature relies on the pod's `spec.workload` fields being correctly set. If a user sets `budgetScope: Workload` but the pods are not correctly linked to a `Workload` object or the Workload was deleted, the controller cannot calculate group health.
+    
+Mitigation: We implement a fail-closed policy. Pods without an owning Workload are treated as unhealthy to prevent accidentally granting unsafe evictions (which could happen if we fell back to per-pod counting). A specific condition `BudgetConfigured=False` (Reason: `MissingWorkloadReference`) will alert the user to this error.
+
+#### Fragile groups:
+One failing pod in a large group can make the entire group unhealthy (if it drops below `minCount`). Consequently, a small number of failing pods spread across many replicas could make all replicas unhealthy, preventing any further evictions and blocking node drains entirely.
+    
+Mitigation: This is intended behavior for preserving application availability when possible. The PDB Status will show `CurrentHealthyReplicas` and `DisruptionsAllowedReplicas`, which makes it clear that the block is due to unresolved group health issues.
+
+#### Mixed scopes:
+A PDB `selector` that matches pods from multiple different `PodGroup`s (or a mix of grouped and individual pods) may result in confusing behavior.
+
+Mitigation: The controller will treat pods without a Workload reference as unhealthy. We will document best practices advising users to create separate PDBs for each distinct `PodGroup` or set of individual pods they wish to protect.
+
+#### API Dependency & Latency:
+The eviction admission logic now requires fetching an external `Workload` object, introducing a dependency on the Workload API and potential latency.
+
+Mitigation: The controller will use a standard informer/cache for `Workload` objects to minimize API latency. If the `Workload` object cannot be found, the controller will fail closed (block eviction) and report a `WorkloadResolutionFailed` condition.
 
 ## Design Details
 
@@ -461,20 +503,22 @@ proposal will be implemented, this is the place to discuss them.
 
 ### API Definition
 
-We will add a new field to `PodDisruptionBudgetSpec` in `pkg/apis/policy/v1/types.go`.
+#### Spec
+
+We will update `PodDisruptionBudgetSpec` in `pkg/apis/policy/v1/types.go`.
 
 ```go
-// CalculationPolicy defines how the disruption budget is calculated.
-type CalculationPolicy string
+// BudgetScope defines how the disruption budget is calculated.
+type BudgetScope string
 
 const (
-    // CalculationPolicyPod indicates that the disruption budget should be calculated
-    // based on individual pods.
-    CalculationPolicyPod CalculationPolicy = "Pod"
+    // BudgetScopePod indicates that the disruption budget should be calculated
+    // based on individual pods. This is the default behavior.
+    BudgetScopePod BudgetScope = "Pod"
 
-    // CalculationPolicyWorkload indicates that the disruption budget should be calculated
+    // BudgetScopeWorkload indicates that the disruption budget should be calculated
     // based on Workload API PodGroups.
-    CalculationPolicyWorkload CalculationPolicy = "Workload"
+    BudgetScopeWorkload BudgetScope = "Workload"
 )
 
 // PodDisruptionBudgetSpec defines the desired state of PodDisruptionBudget
@@ -491,31 +535,165 @@ type PodDisruptionBudgetSpec struct {
   // ...
   MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty" protobuf:"bytes,3,opt,name=maxUnavailable"`
 
-  // calculationPolicy indicates how the disruption budget should be calculated.
+  // BudgetScope indicates how the disruption budget should be calculated.
   // Allowed values are "Pod" (default) and "Workload".
+  //
   // If set to "Workload", the eviction logic will interpret minAvailable/maxUnavailable
   // as a count of PodGroup replicas, not individual pods.
-  // If a pod matched by the selector does not have a workloadReference,
-  // it will be treated as an individual pod for availability calculations,
-  // and a warning will be logged.
+  //
+  // Users must ensure that pods selected by this PDB are correctly populated
+  // with 'spec.workload'. If a selected pod is missing the workload reference,
+  // it will be treated as Unhealthy (blocking eviction) to prevent unsafe
+  // disruptions due to misconfiguration.
+  //
   // Defaults to "Pod".
   // +optional
-  CalculationPolicy *CalculationPolicy `json:"calculationPolicy,omitempty" protobuf:"bytes,4,opt,name=calculationPolicy"`
+  BudgetScope *BudgetScope `json:"budgetScope,omitempty" protobuf:"bytes,4,opt,name=budgetScope"`
 }
+```
+
+#### Status
+
+We will add new fields to `PodDisruptionBudgetStatus` to reflect the status of replicas: `DisruptionsAllowedReplicas`, `CurrentHealthyReplicas`, `DesiredHealthyReplicas`, and `ExpectedReplicas`, each corresponding to an existing pod-scoped field.
+
+For `budgetScope: Pod` (default), the new `...Replicas` fields will be populated with values matching their pod-scoped counterparts. This allows the new fields to be used without needing conditional logic for the scope.
+
+For `budgetScope: Workload`, existing pod-scoped fields will mostly continue to be populated based on pod counts, for compatibility reasons.
+
+Specifically:
+- `DisruptedPods`, `CurrentHealthy`, and `ExpectedPods` will still count the status of individual pods
+- `DesiredHealthy` still counts pods, and is calculated as the minimum number of pods required to support the desired number of replicas (`DesiredHealthyReplicas` * `minCount`). This ensures existing systems comparing `CurrentHealthy` vs `DesiredHealthy` remain accurate.
+- `DisruptionsAllowed` **will not** count pods, as it is not obvious which individual pods can be disrupted. Instead it will count the number of pod groups allowed to be disrupted, identical to `DisruptionsAllowedReplicas`, using the same units as `minAvailable/maxUnavailable`.
+
+```go
+// PodDisruptionBudgetStatus represents information about the status of a
+// PodDisruptionBudget. Status may trail the actual state of a system.
+type PodDisruptionBudgetStatus struct {
+	// Most recent generation observed when updating this PDB status. DisruptionsAllowed and other
+	// status information is valid only if observedGeneration equals to PDB's object generation.
+	// +optional
+	ObservedGeneration int64
+
+	// DisruptedPods contains information about pods whose eviction was
+	// processed by the API server eviction subresource handler but has not
+	// yet been observed by the PodDisruptionBudget controller.
+	// A pod will be in this map from the time when the API server processed the
+	// eviction request to the time when the pod is seen by PDB controller
+	// as having been marked for deletion (or after a timeout). The key in the map is the name of the pod
+	// and the value is the time when the API server processed the eviction request. If
+	// the deletion didn't occur and a pod is still there it will be removed from
+	// the list automatically by PodDisruptionBudget controller after some time.
+	// If everything goes smooth this map should be empty for the most of the time.
+	// Large number of entries in the map may indicate problems with pod deletions.
+	// +optional
+	DisruptedPods map[string]metav1.Time
+
+	// Number of pod disruptions that are currently allowed.
+	DisruptionsAllowed int32
+
+	// Current number of healthy pods
+	CurrentHealthy int32
+
+	// Minimum desired number of healthy pods
+	DesiredHealthy int32
+
+	// Total number of pods counted by this disruption budget
+	ExpectedPods int32
+
+  // Conditions contain conditions for PDB
+	// +optional
+	Conditions []metav1.Condition
+
+  /* [New fields] */
+
+  // DisruptionsAllowedReplicas contains the number of replicas that can be disrupted.
+  // This is identical to DisruptionsAllowed, but provides API symmetry and explicit clarity 
+  // on the unit of measurement.
+  // +optional
+  DisruptionsAllowedReplicas int32
+
+  // CurrentHealthyReplicas contains the number of healthy replicas.
+  // +optional
+  CurrentHealthyReplicas int32
+
+  // DesiredHealthyReplicas contains the minimum desired number of healthy replicas.
+  // +optional
+  DesiredHealthyReplicas int32
+
+  // ExpectedReplicas contains the total number of replicas counted by this PDB.
+  // +optional
+  ExpectedReplicas int32
+}
+```
+
+The `status.Conditions` field is unchanged, but new condition values will indicate workload-scoped information and scope-related issues.
+
+```go
+const (
+	// DisruptionAllowedCondition is a condition set by the disruption controller
+	// that signal whether any of the pods covered by the PDB can be disrupted.
+	DisruptionAllowedCondition = "DisruptionAllowed"
+
+	// SyncFailedReason is set on the DisruptionAllowed condition if reconcile
+	// of the PDB failed and therefore disruption of pods are not allowed.
+	SyncFailedReason = "SyncFailed"
+	// SufficientPodsReason is set on the DisruptionAllowed condition if there are
+	// more pods covered by the PDB than required and at least one can be disrupted.
+	SufficientPodsReason = "SufficientPods"
+	// InsufficientPodsReason is set on the DisruptionAllowed condition if the number
+	// of pods are equal to or fewer than required by the PDB.
+	InsufficientPodsReason = "InsufficientPods"
+
+	/* [New conditions for DisruptionAllowed] */
+
+	// SufficientReplicasReason is set on the DisruptionAllowed condition if 
+	// budgetScope is "Workload" and there are more healthy replicas 
+	// than required, so at least one can be disrupted.
+	SufficientReplicasReason = "SufficientReplicas"
+
+	// InsufficientReplicasReason is set on the DisruptionAllowed condition if 
+	// budgetScope is "Workload" and the number of healthy replicas
+	// is equal to or fewer than required.
+	InsufficientReplicasReason = "InsufficientReplicas"
+
+	// WorkloadResolutionFailedReason is set on the DisruptionAllowed condition if 
+	// the controller fails to retrieve the Workload object referenced by the pods, 
+	// blocking disruption safety checks.
+	WorkloadResolutionFailedReason = "WorkloadResolutionFailed"
+
+	/* [New Condition Type for Configuration Health] */
+
+	// BudgetConfiguredCondition is a condition set by the disruption controller
+	// to signal whether the PDB is correctly configured for its requested scope.
+	// This helps users detect if they enabled "Workload" scope on pods that lack
+	// the necessary Workload API references.
+	BudgetConfiguredCondition = "BudgetConfigured"
+
+	// ValidConfigReason indicates the PDB configuration and pod selection are valid.
+	ValidConfigReason = "ValidConfig"
+
+	// MissingWorkloadReferenceReason indicates that budgetScope is "Workload" but 
+	// one or more selected pods are missing spec.workloadReference.
+	MissingWorkloadReferenceReason = "MissingWorkloadReference"
+  
+  // MultipleWorkloadsDetectedReason indicates that the budgetScope is "Workload" but
+  // selected pods belong to different workloads, which is discouraged.
+  MultipleWorkloadsDetectedReason = "MultipleWorkloadsDetected"
+)
 ```
 
 #### Eviction Logic Flow
 
-If `pdb.spec.calculationPolicy` is `Pod` or unset, follow the existing per-pod availability behavior.
+If `pdb.spec.budgetScope` is `Pod` or unset, follow the existing per-pod availability behavior.
 If `Workload`:
 1.  Get all pods matching the PDB's `selector`.
 2.  Check if all pods have `spec.workloadReference.Name` set.
-3.  If no pods have `spec.workloadReference.Name`, log a warning (misconfiguration) and fall back to existing per-pod availability. If some pods have `spec.workloadReference.Name` unset, log a warning, as mixing pod types in one PDB is discouraged. Individual pods will be counted as their own group.
+3.  If any pods have `spec.workloadReference.Name` unset, treat them as unhealthy, as mixing scopes is not supported.
 4.  Find the `Workload` object for each `spec.workloadReference.Name`
 5.  Find the `PodGroup` in the `Workload` for each `spec.workloadReference.PodGroup`
 6.  Get `PodGroup.replicas` (total replicas) and `PodGroup.policy.gang.minCount` (pods in each replica).
 7.  Count the number of available replicas: a replica is available if its count of existing, healthy, non-evicting pods `>= minCount`.
-8.  Count the total desired replicas, the sum of `replicas` for all `PodGroup`s.
+8.  Count the total expected replicas, the sum of `replicas` for all unique `PodGroup`s.
 9.  Compare this available group count and total against the PDB's `minAvailable` or `maxUnavailable` to decide if an eviction is allowed.
 
 ```mermaid
@@ -530,7 +708,7 @@ graph TD
     subgraph "Group-Aware Eviction Logic Flow"
         direction TB
         
-        Start(Eviction API Triggered<br/>for a PDB) --> CheckPolicy{"calculationPolicy?"}
+        Start(Eviction API Triggered<br/>for a PDB) --> CheckPolicy{"budgetScope?"}
         
         %% Branch 1: Legacy Path (Pod or Unset)
         CheckPolicy -- "Pod / Unset" --> LegacyLogic[Use existing<br/>per-pod availability logic]
@@ -541,50 +719,53 @@ graph TD
         %% Branch 2: New Path (Workload)
         CheckPolicy -- "Workload" --> GetPods[1. Get all pods matching<br/>PDB selector]
         
-        GetPods --> CheckWorkloadRefs{"2. Pods with<br/>workloadReference?"}
+        GetPods --> CheckWorkloadRefs{"2. All pods have<br/>workloadReference?"}
         
-        %% Path 2a: No workloadReference (Misconfiguration)
-        CheckWorkloadRefs -- "None" --> WarnMisconfig[3. Log Warning:<br/>'calculationPolicy: Workload'<br/>but no pods have<br/>workloadReference]
-        WarnMisconfig --> LegacyLogic[Fall back to<br/>per-pod logic]
+        %% Path 2a: Mixed/Missing -> Unhealthy (New strict policy)
+        CheckWorkloadRefs -- "No (Any Missing)" --> MarkUnhealthy[3. Treat pods without<br/>workloadReference as<br/>UNHEALTHY]
+        class MarkUnhealthy warning
+        MarkUnhealthy --> FindWorkloads
 
-        %% Path 2b: Mixed pod types
-        CheckWorkloadRefs -- "Some (Mixed)" --> WarnMixed[3. Log Warning:<br/>Mixed pod types found.<br/>Treat individual pods<br/>as their own group.]
-        WarnMixed --> FindWorkloads
-
-        %% Path 2c: All pods have workloadReference
-        CheckWorkloadRefs -- "All" --> FindWorkloads[4. Find Workload object<br/>for each pod]
+        %% Path 2b: All Good
+        CheckWorkloadRefs -- "Yes" --> FindWorkloads[4. Find Workload object<br/>for valid references]
 
         %% Continue Group Logic Flow
-        FindWorkloads --> FindPodGroups[5. Find PodGroup in<br/>Workload for each pod]
+        FindWorkloads --> FindPodGroups[5. Find unique PodGroups<br/>in Workloads]
         FindPodGroups --> GetGroupInfo[6. Get PodGroup<br/>replicas & minCount]
         
-        %% --- CORRECTED LINE ---
         GetGroupInfo --> CountAvailable["7. Count available replicas<br/>(healthy pods >= minCount)"]
         
-        CountAvailable --> SumTotal[8. Sum total desired replicas<br/>from all PodGroups]
-        SumTotal --> DecisionNew{"9. Compare available/total<br/>group counts<br/>against PDB spec"}
+        CountAvailable --> SumTotal[8. Sum total expected replicas<br/>from unique PodGroups]
+        SumTotal --> DecisionNew{"9. Calculate DisruptionsAllowed<br/>(Available - MinAvailable)"}
         
-        DecisionNew -- "Yes" --> Allow
-        DecisionNew -- "No" --> Deny
+        DecisionNew -- "> 0" --> Allow
+        DecisionNew -- "<= 0" --> Deny
     end
 
     %% Styling
     class Start,Allow,Deny startEnd
     class Deny error
-    class WarnMisconfig,WarnMixed warning
     class GetPods,LegacyLogic,DecisionLegacy,FindWorkloads,FindPodGroups,GetGroupInfo,CountAvailable,SumTotal process
     class CheckPolicy,CheckWorkloadRefs,DecisionNew decision
 ```
 
 #### Group Health
-A `PodGroup` replica is considered healthy if its number of existing, healthy, non-evicting pods is greater than or equal to its `policy.gang.minCount`.
+A `PodGroup` replica is considered healthy if the number of existing, healthy, non-terminating pods associated with it is greater than or equal to its `policy.gang.minCount`.
 
-For example, if a replica is intended to have 10 pods and has `minCount: 8` but only has 9 healthy pods (1 is missing or unhealthy), the replica is still considered healthy. If 3 pods were missing or unhealthy so only 7 healthy pods were found, the replica would be unhealthy. If any pod in a healthy group is targeted for eviction, it would be unhealthy post-eviction and is also counted as unhealthy for the PDB calculation.
+For example, in these scenarios where a replica is intended to have 10 pods and has `minCount: 8`:
+
+Surplus: It has 9 healthy pods. Evicting 1 pod leaves 8; the replica remains healthy after eviction. The eviction is allowed (costing 0 budget).
+
+At Limit: It has 8 healthy pods. Evicting 1 pod leaves 7; the replica would become unhealthy. The eviction counts against the DisruptionsAllowed (costing 1 budget).
 
 
-### Pods missing fields
+TBD: if pod-scoped, should we check for selected workload pods and raise a condition or log?
 
-If a PDB's `selector` matches a pod that is missing the `spec.workloadReference` field (or its `Name` is empty), it will be treated as an individual pod. If `calculationPolicy: Workload` is set, this will be logged as a warning. If the PDB matches *only* individual pods, this will be equivalent to the standard per-pod logic. If a selected pod has `spec.workload.name` but no `spec.workload.podGroup`, this is a misconfiguration and it will be treated as unhealthy.
+#### Multiple Workloads
+
+When `budgetScope` is `Workload`, the PDB is generally intended to protect a single distributed application. Multiple workloads in one PDB is unlikely but possible (e.g. one application with multiple distinct identical workloads for organization or separation purposes).
+
+If the controller detects that the selected pods belong to multiple different Workload objects (different `workloadReference.Name` values), it will issue a warning via the BudgetConfigured condition (Reason: `MultipleWorkloadsDetected`), as this may have been an oversight by the user. However, the controller will still attempt to calculate the budget by summing all unique replicas found, but mixing replicas with different costs/sizes.
 
 ### Test Plan
 
@@ -660,9 +841,9 @@ This can be done with:
 -->
 
 - An integration test will be added to `test/integration/disruption` to simulate the eviction process.
-- **Test 1:** PDB with `calculationPolicy: Pod` (or unset) and `Workload`-managed pods. Verify eviction uses per-pod counting.
-- **Test 2:** PDB with `calculationPolicy: Workload` and `Workload`-managed pods. Verify eviction uses per-group counting and blocks when `minAvailable` groups would be violated.
-- **Test 3:** PDB with `calculationPolicy: Workload` but with non-`Workload` pods. Verify eviction falls back to per-pod counting and logs a warning.
+- **Test 1:** PDB with `budgetScope: Pod` (or unset) and `Workload`-managed pods. Verify eviction uses per-pod counting.
+- **Test 2:** PDB with `budgetScope: Workload` and `Workload`-managed pods. Verify eviction uses per-group counting and blocks when `minAvailable` groups would be violated.
+- **Test 3:** PDB with `budgetScope: Workload` but with non-`Workload` pods. Verify eviction falls back to per-pod counting and logs a warning.
 
 ##### e2e tests
 
@@ -685,7 +866,7 @@ If e2e tests are not necessary or useful, explain why.
 
 An e2e test will be added.
 1.  Create a `Workload` with 2 `PodGroup` replicas, each with `minCount: 3`.
-2.  Create a PDB with `minAvailable: 1` and `calculationPolicy: Workload` selecting these pods.
+2.  Create a PDB with `minAvailable: 1` and `budgetScope: Workload` selecting these pods.
 3.  Manually schedule pods such that one node drain would disrupt both groups (as in the example given earlier).
 4.  Attempt to drain the node.
 5.  Verify the drain is blocked by the PDB.
@@ -782,13 +963,13 @@ enhancement:
 -->
 
 Upgrade:
-- No changes are required. The new field `calculationPolicy` defaults to `Pod`, so all existing PDBs will continue to function with per-pod logic.
-- To use the feature, users must edit their PDBs to set `calculationPolicy: Workload`.
+- No changes are required. The new field `budgetScope` defaults to `Pod`, so all existing PDBs will continue to function with per-pod logic.
+- To use the feature, users must edit their PDBs to set `budgetScope: Workload`.
 
 Downgrade:
-- If a PDB was created with `calculationPolicy: Workload`, this field will be dropped when the API server is downgraded (as it's an unknown field).
+- If a PDB was created with `budgetScope: Workload`, this field will be dropped when the API server is downgraded (as it's an unknown field).
 - The PDB will revert to per-pod logic. This is a behavior change that could violate the application's intended availability (as shown in the user story).
-- Operators should remove `calculationPolicy` (or set to `Pod`) on all PDBs before a downgrade.
+- Operators should remove `budgetScope` (or set to `Pod`) on all PDBs before a downgrade.
 
 
 ### Version Skew Strategy
@@ -807,8 +988,8 @@ enhancement:
 -->
 
 This feature is entirely contained within the disruption controller in `kube-controller-manager` and the API server. By defaulting to `Pod`, a conflict generally reverts to the existing behavior.
-- **New API server, old KCM:** The API server will accept the `calculationPolicy` field, but the old KCM will not know about it and will ignore it, always using per-pod logic. This matches the downgrade scenario.
-- **Old API server, new KCM:** The new KCM will attempt to read the `calculationPolicy` field, but it won't exist on PDB objects. The KCM will default to `Pod` and use per-pod logic.
+- **New API server, old KCM:** The API server will accept the `budgetScope` field, but the old KCM will not know about it and will ignore it, always using per-pod logic. This matches the downgrade scenario.
+- **Old API server, new KCM:** The new KCM will attempt to read the `budgetScope` field, but it won't exist on PDB objects. The KCM will default to `Pod` and use per-pod logic.
 
 The feature will only be active when both the API server and `kube-controller-manager` are at the new version and the user has set the field to `Workload`.
 
@@ -854,11 +1035,11 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: MultiPodPDBs
+  - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 - [x] Other
-  - Describe the mechanism: The feature is enabled on a per-PDB basis with `spec.calculationPolicy: Workload`. It is disabled by default (`Pod`).
+  - Describe the mechanism: The feature is enabled on a per-PDB basis with `spec.budgetScope: Workload`. It is disabled by default (`Pod`).
   - Will enabling / disabling the feature require downtime of the control plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning of a node? No
 
@@ -925,7 +1106,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-If an operator downgrades the control plane, PDBs with `calculationPolicy: Workload` will have that field dropped by the older API server. The PDB will silently revert to per-pod logic, which could lead to an application outage during a node drain if the operator was relying on group-based protection.
+If an operator downgrades the control plane, PDBs with `budgetScope: Workload` will have that field dropped by the older API server. The PDB will silently revert to per-pod logic, which could lead to an application outage during a node drain if the operator was relying on group-based protection.
 
 ###### What specific metrics should inform a rollback?
 
@@ -972,9 +1153,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-`kubectl get pdb -A -o jsonpath='{..spec.calculationPolicy}'` will show PDBs which have the field set to `Workload`.
+`kubectl get pdb -A -o jsonpath='{..spec.budgetScope}'` will show PDBs which have the field set to `Workload`.
 
-If needed, add metric `disruption_controller_pdbs_using_pod_grouping` for the number of PDBs with `calculationPolicy: Workload`.
+If needed, add metric `disruption_controller_pdbs_using_pod_grouping` for the number of PDBs with `budgetScope: Workload`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1033,7 +1214,7 @@ implementation difficulties, etc.).
 -->
 
 Metrics related to the disruption controller, e.g. a `disruption_controller_reconciliations_total` labeled with the replica mode (individual or pod groups).
-For catching issues, `disruption_controller_pdb_grouping_misconfig_total` for when `calculationPolicy: Workload` but no `workloadReference` is found on pods, triggering a fallback.
+For catching issues, `disruption_controller_pdb_grouping_misconfig_total` for when `budgetScope: Workload` but no `workloadReference` is found on pods, triggering a fallback.
 
 ### Dependencies
 
@@ -1090,7 +1271,7 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-`GET` on `workload.k8s.io/v1alpha1.Workload` objects from `kube-controller-manager` (disruption controller) during an eviction request and controller reconciliation. This should be low-volume, as evictions are not typically frequent. The controller will may use a cache to reduce API calls, for example an informer could prevent some new API calls, but add a `WATCH` from the controller on `Workload`s.
+`GET` on `workload.k8s.io/v1alpha1.Workload` objects from `kube-controller-manager` (disruption controller) during an eviction request and controller reconciliation. This should be low-volume, as evictions are not typically frequent. The controller will use a cache to reduce API calls, for example an informer could prevent some new API calls, but add a `WATCH` from the controller on `Workload`s.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1124,7 +1305,7 @@ Describe them, providing:
 
 Yes.
 - API type(s): `policy/v1.PodDisruptionBudget`
-- Estimated increase in size: One string field `calculationPolicy`.
+- Estimated increase in size: One string field `budgetScope`.
 - Estimated amount of new objects: 0.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -1236,6 +1417,9 @@ Initially there was a plan to integrate directly with multi-pod replica systems 
 In the case given in the simplified example above, there may be a way to change the eviction logic to such that the order of pod eviction preserves replicas when possible (e.g. prioritize evicting pods from the replica with the most pods in the node). However, it is simpler to understand and easier ensure intended behavior by just extending the existing PDB budget pattern. It is also unclear if this would work fully when gang scheduling is not used or the number of pods is greater than `minCount`.
 
 Rather than using a field in the PDB spec, it would be possible to detect if any selected pods have the Workload API enabled by checking their spec for `workload.name`. However, we want this new behavior to be something explicitly enabled. Silently changing the behavior of existing PDB fields (`minAvaiable`/`maxUnavailable`), based on context from other objects, could cause confusion and possibly unintended disruptions.
+
+We don't add new alternative fields to the PDB spec (e.g. `MinAvailableReplicas`). The existing ones are sufficient as the two scopes are mutually exclusive. The new fields would represent the same user intent (just for different units of measurement), and they would add confusion (e.g. if two mutually exclusive fields are set), complexity, and potential compatibility issues.
+
 
 ## Infrastructure Needed (Optional)
 
