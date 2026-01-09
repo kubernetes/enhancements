@@ -11,7 +11,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-autoscaling
   - sig-scheduling
-status: implementable
+status: implemented
 creation-date: 2018-11-06
 reviewers:
   - "@bsalamat"
