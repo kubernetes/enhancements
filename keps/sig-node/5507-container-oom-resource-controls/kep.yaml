@@ -1,5 +1,5 @@
-title: Container OOM Kill Mode Configuration
-kep-number: xxxx  # TBD - to be assigned
+title: Container Resource Controls for OOM Behavior
+kep-number: 5507
 authors:
   - "@utam0k"
 owning-sig: sig-node

@@ -1,4 +1,4 @@
-# KEP-XXXX: Container OOM Kill Mode Configuration
+# KEP-5507: Container Resource Controls for OOM Behavior
 
 <!-- toc -->
 
@@ -11,7 +11,6 @@
   - [User Stories](#user-stories)
     - [Story 1: Multi-process Web Application](#story-1-multi-process-web-application)
     - [Story 2: Database Container](#story-2-database-container)
-    - [Story 3: Batch Processing Workload](#story-3-batch-processing-workload)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -20,10 +19,6 @@
   - [Kubelet Implementation](#kubelet-implementation)
   - [Validation Rules](#validation-rules)
   - [CRI Changes](#cri-changes)
-  - [Interaction with Existing Features](#interaction-with-existing-features)
-    - [OOMScoreAdj](#oomscoreadj)
-    - [Pod QoS Classes](#pod-qos-classes)
-    - [Memory QoS](#memory-qos)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -74,14 +69,14 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 
 ## Summary
 
-This KEP proposes adding a per-container `oomKillMode` field to configure whether the OOM killer terminates a single process or all processes in a container. The field extends the existing per-node `singleProcessOOMKill` kubelet flag (v1.31) to provide container-level granularity, addressing production issues reported when cgroup v2 changed the default OOM behavior from single-process to group-kill semantics.
+This KEP proposes adding a per-container `resourceControls` allowlist to configure `memory.oom.group` on Linux cgroup v2. The kubelet `singleProcessOOMKill` flag remains the node-level default when container-level configuration is not set, while container-level settings provide per-workload overrides.
 
 ## Motivation
 
 The transition from cgroup v1 to cgroup v2 changed OOM killer behavior significantly:
 
 - **cgroup v1**: Kills only the process that triggered OOM (single process kill)
-- **cgroup v2**: Kills all processes(group kill) or a process in the container cgroup via `memory.oom.group`
+- **cgroup v2**: Can kill all processes in the cgroup (group kill) or a single process, controlled by `memory.oom.group`
 
 The kubelet flag `singleProcessOOMKill` (added in [PR #126096](https://github.com/kubernetes/kubernetes/pull/126096) for v1.31) provides node-level control, but different workloads require different behaviors:
 
@@ -107,17 +102,22 @@ These reports led to [PR #122813](https://github.com/kubernetes/kubernetes/pull/
 
 ### Goals
 
-- Add a per-container `oomKillMode` field to allow container-level OOM behavior configuration
-- Maintain full backward compatibility with the existing `singleProcessOOMKill` kubelet configuration during migration
+- Add a per-container allowlist (`resourceControls`) to set `memory.oom.group`
+- Maintain backward compatibility with the existing `singleProcessOOMKill` kubelet flag as a node-level default
+- Validate allowed controls and values to keep the API safe and predictable
+- Provide clear user experience on unsupported environments (e.g., Windows, cgroup v1) through explicit validation errors
 
 ### Non-Goals
 
 - Provide cgroups v1 and Windows support
 - Pod-level/WholePod OOM behavior is out of scope; we may revisit it based on demand and feedback from operators.
+- Arbitrary cgroup knobs beyond `memory.oom.group`
+- Preventing kernel OOM itself (e.g., using PSI-driven eviction or other proactive memory management)
+- Scheduler changes to account for cgroup version
 
 ## Proposal
 
-Add an `oomKillMode` field to the Container specification in the core v1 API. This design choice is deliberate and based on several key considerations:
+Add a `resourceControls` field to the Container specification in the core v1 API. This field is an allowlist of control name/value pairs; for this KEP, only `memory.oom.group` is permitted. These controls are low-level runtime settings and do not affect scheduling (requests/limits).
 
 ### Why Container-level Configuration?
 
@@ -147,32 +147,28 @@ type Container struct {
     // +optional
     Resources ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,8,opt,name=resources"`
 
-    // OOMKillMode specifies how the OOM killer behaves for this container.
-    // - "Single": only the process that triggered OOM is killed
-    // - "Group": all processes in the container are killed (cgroup v2 default)
-    // If not specified, the behavior is determined by the kubelet configuration.
+    // ResourceControls is an allowlisted set of low-level control values.
+    // For this KEP, only memory.oom.group is supported.
     // This field requires the ContainerOOMKillMode feature gate to be enabled.
     // +featureGate=ContainerOOMKillMode
     // +optional
-    OOMKillMode *OOMKillMode `json:"oomKillMode,omitempty" protobuf:"bytes,26,opt,name=oomKillMode"`
+    ResourceControls []ResourceControl `json:"resourceControls,omitempty" protobuf:"bytes,26,rep,name=resourceControls"`
 
     // ... rest of fields ...
 }
 
-// OOMKillMode defines how the OOM killer behaves when the container exceeds its memory limit
-// +enum
-type OOMKillMode string
-
-const (
-    // OOMKillModeSingle kills only the process that triggered the OOM condition
-    OOMKillModeSingle OOMKillMode = "Single"
-
-    // OOMKillModeGroup kills all processes in the container when OOM is triggered
-    OOMKillModeGroup OOMKillMode = "Group"
-)
+// ResourceControl is a name/value pair for an allowlisted control.
+type ResourceControl struct {
+    // Name is an allowlisted control name. For this KEP, only "memory.oom.group" is allowed.
+    // +required
+    Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+    // Value is the string value for the control. For memory.oom.group, allowed values are "0" or "1".
+    // +required
+    Value string `json:"value" protobuf:"bytes,2,opt,name=value"`
+}
 ```
 
-The optional `oomKillMode` field will be wired through every Kubernetes container surface:
+The optional `resourceControls` field will be wired through every Kubernetes container surface:
 
 - `pod.spec.containers` (regular and sidecar containers)
 - `pod.spec.initContainers`
@@ -180,12 +176,14 @@ The optional `oomKillMode` field will be wired through every Kubernetes containe
 
 The existing `EphemeralContainer` struct will gain the same optional field so that debugging workflows stay consistent with long-running containers.
 
+For `memory.oom.group`, a value of `"1"` enables group kill and a value of `"0"` enforces single-process kill.
+
 ### Configuration Hierarchy
 
 The OOM kill behavior follows this precedence:
 
-1. **Container-level `oomKillMode`** (highest priority) - if explicitly set
-2. **Kubelet `singleProcessOOMKill` flag** - node-level default when `oomKillMode` is unset and the flag is set
+1. **Container-level `resourceControls`** (highest priority) - `memory.oom.group` if explicitly set
+2. **Kubelet `singleProcessOOMKill` flag** - node-level default when no container value is set
 3. **System default** - cgroup v2 defaults to group kill, cgroup v1 defaults to single process
 
 This hierarchy ensures backward compatibility while enabling smooth migration from node-level to container-specific configuration.
@@ -206,29 +204,25 @@ kind: Pod
 spec:
   containers:
     - name: multi-process-app
-      oomKillMode: Single # Explicitly set for containers needing it
-    - name: database # No setting needed - will use the node default
+      resourceControls:
+        - name: "memory.oom.group"
+          value: "0" # Explicitly enforce single-process kill
+    - name: database # It'll use the node default
 ```
 
 ### Notes/Constraints/Caveats
 
-- **cgroup v1 limitations**: On systems using cgroup v1, the `Group` mode cannot be enforced as cgroup v1 lacks the `memory.oom.group` mechanism. Kubelet will fail container creation with a clear event if `Group` is requested on such nodes, prompting the workload to be rescheduled on cgroup v2 capacity.
-- **Windows incompatibility**: This feature is Linux-specific. Pods that target Windows nodes (`spec.os.name=windows`) and set `oomKillMode` will be rejected during admission with a validation error.
+- **cgroup v1 limitations**: On systems using cgroup v1, `memory.oom.group=1` cannot be enforced as cgroup v1 lacks the `memory.oom.group` mechanism. Kubelet will fail container creation with a clear event if `memory.oom.group=1` is requested on such nodes, prompting the workload to be rescheduled on cgroup v2 capacity.
+- **Windows incompatibility**: This feature is Linux-specific. Pods that target Windows nodes (`spec.os.name=windows`) and set `resourceControls` will be rejected during admission with a validation error.
 - **Container runtime support**: Requires container runtime support for setting `memory.oom.group`. Most modern runtimes (containerd, CRI-O) support this on cgroup v2.
+- **Mixed clusters**: The scheduler does not consider cgroup version. Users should use node labels/affinity to target cgroup v2 Linux nodes when setting `memory.oom.group=1`.
+- **Effective value visibility**: When `resourceControls` is not set, the effective OOM behavior is derived from node defaults and is not exposed in PodStatus. This is consistent with other node-dependent settings (e.g., sysctls or `seccompProfile`) where effective behavior is not surfaced in PodStatus. Users who need to know the exact mode should set `memory.oom.group` explicitly.
 
 ### Risks and Mitigations
 
 **Risk**: Inconsistent behavior between cgroup v1 and v2 environments.
 
-- **Mitigation**: Clear documentation about platform limitations, validation warnings when `Group` is used on cgroup v1.
-
-**Risk**: User confusion about the interaction between container and kubelet settings.
-
-- **Mitigation**: Comprehensive documentation with examples, clear precedence rules, kubectl describe showing effective OOM mode.
-
-**Risk**: Performance impact from additional cgroup configuration.
-
-- **Mitigation**: The setting is applied once at container creation, no runtime overhead.
+- **Mitigation**: Clear documentation about platform limitations and validation errors when `memory.oom.group=1` is used on cgroup v1.
 
 ## Design Details
 
@@ -243,10 +237,10 @@ The changes will be made to the Container struct in `staging/src/k8s.io/api/core
 type Container struct {
     // ... existing fields ...
 
-    // OOMKillMode specifies how the OOM killer behaves for this container.
+    // ResourceControls is an allowlisted set of low-level control values.
     // +featureGate=ContainerOOMKillMode
     // +optional
-    OOMKillMode *OOMKillMode `json:"oomKillMode,omitempty" protobuf:"bytes,26,opt,name=oomKillMode"`
+    ResourceControls []ResourceControl `json:"resourceControls,omitempty" protobuf:"bytes,26,rep,name=resourceControls"`
 }
 ```
 
@@ -254,7 +248,7 @@ The same field applies to `EphemeralContainer` for consistency.
 
 ### Kubelet Implementation
 
-The kubelet will be modified in `pkg/kubelet/kuberuntime/kuberuntime_container_linux.go` to respect the container-level setting:
+The kubelet will be modified in `pkg/kubelet/kuberuntime/kuberuntime_container_linux.go` to respect container-level `resourceControls`:
 
 ```go
 func (m *kubeGenericRuntimeManager) generateLinuxContainerResources(
@@ -269,26 +263,24 @@ func (m *kubeGenericRuntimeManager) generateLinuxContainerResources(
     if utilfeature.DefaultFeatureGate.Enabled(features.ContainerOOMKillMode) &&
        m.singleProcessOOMKill != nil {
         klog.V(2).Info("Using kubelet --single-process-oom-kill as node-level default; " +
-                       "container oomKillMode overrides when set.")
+                       "resourceControls override when set.")
     }
 
     // Determine OOM kill behavior
     var useGroupKill bool
+    var hasOOMGroup bool
+    var oomGroupValue string
 
-    if container.OOMKillMode != nil {
-        // Container-level setting takes precedence
-        switch *container.OOMKillMode {
-        case v1.OOMKillModeSingle:
-            useGroupKill = false
-        case v1.OOMKillModeGroup:
-            if !isCgroup2UnifiedMode() {
-                klog.Warningf("Container %s/%s requests Group mode but system uses cgroup v1, falling back to single process",
-                    pod.Name, container.Name)
-                useGroupKill = false
-            } else {
-                useGroupKill = true
-            }
+    for _, rc := range container.ResourceControls {
+        if rc.Name == "memory.oom.group" {
+            hasOOMGroup = true
+            oomGroupValue = rc.Value
+            break
         }
+    }
+
+    if hasOOMGroup {
+        useGroupKill = (oomGroupValue == "1")
     } else {
         // Fall back to kubelet configuration when set; otherwise use system default
         if utilfeature.DefaultFeatureGate.Enabled(features.ContainerOOMKillMode) &&
@@ -319,23 +311,28 @@ func ValidateContainer(podSpec *core.PodSpec, container *core.Container, path *f
     allErrs := field.ErrorList{}
     // ... existing validation ...
 
-    if container.OOMKillMode != nil {
-        validModes := sets.NewString(
-            string(core.OOMKillModeSingle),
-            string(core.OOMKillModeGroup),
-        )
-        if !validModes.Has(string(*container.OOMKillMode)) {
-            allErrs = append(allErrs, field.Invalid(
-                path.Child("oomKillMode"),
-                *container.OOMKillMode,
-                fmt.Sprintf("must be one of %v", validModes.List()),
-            ))
+    if len(container.ResourceControls) > 0 {
+        for i, rc := range container.ResourceControls {
+            if rc.Name != "memory.oom.group" {
+                allErrs = append(allErrs, field.Invalid(
+                    path.Child("resourceControls").Index(i).Child("name"),
+                    rc.Name,
+                    "only memory.oom.group is supported",
+                ))
+            }
+            if rc.Value != "0" && rc.Value != "1" {
+                allErrs = append(allErrs, field.Invalid(
+                    path.Child("resourceControls").Index(i).Child("value"),
+                    rc.Value,
+                    "must be \"0\" or \"1\"",
+                ))
+            }
         }
 
         if podSpec.OS != nil && podSpec.OS.Name == core.WindowsOS {
             allErrs = append(allErrs, field.Forbidden(
-                path.Child("oomKillMode"),
-                "oomKillMode is not supported for Windows pods",
+                path.Child("resourceControls"),
+                "resourceControls is not supported for Windows pods",
             ))
         }
     }
@@ -347,10 +344,12 @@ func ValidateContainer(podSpec *core.PodSpec, container *core.Container, path *f
 Platform-specific validation in `pkg/kubelet/apis/config/validation/validation_linux.go`:
 
 ```go
-func validateOOMKillMode(kc *kubeletconfig.KubeletConfiguration, container *v1.Container) error {
-    if container.OOMKillMode != nil && *container.OOMKillMode == v1.OOMKillModeGroup {
-        if !isCgroup2UnifiedMode() {
-            return fmt.Errorf("oomKillMode=Group requires cgroup v2 support on the node")
+func validateResourceControls(kc *kubeletconfig.KubeletConfiguration, container *v1.Container) error {
+    for _, rc := range container.ResourceControls {
+        if rc.Name == "memory.oom.group" && rc.Value == "1" {
+            if !isCgroup2UnifiedMode() {
+                return fmt.Errorf("resourceControls memory.oom.group=1 requires cgroup v2 support on the node")
+            }
         }
     }
     return nil
@@ -359,7 +358,7 @@ func validateOOMKillMode(kc *kubeletconfig.KubeletConfiguration, container *v1.C
 
 ### CRI Changes
 
-No CRI changes are required.
+No CRI changes are required. The kubelet sets `memory.oom.group` via the existing `LinuxContainerResources.Unified` map, which is already supported by containerd and CRI-O.
 
 ### Test Plan
 
@@ -406,12 +405,12 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- Test cases:
-  - Valid values (`Single`, `Group`)
-  - Invalid values rejected
-  - Container setting overrides kubelet flag
-  - Fallback to kubelet flag when nil
-  - cgroup v1 fallback behavior
+Test cases:
+- Valid values (`0`, `1`)
+- Invalid values rejected
+- Container setting overrides kubelet flag
+- Fallback to kubelet flag when nil
+- cgroup v1 fallback behavior
 
 ##### Integration tests
 
@@ -442,9 +441,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- Single-process kill behavior with memory-intensive workload
-- Group kill behavior with multi-process container
-- Multi-container pods with different OOM modes
+- Single-process kill behavior with memory-intensive workload (`memory.oom.group=0`)
+- Group kill behavior with multi-process container (`memory.oom.group=1`)
+- Multi-container pods with different `memory.oom.group` values
 - cgroup v1/v2 compatibility
 - Upgrade/downgrade scenarios
 
@@ -452,7 +451,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha (v1.35)
 
-- [ ] Implement the `oomKillMode` field behind the `ContainerOOMKillMode` feature gate
+- [ ] Implement the `resourceControls` field behind the `ContainerOOMKillMode` feature gate
 - [ ] Manual testing on both cgroup v1 and v2 systems
 - [ ] Documentation of the feature in k/website
 - [ ] Integration with existing `singleProcessOOMKill` flag verified
@@ -463,11 +462,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - [ ] Feature gate enabled by default (can still be disabled)
 - [ ] Comprehensive e2e tests including:
-  - Multi-container pods with mixed OOM modes
+  - Multi-container pods with mixed `memory.oom.group` values
   - Behavior verification under actual OOM conditions
   - cgroup v1 fallback scenarios
 - [ ] No critical bugs reported during Alpha (1 release cycle)
-- [ ] kubectl support for displaying effective OOM mode in `describe pod`
+- [ ] kubectl support for displaying effective `memory.oom.group` value in `describe pod`
 
 #### GA (v1.38)
 
@@ -531,7 +530,7 @@ Yes, tests will verify that:
 ###### How can a rollout or rollback fail?
 
 - Misconfiguration of the field value (caught by validation)
-- Incompatibility with cgroup v1 (falls back gracefully with warning)
+- Incompatibility with cgroup v1 when `memory.oom.group=1` is requested (rejected by validation)
 
 ###### What specific metrics should inform a rollback?
 
@@ -551,45 +550,26 @@ No immediate removals. The `singleProcessOOMKill` kubelet flag remains supported
 
 ###### How can an operator determine if this feature is in use?
 
-- Check pods: `kubectl get pods -A -o json | jq '.items[].spec.containers[] | select(.oomKillMode != null)'`
-- Metrics: `container_oom_kill_mode_total{mode="Single|Group"}`
+- Check pods: `kubectl get pods -A -o json | jq '.items[].spec.containers[] | select(.resourceControls != null and (.resourceControls | length > 0))'`
 - Node inspection: `crictl inspect <container-id> | grep "memory.oom.group"`
 
 ###### How can someone using this cluster tell that this feature is working?
 
-- **Configuration**: `kubectl describe pod <pod-name>` shows `OOM Kill Mode` field
+- **Configuration**: `kubectl describe pod <pod-name>` shows a `resourceControls` entry for `memory.oom.group`
 - **Runtime**: Check `/sys/fs/cgroup/memory/<container-cgroup>/memory.oom.group` (0=single, 1=group)
 - **Behavior**: Monitor whether single process or all processes are killed on OOM
 
 ###### What are the reasonable SLOs?
 
-- **Configuration Accuracy**: 100% of containers must have correct `memory.oom.group` setting matching their configuration
-- **Performance Impact**: <1ms additional latency for container creation
-- **Feature Reliability**: 99.99% of OOM events handled according to configured mode
+N/A (use existing kubelet SLIs/SLOs).
 
 ###### What are the SLIs?
 
-```promql
-# Percentage of containers with correct OOM configuration
-(container_oom_kill_mode_configured_total / container_total) * 100
-
-# OOM events by mode (for behavior validation)
-rate(container_oom_events_by_mode[5m])
-
-# Configuration errors
-rate(container_oom_config_errors_total[5m])
-
-# Time to apply OOM configuration
-histogram_quantile(0.99, container_oom_config_duration_seconds)
-```
+N/A.
 
 ###### Are there any missing metrics?
 
-New metrics to be added:
-
-- `container_oom_kill_mode_total`: Number of containers by OOM kill mode
-- `container_oom_events_by_mode`: OOM kill events by effective kill mode
-- `container_oom_config_errors_total`: Total number of OOM configuration errors
+N/A.
 
 ### Dependencies
 
@@ -610,7 +590,7 @@ No new API calls. The field is part of the Pod spec.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Only a new enum type `OOMKillMode` with two values.
+Only a new `ResourceControl` list with allowlisted `memory.oom.group`.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -636,7 +616,7 @@ No impact. The configuration is already part of the pod spec on the node.
 
 ###### What are other known failure modes?
 
-- cgroup v1 incompatibility: Logged as warning, falls back to single process
+- cgroup v1 incompatibility: `memory.oom.group=1` is rejected by validation; `memory.oom.group=0` behaves as single-process kill
 - Invalid field value: Rejected at API validation
 
 ###### What steps should be taken if SLOs are not being met?
@@ -659,22 +639,19 @@ TBD
 ## Alternatives
 
 - **Pod-level configuration**: Rejected as too coarse-grained for multi-container pods
-
+- **Dedicated `oomKillMode` field**: Rejected in favor of a constrained allowlist that can grow if additional controls are needed.
 - **Annotation-based approach**:
 
   ```yaml
   annotations:
-    node.kubernetes.io/oom-kill-mode: "Single"
+    node.kubernetes.io/memory.oom.group: "0"
   ```
 
   Rejected: Annotations are not the proper place for functional configuration
-
 - **NRI plugin**: Provide an NRI plugin that sets `memory.oom.group` for target containers
   Rejected: Requires node-level plugin deployment and runtime support, adds operational complexity, and is not portable across clusters.
-
 - **Privileged init container**: Configure `memory.oom.group` from a privileged init container
   Rejected: Requires privileged access, is fragile across runtimes, and bypasses Kubernetes API validation.
-
 - **Extend existing Resources field**:
 
   ```yaml
@@ -682,11 +659,10 @@ TBD
     limits:
       memory: "1Gi"
     oomPolicy:
-      mode: "Single"
+      oomGroup: "0"
   ```
 
   Rejected: Mixes resource quantities with behavior configuration
-
 - **Do nothing**: Continue with node-level configuration only
   Rejected: Doesn't meet the needs of diverse workloads
 
