@@ -124,6 +124,8 @@ Regarding this feature gate, the changes we will make in the kubelet codebase ar
 
   * We will modify the logic in the `doProbe` function. When it detects a container that was already running before the Kubelet restarted (for the first time after restart), it will skip marking an initial Failure status. This allows the probe `result` to retain the default `Success` status. If the container’s state changes during the Kubelet restart period and causes the probe to return an abnormal result, the status will be updated to a non-Success state in the next probe cycle. Subsequent syncPod operations will then set the container’s Ready status to false.
 
+* Additionally, this KEP ensures that if a Pod's Ready condition is set to `false` before kubelet restart, the kubelet will not transition the Pod to a `Ready` state until the readiness probe explicitly marks it as such. This prevents Pods that were previously marked as `NotReady` from being incorrectly reported as `Ready` after a kubelet restart, ensuring consistency and avoiding potential service disruptions.
+
 **Before the Changes:**
 If kubelet restarts, the pod status transition process is as follows:
 
@@ -156,6 +158,9 @@ After the change, if the kubelet is restarted for a sufficiently long time (exce
 2. After updating the container status, `SyncPod` adds the pod to the `probeManager`. The pod then begins executing probes.
 
 3. The logic here is the same as in Scenario 1. Since the container's `Ready` fields is false, doProbe sets the result of all probes to their `initialValue` and updates the `Started` and `Ready` fields of the container status in the API server to false based on the probe results. Subsequent executions of `doProbe` will then transition the pod status to the desired state.
+
+* Special Case: If a Pod's `Ready` status has been set to false before the kubelet restarts, the kubelet will ensure that the Pod remains in the `NotReady` state until the readiness probe explicitly marks it as Ready. This behavior is consistent with when a Pod's `Ready` status is set to false during a kubelet restart.
+
 
 The sequence diagram for this process is as follows:
 ![Scenario 2](./scenario-2.png)
