@@ -13,8 +13,6 @@
   - [API Warnings](#api-warnings)
   - [Updated Validation](#updated-validation)
     - [Ratcheting validation for pre-existing objects](#ratcheting-validation-for-pre-existing-objects)
-    - [Ratcheting validation for immutable fields](#ratcheting-validation-for-immutable-fields)
-  - [Dealing with pre-existing invalid values](#dealing-with-pre-existing-invalid-values)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -38,6 +36,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Ratcheting validation for immutable fields](#ratcheting-validation-for-immutable-fields)
+  - [Fixing pre-existing invalid values](#fixing-pre-existing-invalid-values)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -716,7 +716,7 @@ necessary to fix the security problems.
 
 A few ideas from the original KEP proposal were not implemented.
 
-#### Ratcheting validation for immutable fields
+### Ratcheting validation for immutable fields
 
 Four of the fields listed above are immutable:
 
