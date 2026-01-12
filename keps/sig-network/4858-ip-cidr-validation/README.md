@@ -13,8 +13,6 @@
   - [API Warnings](#api-warnings)
   - [Updated Validation](#updated-validation)
     - [Ratcheting validation for pre-existing objects](#ratcheting-validation-for-pre-existing-objects)
-    - [Ratcheting validation for immutable fields](#ratcheting-validation-for-immutable-fields)
-  - [Dealing with pre-existing invalid values](#dealing-with-pre-existing-invalid-values)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -38,6 +36,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Ratcheting validation for immutable fields](#ratcheting-validation-for-immutable-fields)
+  - [Fixing pre-existing invalid values](#fixing-pre-existing-invalid-values)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -124,9 +124,10 @@ finally moving forward on that.
 - Providing `netip.Addr`/`netip.Prefix`-based utilities or increasing
   the usage of those types. (There is a separate plan for this.)
 
-- Adding warnings/logs/events in some form when invalid IP/CIDR values
-  are seen in old objects, so users can fix them themselves. (This was
-  originally listed as a Goal, but was not implemented.)
+- Adding cluster-level warnings/logs/events when invalid IP/CIDR
+  values are seen in old objects, so admins can ensure that they
+  eventually get fixed. (This was originally listed as a Goal, but was
+  not implemented.)
 
 - Allowing immutable fields to be fixed if they are invalid. (E.g., if
   an existing Service has `clusterIP: 172.030.099.099`, allow changing
@@ -281,10 +282,10 @@ semantics we propose here, so while their validation functions will be
 updated to make better use of shared code, their semantics will not
 actually change.
 
-`resourceclaim.status.devices[].networkData.ips[]` is part of the
-`DRAResourceClaimDeviceStatus` feature, which is currently alpha, so
-we will also just make it unconditionally require the stricter
-validation.
+Similarly, `resourceclaim.status.devices[].networkData.ips[]` is part
+of a feature that was still Alpha when implementation of this KEP
+began, so we were able to just make it unconditionally require the
+stricter validation rather than having to ratchet it forward.
 
 ### Canonicalization of Kubernetes-controlled values
 
@@ -353,16 +354,13 @@ All in-tree API types have already been modified to use appropriate
 [kubernetes #123174]), so we just need to update the validation
 functions themselves to allow only unambiguous values.
 
-(UPDATE: the newly-added DRA `NetworkDeviceData` field uses
-`netutils.ParseCIDRSloppy` directly and needs to be fixed.)
-
 [kubernetes #122931]: https://github.com/kubernetes/kubernetes/pull/122931
 [kubernetes #123174]: https://github.com/kubernetes/kubernetes/pull/123174
 
 #### Ratcheting validation for pre-existing objects
 
-We want to allow making changes to objects containing invalid
-IPs/CIDRs, as long as the IPs/CIDRs themselves are not changed.
+We will apply [ratcheting validation] to existing resources containing
+IP and CIDR values.
 
 In the case of the four fields above which are not arrays themselves,
 and not contained within arrays, this is simple: if `pod.spec.hostIP`,
@@ -399,6 +397,8 @@ are only allowed to remain unfixed if the update leaves the entire
 top-level `.subsets` / `.endpoints` unchanged. So you can edit the
 labels or annotations without fixing invalid endpoint IPs, but you
 can't add a new IP while leaving existing invalid IPs in place.
+
+[ratcheting validation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#ratcheting-validation
 
 ### Risks and Mitigations
 
@@ -540,7 +540,22 @@ longer be possible to test behavior regarding them.)
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+Admins and users should address any warnings they receive about
+objects during the Alpha period, to ensure that they do not run into
+problems trying to modify or recreate those objects after the stricter
+validation is enabled. In particular, admins should not upgrade to
+Beta if they have local tooling/automation that creates objects that
+trigger the warnings about values that "will be considered invalid in
+a future Kubernetes release".
+
+Admins should also ensure that they have no third-party components in
+their cluster that try to create objects with invalid IP/CIDR values.
+(Note that we are not aware of any third-party components that have
+this problem, and weren't aware of any even before the work on this
+KEP began. Indeed, the entire point of the KEP is that many
+third-party components already had stricter validation than the
+apiserver, so upgrading is more likely to increase compatibility with
+third-party components than to decreate it.)
 
 ### Version Skew Strategy
 
@@ -581,7 +596,22 @@ The same thing as happened when it was enabled the first time.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No
+There are unit tests in the `core`, `networking`, and `discovery`
+validation code for both the enabled and disabled states. For
+instance, [`TestValidateServiceCreate`] checks that an invalid
+`.spec.clusterIP` is [allowed with the feature gate disabled] and
+[causes an error with the feature gate enabled].
+
+(The [corresponding validation tests in `resource`] are not feature
+gated, since `ResourceClaim` always requires valid IPs. There are no
+e2e tests for the functionality because it is not possible to create
+bad IPs to test with when the feature gate is enabled, as discussed
+[above](#e2e-tests).)
+
+[`TestValidateServiceCreate`]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/core/validation/validation_test.go#L16422
+[allowed with the feature gate disabled]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/core/validation/validation_test.go#L16580-L16586
+[causes an error with the feature gate enabled]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/core/validation/validation_test.go#L16588-L16593
+[corresponding validation tests in `resource`]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/resource/validation/validation_resourceclaim_test.go#L1461
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -610,7 +640,10 @@ metrics" question below).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD.
+No.
+
+The feature does not do anything during the actual upgrade/downgrade,
+so it can be tested adequately against "static" clusters.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -628,11 +661,12 @@ It is automatically in use in any cluster where it is enabled.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+It should not noticeably affect the SLOs of the API server (or any
+other component).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A
+Existing API server SLIs.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -643,6 +677,12 @@ out _why_. A more useful approach might be to make sure that the
 warnings get logged, with information about specific objects, which
 would be more useful in helping to track down the offending
 users/controllers.
+
+(Neither of these was done. There is no real reason why people would
+have been creating objects with invalid IPs anyway, and we have not
+seen any evidence that anyone is actually encountering the warnings
+about the impending validation change, so any additional
+metrics/logging seems unnecessary.)
 
 ### Dependencies
 
@@ -694,7 +734,18 @@ N/A; it is part of the API server.
 
 ###### What are other known failure modes?
 
-None
+Anything that requires an object to be recreated could potentially run
+into problems starting in Beta, if it is trying to recreate the object
+from a template containing an invalid IP or CIDR. This could happen
+automatically (as with the DaemonSet example in the "How can a rollout
+or rollback fail?" section above), or as a result of some external
+controller or user action (for example, trying to recreate a Service
+object with a bad IP after the original is deleted).
+
+In general, there is little reason why users would have intentionally
+been creating objects with these invalid values before, so this is not
+likely to be common, and hopefully where it does happen, users will
+see warnings during Alpha and have a chance to fix things.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -716,7 +767,7 @@ necessary to fix the security problems.
 
 A few ideas from the original KEP proposal were not implemented.
 
-#### Ratcheting validation for immutable fields
+### Ratcheting validation for immutable fields
 
 Four of the fields listed above are immutable:
 
