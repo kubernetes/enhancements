@@ -108,10 +108,6 @@ finally moving forward on that.
   validation requirement anyway.) For "legacy" fields, add apiserver
   warnings for IPv6 addresses in non-canonical form.
 
-- Add warnings/logs/events in some form when invalid IP/CIDR values
-  are seen in old objects, so users can fix them themselves. (The plan
-  for this is still vague.)
-
 - Update the [CEL IP/CIDR validation helpers] to use the same code as
   the new core API validation. (The CEL helpers already have the
   correct semantics; this is just about not having two separate
@@ -127,6 +123,10 @@ finally moving forward on that.
 
 - Providing `netip.Addr`/`netip.Prefix`-based utilities or increasing
   the usage of those types. (There is a separate plan for this.)
+
+- Adding warnings/logs/events in some form when invalid IP/CIDR values
+  are seen in old objects, so users can fix them themselves. (This was
+  originally listed as a Goal, but was not implemented.)
 
 - Allowing immutable fields to be fixed if they are invalid. (E.g., if
   an existing Service has `clusterIP: 172.030.099.099`, allow changing
