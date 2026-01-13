@@ -75,10 +75,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -532,6 +532,11 @@ Phase 1 + 2 (no breaking change yet):
 
 As of 2024-09-04, telemetry numbers from OpenShift show that less than 2% of the clusters have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`.
 More than 50% of these potentially-broken clusters have less than 10 of such Pods.
+
+As of 2026-01-13, telemetry numbers from OpenShift show:
+* ~0.9% of the clusters with Kubernetes 1.32 and newer have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`.
+* ~0.3% of the clusters with Kubernetes 1.33 and newer have any SELinux warning controller warnings. Admins of those clusters need to evaluate the warnings and fix their Pods before Kubernetes upgrade to a version where `SELinuxMount` is GA.
+We consider these numbers good enough to consider Phase 2 beta successful and proceed with GA, aiming at Phase 3 GA in the subsequent release.
 
 Phase 3:
 * `volume_manager_selinux_volume_context_mismatch_errors_total`: counter of Pods that did not start.
@@ -1049,6 +1054,11 @@ _This section must be completed when targeting beta graduation to a release._
 * 1.33: Graduate `SELinuxMount` to beta / disabled by default, `SELinuxChangePolicy` to beta / enabled by default.
   * Add e2e tests for the SELinuxWarningController.
   * Test on non-Fedora based Linux distribution (e.g. Debian) with SELinux enabled.
+* 1.36: Graduate `SELinuxMountReadWriteOncePoc` and `SELinuxChangePolicy` to GA.
+  * Keep `SELinuxMount` beta / disabled by default.
+  * Publish a blog or similar documentation that upgrade from 1.36 to 1.37 may introduce breaking changes on clusters with SELinux enabled and cluster admins are advised to check metrics and events.
+  * This is based on favorable telemetry data reported by OpenShift on 2026-01-13, see [Risks and Mitigations](#risks-and-mitigations).
+* Optimistic plan: 1.37 GA of everything.
 
 ## Drawbacks [optional]
 
