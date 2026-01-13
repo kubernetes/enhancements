@@ -15,13 +15,14 @@ approvers:
   - "@liggitt"
   - "@enj"
 
-stage: beta
+stage: stable
 
-latest-milestone: "v1.34"
+latest-milestone: "v1.36"
 
 milestone:
   alpha: "v1.32"
   beta: "v1.34"
+  stable: "v1.36"
 
 feature-gates:
   - name: ExternalServiceAccountTokenSigner
