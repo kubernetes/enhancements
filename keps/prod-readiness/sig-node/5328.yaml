@@ -1,3 +1,5 @@
 kep-number: 5328
 alpha:
   approver: "@johnbelamaric"
+beta:
+  approver: "@johnbelamaric"

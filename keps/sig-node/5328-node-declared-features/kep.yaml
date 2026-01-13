@@ -6,6 +6,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-scheduling
+  - sig-autoscaling
 
 creation-date: "2025-05-27"
 reviewers: 
@@ -18,14 +19,16 @@ reviewers:
 approvers:
 - '@dchen1107' # sig-node-tl
 - '@tallclair' # sig-node-assigned-approver
-- '@dom4ha'
-- '@macsko'
-- "@tallclair" # sig-node-assigned-approver
+- '@dom4ha' # SIG-Scheduling
+- '@macsko' # SIG-Scheduling
+- '@jackfrancis' # SIG-Autoscaling
+- '@towca' # SIG-Autoscaling
 status: implementable
-stage: alpha
-latest-milestone: "v1.35"
+stage: beta
+latest-milestone: "v1.36"
 milestone:
   alpha: "v1.35"
+  beta:  "v1.36"
 
 feature-gates:
   - name: NodeDeclaredFeatures
@@ -35,4 +38,7 @@ feature-gates:
       - kube-apiserver
 disable-supported: true
 
-metrics: []
+metrics:
+  - scheduler_pending_pods
+  - scheduler_plugin_execution_duration_seconds
+  - kubelet_admission_rejections_total
