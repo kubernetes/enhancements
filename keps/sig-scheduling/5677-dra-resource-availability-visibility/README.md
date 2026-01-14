@@ -93,7 +93,7 @@ This enhancement introduces:
 Dynamic Resource Allocation (DRA) provides a flexible framework for managing specialized hardware resources like GPUs, FPGAs, and other accelerators. However, the current implementation lacks visibility into resource availability:
 
 **Current State:**
-- ResourceSlices publish total capacity of devices in a pool
+- ResourceSlices are cluster-scoped resources that publish total capacity of devices in a pool
 - ResourceClaims are namespaced and track individual allocations
 - Most users cannot see all ResourceClaims consuming resources from a pool (due to namespace boundaries and RBAC)
 - No API-level view of "available" vs "allocated" capacity
@@ -113,7 +113,7 @@ Dynamic Resource Allocation (DRA) provides a flexible framework for managing spe
 - Enhance `kubectl describe resourceslice` to show capacity, allocated, and available resources
 - Enhance `kubectl describe node` to show DRA resource information for node-local resources
 - Ensure the solution works for both node-local and network-attached devices
-- Support both single-device and consumable capacity (multi-allocatable) devices
+- Support single-device, consumable capacity (multi-allocatable), and partitionable devices
 
 ### Non-Goals
 
@@ -302,11 +302,15 @@ type DeviceStatus struct {
     // +required
     Name string `json:"name"`
 
-    // Conditions represent the latest available observations of the device's state
+    // State indicates the current availability state of the device.
+    // This is derived from allocations and capacity, not reported by drivers.
+    // +required
+    State DeviceState `json:"state"`
+
+    // StateReason provides additional detail when State is Unavailable.
+    // For example: "InsufficientSharedCapacity" for partitionable devices.
     // +optional
-    // +listType=map
-    // +listMapKey=type
-    Conditions []DeviceCondition `json:"conditions,omitempty"`
+    StateReason string `json:"stateReason,omitempty"`
 
     // Allocations lists all current allocations of this device.
     // For single-allocation devices, this will have at most one entry.
@@ -320,47 +324,33 @@ type DeviceStatus struct {
     // +optional
     Capacity ResourceList `json:"capacity,omitempty"`
 
-    // Available represents the remaining available capacity after subtracting
+    // AvailableCapacity represents the remaining available capacity after subtracting
     // all allocations. Only set for multi-allocatable devices.
     // +optional
-    Available ResourceList `json:"available,omitempty"`
+    AvailableCapacity ResourceList `json:"availableCapacity,omitempty"`
 }
 
-// DeviceCondition describes a condition of a device
-type DeviceCondition struct {
-    // Type of device condition
-    // +required
-    Type DeviceConditionType `json:"type"`
-
-    // Status of the condition (True, False, Unknown)
-    // +required
-    Status ConditionStatus `json:"status"`
-
-    // LastTransitionTime is the last time the condition transitioned
-    // +optional
-    LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
-
-    // Reason is a brief machine-readable explanation for the condition
-    // +optional
-    Reason string `json:"reason,omitempty"`
-
-    // Message is a human-readable explanation for the condition
-    // +optional
-    Message string `json:"message,omitempty"`
-}
-
-// DeviceConditionType is the type of device condition
-type DeviceConditionType string
+// DeviceState represents the availability state of a device.
+// Note: Health/error conditions are tracked separately in KEP-5283.
+type DeviceState string
 
 const (
-    // DeviceAllocated indicates the device is currently allocated to one or more claims
-    DeviceAllocated DeviceConditionType = "Allocated"
+    // DeviceStateAvailable indicates the device is fully available for allocation
+    DeviceStateAvailable DeviceState = "Available"
 
-    // DeviceAvailable indicates the device is available for allocation
-    DeviceAvailable DeviceConditionType = "Available"
+    // DeviceStatePartiallyAllocated indicates the device has some allocations
+    // but still has available capacity (only for consumable capacity devices)
+    DeviceStatePartiallyAllocated DeviceState = "PartiallyAllocated"
 
-    // DeviceError indicates there is an error with the device
-    DeviceError DeviceConditionType = "Error"
+    // DeviceStateAllocated indicates the device is fully allocated
+    // (no more capacity available)
+    DeviceStateAllocated DeviceState = "Allocated"
+
+    // DeviceStateUnavailable indicates the device cannot accept allocations
+    // even though it may not be directly allocated. This happens with
+    // partitionable devices when shared/parent resources are exhausted.
+    // See StateReason for details.
+    DeviceStateUnavailable DeviceState = "Unavailable"
 )
 
 // DeviceAllocation describes a single allocation of a device or portion of a device
@@ -614,6 +604,49 @@ func (c *ResourceSliceStatusController) validatePool(slice *ResourceSlice) *Reso
 }
 ```
 
+#### Consistency Handling
+
+The status controller is an observer, not a fixer. It reports inconsistencies but does not attempt to resolve them. Resolution is the responsibility of the DRA driver, scheduler/allocator, or cluster administrators.
+
+**Key principle:** `ResourceSlice.Status.Devices[]` only contains entries for devices that exist in `ResourceSlice.Spec.Devices[]`. The controller never creates phantom status entries for removed devices.
+
+**Scenarios and handling:**
+
+1. **Device removed from ResourceSlice spec while ResourceClaim still references it:**
+   - The device no longer exists in spec, so it has no DeviceStatus entry
+   - Status controller scans ResourceClaims that reference this pool
+   - Detects allocation pointing to non-existent device
+   - Reports in `PoolStatus.ValidationErrors`: "ResourceClaim ns/name references non-existent device 'X' in pool 'Y'"
+   - **Resolution:** This is typically a driver bug or race condition. The DRA driver should either restore the device to the ResourceSlice, or the scheduler/allocator should deallocate the claim. The status controller does NOT fix this - only reports it.
+
+2. **ResourceClaim deleted but status not yet updated:**
+   - Normal eventual consistency - status will catch up on next reconcile
+   - DeviceStatus will change from showing the allocation to showing device as available
+   - No special handling needed beyond normal reconciliation latency
+
+3. **New device added to ResourceSlice spec:**
+   - Status controller creates DeviceStatus with the device shown as available (assuming no claims reference it yet)
+   - Normal operation
+
+4. **ResourceSlice spec updated during status write (race condition):**
+   - Use optimistic locking via `resourceVersion`
+   - On conflict, controller re-fetches fresh spec and retries
+   - Standard Kubernetes controller pattern
+
+5. **Pool generation changes (driver updates pool):**
+   - Status controller only processes slices at the current generation
+   - Old-generation slices are ignored until driver updates them
+   - Prevents mixing old and new pool configurations in validation
+
+**Controller responsibilities vs. other components:**
+
+| Scenario | Status Controller | DRA Driver | Scheduler/Allocator |
+|----------|------------------|------------|---------------------|
+| Device removed with active allocation | Reports error | Should restore device or signal removal | Should deallocate orphaned claims |
+| Stale allocation data | Updates on next reconcile | N/A | N/A |
+| Cross-slice validation errors | Reports in PoolStatus | Should fix ResourceSlice definitions | N/A |
+| Spec/status conflict | Retries with fresh data | N/A | N/A |
+
 ### kubectl Integration
 
 #### kubectl describe resourceslice
@@ -653,17 +686,13 @@ Status:
     Available Devices:   1
   Devices:
     Name:  gpu-0
-    Conditions:
-      Type:    Allocated
-      Status:  True
+    State: Allocated
     Allocations:
       Claim Namespace:  default
       Claim Name:       ml-training-gpu
       Claim UID:        abc-123
     Name:  gpu-1
-    Conditions:
-      Type:    Available
-      Status:  True
+    State: Available
 
 Events:  <none>
 ```
@@ -785,6 +814,10 @@ Test with:
 - Metrics for monitoring controller performance
 - User feedback incorporated
 - Cross-slice validation proven stable
+
+**Potential Beta enhancements (based on user feedback):**
+- Vendor-defined summarization attributes: Allow DeviceClass or ResourceSlice to specify which device attributes should be highlighted in summaries (e.g., NVIDIA MIG partition types)
+- Synthetic `kubectl describe resourcepool` command for aggregated pool-level views
 
 #### GA
 
@@ -1181,6 +1214,31 @@ The controller uses standard Kubernetes client patterns with retries and backoff
 
 - 2025-12-20: KEP created in provisional state
 
+## Security Considerations
+
+### Cross-Namespace Information Exposure
+
+ResourceSlice is a cluster-scoped resource, but ResourceClaims are namespaced. The status field contains references to ResourceClaims (namespace/name) which could expose information about claims in namespaces the user cannot access.
+
+**Mitigation: kubectl-side RBAC filtering**
+
+- ResourceSlice.Status stores full allocation details including claim namespace/name
+- kubectl checks the user's RBAC permissions before displaying claim references
+- For claims in namespaces the user cannot access, kubectl elides the reference:
+  - Full access: `Allocated to team-a/gpu-claim-1`
+  - Restricted: `Allocated (1 claim)`
+- Users always see device states and availability counts (the primary use case)
+- Only claim references are filtered based on RBAC
+
+**Why this approach:**
+- Keeps API simple (single status field, no subresources)
+- Primary use case (checking availability) works for all users
+- Admins with full RBAC access get complete debugging information
+- No additional API calls required
+- Follows existing kubectl patterns for RBAC-aware display
+
+**Alternative considered:** A separate `resourceslices/allocations` subresource with independent RBAC. This is architecturally cleaner but adds API complexity for a display-only concern.
+
 ## Drawbacks
 
 1. **API server storage overhead**: Every ResourceSlice gains a status field, increasing etcd storage
@@ -1193,7 +1251,7 @@ The controller uses standard Kubernetes client patterns with retries and backoff
    - Mitigation: Thorough testing, clear code structure, good observability
 
 4. **Security consideration**: Status reveals which ResourceClaims are allocated, potentially exposing namespace information
-   - Mitigation: Document this, users can restrict ResourceSlice access via RBAC if needed
+   - Mitigation: kubectl-side RBAC filtering elides claim references for unauthorized users (see [Security Considerations](#security-considerations))
 
 ## Alternatives
 
