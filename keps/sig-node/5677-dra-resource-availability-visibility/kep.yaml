@@ -2,9 +2,9 @@ title: DRA Resource Availability Visibility
 kep-number: 5677
 authors:
   - "@nmn3m"
-owning-sig: sig-scheduling
+owning-sig: sig-node
 participating-sigs:
-  - sig-node
+  - sig-scheduling
   - sig-cli
 
 status: provisional
