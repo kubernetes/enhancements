@@ -726,7 +726,12 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-No testing of upgrade->downgrade->upgrade necessary.
+No testing of upgrade->downgrade->upgrade necessary because:
+
+1. **No new persisted state changes**: Either the corrupt object is deleted or not.
+2. **"Atomic" behavior**: Either the feature is enabled and the user can perform unsafe deletes (with proper RBAC), or it's disabled and they cannot.
+3. **Version skew is handled gracefully**: The interpretation of a deletion event of a corrupt object is added to k8s 1.32.
+4. **Rollback is trivial**: Disabling the feature gate simply makes the `DeleteOption` non-functional. No cleanup or migration required.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
