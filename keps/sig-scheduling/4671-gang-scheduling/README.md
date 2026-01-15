@@ -23,7 +23,7 @@
     - [North Star Vision](#north-star-vision)
     - [GangScheduling Plugin](#gangscheduling-plugin)
     - [Future plans](#future-plans)
-  - [Scheduler Changes for v1.36](#scheduler-changes-for-beta)
+  - [Scheduler Changes for v1.36](#scheduler-changes-for-v136)
     - [The Workload Scheduling Cycle](#the-workload-scheduling-cycle)
     - [Queuing and Ordering](#queuing-and-ordering)
     - [Scheduling Algorithm](#scheduling-algorithm)
@@ -53,6 +53,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [API](#api-1)
+  - [Pod group queueing in scheduler](#pod-group-queueing-in-scheduler)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -968,7 +970,7 @@ or potentially scaling it based on the number of pods within the group.
 The current default of 10 seconds has proven insufficient in large clusters,
 so this might be the case for workloads. Crucially, because the Workload Scheduling Cycle
 can be computationally expensive, retrying it too frequently risks starving individual pods.
-Moreover, retries triggered by the Delayed Preemption feature may further strenghten the problem.
+Moreover, retries triggered by the Delayed Preemption feature may further strengthen the problem.
 
 3. Retries
 
