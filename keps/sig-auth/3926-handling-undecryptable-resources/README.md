@@ -810,8 +810,13 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-All corrupt object DELETEs complete, when feature is enabled, option is set and
-the user is authorized.
+This feature targets emergency cluster recovery scenarios where corrupt objects
+are blocking normal operations. Temporary performance degradation during
+remediation is acceptable - the priority is restoring cluster functionality.
+
+The deletion itself is faster as it bypasses preconditions and finalizers,
+but there are cache resets at the kube-apiserver and its watching clients
+(informers) that may cause performance degradation.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
