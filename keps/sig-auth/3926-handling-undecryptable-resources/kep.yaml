@@ -14,7 +14,7 @@ approvers:
   - "@deads2k"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -37,4 +37,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - 
+  - apiserver_request_duration_seconds
+  - apiserver_current_inqueue_requests
+  - apiserver_current_inflight_requests
