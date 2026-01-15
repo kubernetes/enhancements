@@ -206,7 +206,7 @@ Each mutation field contains a CEL expression which evaluates to a partially pop
 Here is an example of injecting an initContainer.
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
+apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicy
 metadata:
   name: "sidecar-policy.example.com"
@@ -254,7 +254,7 @@ The "JSONPatch" strategy will use JSON Patch like what is done in Mutating Webho
 Example JSON Patch:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
+apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicy
 metadata:
   name: "sidecar-policy.example.com"
@@ -311,7 +311,7 @@ and `Sidecar` parameter resource:
 
 ```yaml
 # Policy Binding
-apiVersion: admissionregistration.k8s.io/v1alpha1
+apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicyBinding
 metadata:
   name: "sidecar-binding-test.example.com"
@@ -482,7 +482,7 @@ These validation checks will be declared using a `mutationValidationPolicy` fiel
 For example:
 
 ```yaml
-apiVersion: admissionregistration.k8s.io/v1alpha1
+apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicy
 metadata:
   name: "sidecar-policy.example.com"
@@ -1459,6 +1459,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- v1.32: Alpha
+- v1.34: Beta
+- v1.36: Stable
 
 ## Drawbacks
 
