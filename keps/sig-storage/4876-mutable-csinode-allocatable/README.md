@@ -475,8 +475,8 @@ All unit tests/integration/e2e tests completed and enabled:
 
 #### GA
 
-- No bug reports / feedback / improvements to address in k/k.
-- No bug reports in Cluster Autoscalar as a result of this enhancement (*this KEP does not affect CA, but we have added this requirement out of an abundance of caution, as requested by CA.*)
+- [✅] No bug reports / feedback / improvements to address in k/k.
+- [✅] No bug reports in Cluster Autoscalar as a result of this enhancement (*this KEP does not affect CA, but we have added this requirement out of an abundance of caution, as requested by CA.*)
 
 ### Upgrade / Downgrade Strategy
 
@@ -952,6 +952,8 @@ Major milestones might include:
 - 2024-08-08 - Enhancement proposed in sig-storage.
 - 2024-09-25 - Enhancement officially submitted to Kubernetes.
 - 2025-04-23 - Kubernetes v1.33: Enhancement implemented and released in Alpha.
+- 2025-08-27 - Kubernetes v1.34: Enhancement graduated to Beta.
+- 2025-12-17 - Kubernetes v1.35: Feature gate enabled by default in Beta.
 
 ## Drawbacks
 
