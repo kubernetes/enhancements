@@ -37,4 +37,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - 
+- apiserver_request_duration_seconds
+- apiserver_current_inqueue_requests
+- apiserver_current_inflight_requests
