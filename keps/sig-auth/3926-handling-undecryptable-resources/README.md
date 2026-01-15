@@ -551,7 +551,7 @@ Beta:
 - list error aggregation
 - delete handler with unsafe deletion flow
 - deserialization failure via bit-flip (not just encryption failure)
-- deletion works for CRDs
+- deletion works for CRs
 - KAS health recovery after deleting all corrupt objects
 
 ##### e2e tests
