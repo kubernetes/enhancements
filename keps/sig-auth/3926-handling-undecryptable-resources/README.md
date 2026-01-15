@@ -865,7 +865,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
-- kube-apiserver
+No
 
 ### Scalability
 
