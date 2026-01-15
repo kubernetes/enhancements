@@ -451,10 +451,9 @@ The following principles, agreed upon by SIG API Machinery, guide this enhanceme
    temporary increase in API server load from client re-lists is an accepted
    tradeoff for restoring cluster health.
 
-3. **Recovery priorities** (in order):
-   - Remove the corrupt data from storage
-   - Restore kube-apiserver to a healthy state
-   - Allow clients to converge eventually
+3. **Enable admin remediation**: The admin must be able to identify corrupt
+   objects and delete them, even if one by one. Once all corrupt objects are
+   removed, the kube-apiserver and client informers recover automatically.
 
 This approach favors eventual consistency and cluster recovery over preserving
 individual watch streams during an inherently abnormal situation.
