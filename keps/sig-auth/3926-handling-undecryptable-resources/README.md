@@ -825,7 +825,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-- No metric tracking when unsafe deletions actually occur. Not assumed to happen
+- No new metric for tracking unsafe deletions is required. The available metrics (`apiserver_request_duration_seconds`) are sufficient to track the functionality of this feature. 
   often.
 
 ### Dependencies
