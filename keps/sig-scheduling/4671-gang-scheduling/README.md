@@ -23,10 +23,11 @@
     - [North Star Vision](#north-star-vision)
     - [GangScheduling Plugin](#gangscheduling-plugin)
     - [Future plans](#future-plans)
-  - [Scheduler Changes for Beta](#scheduler-changes-for-beta)
+  - [Scheduler Changes for v1.36](#scheduler-changes-for-beta)
     - [The Workload Scheduling Cycle](#the-workload-scheduling-cycle)
     - [Queuing and Ordering](#queuing-and-ordering)
     - [Scheduling Algorithm](#scheduling-algorithm)
+    - [Algorithm Limitations](#algorithm-limitations)
     - [Interaction with Basic Policy](#interaction-with-basic-policy)
     - [Delayed Preemption](#delayed-preemption)
     - [Workload-aware Preemption](#workload-aware-preemption)
@@ -256,7 +257,7 @@ However, this impact is mitigated by several factors:
   the overall window of time where these nominations are active is expected to be short enough
   to prevent severe degradation.
 
-The real impact will be verified hrough scalability tests (scheduler-perf benchmark).
+The real impact will be verified through scalability tests (scheduler-perf benchmark).
 
 ## Design Details
 
@@ -599,15 +600,15 @@ this problem with existing mechanisms (e.g. reserving resources via NominatedNod
 However, approval for this KEP is NOT an approval for this vision. We only sketch it to show that
 we see a viable path forward from the proposed design that will not require significant rework.
 
-### Scheduler Changes for Beta
+### Scheduler Changes for v1.36
 
-For the `Alpha` phase, we focused on plumbing the `Workload` API and implementing
+For the `Alpha` phase in v1.35, we focused on plumbing the `Workload` API and implementing
 the `GangScheduling` plugin using simple barriers (`PreEnqueue` and `Permit`).
 While this satisfied the correctness requirement for "all-or-nothing" scheduling,
 it did not address performance or efficiency at scale, scheduling livelocks,
 nor did it solve the problem of partial preemption application.
 
-For `Beta`, we propose introducing a **Workload Scheduling Cycle**.
+For v1.36, we propose introducing a **Workload Scheduling Cycle**.
 This mechanism processes all Pods belonging to a single `PodGroup` in one batch,
 rather than attempting to schedule them individually in isolation using the
 traditional pod-by-pod approach. While introduction of this phase itself won't
@@ -634,14 +635,19 @@ initiates the Workload Scheduling Cycle.
 Since the `PodGroup` instance (defined by the group name and replica key)
 is the effective scheduling unit, the Workload Scheduling Cycle will operate
 at the `PodGroup` instance level, i.e., each instance will be scheduled separately
-in its own cycle. If new Pods belonging to an already scheduled `PodGroup` instance appear,
+in its own cycle.
+
+If new Pods belonging to an already scheduled `PodGroup` instance
+(i.e., one that already passed `WaitOnPemit`) appear,
 they are also processed via the Workload Scheduling Cycle, which takes the previously
-scheduled Pods into consideration.
+scheduled Pods into consideration. This is done for safety reasons to ensure
+the PodGroup-level constraints are still satisfied. However, if the `PodGroup` is being processed,
+these new Pods must wait for the ongoing pod group scheduling to be finished, before being considered.
 
 The cycle proceeds as follows:
 
-1. The scheduler takes either pod group itself or its Pod representative from
-   the scheduling queue. If the pod group is unscheduled (even partially), it temporarily removes
+1. The scheduler takes pod group from the scheduling queue.
+   If the pod group is unscheduled (even partially), it temporarily removes
    all group's pods from the queue for processing. The order of processing
    is determined by the queueing mechanism (see *Queuing and Ordering* below).
    
@@ -658,7 +664,7 @@ The cycle proceeds as follows:
      scheduler's internal cache. Pods are then pushed to the
      active queue (restoring their original timestamps to ensure fairness)
      to pass through the standard scheduling and binding cycle,
-     which will consider the nomination.
+     which will consider and follow the nomination.
    * If `minCount` cannot be met (even after calculating potential
      preemptions), the scheduler considers the `PodGroup` unschedulable. Standard backoff
      logic applies (see *Failure Handling*), and Pods are returned to
@@ -676,68 +682,36 @@ One such formula can be to set it to the lowest priority found within the pod gr
 what will be effectively the weakest link to determine if the whole pod group is schedulable
 and reduce unnecessary preemption attempts.
 
-```md
-<<[UNRESOLVED Queue Implementation Strategy]>>
 To ensure that we process the `PodGroup` instance at an appropriate time and
 don't starve other pods (including gang pods in the pod-by-pod scheduling phase)
 from being scheduled, we need to have a good queueing mechanism for pod groups.
-There are several alternatives:
 
-Alternative 0 (Keep current queueing and ordering):
+We have decided to make the scheduling queue explicitly workload-aware.
+The queue will support queuing `PodGroup` instances alongside individual Pods.
 
-We can minimize changes by retaining the current queueing and ordering logic.
-When a Pod is popped, the scheduler can check if it belongs to a `PodGroup`
-requiring a Workload Scheduling Cycle. As we add scheduling priorities
-for pod groups later, this alternative naturally evolves into Alternative 1.
-* *Pros:* Fits the current architecture. Retains current reasoning about the
-  scheduling queue. Minimizes implementation effort.
-* *Cons:* Might be problematic when some of the pod groups's pods are in the backoffQ
-  or unschedulablePods and need to be retrieved efficiently.
-  Makes it hard to further evolve the Workload Scheduling Cycle.
-  Observability, currently suited for pod-by-pod scheduling, may not
-  accurately reflect the state of the queue (e.g., pending gangs).
-  Likely harder to support future extensions and won't work well
-  if `PodGroup` becomes a separate top-level resource.
-  The pod group will be likely scheduled based on the highest priority member,
-  meaning the latter pod-by-pod cycles might be visibly delayed for lower priority Pods.
+1. When Pods belonging to a `PodGroup` are added to the scheduler and pass the `PreEnqueue`,
+   they are initially stored in a dedicated internal data structure (tentatively named `workloadPods`)
+   rather than the standard active queue.
 
-Alternative 1 (Modify sorting logic):
+2. Once the number of accumulated Pods meets the scheduling requirements (e.g., `minCount`),
+   a `QueuedPodGroupInfo` object (analogous to `QueuedPodInfo`) is created
+   and injected into the main scheduling queue.
 
-Modify the sorting logic within the existing `PriorityQueue` to put all pods
-from a pod group one after another.
-* *Pros:* Fits the current architecture.
-* *Cons:* Might be problematic when some of the pod groups's pods are in the
-  backoffQ or unschedulablePods and need to be retrieved efficiently.
-  Makes it hard to further evolve the Workload Scheduling Cycle.
-  Would need to inject the workload priority into each of the Pods
-  or somehow apply the lowest pod's priority to the rest of the group.
+3. The `scheduleOne` loop will pop the highest-priority item from the queue,
+   which may now be either a single Pod (triggering the standard cycle)
+   or a `PodGroup` (triggering the Workload Scheduling Cycle).
 
-Alternative 2 (Store a PodGroup instance):
+4. During a Workload Scheduling Cycle, all member Pods are retrieved from `workloadPods`.
+   Based on the cycle's outcome:
+   * **Success:** Pods are moved to the standard `activeQ` (with nominations set)
+     to proceed to the pod-by-pod scheduling soon.
+   * **Failure/Preemption:** Pods are returned to `workloadPods` or the unschedulable queue.
+     The `PodGroup` enters a backoff state and is eligible for retry only when
+     a relevant cluster event wakes up at least one of its member pods.
 
-Modify the scheduling queue's data structures to accept `QueuedPodGroupInfo` alongside `QueuedPodInfo`.
-This allows reusing existing queue logic while extending it to `PodGroups`.
-All queued members would be stored in a new dara structure
-and retrieved for the Workload Cycle when the `PodGroup` is popped.
-* *Pros:* Makes it easier to obtain all pods in a group and reduces queue size.
-  Reuses current logic for popping, enforcing backoff, and processing unschedulable entities.
-* *Cons:* Requires adapting the scheduling queue to handle `PodGroups` as
-  queueable entities, which is non-trivial and might clutter the code.
-
-Alternative 3 (Dedicated PodGroup queue):
-
-Introduce a completely separate queue for PodGroups alongside the `activeQ` for Pods.
-The scheduler would pop the item (Pod or PodGroup) with the highest priority/earliest timestamp.
-Pods belonging to an enqueued PodGroup won't be allowed in the `activeQ`.
-* *Pros:* Clean separation of concerns. Can easily use the Workload scheduling priority.
-  Can report dedicated logs and metrics with less confusion to the user.
-* *Cons:* Significant and non-trivial architectural change to the scheduling queue
-  and `scheduleOne` loop.
-
-*Proposed:* Alternative 3 (Dedicated PodGroup queue). While this requires architectural change to the scheduling queue,
-the effort involved in adding pod group queuing will be comparable to modifying the code for the previous alternatives.
-This will also make the foundation for future WAS features and support workload priority by design.
-<<[/UNRESOLVED]>>
-```
+While this represents a significant architectural change to the scheduling
+queue and `scheduleOne` loop, it provides a clean separation of concerns and
+establishes a necessary foundation for future Workload Aware Scheduling features.
 
 #### Scheduling Algorithm
 
@@ -756,7 +730,8 @@ The list and configuration of plugins used by this algorithm will be the same as
 2. These sub-groups are sorted. Initially, we sort by the highest priority
    of the sub-group (assuming homogeneity enforces uniform sub-group priority).
    In the future, sorting may use the size of the sub-group (larger groups first) to
-   tackle the hardest placement problems early.
+   tackle the hardest placement problems early. Crucially, the ordering should be deterministic
+   and saable if the pod group state doesn't change
    *This sorting can be done in the scheduler's cache earlier to optimize performance.*
 
 3. The scheduler iterates through the sorted sub-groups. It finds a feasible node
@@ -805,10 +780,10 @@ The list and configuration of plugins used by this algorithm will be the same as
        pushed directly to the active queue, and will soon attempt to be scheduled
        on their nominated nodes in their own, pod-by-pod cycles.
 
-     If a pod selects a different node than its nomination during the individual cycle, the
-     gang remains valid as long as `minCount` is satisfied globally (enforced at `WaitOnPermit`).
-     The `minCount` check can consider the number of pods that have passed the Workload Scheduling Cycle
-     to ensure that Pods are not waiting unnecessarily when some have been rejected
+     Pod will be restricted to its nominated node during the individual cycle.
+     If the node is unavailable, the pod will remain unschedulable and the `WaitOnPermit` gate will take that
+     into consideration. The `minCount` check can consider the number of pods that have passed
+     the Workload Scheduling Cycle to ensure that Pods are not waiting unnecessarily when some have been rejected
      but other new pods have been added to the cluster.
 
      In the pod-by-pod cycle, preemption initiated by the workload pods will be forbidden.
@@ -823,45 +798,58 @@ The list and configuration of plugins used by this algorithm will be the same as
      and nominations for them are cleared to ensure the other workloads (pod groups)
      can be attempted on that place. See *Failure Handling*.
 
-```md
-<<[UNRESOLVED Enforcing minCount constraint in algorithm]>>
-Gang Scheduling is currently implemented as a plugin, meaning the `minCount` constraint
-is enforced at the plugin level. However, the proposed Workload Scheduling Cycle algorithm
-needs to know if this constraint is met to decide whether to commit the results.
-We have two ways of verifying this:
-
-1. Explicit check in the algorithm: Hardcode the `minCount` check within the framework's logic.
-   This implies that Gang Scheduling becomes a core scheduler framework feature rather than
-   just a specific plugin.
-
-2. New Extension Point: Introduce a new extension point allowing plugins to validate the group's
-   scheduled pods. This would function similarly to a `Permit` check (likely requiring `Reserve` state)
+   Gang Scheduling is currently implemented as a plugin, meaning the `minCount` constraint
+   is enforced at the plugin level. However, the proposed Workload Scheduling Cycle algorithm
+   needs to know if this constraint is met to decide whether to commit the results.
+   To verify this, a new extension point will be introduced, allowing plugins to validate the group's
+   scheduled pods. This will function similarly to a `Permit` check (likely requiring `Reserve` state)
    but without the suspension (`WaitOnPermit`) gate. Crucially, this extension should support two checks:
+
    * Validation: Check whether the currently scheduled pods meet the requirements,
      e.g., if the `minCount` pods from a pod group was successfully scheduled.
+
    * Feasibility: Given the number of pods that have already failed scheduling in this cycle,
      check whether is it still *possible* to meet the constraint. If not, the cycle should abort early
      to save time.
-<<[/UNRESOLVED]>>
-```
   
 While this algorithm might be suboptimal, it is a solid first step for ensuring we have
 a single-cycle workload scheduling phase. As long as PodGroups consist of homogeneous pods,
 opportunistic batching itself will provide significant improvements.
 Future features like Topology Aware Scheduling can further improve other subsets of use cases.
 
-Moreover, this default algorithm relies on specific sorting and may fail to find
+#### Algorithm Limitations
+
+Default algorithm proposed above relies on specific sorting and may fail to find
 a valid placement that could have been discovered by processing the group's pods
 in a different order. While resolving this limitation could be desirable,
 implementing a generalized solver for arbitrary constraints would introduce excessive complexity
 for the default implementation. The current proposal addresses the vast majority of standard use cases
-(homogeneous workloads). Future improvements for this should be delivered via specialized algorithms
-based on specific `PodGroup` constraints, such as Topology Aware Scheduling (TAS).
+(specifically homogeneous workloads). Future improvements for this should be delivered
+via specialized algorithms based on specific pod group constraints,
+such as Topology Aware Scheduling (TAS).
+
+Since the scheduler cannot exhaustively analyze all possible placement permutations,
+we will advise users via documentation regarding which pod group types
+are well-supported and which scenarios are handled on a
+best-effort basis (where a successful placement is not guaranteed, even if
+one theoretically exists).
+
+In particular:
+* For basic **homogeneous** pod groups without inter-pod dependencies, this
+  algorithm is expected to find a placement whenever one exists.
+* For **heterogeneous** pod groups, finding a valid placement is not guaranteed.
+* For pod groups with **inter-pod dependencies** (e.g., affinity/anti-affinity
+  or topology spreading rules), finding a valid placement is not guaranteed.
+
+Moreover, if a pod using these features is rejected by the Workload Scheduling Cycle,
+its rejection message (exposed via Pod status) will explicitly indicate
+that the rejection may be due to the use of features for which finding an existing
+placement cannot be guaranteed, distinguishing it from a generic `Unschedulable` reason.
 
 #### Interaction with Basic Policy
 
 For pod groups using the `Basic` policy, the Workload Scheduling Cycle is
-optional. In the `Beta` timeframe, this cycle will be applied to
+optional. In the v1.36 timeframe, this cycle will be applied to
 `Basic` pod groups to leverage the batching performance benefits, but the
 "all-or-nothing" (`minCount`) checks will be skipped; i.e., we will try to
 schedule as many pods from such PodGroup as possible.
@@ -973,12 +961,14 @@ When the cycle fails, the scheduler rejects the entire group.
 2. Backoff strategy
 
 Backoff mechanism has to be applied for a pod group similarly as we do for individual pods.
-For Beta, we will apply the standard Pod backoff logic to the group.
+Initially, we will apply the standard Pod backoff logic to the group.
 
 At the same time, we should consider increasing the maximum backoff duration for pod groups
+or potentially scaling it based on the number of pods within the group.
 The current default of 10 seconds has proven insufficient in large clusters,
-so this might be the case for workloads. Crucially, because the Workload Scheduling Cycle can take a significant
-amount of time, retrying it too frequently risks starving individual pods.
+so this might be the case for workloads. Crucially, because the Workload Scheduling Cycle
+can be computationally expensive, retrying it too frequently risks starving individual pods.
+Moreover, retries triggered by the Delayed Preemption feature may further strenghten the problem.
 
 3. Retries
 
@@ -991,10 +981,9 @@ While checking a single Pod does not guarantee the *whole* gang can fit,
 calculating gang-level schedulability inside the event handler can be difficult at the moment.
 Therefore, we optimistically retry the Workload Scheduling Cycle if any member's condition improves.
 
-It might be beneficial to retry the pod group without being triggered by any cluster event.
-Ideally, this would involve scrambling the pods and subgroups within the group that have the same priority.
-This could be useful because the pods could be scheduled without any cluster changes
-when considered in a different order.
+It might be beneficial to retry the pod group without being triggered by any cluster event,
+because single Workload Scheduling Cycle cannot determine the placement doesn't really exists,
+especially for heterogeneous workloads or inter-pod dependencies.
 
 
 ### Test Plan
@@ -1457,6 +1446,8 @@ However:
 
 ## Alternatives
 
+### API
+
 The longer version of this design describing the whole thought process of choosing the
 above described approach can be found in the [extended proposal] document.
 
@@ -1515,6 +1506,62 @@ type PodGroup struct {
     GangSchedulingPolicy GangSchedulingPolicy
 }
 ```
+
+### Pod group queueing in scheduler
+
+In selecting the optimal pod group queuing mechanism, we evaluated several alternatives:
+
+Alternative 0 (Keep current queueing and ordering):
+
+We can minimize changes by retaining the current queueing and ordering logic.
+When a Pod is popped, the scheduler can check if it belongs to a `PodGroup`
+requiring a Workload Scheduling Cycle. As we add scheduling priorities
+for pod groups later, this alternative naturally evolves into Alternative 1.
+* *Pros:* Fits the current architecture. Retains current reasoning about the
+  scheduling queue. Minimizes implementation effort.
+* *Cons:* Might be problematic when some of the pod groups's pods are in the backoffQ
+  or unschedulablePods and need to be retrieved efficiently.
+  Makes it hard to further evolve the Workload Scheduling Cycle.
+  Observability, currently suited for pod-by-pod scheduling, may not
+  accurately reflect the state of the queue (e.g., pending gangs).
+  Likely harder to support future extensions and won't work well
+  if `PodGroup` becomes a separate top-level resource.
+  The pod group will be likely scheduled based on the highest priority member,
+  meaning the latter pod-by-pod cycles might be visibly delayed for lower priority Pods.
+
+Alternative 1 (Modify sorting logic):
+
+Modify the sorting logic within the existing `PriorityQueue` to put all pods
+from a pod group one after another.
+* *Pros:* Fits the current architecture.
+* *Cons:* Might be problematic when some of the pod groups's pods are in the
+  backoffQ or unschedulablePods and need to be retrieved efficiently.
+  Makes it hard to further evolve the Workload Scheduling Cycle.
+  Would need to inject the workload priority into each of the Pods
+  or somehow apply the lowest pod's priority to the rest of the group.
+
+Alternative 2 (Store a PodGroup instance):
+
+Modify the scheduling queue's data structures to accept `QueuedPodGroupInfo` alongside `QueuedPodInfo`.
+This allows reusing existing queue logic while extending it to `PodGroups`.
+All queued members would be stored in a new data structure
+and retrieved for the Workload Cycle when the `PodGroup` is popped.
+* *Pros:* Makes it easier to obtain all pods in a group and reduces queue size.
+  Reuses current logic for popping, enforcing backoff, and processing unschedulable entities.
+* *Cons:* Requires adapting the scheduling queue to handle `PodGroups` as
+  queueable entities, which is non-trivial and might clutter the code.
+
+Alternative 3 (Dedicated PodGroup queue):
+
+Introduce a completely separate queue for PodGroups alongside the `activeQ` for Pods.
+The scheduler would pop the item (Pod or PodGroup) with the highest priority/earliest timestamp.
+Pods belonging to an enqueued PodGroup won't be allowed in the `activeQ`.
+* *Pros:* Clean separation of concerns. Can easily use the Workload scheduling priority.
+  Can report dedicated logs and metrics with less confusion to the user.
+* *Cons:* Significant and non-trivial architectural change to the scheduling queue
+  and `scheduleOne` loop.
+
+Ultimately, Alternative 3 (Dedicated PodGroup queue) was chosen as the best long-term solution.
 
 ## Infrastructure Needed (Optional)
 
