@@ -780,8 +780,18 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name:
   - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+- Details:
+    1. Attempt to delete a corrupt object with the delete option set but without
+        RBAC permission for `unsafe-delete-ignore-read-errors` verb. Receiving
+        403 Forbidden (instead of 500 StorageReadError) confirms the feature is
+        enabled and recognizing the option.
+    2. Without the delete option, attempting to delete a corrupt object returns
+        the original 500 StorageReadError.
+    3. Use dry-run to safely verify the behavior with various combinations of
+        option and RBAC permissions.
+    4. With proper RBAC permission and the option set, the corrupt object
+        deletion succeeds.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
