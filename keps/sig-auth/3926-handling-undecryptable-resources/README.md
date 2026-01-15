@@ -547,11 +547,11 @@ Alpha:
   error will be truncated
 
 Beta:
-- list error aggregation
-- delete handler with unsafe deletion flow
-- deserialization failure via bit-flip (not just encryption failure)
-- deletion works for CRs
-- KAS health recovery after deleting all corrupt objects
+- test that LIST operation is capable of returning multiple corrupt objects
+- test delete handler with unsafe deletion flow
+- test deletion of bit-flip corrupted objects (deserialization failure, not transformer failure)
+- test deletion of corrupt CRs
+- validate kube-apiserver transition to healthy state after cleanup
 
 ##### e2e tests
 
