@@ -613,8 +613,15 @@ Initial PRs:
 - kubernetes/kubernetes#125177
 
 1.32: Alpha release
+- kubernetes/kubernetes#128190
+- kubernetes/kubernetes#128192
+- kubernetes/kubernetes#128953
 
 1.34: Beta release
+- kubernetes/kubernetes#131300
+
+1.36: Stable release
+- kubernetes/kubernetes#136118
 
 ## Drawbacks
 
