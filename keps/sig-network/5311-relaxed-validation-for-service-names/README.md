@@ -382,11 +382,18 @@ N/A
     - https://github.com/kubernetes/enhancements/pull/5315
   - [x] Code (`k/k`) update PR(s):
     - https://github.com/kubernetes/kubernetes/pull/132339
-  - [ ] Docs (`k/website`) update PR(s):
+  - [x] Docs (`k/website`) update PR(s):
+    - https://github.com/kubernetes/website/pull/52447
 - [x] Beta
-  - [ ] KEP (`k/enhancements`) update PR(s):
-    - ...
+  - [x] KEP (`k/enhancements`) update PR(s):
+    - https://github.com/kubernetes/enhancements/pull/5561
   - [ ] Code (`k/k`) update PR(s):
+	- (this PR was rolled back by the PR below) https://github.com/kubernetes/kubernetes/pull/134493
+	- https://github.com/kubernetes/kubernetes/pull/135426
+    - ...
+  - [ ] Docs (`k/website`) update(s):
+	- (this PR was rolled back by the PR below)  https://github.com/kubernetes/website/pull/52920
+	- https://github.com/kubernetes/website/pull/53471
     - ...
 
 ## Drawbacks
