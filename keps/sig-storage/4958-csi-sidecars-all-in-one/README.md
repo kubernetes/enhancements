@@ -525,6 +525,24 @@ Process: We will provide clear documentation outlining the steps for integration
 Ownership: The original developers will retain full ownership and control of their sidecar project.
 
 
+##### Lease migration strategy
+
+To safely migrate from multiple legacy leader-election leases (e.g., for csi-provisioner, csi-resizer) to a single, consolidated lease for the new all-in-one (AIO) csi-sidecars container. This process must prevent a "split-brain" scenario where both old and new sidecars are active simultaneously.
+
+1. Acquire New Lease: The new process(in csi-lib-utils) starts and acquires the consolidated lease.
+2. Check for Migration Marker: It inspects the lease object for a migration.csi.k8s.io/status: completed annotation.
+   - If Marker Exists: The migration is already complete. The proceeds to run the controllers immediately.
+   - If Marker is Missing: Migration is required. The process proceeds to the next step.
+3. Attempt to Seize Old Leases: The process attempts to acquire the leases of all legacy sidecars (e.g., provisioner, resizer). This is an all-or-nothing check.
+   - On Success: This confirms no old sidecars are active. The process then:
+        1. Adds the migration.csi.k8s.io/status: completed annotation to the new lease.
+        2. Releases the old leases it just acquired.
+        3. Starts the main controllers.
+   - On Failure: This means at least one old sidecar is still running and holds its lease. The AIO process will:
+        1. Log a clear error message instructing the user to scale down the legacy sidecar deployment.
+        2. Exit with an error, causing the pod to enter a CrashLoopBackOff state. This safely prevents a "split-brain" scenario and alerts the user to the required manual intervention.
+
+
 #### Risks And Mitigations
 
 - Breaking Changes Amplification: Breaking changes in one component forces the single release to be a breaking change
@@ -566,7 +584,9 @@ Tasks:
 
 1. For {external-attacher, external-provisioner, ...} split the main function
 2. For {external-attacher, external-provisioner, ...} add per sidecar specific flags
-3. Introduce the concept of global flags in the AIO sidecar 
+3. Introduce the concept of global flags in the csi-lib-utils [already merged]
+  - https://github.com/kubernetes-csi/csi-lib-utils/pull/202
+4. Modify the individual sidecar entrypoint to reuse the global flags
 
 
 > **workflow2:**
