@@ -316,14 +316,14 @@ type PodSetInfo struct {
 // Placement is valid only in the context of a given PodGroup for a single cycle of
 // workload scheduling.
 type Placement struct {
-    // NodeAffinity specifies the node constraints for this Placement.
+    // NodeSelector specifies the node constraints for this Placement.
     // For Topology this is derived from topology labels (e.g., all nodes with label
     // 'topology-rack: rack-1').
-    // For DRA, this Affinity would be constructed based on nodeSelector from
+    // For DRA, this selector would be constructed based on nodeSelector from
     // DRA's AllocationResult from DRAAllocations.
     // All pods within the PodGroup, when being evaluated against this Placement,
-    // are restricted to the nodes matching this NodeAffinity.
-    NodeAffinity *corev1.NodeAffinity
+    // are restricted to the nodes matching this NodeSelector.
+    NodeSelector *corev1.NodeSelector
 
     // DRAAllocations details the proposed DRA resource assignments for
     // the ResourceClaims made by the PodGroup. This field is primarily used
@@ -353,6 +353,8 @@ type DraClaimAllocation struct {
 
 ```go
 // PlacementGeneratorPlugin is an interface for plugins that generate candidate Placements.
+// Plugins implemeting PlacementGeneratorPlugin interface should also implement
+// EnqueueExtensions interface.
 type PlacementGeneratorPlugin interface {
     Name() string
 
@@ -419,6 +421,9 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
   available Devices (DRA).
 
 - **Output:** A list of Placement objects.
+
+- Placement generation is executed after PreFilter giving PlacementGeneratorPlugins
+  a chance to get the list of nodes in the cluster.
 
 - Example: If the label is rack, placements are generated for rack-1, rack-2,
   etc.
