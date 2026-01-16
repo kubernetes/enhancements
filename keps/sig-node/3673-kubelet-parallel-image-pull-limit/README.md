@@ -111,6 +111,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
   - [Alpha](#alpha-1)
   - [Beta](#beta-1)
+  - [GA](#ga-1)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -919,6 +920,10 @@ Add e2e tests <https://github.com/kubernetes/kubernetes/pull/121604>(WIP):
 1. A new node_e2e test to confirm image pull will be blocked if maxParallelImagePulls is reached.
 2. Verfiy behavior of image pull in parallel for same image using `imagePullPolicy:Always`.
 3. Check the waiting period of image pull for pods with `MaxParallelImagePulls: 1` and `MaxParallelImagePulls: 5`.
+
+### GA 
+
+1.35 the feature is GA.
 
 ## Drawbacks
 

@@ -4,7 +4,7 @@ authors:
   - "@pacoxu"
   - "@Ruiwen-Zhao"
 owning-sig: sig-node
-status: implementable
+status: implemented
 creation-date: 2023-01-05
 last-updated: 2025-10-09
 reviewers:
