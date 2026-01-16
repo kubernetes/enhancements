@@ -402,9 +402,9 @@ This handler is responsible for the following actions:
 * Document Generation: Merges local discovery data with PeerDiscovery cache to create a comprehensive view of all API groups and resources available in the cluster
 * Client Negotiation: Interprets a new `profile` parameter in the Accept header
   * By default, serves the peer-aggregated discovery document
-  * If `profile=unmerged` is specified, serves the local-only discovery response. This is used for PeerDiscovery cache population and for backward compatibility 
-* Backward Compatibility: The handler ensures that non peer-aggregated discovery requests continue to function as before. When a newer API server (with the feature enabled) needs to fetch discovery information from an older peer (which is unaware of the feature), it sends a discovery request with the Accept header:
-  `application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;profile=unmerged, application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList, application/json;...;q=0.9`. This header signals the preference for an unmerged response. The older peer, which does not recognize the `profile=unmerged` parameter, simply falls back to its standard discovery behavior and returns its local discovery document. This guarantees that the request succeeds and allows the newer API server to collect the necessary unmerged data for its peer cache.
+  * If `profile=nopeer` is specified, serves the local-only discovery response. This is used for PeerDiscovery cache population and for backward compatibility 
+* Backward Compatibility: The handler ensures that local (non peer-aggregated) discovery requests continue to function as before. When a newer API server (with the feature enabled) needs to fetch discovery information from an older peer (which is unaware of the feature), it sends a discovery request with the Accept header:
+  `application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList;profile=nopeer, application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList, application/json;...;q=0.9`. This header signals the preference for a local (non peer-aggregated) response. The older peer, which does not recognize the `profile=nopeer` parameter, simply falls back to its standard discovery behavior and returns its local discovery document. This guarantees that the request succeeds and allows the newer API server to collect the necessary unmerged data for its peer cache.
   
 #### Caching and consistency
 
@@ -418,15 +418,15 @@ This two-layer caching strategy provides a robust feedback loop:
 Case 1: Peer API server change sequence
 1. Peers Announce: API servers announce their presence(or absence) via identity leases
 2. Caches Update: The informer on these leases triggers the repopulation of the peer discovery cache on each API server
-3. Merged Cache Invalidates: An update to the peer discovery cache automatically invalidates the peeer-aggregated discovery cache
-4. Recalculation: The next peer-aggregated discovery request triggers a single, optimized recalculation of the merged response, which is then cached for subsequent requests
+3. Peer-aggregated discovery cache Invalidates: An update to the peer discovery cache automatically invalidates the peer-aggregated discovery cache
+4. Recalculation: The next peer-aggregated discovery request triggers a single, optimized recalculation of the peer-aggregated discovery response, which is then cached for subsequent requests
 
 Case 2: Local Discovery change sequence
 
 1. Local Resource Change: The API server detects a change in its own resources (e.g., an API group or version is added, removed, or updated)
 2. Local Discovery Cache Update: The local discovery cache is updated to reflect the new set of available resources
-3. Merged Cache Invalidates: Any update to the local discovery cache automatically invalidates the peer-aggregated discovery cache
-4. Recalculation: The next peer-aggregated discovery request triggers a single, optimized recalculation of the merged response, which is then cached for subsequent requests
+3. Peer-aggregated discovery cache Invalidates: Any update to the local discovery cache automatically invalidates the peer-aggregated discovery cache
+4. Recalculation: The next peer-aggregated discovery request triggers a single, optimized recalculation of the peer-aggregated discovery response, which is then cached for subsequent requests
 
 ### Test Plan
 
@@ -500,7 +500,7 @@ Resource request routing tests:
 Peer-aggregated discovery tests:
 
 - Validation that the peer-aggregated discovery endpoint correctly combines API groups and resources from multiple API servers with different served resources
-- Validation of the Accept header negotiation, ensuring that by default we return the consolidated document, while `profile=unmerged` Accept header returns the local document
+- Validation of the Accept header negotiation, ensuring that by default we return the consolidated document, while `profile=nopeer` Accept header returns the local document
 
 ##### e2e tests
 
@@ -796,10 +796,10 @@ logs or events for this purpose.
 
 The following metrics could be used to see if the feature is in use:
 
-- `kubernetes_apiserver_rerouted_request_total` which is incremented anytime a resource request is proxied to a peer apiserver
-- `aggregator_discovery_merged_cache_misses_total` which is incremented everytime we construct a peer-aggregated discovery response by merging resources served by a peer apiserver
-- `aggregator_discovery_merged_cache_hits_total` which is incremented everytime peer-aggregated discovery was served from the cache
-- `aggregator_discovery_unmerged_count_total` which is incremented everytime a non peer-aggregated discovery was requested
+- `apiserver_rerouted_request_total` which is incremented anytime a resource request is proxied to a peer apiserver
+- `aggregator_discovery_peer_aggregated_cache_misses_total` which is incremented everytime we construct a peer-aggregated discovery response by merging resources served by a peer apiserver
+- `aggregator_discovery_peer_aggregated_cache_hits_total` which is incremented everytime peer-aggregated discovery was served from the cache
+- `aggregator_discovery_nopeer_requests_total` which is incremented everytime a no-peer discovery was requested
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -814,10 +814,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- Metrics like `kubernetes_apiserver_rerouted_request_total` can be used to check
+- Metrics like `apiserver_rerouted_request_total` can be used to check
 how many resource requests were proxied to remote apiserver
-- The `aggregator_discovery_merged_cache_misses_total` and `aggregator_discovery_merged_cache_hits_total` metrics will show activity when peer-aggregated discovery responses are constructed and served
-- The `aggregator_discovery_unmerged_count_total` metric will increment when non peer-aggregated discovery is requested
+- The `aggregator_discovery_peer_aggregated_cache_misses_total` and `aggregator_discovery_peer_aggregated_cache_hits_total` metrics will show activity when peer-aggregated discovery responses are constructed and served
+- The `aggregator_discovery_nopeer_requests_total` metric will increment when local (non peer-aggregated) discovery is requested
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -847,11 +847,13 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: `kubernetes_apiserver_rerouted_request_total`
+  - Metric name: `apiserver_rerouted_request_total`
     - Components exposing the metric: kube-apiserver
-  - Metric name: `aggregator_discovery_merged_count_total`
+  - Metric name: `aggregator_discovery_peer_aggregated_cache_hits_total`
     - Components exposing the metric: kube-apiserver
-  - Metric name: `aggregator_discovery_unmerged_count_total`
+  - Metric name: `aggregator_discovery_peer_aggregated_cache_misses_total`
+    - Components exposing the metric: kube-apiserver
+  - Metric name: `aggregator_discovery_nopeer_requests_total`
     - Components exposing the metric: kube-apiserver
 
 
