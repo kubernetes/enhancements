@@ -18,6 +18,8 @@
   - [Scaling from zero](#scaling-from-zero)
 - [Kubernetes Scheduler change](#kubernetes-scheduler-change)
   - [Handling Node Readiness](#handling-node-readiness)
+  - [When it is safe to Prevent pod placement?](#when-it-is-safe-to-prevent-pod-placement)
+    - [What happens if cluster-admin opts-in to prevent pod scheduling but autoscaler does not have CSI attach limit awareness?](#what-happens-if-cluster-admin-opts-in-to-prevent-pod-scheduling-but-autoscaler-does-not-have-csi-attach-limit-awareness)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -91,7 +93,7 @@ Fix cluster-autoscaler (CAS) to be aware of node's volume attach limits when sca
 
 When scaling new nodes to satisfy pending pods in a cluster, currently cluster-autoscaler (CAS) does not take into account volume attach limits (available via CSI) an upcoming node may have, this could result in insufficient number of nodes created to satisfy pending pods. With this KEP, we will make changes into CAS so that when running simulations to estimate number of nodes necessary to satisfy pending pods or when running scheduler simulations on upcoming nodes, it takes into account CSI volume attach limits via templated `CSINode` objects.
 
-There is also a gap in implementation of `NodeVolumeLimits` scheduler plugin which was left intentionally to take into account the fact that, CAS will run this plugin without any templated `CSINode` objects during creation of new nodes and hence plugin permits placement of unlimited number of pods to nodes even if no CSI driver is installed on them. With this KEP - we aim to close the gap in `NodeVolumeLimits` scheduler plugin, so that scheduler will not place pods on nodes which aren't reporting any CSI driver information.
+There is also a gap in implementation of `NodeVolumeLimits` scheduler plugin which was left intentionally to take into account the fact that, CAS will run this plugin without any templated `CSINode` objects during creation of new nodes and hence plugin permits placement of unlimited number of pods to nodes even if no CSI driver is installed on them. With this KEP - we aim to close the gap in `NodeVolumeLimits` scheduler plugin, so that scheduler will not place pods on nodes which aren't reporting any CSI driver information, if a CSI driver decides to do so.
 
 To summarize:
 
@@ -103,7 +105,7 @@ To summarize:
 
 After:
 
-- Scheduler CSI plugin assumes that "no information about a CSI driver published in a CSINode" means "0 limit for volumes from that driver".
+- Scheduler CSI plugin assumes that "no information about a CSI driver published in a CSINode" means "0 limit for volumes from that driver" (but with opt-in).
 - No change for existing Nodes with CSI driver information already published - CA and scheduler still behave correctly.
 - Scheduler waits until all relevant CSI driver info is published before scheduling a Pod, removing the race condition for new Nodes.
 - Cluster Autoscaler correctly simulates "upcoming" CSINodes for "upcoming" Nodes and makes correct scale-up decisions.
@@ -124,7 +126,16 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 
 1. Fix cluster-autoscaler so that it takes into account attach limits when scaling nodes from 0 in a nodegroup.
 2. Fix cluster-autoscaler so that it takes into account attach limits when scaling nodegroups with existing nodes.
-3. Fix kubernetes built-in scheduler so that we do not schedule pods to nodes that doesn't have CSI driver installed.
+3. Fix kubernetes built-in scheduler so that we do not schedule pods to nodes that doesn't have CSI driver installed with admin opt-in via `CSIDriver` object.
+
+Just to reiterate we are not going to change default scheduling policy of pods that use CSI volumes. Using the new change in scheduler, which actually
+prevents pod placement to nodes without CSI driver will require explicit opt-in by Cluster admins.
+
+The reason, we decided to make the change an explicit opt-in is because:
+
+1. It completely decouples CAS and scheduler changes. When CAS imports the scheduler, we preserve the default behaviour and only if cluster-admin or Kubernetes distributor is sure that it is safe to do, then can enable this behaviour. See Implementation section for when it is safe to enable new behaviour in a cluster.
+2. For autoscalers such as Karpenter etc, which may still not have CSI node awareness builtin, this allows cluster-admin or Kubernetes distro to make the decision of whether to block pod scheduling to nodes without driver or not.
+3. This allows us to release scheduler changes sooner and completely decoupled from various autoscalers, because the new feature requires explicit opt-in by the cluster-admin.
 
 ### User Stories (Optional)
 
@@ -139,16 +150,10 @@ As part of this proposal we are proposing changes into both cluster-autoscaler a
 
 ### Notes/Constraints/Caveats (Optional)
 
-Scheduler changes must be vendored into CAS repository prior to release, so that both scheduler and CAS can work with same feature gate.
-
-But in independently running scheduler(i.e out of CAS process) in k8s cluster, the feature-gate will not be enabled by default until `VolumeLimitScaling` featuregate
-has gone GA in CAS and satisfies version skew criteria of CAS and kube-scheduler.
+1. To fully utilize CSI node limit awareness in cluster-autoscaler, the cloudprovider interface MUST implement `TemplateNodeInfo` interface that also returns `CSINode` object with templated nodeinfo - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/cloudprovider/clusterapi/clusterapi_nodegroup.go#L383
+2. To prevent pod placement on nodes without CSI driver, the `CSIDriver` object must have an explicit opt-in.
 
 ### Risks and Mitigations
-
-While, changes into both CAS and scheduler can happen behind same featuregate that is being proposed in this enhancement, we propose delaying default enablement of scheduler change
-that prevents scheduling of pods to a node that doesn't have CSI driver installed until a release when Cluster-AutoScaler (CAS) changes have been GAed and meet N-3 version skew criteria. See - version skew section for more information.
-
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -236,7 +241,18 @@ A future enhancement could incorporate https://github.com/kubernetes/autoscaler/
 
 ## Kubernetes Scheduler change
 
-We also propose that, if given node is not reporting any installed CSI drivers, we do not schedule pods that need CSI volumes to that node.
+We also propose that, if given node is not reporting any installed CSI drivers, we do not schedule pods that need CSI volumes to that node, if ClusterAdmin has explicitly opt-in via following `CSIDriver` change:
+
+```golang
+type CSIDriverSpec struct {
+    ....
+    ....
+    // if set to true, it will cause scheduler to prevent pod placement
+    // to nodes where no CSI driver is installed.
+    //   Defaults: false
+    PreventPodPlacementWithoutDriver *bool
+}
+```
 
 The proposed change is small and a draft PR is available here - https://github.com/kubernetes/kubernetes/pull/130702
 This will stop too many pods crowding a node, when a new node is spun up and node is not yet reporting volume limits.
@@ -265,6 +281,15 @@ A node which is ready  but does not have CSI driver installed within certain tim
 
 2. A more exhaustive solution to node readiness is being proposed in - https://github.com/kubernetes/enhancements/pull/5416 , we are open to the idea of using it when it becomes usable from CAS.
 
+
+### When it is safe to Prevent pod placement?
+
+Generally speaking it is safe to prevent pod placement to nodes without CSI driver in scheduler, if cluster-admin or Kubernetes distro is aware that, it is running a version of autoscaler (CAS or Karpenter), which is aware of CSI attach limits coming from the node.  For CAS this generally means, `enable-csi-node-aware-scheduling` flag should be enabled and set to true in the version of CAS that is running in the cluster.
+
+
+#### What happens if cluster-admin opts-in to prevent pod scheduling but autoscaler does not have CSI attach limit awareness?
+
+If autoscaler has updated `NodeVolumeLimits` plugin from the scheduler but has otherwise has `enable-csi-node-aware-scheduling` flag disabled in CAS (or has no `CSINode` awareness), then CAS will *not* be able to schedule any pods that use CSI volume during its simulations on new nodes. The kube-scheduler will keep rejecting simulated node because, it will not have any `CSINode` information. This will be bad and autocaling will be more or less broken for pods that require CSI volumes.
 
 ### Test Plan
 
@@ -348,11 +373,9 @@ Please note other conditions are already tested via - https://github.com/kuberne
 
 - All of the planned code changes for alpha will be done in cluster-autoscaler and kubernetes (scheduler in particular) repository.
 - We plan to implement changes in cluster-autoscaler so that it can consider volume limits when scaling cluster.
-- Make changes in `kube-scheduler` so that it can stop scheduling of pods that require CSI volume if underlying CSI volume is not installed on the node.
+- Make changes in `kube-scheduler` so that it can stop scheduling of pods that require CSI volume if underlying CSI volume is not installed on the node, with `CSIDriver` opt-in.
 - Initial e2e tests completed and enabled.
 - All of the changes in CAS and kube-scheduler will be behind `VolumeLimitScaling` featuregate.
-
-We will delay beta/graduation of kube-scheduler featuregate until corresponding featuregate `VolumeLimitScaling` has been made GA in CAS and one more release after that has passed. For example, we GA CAS featuregate in v1.38, then we would beta/enable scheduler change in v1.39.
 
 <!---
 #### Beta
@@ -390,8 +413,7 @@ in back-to-back releases.
 In general Upgrade and Downgrade of `cluster-autoscaler` should be fine, it just means how CA scales nodes will
 change.
 
-We do not want to downgrade to a version of CAS that has `VolumeLimitScaling` disabled while kube-scheduler has it enabled.
-See Version Skew strategy for more details.
+If customers have opted-in to prevent pod placement via aformentiond `CSIDriver` change, it is not recommend to disable `enable-csi-node-aware-scheduling` flag.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
@@ -409,16 +431,8 @@ enhancement:
 
 This feature has no interaction with kubelet and other components running on the node.
 
-However, if this feature is enabled in kube-scheduler (not part of CAS but externally running kube-scheduler) and CAS is older and has this feature disabled,
-then we may run into an issue where CAS creates a node to satisfy pod requirements, but kube-scheduler will not schedule pods to the node until CSI driver
-is installed.
-
-To satisfy this version skew, we propose:
-
-1. We will delay beta/graduation of kube-scheduler featuregate until corresponding featuregate `VolumeLimitScaling` has been made GA in CAS and one more release after that has passed. For example, we GA CAS featuregate in v1.38, then we would beta/enable-by-default scheduler change in v1.39.
-2. What this means is, when we enable `VolumeLimitScaling` feature in kube-scheduler, last 3 versions of CAS should already have this feature enabled and running by default and hence there should not be any version skew issues in case of downgrades.
-
-Just to make it clearer, although it should never happen - if feature-gate is disabled in scheduler but enabled in CAS, that will *never* be a problem, because in that case, CAS will properly take into account CSI volume limits when creating nodes and since kube-scheduler *yet* doesn't have limit for upcoming nodes, it will place those pods on those nodes without any restriction (like how it does today).
+The interaction between CAS (or other autoscalers such as Karpenter) and kube-scheduler is resolved by requiring explicit opt-in
+via `CSIDriver` to prevent pod placement.
 
 <!--
 If applicable, how will the component handle version skew with other
@@ -476,8 +490,8 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `VolumeLimitScaling`
-  - Components depending on the feature gate: `cluster-autoscaler`, `kube-scheduler`
+  - Feature gate name: `VolumeLimitScaling` (in `kube-scheduler` and `kube-apiserver`)
+  - `enable-csi-node-aware-scheduling"` flag in `CAS`.
 - [x] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -486,16 +500,17 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, it will cause cluster-autoscaler to consider volume limits when scaling nodes. It will also cause scheduler to not schedule pods to nodes that don't have CSI driver.
+Yes, it will cause cluster-autoscaler to consider volume limits when scaling nodes.
+
+But default this feature does not make any changes into kube-scheduler's behaviour and pod placement policy requires explicit opt-in via `CSIDriver` object.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 For CAS:
-- Yes. This will simply cause old behaviour to be restored.
+- Yes. This will simply cause old behaviour to be restored, but `PreventPodPlacementWithoutDriver` should be disabled (if enabled manually) in `CSIDriver` object before disabling this feature in CAS.
 
 For kube-scheduler:
-- This feature will *not* be enabled until the CAS this feature GAed and meets the version skew requirement, in which case disabling the feature in scheduler will simply cause
-scheduler to place pods on a node, which does not have CSI driver installed (current behaviour basically). Just to make it clearer, although it should never happen - if feature-gate is disabled in scheduler but enabled in CAS, that is not a problem.
+- The feature gate in kube-scheduler can be disabled without problems.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -701,6 +716,8 @@ Focusing mostly on:
 ###### Will enabling / using this feature result in introducing new API types?
 
 In the v1.35 alpha release, we are not considering introducing new API types yet.
+
+In v1.36 we are making chages into `CSIDriver` object by adding the field `PreventPodPlacementWithoutDriver`.
 
 <!--
 Describe them, providing:
