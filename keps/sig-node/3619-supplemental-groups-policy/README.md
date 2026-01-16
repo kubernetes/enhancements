@@ -1218,6 +1218,7 @@ Major milestones might include:
 - 2023-02-10: Initial KEP published.
 - v1.31.0(2024-08-13): Alpha
 - v1.33.0(2025-04-23): Beta
+- v1.35.0(2025-12-17): GA
 
 ## Drawbacks
 
