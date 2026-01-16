@@ -995,6 +995,16 @@ Start of 1.34 development cycle (04/23/2025):
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.2%
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 79.3%
 
+Start of 1.36 development cycle (01/15/2026):
+
+- `k8s.io/dynamic-resource-allocation/cel`: 85.2%
+- `k8s.io/dynamic-resource-allocation/structured`: 33.3%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.6%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 83.3%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 83.5%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 44.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.3%
+
 ##### Integration tests
 
 <!--
@@ -1335,9 +1345,15 @@ should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable.
+
 ###### What are other known failure modes?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A since this feature does not come with an SLO.
 
 ## Implementation History
 
