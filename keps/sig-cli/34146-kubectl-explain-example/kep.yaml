@@ -1,0 +1,21 @@
+id: "34146"
+name: kubectl-example
+title: kubectl example - kubectl explain but immediate practical output that can be applied | trialed by new user to advanced
+kep-number: 34146
+authors: ['@ogormans-deptstack']
+owning-sig: sig-cli
+participating-sigs: [sig-cli]
+reviewers: []
+approvers: []
+creation-date: "2025-09-27"
+last-updated: "2025-09-27"
+status: provisional
+stage: alpha
+latest-milestone: "v1.36"
+milestone:
+    alpha: "v1.36"
+    beta: "v1.37"
+    stable: "v1.38"
+feature-gates: []
+disable-supported: false
+metrics: []
