@@ -3,7 +3,7 @@ kep-number: 4210
 authors:
   - "@haircommander"
 owning-sig: sig-node
-status: implementable
+status: implemented
 creation-date: 2023-09-14
 reviewers:
   - "@SergeyKanzhelev"
