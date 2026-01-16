@@ -628,11 +628,8 @@ this will address requirement (5).
 
 We introduce a new phase in the main scheduling loop (`scheduleOne`). In the
 end-to-end Pod scheduling flow, it is planned to place this new phase *before*
-the standard pod-by-pod scheduling cycle.
-
-When the scheduler pops a Pod from the active queue, it checks if that Pod
-belongs to an unscheduled `PodGroup`. If so, the scheduler
-initiates the Workload Scheduling Cycle.
+the standard pod-by-pod scheduling cycle. When the loop pops a `PodGroup` from
+the active queue, it initiates the Workload Scheduling Cycle.
 
 Since the `PodGroup` instance (defined by the group name and replica key)
 is the effective scheduling unit, the Workload Scheduling Cycle will operate
@@ -644,7 +641,8 @@ If new Pods belonging to an already scheduled `PodGroup` instance
 they are also processed via the Workload Scheduling Cycle, which takes the previously
 scheduled Pods into consideration. This is done for safety reasons to ensure
 the PodGroup-level constraints are still satisfied. However, if the `PodGroup` is being processed,
-these new Pods must wait for the ongoing pod group scheduling to be finished, before being considered.
+these new Pods must wait for the ongoing pod group scheduling to be finished (pass `WaitOnPermit`),
+before being considered.
 
 The cycle proceeds as follows:
 
@@ -716,6 +714,10 @@ queue and `scheduleOne` loop, it provides a clean separation of concerns and
 establishes a necessary foundation for future Workload Aware Scheduling features.
 
 #### Scheduling Algorithm
+
+*Note: The algorithm described below is a simplified default version based on baseline scheduling logic.
+It is expected to evolve to more effectively handle complex scenarios and specific features
+in future iterations.*
 
 The internal algorithm for placing the group utilizes the optimization defined
 in *Opportunistic Batching* ([KEP-5598](https://kep.k8s.io/5598)) for improved performance.
@@ -921,6 +923,8 @@ We will address it with what we call *delayed preemption* mechanism as following
    In other words, a different placement can be chosen in a subsequent (workload) scheduling cycles only if
    it doesn't require additional preemptions or the previously chosen placement is no longer
    feasible (e.g. because higher priority pods were scheduled in the meantime).
+   This can be done by ignoring the pods with `deletionTimestamp` set in these preemption attempts
+   (when the previous preemption is ongoing for the preemptor).
 
 The rationale behind the above design is to maintain the current scheduling property where preemption
 doesn't result in a commitment for a particular placement. If a different possible placement appears
@@ -986,6 +990,8 @@ Therefore, we optimistically retry the Workload Scheduling Cycle if any member's
 It might be beneficial to retry the pod group without being triggered by any cluster event,
 because single Workload Scheduling Cycle cannot determine the placement doesn't really exists,
 especially for heterogeneous workloads or inter-pod dependencies.
+To avoid introducing subtle errors in the initial implementation,
+we can start by skipping the Queueing Hints mechanism and relying solely on the backoff time.
 
 
 ### Test Plan
