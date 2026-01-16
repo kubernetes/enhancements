@@ -1,3 +1,5 @@
 kep-number: 4020
 alpha:
   approver: "@deads2k"
+beta:
+  approver: "@jpbetz"
