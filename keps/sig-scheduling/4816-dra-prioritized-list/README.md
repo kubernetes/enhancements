@@ -995,6 +995,16 @@ Start of 1.34 development cycle (04/23/2025):
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.2%
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 79.3%
 
+Start of 1.36 development cycle (01/15/2026):
+
+- `k8s.io/dynamic-resource-allocation/cel`: 85.2%
+- `k8s.io/dynamic-resource-allocation/structured`: 33.3%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.6%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 83.3%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 83.5%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 44.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.3%
+
 ##### Integration tests
 
 <!--
@@ -1012,13 +1022,13 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-Integration test verifying correctness:
-- https://github.com/kubernetes/kubernetes/blob/master/test/integration/dra/dra_test.go#L299
+Integration tests to verify performance have been added
+[here](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf/dra/prioritizedlist).
 
-The existing [integration tests for kube-scheduler which measure
-performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme)
-will be extended to cover the overhead of running the additional logic to
-support the features in this KEP.
+There are also additional integration tests to improve coverage:
+- source code: https://github.com/kubernetes/kubernetes/blob/b2ac9e206fdd912f35f2ab5b3c5b5243303ba14b/test/integration/dra/dra_test.go#L582-L761
+- job: https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=dra.dra
+- triage: https://storage.googleapis.com/k8s-triage/index.html?text=PrioritizedList&job=integration&test=dra
 
 ##### e2e tests
 
@@ -1037,8 +1047,9 @@ with CDI support. A [test
 driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
 was developed as part of the overall DRA development effort. We have added e2e tests
 that cover this feature:
-- https://github.com/kubernetes/kubernetes/blob/master/test/e2e/dra/dra.go#L864
-The results are available at https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all
+- source code: https://github.com/kubernetes/kubernetes/blob/b2ac9e206fdd912f35f2ab5b3c5b5243303ba14b/test/e2e/dra/dra.go#L1222-L1629
+- job: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all&include-filter-by-regex=DRAPrioritizedList
+- triage: https://storage.googleapis.com/k8s-triage/index.html?test=DRAPrioritizedList
 
 ### Graduation Criteria
 
@@ -1259,7 +1270,12 @@ numbers for only `ResourceClaim` with at least one request using the feature.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Existing DRA and related SLOs continue to apply.
+As for normal pod scheduling of pods using ResourceClaims, there is no SLO for scheduling with
+prioritized list.
+
+Using the feature means potentially more work will be required to select devices since multiple
+subrequests might have to be evaluated if the first subrequest can not be satisfied. As a result,
+we expect pod scheduling to be slower when this feature is used.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1329,9 +1345,15 @@ should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable.
+
 ###### What are other known failure modes?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A since this feature does not come with an SLO.
 
 ## Implementation History
 
@@ -1349,6 +1371,7 @@ Major milestones might include:
 - 1.32 Enhancements Freeze - KEP merged, alpha implementation initiated
 - 1.33 Prioritized List is included as an alpha feature.
 - 1.34 Prioritized List graduates to beta.
+- 1.36 Prioritized List graduates to stable.
 
 ## Drawbacks
 
