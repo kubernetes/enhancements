@@ -17,11 +17,13 @@
   - [Kubelet Changes](#kubelet-changes)
   - [Shared Feature Matching Library](#shared-feature-matching-library)
     - [Multi Cluster Support](#multi-cluster-support)
-  - [kube-scheduler Changes](#kube-scheduler-changes)
+  - [Scheduler Framework Changes](#scheduler-framework-changes)
     - [Plugin Implementation](#plugin-implementation)
     - [Performance Considerations](#performance-considerations)
   - [Admission Controller Changes](#admission-controller-changes)
   - [Cluster Autoscaler Integration](#cluster-autoscaler-integration)
+    - [Scaling a node group with existing nodes (Scale from &gt; 0)](#scaling-a-node-group-with-existing-nodes-scale-from--0)
+    - [Scaling Empty Node Groups (Scale from 0)](#scaling-empty-node-groups-scale-from-0)
   - [Declared Feature Lifecycle](#declared-feature-lifecycle)
   - [Walkthrough](#walkthrough)
   - [Declared Feature Changes on Existing Nodes](#declared-feature-changes-on-existing-nodes)
@@ -38,7 +40,6 @@
   - [Version Skew Strategy](#version-skew-strategy)
   - [Future Considerations](#future-considerations)
     - [Explicit Declared Feature Request](#explicit-declared-feature-request)
-    - [Cluster Autoscaler Scale-From-Zero Integration](#cluster-autoscaler-scale-from-zero-integration)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -63,19 +64,19 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [] (R) Production readiness review completed
+- [] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
@@ -235,81 +236,111 @@ As a part of the feature's graduation to GA and eventual removal of the feature 
 
 ### Shared Feature Matching Library
 
-To avoid code duplication and ensure that all components make decisions based on the same logic, a new shared library will be introduced in the `k8s.io/component-helpers/nodedeclaredfeatures` staging repository. This library encapsulates all the logic for inferring a pod's feature requirements and matching them against a node's declared features.
+To avoid code duplication and ensure that all components make decisions based on the same logic, a new shared library is introduced in the `k8s.io/component-helpers/nodedeclaredfeatures` staging repository. This library encapsulates all the logic for feature registration, discovery on nodes, inferring pod feature requirements, and matching pod requirements against a node's declared features.
 
 **Feature Registration**
 
-*   Each new feature that needs to be declared in `node.status.declaredFeatures` is registered along with its specific inference logic by implementing a `CreateInferrer` or `UpdateInferrer` interface. This registration will also include `MinVersion` and `MaxVersion` fields which define the inclusive bounds of Kubernetes versions for which the feature is an active scheduling constraint.
-    *   **`MinVersion`** is the first Kubernetes version in which the feature is introduced.
-    *   **`MaxVersion`** should be the version at which the feature is considered universally available in the cluster (e.g., `GA_VERSION + SKEW`). This can be defined when the feature goes GA.
-*   This feature, along with its inferrer, is then registered with the central registry. This makes the framework pluggable, allowing new features to be added without modifying the core components.
-
-**Core Functionality**
-
-The `NodeDeclaredFeatureHelper` will expose functions that logically separate pod inspection and per-node matching.
-1. Inferring Requirements: The library will provide functions  (`InferPodCreateRequirements`, `InferPodUpdateRequirements`) to analyze the PodSpec and return a list of its feature requirements. The infer functions do not contain any feature specific logic themselves, instead they iterate over all features registered in the central registry and execute the corresponding `Infer` method for each one. This design is key to the framework's extensibility. These functions validate the pod's inferred requirements against the `targetVersion`. Passing the target version in the inference functions is necessary to support [multi-cluster support](#multi-cluster-support)
-   *  If the pod requires a feature where `targetVersion < MinVersion`, the function returns an `IncompatibleFeatureError`. 
-   *  If the pod requires a feature where `targetVersion > MaxVersion`, the specific feature requirement is silently ignored, as the feature is assumed to be universally available in the cluster and is no longer a scheduling constraint.
-2. Matching Requirements: A second function (`MatchNode`) will take the pre-computed requirements and check them against a specific node.
+*   Each new feature that needs to be declared in `node.status.declaredFeatures` must implement the `Feature` interface. This interface defines how a feature is discovered, and how its requirements are inferred from pod specifications.
+*   The `Feature` interface includes a `MaxVersion()` method. This specifies the upper bound of Kubernetes versions for which the feature is an active scheduling constraint. This should typically be set to the version where the feature becomes GA and is expected to be available on all nodes, considering version skew (e.g., `GA_VERSION + SKEW`). A `nil` return value from `MaxVersion()` indicates no upper version bound.
 
 ```go
-// PodInfo is an extensible data structure that wraps the pod object
-// and can be expanded in the future to include ancillary resources
-// like ResourceClaims or PVCs.
+// Feature encapsulates all logic for a given declared feature.
+type Feature interface {
+	// Name returns the feature's well-known name.
+	Name() string
+
+	// Discover checks if a node provides the feature based on its configuration.
+	Discover(cfg *NodeConfiguration) bool
+
+	// InferForScheduling checks if pod scheduling requires the feature.
+	InferForScheduling(podInfo *PodInfo) bool
+
+	// InferForUpdate checks if a pod update requires the feature.
+	InferForUpdate(oldPodInfo, newPodInfo *PodInfo) bool
+
+	// MaxVersion specifies the upper bound Kubernetes version (inclusive) for this feature's relevance
+	// as a scheduling factor. Should be set based on the feature's GA version
+	// and the cluster's version skew policy. Nil means no upper version bound.
+	MaxVersion() *version.Version
+}
+
+// PodInfo is an extensible data structure that wraps the pod object.
 type PodInfo struct {
-	Pod *v1.Pod
-	// Add other ancillary resources here in the future as needed.
+	// Spec is the Pod's specification.
+	Spec *v1.PodSpec
+	// Status is the Pod's current status.
+	Status *v1.PodStatus
+    // Add other ancillary resources here in the future as needed.
 	// Example: ResourceClaims []*v1.ResourceClaim
 }
 
-// CreateInferrer is an interface for inferring feature requirements from a new pod.
-// It returns the list of feature requirements, or an empty list if none are needed.
-type CreateInferrer interface {
-  Infer(ctx context.Context, podInfo *PodInfo, targetVersion string) []string
+// NodeConfiguration provides a generic view of a node's static configuration.
+type NodeConfiguration struct {
+	FeatureGates FeatureGate
+	StaticConfig StaticConfiguration
+	Version      *version.Version
 }
+```
 
-// UpdateInferrer is an interface for inferring feature requirements from a pod update.
-// It returns the list of feature requirements, or an empty list if none are needed.
-type UpdateInferrer interface {
-  Infer(ctx context.Context, oldPodInfo, newPodInfo *PodInfo, targetVersion string) []string
-}
+**Core Functionality**
 
-// InferPodCreateRequirements inspects a new pod and returns a list of feature requirements required by the pod
-// for a specific target Kubernetes version.
-// If the pod requires a feature where `targetVersion < MinVersion`, the function returns an `IncompatibleFeatureError`.
-// If the pod requires a feature where `targetVersion > MaxVersion`, the feature is not added to the list as it's assumed to be universally available in the cluster.
-func (h *NodeDeclaredFeatureHelper) InferPodCreateRequirements(ctx context.Context, podInfo *PodInfo, targetVersion string) ([]string, error)
+The core logic is Node Declared Features `Framework`, which is initialized with the list of registered features.
+1. Inferring Requirements: The library will provide functions  (`InferForPodScheduling`, `InferForPodUpdate`) to inspect `PodInfo` and return a `FeatureSet` of its feature requirements. The inference functions iterate over all registered features. For each feature, they check if the `targetVersion` has exceeded the feature's `MaxVersion()`. If `targetVersion > MaxVersion()`, the feature requirement is silently ignored, as the feature is assumed to be universally available. Otherwise, the feature's `InferForScheduling` or `InferForUpdate` method is called.
+2. Matching Requirements: The library provides functions to compare the pod's inferred features against a node's declared features.
 
-// InferPodUpdateRequirements inspects the change between an old and new pod spec
-// and returns a list of feature requirements required by the pod update operation
-// for a specific target Kubernetes version.
-// If the pod requires a feature where `targetVersion < MinVersion`, the function returns an `IncompatibleFeatureError`.
-// If the pod requires a feature where `targetVersion > MaxVersion`, the feature is not added to the list as it's assumed to be universally available in the cluster.
-func (h *NodeDeclaredFeatureHelper) InferPodUpdateRequirements(ctx context.Context, oldPodInfo, newPodInfo *PodInfo, targetVersion string) ([]string, error)
+```go
+// DiscoverNodeFeatures determines which features from the registry are enabled
+// for a specific node configuration. Returns a sorted, unique list of feature names.
+func (f *Framework) DiscoverNodeFeatures(cfg *NodeConfiguration) []string
 
-// MatchResult encapsulates the result of a feature match check.
-type MatchResult struct {
-	// IsMatch is true if the node satisfies all feature requirements.
-	IsMatch bool
-	// UnsatisfiedFeatureRequirements lists the specific feature requirements that were not met.
-	// This field is only populated if IsMatch is false.
-	UnsatisfiedFeatureRequirements []string
-}
+// InferForPodScheduling determines which features are required by a pod for scheduling.
+func (f *Framework) InferForPodScheduling(podInfo *PodInfo, targetVersion *version.Version) (FeatureSet, error)
 
-// MatchNode checks if the node's declared features satisfy the pre-computed feature requirements for a pod.
-// It returns a MatchResult with the outcome of the match.
-func (h *NodeDeclaredFeatureHelper) MatchNode(ctx context.Context, reqs []string, node *v1.Node) (*MatchResult, error)
+// InferForPodUpdate determines which features are required by a pod update operation.
+func (f *Framework) InferForPodUpdate(oldPodInfo, newPodInfo *PodInfo, targetVersion *version.Version) (FeatureSet, error)
+
+// MatchNode checks if a node's declared features satisfy the pod's pre-computed requirements.
+func MatchNode(requiredFeatures FeatureSet, node *v1.Node) (*MatchResult, error)
+
+// MatchNodeFeatureSet compares a set of required features against a set of features present on a node.
+func MatchNodeFeatureSet(requiredFeatures FeatureSet, nodeFeatures FeatureSet) (*MatchResult, error)
 ```
 
 This design provides a clear and extensible interface for consumers:
-*   kube-scheduler would call `InferPodCreateRequirements` once during the `PreFilter` and `Enqueue Extension` stages and call `MatchNode` for each node during the Filter stage.
-*   Admission controller when validating a pod update, would call `InferPodUpdateRequirements()` with the current and the new PodSpec to infer the requirement and then call `MatchNode()` with the node object from `pod.spec.nodeName`.
+*   **Kubelet:** Uses `DiscoverNodeFeatures` at startup to determine its declared features. The Kubelet's admission handler uses `InferForPodScheduling` and `MatchNodeFeatureSet` to validate pods.
+*   **kube-scheduler:** The `NodeDeclaredFeatures` plugin uses `InferForPodScheduling` in the `PreFilter` stage to get pod requirements and `MatchNode` in the `Filter` stage to check against each node.
+*   **Admission Controller:** The `NodeDeclaredFeatureValidator` plugin uses `InferForPodUpdate()` to determine requirements for a pod update and `MatchNode` to validate against the node the pod is on.
 
 #### Multi Cluster Support
 
- To support external controllers that interact with multiple Kubernetes clusters of different versions, the shared library's inference logic must be version-aware. The set of available declared features and the rules for inferring them from a `PodSpec` can change between versions. The library must provide an unambiguous signal to these controllers.
+ To support external controllers that interact with multiple Kubernetes clusters of different versions, the shared library's inference logic is version-aware. The `targetVersion` parameter (the version of the component making the call, e.g., kube-scheduler or kube-apiserver) is passed to the inference functions. The framework uses this `targetVersion` in conjunction with each registered feature's `MaxVersion()` to determine if a feature is still a relevant constraint in that version. Features whose `MaxVersion` is less than the `targetVersion` are considered universally available and are not included in the inferred requirements.
 
-### kube-scheduler Changes
+### Scheduler Framework Changes
+
+To support Cluster Autoscaler scale-from-zero integration, the `NodeInfo` interface in `k8s.io/kube-scheduler/framework/types.go` is extended:
+
+```go
+// NodeInfo interface in k8s.io/kube-scheduler/framework/types.go
+type NodeInfo interface {
+    // ... existing methods like Node(), GetPods(), etc.
+
+    // GetNodeDataOrigin returns the origin of the node info.
+    GetNodeDataOrigin() NodeDataSourceOrigin
+
+    // SetNodeDataOrigin sets the origin of node info
+    SetNodeDataOrigin(origin NodeDataSourceOrigin)
+}
+
+// NodeDataSourceOrigin indicates the source and nature of the Node data.
+type NodeDataSourceOrigin string
+
+const (
+  ClusterNode NodeDataSourceOrigin = "ClusterNode"
+  DerivedFromClusterNode NodeDataSourceOrigin = "DerivedFromClusterNode"
+  FromSpecification NodeDataSourceOrigin = "FromSpecification"
+)
+```
+This allows plugins to understand the nature of the NodeInfo object, particularly whether it's derived from a real node or a base template.
 
 We propose a new scheduler plugin named `NodeDeclaredFeatures` to infer a pod's feature requirements and match them against a node's declared features.
 
@@ -326,7 +357,7 @@ We propose a new scheduler plugin named `NodeDeclaredFeatures` to infer a pod's 
 3. Enqueue Extension:
     *   To make the scheduler responsive to cluster changes, the plugin implements queueing hints to optimize re-queueing.
     *   **Node Events:** The scheduler plugin registers for Node `Add` and `Update` events. In the case of updates, a new narrowly-scoped `UpdateNodeDeclaredFeature` action type will be introduced to trigger the hint function when `node.status.declaredFeatures` is modified. A queue hint is generated if a new node is added or an existing node's declared features are updated in a way it satisfies the pod's feature requirements.
-    *   **Pod Events:** The scheduler plugin registers for Pod `Update` event. A new narrowly-scoped `UpdatePodFeatureRequirement` action type will be introduced and a queue hint is generated if a pending pod is updated in a way that its feature requirements have changed.
+    *   **Pod Events:** The scheduler plugin registers for Pod `Update` event. A queue hint is generated if a pending pod is updated.
 
 This design ensures that the `NodeDeclaredFeatures` scheduler plugin remains generic and does not require modification when new features are added. All feature-specific inference and matching logic is encapsulated within the shared library.
 
@@ -337,21 +368,61 @@ Introducing this plugin adds a new step to the scheduling cycle, which may have 
 
 ### Admission Controller Changes
 
-To enable the validation of API requests against Node Declared Features, this KEP proposes the introduction of a new admission controller plugin, `NodeDeclaredFeatureValidator`, that will be enabled when the `NodeDeclaredFeatures` feature gate is active. For its initial scope, this admission controller will focus on validating Pod `UPDATE` requests to prevent modifications that are incompatible with the node a pod is running on. This admission controller cross-references the objects, i.e., looking up the Node object that a Pod is bound to (`spec.nodeName`) and runs the validation checks.
+To enable the validation of API requests against Node Declared Features, this KEP proposes the introduction of a new admission controller plugin, `NodeDeclaredFeatureValidator`, that will be enabled when the `NodeDeclaredFeatures` feature gate is active. For its initial scope, this admission controller will focus on validating Pod `UPDATE` requests to prevent modifications that are incompatible with the node a pod is running on. It only validates updates to the main pod spec or the `resize` subresource. This admission controller cross-references the objects, i.e., looking up the Node object that a Pod is bound to (`spec.nodeName`) and runs the validation checks.
 
 The admission controller workflow will be as follows:
 *   Inspect an incoming pod `UPDATE` request and verifies that the pod is already bound to a node by checking that `pod.spec.nodeName` is set. If not, it takes no action.
 *   Retrieves the Node object corresponding to `pod.spec.nodeName`.
-*   Call the shared library to infer the feature requirements based on the changes between the old and new `PodSpec` along with the kubelet version `node.status.nodeInfo.kubeletVersion`.  If the function returns an `IncompatibleFeatureError`, the admission controller rejects the request.
+*   Call the shared library to infer the feature requirements based on the changes between the old and new `PodSpec`. The admission controller uses its own component version (i.e., the kube-apiserver version) as the `targetVersion` argument for the inference function. If the function indicates an issue (e.g., a feature is not known in this version), the admission controller rejects the request.
 *   Call the shared library's `MatchNode` function with the inferred feature requirements and the `node.status.declaredFeatures`. If the check fails, the admission controller rejects the request.
 
 ### Cluster Autoscaler Integration
 
-For the Node Declared Features feature to be fully effective, it must be integrated with the Cluster Autoscaler (CA). The CA makes scaling decisions by simulating the scheduling of pending pods on template nodes representing what a new node from a node group would look like. The integration has two distinct scenarios depending on how this template is created:
+For the Node Declared Features feature to be fully effective, it must be integrated with the Cluster Autoscaler (CA).
 
-1.  **Scaling a node group with existing nodes:** A node group is an abstraction for a set of nodes with the same configuration. If a node group has active nodes, the CA can create a template for a new node based on the configuration of an existing node. This template will include the `node.status.declaredFeatures` reported by the running node. The CA's scheduling simulator can then use this information, in conjunction with a simulated `NodeDeclaredFeatures` scheduler plugin, to correctly predict that a new node will satisfy a pending pod's feature requirements. This approach relies on the assumption that all nodes within a node group are homogeneous and will declare the same set of features. This scenario is in scope for the Alpha release.
+#### Scaling a node group with existing nodes (Scale from > 0)
 
-2.  **Scaling a node group from zero nodes (scale-from-zero):** This approach fails in scale-from-zero scenarios. When a node group has no active nodes, the CA must create the node template from the cloud provider's configuration (e.g., GCE Instance Template). Since Node Declared Features is dynamically set by the Kubelet only after a node has been created, the CA's simulation cannot account for this during scale-from-zero nodes. Handling this is not in scope for Alpha or Beta. A long-term solution to solve the scale-from-zero problem is discussed in the [Future Considerations](#cluster-autoscaler-scale-from-zero-integration) section.
+When CA creates a template node from an existing node in the cluster, the template inherits the `node.status.declaredFeatures`. The `NodeDeclaredFeatures` scheduler plugin will correctly consider `node.status.declaredFeatures` to scale up node groups in the CA simulator.
+
+#### Scaling Empty Node Groups (Scale from 0)
+    
+If a node group has no nodes, Cluster Autoscaler cannot create a template based on an existing node. Instead, the cloud provider template is used, which only contains basic information like capacity, labels, taints etc. This template does not include `node.status.declaredFeatures`, because this is added by kubelet during bootstrap.
+When a pending pod requires a declared feature and CA runs the scheduler simulation, the `NodeDeclaredFeatures` scheduler plugin (filter) will fail to match the node to the pod because the features are missing in the template. As a result, Cluster Autoscaler will not scale up any node group, even if a real node in the group supports the required features.
+
+To address this, the kube-scheduler `NodeInfo` interface is extended with `GetNodeDataOrigin()` and `SetNodeDataOrigin(NodeDataSourceOrigin)`:
+
+```go
+// NodeInfo interface in k8s.io/kube-scheduler/framework/types.go
+type NodeInfo interface {
+    // ... existing methods like Node(), GetPods(), etc.
+
+    // GetNodeDataOrigin returns the origin of the node info.
+    GetNodeDataOrigin() NodeDataSourceOrigin
+
+    // SetNodeDataOrigin sets the origin of node info
+    SetNodeDataOrigin(origin NodeDataSourceOrigin)
+}
+
+// NodeDataSourceOrigin indicates the source and nature of the Node data.
+type NodeDataSourceOrigin string
+
+const (
+  ClusterNode NodeDataSourceOrigin = "ClusterNode"
+  DerivedFromClusterNode NodeDataSourceOrigin = "DerivedFromClusterNode"
+  FromSpecification NodeDataSourceOrigin = "FromSpecification"
+)
+```
+
+Using this new API, the `NodeDeclaredFeatures` plugin can understand the nature of the NodeInfo object, whether it's derived from a real node or a base template.
+
+*   By default, the node origin is set to `ClusterNode` and is used by the default kube-scheduler implemetation. The `NodeDeclaredFeatures` scheduler plugin's behavior would remain unchanged for `ClusterNode`.
+*   Cluster Autoscaler will be modified to set the origin to
+    *  `FromSpecification` when creating a `NodeInfo` from a cloud provider template (i.e., when scaling from zero).
+    *  `DerivedFromClusterNode` when creating `NodeInfo` from a real node sampled from a node group.
+*   The `NodeDeclaredFeatures` scheduler plugin's `Filter` method checks this origin. If it's `FromSpecification`, the plugin bypasses the feature check, allowing the simulation to succeed and the scale-up to proceed. This is done because the absence of declared features in the template and doesn't necessarily mean the feature will be missing on the actual node.
+
+**Drawback:** The above solution only unblocks a node group from scaling up. This might lead to scaling up node groups even if the nodes created from the template lack the features required by the pod. The pod will remain pending, as the kube-scheduler will correctly filter out the real node created from the template. This can result in unnecessary node creation and churn.
+
 
 ### Declared Feature Lifecycle
 
@@ -369,14 +440,14 @@ This walkthrough demonstrates the end-to-end lifecycle of the [In-Place Pod Resi
   * Kubelet Changes
     *   A new feature key `GuaranteedQoSPodCPUResize` is defined and registered with the shared library along with a function to infer if the feature is required by the pod. 
     *   The Kubelet is updated to report `GuaranteedQoSPodCPUResize` in `node.status.declaredFeatures` if either of the following conditions are met:
-        *   The `InPlacePodResizeExclusiveCPUs` feature gate is enabled AND the CPU Manager Policy is set to static.
+        *   The `InPlacePodVerticalScalingExclusiveCPUs` feature gate is enabled AND the CPU Manager Policy is set to static.
         *   The CPU Manager Policy is set to none.
   *   No code changes are needed in the  `NodeDeclaredFeatureValidator` admission plugin itself. It calls the shared library with the pod spec and will use the inferrer provided along with the registration.
 
 **Phase 2: Rollout**
-  *   Cluster administrator enables the new feature `InPlacePodResizeExclusiveCPUs` and `static` CPU Manager Policy on a NodePool.
+  *   Cluster administrator enables the new feature `InPlacePodVerticalScalingExclusiveCPUs` and `static` CPU Manager Policy on a NodePool.
   *   A user requests an in-place CPU resize for a pod on an upgraded node.
-  *   The `NodeDeclaredFeatureValidator` admission controller intercepts the update. It calls the shared library's `InferPodUpdateRequirements` function. The `InferPodUpdateRequirements` function will loop through all the registered features and call their corresponding infer functions. The infer function added for `GuaranteedQoSPodCPUResize` identifies the need for the `GuaranteedQoSPodCPUResize` feature requirement.
+  *   The `NodeDeclaredFeatureValidator` admission controller intercepts the update. It calls the shared library's `InferForPodUpdate` function. The `InferForPodUpdate` function will loop through all the registered features and call their corresponding infer functions. The infer function added for `GuaranteedQoSPodCPUResize` identifies the need for the `GuaranteedQoSPodCPUResize` feature requirement.
   *   The `NodeDeclaredFeatureValidator` admission controller calls `MatchNode` function with the inferred pod feature requirements and the Node object from `pod.spec.nodeName`.
   *   The request is admitted only if the node's `declaredFeatures` list **contains** `GuaranteedQoSPodCPUResize`.
 
@@ -414,25 +485,41 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 -->
 ##### Unit tests
 
-*   kubelet
-    *   Verify that the kubelet adds the `declaredFeatures` field in `node.status` when the feature gate is enabled and omits it when disabled.
-    *   Verify that the Kubelet correctly applies validation rules to declared features.
-    *   Verify that the Kubelet's pod admission handler correctly rejects a pod that requires a declared feature the node does not have.
-    *   Test the conditional logic
-        *   Verify `node.status.declaredFeatures` accurately reflects the state of the `InPlacePodResizeExclusiveCPUs` feature gate.
-*   kube-apiserver
-    *   Verify the declaredFeatures field in `node.status` is correctly served (e.g., on GET, LIST) when the feature gate is enabled and omitted when the feature gate is disabled.
-* Shared Feature Matching Library
-    *   Verify the library accurately infers a pod's feature requirements from its specification.
+*   **Kubelet:**
+    *   Verify that the Kubelet adds the `declaredFeatures` field in `node.status` when the feature gate is enabled and omits it when disabled.
+    *   Verify that the Kubelet's pod admission handler (`declaredFeaturesAdmitHandler`) correctly rejects a pod that requires a declared feature the node does not have, using the shared library.
+*   **kube-apiserver:**
+    *   Verify the `declaredFeatures` field in `node.status` is correctly served (e.g., on GET, LIST).
+    *   Verify API validation rules (regex format, uniqueness, sorting) are enforced for `node.status.declaredFeatures` on updates.
+*   **Shared Feature Matching Library (`k8s.io/component-helpers/nodedeclaredfeatures`):**
+    *   Verify the library accurately infers a pod's feature requirements for scheduling and updates.
     *   Verify the library correctly matches a pod's requirements against a node's declared features.
-    *   Verify the library returns an IncompatibleFeatureError if a pod requires a feature where targetVersion is less than the feature's registered MinVersion.
-    *   Verify the library silently ignores a feature requirement if the targetVersion is greater than the feature's registered MaxVersion.
-    *   Verify the library correctly infers requirements when the targetVersion is within the valid [MinVersion, MaxVersion] range.
-* kube-scheduler (`NodeDeclaredFeatures` scheduler plugin):
-    *   Verify the plugin correctly calls the shared library to infer requirements in `PreFilter` stage and match nodes based on pre-computed requirements in `Filter` stage.
-* Admission Controller (`NodeDeclaredFeatureValidator`):
+    *   Verify the library silently ignores a feature requirement if the `targetVersion` is greater than the feature's registered `MaxVersion()`.
+    *   Verify the conditional discovery logic for each registered feature (e.g., feature gate status, static node configuration).
+*   **kube-scheduler (`NodeDeclaredFeatures` scheduler plugin):**
+    *   Verify the plugin correctly calls the shared library to infer requirements in `PreFilter` stage and match nodes in `Filter` stage.
+    *   Verify event handling for requeuing in `EnqueueExtensions`.
+*   **Admission Controller (`NodeDeclaredFeatureValidator`):**
     *   Verify that for a Pod update request (e.g., resize), the validator correctly fetches the declared features of the node specified in `pod.spec.nodeName`.
     *   Verify the plugin correctly uses the shared library to match pod requirements against node declared features, and correctly admits or rejects the request based on the library's result.
+    *   Verify feature gate enablement and resource/subresource filtering.
+
+** Test Coverage:**
+
+1. Shared library
+- `k8s.io/component-helpers/nodedeclaredfeatures`: `20260115` - `88.2`
+- `k8s.io/component-helpers/nodedeclaredfeatures/features/inplacepodresize`: `20260115` - `84`
+- `k8s.io/component-helpers/nodedeclaredfeatures/features/restartallcontainers`: `20260115` - `84.6`
+
+2. kube-scheduler
+- `pkg/scheduler/framework/plugins/nodedeclaredfeatures`: `20260115` - `64.1`
+
+3. Admission controller
+- `plugin/pkg/admission/nodedeclaredfeatures`: `20260115` - `71.6`
+
+4. kubelet
+- `pkg/kubelet/kubelet_node_declared_features.go`: `20260115` - `100`
+- `pkg/kubelet/lifecycle/handlers.go`: `20260115` - `84.4`
 
 <!--
 In principle every added code should have complete unit test coverage, so providing
@@ -458,11 +545,18 @@ extending the production code to implement this enhancement.
 ##### Integration tests
 
 *   kube-scheduler (for the `NodeDeclaredFeatures` scheduler plugin):
-    *   Integration tests would be added in `test/integration/scheduler/filters`. They will verify the scheduler plugin's PreFilter and Filter by creating `v1.Node` objects, patching their `status.declaredFeatures` field, and scheduling `v1.Pod` objects whose specs imply a requirement for those declared features.
-    *   Tests for queueing hints would be introduced in `test/integration/scheduler/queueing`. These tests will verify the conditional logic to requeue a pending pod if its feature requirements are satisfied after the node is added or an existing node's declared features are updated, or pod is updated in a way its required declared features change.
-    *   Performance tests would be introduced in `test/integration/scheduler_perf` to measure the plugin's impact on scheduling throughput and latency.
+    *   **Alpha:**
+        *   Integration tests in `test/integration/scheduler/filters/filters_test.go`: Verify the plugin's PreFilter and Filter logic, ensuring pods are scheduled only on nodes with matching `declaredFeatures`.
+            *  [TestNodeDeclaredFeaturesFilter](https://github.com/kubernetes/kubernetes/blob/f4f3e5f92c38d8f3005996201bd2cdccd16629bc/test/integration/scheduler/filters/filters_test.go#L3171C6-L3171C36):[integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=filters): [triage search](https://storage.googleapis.com/k8s-triage/index.html?date=2026-01-15&test=NodeDeclaredFeatures)
+        *   Integration tests in `test/integration/scheduler/queueing/queueinghint/queue_test.go`: Verify the Enqueue extensions, ensuring pods are re-queued correctly when relevant Node or Pod updates occur.
+            *   [TestCoreResourceEnqueue](https://github.com/kubernetes/kubernetes/blob/f4f3e5f92c38d8f3005996201bd2cdccd16629bc/test/integration/scheduler/queueing/queueinghint/queue_test.go#L32C6-L32C29):[integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=queueinghint): [triage search](https://storage.googleapis.com/k8s-triage/index.html?date=2026-01-15&test=Enqueue)
+    *   **Beta:**
+        *   Performance tests would be introduced in `test/integration/scheduler_perf` to measure the plugin's impact on scheduling throughput and latency.
+        *   Additional test cases will be added to `test/integration/scheduler/filters/filters_test.go` to cover Cluster Autoscaler simulation scenarios.
 *   Admission Controller (for the `NodeDeclaredFeatureValidator` admission controller):
-    *   New tests in `test/integration/apiserver/admissionwebhook` will enable the `NodeDeclaredFeatureValidator` plugin and verify that Pod `UPDATE` operations are correctly admitted or rejected based on the declared features of the Node the Pod is bound to.
+    *   **Alpha:**
+        *   Integration tests in `test/integration/pods/pods_test.go`: Verify that the admission plugin correctly admits or rejects Pod `UPDATE` operations based on the `declaredFeatures` of the Node the Pod is bound to.
+            *   [TestNodeDeclaredFeatureAdmission](https://github.com/kubernetes/kubernetes/blob/f4f3e5f92c38d8f3005996201bd2cdccd16629bc/test/integration/pods/pods_test.go#L1504C6-L1504C38):[integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=pods): [triage search](https://storage.googleapis.com/k8s-triage/index.html?date=2026-01-15&test=NodeDeclared)
 
 <!--
 Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
@@ -506,6 +600,12 @@ If e2e tests are not necessary or useful, explain why.
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 -->
+
+E2E tests will be added to cover the below scenarios
+  *   Pods being correctly scheduled or remaining Pending based on `node.status.declaredFeatures`.
+  *   The `NodeDeclaredFeatureValidator` admission plugin correctly allows or rejects Pod `UPDATE`.
+  *   Kubelet accurately reports features and enforces them during its own admission checks.
+  *   Testing scenarios with different control plane and node versions to ensure correct behavior.
 
 ### Graduation Criteria
 
@@ -592,8 +692,12 @@ in back-to-back releases.
 *   All unit and integration tests outlined in the Test Plan are implemented and verified.
 
 **Beta:**
-*   Cluster Autoscaler support for existing node pools with active nodes. 
-*   Revisit the [Explicit Declared Feature Request](#explicit-declared-feature-request) as a beta graduation criteria.
+
+*   Feature gate `NodeDeclaredFeatures` is enabled by default.
+*   Cluster Autoscaler scale-from-zero scenario is handled by bypassing the scheduler plugin check.
+*   Unit and Integration test coverage for all changes, including the Cluster Autoscaler scale-from-zero handling in the scheduler plugin.
+*   All E2E tests outlined in the Test Plan are implemented and verified.
+*   Performance tests for the scheduler plugin are implemented to measure scheduling throughput and latency impact, ensuring no significant regressions.
 
 ### Upgrade/Downgrade Strategy
 
@@ -619,12 +723,6 @@ Downgrading both kubelet and control plane components to a version without the f
 #### Explicit Declared Feature Request
 
 For the Alpha implementation, a pod's feature requirements are inferred by the shared library based on its `PodSpec`. While this centralizes the logic, this implicit model requires a code change for each new feature that is introduced. To make the framework more scalable and generic, we should explore an explicit feature request mechanism. In this model, a pod would declare its requirements directly in its specification. This would simplify the control plane's role, particularly the scheduler, reducing its task to a straightforward comparison between the features a pod requests and those a node provides, eliminating the need for complex, case-by-case inference logic.
-
-#### Cluster Autoscaler Scale-From-Zero Integration
-
-The Cluster Autoscaler (CA) makes scale-up decisions based on `NodeGroup` templates, which are abstract representations of a node. Since node declared features are set by a running Kubelet, they are not present on these templates. This creates an information gap: CA cannot know what declared features a new node will have, making it unable to scale up a node pool to satisfy a feature-specific pending pod in scale-from-zero scenarios.
-
-A long-term solution to solve the scale-from-zero problem requires that declared feature information be made available as part of the node group's template providing an authoritative signal to the CA. This problem is similar to the one faced by Dynamic Resource Allocation (DRA), where the CA also does not work well if a pod is pending because it requires nodes with specific ResourceSlices. This problem was discussed [here](https://github.com/kubernetes/enhancements/pull/5347#discussion_r2132302773) and is being tracked in [kubernetes/autoscaler#7799](https://github.com/kubernetes/autoscaler/issues/7799). In both the DRA and Node Declared Features use cases, critical scheduling information is determined after a node is created, making it invisible to the CA's template-based simulation. 
 
 ## Production Readiness Review Questionnaire
 
@@ -712,28 +810,15 @@ Yes, feature enablement/disablement tests will be added along with alpha impleme
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+*  The behavior when the feature is enabled only on the control plane but not on nodes is covered in the [Version Skew Strategy](#version-skew-strategy) section.
+*  Existing workload should not be impacted by rollout. Only new pods that requires a feature using this framework would remain pending if none of the nodes support the feature.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+*   A sudden increase in the`scheduler_pending_pods` metric in the kube-scheduler could point to potential issues in `NodeDeclaredFeatures` plugin. The pods would be stuck in `Pending` state with scheduler events indicating `FailedScheduling` due to `NodeDeclaredFeatures`.
+*   An increase in `kubelet_admission_rejections_total` metric with `PodFeatureUnsupported` reason would point to kubelet admission failures.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -743,11 +828,34 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Testing plan for beta:
+
+**Initial State:**
+*  Create a 1.35 cluster with `NodeDeclaredFeatures` feature gate enabled. Create a 1.34 node in the cluster. 
+*  Enable a feature that is using the framework to manage version skew. Eg: `RestartAllContainersOnContainerExits` ([restart_all_containers.go](https://github.com/kubernetes/kubernetes/blob/c6ba23521ce78e90a6765abd7431f75d2cc58966/staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features/restartallcontainers/restart_all_containers.go#L34)).
+*  Create `testpod1` requiring `RestartAllContainersOnContainerExits`. The pod should remain pending as the 1.34 node does not support the feature.
+
+**Upgrade:**
+*  Upgrade the node to 1.35 and enable `NodeDeclaredFeatures` and `RestartAllContainersOnContainerExits` feature gates. The node should start reporting the feature in `node.status.declaredFeatures`
+* `testpod1` should now get scheduled on the node and start running.
+*  Flip `NodeDeclaredFeatures` to `false` first on the node and then on the control plane. `testpod1` should remain running. 
+*  Flip `NodeDeclaredFeatures` back to `true`.
+*  Flip `RestartAllContainersOnContainerExits` to `false` and restart node. `testpod1` transitions to `Failed` after node restart due to kubelet admission failure.
+*  Flip `RestartAllContainersOnContainerExits` back to `true` and restart node. `testpod1` should start running.
+
+
+**Downgrade:**
+*  Downgrade the node to 1.34. The node stops reporting any declared features.
+* `testpod1` transitions to `Failed` since 1,34 does not support the feature that the pod requires.
+*  Delete `testpod1` and recreate it again. Now `testpod1` should remain `Pending`.
+
+**Upgrade:**
+*  Upgrade the node to 1.35 and re-enable the feature gates. 
+* `testpod1` should now get scheduled on the node and start running.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No
 
 ### Monitoring Requirements
 
@@ -941,6 +1049,7 @@ N/A
 - 2025-05-13: Initial discussion in SIG Node meeting.
 - 2025-06-12: KEP discussion in SIG Scheduling meeting.
 - 2025-06-26: KEP discussion in SIG Architecture meeting.
+- 2025-11-09: Alpha Implementation merged.
 
 ## Drawbacks
 
