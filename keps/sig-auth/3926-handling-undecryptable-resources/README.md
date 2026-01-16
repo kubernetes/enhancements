@@ -89,10 +89,15 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Current state](#current-state)
-    - [Retrieving a failing resource](#retrieving-a-failing-resource)
-    - [Deleting a failing resource](#deleting-a-failing-resource)
-    - [Protecting unconditional deletion](#protecting-unconditional-deletion)
+  - [Background](#background)
+  - [Proposed Solution](#proposed-solution)
+    - [New Error Status for Read Failures](#new-error-status-for-read-failures)
+    - [New Delete Option for Corrupt Objects](#new-delete-option-for-corrupt-objects)
+    - [Admission Control for Unconditional Deletion](#admission-control-for-unconditional-deletion)
+  - [Implementation Considerations](#implementation-considerations)
+    - [Watch Event Propagation and Client Recovery](#watch-event-propagation-and-client-recovery)
+    - [Design Principles](#design-principles)
+    - [Alternative Approaches Considered](#alternative-approaches-considered)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -100,6 +105,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -302,7 +308,7 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
-### Current state
+### Background
 
 The encryption/decryption for encryption at rest is implemented via transformers
 that get applied to a resource in code that handles resource read/write from etcd3
@@ -319,7 +325,9 @@ The code example 2. above shows that currently, when reading a resource fails, w
 lose all the context about the resource and a non-wrapping, generic internal error
 is returned.
 
-#### Retrieving a failing resource
+### Proposed Solution
+
+#### New Error Status for Read Failures
 
 The current API errors don't appear to include an error status specific to storage. Therefore
 a new status should be introduced - `StatusReasonStoreReadError`.
@@ -357,7 +365,7 @@ StatusCause{
 ```
 
 
-#### Deleting a failing resource
+#### New Delete Option for Corrupt Objects
 
 Deleting a resource is a rather complicated process:
 1. a resource might represent an actual process running on a host (Pod)
@@ -397,7 +405,7 @@ type DeleteOptions struct {
 }
 ```
 
-#### Protecting unconditional deletion
+#### Admission Control for Unconditional Deletion
 
 A "delete" verb on a resource is not usually considered a privileged action. As the previous
 section explains, deletion of a resource might carry unexpected consequences. Unconditional
@@ -406,6 +414,69 @@ deletions should therefore have their own extra admission.
 The unconditional deletion admission:
 1. checks if a "delete" request contains the `IgnoreStoreReadErrorWithClusterBreakingPotential` option
 2. if it does, it checks the RBAC of the request's user for the `delete-ignore-read-errors` verb of the given resource
+
+### Implementation Considerations
+
+#### Watch Event Propagation and Client Recovery
+
+When a corrupt object is deleted from etcd, the kube-apiserver's watch cache
+cannot transform or decode the object's previous value. This triggers a
+deliberate recovery sequence:
+
+1. **Error Detection**: The etcd3 watcher fails to transform/decode the deleted
+   object's data and generates a `watch.Error` event with `StatusReasonStoreReadError`.
+
+2. **Cacher Reset**: The Cacher's internal Reflector receives this error, causing
+   `ListAndWatch()` to stop. After a brief delay, the Cacher reinitializes by
+   calling `terminateAllWatchers()` followed by a fresh LIST from etcd.
+
+3. **Client Disconnection**: All active watch connections for that resource type
+   are terminated. Clients see their watch channels close without receiving the
+   original error event.
+
+4. **Client Recovery**: Disconnected clients attempt to resume watching from their
+   last known `resourceVersion`. The server rejects this with a "too old resource
+   version" error, forcing clients to perform a fresh LIST and rebuild their
+   local caches.
+
+#### Design Principles
+
+The following principles, agreed upon by SIG API Machinery, guide this enhancement:
+
+1. **Watch history cannot be preserved** when a corrupt object exists. Since the
+   object's data cannot be decrypted or decoded, we have no access to the correct
+   previous object state required for a semantically valid DELETE event.
+
+2. **Performance degradation is acceptable** during the remediation window. The
+   temporary increase in API server load from client re-lists is an accepted
+   tradeoff for restoring cluster health.
+
+3. **Enable admin remediation**: The admin must be able to identify corrupt
+   objects and delete them, even if one by one. Once all corrupt objects are
+   removed, the kube-apiserver and client informers recover automatically.
+
+This approach favors eventual consistency and cluster recovery over preserving
+individual watch streams during an inherently abnormal situation.
+
+#### Alternative Approaches Considered
+
+We considered using shallow object representations to enhance error or delete events,
+enabling targeted removal of the corrupt object from client caches without triggering
+a full re-list:
+
+1. **`DeletedFinalStateUnknown`**: A client-go type used when the final state of
+   a deleted object is unknown. This approach failed because `DeletedFinalStateUnknown`
+   does not implement `runtime.Object`, which is required by the watch cache.
+
+2. **`PartialObjectMetadata`**: A Kubernetes type containing only object metadata.
+   This failed because the watch cache's `getAttrsFunc` performs type assertions
+   to the specific resource type (e.g., `*api.Secret`), which `PartialObjectMetadata`
+   cannot satisfy.
+
+3. **Type Identity Object**: Creating an empty object of the correct type via
+   `newFunc()` and copying only essential metadata (namespace, name, resourceVersion,
+   UID). While technically feasible, the added complexity was not justified given
+   the design principles outlined above.
 
 ### Test Plan
 
@@ -465,7 +536,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-New tests will be added to prove:
+Alpha:
 - resources that are encrypted and are decryptable can still be deleted as before
 - resources that are malformed throw the new error on read
 - resources that are malformed cannot be removed if the user lacks required
@@ -474,6 +545,13 @@ New tests will be added to prove:
   and uses the new DeleteOption
 - if there are too many malformed resources in a return of a LIST action, the
   error will be truncated
+
+Beta:
+- test that LIST operation is capable of returning multiple corrupt objects
+- test delete handler with unsafe deletion flow
+- test deletion of bit-flip corrupted objects (deserialization failure, not transformer failure)
+- test deletion of corrupt CRs
+- validate kube-apiserver transition to healthy state after cleanup
 
 ##### e2e tests
 
@@ -557,6 +635,12 @@ in back-to-back releases.
 
 - Error type is implemented
 - Deletion of malformed etcd objects and its admission can be enabled via a feature flag
+
+#### Beta
+
+- Feature enabled by default
+- Dry-run support for unsafe corrupt object deletion
+- Comprehensive test coverage as outlined in the [Integration tests > Beta](#integration-tests) section.
 
 ### Upgrade / Downgrade Strategy
 
