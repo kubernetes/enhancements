@@ -1776,6 +1776,7 @@ _This section must be completed when targeting beta graduation to a release._
 - 2025-10-15 - Update in-place pod resize for GA
     - Update test plan
     - Remove `UpdatePodSandboxResources` from graduation criteria 
+- 2025-12-29 - Mark as implemented after GA release
 
 
 ## Drawbacks
