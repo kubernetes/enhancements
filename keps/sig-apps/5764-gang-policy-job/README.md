@@ -18,7 +18,9 @@
   - [API Changes](#api-changes)
   - [Feature Gate](#feature-gate)
   - [Behavior](#behavior)
+  - [Workflow example](#workflow-example)
   - [Limitations](#limitations)
+  - [Relation to future Workflow Aware Scheduling features](#relation-to-future-workflow-aware-scheduling-features)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -139,7 +141,7 @@ I want to be able to disable gang scheduling in Job controller to avoid conflict
 One option was to allow users to set WorkloadTemplates as a policy option
 but the workload API is v1alpha1 and the Job API is v1.
 
-It may be best to safe this option when the workload API matures to avoid
+It may be best to table this option until the workload API matures to avoid
 API breaking changes in the V1 API of Job.
 
 ### Risks and Mitigations
@@ -221,6 +223,78 @@ When `JobGangPolicy` is enabled and `GangPolicy` is set to `JobAsGang`:
    pointing to the created `Workload` (with `Name` set to the Job name and `PodGroup`
    set to "default").
 
+### Workflow example
+
+For the following Job:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sleep-gang-job
+spec:
+  parallelism: 10
+  completions: 10
+  completionMode: Indexed
+  gangPolicy: 
+    policy: JobAsGang
+  template:
+    spec:
+      containers:
+      - name: sleep-container
+        image: busybox:latest
+        command: ["sleep", "10000"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+      restartPolicy: Never
+  backoffLimit: 4
+```
+
+When the gangPolicy.policy is equal to JobAsGang the following workload will be created:
+
+```yaml
+apiVersion: v1
+items:
+- apiVersion: scheduling.k8s.io/v1alpha1
+  kind: Workload
+  metadata:
+    creationTimestamp: "2026-01-16T20:53:31Z"
+    name: sleep-gang-job
+    namespace: default
+    ownerReferences:
+    - apiVersion: batch/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Job
+      name: sleep-gang-job
+      uid: 85b9436d-14df-4a86-872f-266a6fe6109f
+    resourceVersion: "343"
+    uid: 7df77956-d5d8-4adb-ba54-f5c0619049c2
+  spec:
+    controllerRef:
+      apiGroup: batch
+      kind: Job
+      name: sleep-gang-job
+    podGroups:
+    - name: sleep-gang-job
+      policy:
+        gang:
+          minCount: 10
+```
+
+The pods that are created by this job would have the following values in their workload:
+
+```yaml
+  workloadRef:
+    name: sleep-gang-job
+    podGroup: sleep-gang-job
+```
+
 **Defaulting behavior**:
 When the feature gate is enabled and `GangPolicy` is not specified, it defaults to
 `NoGang` (no gang scheduling).
@@ -229,6 +303,13 @@ When the feature gate is enabled and `GangPolicy` is not specified, it defaults 
 When a Job's `Parallelism` changes (for elastic indexed jobs), the Job Controller
 will delete the existing Workload and recreate it with the updated `MinCount` to
 match the new parallelism value.
+
+<<Unresolved kannon92
+Deleting workloads and recreating is not ideal. 
+One option could be to forbid gang scheduling and elastic jobs for now.
+One could reject the updates if gangPolicy is set to JobAsGang.
+And elastic jobs is only supported for non gang scheduled jobs.
+>>
 
 **Feature gate disabled behavior**:
 When the feature gate is disabled, the `GangPolicy` field is dropped from new Jobs.
@@ -248,6 +329,17 @@ jobs where `Parallelism` changes, the Job Controller deletes and recreates the
   gang scheduling semantics will not work during this window.
 - Future work may explore relaxing immutability requirements of the `Workload`
   object to allow in-place updates.
+
+### Relation to future Workflow Aware Scheduling features
+
+The workload aware scheduling umbrella work is full of interesting turns. To provide useful functionality early,
+we can streamline gang scheduling so jobs can be scheduled as all or nothing.
+
+Future work like Topology Aware Scheduling or DRA can be supported by potentially giving an option to create the WorkloadTemplate.
+So the potential support could be a new enum policy where users can put in the WorkloadTemplate they want and the job controller would create that API.
+Right now we assume that `MinCount` = parallelism and are not providing much flexibility.
+The author believes this is useful as is as many HPC schedulers do not provide opt-out support for gang scheduling so it at least provides 
+a critical feature for AI/ML workloads.
 
 ### Test Plan
 
