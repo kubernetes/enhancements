@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5541: Report Last Used Time on a PVC
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -92,8 +92,8 @@ tags, and then generate with `hack/update-toc.sh`.
   * [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   * [User Stories (Optional)](#user-stories-optional)
-    + [Story 1 (Optional)](#story-1-optional)
-    + [Story 2 (Optional)](#story-2-optional)
+    + [Story 1: Cluster Administrator](#story-1-cluster-administrator)
+    + [Story 2: Developer](#story-2-developer)
   * [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   * [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -199,7 +199,7 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
@@ -224,6 +224,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
+This KEP proposes adding a new `lastUsed` status field on a `PersistentVolumeClaim`
+to determine when a PVC was last used by a Pod. This enables cluster
+administrators to identify unused PVCs and implement cleanup policies for
+storage that is no longer in use.
+
 <!--
 This section is incredibly important for producing high-quality, user-focused
 documentation such as release notes or a development roadmap. It should be
@@ -238,6 +243,13 @@ A good summary is probably at least a paragraph in length.
 
 ## Motivation
 
+PersistentVolumeClaims can accumulate over time in a cluster. When applications
+are deleted or migrated, their associated PVCs may be left behind, consuming storage
+resources and incurring costs. Currently, Kubernetes provides no mechanism to
+determine when a PVC was last actively used by a workload.
+
+Only Kubernetes has accurate knowledge of when a PVC is mounted by a Pod, making
+this the ideal place to track usage.
 <!--
 This section is for explicitly listing the motivation, goals, and non-goals of
 this KEP.  Describe why the change is important and the benefits to users. The
@@ -253,6 +265,9 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
+- Add a `lastUsedTime` timestamp field to `PersistentVolumeClaimStatus` (the naming is
+yet to be decided)
+- Update this field when a PVC is last used by a Pod
 
 ### Non-Goals
 
@@ -260,6 +275,9 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+- Automatically deleting unused PVCs (this is a decision for cluster administrators)
+- Tracking which specific Pod last used the PVC (only tracking when, not who)
+- Providing PVC usage recommendations or alerts
 
 ## Proposal
 
@@ -271,6 +289,9 @@ implementation. What is the desired outcome and how do we measure success?.
 The "Design Details" section below is for the real
 nitty-gritty.
 -->
+Add a new field `lastUsedTime` of type `metav1.Time` to the `PersistentVolumeClaimStatus`
+struct. This field will be updated by the kube-apiserver when the last Pod
+referencing the PVC terminates.
 
 ### User Stories (Optional)
 
@@ -281,9 +302,16 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1 (Optional)
+#### Story 1: Cluster Administrator
 
-#### Story 2 (Optional)
+As a cluster administrator, I want to identify PVCs that have not been used
+in the last 90 days so that I can review them for potential deletion and
+reduce storage costs.
+
+#### Story 2: Developer
+
+As a developer, I want to see when my PVCs were last used so that I can
+clean up test resources I've forgotten about.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -293,6 +321,14 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
+- Definition of 'last used': For the purposes of this KEP, a PVC is considered
+'last used' when the last Pod referencing it has been deleted/terminated. Since
+multiple Pods can share the same PVC, its important to update the last used
+status when the last Pod referencing it goes down.
+- Granularity: The timestamp represents the last time the PVC was referenced
+by a Pod, not continuous usage tracking. A PVC re-mounted by a long-running Pod
+will show the time it was last used, not "now".
 
 ### Risks and Mitigations
 
