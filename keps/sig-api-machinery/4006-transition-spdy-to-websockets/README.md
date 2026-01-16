@@ -111,6 +111,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [v1.30 RemoteCommand Subprotocol (exec, cp, and attach)](#v130-remotecommand-subprotocol-exec-cp-and-attach)
       - [v1.31 PortForward Subprotocol (port-forward)](#v131-portforward-subprotocol-port-forward)
       - [v1.35 Synthetic RBAC CREATE Authorization Check](#v135-synthetic-rbac-create-authorization-check)
+      - [v1.36 Extend WebSockets to Kubelet](#v136-extend-websockets-to-kubelet)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -537,15 +538,35 @@ they update their RBAC policies.
 ### Proposal: Transitioning the API Server-to-Kubelet Connection
 
 The long-term goal of this KEP is to replace SPDY with WebSockets for the entire
-communication path from the client to the Kubelet. After the initial
-kubectl-to-API-Server leg is stable, this proposal outlines the next phase:
-transitioning the communication between the API Server and the Kubelet. This is
-achieved by replicating the translation logic currently in the API Server—specifically
-the `StreamTranslatorProxy` (for exec/attach) and the `StreamTunnelingProxy`
-(for port-forward)—into the Kubelet's `UpgradeAwareProxy`. Once implemented, WebSocket
-streaming will extend end-to-end from the client to the Node, with the Kubelet then
-translating the stream to SPDY for the final, intra-node communication leg to the
-container runtime.
+communication path from the client to the Kubelet. The second phase of this
+transition, extending WebSocket support to the Kubelet for `exec`, `attach`, `cp`,
+and `port-forward`, is controlled by the `ExtendWebsocketsToKubelet` feature gate.
+
+When this feature is enabled, the Kubelet advertises its streaming protocol capabilities
+by adding an annotation, `kubelet.kubernetes.io/streaming-protocols`, to its Node
+object. This annotation contains a list of supported protocols (e.g., `['spdy', 'websocket']`).
+
+The API server's handlers for `exec`, `attach`, and `port-forward` are modified to check for
+this annotation on the target node.
+- If the `ExtendWebsocketsToKubelet` gate is enabled and the node's annotation
+  indicates WebSocket support, the API server acts as a simple pass-through proxy,
+  forwarding the client's WebSocket connection directly to the Kubelet without
+  any protocol translation or tunneling. This offloads the proxying work from the API server.
+- If the Kubelet does not advertise WebSocket support (or the feature gate is disabled),
+  the API server falls back to the original behavior: it accepts the client's WebSocket
+  connection and either translates it (`exec`/`attach`) or tunnels it (`port-forward`)
+  to an upstream SPDY connection to the Kubelet.
+
+On the Kubelet side, the HTTP server is updated to handle incoming WebSocket upgrade
+requests.
+- For `exec` and `attach`, it uses a `StreamTranslatorProxy` to terminate the
+  WebSocket connection and translate the `v5.channel.k8s.io` subprotocol into a SPDY
+  stream for the final communication leg to the container runtime.
+- For `port-forward`, it uses a `StreamTunnelingProxy` to terminate the WebSocket
+  connection, decode the SPDY frames from the WebSocket message payloads, and forward
+  them over a standard SPDY connection to the container runtime.
+
+In both cases, legacy SPDY requests from older API servers are still handled correctly.
 
 ### Test Plan
 
@@ -781,6 +802,16 @@ in back-to-back releases.
   will be gated by the API Server `AuthorizePodWebsocketUpgradeCreatePermission` feature flag,
   which defaults to **TRUE**.
 
+##### v1.36 Extend WebSockets to Kubelet
+
+- `ExtendWebsocketsToKubelet` feature gate is **ON** by default (Beta), controlling the extension
+  for both `RemoteCommand` (`exec`/`attach`) and `PortForward`.
+- API Server uses the Kubelet's `kubelet.kubernetes.io/streaming-protocols` node annotation to
+  determine if it can proxy WebSocket requests directly to the Kubelet for all streaming commands.
+- Kubelet handles incoming WebSocket requests for `exec`/`attach` (translation) and `port-forward`
+  (tunneling), converting them to SPDY for the container runtime.
+- Unit and integration tests for the new API Server and Kubelet logic are completed and enabled.
+
 #### GA
 
 - `kubectl` environment variables and API Server feature gates are locked to on by default.
@@ -793,7 +824,7 @@ in back-to-back releases.
 - Conformance tests for `PortForward` completed and enabled.
 - Conformance tests for `PortForward` have been stable and
   non-flaky for two weeks.
-- Extend the WebSockets communication leg from the API Server to Kubelet.
+- Achieve stable (GA) status for the extension of the WebSockets communication leg from the API Server to Kubelet.
 
 ### Upgrade / Downgrade Strategy
 
@@ -868,13 +899,28 @@ The `kubectl port-forward` will successfully request an upgrade for legacy
 
 #### Version Skew within the Control Plane and Nodes
 
-These proposals do not modify intra-cluster version skew behavior. The entire reason
-for the current `StreamTranslatorProxy` and `StreamTunnelingProxy` design is to ensure no modifications
-to communication within the Control Plane. The `StreamTranslatorProxy` or `StreamTunnelingProxy` can update
-streaming between the client and the API Server, but it is designed to provide legacy
-SPDY streaming from the API Server to the other components within the ControlPlane.
-Once these `StreamTranslatorProxy` and `StreamTunnelingProxy` are moved to the kubelet, we will have to address
-the possibility of intra-cluster version skew.
+The phased rollout of this feature creates three distinct API server behaviors and two Kubelet behaviors. The system is designed to handle version skew gracefully across all combinations.
+
+**API Server Versions:**
+1.  **Legacy SPDY-Only**: Does not support WebSocket streaming.
+2.  **Phase 1 (WS @ API Server)**: Supports WebSocket streaming from the client but always translates/tunnels this to an upstream SPDY connection for the Kubelet.
+3.  **Phase 2 (WS @ Kubelet)**: Supports WebSocket streaming and can proxy it directly to a capable Kubelet, falling back to Phase 1 behavior if the Kubelet does not support WebSockets.
+
+**Kubelet Versions:**
+1.  **SPDY-Only**: The legacy Kubelet which only accepts SPDY streams.
+2.  **WS-Capable**: The newer Kubelet which accepts both SPDY and WebSocket streams, advertising its capabilities via the `kubelet.kubernetes.io/streaming-protocols` node annotation.
+
+**Interaction Scenarios:**
+
+-   **Any `kubectl` vs. `Legacy SPDY-Only API Server`**: `kubectl`'s initial WebSocket upgrade request is rejected, and it automatically falls back to using SPDY. *Streaming works via legacy SPDY.*
+
+-   **`Phase 1 API Server` vs. `SPDY-Only` or `WS-Capable Kubelet`**: The API server accepts the client's WebSocket stream, performs the translation/tunneling itself, and sends a SPDY stream to the Kubelet. Since both Kubelet versions accept SPDY, *streaming works*.
+
+-   **`Phase 2 API Server` vs. `SPDY-Only Kubelet`**: The API server checks the Kubelet's node annotation, does not find "websocket" support, and gracefully falls back to the Phase 1 behavior (translating/tunneling locally). *Streaming works via API server fallback.*
+
+-   **`Phase 2 API Server` vs. `WS-Capable Kubelet`**: The API server checks the annotation, finds "websocket" support, and acts as a pass-through proxy for the WebSocket stream directly to the Kubelet. *Streaming works via the optimal end-to-end WebSocket path.*
+
+This design ensures that clusters can be upgraded one component at a time without breaking streaming functionality.
 
 ## Production Readiness Review Questionnaire
 
@@ -925,6 +971,8 @@ well as the [existing list] of feature gates.
   KUBECTL_PORT_FORWARD_WEBSOCKETS, PortForwardWebsockets
   - Feature gate name(s) for subresource endpoints `pods/exec`, `pods/attach`,
   and `pods/portforward`: AuthorizePodWebsocketUpgradeCreatePermission
+  - Feature gate name(s) for extending WebSocket to the Kubelet:
+  ExtendWebsocketsToKubelet
 - Components depending on the feature gate: kubectl, API Server
 
 ###### Does enabling the feature change any default behavior?
@@ -947,7 +995,10 @@ intermediary such as a proxy (which is the whole reason for the feature). The AP
 feature flag `AuthorizePodWebsocketUpgradeCreatePermission` forces a synthetic, secondary
 RBAC check for the `CREATE` verb permission on WebSocket upgrade requests. When this
 feature gate is **TRUE**, the additional permission check will apply to endpoints
-`pods/exec`, `pods/attach`, and `pods/portforward`.
+`pods/exec`, `pods/attach`, and `pods/portforward`. Enabling the `ExtendWebsocketsToKubelet`
+feature gate on the API Server will change the default behavior for `exec`, `attach`, and `port-forward`
+by attempting to proxy WebSocket requests directly to Kubelets that advertise
+support for it, thus offloading protocol translation and tunneling from the API Server to the Kubelet.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1499,6 +1550,7 @@ Major milestones might include:
 - PortForward over WebSockets shipped as beta: v1.31
 - WebSocket HTTPS Proxy functionality shipped: v1.33
 - Synthetic RBAC `CREATE` authz check for WebSocket upgrade requests: v1.35
+- Extend WebSocket communication to the Kubelet for RemoteCommand and PortForward shipped as beta: v1.36
 
 ## Drawbacks
 
