@@ -10,11 +10,11 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pkg/errors v0.9.1
 	github.com/psampaz/go-mod-outdated v0.8.0
-	github.com/sirupsen/logrus v1.7.0
+	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.1.1
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.10.0
 	golang.org/x/oauth2 v0.21.0
-	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/release v0.7.1-0.20210218090651-d71805402dab
 	k8s.io/test-infra v0.0.0-20200813194141-e9678d500461
 )
@@ -59,7 +59,7 @@ require (
 	golang.org/x/mod v0.4.0 // indirect
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b // indirect
 	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a // indirect
-	golang.org/x/sys v0.0.0-20210112080510-489259a85091 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/tools v0.0.0-20210108195828-e2f9c7f1fc8e // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
