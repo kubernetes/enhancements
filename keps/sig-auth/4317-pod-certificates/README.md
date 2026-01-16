@@ -15,6 +15,8 @@
     - [Issuance Flow](#issuance-flow)
     - [API Object Diff](#api-object-diff)
     - [Example certificate bundle written to the pod filesystem](#example-certificate-bundle-written-to-the-pod-filesystem)
+  - [Kube-native serving certificates signer for Pods and Services](#kube-native-serving-certificates-signer-for-pods-and-services)
+    - [Referencing Services for the kubernetes.io/service-ca signer](#referencing-services-for-the-kubernetesioservice-ca-signer)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
@@ -107,6 +109,9 @@ kube-apiserver, so that signer implementations do not need to consider it.
 not include a concrete signer that issues dedicated server certificates,
 third-party signer implementations should be able to do so on top of the
 machinery described in this KEP.
+
+**Provide an easy way to to provision serving certificates** for an in-cluster
+trust domain to pods and services across the cluster.
 
 ### Non-Goals
 
@@ -685,6 +690,54 @@ k68gmm9HQCdRI3stW7TC3lB0Cd1XSSMUISIP0g==
 -----END CERTIFICATE-----
 ```
 
+### Kube-native serving certificates signer for Pods and Services
+
+A new certificate signer is introduced to handle PodCertificateRequests for
+serving certificates for Pods and Services - `kubernetes.io/service-ca`. The signer
+is represented by a controller in the Kubernetes Controller Manager that publishes
+a ClusterTrustBundle with the signer's trust anchor, and another controller to issue
+certificates for incoming PodCertificateRequests that target this signer.
+
+The signer expects at least one of the following parameters in PodCertificateRequest
+`unverifiedUserAnnotations`:
+- `kubernetes.io/add-pod-ip`
+    - adds the Pod IP to the SAN IP extension of the resulting certificate
+    - valid values: "true"
+- `kubernetes.io/add-pod-fqdn`
+    - adds the Pod FQDN to the SAN DNS extension of the resulting certificate
+    - the pod must set its `spec.hostname` and a headless Service whose name
+      matches the Pod's `spec.subdomain` must exist in the namespace and the
+      Service's selector must match the Pod
+    <!-- these rules are based on https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-hostname-and-subdomain-field -->
+    - valid values: "true"
+- `kubernetes.io/service-names`
+    - adds parameters from Kubernetes Service to the certificate
+    - valid values: comma-separated list of Service names in the Pod's namespace
+
+The attributes of the Pod requesting the certificate are mapped into the certificate
+subject like this:
+- `CN` is the Pod name
+- `O` is the Pod namespace
+- `uid` is the Pod UID (this uses the [standardized](https://www.rfc-editor.org/rfc/rfc4519.html#section-2.39)
+`uid` OID 0.9.2342.19200300.100.1.1, not the Kubernetes-specific UID for client certificates)
+
+#### Referencing Services for the kubernetes.io/service-ca signer
+
+The `kubernetes.io/service-names` Service references require the following to be
+considered valid:
+- the referenced Service must exist in the Pod's namespace
+- the `spec.selector` of the Service must match the Pod's labels
+
+If the above conditions are fulfilled, parameters of the Service are added into
+the resulting certificate.
+
+For **headless services** the certificate gets SAN DNS names in the form of
+`<svc-name>.<svc-namespace>.svc.<cluster-domain>` and `<svc-name>.<svc-namespace>.svc`.
+
+For **cluster IP services** the certificate gets SAN DNS names same as for
+headless services, but the Service's IP is also added to the certificate as SAN
+IP address.
+
 ### Risks and Mitigations
 
 **Scalability**: In the current design and draft implementation, kubelet holds
@@ -836,6 +889,17 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   establish an mTLS connection. An additional test case will confirm that
   rotation works properly by continuing to establish connections for 20 minutes,
   while using a signer that issues 10-minute valid certificates.
+* test/e2e/auth/serving_signer.go:
+  - Requests a pod certificate from the `kubernetes.io/service-ca` signer for one
+    pod. Another pod requests a ClusterTrustBundle to be mounted into its volume and
+    attempts to connect read HTTPS content served by the first pod, which uses the
+    certificates it received from the PodCertificatesVolume.
+  - Tests the scenario with:
+      - normal service
+      - headless service with and without pod IP and FQDN
+      - pod IP alone
+      - invalid service name
+      - pod FQDN without any service
 
 ### Graduation Criteria
 
@@ -854,6 +918,7 @@ For Beta:
   - issuing client certificates
   - SPIFFE certificates (?)
   [mesh-examples](https://github.com/ahmedtd/mesh-example).
+* Implement an in-tree signer for internal serving certificates domain
 * Migrate kubelet implementation to use the beta API.
 * Deprecate and remove the alpha API.
 
@@ -1012,6 +1077,7 @@ At beta, enabling this feature in a live cluster will require the following step
 1. Enable the certificates/v1beta1 API.
 2. Enable the PodCertificateRequest feature gate on all kube-apiserver replicas.
 3. Enable the PodCertificateRequest feature gate on all kubelet instances.
+4. Enable the PodCertificateServingSigner feature gate on all kube-controller-manager instances.
 
 At this point, you can begin to create pods that use the features.
 
@@ -1025,7 +1091,8 @@ Yes, the feature can be disabled safely by following this procedure.
 
 1. Remove any workloads that are currently using PodCertificate projected volumes.
 2. Disable the PodCertificateRequest feature gate on all kubelet instances
-3. Disable the PodCertificateRequest feature gate on all kube-apiserver replicas
+3. Disable the PodCertificateServingSigner feature gate on all kube-controller-manager instances
+4. Disable the PodCertificateRequest feature gate on all kube-apiserver replicas
 5. Disable the certificates/v1beta1 API.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
