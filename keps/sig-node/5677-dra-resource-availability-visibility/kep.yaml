@@ -6,11 +6,14 @@ owning-sig: sig-node
 participating-sigs:
   - sig-scheduling
   - sig-cli
+  - sig-api-machinery
 
 status: provisional
 creation-date: 2025-12-20
 reviewers:
-  - TBD
+  - "@johnbelamaric"
+  - "@mortent"
+  - "@liggitt"
 approvers:
   - TBD
 
@@ -29,12 +32,12 @@ milestone:
 feature-gates:
   - name: DRAResourceAvailabilityVisibility
     components:
+      - kube-apiserver
       - kube-controller-manager
-      - kube-scheduler
-      - kubectl
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - dra_resourceslice_status_update_duration_seconds
-  - dra_resourceslice_status_update_errors_total
+  - resourcepool_controller_sync_duration_seconds
+  - resourcepool_controller_sync_errors_total
+  - resourcepool_controller_pools_total
