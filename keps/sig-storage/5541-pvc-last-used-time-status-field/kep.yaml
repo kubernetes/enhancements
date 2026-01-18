@@ -7,7 +7,7 @@ owning-sig: sig-storage
 # participating-sigs:
 # - sig-aaa
 # - sig-bbb
-status: implementable
+status: provisional
 creation-date: 2026-01-14
 reviewers:
   - "@RomanBednar"
