@@ -98,10 +98,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -139,20 +139,20 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required _prior to targeting to a milestone / release_.
 
--  [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
--  [ ] (R) KEP approvers have approved the KEP status as `implementable`
--  [ ] (R) Design details are appropriately documented
--  [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-   -  [ ] e2e Tests for all Beta API Operations (endpoints)
-   -  [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-   -  [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
--  [ ] (R) Graduation criteria is in place
-   -  [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
--  [ ] (R) Production readiness review completed
--  [ ] (R) Production readiness review approved
--  [ ] "Implementation History" section is up-to-date for milestone
--  [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
--  [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -208,9 +208,9 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
--  Add a `lastUsedTime` timestamp field to `PersistentVolumeClaimStatus` (the naming is
+- Add a `lastUsedTime` timestamp field to `PersistentVolumeClaimStatus` (the naming is
    yet to be decided)
--  Update this field with a timestamp when a PVC is last used by a Pod
+- Update this field with a timestamp when a PVC is last used by a Pod
 
 ### Non-Goals
 
@@ -219,9 +219,9 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
--  Automatically deleting unused PVCs (this is a decision for cluster administrators)
--  Tracking which specific Pod last used the PVC (only tracking when, not who)
--  Providing PVC usage recommendations or alerts
+- Automatically deleting unused PVCs (this is a decision for cluster administrators)
+- Tracking which specific Pod last used the PVC (only tracking when, not who)
+- Providing PVC usage recommendations or alerts
 
 ## Proposal
 
@@ -272,11 +272,11 @@ This might be a good place to talk about core concepts and how they relate.
 
 Notes:
 
--  Definition of 'last used': For the purposes of this KEP, a PVC is considered
+- Definition of 'last used': For the purposes of this KEP, a PVC is considered
    'last used' when the last Pod referencing it has been deleted/terminated. Since
    multiple Pods can share the same PVC, its important to update the last used
    status when the last Pod referencing it goes down.
--  Granularity: The timestamp represents the last time the PVC was referenced
+- Granularity: The timestamp represents the last time the PVC was referenced
    by a Pod, not continuous usage tracking. A PVC re-mounted by a long-running Pod
    will show the time it was last used, and the current timestamp.
 
@@ -330,14 +330,14 @@ Changes required for this KEP:
 
 1. Update the timestamp whenever the PVC transitions to not being in use anymore.
 
-   -  The PVC Protection controller already watched Pod events and checks when a
+   - The PVC Protection controller already watched Pod events and checks when a
       PVC transitions from "in use" to "not in use".
-   -  The implementation can extend this existing logic:
-      -  When a Pod is deleted, the controller enqueues all the affected PVCs
-      -  During sync, the controller checks if the PVC is still in use by an Pod
-      -  Existing behavior: If it's not in use, and the `deletionTimestamp` is set,
+   - The implementation can extend this existing logic:
+      - When a Pod is deleted, the controller enqueues all the affected PVCs
+      - During sync, the controller checks if the PVC is still in use by an Pod
+      - Existing behavior: If it's not in use, and the `deletionTimestamp` is set,
          it proceeds with finalizer removal. If `deletionTimestamp` is not set, it returns early.
-      -  New behavior: When it determines a PVC is not in use, and the `deletionTimestamp`
+      - New behavior: When it determines a PVC is not in use, and the `deletionTimestamp`
          is not set (not queued for deletion), it should update the `status.LastUsedTime`
          timestamp to the current timestamp. (Note: If `deletionTimestamp` is set, we skip
          updating `lastUsedTime` since the PVC is being deleted and the timestamp
@@ -384,7 +384,7 @@ together with explanation why this is acceptable.
 
 The following packages will be modified and require test coverage:
 
--  `pkg/controller/volume/pvcprotection`: tests for `lastUsedTime` being set when
+- `pkg/controller/volume/pvcprotection`: tests for `lastUsedTime` being set when
 the last Pod referencing a PVC terminates, and not set when other Pods still
 reference the PVC.
 <!--
@@ -427,15 +427,15 @@ This can be done with:
 
 Integration tests can be added to verify the core controller logic:
 
--  `lastUsedTime` set when last Pod referencing PVC terminates
--  `lastUsedTime` not set when other Pods still reference the PVC
--  Feature gate enable/disable behavior
+- `lastUsedTime` set when last Pod referencing PVC terminates
+- `lastUsedTime` not set when other Pods still reference the PVC
+- Feature gate enable/disable behavior
 
 Note: Integration and e2e tests would be pretty identical for this feature.
 We can possibly skip this using the reasoning that e2e tests would provide
 more value and might help catch more bugs. \[TBD\]
 
--  [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ##### e2e tests
 
@@ -456,7 +456,7 @@ If e2e tests are not necessary or useful, explain why.
 
 e2e tests will be added to verify the feature works in a real cluster environment.
 
--  [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
 
@@ -535,9 +535,9 @@ in back-to-back releases.
 
 #### Alpha
 
--  Feature implemented successfully behind a feature gate
--  Unit tests added to test out feature enablement/disablement, and passing
--  Initial e2e tests completed and enabled
+- Feature implemented successfully behind a feature gate
+- Unit tests added to test out feature enablement/disablement, and passing
+- Initial e2e tests completed and enabled
 
 #### Beta
 
@@ -633,17 +633,11 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
--  [x] Feature gate (also fill in values in `kep.yaml`)
-   -  Feature gate name: `PVCLastUsedTime`
-   -  Components depending on the feature gate:
-      -  kube-apiserver
-      -  kube-controller-manager
--  [ ] Other
-   -  Describe the mechanism:
-   -  Will enabling / disabling the feature require downtime of the control
-      plane?
-   -  Will enabling / disabling the feature require downtime or reprovisioning
-      of a node?
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `PVCLastUsedTime`
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
@@ -735,12 +729,14 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+Yet to be completed for beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No.
 
 ### Monitoring Requirements
 
@@ -758,6 +754,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
+Operators can check if the PVCs have `status.LastUsedTime` field populated.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -770,13 +767,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
--  [ ] Events
-   -  Event Reason:
--  [ ] API .status
-   -  Condition name:
-   -  Other field:
--  [ ] Other (treat as last resort)
-   -  Details:
+- [X] API .status
+  - Other field: `pvc.status.lastUsedTime`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -801,12 +793,12 @@ question.
 Pick one more of these and delete the rest.
 -->
 
--  [ ] Metrics
-   -  Metric name:
-   -  [Optional] Aggregation method:
-   -  Components exposing the metric:
--  [ ] Other (treat as last resort)
-   -  Details:
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [ ] Other (treat as last resort)
+  - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -837,6 +829,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No, depends only upon the core Kubrenetes components available to a functioning
+cluster.
 
 ### Scalability
 
@@ -864,6 +858,9 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+Yes. A new PATCH call for PersistentVolumeClaimStatus. Estimated throughput would be
+one PATCH call per PVC when transitioning from in use to not in use. The originating
+component is PVC Protection Controller (in kube-controller-manager).
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -873,6 +870,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -881,6 +879,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -890,6 +889,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+Yes. All PVC objects will have an entirely new status field `lastUsedTime` to hold
+the timestamp value. Estimated increase in size would be < 50B.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -901,6 +902,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -913,6 +915,7 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -925,6 +928,7 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+No, this feature operates in the control-plane and doesn't affect node resources.
 
 ### Troubleshooting
 
@@ -940,6 +944,8 @@ details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+The controller will be unable to update the `lastUsedTime` status field.
 
 ###### What are other known failure modes?
 
@@ -958,6 +964,9 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+Users should check kube-controller-manager logs for errors related to
+PVC status updates.
+
 ## Implementation History
 
 <!--
@@ -970,6 +979,7 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+- 1.36: alpha
 
 ## Drawbacks
 
@@ -984,6 +994,9 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+One alternative was the use the deletion of `VolumeAttachment` objects as triggers
+for updating the status field. This was ruled out because of the fact that not all
+volume types create a `VolumeAttachment` object, restricting the scope of the KEP.
 
 ## Infrastructure Needed (Optional)
 
@@ -992,3 +1005,4 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+None.
