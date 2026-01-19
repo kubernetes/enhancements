@@ -642,7 +642,8 @@ they are also processed via the Workload Scheduling Cycle, which takes the previ
 scheduled Pods into consideration. This is done for safety reasons to ensure
 the PodGroup-level constraints are still satisfied. However, if the `PodGroup` is being processed,
 these new Pods must wait for the ongoing pod group scheduling to be finished (pass `WaitOnPermit`),
-before being considered.
+before being considered. This can simplify the preemption, where we can be sure the decision won't be changed,
+while the previous attempt hasn't finished yet.
 
 The cycle proceeds as follows:
 
@@ -689,25 +690,27 @@ from being scheduled, we need to have a good queueing mechanism for pod groups.
 We have decided to make the scheduling queue explicitly workload-aware.
 The queue will support queuing `PodGroup` instances alongside individual Pods.
 
-1. When Pods belonging to a `PodGroup` are added to the scheduler and pass the `PreEnqueue`,
-   they are initially stored in a dedicated internal data structure (tentatively named `workloadPods`)
-   rather than the standard active queue.
+1.  When Pods belonging to a `PodGroup` are added to the scheduler, if a corresponding `QueuedPodGroupInfo`
+    is not yet present in the scheduling queue, it is created and enqueued.
+    This object will have an aggregated `PreEnqueue` check, evaluating conditions for all its members.
+    Crucially, the individual Pods themselves are **not** stored in any standard scheduling queue
+    data structure (active, backoff, or unschedulable) at this stage, but they are effectively managed
+    via the `QueuedPodGroupInfo`.
 
 2. Once the number of accumulated Pods meets the scheduling requirements (e.g., `minCount`),
-   a `QueuedPodGroupInfo` object (analogous to `QueuedPodInfo`) is created
-   and injected into the main scheduling queue.
+   a `QueuedPodGroupInfo` object is moved to the activeQ, following the logic similar to individual pods.
 
 3. The `scheduleOne` loop will pop the highest-priority item from the queue,
    which may now be either a single Pod (triggering the standard cycle)
    or a `PodGroup` (triggering the Workload Scheduling Cycle).
 
-4. During a Workload Scheduling Cycle, all member Pods are retrieved from `workloadPods`.
+4. During a Workload Scheduling Cycle, all member Pods are retrieved from the `QueuedPodGroupInfo`.
    Based on the cycle's outcome:
    * **Success:** Pods are moved to the standard `activeQ` (with nominations set)
      to proceed to the pod-by-pod scheduling soon.
-   * **Failure/Preemption:** Pods are returned to `workloadPods` or the unschedulable queue.
-     The `PodGroup` enters a backoff state and is eligible for retry only when
-     a relevant cluster event wakes up at least one of its member pods.
+   * **Failure/Preemption:** The `QueuedPodGroupInfo` (containing the unschedulable pods) is returned
+     to the `unschedulablePodInfos` structure. The `PodGroup` enters a backoff state and is eligible
+     for retry only when a relevant cluster event wakes up at least one of its member pods.
 
 While this represents a significant architectural change to the scheduling
 queue and `scheduleOne` loop, it provides a clean separation of concerns and
@@ -850,6 +853,16 @@ its rejection message (exposed via Pod status) will explicitly indicate
 that the rejection may be due to the use of features for which finding an existing
 placement cannot be guaranteed, distinguishing it from a generic `Unschedulable` reason.
 
+In addition to the above, for cases involving **intra-group dependencies**
+(e.g., when the schedulability of one pod depends on another group member via inter-pod affinity),
+this algorithm may fail to find a placement regardless of cluster state,
+due to the deterministic processing order.
+
+Users will be advised that such dependencies are discouraged. However, they could mitigate this
+by assigning a lower priority to the dependent pods. Since the algorithm processes higher-priority
+pods first, this ensures that the required pods are scheduled earlier,
+to satisfy the affinity rules of the subsequent dependent pods.
+
 #### Interaction with Basic Policy
 
 For pod groups using the `Basic` policy, the Workload Scheduling Cycle is
@@ -891,6 +904,10 @@ We will address it with what we call *delayed preemption* mechanism as following
    If that proves incorrect, we will introduce a new plugin extension point (tentatively called
    `Preempt`) that will be responsible for actuation. However, for now we don't see evidence for this
    being needed.
+
+   Relying on the actuation logic is optional for plugins. For example,
+   the DynamicResources plugin can still actuate its decision (claim deallocation) in the PostFilter phase.
+   However, any pod-based removals in other plugins should be delegated to the delayed actuation phase.
 
 3. For individual pods (not being part of a workload), we will adjust the scheduling framework
    implementation of `schedulingCycle` to actuate preemptions of returned victims if calling
@@ -958,7 +975,7 @@ or a timeout occurs), the scheduler must handle the failure efficiently.
 1. Rejection
 
 When the cycle fails, the scheduler rejects the entire group.
-* All Pods in the group are moved back to the scheduling queue.
+* All Pods in the group are moved back to the scheduling queue (stored in the `unschedulablePodGroups` data structure).
   Their status is updated the event with failure reason is sent.
 * Crucially, any `.status.nominatedNodeName` entries set during the failed attempt
   (or from previous cycles) must be cleared. This ensures that the resources
