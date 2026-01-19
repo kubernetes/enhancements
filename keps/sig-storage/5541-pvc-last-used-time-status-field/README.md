@@ -399,7 +399,7 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
--  `<package>`: `<date>` - `<test coverage>`
+- `pkg/controller/volume/pvcprotection`: `2026-01-18` - `74.1%`
 
 ##### Integration tests
 
