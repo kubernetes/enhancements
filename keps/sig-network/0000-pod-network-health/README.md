@@ -60,6 +60,25 @@ Exact fields will be refined during review.
 - No default probing required
 - Implementations may be controller-based, node-based, or vendor-provided
 
+## Why a Core Kubernetes API?
+
+While pod-to-pod network health can be measured using an external
+controller and CRD, the motivation for a core Kubernetes API is to
+standardize semantics across clusters, CNIs, and tooling.
+
+Existing tools (for example, kube-latency:
+https://github.com/simonswine/kube-latency) demonstrate that connectivity
+and latency can be measured externally. However, these tools define
+their own schemas and reporting mechanisms, making it difficult for
+operators and platforms to build portable integrations.
+
+A core API would define a common contract and vocabulary, while allowing
+actual data collection and implementation to remain pluggable and
+external. As a validation step, this proposal is compatible with first
+prototyping the design as an external controller + CRD before considering
+promotion into core Kubernetes.
+
+
 ## Alternatives Considered
 - CNI-specific tooling (not portable)
 - External observability systems (not Kubernetes-native)
