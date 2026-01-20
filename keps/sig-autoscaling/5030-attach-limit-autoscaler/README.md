@@ -501,9 +501,7 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, it will cause cluster-autoscaler to consider volume limits when scaling nodes.
-
-But default this feature does not make any changes into kube-scheduler's behaviour and pod placement policy requires explicit opt-in via `CSIDriver` object.
+No, the scheduler and autoscaler defaul behavior is the same. A CSI driver must opt-in via its CSIDriver instance to get the new behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
