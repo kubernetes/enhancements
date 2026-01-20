@@ -414,7 +414,7 @@ in back-to-back releases.
 In general Upgrade and Downgrade of `cluster-autoscaler` should be fine, it just means how CA scales nodes will
 change.
 
-If customers have opted-in to prevent pod placement via aformentiond `CSIDriver` change, it is not recommend to disable `enable-csi-node-aware-scheduling` flag.
+If customers have opted-in to prevent pod placement via aforementioned `CSIDriver` change, it is not recommended to disable `enable-csi-node-aware-scheduling` flag.
 
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
