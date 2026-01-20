@@ -285,8 +285,9 @@ A node which is ready  but does not have CSI driver installed within certain tim
 
 ### When it is safe to Prevent pod placement?
 
-Generally speaking it is safe to prevent pod placement to nodes without CSI driver in scheduler, if cluster-admin or Kubernetes distro is aware that, it is running a version of autoscaler (CAS or Karpenter), which is aware of CSI attach limits coming from the node.  For CAS this generally means, `enable-csi-node-aware-scheduling` flag should be enabled and set to true in the version of CAS that is running in the cluster.
+Generally speaking it is safe to prevent pod placement to nodes without CSI driver in scheduler when running an autoscaler that has support for CSI attach limit awareness. Cluster Autoscaler currently supports this with the enable-csi-node-aware-scheduling feature flag (starting with version 1.35). Other autoscalers in the ecosystem may support this in the future.
 
+Obviously it is also safe to prevent pod placement if your cluster doesn't have any autoscalers.
 
 #### What happens if cluster-admin opts-in to prevent pod scheduling but autoscaler does not have CSI attach limit awareness?
 
