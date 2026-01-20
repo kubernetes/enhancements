@@ -851,7 +851,11 @@ In particular:
 Moreover, if a pod using these features is rejected by the Workload Scheduling Cycle,
 its rejection message (exposed via Pod status) will explicitly indicate
 that the rejection may be due to the use of features for which finding an existing
-placement cannot be guaranteed, distinguishing it from a generic `Unschedulable` reason.
+placement cannot be guaranteed. This will be accompanied by a specific failure
+reason, distinguishing it from a generic `Unschedulable` condition.
+distinguishing it from a generic `Unschedulable` reason. This distinction
+is particularly relevant for Cluster Autoscaler or Karpenter, which can act
+differently based on the new reason.
 
 In addition to the above, for cases involving **intra-group dependencies**
 (e.g., when the schedulability of one pod depends on another group member via inter-pod affinity),
