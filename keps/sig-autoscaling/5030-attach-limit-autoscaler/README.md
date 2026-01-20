@@ -289,7 +289,7 @@ Generally speaking it is safe to prevent pod placement to nodes without CSI driv
 
 #### What happens if cluster-admin opts-in to prevent pod scheduling but autoscaler does not have CSI attach limit awareness?
 
-If autoscaler has updated `NodeVolumeLimits` plugin from the scheduler but has otherwise has `enable-csi-node-aware-scheduling` flag disabled in CAS (or has no `CSINode` awareness), then CAS will *not* be able to schedule any pods that use CSI volume during its simulations on new nodes. The kube-scheduler will keep rejecting simulated node because, it will not have any `CSINode` information. This will be bad and autocaling will be more or less broken for pods that require CSI volumes.
+If autoscaler has updated `NodeVolumeLimits` plugin from the scheduler but has otherwise has `enable-csi-node-aware-scheduling` flag disabled in CAS (or has no `CSINode` awareness), then CAS will *not* be able to schedule any pods that use CSI volume during its simulations on new nodes. The kube-scheduler will keep rejecting simulated node because, it will not have any `CSINode` information. This will be bad and autoscaling will be more or less broken for pods that require CSI volumes.
 
 ### Test Plan
 
