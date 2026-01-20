@@ -1,4 +1,4 @@
-# KEP-NNNN: Stale Controller Detection and Mitigation
+# KEP-5647: Stale Controller Detection and Mitigation
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
