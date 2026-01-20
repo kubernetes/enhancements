@@ -1244,8 +1244,23 @@ whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-This will be done manually before transition to beta by bringing up a KinD cluster with
-kubeadm and changing the feature gate for individual components.
+This was tested by bringing up a KinD cluster and changing the feature gate for the
+api-server and scheduler individually. There was a workload using the feature running
+throughout and for each change, another workload was deployed to validate the correct
+behavior:
+
+* Test started with the feature enabled on both components
+* Feature was disabled on the scheduler
+  * As expected, as workload trying to use the feature did not schedule and the
+    `PodScheduled` condition on the pod explains why.
+* Feature was disabled also on the api-server
+  * As expected, the `ResourceClaim` can not be applied since the `firstAvailable`
+    field is dropped resulting in an invalid `ResourceClaim`.
+* Feature as enabled on the scheduler.
+  * As expected, the `ResourceClaim` can not be applied since the `firstAvailable`
+    field is dropped resulting in an invalid `ResourceClaim`.
+* Feature enabled also on the api-server
+  * Pod is scheduled as expected.
 
 Roundtripping of API types is covered by unit tests.
 
