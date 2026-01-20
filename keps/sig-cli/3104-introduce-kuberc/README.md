@@ -402,8 +402,6 @@ kuberc execution:
 * If `KUBERC` environment variable is specified, operate on this file
 * If none, operate on default kuberc (i.e. `$HOME/.kube/kuberc`).
 
-This command and subcommands are marked as alpha initially. They can be executed under `kubectl alpha`, until they are promoted to beta.
-
 ### kubectl kuberc view
 
 `kubectl kuberc view` subcommand prints the defined kuberc file content in the given format via `--output` flag (default is yaml).
