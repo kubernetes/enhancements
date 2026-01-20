@@ -66,11 +66,13 @@ specification refers to it by the placeholder `<clusterset-zone>`, but per the
 MCS API it currently must be defined to be `clusterset.local`.
 
 ClusterSetIP / `<clusterset-ip>` / clusterset IP = as defined in [KEP-1645:
-Multi-Cluster Services API](README.md): “A non-headless ServiceImport is
+Multi-Cluster Services API](README.md): “A non-headless service imported from
+a remote cluster is
 expected to have an associated IP address, the clusterset IP, which may be
 accessed from within an importing cluster. This IP may be a single IP used
 clusterset-wide or assigned on a per-cluster basis, but is expected to be
-consistent for the life of a ServiceImport from the perspective of the importing
+consistent for the life of the logical imported service from the perspective
+of the importing
 cluster. Requests to this IP from within a cluster will route to backends for
 the aggregated Service.”
 

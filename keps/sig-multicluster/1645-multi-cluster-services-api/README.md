@@ -295,26 +295,17 @@ a `ServiceExport` in a cluster will signify that the `Service` with the same
 name and namespace as the export should be visible to other clusters in the
 clusterset.
 
-Another CRD called `ServiceImport` will be introduced to act as the in-cluster
-representation of a multi-cluster service in each importing cluster. This is
-analogous to the traditional `Service` type in Kubernetes. Importing clusters
-will have a corresponding `ServiceImport` for each uniquely named `Service` that
-has been exported within the clusterset, referenced by namespaced name.
-`ServiceImport` resources will be managed by the MCS implementation's
-mcs-controller.
-
 If multiple clusters export a `Service` with the same namespaced name, they will
 be recognized as a single combined service. For example, if 5 clusters export
-`my-svc.my-ns`, each importing cluster will have one `ServiceImport` named
-`my-svc` in the `my-ns` namespace and it will be associated with endpoints from
-all exporting clusters. Properties of the `ServiceImport` (e.g. ports, topology)
-will be derived from a merger of component `Service` properties.
+`my-svc.my-ns`, each consuming cluster will resolve the corresponding DNS name
+(see the [DNS-based service discovery specification](specification.md))
+and associate it with endpoints from all exporting clusters.
 
 This specification is not prescriptive on exact implementation details. Existing
 implementations of Kubernetes Service API (e.g. kube-proxy) can be extended to
-present `ServiceImports` alongside traditional `Services`. One often discussed
+present imported services alongside traditional `Services`. One often discussed
 implementation requiring no changes to kube-proxy is to have the mcs-controller
-maintain ServiceImports and create "dummy" or "shadow" Service objects, named
+create "dummy" or "shadow" Service objects, named
 after a mcs-controller managed EndpointSlice that aggregates all cross-cluster
 backend IPs, so that kube-proxy programs those endpoints like a regular Service.
 Other implementations are encouraged as long as the properties of the API described
@@ -515,170 +506,37 @@ unless there is a clear use case.
 
 To consume a clusterset service, the domain name associated with the
 multi-cluster service should be used (see [DNS](#dns)). When the mcs-controller
-sees a `ServiceExport`, a `ServiceImport` will be introduced in each importing
-cluster to represent the imported service. Users are primarily expected to
-consume the service via domain name and clusterset VIP, but the `ServiceImport`
-may be used for imported service discovery via the K8s API and will be used
-internally as the source of truth for routing and DNS configuration.
+sees a `ServiceExport`, it ensures that, in each importing cluster, the
+corresponding service can be consumed via the corresponding domain name and
+clusterset VIP.
 
-A `ServiceImport` is a service that may have endpoints in other clusters. This
-includes 3 scenarios:
+A service consumable in this way appears like a service (but not necessarily a
+`Service`!) that may have endpoints in other clusters. This includes 3 scenarios:
 1. This service is running entirely in different cluster(s).
 2. This service has endpoints in other cluster(s) and in this cluster.
 3. This service is running entirely in this cluster, but is exported to other
    cluster(s) as well.
 
-A multi-cluster service will be imported only by clusters in which the service's
+A multi-cluster service will be made available only in clusters where the service's
 namespace exists. All clusters containing the service's namespace will import
 the service. This means that all exporting clusters will also import the
 multi-cluster service. _An implementation may or may not decide to create
 missing namespaces automatically, that behavior is out of scope of this spec._
 
-Because of the potential wide impact a `ServiceImport` may have within a
-cluster, non-cluster-admin users should not be allowed to create or modify
-`ServiceImport` resources. The mcs-controller should be solely responsible for
-the lifecycle of a `ServiceImport`.
-
-Some errors may occur during the `ServiceImport`'s lifecycle, such as IP protocol
-incompatibilities (i.e.: importing an IPv6 only service in an IPv4 cluster). These
-errors and general status reporting of a `ServiceImport` should be reported
-via its status conditions field.
-
 For each exported service, one `ServiceExport` will exist in each cluster that
-exports the service. The mcs-controller will create and maintain a derived
-`ServiceImport` in each cluster within the clusterset so long as the service's
-namespace exists (see: [constraints and conflict
-resolution](#constraints-and-conflict-resolution)). If all `ServiceExport`
-instances are deleted, each `ServiceImport` will also be deleted from all
-clusters.
+exports the service. How that exported service is represented in importing
+clusters is implementation-defined.
 
-```golang
-// ServiceImport describes a service imported from clusters in a clusterset.
-type ServiceImport struct {
-  metav1.TypeMeta `json:",inline"`
-  // +optional
-  metav1.ObjectMeta `json:"metadata,omitempty"`
-  // +optional
-  Spec ServiceImportSpec `json:"spec,omitempty"`
-  // +optional
-  Status ServiceImportStatus `json:"status,omitempty"`
-}
+When a namespace with exported services is removed from an importing cluster,
+the corresponding services in remote clusters must stop being available in the
+importing cluster. Liekwise, if all `ServiceExport` instances are deleted from
+all exporting clusters, the corresponding service must stop being available in
+importing clusters (this does not affect the availability of the underlying
+`Service` in each local cluster with that `Service`).
 
-// ServiceImportType designates the type of a ServiceImport
-type ServiceImportType string
-
-const (
-  // ClusterSetIP are only accessible via the ClusterSet IP.
-  ClusterSetIP ServiceImportType = "ClusterSetIP"
-  // Headless services allow backend pods to be addressed directly.
-  Headless ServiceImportType = "Headless"
-)
-
-// ServiceImportSpec describes an imported service and the information necessary to consume it.
-type ServiceImportSpec struct {
-  // +listType=atomic
-  Ports []ServicePort `json:"ports"`
-  // +kubebuilder:validation:MaxItems:=2
-  // +optional
-  IPs []string `json:"ips,omitempty"`
-  // +kubebuilder:validation:MaxItems:=2
-  // +optional
-  IPFamilies []corev1.IPFamily `json:"ipFamilies,omitempty"`
-  // +optional
-  Type ServiceImportType `json:"type"`
-  // +optional
-  SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
-  // +optional
-  SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig"`
-  // +optional
-  InternalTrafficPolicy *corev1.ServiceInternalTrafficPolicy `json:"internalTrafficPolicy,omitempty"`
-  // The possible TrafficDistribution values should match what can be similarly
-  // defined in a Service, see https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
-  // +optional
-  TrafficDistribution *string `json:"trafficDistribution,omitempty"`
-}
-
-// ServicePort represents the port on which the service is exposed
-type ServicePort struct {
-  // The name of this port within the service. This must be a DNS_LABEL.
-  // All ports within a ServiceSpec must have unique names. When considering
-  // the endpoints for a Service, this must match the 'name' field in the
-  // EndpointPort.
-  // Optional if only one ServicePort is defined on this service.
-  // +optional
-  Name string `json:"name,omitempty"`
-
-  // The IP protocol for this port. Supports "TCP", "UDP", and "SCTP".
-  // Default is TCP.
-  // +optional
-  Protocol Protocol `json:"protocol,omitempty"`
-
-  // The application protocol for this port.
-  // This field follows standard Kubernetes label syntax.
-  // Un-prefixed names are reserved for IANA standard service names (as per
-  // RFC-6335 and http://www.iana.org/assignments/service-names).
-  // Non-standard protocols should use prefixed names such as
-  // mycompany.com/my-custom-protocol.
-  // Field can be enabled with ServiceAppProtocol feature gate.
-  // +optional
-  AppProtocol *string `json:"appProtocol,omitempty"`
-
-  // The port that will be exposed by this service.
-  Port int32 `json:"port"`
-}
-
-// ServiceImportStatus describes derived state of an imported service.
-type ServiceImportStatus struct {
-  // +optional
-  // +patchStrategy=merge
-  // +patchMergeKey=cluster
-  // +listType=map
-  // +listMapKey=cluster
-  Clusters []ClusterStatus `json:"clusters"`
-  // +optional
-  // +patchStrategy=merge
-  // +patchMergeKey=type
-  // +listType=map
-  // +listMapKey=type
-  Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
-}
-
-// ClusterStatus contains service configuration mapped to a specific source cluster
-type ClusterStatus struct {
- Cluster string `json:"cluster"`
-}
-```
-
-```yaml
-apiVersion: multicluster.k8s.io/v1alpha1
-kind: ServiceImport
-metadata:
-  name: my-svc
-  namespace: my-ns
-spec:
-  ips:
-  - 42.42.42.42
-  ipFamilies:
-    - IPv4
-  type: "ClusterSetIP"
-  ports:
-  - name: http
-    protocol: TCP
-    port: 80
-  sessionAffinity: None
-status:
-  conditions:
-  - type: Ready
-    reason: Ready
-    status: "True"
-    lastTransitionTime: "2020-03-30T01:33:51Z"
-  clusters:
-  - cluster: us-west2-a-my-cluster
-```
-
-The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
-this cluster.
-
+Some errors may occur when importing a service and during its lifecycle as a whole,
+such as IP protocol incompatibilities (for example importing an IPv6-only service
+in an IPv4-only cluster). TODO
 
 ### ClusterSet Service Behavior Expectations
 
@@ -687,14 +545,14 @@ this cluster.
 - `ClusterIP`: This is the straightforward case most of the proposal assumes.
   Each endpoint from a producing cluster associated with the exported service is
   aggregated with endpoints from other clusters to make up the clusterset
-  service. They will be imported to the cluster behind the clusterset IP, with a
-  `ServiceImport` of type `ClusterSetIP`. The details on how the clusterset IP
+  service. They will be imported to the cluster behind the clusterset IP.
+  The details on how the clusterset IP
   is allocated or how the combined slices are maintained may vary by
   implementation; see also [Tracking Endpoints](#TrackingEndpoints).
 - `ClusterIP: none` (Headless): Headless services are supported and will be
-  imported with a `ServiceImport` like any other `ClusterIP` service, but do not
-  configure a VIP and must be consumed via [DNS](#DNS). Their `ServiceImport`s
-  will be of type `Headless`. A multi-cluster service's headlessness is derived
+  imported like any other `ClusterIP` service, but do not
+  configure a VIP and must be consumed via [DNS](#DNS).
+  A multi-cluster service's headlessness is derived
   from it's constituent exported services according to the [conflict resolution
   policy](#constraints-and-conflict-resolution).
 
@@ -719,10 +577,11 @@ this cluster.
 
 #### ClusterSetIP
 
-A non-headless `ServiceImport` is expected to have associated IP addresses, the
+A non-headless service imported from a remote cluster is expected to have
+associated IP addresses, the
 clusterset IPs, which may be accessed from within an importing cluster. These IPs
-may be used clusterset-wide or assigned on a per-cluster basis, but is expected
-to be consistent for the life of a `ServiceImport` from the perspective of the
+may be used clusterset-wide or assigned on a per-cluster basis, but they are expected
+to be consistent for the life of the logical imported service from the perspective of the
 importing cluster. Requests to these IPs from within a cluster will route to
 backends for the aggregated Service. The `IPs` field must correspond to the
 protocols defined in the `ipFamilies` field, if specified. How the `ipFamilies`
@@ -797,7 +656,7 @@ multicluster DNS, especially between importing and exporting clusters (for
 example, a Headless pod IP `PTR` record would exist on the exporting cluster,
 but not necessarily on an importing cluster). On the other hand, some existing
 MCS API implementations create a new "dummy" cluster-local `Service` object for
-every `ServiceImport`, and due to the cluster-local DNS specification, they will
+every imported service, and due to the cluster-local DNS specification, they will
 already have a `PTR` record generated due to the DNS resolution of the "dummy"
 `Service`.
 
@@ -909,7 +768,7 @@ multicluster plugin](https://github.com/coredns/multicluster/), depend.
 
 When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
 the underlying `Service` to be created in each importing cluster within the
-clusterset, associated with the derived `ServiceImport`. One or more
+clusterset. One or more
 `EndpointSlice` resources will exist for the exported `Service`, with each
 `EndpointSlice` containing only endpoints from a single source cluster. An
 `EndpointSlice` created by an mcs-controller must be marked as managed by the
@@ -919,8 +778,8 @@ between the controllers.
 When a service is un-exported, the associated EndpointSlices will be deleted.
 The specific mechanism by which they are deleted is an implementation detail.
 
-Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
-given `EndpointSlice` will reference its `ServiceImport` using the label
+Since a given imported service may be backed by multiple `EndpointSlices`, a
+given `EndpointSlice` will reference its originating service using the label
 `multicluster.kubernetes.io/service-name` similarly to how an `EndpointSlice` is
 associated with its `Service` in a single cluster.
 
@@ -933,27 +792,11 @@ source cluster.
 
 If the implementation is using `EndpointSlice`s in this way, the mcs-controller
 is responsible for managing the imported `EndpointSlice`s and making sure they
-are conformant with this section.
+are conformant with this section. It may also set the owner reference for the
+`EndpointSlice`s it manages to point to an appropriate implementation-specific
+object.
 
 ```yaml
-apiVersion: multicluster.k8s.io/v1alpha1
-kind: ServiceImport
-metadata:
-  name: my-svc
-  namespace: my-ns
-spec:
-  ips:
-  - 42.42.42.42
-  type: "ClusterSetIP"
-  ports:
-  - name: http
-    protocol: TCP
-    port: 80
-  sessionAffinity: None
-status:
-  clusters:
-  - cluster: us-west2-a-my-cluster
----
 apiVersion: discovery.k8s.io/v1beta1
 kind: EndpointSlice
 metadata:
@@ -962,11 +805,6 @@ metadata:
   labels:
     multicluster.kubernetes.io/source-cluster: us-west2-a-my-cluster
     multicluster.kubernetes.io/service-name: my-svc
-  ownerReferences:
-  - apiVersion: multicluster.k8s.io/v1alpha1
-    controller: false
-    kind: ServiceImport
-    name: my-svc
 addressType: IPv4
 ports:
   - name: http
@@ -1041,7 +879,7 @@ Like regular services, the resulting ports must respect two rules:
 As a result, MCS-API implementations should merge ports from constituent
 services first based on port name then by the protocol and port number pair.
 The conflict resolution policy will determine which of the duplicated ports
-are used by the ServiceImport.
+are used by the imported service.
 
 #### Headlessness
 
@@ -1295,8 +1133,8 @@ retain the flexibility of selectors.
 `ServiceExport` initially had no spec and seemed like it could just be
 replaced with an annotation, e.g. `multicluster.kubernetes.io/export`. When a
 service is found with the annotation, it would be considered marked for export
-to the clusterset. The controller would then create `EndpointSlices` and an
-`ServiceImport` in each cluster exactly as described above. Unfortunately,
+to the clusterset. The controller would then create `EndpointSlices`
+in each cluster exactly as described above. Unfortunately,
 `Service` does not have an extensible status and there is no way to represent
 the state of the export on the annotated `Service`. We could extend
 `Service.Status` to include `Conditions` and provide the flexibility we need,
@@ -1307,7 +1145,7 @@ resource.
 
 ### Other conflict resolution algorithms
 
-When a service has a ServiceExport and a ServiceImport, we could have taken the
+When a service has a ServiceExport locally, we could have taken the
 approach of favoring a "local truth" by giving a higher precedence to the locally
 exported Service in the conflict resolution algorithm. This alternative
 approach was not adopted, as in this KEP we favored global consistency across
@@ -1324,7 +1162,8 @@ alternative conflict resolution algorithm could hinder this ease of use.
 ### Exporting labels/annotations from the Service/ServiceExport objects
 
 `Service` and `ServiceExport` have labels and annotations which could be used during
-export and propagated to the `ServiceImport`. However various tools such as kubectl or
+export and propagated to a representation of imported services in consuming clusters.
+However various tools such as kubectl or
 ArgoCD add some labels and annotations which would then need to be actively
 filtered to avoid any conflict. Filtering those labels and annotations is not
 something easy and we chose to avoid this problem entirely by not using the metadata
