@@ -716,7 +716,7 @@ Focusing mostly on:
 
 In the v1.35 alpha release, we are not considering introducing new API types yet.
 
-In v1.36 we are making chages into `CSIDriver` object by adding the field `PreventPodPlacementWithoutDriver`.
+In v1.36 we are making changes into `CSIDriver` object by adding the field `PreventPodPlacementWithoutDriver`.
 
 <!--
 Describe them, providing:
