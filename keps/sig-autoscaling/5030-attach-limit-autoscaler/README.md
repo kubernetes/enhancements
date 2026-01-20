@@ -105,7 +105,8 @@ To summarize:
 
 After:
 
-- Scheduler CSI plugin assumes that "no information about a CSI driver published in a CSINode" means "0 limit for volumes from that driver" (but with opt-in).
+- By default, the scheduler CSI plugin still assumes that "no information about a CSI driver published in a CSINode" means "the node can handle unlimited amount of volumes".
+- Only when explicitly opted in in CSIDriver instance, the scheduler CSI plugin assumes that "no information about a CSI driver published in a CSINode" means "the node cannot handle any volumes".
 - No change for existing Nodes with CSI driver information already published - CA and scheduler still behave correctly.
 - Scheduler waits until all relevant CSI driver info is published before scheduling a Pod, removing the race condition for new Nodes.
 - Cluster Autoscaler correctly simulates "upcoming" CSINodes for "upcoming" Nodes and makes correct scale-up decisions.
