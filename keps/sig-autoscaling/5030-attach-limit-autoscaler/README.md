@@ -241,7 +241,7 @@ A future enhancement could incorporate https://github.com/kubernetes/autoscaler/
 
 ## Kubernetes Scheduler change
 
-We also propose that, if given node is not reporting any installed CSI drivers, we do not schedule pods that need CSI volumes to that node, if ClusterAdmin has explicitly opt-in via following `CSIDriver` change:
+We also propose that the new scheduler behavior is opt-in via a new field in `CSIDriver`. If given node is not reporting any installed CSI drivers and `CSIDriver` has explicitly opted in, we do not schedule pods that need CSI volumes to that node.
 
 ```golang
 type CSIDriverSpec struct {
