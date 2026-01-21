@@ -973,10 +973,151 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-This will be covered by automated tests before transition to beta by bringing up a KinD cluster and
-changing the feature gate for individual components.
 
-Roundtripping of API types is covered by unit tests.
+Upgrade, downgrade, and upgrade->downgrade->upgrade paths would be tested using an automated testing framework.
+
+**Testing Framework**
+
+A new testing framework has been developed for DRA upgrade/downgrade testing
+(see [kubernetes/kubernetes#135664](https://github.com/kubernetes/kubernetes/pull/135664) and [kubernetes/kubernetes#136156](https://github.com/kubernetes/kubernetes/pull/136156)).
+
+**Testing Strategy for Beta**
+
+Given the historical difficulty of implementing comprehensive upgrade/downgrade tests and the need for a clear path forward, the testing approach balances **required coverage for beta graduation** with **comprehensive long-term testing goals**. The scenarios below are organized accordingly.
+
+**DRAExtendedResources Test Scenarios**
+
+For the DRAExtendedResources feature, the following test scenarios are planned for implementation in `test/e2e_dra/extendedresources_test.go`:
+
+**REQUIRED FOR BETA:**
+
+1. **Basic Feature Enablement**
+   - Deploy workloads requesting extended resources via pod spec (e.g., `example.com/gpu: 1`)
+   - Configure `DeviceClass` with `extendedResourceName` field mapping to DRA devices
+   - Create `ResourceSlice` advertising devices
+   - Verify pods are scheduled and devices are allocated correctly
+   - Validate that the special `ResourceClaim` is created by the scheduler
+   - Check `pod.status.extendedResourceClaimStatus` contains correct mapping
+
+2. **Enablement Testing** (Feature Gate: OFF → ON)
+   - **Pre-enablement state**: Cluster running with DRAExtendedResource feature disabled
+     - Workloads using device plugin extended resources function normally
+   - **Enablement**: Enable DRAExtendedResource feature gate on API server, kube controller manager, scheduler, and the kubelet
+   - **Post-enablement validation**:
+     - Existing pods with device plugin resources continue to run without disruption
+     - New pods can request extended resources backed by DRA
+     - DeviceClass with extendedResourceName is processed correctly
+     - Scheduler creates special ResourceClaims for new pods
+     - Resource quota accounting works for both device plugin and DRA-backed resources
+   - **Workload transition**:
+     - Create DeviceClass mapping to DRA devices on specific nodes
+     - Deploy new pods requesting the same extended resource name
+     - Verify pods are scheduled on the nodes
+     - Verify device allocation through DRA driver
+
+3. **Upgrade and Downgrade Testing** (version n-1 → n → n-1)
+   - **Initial state (version n-1)**: Cluster running version n-1 with DRAExtendedResource feature enabled
+     - Install test DRA driver with devices on cluster nodes
+     - Create DeviceClass with extendedResourceName mapping
+     - Deploy workloads requesting extended resources backed by DRA
+     - Verify special ResourceClaims are created by scheduler
+     - **Step 1 validation**: Run test workloads and verify device allocation works correctly
+   - **Upgrade** (n-1 → n): Upgrade cluster to version n while keeping DRAExtendedResource feature gate enabled
+   - **Post-upgrade validation (version n)**:
+     - Existing pods with DRA-backed extended resources continue to run without disruption
+     - Special ResourceClaims created in n-1 remain valid and functional
+     - **Step 2 validation**: Deploy new pods requesting extended resources backed by DRA
+     - Scheduler in version n correctly creates special ResourceClaims
+     - Resource quota accounting continues to work correctly
+     - No API compatibility issues with DeviceClass or Pod.status.extendedResourceClaimStatus
+     - Verify backward compatibility of special ResourceClaim format
+   - **Downgrade** (n → n-1): Downgrade cluster back to version n-1 while keeping feature gate enabled
+   - **Post-downgrade validation (version n-1)**:
+     - Pods and ResourceClaims created in version n continue to function correctly
+     - **Step 3 validation**: Verify scheduler in downgraded version can still handle existing allocations
+     - New pods can be scheduled with extended resources backed by DRA
+     - Device allocation and cleanup continue to work properly
+
+4. **API Object Persistence**
+   - Verify `DeviceClass.spec.extendedResourceName` field persists across upgrades
+   - Verify `pod.status.extendedResourceClaimStatus` persists correctly
+   - Roundtripping of API types is covered by unit tests
+
+**COMPREHENSIVE COVERAGE (Expanded testing for GA and long-term robustness):**
+
+The following scenarios provide thorough coverage of edge cases and complex state transitions. While valuable for ensuring long-term feature robustness, they are not hard requirements for beta graduation. These tests will be implemented based on available resources and prioritized for GA.
+
+5. **Disablement Testing** (Feature Gate: ON → OFF)
+   - **Pre-disablement state**: Cluster with DRAExtendedResource enabled and active workloads
+     - Some pods using DRA-backed extended resources
+     - Special ResourceClaims exist
+   - **Disablement**: Disable DRAExtendedResource feature gate
+   - **Post-disablement validation**:
+     - Existing pods with DRA-backed resources continue running (CDI devices remain prepared)
+     - New pods with extended resource requests can only use device plugin resources
+     - Scheduler no longer creates special ResourceClaims
+     - API server accepts but ignores extendedResourceName in DeviceClass
+     - Existing special ResourceClaims are not deleted (handled by garbage collector)
+
+6. **Enablement→Disablement→Enablement Path**
+   - **Initial enablement**: OFF → ON (as described in scenario 2)
+   - **Disablement**: ON → OFF
+     - Delete all pods using DRA-backed extended resources
+     - Verify special ResourceClaims are cleaned up by garbage collector
+     - Verify resource accounting is updated correctly
+   - **Re-enablement**: OFF → ON
+     - Scheduler can recreate special ResourceClaims for new workloads
+     - No stale state from previous enable/disable cycles
+     - Resource allocation works correctly
+
+7. **Mixed Node Scenarios**
+   - Cluster with some nodes using device plugin and others using DRA for the same resource name
+   - Verify pods can be scheduled to either type of node appropriately
+   - Ensure one node cannot have both device plugin and DRA for same resource simultaneously
+   - Validate node transition: remove device plugin, add DRA driver on same node
+
+8. **Implicit Extended Resource Name Testing**
+   - Deploy workloads requesting extended resources using the implicit name format `deviceclass.resource.kubernetes.io/<device-class-name>`
+   - Create `DeviceClass` without setting the explicit `extendedResourceName` field
+   - Verify pods can request devices using the implicit extended resource name in their resource requests
+   - Validate that the scheduler creates special `ResourceClaim` for implicit requests
+   - Verify that both explicit and implicit extended resource names can coexist in the cluster
+
+**Test Implementation Location**
+
+Tests can be implemented in:
+- `test/e2e_dra/extendedresources_test.go` - End-to-end upgrade/rollback tests
+- Unit tests in scheduler and kubelet packages - Component-level validation
+
+**Example Test Pattern**
+
+```go
+func TestDRAExtendedResourcesEnablementDisablement(tCtx *ktesting.TC) {
+    tCtx.Run("initial-cluster-setup", func(tCtx *ktesting.TC) {
+        // Create cluster with feature disabled
+    })
+
+    tCtx.Run("feature-enablement", func(tCtx *ktesting.TC) {
+        // Enable DRAExtendedResource feature gate
+        // Deploy DeviceClass, ResourceSlice
+        // Deploy pods requesting extended resources
+        // Verify special ResourceClaim creation
+    })
+
+    tCtx.Run("feature-disablement", func(tCtx *ktesting.TC) {
+        // Disable feature gate
+        // Verify existing workloads continue
+        // Verify new workloads use device plugin only
+    })
+
+    tCtx.Run("feature-re-enablement", func(tCtx *ktesting.TC) {
+        // Re-enable feature
+        // Verify clean state, no stale data
+    })
+}
+```
+
+The testing approach ensures core functionality is validated for beta graduation through the required scenarios (1-4), while comprehensive coverage scenarios (5-8) provide thorough edge case testing that will be prioritized for GA based on available resources and implementation feasibility.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1225,7 +1366,8 @@ For each of them, fill in the following information by copying the below templat
 ## Implementation History
 
 - Kubernetes 1.34: KEP accepted.
-- Kubernetes 1.35: promotion to beta.
+- Kubernetes 1.35: Feature in alpha.
+- Kubernetes 1.36: Promotion to beta.
 
 ## Drawbacks
 
