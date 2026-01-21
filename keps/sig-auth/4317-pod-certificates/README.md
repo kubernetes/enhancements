@@ -148,20 +148,23 @@ workloads.
 
 ### PodCertificateRequest Resource
 
-PodCertificateRequest is a new API type in certificates.k8s.io/v1alpha1.  It's a
+PodCertificateRequest is a new API type in certificates.k8s.io.  It's a
 stripped-down version of CertificateSigningRequest that is tailored directly to
 the pod certificate issuance use case.
 
 PodCertificateRequest is fundamentally a statement that "Pod X is requesting a
-certificate from Signer Y".  PodCertificateRequests contain a stub PKCS#10 CSR, that the pod author can minimally customize in order to meet the needs of ACME-based CAs, but in the typical case the signer is expected to ignore the contents of the CSR and issue whatever certificate they like to the subject public key.
-* A stub PKCS#10 CSR.  This CSR is normally completely empty, and the signer
-  merely extracts the subject public key from it in order to issue a certificate
-  with the signer's documented format.  However, to enable integration with
-  ACME-based CAs, the CSR may contain DNS SANs.
-* The subject public key in the CSR must be one of:
-  * An RSA key with modulus size 3072 or 4096,
-  * An ECDSA key with curve P256, P384, or P521, or
-  * An ED25519 key.
+certificate from Signer Y".  PodCertificateRequests contain:
+* A stub PKCS#10 CSR.
+  * This CSR is normally completely empty, and the signer merely extracts the
+    subject public key from it in order to issue a certificate with the signer's
+    documented format.
+  * However, to enable integration with ACME-based CAs, the CSR may contain DNS
+    and IP SANs.  The podCertificate projected volume type allows the pod author
+    to request particular SANs to appear in the CSR.
+  * The subject public key in the CSR must be one of:
+    * An RSA key with modulus size 3072 or 4096,
+    * An ECDSA key with curve P256, P384, or P521, or
+    * An ED25519 key.
 * Details of the requesting Pod's identity:
   * Namespace (indicated by the namespace the PodCertificateRequest is created in).
   * Pod name
@@ -207,6 +210,7 @@ PodCertificateRequest validation logic will:
 * Confirm that the public key is one of the supported key types.
 * Verify the signature on the PKCS#10 CSR to confirm proof-of-possession of the
   private key.
+* Verify that the PKCS#10 CSR is empty except for possible IP and DNS SANs.
 * Confirm that the issued chain (if one is set) consists of valid certificates.
 * To stay ahead of tighter certifificate validation coming in future versions of
   Go, we also check:
@@ -297,25 +301,25 @@ type PodCertificateRequestSpec struct {
 	// signerName indicates the request signer.
 	SignerName string `json:"signerName" protobuf:"bytes,1,opt,name=signerName"`
 
-  // unverifiedUserAnnotations allow pod authors to pass additional information to
-  // the signer implementation.  Kubernetes does not restrict or validate this
-  // metadata in any way.
-  //
-  // Entries are subject to the same validation as object metadata annotations,
-  // with the addition that all keys must be domain-prefixed. No restrictions
-  // are placed on values, except an overall size limitation on the entire field.
-  //
-  // Signers should document the keys and values they support.  Signers should
-  // deny requests that contain keys they do not recognize.
-  UnverifiedUserAnnotations map[string]string `json:"unverifiedUserAnnotations,omitempty" protobuf:"bytes,11,opt,name=unverifiedUserAnnotations"`
+	// unverifiedUserAnnotations allow pod authors to pass additional information to
+	// the signer implementation.  Kubernetes does not restrict or validate this
+	// metadata in any way.
+	//
+	// Entries are subject to the same validation as object metadata annotations,
+	// with the addition that all keys must be domain-prefixed. No restrictions
+	// are placed on values, except an overall size limitation on the entire field.
+	//
+	// Signers should document the keys and values they support.  Signers should
+	// deny requests that contain keys they do not recognize.
+	UnverifiedUserAnnotations map[string]string `json:"unverifiedUserAnnotations,omitempty" protobuf:"bytes,11,opt,name=unverifiedUserAnnotations"`
 
 	// maxExpirationSeconds is the requested lifetime for the certificate.  This
-  // should be treated as a maximum, as both kube-apiserver and the signer 
-  // implementation may substitute a shorter expiration.
-  //
-  // If this field is set to 0 during creation of the PodCertificateRequest, then 
-  // kube-apiserver will set it to 24 hours.  kube-apiserver will then shorten
-  // the value to the maximum expiration configured for the requested signer.
+	// should be treated as a maximum, as both kube-apiserver and the signer 
+	// implementation may substitute a shorter expiration.
+	//
+	// If this field is set to 0 during creation of the PodCertificateRequest, then 
+	// kube-apiserver will set it to 24 hours.  kube-apiserver will then shorten
+	// the value to the maximum expiration configured for the requested signer.
 	MaxExpirationSeconds int32 `json:"expirationSeconds" protobuf:"bytes,2,opt,name=expirationSeconds"`
 
 	// podName is the name of the pod into which the certificate will be mounted.
@@ -337,13 +341,22 @@ type PodCertificateRequestSpec struct {
 
 	// DEPRECATED: This field is replaced by UnverifiedPKCS10Request. If
 	// UnverifiedPKCS10Request is set, this field must be empty.
+	//
+	// This field will not be carried forward to certificates.k8s.io/v1.
+	//
+	// Signer implementations should extract the public key from UnverifiedPKCS10Request.
 	PKIXPublicKey []byte `json:"pkixPublicKey" protobuf:"bytes,9,opt,name=pkixPublicKey"`
 
 	// DEPRECATED: This field is replaced by UnverifiedPKCS10Request. If
 	// UnverifiedPKCS10Request is set, this field must be empty.
+	//
+	// This field will not be carried forward to certificates.k8s.io/v1.
+	//
+	// Signer implementations do not need to verify any proof of possession; this
+	// is handled by kube-apiserver.
 	ProofOfPossession []byte `json:"proofOfPossession" protobuf:"bytes,10,opt,name=proofOfPossession"`
 
-  // A PKCS#10 certificate signing request generated by Kubelet using the
+	// A PKCS#10 certificate signing request generated by Kubelet using the
 	// subject private key.
 	//
 	// Most signer implementations will ignore the contents of the CSR except to
@@ -370,7 +383,7 @@ type PodCertificateRequestSpec struct {
 	// implementation can then pass on to the CA.
 	//
 	// By default the request is completely empty, but the pod spec author may
-	// request one or more DNS SANs using the pkcs10RequestParameters field on
+	// request one or more DNS and IP SANs using the pkcs10RequestParameters field on
 	// the pod certificate projected volume spec.
 	//
 	// The signer and CA implementation MUST NOT trust the contents of this
@@ -384,10 +397,10 @@ type PodCertificateRequestSpec struct {
 type PodCertificateRequestStatus struct {
 	// conditions applied to the request. Known conditions are "Denied",
 	// "Failed", and "SuggestedKeyType".
-  //
-  // If the request is denied with `Reason=UnsupportedKeyType`, the signer
-  // may have suggested a key type that will work in the `Reason` field of a
-  // `SuggestedKeyType` condition.
+	//
+	// If the request is denied with `Reason=UnsupportedKeyType`, the signer
+	// may have suggested a key type that will work in the `Reason` field of a
+	// `SuggestedKeyType` condition.
 	//
 	// +listType=map
 	// +listMapKey=type
@@ -404,31 +417,31 @@ type PodCertificateRequestStatus struct {
 	// field remains empty.
 	//
 	// Validation requirements:
-  //  1. certificateChain must consist of one or more PEM-formatted certificates.
-  //  2. Each entry must be a valid PEM-wrapped, DER-encoded ASN.1 Certificate as
-  //     described in section 4 or RFC5280.
+	//  1. certificateChain must consist of one or more PEM-formatted certificates.
+	//  2. Each entry must be a valid PEM-wrapped, DER-encoded ASN.1 Certificate as
+	//     described in section 4 or RFC5280.
 	//
 	// If more than one block is present, and the definition of the requested
 	// spec.signerName does not indicate otherwise, the first block is the
 	// issued certificate, and subsequent blocks should be treated as
 	// intermediate certificates and presented in TLS handshakes.  When
 	// projecting the chain into a pod volume, kubelet will preserve the exact
-  // contents of certificateChain.
-  //
+	// contents of certificateChain.
+	//
 	// +optional
 	CertificateChain string `json:"certificateChain,omitempty" protobuf:"bytes,2,opt,name=certificateChain"`
 
 	// issuedAt is the time at which the signer issued the certificate.  This
 	// field is set via the /status subresource.  Once populated, it is
-	// immutable.  The signer must set this field at the same time it sets 
-  // certificateChain.
+	// immutable.  The signer must set this field at the same time it sets
+	// certificateChain.
 	//
 	// +optional
 	IssuedAt *metav1.Time `json:"issuedAt,omitempty" protobuf:"bytes,3,opt,name=issuedAt"`
 
 	// notBefore is the time at which the certificate becomes valid.  This field
 	// is set via the /status subresource.  Once populated, it is immutable.  The 
-  // signer must set this field at the same time it sets certificateChain.
+	// signer must set this field at the same time it sets certificateChain.
 	//
 	// +optional
 	NotBefore *metav1.Time `json:"notBefore,omitempty" protobuf:"bytes,4,opt,name=notBefore"`
@@ -437,16 +450,16 @@ type PodCertificateRequestStatus struct {
 	// refresh the certificate.  This field is set via the /status subresource,
 	// and must be set at the same time as certificateChain.  Once populated,
 	// this field is immutable.
-  //
-  // This field is only a hint.  Kubelet may start refreshing before or after
-  // this time if necessary.
+	//
+	// This field is only a hint.  Kubelet may start refreshing before or after
+	// this time if necessary.
 	//
 	// +optional
 	BeginRefreshAt *metav1.Time `json:"beginRefreshAt,omitempty" protobuf:"bytes,5,opt,name=beginRefreshAt"`
 
 	// notAfter is the time at which the certificate expires.  This field is set
 	// via the /status subresource.  Once populated, it is immutable.  The 
-  // signer must set this field at the same time it sets certificateChain.
+	// signer must set this field at the same time it sets certificateChain.
 	//
 	// +optional
 	NotAfter *metav1.Time `json:"notAfter,omitempty" protobuf:"bytes,6,opt,name=notAfter"`
@@ -466,10 +479,10 @@ const (
 	// doesn't support the key type of publicKey.
 	PodCertificateRequestConditionUnsupportedKeyType string = "UnsupportedKeyType"
 
-  // InvalidUnverifiedUserAnnotations should be set on "Denied" conditions when the signer
-  // does not recognize one of the keys passed in userConfig, or if the signer
-  // otherwise considers the userConfig of the request to be invalid.
-  PodCertificateRequestConditionInvalidUserConfig string = "InvalidUnverifiedUserAnnotations"
+	// InvalidUnverifiedUserAnnotations should be set on "Denied" conditions when the signer
+	// does not recognize one of the keys passed in userConfig, or if the signer
+	// otherwise considers the userConfig of the request to be invalid.
+	PodCertificateRequestConditionInvalidUserConfig string = "InvalidUnverifiedUserAnnotations"
 )
 ```
 
@@ -489,9 +502,9 @@ parameters. Key types supported by kubelet are "RSA3072", "RSA4096",
 "ECDSAP256", "ECDSAP384", "ECDSAP521", and "ED25519".
 
 To allow signer implementations to be backed by an ACME CA such as Let's
-Encrypt, the pod spec author can request DNS SANs that Kubelet will embed in the
-PKCS#10 CSR it generates.  In the future, other customizations based on the
-[ACME Identifier Type
+Encrypt, the pod spec author can request DNS and IP Subject Alternate Names that
+Kubelet will embed in the PKCS#10 CSR it generates.  In the future, other
+customizations based on the [ACME Identifier Type
 Registry](https://www.iana.org/assignments/acme/acme.xhtml#acme-identifier-types)
 might be supported.
 
@@ -670,12 +683,22 @@ type PodCertificateProjection struct {
 // See the ACME Identifier Types registry [1] for PKCS#10 fields that
 // ACME-compatible CAs *may* support.
 //
+// In total, up to 100 SANs may be requested.
+//
 // [1] https://www.iana.org/assignments/acme/acme.xhtml#acme-identifier-types
 type PKCS10RequestParameterSpec struct {
 	// DNS Subject Alternate Names that will be included in the request.
+	//
+	// Each entry will be validated as a DNS name (maximum length 253, all
+	// ASCII characters).
 	DNS []string `json:"dns,omitempty" protobuf:"bytes,1,rep,name=dns"`
-}
 
+	// IP Address Subject Alternate Names that will be included in the request.
+	//
+	// Entries must be either IPv4 addresses in dotted-decimal form ("192.0.2.1"),
+	// or IPv6 addresses ("2001:db8::68").
+	IPAddresses []string
+}
 
 // ...
 
@@ -719,7 +742,7 @@ type VolumeProjection struct {
 	// use the certificates it issues.
 	//
 	// +featureGate=PodCertificateProjection
-  // +optional
+	// +optional
 	PodCertificate *PodCertificateProjection `json:"podCertificate,omitempty" protobuf:"bytes,6,opt,name=podCertificate"`
 }
 ```
@@ -766,12 +789,14 @@ capability to read back the existing key from the projected volume on startup.
 
 #### Story 1
 
-Several example signers built on the alpha feature set are available in the
+Several example signers built on the beta feature set are available in the
 [mesh-examples repository](https://github.com/ahmedtd/mesh-example).
 
 I'm an application developer building an application that I want to deploy into
 my cluster.  I want my application to receive a SPIFFE client certificate that
 can be used to authenticate to an external API.
+
+I install a signer (hypothetically, `mysigner.example/spiffe`) into my cluster.
 
 I add a new projected volume to my pod:
 ```yaml
@@ -795,7 +820,7 @@ spec:
     projected:
       sources:
       - podCertificate:
-          signerName: "row-major.net/spiffe"
+          signerName: "mysigner.example"
           keyType: ED25519
           credentialBundlePath: credentialbundle.pem
 ```
@@ -806,11 +831,14 @@ client certificate to authenticate to external APIs.
 
 #### Story 2: ACME-based signer
 
-An application developer wants their pod to have a public CA certificate for a certain domain name, issued by Let's Encrypt, or another ACME-based WebPKI CA.
+An application developer wants their pod to have a public CA certificate for a
+certain domain name, issued by Let's Encrypt, or another ACME-based WebPKI CA.
 
-The developer has deployed a hypothetical `row-major.net/letsencrypt` signer implementation into their cluster.
+The developer has deployed a hypothetical `mysigner.example/letsencrypt` signer
+implementation into their cluster.
 
-The application developer can then request a certificate for `myapp.example.com` to be mounted into their pod.
+The application developer can then request a certificate for `myapp.example.com`
+to be mounted into their pod.
 
 ```yaml
 apiVersion: v1
@@ -831,7 +859,7 @@ spec:
     projected:
       sources:
       - podCertificate:
-          signerName: "row-major.net/letsencrypt"
+          signerName: "mysigner.example/letsencrypt"
           keyType: ED25519
           credentialBundlePath: credentialbundle.pem
           pkcs10RequestParameters:
@@ -956,6 +984,10 @@ For Beta:
 * Migrate kubelet implementation to use the beta API.
 * Deprecate and remove the alpha API.
 
+For GA:
+* The `PKIXPublicKey` and `ProofOfPossession` fields will not be promoted to v1.
+  They will remain on the v1beta1 API until it is removed.
+
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -1031,6 +1063,17 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+The UnverifiedPKCS10Request field will be added to the v1beta1 API in 1.36, and
+at the same time Kubelet will be migrated to generate PodCertificateRequests
+using the new field (leaving PKIXPublicKey and ProofOfPossession empty).  If any
+workloads in the cluster are actively using Pod Certificate projected volumes
+sources, it will be necessary to ensure that all API server replicas are updated
+to 1.36 before upgrading Kubelets.
+
+If downgrading back to 1.35 is necessary, it will need to be done in reverse
+order.  All Kubelets will need to be downgraded to 1.35 before any API server
+can be downgraded.
 
 ### Version Skew Strategy
 
