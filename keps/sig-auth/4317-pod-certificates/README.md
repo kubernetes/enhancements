@@ -834,7 +834,7 @@ client certificate to authenticate to external APIs.
 An application developer wants their pod to have a public CA certificate for a
 certain domain name, issued by Let's Encrypt, or another ACME-based WebPKI CA.
 
-The developer has deployed a hypothetical `mysigner.example/letsencrypt` signer
+The developer has deployed a hypothetical `mysigner.example/acme-webpki` signer
 implementation into their cluster.
 
 The application developer can then request a certificate for `myapp.example.com`
@@ -859,7 +859,7 @@ spec:
     projected:
       sources:
       - podCertificate:
-          signerName: "mysigner.example/letsencrypt"
+          signerName: "mysigner.example/acme-webpki"
           keyType: ED25519
           credentialBundlePath: credentialbundle.pem
           pkcs10RequestParameters:
