@@ -68,7 +68,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This KEP proposes a way to let Dynamic Resource Allocation (DRA) drivers control the order in which
 the DynamicResources Allocator attempts to allocate devices to ResourceClaims. Since the allocator
-has a best-fit algorithm, the order in which devices are evaluated can affect both which devices
+has a first-fit algorithm, the order in which devices are evaluated can affect both which devices
 are allocated to a claim and how long it will take the allocator to find a set of devices that meet
 all the criteria.
 
@@ -113,9 +113,11 @@ different resource pool than node-local devices.
 * The need for this feature is partly a result of not having scoring, and as a result,
   the scheduler only does a first-fit search for devices. With scoring, the order of the
   devices across resource pools and ResourceSlices doesn't matter since the allocator
-  would evaluate all sets of devices to choose the one with the best fit. So this
-  feature will be less relevant once we get scoring, but we don't
-  currently have any timeline for when that might happen.
+  would be responsible for determining which sets of devices that needs to be evaluated
+  to know that we have at least close to a best-fit solution. Note that this doesn't necessarily
+  mean all possible sets of devices will have to be evaluated as that might be too
+  expensive. So this feature might be less relevant when we implement scoring, but we don't
+  currently have any timeline for when - or if - that might happen.
 
 * This will require that the order of ResourceSlices and resource pools are sorted
   in the allocator. This means additional work in the allocator so it might
@@ -143,7 +145,7 @@ type ResourceSliceSpec struct {
     //
     // This field is optional and ResourceSlices without a value
     // specified is assumed to have a priority of zero. This means
-    // that a negative value means that devices in the ResourceSlice
+    // that devices in a ResourceSlice with a negative value
     // will be evaluated after devices in ResourceSlices without a
     // value specified.
     //
@@ -168,7 +170,7 @@ type ResourcePool struct {
     //
     // This field is optional and resource pool without a value
     // specified is assumed to have a priority of zero. This means
-    // that a negative value means that devices in the resource pool
+    // that devices in a resource pool with a negative value
     // will be evaluated after devices in resource pools without a
     // value specified.
     //
