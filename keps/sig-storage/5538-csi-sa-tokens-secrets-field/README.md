@@ -230,7 +230,11 @@ New tests will be added for:
 
 - Feature gate locked to true (always enabled)
 - At least one CSI driver updated to use the secrets field
+  - Secrets Store CSI Driver using secrets field for tokens: [PR](https://github.com/kubernetes-sigs/secrets-store-csi-driver/pull/1979)
+  - Fallback logic implemented in Azure File CSI Driver: [PR](https://github.com/kubernetes-sigs/azurefile-csi-driver/pull/2945)
+  - Fallback logic implemented in Blob CSI Driver: [PR](https://github.com/kubernetes-sigs/blob-csi-driver/pull/2305)
 - Clear best practice documentation and migration guides
+  - This is already done in the [beta blog post](https://kubernetes.io/blog/2026/01/07/kubernetes-v1-35-csi-sa-tokens-secrets-field-beta/)
 
 ### Upgrade / Downgrade Strategy
 
