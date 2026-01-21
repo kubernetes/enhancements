@@ -21,6 +21,7 @@ A standardized API enables:
 - Represent basic signals such as reachability and latency
 - Remain CNI-agnostic and implementation-neutral
 - Introduce the API as alpha behind a feature gate
+- Avoid requiring complete or full-mesh pod-to-pod coverage
 
 ## Non-Goals
 - Deep packet inspection
@@ -77,6 +78,32 @@ actual data collection and implementation to remain pluggable and
 external. As a validation step, this proposal is compatible with first
 prototyping the design as an external controller + CRD before considering
 promotion into core Kubernetes.
+
+## Scalability and Semantics Considerations
+
+A core Kubernetes API implies defined semantics and eventual conformance.
+This proposal intentionally limits scope to avoid implying universal
+guarantees or required implementations.
+
+In particular:
+- The API does not require full pod-to-pod coverage
+- It does not mandate probing or measurement strategies
+- It does not imply a complete or global view of cluster network health
+
+Full mesh measurement of pod-to-pod health is infeasible at scale
+(O(N²)) and would generate unacceptable dataplane load in large
+clusters. As such, any data exposed via this API is expected to be:
+- sampled, targeted, or workload-specific
+- partial and best-effort
+- explicitly bounded in scope
+
+The API represents *reported observations*, not guarantees of reachability
+or latency across the entire cluster.
+
+The design must remain compatible with diverse dataplanes, including
+kernel-based, DPDK, Open vSwitch, and eBPF-only implementations, without
+assuming common probing or traffic interception mechanisms.
+
 
 
 ## Alternatives Considered
