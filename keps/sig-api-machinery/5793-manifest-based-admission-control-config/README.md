@@ -119,9 +119,10 @@ controls that operates independently of the Kubernetes API.
    active before the API server begins processing requests. There must be no gap during startup
    when requests are handled but admission controls are not yet active.
 
-2. Isolated universe: Manifest-based admission control exists in a tightly scoped, hidden, and
+2. Isolated universe: Manifest-based admission control exists in a tightly scoped and
    isolated universe. It may not reference API resources, nor vice-versa. This means no paramKind
-   support, no service references, and no dynamic credentials.
+   support, no service references, and no dynamic credentials. The manifest-based admission
+   control objects will not be exposed as REST API visible API objects.
 
 3. Enable platform-level protection: Manifest-based admission control can intercept and enforce
    policies on API-based admission control resources (VAP/MAP/VAPB/MAPB/VWC/MWC), providing a
@@ -141,22 +142,21 @@ controls that operates independently of the Kubernetes API.
    server, each API server must be configured individually. This is similar to how other file-based
    configurations (e.g., encryption configuration) work today.
 
-2. Param objects for policies: No support for ValidatingAdmissionPolicy/MutatingAdmissionPolicy
-   `paramKind` references. Policies configured via manifest cannot reference ConfigMaps or other
-   cluster resources for parameters.
+2. API-dependent references: Manifest-based admission control resources may not depend on the rest API.
+    1. Param objects for policies: No support for ValidatingAdmissionPolicy/MutatingAdmissionPolicy
+    `paramKind` references. Policies configured via manifest cannot reference ConfigMaps or other
+    cluster resources for parameters.
+    2. Service references in webhooks: Only URL-based webhook endpoints are supported. Service
+    references (`clientConfig.service`) are not supported because the service network may not be
+    available at API server startup.
+    3. Credentials for webhooks: Webhooks will only use statically configured credentials
+   (e.g., `kubeConfigFile`). Service account credentials, cluster trust bundles, or other
+   API-fetched credentials are not supported. Credentials that e.g. refer to an external
+   OAuth endpoint are permitted.
 
-3. Service references in webhooks: Only URL-based webhook endpoints are supported. Service
-   references (`clientConfig.service`) are not supported because the service network may not be
-   available at API server startup.
-
-4. API visibility: Manifest-based admission control resources are not visible through the
+3. API visibility: Manifest-based admission control resources are not visible through the
    Kubernetes API. These resources cannot be controlled through the API by design, may not be
    synchronized between API servers, and exposing them (similar to mirror pods) has proven
-   error-prone in practice.
-
-5. Dynamic credentials for webhooks: Webhooks will only use statically configured credentials
-   (e.g., `kubeConfigFile`). Service account credentials, cluster trust bundles, or other
-   dynamically-fetched credentials are not supported.
 
 ## Proposal
 
@@ -322,33 +322,30 @@ plugins:
     apiVersion: apiserver.config.k8s.io/v1
     kind: WebhookAdmissionConfiguration
     kubeConfigFile: "<path-to-kubeconfig>"
-    manifestFiles:
-    - "/etc/kubernetes/admission/validating/*.yaml"
+    manifestFiles: "/etc/kubernetes/admission/validating/webhooks.yaml"
 - name: MutatingAdmissionWebhook
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
     kind: WebhookAdmissionConfiguration
     kubeConfigFile: "<path-to-kubeconfig>"
-    manifestFiles:
-    - "/etc/kubernetes/admission/mutating/*.yaml"
+    manifestFiles: "/etc/kubernetes/admission/mutating/"
 - name: ValidatingAdmissionPolicy
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
     kind: ValidatingAdmissionPolicyConfiguration
-    manifestFiles:
-    - "/etc/kubernetes/admission/policies/*.yaml"
+    manifestFiles: "/etc/kubernetes/admission/policies/"
 - name: MutatingAdmissionPolicy
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
     kind: MutatingAdmissionPolicyConfiguration
-    manifestFiles:
-    - "/etc/kubernetes/admission/mutating-policies/*.yaml"
+    manifestFiles: "/etc/kubernetes/admission/mutating-policies/"
 ```
 
 The `manifestFiles` field accepts:
-- Absolute paths to individual files
-- Glob patterns (e.g., `/path/to/dir/*.yaml`)
-- Paths to directories (all `.yaml`, `.yml`, and `.json` files are loaded)
+- An absolute path to an individual file
+- An absolute path to a directory (all direct-children `.yaml`, `.yml`, and `.json` files are loaded)
+
+Glob is not suported. Relative paths are not supported.
 
 Related objects (such as a ValidatingAdmissionPolicy and its associated ValidatingAdmissionPolicyBinding)
 should be placed in the same file to ensure they are loaded and reloaded together atomically.
@@ -402,7 +399,7 @@ items:
 
 All resources in manifest files must have unique names within their type. The naming rules are:
 
-1. Uniqueness within manifests: If two manifest files define resources of the same type with
+1. Uniqueness: If two manifest files define resources of the same type with
    the same name, the API server fails to start with a descriptive error.
 
 2. Coexistence with API-based resources: Manifest-based and API-based resources are treated as
