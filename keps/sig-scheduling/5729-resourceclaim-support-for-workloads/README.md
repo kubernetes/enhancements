@@ -528,15 +528,21 @@ associated with the Pod's PodGroup. If a claim already exists for the PodGroup,
 it will be added to the Pod's `status.resourceClaimStatuses`. If no such claim
 exists, the controller will create one and add it to the Pod's `status`.
 
-The generated ResourceClaim will already be reconciled when Pods for which it
-is allocated are deleted or terminate. That reconciliation logic will be
-updated to including deleting ResourceClaims generated for a PodGroup when all
-Pods in the group have either been deleted or terminated. The controller will
-identify the PodGroup by the ResourceClaim's owning Workload and the PodGroup's
-name and replica key stored in annotations. Then it will map that
-`<workload>/<podgroup>/<replicakey>` key to a list of Pods using a new index on
-the existing Pod informer. When that list is empty or contains only terminated
-Pods when the ResourceClaim is reconciled, the ResourceClaim will be deleted.
+A ResourceClaim generated from a ResourceClaimTemplate for a PodGroup will
+continue to be deallocated at the same time as any other ResourceClaim: when
+its `status.reservedFor` list is empty. When a Workload-owned claim is
+deallocated, the controller will check if any other Pods in the same PodGroup
+still exist and are running. If no Pods in the group requiring that
+ResourceClaimTemplate are still running and no other Pod is using the
+ResourceClaim, the controller will delete the generated ResourceClaim.
+Efficient lookup of Pods in a given PodGroup will be enabled by a new Pod
+informer index based on keys of the form
+`<namespace>/<workload>/<podgroup>/<replicakey>` which can be calculated for
+both Pods and controller-generated ResourceClaims.
+
+After a ResourceClaim generated for a PodGroup is deleted, a new ResourceClaim
+will be created from the same ResourceClaimTemplate if new Pods in the PodGroup
+are created which reference the ResourceClaimTemplate.
 
 ### Test Plan
 
