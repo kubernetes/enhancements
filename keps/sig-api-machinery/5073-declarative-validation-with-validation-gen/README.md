@@ -15,7 +15,7 @@
     - [New Validation Tests](#new-validation-tests)
     - [Ensuring Validation Equivalence With Testing](#ensuring-validation-equivalence-with-testing)
   - [Introduce Feature Gates: <code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code>](#introduce-feature-gates-declarativevalidation--declarativevalidationtakeover)
-    - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code> Will Target Beta From The Beginning](#declarativevalidation--declarativevalidationtakeover-will-target-beta-from-the-beginning)
+    - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code> Graduation](#declarativevalidation--declarativevalidationtakeover-graduation)
   - [Linter](#linter)
   - [Documentation Generation](#documentation-generation)
 - [DV-Only Graduation Plan](#dv-only-graduation-plan)
@@ -58,7 +58,6 @@
     - [Risk: Committing to DV Only Makes Future Reversals More Costly](#risk-committing-to-dv-only-makes-future-reversals-more-costly)
       - [Mitigation: Incremental Adoption and Calculated Risk](#mitigation-incremental-adoption-and-calculated-risk)
     - [Risk: Altered Feature Gate Semantics for Mixed Validation Types](#risk-altered-feature-gate-semantics-for-mixed-validation-types)
-      - [Mitigation: Controlled Scope and Communication](#mitigation-controlled-scope-and-communication)
     - [Risk: Panics in Mixed Validation Scenarios Cause Validation to &quot;Fail-Closed&quot;](#risk-panics-in-mixed-validation-scenarios-cause-validation-to-fail-closed)
       - [Mitigation: Controlled Scope, Initial Code Review, and Comprehensive Testing](#mitigation-controlled-scope-initial-code-review-and-comprehensive-testing)
 - [Design Details](#design-details)
@@ -121,6 +120,8 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [<code>DeclarativeValidation</code> Feature Gate](#declarativevalidation-feature-gate)
+    - [<code>DeclarativeValidationTakeover</code> Feature Gate](#declarativevalidationtakeover-feature-gate)
     - [Complex Tags](#complex-tags)
     - [Straightforward Tags](#straightforward-tags)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -226,6 +227,8 @@ func Validate_ReplicationControllerSpec(opCtx operation.Context, obj, oldObj *co
 ```
 
 This generated code will then be used in the kube-apiserver to validate API requests.
+
+After three releases (v1.33-v1.35) of proven stability via mismatch metrics, the focus is transitioning to GA of the core machinery in v1.36.
 
 ## Motivation
 
@@ -343,17 +346,16 @@ Verifying that a field/type that is migrated is appropriately tested with proper
 Additionally, to aid in ensuring that the validation is identical across current hand-written validation and declarative validations, we will create a runtime check controlled by the `DeclarativeValidation` and `DeclarativeValidationTakeover` feature gates. When `DeclarativeValidation` is enabled, both hand-written and declarative validation will be run.  Any mismatches will be logged and a `declarative_validation_mismatch_total` metric will be incremented.  The `DeclarativeValidationTakeover` gate controls which result (imperative or declarative) is returned to the user.
 ### Introduce Feature Gates: `DeclarativeValidation` & `DeclarativeValidationTakeover`
 
-Two new feature gates will be introduced:
+Two feature gates were introduced to manage the rollout:
 
-*   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics (see `DeclarativeValidationTakeover` below).  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
+*   **`DeclarativeValidation`**: This gate controls whether declarative validation is *enabled* for a given resource or field. After reaching GA in v1.36, it ensures the core machinery is always available.
+*   **`DeclarativeValidationTakeover`**: This gate determines *which* validation result (imperative or declarative) is returned to the user when `DeclarativeValidation` is also enabled.
 
-*   **`DeclarativeValidationTakeover`**: This gate determines *which* validation result (imperative or declarative) is returned to the user when `DeclarativeValidation` is also enabled.  When `DeclarativeValidationTakeover` is enabled, the declarative validation result is returned. When disabled (and `DeclarativeValidation` is enabled), the imperative result is returned.  `DeclarativeValidationTakeover` has *no effect* if `DeclarativeValidation` is disabled.  This gate allows for a phased rollout where we can first verify equivalence, and *then* switch to using the declarative results.
+#### `DeclarativeValidation` & `DeclarativeValidationTakeover` Graduation
 
-#### `DeclarativeValidation` & `DeclarativeValidationTakeover` Will Target Beta From The Beginning
-
-Declarative Validation will target the Beta stage from the beginning (vs Alpha).  Additionally, `DeclarativeValidation` is targeting Beta with `default:true`.  This is because Declarative Validation is not new functionality, but an alternative implementation of validation, and users should not be able to perceive any changes when swapping hand-written validation with identical declarative validation.  The feature gate, `DeclarativeValidation`, exists as a safety mechanism in case a mistake is made so that users can turn it off and get back to safety. There is prior art for this rationale where other feature gates did not target Alpha as they were not related to new functionality (changing underlying behavior, bugfix, etc.).  An example of this is the current feature gate `AllowParsingUserUIDFromCertAuth`, which was introduced in Beta as `default:true` as it is not a net new feature but fixes a current issue ([PR](https://github.com/kubernetes/kubernetes/pull/127897), [feature gate](https://github.com/kubernetes/kubernetes/blob/master/pkg/features/versioned_kube_features.go#L228-L230)). 
-
-`DeclarativeValidationTakeover` will default to `false` initially in Beta.  This way during the initial rollout we can "soak" and verify that the errors produced for a replaced validation rule (handwritten -> declarative) are identical.  Over time the goal is to flip `DeclarativeValidationTakeover` to be default `true` such that for fields where declarative validation rules exist, they are used as the authoritative validation rule.
+*   **Beta to GA (v1.36)**:
+    *   `DeclarativeValidation` reaches GA in v1.36.
+    *   Three release cycles with no `declarative_validation_mismatch_total` or `declarative_validation_panic_total` failures in production (achieved v1.33-v1.35).
 
 ### Linter
 
@@ -1759,6 +1761,10 @@ To ensure that Declarative Validation and some of the identified potential perfo
 
 ### Graduation Criteria
 
+#### `DeclarativeValidation` Feature Gate
+*   **Beta to GA (v1.36)**:
+    *   Three release cycles with no `declarative_validation_mismatch_total` or `declarative_validation_panic_total` failures in production (achieved v1.33-v1.35).
+
 The promotion of a tag from one stability level to the next follows a defined set of criteria to ensure quality and reliability.
 
 #### Complex Tags
@@ -1983,6 +1989,8 @@ If the API server is failing to meet SLOs (latency, validation error-rate, etc.)
 ## Implementation History
 
 v1.35: Dual implementation (DV + hand-written) requirement enforced, no DV-Only usage, tag/feature stability data collection and stability codified, validation library for dual implementation
+
+v1.36: Graduate `DeclarativeValidation` to GA.
 
 ## Drawbacks
 
