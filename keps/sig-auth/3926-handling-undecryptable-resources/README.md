@@ -466,15 +466,14 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-New tests will be added to prove:
-- resources that are encrypted and are decryptable can still be deleted as before
-- resources that are malformed throw the new error on read
-- resources that are malformed cannot be removed if the user lacks required
-  permissions but uses the new DeleteOption
-- resources that are malformed can be removed if the user has proper permissions
-  and uses the new DeleteOption
-- if there are too many malformed resources in a return of a LIST action, the
-  error will be truncated
+- [TestAllowUnsafeMalformedObjectDeletionFeature](https://github.com/kubernetes/kubernetes/blob/506e4fed14e38d3dd84ac043dfe66bbc16993fa7/test/integration/controlplane/transformation/secrets_transformation_test.go#L137): [testgrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=AllowUnsafeMalformedObjectDeletion), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestAllowUnsafeMalformedObjectDeletionFeature)
+  - Verifies corrupt secrets can be deleted with feature enabled, the new option set and proper RBAC
+  - Verifies that normal deletion deletion fails with new `StorageError: corrupt object`
+  - Verifies that normal secrets can still be deleted with the feature enabled, even with corrupt objects in the database
+  - Verifies deletion of corrupt objects is blocked when feature is disabled and there is a lack of option and RBAC.
+- [TestListCorruptObjects](https://github.com/kubernetes/kubernetes/blob/506e4fed14e38d3dd84ac043dfe66bbc16993fa7/test/integration/controlplane/transformation/secrets_transformation_test.go#L426): [testgrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=AllowUnsafeMalformedObjectDeletion), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestListCorruptObjects)
+  - Verifies LIST returns errors for corrupt objects when feature is enabled
+  - Verifies error truncation when too many corrupt objects exist
 
 ##### e2e tests
 
