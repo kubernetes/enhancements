@@ -551,7 +551,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -561,6 +561,8 @@ to implement this enhancement.
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
+
+None needed.
 
 ##### Unit tests
 
@@ -583,7 +585,12 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- `k8s.io/dynamic-resource-allocation/resourceclaim`: `2026-01-21` - `89.3%`
+- `k8s.io/kubernetes/pkg/apis/core/v1`: `2026-01-21` - `79.0%`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2026-01-21` - `85.3%`
+- `k8s.io/kubernetes/pkg/apis/scheduling/v1alpha1`: `2026-01-21` - `83.3%`
+- `k8s.io/kubernetes/pkg/apis/scheduling/validation`: `2026-01-21` - `96.6%`
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: `2026-01-21` - `74.4%`
 
 ##### Integration tests
 
@@ -607,9 +614,21 @@ This can be done with:
 - permalinks to the GitHub source code
 - links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+-->
+
+New integration tests will verify:
+- New API fields in Pod and Workload are persisted or rejected correctly
+  depending on the value of the `WorkloadPodGroupResourceClaimTemplate` feature
+  gate.
+- ResourceClaimTemplates specified for PodGroups result in the correct
+  ResourceClaims being allocated for the correct Pods.
+- No inconsistent state is reached when PodGroups rapidly come and go as their
+  first Pods are created and their last Pods are deleted.
+    - ResourceClaims should continue to be created and deleted with their
+      owning PodGroups such that Pods still schedule and no ResourceClaims are
+      orphaned.
 
 ##### e2e tests
 
@@ -626,9 +645,25 @@ This can be done with:
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 If e2e tests are not necessary or useful, explain why.
--->
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+-->
+
+New e2e tests will verify correct behavior at key points in the lifecycle of a
+Workload and its PodGroups.
+
+- When a Workload referencing a ResourceClaimTemplate for one of its PodGroups
+  is created and no Pods in that group exist yet, no ResourceClaim is
+  generated.
+- When the first Pod is created for the PodGroup, a ResourceClaim is generated.
+- When subsequent Pods in the PodGroup are created, no additional
+  ResourceClaims are generated and the Pods are all allocated the same existing
+  ResourceClaim.
+- When all but one Pod in the PodGroup are deleted, the ResourceClaim is not
+  deleted and remains allocated.
+- When all of the Pods in the PodGroup have been deleted, then the
+  ResourceClaim is deallocated and deleted.
+
 
 ### Graduation Criteria
 
