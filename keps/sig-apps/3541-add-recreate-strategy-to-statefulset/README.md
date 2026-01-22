@@ -138,7 +138,7 @@ spec:
 
 ### Why Existing Solutions Are Insufficient
 
-1. [MaxUnavailable](https://github.com/kubernetes/enhancements/issues/961) Doesn't Address the Core Issue.
+1. [MaxUnavailable](https://github.com/kubernetes/enhancements/issues/961) doesn't address the core issue.
     The `maxUnavailable` option in `RollingUpdate` strategy allows multiple pods to be updated simultaneously, but its behavior depends on `podManagementPolicy`.
 
     ```yaml
@@ -230,6 +230,12 @@ Adding `Recreate` update strategy to StatefulSets addresses these issues by:
 
 ### Notes/Constraints/Caveats (Optional)
 
+- Strategy Type Change Does Not Trigger Rollout: changing only `.spec.updateStrategy.type` from `RollingUpdate` to `Recreate` (or vice versa) does not trigger a new rollout. This is consistent with Deployment behavior. The StatefulSet controller uses the `controller-revision-hash` label to identify pod revisions, which is computed from `.spec.template` content only.
+
+The Recreate behavior will only be triggered when users either:
+   1. Make a change to `.spec.template`
+   2. Force a rollout using `kubectl rollout restart`
+
 ### Risks and Mitigations
 
 #### Risk: Unintended Data Loss
@@ -301,8 +307,6 @@ ENDIF
 
 IF current_phase == "ReadyForCreation" THEN
     // Phase 3: Create pods with new revision up to desired replica count
-    emit_event("RecreateCreatingPods", "Creating new pods with updated spec")
-    
     // Create pods for missing ordinals 0 to replicas-1
     FOR i = 0 TO replicas-1:
         IF pod with ordinal i does not exist THEN
@@ -315,7 +319,6 @@ ENDIF
 IF current_phase == "Complete" THEN
     // All replicas exist with current revision
     set_condition("Progressing", status="True", reason="RecreateComplete")
-    emit_event("RecreateCompleted", "All pods recreated successfully")
     return
 ENDIF
 
@@ -404,12 +407,6 @@ const (
     StatefulSetProgressing StatefulSetConditionType = "Progressing"
     
     StatefulSetAvailable StatefulSetConditionType = "Available"
-
-    // RecreateInProgress indicates that a Recreate strategy update is currently in progress
-    RecreateInProgressReason = "RecreateInProgress"
-    
-    // RecreateComplete indicates that a Recreate strategy update has completed
-    RecreateCompleteReason = "RecreateComplete"
 )
 ```
 
@@ -436,7 +433,7 @@ spec:
 - When update is triggered (e.g., template change):
   1. All pods (web-0 through web-9) are deleted simultaneously
   2. Controller waits for all pods to fully terminate
-  3. All new pods (web-0 through web-9) are created simultaneously
+  3. All new pods (web-0 through web-9) are created according to their `.spec.podManagementPolicy`
   4. Pods start and become Ready independently
 - Downtime occurs between deletion and recreation phases
 - No stuck pod scenarios - all pods are forcibly deleted
@@ -457,24 +454,16 @@ The implementation requires changes to the StatefulSet controller in `pkg/contro
    - No Readiness Waiting: Unlike RollingUpdate, do not block on pod Ready state
 
 3. Status Condition Management:
-   - Add `Progressing` condition to StatefulSet status (similar to Deployment)
-   - Set `status: "True"` and `reason: "RecreateInProgress"` during phases 1-2
-   - Set `status: "True"` and `reason: "RecreateComplete"` after phase 3
+   - Add `Progressing` condition to StatefulSet status
 
-4. Event Emission:
-   - Emit `RecreateStarted` event when beginning pod deletion phase
-   - Emit `RecreateWaitingTermination` event during termination wait phase
-   - Emit `RecreateCompleted` event when all new pods are created
-
-5. Validation:
+4. Validation:
    - API validation in `pkg/apis/apps/validation/validation.go`
    - Validate `type: Recreate` can be set on StatefulSet
    - No additional fields required for Recreate strategy (unlike RollingUpdate which has partition, maxUnavailable)
 
-6. No Ordering Semantics:
-   - Recreate strategy deliberately ignores `podManagementPolicy`
-   - All pods deleted/created in parallel regardless of OrderedReady vs Parallel setting
-   - Aligns with Deployment Recreate behavior where ordering is not relevant
+5. Respect Ordering Semantics:
+   - Recreate strategy according to `podManagementPolicy` settings
+   - All pods deleted at once and then re-created according to `podManagementPolicy` settings
 
 ### Comparison with Existing Solutions
 
@@ -509,10 +498,9 @@ We should cover below scenarios:
   - All pods are deleted when update is triggered (template spec change)
   - Controller waits for all pods to fully terminate (no pods with deletionTimestamp remain)
   - All new pods are created simultaneously after termination complete
-  - Status condition `Progressing=True` with `reason=RecreateInProgress` during deletion/termination phases
+  - Status condition `Progressing=True`
   - Status condition `Progressing=True` with `reason=RecreateComplete` after pods created
-  - Events emitted: `RecreateStarted`, `RecreateWaitingTermination`, `RecreateCompleted`
-- Ordering independence: Recreate strategy ignores `podManagementPolicy` setting (both OrderedReady and Parallel behave identically)
+  - Ordering independence: Recreate strategy ignores `podManagementPolicy` setting (both OrderedReady and Parallel behave identically)
 - PVC preservation: PersistentVolumeClaims are not deleted during Recreate (only pods are deleted)
 - Stuck pod handling: Pods stuck in any state are forcibly deleted (ImagePullBackOff, Pending, CrashLoopBackOff, etc.)
 - Validation: API validation accepts `type: Recreate` on StatefulSet
@@ -665,6 +653,9 @@ No, unit and integration tests will be added to cover feature gate enablement/di
 ###### What specific metrics should inform a rollback?
 
 - `statefulset_unavailable_replicas` shows how many Statefulset replicas are unavailable
+- `workqueue_depth{name="statefulset"}` shows the current depth of the StatefulSet controller queue
+- `workqueue_queue_duration_seconds{name="statefulset"}` shows how long items wait in queue before processing
+- `workqueue_retries_total{name="statefulset"}` shows retry counts which may indicate processing failures
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -690,24 +681,14 @@ kubectl get statefulsets -A -o json | \
 
 ```sh
 kubectl get statefulsets -A -o json | \
-  jq '.items[] | select(.status.conditions[]? | select(.type=="Progressing" and .reason=="RecreateInProgress"))'
-```
-
-- By monitoring events:
-
-```sh
-kubectl get events -A --field-selector reason=RecreateStarted
-kubectl get events -A --field-selector reason=RecreateCompleted
+  jq '.items[] | select(.status.conditions[]? | select(.type=="Progressing"))'
 ```
 
 ###### How can someone using this feature know that it is working for their instance?
 
-- [x] Events
-  - Event Reason: `RecreateStarted` - emitted when Recreate update begins (all pods being deleted)
-  - Event Reason: `RecreateWaitingTermination` - emitted while waiting for all pods to terminate
-  - Event Reason: `RecreateCompleted` - emitted when all new pods are created
+- [] Events
 - [x] API .status
-  - Condition name: `Progressing` with reason `RecreateInProgress` or `RecreateComplete`
+  - Condition name: `Progressing`
 - [x] Metrics (existing metrics, no new ones needed)
   - `statefulset_replicas_available` - drops to 0 during Recreate, then increases as new pods become ready
   - `statefulset_replicas_ready` - tracks how many replicas are ready after recreation
@@ -766,7 +747,7 @@ Yes, minor increases in size when `type: Recreate` is used.
 Per StatefulSet using Recreate strategy:
 
 - **Spec**: ~8 bytes (strategy type enum value: "Recreate")
-- **Status**: ~150-200 bytes when Progressing condition is active with RecreateInProgress/RecreateComplete reason
+- **Status**: ~150-200 bytes when Progressing condition is active
 - **Total**: ~160-210 bytes per StatefulSet
 
 For a cluster with 1000 StatefulSets using Recreate strategy:
@@ -819,12 +800,11 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check StatefulSet Status and Events (look for `RecreateInProgress` or stalled conditions)
-2. Examine Metrics (`statefulset_replicas_available`, `statefulset_replicas_ready`)
+1. Examine Metrics (`statefulset_replicas_available`, `statefulset_replicas_ready`)
    - If `statefulset_replicas_available` is stuck at 0 for extended period → pods may be stuck in termination
    - If `statefulset_replicas_current` is increasing but `statefulset_replicas_ready` is not → pods may be failing to start
-3. Check if pods are stuck in termination (long grace periods, finalizers blocking deletion)
-4. Verify pod startup time is reasonable (image pull, initialization containers, readiness probes)
+2. Check if pods are stuck in termination (long grace periods, finalizers blocking deletion)
+3. Verify pod startup time is reasonable (image pull, initialization containers, readiness probes)
 
 ## Implementation History
 
