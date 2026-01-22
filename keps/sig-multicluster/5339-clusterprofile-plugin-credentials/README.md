@@ -220,24 +220,23 @@ The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api
 
 ### Standardizing the Provider definition
 
-In order to populate the Cluster object that the exec provider requires, we standardize a new field in ClusterProfile called `credentialProviders` that is stored in the Status of the ClusterProfile.
+In order to populate the Cluster object that the exec provider requires, we standardize a new field in ClusterProfile called `accessProviders` that is stored in the Status of the ClusterProfile.
 All the data from this structure is specific to the clusterProfile and does not contain any Controller-specific information. It must be usable by different
-controller, applications or consumers without requiring changes. It also cannot contain any data considered a secret; and we consider that reachability information
-is not sensitive.
+controller, applications or consumers without requiring changes. It also cannot contain any data considered a secret; and we consider that reachability information is not sensitive.
 
 The definition is as follows:
 ```
-type CredentialProviders struct {
+type AccessProviders struct {
   // +listType=map
   // +listMapKey=name
-  credentialProviders []CredentialsConfig // mapping of credentials types to their config. In some cases the cluster may recognize different identity types and they may have different endpoints or TLS config.
+  accessProviders []AccessConfig // mapping of access provider types to their config. In some cases the cluster may recognize different identity types and they may have different endpoints or TLS config.
 }
 
-// CredentialsTypes defines the type of credentials that are accepted by the cluster. For example, GCP credentials (tokens that are understood by GCP's IAM) are designated by the string `google`.
-type CredentialsType string
+// AccessType defines the type of access provider that is used to reach the cluster. For example, GCP access (using tokens that are understood by GCP's IAM) is designated by the string `google`.
+type AccessType string
 
-// CredentialsConfig gives more details on data that is necessary to reach out the cluster for this kind of Credentials
-type CredentialsConfig struct {
+// AccessConfig gives more details on data that is necessary to reach out the cluster for this kind of access provider
+type AccessConfig struct {
   Name string // name of the provider type
   Cluster *Cluster // Configuration to reach the cluster (endpoints, proxy, etc) // See following section for details.
 }
@@ -303,7 +302,7 @@ Some credential providers require cluster-specific, non-secret parameters (for e
 
 Reference: [client.authentication.k8s.io/v1 Cluster: `config` sourced from `extensions[client.authentication.k8s.io/exec]`](https://kubernetes.io/docs/reference/config-api/client-authentication.v1/#client-authentication-k8s-io-v1beta1-Cluster)
 
-Example (embedded in `ClusterProfile.status.credentialProviders[].cluster`):
+Example (embedded in `ClusterProfile.status.accessProviders[].cluster`):
 
 ```
 extensions:
@@ -333,7 +332,7 @@ status:
      value: some-clusterset
    - name: location
      value: us-central1
-  credentialProviders:
+  accessProviders:
   - name: google
     cluster:
       server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
@@ -351,7 +350,7 @@ spec:
   clusterManager:
     name: inhouse-manager
 status:
-  credentialProviders:
+  accessProviders:
   - name: secretreader
     cluster:
       server: https://<spoke-server>
@@ -365,19 +364,19 @@ status:
 
 ### Configuring plugins in the controller
 
-Plugins are selected by a string which represents the type of credentials that is expected by the cluster, for example, "google" for GKE Clusters.
+Plugins are selected by a string which represents the type of access provider that is used to reach the cluster, for example, "google" for GKE Clusters.
 This allows the controller to attach a different binary name or path for the binary.
 
-It is expected that the library will have a mapping from its supported type of credentials to the expected binary to call. The library would be fed via a repeated flag `clusterprofile-creds-provider` for ease of use.
-The flag maps a credentials type to the associated binary and potential flags that should be passed. It cannot contain cluster-specific information (which is not known at that time).
+It is expected that the library will have a mapping from its supported type of access provider to the expected binary to call. The library would be fed via a repeated flag `clusterprofile-access-provider` for ease of use.
+The flag maps an access provider type to the associated binary and potential flags that should be passed. It cannot contain cluster-specific information (which is not known at that time).
 ```
-./controller ... --clusterprofile-creds-provider "google='/usr/bin/gke-gcloud-auth-plugin --flag1 value1 --flag2 value2'"
+./controller ... --clusterprofile-access-provider "google='/usr/bin/gke-gcloud-auth-plugin --flag1 value1 --flag2 value2'"
 ```
 
 Despite being a flag, we can express the equivalent structure for each Plugin:
 ```
 type Provider struct {
-  CredentialsType string
+  AccessType string
   ExecutablePath string
   args []string
 }
