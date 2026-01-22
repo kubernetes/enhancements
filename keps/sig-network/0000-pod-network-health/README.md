@@ -61,7 +61,7 @@ Exact fields will be refined during review.
 - No default probing required
 - Implementations may be controller-based, node-based, or vendor-provided
 
-## Why a Core Kubernetes API?
+## Why Consider Standardizing This API in Kubernetes?
 
 While pod-to-pod network health can be measured using an external
 controller and CRD, the motivation for a core Kubernetes API is to
@@ -79,9 +79,44 @@ external. As a validation step, this proposal is compatible with first
 prototyping the design as an external controller + CRD before considering
 promotion into core Kubernetes.
 
+## Intersection with Existing Kubernetes APIs
+
+A key question for this proposal is whether this functionality should
+exist as an external CRD or as a core Kubernetes API.
+
+This proposal argues for a core API based on how the resource naturally
+intersects with existing Kubernetes objects and control plane behavior.
+
+Specifically, PodNetworkHealth observations are tightly coupled to:
+
+- **Pods** (as first-class core objects being referenced)
+- **Nodes** (where observations may originate)
+- **NetworkPolicy** debugging and validation workflows
+- **kubectl describe / status** style operational diagnostics
+- Potential future integration with **Events** and **Conditions**
+- Standard tooling that today understands only core APIs
+
+While a CRD can represent similar data, it remains opaque to:
+
+- Native `kubectl` UX and discovery
+- Generic controllers and ecosystem tooling
+- Future integration with Pod Status, Events, or Conditions
+- Consistent behavior across Kubernetes distributions and platforms
+
+If standardized within Kubernetes, such an API could make it easier for
+tools and operators to rely on a common vocabulary for reporting
+network health observations without depending on tool-specific CRDs
+or schemas.
+
+However, this proposal does not assume that this must immediately be a
+core API. An external CRD-based prototype is a valid and encouraged
+first step to validate usefulness, scalability, and semantics before
+considering any form of standardization within Kubernetes.
+
+
 ## Scalability and Semantics Considerations
 
-A core Kubernetes API implies defined semantics and eventual conformance.
+Any standardized Kubernetes API would imply defined semantics and eventual conformance.
 This proposal intentionally limits scope to avoid implying universal
 guarantees or required implementations.
 
@@ -104,6 +139,34 @@ The design must remain compatible with diverse dataplanes, including
 kernel-based, DPDK, Open vSwitch, and eBPF-only implementations, without
 assuming common probing or traffic interception mechanisms.
 
+```yaml
+apiVersion: networking.k8s.io/v1alpha1
+kind: PodNetworkHealth
+metadata:
+  name: pod-a-to-pod-b
+spec:
+  sourcePodRef:
+    namespace: default
+    name: pod-a
+  targetPodRef:
+    namespace: default
+    name: pod-b
+status:
+  reachable: true
+  latencyMillis: 3
+  lastObservedTime: "2026-01-22T10:15:30Z"
+  observedFromNode: worker-node-1
+```
+
+---
+
+This example illustrates how the resource relates to existing core objects:
+
+- `core/v1 Pod`
+- `core/v1 Node`
+- NetworkPolicy debugging workflows
+- Potential future integration with Pod Conditions or Events
+- Native `kubectl describe` diagnostics
 
 
 ## Alternatives Considered
