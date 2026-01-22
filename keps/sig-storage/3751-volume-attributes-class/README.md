@@ -1075,6 +1075,8 @@ Major milestones might include:
 - 2023-11-09 Implementation merged in kubernetes-csi/external-resizer
 - First available release: Alpha in Kubernetes 1.29
 - 2024-08-14: Beta in Kubernetes 1.31
+- 2025-04-30: GA in Kubernetes 1.34
+- 2025-12-18: Lock VolumeAttributesClass feature gate and bump preferred storage version to v1 in Kubernetes 1.36
 
 Implementations in CSI Drivers:
 - [AWS EBS CSI Driver](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/a402256d03ab3008f642e70253acb4b41d674af0/pkg/driver/controller.go#L581)

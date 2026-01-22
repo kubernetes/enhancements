@@ -5,7 +5,7 @@ authors:
   - "@yuqi-zhang"
   - "@sohankunkerkar"
 owning-sig: sig-node
-status: implementable
+status: implemented
 creation-date: 2023-05-04
 last-updated: 2024-09-30
 reviewers:
@@ -14,7 +14,7 @@ approvers:
   - "@mrunalp"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively

@@ -7,7 +7,7 @@ authors:
 owning-sig: sig-cli
 participating-sigs:
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2019-02-22
 reviewers:
   - "@deads2k"

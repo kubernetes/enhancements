@@ -4,3 +4,5 @@
 kep-number: 5055
 alpha:
   approver: "@soltysh"
+beta:
+  approver: "@soltysh"

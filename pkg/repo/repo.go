@@ -19,7 +19,6 @@ package repo
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -181,7 +180,7 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 
 func (r *Repo) SetGitHubToken(tokenFile string) error {
 	if tokenFile != "" {
-		token, err := ioutil.ReadFile(tokenFile)
+		token, err := os.ReadFile(tokenFile)
 		if err != nil {
 			return err
 		}
@@ -199,7 +198,7 @@ func (r *Repo) getProposalTemplate() ([]byte, error) {
 		ProposalFilename,
 	)
 
-	return ioutil.ReadFile(path)
+	return os.ReadFile(path)
 }
 
 func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
@@ -459,7 +458,7 @@ func (r *Repo) LoadPullRequestKEPs(sig string) ([]*api.Proposal, error) {
 // within the given repoPath, or an error if the Proposal is invalid
 func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) {
 	fullKEPPath := filepath.Join(repoPath, kepPath)
-	b, err := ioutil.ReadFile(fullKEPPath)
+	b, err := os.ReadFile(fullKEPPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read KEP metadata for %s: %w", fullKEPPath, err)
 	}

@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,7 +166,7 @@ func printJSONOutput(filePath string, proposals api.Proposals) error {
 		return err
 	}
 
-	if err := ioutil.WriteFile(filePath, data, 0755); err != nil {
+	if err := os.WriteFile(filePath, data, 0o755); err != nil {
 		return err
 	}
 
