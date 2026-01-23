@@ -67,8 +67,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes a way to let Dynamic Resource Allocation (DRA) drivers control the order in which
-the DynamicResources Allocator attempts to allocate devices to ResourceClaims. Since the allocator
-has a first-fit algorithm, the order in which devices are evaluated can affect both which devices
+the scheduler attempts to allocate devices to ResourceClaims. Since the allocator
+has a first-fit algorithm, the order in which devices are considered can affect both which devices
 are allocated to a claim and how long it will take the allocator to find a set of devices that meet
 all the criteria.
 
@@ -81,7 +81,7 @@ in the ResourceClaim. As soon as it finds a set of devices that works, it stops 
 returns the solution.
 
 If the ResourceClaim asks for a GPU with at least 1Gi of memory and the ResourceSlices contains
-devices with memory ranging from 1Gi to 80Gi, the order in which devices are evaluated are
+devices with memory ranging from 1Gi to 80Gi, the order in which devices are considered are
 important. If the allocator attempts a GPU with 80Gi of memory first, it will find that it
 satisfies the ResourceClaim and it will be returned as the solution. But this is not a very
 efficient solution since allocating a GPU with just the right amount of memory would be
@@ -99,11 +99,11 @@ different resource pool than node-local devices.
 ### Goals
 
 * Give DRA drivers a way to signal to the allocator the order in which devices should
-  be evaluated.
+  be considered.
 
 ### Non-Goals
 
-* Provide a way to order the way the allocator evaluates devices across drivers.
+* Provide a way to order the way the allocator considers devices across drivers.
 * Full implementation of scoring.
 
 ## Proposal
@@ -113,9 +113,9 @@ different resource pool than node-local devices.
 * The need for this feature is partly a result of not having scoring, and as a result,
   the scheduler only does a first-fit search for devices. With scoring, the order of the
   devices across resource pools and ResourceSlices doesn't matter since the allocator
-  would be responsible for determining which sets of devices that needs to be evaluated
+  would be responsible for determining which sets of devices that needs to be considered
   to know that we have at least close to a best-fit solution. Note that this doesn't necessarily
-  mean all possible sets of devices will have to be evaluated as that might be too
+  mean all possible sets of devices will have to be considered as that might be too
   expensive. So this feature might be less relevant when we implement scoring, but we don't
   currently have any timeline for when - or if - that might happen.
 
@@ -137,16 +137,16 @@ type ResourceSliceSpec struct {
     ...
 
     // Priority specifies the order in which the allocator should
-    // evaluate devices from ResourceSlices when allocating devices
+    // consider devices from ResourceSlices when allocating devices
     // for ResourceClaims. A higher value means the allocator will
-    // evaluate devices from the ResourceSlice before devices from
+    // consider devices from the ResourceSlice before devices from
     // ResourceSlices with a lower value. Devices from ResourceSlices
-    // with the same value can be evaluated in any order.
+    // with the same value can be considered in any order.
     //
     // This field is optional and ResourceSlices without a value
     // specified is assumed to have a priority of zero. This means
     // that devices in a ResourceSlice with a negative value
-    // will be evaluated after devices in ResourceSlices without a
+    // will be considered after devices in ResourceSlices without a
     // value specified.
     //
     // +optional
@@ -159,11 +159,11 @@ type ResourcePool struct {
     ...
 
     // Priority specifies the order in which the allocator should
-    // evaluate devices from resource pools when allocating devices
+    // consider devices from resource pools when allocating devices
     // for ResourceClaims. A higher value means the allocator will
-    // evaluate devices from the resource pool before devices from
+    // consider devices from the resource pool before devices from
     // resource pools with a lower value. Devices from resource pools
-    // with the same value can be evaluated in any order. The ordering
+    // with the same value can be considered in any order. The ordering
     // only applies to resource pools from the same driver. DRA does
     // not provide a way to specify the ordering between resource pools
     // from different drivers.
@@ -171,8 +171,11 @@ type ResourcePool struct {
     // This field is optional and resource pool without a value
     // specified is assumed to have a priority of zero. This means
     // that devices in a resource pool with a negative value
-    // will be evaluated after devices in resource pools without a
+    // will be considered after devices in resource pools without a
     // value specified.
+    //
+    // For pools with the same priority, whether explicit or implicit,
+    // pools without binding conditions are considered first.
     //
     // +optional
     Priority *int64
@@ -226,10 +229,16 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-Start of v1.36 development cycle (2026-01-14):
+<!--
+Generated with:
+go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/...  ./staging/src/k8s.io/dynamic-resource-allocation/structured ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+-->
+
+Start of v1.36 development cycle (2026-01-23):
 
 - `k8s.io/dynamic-resource-allocation/structured`: 33.3%
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.2%
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: 93.1%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.0%
 
 ##### Integration tests
 
