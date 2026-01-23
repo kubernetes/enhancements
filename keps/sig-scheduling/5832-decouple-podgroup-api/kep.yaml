@@ -1,0 +1,44 @@
+title: Decouple PodGroup API 
+kep-number: 5832
+authors:
+  - "@helayoty"
+  - "@mm4tt"
+  - "@erictune"
+
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-apps
+  - sig-api-machinery
+status: implementable
+creation-date: 2026-01-23
+reviewers:
+  - "@wojtek-t"
+  - "@dom4ha"
+approvers:
+  - "@macsko"
+  - "@sanposhiho"
+
+see-also:
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/583-coscheduling"
+replaces:
+  - "/keps/sig-scheduling/583-coscheduling"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+
+feature-gates:
+  - name: GangScheduling-PodGroup
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - 
