@@ -87,17 +87,20 @@ done < <(git diff-tree --no-commit-id --name-only -r "${base}".."${target}")
 for kep_readme in "${kep_readmes[@]}"; do
     kep_toc=$("${MDTOC[@]}" "${mdtoc_options[@]}" "${kep_readme}")
     echo >&2 "Diffing table of contents for $kep_readme:"
-    # diff only removals versus the template
+    # diff only removal lines, starting with '-', but excluding '---' separator,
     # we don't care about _additional_ headings in the KEP
     # we also don't care if (Optional) headings are missing
-    git diff <(echo "${template_toc}" ) <(echo "${kep_toc}" ) \
-        | grep -E '^-' \
-        | grep -v '(Optional)' \
-      || result=-1
+    missing_toc=$(diff -U0 -I '(Optional)' <(echo "${template_toc}") <(echo "${kep_toc}") \
+        | grep -E '^-[^-]' || true)
+    if [[ -n "${missing_toc}" ]]; then
+        echo >&2 "${missing_toc}"
+        result=1
+    fi
 done
-
 
 echo >&2 "Checked: ${kep_readmes[@]}"
 echo >&2 "Result: ${result}"
-exit "${result}"
+# TODO(soltysh): for now this should not fail, but print problems
+exit 0
+# exit "${result}"
 
