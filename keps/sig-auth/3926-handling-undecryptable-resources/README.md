@@ -712,11 +712,20 @@ No impact on rollout or rollback.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-If the average time of `apiserver_request_duration_seconds{verb="delete"}` or
-`apiserver_request_duration_seconds{verb="list"}` the amount of
-`apiserver_current_inqueue_requests` or `apiserver_current_inflight_requests`
-increases greatly over an extended period of time this feature might have
-caused a performance regression.
+
+**Important context:** This feature is for emergency cluster recovery. During remediation,
+temporary performance degradation is expected and acceptable. The following metrics will
+spike when corrupt objects are deleted - this is the feature working correctly, not a problem.
+
+Rollback should only be considered if:
+
+1. **Unexpected cache resets** — `apiserver_watch_cache_initializations_total` spikes occur
+   when no corrupt object deletion was performed. This would indicate the feature gate
+   enablement itself is causing unintended side effects.
+
+2. **Recovery does not complete** — After corrupt object deletion, the system should stabilize
+   within minutes. If `apiserver_storage_list_total` remains elevated for an extended period
+   (>10 minutes for typical clusters), clients may be stuck in reconnection loops.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -824,17 +833,24 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-    - Metric name: `apiserver_request_duration_seconds`
-      [Optional] Aggregation method:
-        - `verb=delete` > track latency increase from deleting corrupt objects (the latency should actually shorten)
-        - `verb=list` > track latency increase from client re-lists
-      Components exposing the metric: kube-apiserver
-    - Metric name: `apiserver_current_inqueue_requests`
-      Components exposing the metric: kube-apiserver
-      Details: Detect apiserver overload from request queueing
-    - Metric name: `apiserver_current_inflight_requests`
-      Components exposing the metric: kube-apiserver
-      Details: Detect apiserver being maxed out on requests consistently
+
+  **Note:** During corrupt object deletion remediation, temporary metric spikes are expected
+  and acceptable. The priority is restoring cluster functionality, not maintaining SLOs.
+
+  - Metric name: `apiserver_watch_cache_initializations_total`
+    - Labels: `group`, `resource`
+    - Components exposing the metric: kube-apiserver
+    - Details: Increments when watch cache rebuilds. A spike correlating with corrupt
+      object deletion confirms the expected recovery flow triggered. After remediation
+      completes, this should return to baseline (typically zero or very low).
+  
+  - Metric name: `apiserver_storage_list_total`
+    - Labels: `group`, `resource`
+    - Components exposing the metric: kube-apiserver
+    - Details: Tracks LIST operations hitting etcd storage. Expect a transient spike
+      as clients reconnect and rebuild caches. Recovery is complete when this returns
+      to pre-remediation levels.
+
 - [ ] Other (treat as last resort)
     - Details:
 
@@ -844,8 +860,25 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-- No new metric for tracking unsafe deletions is required. The available metrics (`apiserver_request_duration_seconds`) are sufficient to track the functionality of this feature. 
-  often.
+
+The existing metrics provide sufficient observability for tracking cache rebuilds and recovery:
+
+- `apiserver_watch_cache_initializations_total` — confirms cache rebuild occurred
+- `apiserver_storage_list_total` — tracks recovery progress (client re-lists)
+
+**Known gap:** `apiserver_storage_decode_errors_total` only covers decode errors in `store.go`
+operations (GET, LIST, etc.), not in `watcher.go` transform/decode failures. This means the
+metric won't increment specifically for the corrupt object deletion watch flow. This is
+acceptable because:
+
+1. The feature is for emergency recovery where detailed decode error counts are less
+   critical than successful deletion.
+2. The cache rebuild metrics above provide sufficient signal that the flow completed.
+3. Adding watcher-specific decode error metrics would require broader consensus in
+   sig-instrumentation.
+
+For tracking actual feature usage (unsafe deletions performed), operators should use audit logs
+and search for the `apiserver.k8s.io/unsafe-delete-ignore-read-error` annotation.
 
 ### Dependencies
 

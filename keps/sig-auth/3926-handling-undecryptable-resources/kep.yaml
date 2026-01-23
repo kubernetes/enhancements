@@ -36,7 +36,8 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
+# Note: These metrics spike during remediation - this is expected and acceptable.
+# See README.md "Monitoring Requirements" section for details.
 metrics:
-- apiserver_request_duration_seconds
-- apiserver_current_inqueue_requests
-- apiserver_current_inflight_requests
+- apiserver_watch_cache_initializations_total
+- apiserver_storage_list_total
