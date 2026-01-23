@@ -143,13 +143,15 @@ This is mitigated by:
 
 ## Design Details
 
-We use a similar concept as already implemented in the node and service controller. Through node informers we register event handlers for the add, delete and update node events, where updates are filtered by certain criteria. To introduce the feature we establish a new feature gate called `CloudControllerManagerWatchBasedRoutesReconciliation`. Additionally, we gate a new metric `route_controller_route_sync_total`, which tracks the number of route reconciliations.
+We use a similar concept as already implemented in the node and service controller. Through node informers we register event handlers for the add, delete and update node events, where updates are filtered by certain criteria. To introduce the feature we establish a new feature gate called `CloudControllerManagerWatchBasedRoutesReconciliation`.
 
 ```
 <<[UNRESOLVED @joelspeed @lukasmetzner]>>
 We had a discussion about adding a new metric for A/B testing. To not miss the v1.35 milestone, we decided to postpone this metric until the beta stage, which is planned for milestone v1.36.
 <<[/UNRESOLVED]>>
+
 ```
+Additionally, we introduce a new non-gated metric `route_controller_route_sync_total`, which tracks the number of route reconciliations. This metric can be used for A/B testing to evaluate the impact of watch based route reconciliation.
 
 #### Full reconcile
 
