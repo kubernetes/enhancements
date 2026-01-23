@@ -286,6 +286,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 #### GA
 - Quantify the cAdvisor and kubelet-level overhead of PSI metric collection, especially where PSI is disabled at the kernel level.
 - Validate with SIG Node that collection overhead is acceptable for general use cases, or include opt-out knobs.
+- Exoanded stress testing with diverse environments and scenarios, while maintining acceptable minimal resource consumption like outlined in Beta perf testing.
 - Gather evidence of real-world usage from beta users.
 - No major issues reported.
 
