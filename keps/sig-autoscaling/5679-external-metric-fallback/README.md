@@ -229,7 +229,7 @@ This approach:
 
 #### Story 1: SaaS Application Scaling on Queue Depth
 
-I run a SaaS application that scales based on a cloud provider's message queue depth (external metric). Occasionally, the cloud provider's metrics API experiences brief outages (5-10 minutes). During these outages, my HPA cannot scale, and customer requests queue up. 
+As an operator, I run a SaaS application that scales based on a cloud provider's message queue depth (external metric). Occasionally, the cloud provider's metrics API experiences brief outages (5-10 minutes). During these outages, I would like my HPA fallback to a manual configuration, ensuring sufficient capacity to handle the presumed backlog safely.
 
 With this feature, I can configure:
 ```yaml
