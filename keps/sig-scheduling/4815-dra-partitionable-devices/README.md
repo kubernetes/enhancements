@@ -1260,6 +1260,11 @@ extending the production code to implement this enhancement.
 - `<package>`: `<date>` - `<test coverage>`
 -->
 
+<!--
+Generated with:
+go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/incubating ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/stable | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+-->
+
 Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
 
 - `k8s.io/dynamic-resource-allocation/cel`: 88.8%
@@ -1271,14 +1276,17 @@ We have integration tests that validates the theoretical maximum size of the
 ResourceSlice resource to make sure it remains within the size limitations
 of etcd.
 
-Start of v1.36 development cycle (01/04/2026):
+Start of v1.36 development cycle (01/23/2026):
 - `k8s.io/dynamic-resource-allocation/cel`: 85.2%
 - `k8s.io/dynamic-resource-allocation/structured`: 33.3%
-- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 75.4%
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 83.2%
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: 93.1%
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: 92.2%
+- `k8s.io/dynamic-resource-allocation/structured/internal/stable`: 67.7%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.6%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 83.3%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 83.5%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 44.2%
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 81.5%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.0%
 
 ##### Integration tests
 
@@ -1407,7 +1415,7 @@ Kubernetes components themselves. They are written by 3rd-party drivers.
 However, the scheduler does consume these objects and track information from
 them in order to make scheduling decisions.
 
-Unit tests exists in the scheduler that verifies that enabling /
+Unit tests exist in the scheduler that verify that enabling /
 disabling of the DRAPartitionableDevices feature gate is non-disruptive to the
 scheduler.
 
@@ -1450,9 +1458,9 @@ have to be restarted.
 One indicator are unexpected restarts of the cluster control plane
 components (kube-scheduler, apiserver, kube-controller-manager).
 
-If the scheduler_pending_pods metric in the kube-scheduler suddenly increases of
-remains constant, it can suggest that pods are no longer gettings scheduled which
-might be due to a problem with the DRA scheduler plugin. Another are an increase
+If the scheduler_pending_pods metric in the kube-scheduler suddenly increases or
+remains constant, it can suggest that pods are no longer getting scheduled which
+might be due to a problem with the DRA scheduler plugin. Another measure is an increase
 in the number of pods that fail to start, as indicated by the
 kubelet_started_containers_errors_total metric.
 
@@ -1522,7 +1530,8 @@ No
 ###### Does this feature depend on any specific services running in the cluster?
 
 This feature depends on the DRA structured parameters feature being enabled, and on DRA drivers being deployed.
-There are no requirements beyond those already needed for DRA structured parameters.
+There are no requirements beyond those already needed for DRA structured parameters. Core DRA is locked to on in
+1.36, but it can still be disabled through emulation.
 
 ### Scalability
 
