@@ -978,7 +978,7 @@ extending the production code to implement this enhancement.
 
 <!--
 Generated with:
-go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/incubating ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/stable | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
 -->
 
 Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
@@ -999,11 +999,14 @@ Start of 1.36 development cycle (01/15/2026):
 
 - `k8s.io/dynamic-resource-allocation/cel`: 85.2%
 - `k8s.io/dynamic-resource-allocation/structured`: 33.3%
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: 93.1%
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: 92.2%
+- `k8s.io/dynamic-resource-allocation/structured/internal/stable`: 67.7%
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.6%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 83.3%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 83.5%
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 44.2%
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.3%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.0%
 
 ##### Integration tests
 
@@ -1365,6 +1368,10 @@ See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dr
 ###### What are other known failure modes?
 
 See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
+
+The failure mode where the scheduler fails to schedule pods because searching for available
+devices that match the request becomes more likely when this feature is used, since it can
+increase the number of device combinations that the scheduler needs to search through.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
