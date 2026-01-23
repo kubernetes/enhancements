@@ -378,7 +378,7 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes, but starting in v1.35 where this feature graduates to GA, the KubeletPSI feature gate will be locked to true and will no longer be disable-able.
+Yes, but starting in v1.36 where this feature graduates to GA, the KubeletPSI feature gate will be locked to true and will no longer be disable-able.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 No PSI metrics will be available in kubelet Summary API nor Prometheus metrics if the
