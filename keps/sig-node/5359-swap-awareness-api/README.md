@@ -44,16 +44,16 @@
 
 ## Summary
 
-This KEP proposes a new API to allow users to control the amount of swap a
-container can use. The current swap behavior in Kubernetes is implicit and can
-lead to under-utilization of swap provisioned on the node. The explicit API
-control for swap enables k8s users to directly manage swap decisions for their
-workloads, eliminating assumptions about preferences. This KEP proposes to
-remove existing swap limitations for other features and QoS classes, e.g: In-Pod
-Place Pod Resize and CPU pinning in the Guaranteed class, allowing these
-workloads to also benefit from swap without restrictions.  This proposal
-introduces a "WorkloadControlledSwap" mode where swap usage is explicitly
-defined by the user per container. This allows for better resource management
+This KEP proposes a new API to give users control over how much swap a
+container can use. The current swap behavior in Kubernetes is implicit, which can
+lead to under-utilization of swap provisioned on a node. Explicit API
+control for swap enables Kubernetes users to directly manage swap for their
+workloads, eliminating assumptions about their requirements. This proposal also
+removes existing swap restrictions for features like In-Place
+Pod Resize and for Guaranteed pods (e.g. those with CPU pinning), allowing these
+workloads to benefit from swap. This KEP introduces a
+"WorkloadControlledSwap" mode where swap usage is explicitly
+defined by the user for each container. This allows for better resource management
 and safer overcommitment of swap resources on a node.
 
 ## Motivation
@@ -76,11 +76,11 @@ KEP are to
     `swap.limit=0`.
 -  enable workloads to declare the maximum _acceptable_ swap limits for
     their containers.
--  enable users to configure swap with other QoS classes, such as
-    'guaranteed', while still giving the required protection by maintaining the
-    default setting as 'disabled'.  
+-  enable users to configure swap for containers of any QoS class (including
+    `Guaranteed` and `BestEffort`), removing QoS-based restrictions on swap
+    while maintaining the safe default of swap being disabled.
 -  allow safely overcommit on swap to fully leverage available node capacity.
--  facilitate k8s node features like in-place pod resize and CPU pinning on
+-  facilitate kubernetes node features like in-place pod resize and CPU pinning on
     swap enabled nodes by eliminating implicit swap assumptions on pods.
 
 ### Non Goals
@@ -205,7 +205,8 @@ kubeletConfiguration:
 ### Proposed Design: Limits-Only Model
 
 Swap limits are configured per container for a cleaner resource model. This
-avoids the ambiguity of swap requests.
+avoids the ambiguity of swap requests. To enforce this, API-level validation
+will be added to forbid non-zero values for `requests.swap`.
 
 -  **Rationale:** "policy" fits per pod, swap "limits" are container specific
     as swap is treated by kernel per process. Starting with ‘container' limits
@@ -270,6 +271,14 @@ The default behavior for all pods in "WorkloadControlledSwap" mode is "No swap"
   </tbody>
 </table>
 
+**Note on user experience:** If a pod with `resources.limits.swap` set is
+scheduled on a node where the kubelet is configured with `NoSwap` or
+`LimitedSwap`, the pod will be admitted, but a Pod event will be generated to
+indicate that the node does not support the requested swap configuration. The
+container will run, but the specified swap limit will have no effect. This
+approach avoids disrupting pods that have already been scheduled. For explicit
+placement, users should use node labels and selectors to ensure pods are
+scheduled on nodes with the appropriate `swapBehavior`.
 
 **Note on placement:** For cases, when explicit limit is set, the
 `NodeDeclaredFeatures` KEP is an option to explore for implicit scheduling
@@ -279,7 +288,7 @@ limits show clear user intent for these workloads to work with nodes in
 also can protect the conflicting case by not placing explicitly disabled swap
 workloads on a `LimitedSwap` node.
 
-**Note on coexistence:**  K8s cannot support ‘built-in' protection when users
+**Note on coexistence:**  Kubernetes cannot support ‘built-in' protection when users
 want to have some nodes in `LimitedSwap` and some nodes in
 `WorkloadControlledSwap` within a cluster. This placement control can be
 achieved with taints or label selectors. NFD (Node Feature Discovery) is seen as
