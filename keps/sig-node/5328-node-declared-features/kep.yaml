@@ -9,15 +9,15 @@ participating-sigs:
 
 creation-date: "2025-05-27"
 reviewers: 
-  - '@tallclair'
+  - '@SergeyKanzhelev' # sig-node-assigned-reviewer
   - '@yujuhong'
   - '@wojtek-t'
   - '@dom4ha'
   - '@macsko'
-  - '@haircommander'
+  - '@haircommander' # sig-node-assigned-reviewer
 approvers:
-- '@dchen1107'
-- '@SergeyKanzhelev'
+- '@dchen1107' # sig-node-tl
+- '@tallclair' # sig-node-assigned-approver
 - '@dom4ha'
 - '@macsko'
 status: implementable
