@@ -19,7 +19,7 @@
   - [Manifest File Format](#manifest-file-format)
   - [Naming and Conflict Resolution](#naming-and-conflict-resolution)
   - [File Watching and Dynamic Reloading](#file-watching-and-dynamic-reloading)
-  - [Validation](#validation)
+  - [Decoding, Defaulting, and Validation](#decoding-defaulting-and-validation)
   - [Metrics and Audit Annotations](#metrics-and-audit-annotations)
   - [Implementation](#implementation)
   - [Test Plan](#test-plan)
@@ -171,7 +171,10 @@ This proposal is both slightly simpler (no analogue to mirror pods) and slightly
 
 ### Supported Resource Types
 
-The following resource types are supported in manifest files:
+The following resource types are supported in manifest files. Only the v1 API version is supported
+for each type. Each admission plugin's manifest file/directory must only contain the types allowed
+for that plugin (e.g., if you want to use manifests for all four admission plugins, you need four
+separate manifest files or directories).
 
 Webhooks:
 - `admissionregistration.k8s.io/v1.ValidatingWebhookConfiguration`
@@ -182,8 +185,10 @@ Webhooks:
 CEL-based policies:
 - `admissionregistration.k8s.io/v1.ValidatingAdmissionPolicy`
 - `admissionregistration.k8s.io/v1.ValidatingAdmissionPolicyBinding`
-- `admissionregistration.k8s.io/v1.MutatingAdmissionPolicy`
-- `admissionregistration.k8s.io/v1.MutatingAdmissionPolicyBinding`
+- `admissionregistration.k8s.io/v1.MutatingAdmissionPolicy` (requires MAP to be at v1)
+- `admissionregistration.k8s.io/v1.MutatingAdmissionPolicyBinding` (requires MAP to be at v1)
+
+Note: MutatingAdmissionPolicy (MAP) is at v1beta1 as of Kubernetes 1.35 and is targeting GA in 1.36.
 
 Generic lists:
 - `v1.List` containing any of the above types
@@ -437,14 +442,24 @@ The API server watches the configured manifest files/directories for changes:
    | Parse error | Previous configuration retained; error logged |
    | Validation error | Previous configuration retained; error logged |
 
-### Validation
+### Decoding, Defaulting, and Validation
 
-Manifest-based configurations undergo stricter validation:
+Manifest files are decoded using the strict decoder, which rejects manifests containing duplicate
+fields or unknown fields. This matches the behavior of other configuration file loading in
+kube-apiserver.
+
+Each object loaded from manifest files undergoes the same versioned defaulting and validation that
+the REST API applies. This includes:
+
+- Version conversion where applicable (via standard API machinery decoding)
+- Applying defaulting for the specified API version
+- Running the same validation rules that the REST API would run on that version
+
+In addition to standard validation, manifest-based configurations undergo additional restrictions:
 
 - Webhooks: `clientConfig.url` and `caBundle` required; `clientConfig.service` not allowed
 - Policies: `spec.paramKind` not allowed
 - Bindings: `spec.paramRef` not allowed; referenced policy must exist in manifest file set
-- Standard validation rules apply for all types
 
 ### Metrics and Audit Annotations
 
