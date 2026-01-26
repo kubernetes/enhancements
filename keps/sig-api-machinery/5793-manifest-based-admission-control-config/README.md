@@ -157,6 +157,7 @@ controls that operates independently of the Kubernetes API.
 3. API visibility: Manifest-based admission control resources are not visible through the
    Kubernetes API. These resources cannot be controlled through the API by design, may not be
    synchronized between API servers, and exposing them (similar to mirror pods) has proven
+   error-prone in practice.
 
 ## Proposal
 
