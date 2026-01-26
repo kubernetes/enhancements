@@ -195,7 +195,7 @@ within each driver will be sorted based on the `spec.pool.priority` field.
 The `spec.pool.priority` field will be set on all ResourceSlices within the
 same pool, which means that there is a chance that different ResourceSlices
 might have different values for the priority. For a resource pool to be valid,
-all ResourceSlices in the poolwith the same value for `spec.pool.generation`
+all ResourceSlices in the pool with the same value for `spec.pool.generation`
 must also have the same value for `spec.pool.priority`. If this is not true,
 the resource pool will be considered invalid and devices will not be allocated
 from the pool.
@@ -307,7 +307,8 @@ warnings, but they won't have any effect.
 
 ###### Does enabling the feature change any default behavior?
 
-No
+No, this does not change the default behavior. The feature must be enabled
+and the new fields explicitly set for it to have any effect.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -382,7 +383,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name: 
   - Other field: `.status.allocation.devices.results.device` references a device from `ResourceSlice` or resource pool
-    and it is the expected device based on availability of devices in the `ResourceSlice` and resource pool.
+    and it is the expected device based on the specified priorities and the  availability of devices in the `ResourceSlice`
+    and resource pool.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
