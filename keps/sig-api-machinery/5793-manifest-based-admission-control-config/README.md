@@ -138,9 +138,11 @@ controls that operates independently of the Kubernetes API.
 ### Non-Goals
 
 1. Cross-apiserver synchronization: Synchronization of file-based resource information across
-   API servers will not be supported. For control planes running multiple instances of the API
-   server, each API server must be configured individually. This is similar to how other file-based
-   configurations (e.g., encryption configuration) work today.
+   API servers will not be implemented as part of this KEP.
+   For control planes running multiple instances of the API server, each API server must be
+   configured individually by external means.
+   This is similar to how other file-based configurations (e.g., encryption configuration)
+   work today.
 
 2. API-dependent references: Manifest-based admission control resources may not depend on the rest API.
     1. Param objects for policies: No support for ValidatingAdmissionPolicy/MutatingAdmissionPolicy
