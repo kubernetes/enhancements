@@ -32,3 +32,5 @@ feature-gates:
 disable-supported: true
 
 metrics:
+  - apiserver_admission_manifest_config_automatic_reloads_total
+  - apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds

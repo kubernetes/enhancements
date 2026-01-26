@@ -434,13 +434,12 @@ The API server watches the configured manifest files/directories for changes:
    should be made atomically (e.g., write to a temporary file, then atomically rename/replace
    the actual file).
 
-4. Error handling:
-   | Scenario | Behavior |
-   |----------|----------|
-   | File goes missing | Previous configuration retained; error logged and metric incremented |
-   | File cannot be read (permissions) | Previous configuration retained; error logged |
-   | Parse error | Previous configuration retained; error logged |
-   | Validation error | Previous configuration retained; error logged |
+4. Error handling: If any error occurs during reload (missing file, permission errors, parse errors,
+   validation errors), the previous configuration is retained and the error is logged. Successful
+   reloads atomically replace the previous configuration. All reload attempts update the
+   `automatic_reloads_total` and `automatic_reload_last_timestamp_seconds` metrics with the
+   appropriate `status` label (`success` or `failure`) and `plugin` label to identify which
+   admission plugin the reload was for.
 
 ### Decoding, Defaulting, and Validation
 
@@ -473,10 +472,9 @@ All existing admission metrics will include an additional label `manifest_based`
 - `apiserver_validating_admission_policy_check_duration_seconds{manifest_based="true|false"}`
 - etc.
 
-New metrics for manifest loading health:
-- `apiserver_admission_manifest_load_total{result="success|error"}`
-- `apiserver_admission_manifest_last_reload_timestamp_seconds`
-- `apiserver_admission_manifest_configurations_loaded{type="webhook|policy|binding"}`
+New metrics for manifest loading health (following the existing reload metrics pattern):
+- `apiserver_admission_manifest_config_automatic_reloads_total{plugin="ValidatingAdmissionWebhook|MutatingAdmissionWebhook|ValidatingAdmissionPolicy|MutatingAdmissionPolicy", status="success|failure"}`
+- `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds{plugin="...", status="success|failure"}`
 
 Audit annotations:
 
