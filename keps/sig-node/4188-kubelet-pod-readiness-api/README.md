@@ -495,6 +495,7 @@ The API should be disabled using the feature gate.
 
 - 2023-09-05: KEP created
 - 2025-09-30: KEP updated with new API and goals
+- 2026-01-27: KEP milestones updated
 
 ## Drawbacks
 
