@@ -178,9 +178,9 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-This enhancement describes additions to the [Workload API][kep-4671] that
+This enhancement describes additions to the [Workload API][kep-4671] and [PodGroup API][kep-5832] that
 reference ResourceClaimTemplates which replicate into one ResourceClaim per
-instance of a PodGroup. Pods can then reference these generated ResourceClaims
+PodGroup. Pods can then reference these generated ResourceClaims
 to share resources with other Pods in the same PodGroup.
 
 ## Motivation
@@ -229,7 +229,7 @@ know that this has succeeded?
 -->
 
 - Allow users to express sets of DRA resources to be replicated for each
-  instance of a PodGroup, and shared by each Pod in the PodGroup.
+  PodGroup, and shared by each Pod in the PodGroup.
 - Automatically create and delete PodGroups' ResourceClaims as needed.
 - Reduce the burden of each true workload controller implementing per-PodGroup
   ResourceClaim generation separately (e.g. JobSet, LWS).
@@ -242,7 +242,7 @@ and make progress.
 -->
 
 - Influence scheduling based on the ResourceClaimTemplates and ResourceClaims
-  associated with a Workload or its Pods (See
+  associated with a PodGroup or its Pods (See
   [KEP-5732](https://kep.k8s.io/5732)).
 
 ## Proposal
@@ -305,19 +305,18 @@ proposal will be implemented, this is the place to discuss them.
 
 The following API changes will be made:
 
-- The Workload API will be updated to include references from PodGroups to
+- The PodGroup API will be updated to include references to
   ResourceClaimTemplates.
 - The Pod API will be updated to include references to claims listed in its
-  Workload.
+  PodGroup.
 
-#### Workload
+#### PodGroup
 
-The Workload API changes are modeled after the existing Pod API to reference
-ResourceClaims, adding a `resourceClaims` field to the elements of the
-`podGroups` array:
+The PodGroup API changes are modeled after the existing Pod API to reference
+ResourceClaims, adding a `spec.resourceClaims` field:
 
 ```go
-type PodGroup struct {
+type PodGroupSpec struct {
 	...
 
 	// ResourceClaims defines which ResourceClaims may be shared among Pods in
@@ -367,7 +366,7 @@ type WorkloadResourceClaim struct {
 #### Pod
 
 When a PodGroup includes a ResourceClaimTemplate, the `name` of the claim in
-the PodGroup can be used on Pods in the group to associate the group instance's
+the PodGroup can be used on Pods in the group to associate the PodGroup's
 dedicated ResourceClaim. This complements existing references to ResourceClaims
 and ResourceClaimTemplates.
 
@@ -412,19 +411,41 @@ metadata:
   name: my-workload
   namespace: default
 spec:
-  podGroups:
+  podGroupTemplates:
   - name: group-1
     policy:
       basic: {}
-    resourceClaims:
-    - name: wl-claim
-      resourceClaimTemplateName: wl-claim-template
   - name: group-2
     policy:
       basic: {}
-    resourceClaims:
-    - name: wl-claim
-      resourceClaimTemplateName: wl-claim-template
+---
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: PodGroup
+metadata:
+  name: my-podgroup-1
+  namespace: default
+spec:
+  workloadRef:
+    name: my-workload
+  podGroupTemplateRef:
+    name: group-1
+  resourceClaims:
+  - name: wl-claim
+    resourceClaimTemplateName: wl-claim-template
+---
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: PodGroup
+metadata:
+  name: my-podgroup-2
+  namespace: default
+spec:
+  workloadRef:
+    name: my-workload
+  podGroupTemplateRef:
+    name: group-2
+  resourceClaims:
+  - name: wl-claim
+    resourceClaimTemplateName: wl-claim-template
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
@@ -501,48 +522,31 @@ spec:
 ### ResourceClaim Lifecycle
 
 The ResourceClaim controller run by kube-controller-manager will be updated to
-manage the lifecycle of ResourceClaims associated with PodGroups like it
-already does for per-Pod ResourceClaims from ResourceClaimTemplates. In short,
-ResourceClaims will be created once the first Pod in the PodGroup is created
-and deleted when all Pods in the PodGroup have either been deleted or reached a
-terminal status.
+manage the lifecycle of ResourceClaims associated with PodGroups like it already
+does for per-Pod ResourceClaims from ResourceClaimTemplates. In short,
+ResourceClaims will be created once the PodGroup is created and deleted when the
+PodGroup is deleted.
 
-ResourceClaims created from ResourceClaimTemplates for a PodGroup replica can
-be mapped to Pods in the group with the following metadata:
+When a PodGroup is created, the ResourceClaim controller will immediately create
+one ResourceClaim for each of the PodGroup's `spec.resourceClaims` which define
+a `resourceClaimTemplateName`. Generated ResourceClaims will be owned (through
+`metadata.ownerReferences`) by the PodGroup and annotated with
+`resource.kubernetes.io/pod-claim-name` the same way as ResourceClaims generated
+for individual Pods to facilitate mapping a single Pod claim to the
+ResourceClaim generated for its PodGroup. This mapping will be recorded in the
+Pod's `status.resourceClaimStatuses` like ResourceClaims generated for Pods.
 
-- `metadata.ownerReferences`: A reference to the Workload object from the Pod's
-  `spec.workloadRef.name`
-- `metadata.annotations."resource.kubernetes.io/workload-pod-group-name"`: The
-  name of the PodGroup from the Pod's `spec.workloadRef.podGroup`
-- `metadata.annotations."resource.kubernetes.io/workload-pod-group-replica"`:
-  The ID for this particular PodGroup replica from the Pod's
-  `spec.workloadRef.podGroupReplicaKey`
+Allocation and deallocation of the generated ResourceClaims remains
+fundamentally the same. ResourceClaims will be created in an unallocated state
+(`status.allocation` unset). kube-scheduler will allocate a claim when
+scheduling the first Pod which requests it. The ResourceClaim controller will
+deallocate claims when there are no entries in the ResourceClaim's
+`status.reservedFor`. Generated ResourceClaims will exist in an unallocated
+state until its owning PodGroup is deleted or a new Pod in the PodGroup is
+created.
 
-Like the existing `resource.kubernetes.io/pod-claim-name` annotation, these
-annotations are only meant for internal use by kube-controller-manager and will
-not be documented as part of the public API.
-
-When the ResourceClaim controller reconciles a Pod with a claim referencing a
-`workloadPodGroupResourceClaim`, it will check for any existing ResourceClaims
-associated with the Pod's PodGroup. If a claim already exists for the PodGroup,
-it will be added to the Pod's `status.resourceClaimStatuses`. If no such claim
-exists, the controller will create one and add it to the Pod's `status`.
-
-A ResourceClaim generated from a ResourceClaimTemplate for a PodGroup will
-continue to be deallocated at the same time as any other ResourceClaim: when
-its `status.reservedFor` list is empty. When a Workload-owned claim is
-deallocated, the controller will check if any other Pods in the same PodGroup
-still exist and are running. If no Pods in the group requiring that
-ResourceClaimTemplate are still running and no other Pod is using the
-ResourceClaim, the controller will delete the generated ResourceClaim.
-Efficient lookup of Pods in a given PodGroup will be enabled by a new Pod
-informer index based on keys of the form
-`<namespace>/<workload>/<podgroup>/<replicakey>` which can be calculated for
-both Pods and controller-generated ResourceClaims.
-
-After a ResourceClaim generated for a PodGroup is deleted, a new ResourceClaim
-will be created from the same ResourceClaimTemplate if new Pods in the PodGroup
-are created which reference the ResourceClaimTemplate.
+When a PodGroup is deleted, the garbage collector will delete its ResourceClaims
+based on their `metadata.ownerReferences`.
 
 ### Test Plan
 
@@ -625,7 +629,7 @@ This can be done with:
 -->
 
 New integration tests will verify:
-- New API fields in Pod and Workload are persisted or rejected correctly
+- New API fields in Pod and PodGroup are persisted or rejected correctly
   depending on the value of the `WorkloadPodGroupResourceClaimTemplate` feature
   gate.
 - ResourceClaimTemplates specified for PodGroups result in the correct
@@ -656,19 +660,20 @@ If e2e tests are not necessary or useful, explain why.
 -->
 
 New e2e tests will verify correct behavior at key points in the lifecycle of a
-Workload and its PodGroups.
+PodGroup.
 
-- When a Workload referencing a ResourceClaimTemplate for one of its PodGroups
-  is created and no Pods in that group exist yet, no ResourceClaim is
-  generated.
-- When the first Pod is created for the PodGroup, a ResourceClaim is generated.
+- When a PodGroup referencing a ResourceClaimTemplate
+  is created, a ResourceClaim is
+  generated and remains unallocated.
+- When the first Pod is created for the PodGroup, the ResourceClaim is allocated.
 - When subsequent Pods in the PodGroup are created, no additional
   ResourceClaims are generated and the Pods are all allocated the same existing
   ResourceClaim.
 - When all but one Pod in the PodGroup are deleted, the ResourceClaim is not
   deleted and remains allocated.
 - When all of the Pods in the PodGroup have been deleted, then the
-  ResourceClaim is deallocated and deleted.
+  ResourceClaim is deallocated, but is not deleted.
+- When the PodGroup is deleted, its generated ResourceClaims are deleted.
 
 
 ### Graduation Criteria
@@ -1156,4 +1161,5 @@ SIG to get the process for these resources started right away.
 
 
 [kep-4671]: https://kep.k8s.io/4671
+[kep-5832]: https://kep.k8s.io/5832
 [dra-topology-model]: https://docs.google.com/document/d/1Fg9ughIRMtt1HmDqiGWV-w9OKdrcKf_PsH4TjuP8Y40/edit?usp=sharing

@@ -15,6 +15,7 @@ approvers:
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
   - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+  - "/keps/sig-scheduling/5832-decouple-podgroup-api"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
