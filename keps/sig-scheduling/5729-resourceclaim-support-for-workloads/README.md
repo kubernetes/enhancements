@@ -245,7 +245,7 @@ and make progress.
   associated with a PodGroup or its Pods (See
   [KEP-5732](https://kep.k8s.io/5732)).
 - Allow claims to be allocated for more than 256 Pods (See
-  [KEP-5194](https://kep.k8s.io/5194)).
+  [KEP-5194][kep-5194]).
 
 ## Proposal
 
@@ -710,6 +710,7 @@ functionality is accessed.
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+-->
 
 #### Alpha
 
@@ -719,7 +720,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### Beta
 
 - Gather feedback from developers and surveys
-- Complete features A, B, C
+- Integrate with [KEP-5194][kep-5194] to increase scalability
 - Additional tests are in Testgrid and linked in KEP
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - All functionality completed
@@ -728,15 +729,18 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - All testing requirements completed
 - All known pre-release issues and gaps resolved
 
+<!--
 **Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+-->
 
 #### GA
 
-- N examples of real-world usage
-- N installs
+- Integration with at least 2 widely used APIs for complex workload
+  orchestration (e.g. Jobset, LeaderWorkerSet)
 - Allowing time for feedback
 - All issues and gaps identified as feedback during beta are resolved
 
+<!--
 **Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
 
 **Note:** Generally we also wait at least two releases between beta and
@@ -747,10 +751,11 @@ in back-to-back releases.
 [conformance tests].**
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
+-->
 
 <!--
+#### Deprecation
+
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
@@ -1167,5 +1172,6 @@ SIG to get the process for these resources started right away.
 
 
 [kep-4671]: https://kep.k8s.io/4671
+[kep-5194]: https://kep.k8s.io/5194
 [kep-5832]: https://kep.k8s.io/5832
 [dra-topology-model]: https://docs.google.com/document/d/1Fg9ughIRMtt1HmDqiGWV-w9OKdrcKf_PsH4TjuP8Y40/edit?usp=sharing
