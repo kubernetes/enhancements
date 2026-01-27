@@ -20,13 +20,13 @@ see-also:
   - "keps/sig-api-machinery/2342-exposing-hashed-storage-versions-via-the-discovery-API"
   - "keps/sig-api-machinery/2343-automated-storage-version-migration-with-storage-version-hash"
   - "keps/sig-api-machinery/4020-unknown-version-interoperability-proxy"
-stage: alpha
-latest-milestone: "v1.35"
+stage: beta
+latest-milestone: "v1.36"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.30"
   beta: "v1.35"
-  stable: "v1.36"
+  stable: "v1.37"
 feature-gates:
   - name: StorageVersionMigrator
     components:
