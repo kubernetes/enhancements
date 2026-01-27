@@ -585,7 +585,7 @@ to process the entire gang together.
 The single scheduling cycle, together with blocking resources using nomination,
 will address requirement (3).
 
-We will also introduce delayed preemption (described in [KEP-5710](https://kep.k8s.io/5711)).
+We will also introduce [Delayed Preemption](#delayed-preemption).
 Together with the introduction of a dedicated Workload Scheduling Cycle,
 this will address requirement (5).
 
