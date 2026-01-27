@@ -19,6 +19,8 @@
     - [1. <code>Pod</code> API](#1-pod-api)
     - [2. <code>PodGroup</code> API](#2-podgroup-api)
   - [Scheduler Changes](#scheduler-changes)
+    - [Informers and Watches](#informers-and-watches)
+    - [GangScheduling plugin](#gangscheduling-plugin)
   - [Ownership and Object Relationship](#ownership-and-object-relationship)
   - [Naming Convention](#naming-convention)
   - [Future Plans](#future-plans)
@@ -258,7 +260,52 @@ type PodGroupStatus struct {
 
 > These changes build upon the scheduler framework introduced in [KEP-4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling).
 
-TBD
+When a pod with `workloadRef` is submitted for scheduling, the kube-scheduler performs the following lookup chain:
+
+- Read `pod.spec.workloadRef.podGroupName` to identify the PodGroup
+- Lookup the `PodGroup` object in the scheduler's cache
+- Read `podGroup.spec.workloadRef` and `podGroup.spec.podGroupTemplateName`
+- Lookup the `Workload` object and locate the corresponding `podGroupTemplate` and retrieve the scheduling policy from the template
+
+If any object in this chain is missing, the pod remains unschedulable until all required objects are created and observed by the scheduler.
+
+#### Informers and Watches
+
+The kube-scheduler will add a new informer to watch `PodGroup` objects alongside `Workload` informer:
+
+```go
+// PodGroupInformer provides access to a shared informer and lister for
+// PodGroups.
+type PodGroupInformer interface {
+	Informer() cache.SharedIndexInformer
+	Lister() schedulingv1alpha1.PodGroupLister
+}
+
+// podGroupInformer provides access to a shared informer and lister for PodGroups.
+type podGroupInformer struct {
+	factory          internalinterfaces.SharedInformerFactory
+	tweakListOptions internalinterfaces.TweakListOptionsFunc
+	namespace        string
+}
+
+// PodGroups returns a PodGroupInformer.
+func (v *version) PodGroups() PodGroupInformer {
+	return &podGroupInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+```
+
+#### GangScheduling plugin
+
+And the GangScheduling plugin will maintain both listers for `Workload` and `PodGroup`. In addition to the following changes:
+
+**1. PreEnqueue**: The extension will check if the `Workload` and `PodGroup` objects exist. If not, it will return `UnschedulableAndUnresolvable` status. Then check if the Pod scheduling requirement is met for gang scheduling (based on `PodGroupTemplate`).
+
+**2. Permit**: The extension waits for all pods in the `PodGroup` to reach permit stage. It will use `PodGroup` object to identify gang membership instead of `workloadRef` + `ReplicaKey`.
+
+**3. EventsToRegister (Enqueue)**: The extension will register new event for `PodGroup` object is created.
+
+**4. PostBind**:
+The kube-scheduler will update `PodGroup.Status` to reflect gang scheduling progress.
 
 ### Ownership and Object Relationship
 
@@ -295,22 +342,7 @@ For DRA integration, the`ResourceClaim` either already exist or are created from
 
 ### Naming Convention
 
-`PodGroup` names must be unique within the namespace. We propose the naming convention follows this pattern:
-
-```sh
-<owner-object-name>-<podgroup-template-name>[-<replica-index>]
-```
-
-Where:
-
-- `<owner-object-name>` is the name of the controller's managed object (e.g., Job name, JobSet name)
-- `<podgroup-template-name>` is the name of the `PodGroupTemplate` object.
-- `<replica-index>` (Optional) is a numeric index when the workload creates multiple PodGroup instances from the same template (i.e., for JobSet or LWS replicas).
-
-> We didn't include the `<workload-name>` because it's already referenced in the spec. Same for the `<namespace>` since `PodGroup` is namespace-scoped.
-
-**Constraints**:
-
+- `PodGroup` names must be unique within the namespace.
 - The name must be a valid DNS subdomain[^2].
 - The controller that creates the `PodGroup` is responsible for generating the name based on the above convention.
 
@@ -358,7 +390,7 @@ We will add integration tests for `PodGroup`  to ensure the basic functionalitie
 
 ##### e2e tests
 
-We will add basic API tests for the the new `PodGroup` API.
+We will add basic API tests for the the new `PodGroup` API for alpha release. More tests will be added for beta release.
 
 ### Graduation Criteria
 

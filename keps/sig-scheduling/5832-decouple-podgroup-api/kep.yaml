@@ -37,7 +37,6 @@ feature-gates:
   - name: GenericWorkloadPodGroup
     components:
       - kube-apiserver
-      - kube-controller-manager
       - kube-scheduler
 disable-supported: true
 
