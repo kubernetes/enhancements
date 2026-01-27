@@ -12,7 +12,7 @@ creation-date: 2026-01-14
 reviewers:
   - "@RomanBednar"
 approvers:
-  - TBD
+  - "@kannon92"
 see-also:
   - "/keps/sig-storage/3762-persistent-volume-last-phase-transition-time"
 replaces:
