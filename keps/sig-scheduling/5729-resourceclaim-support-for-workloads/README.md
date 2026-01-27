@@ -532,11 +532,11 @@ one ResourceClaim for each of the PodGroup's `spec.resourceClaims` which define
 a `resourceClaimTemplateName`. Generated ResourceClaims will be owned (through
 `metadata.ownerReferences`) by the PodGroup and annotated with
 `resource.kubernetes.io/podgroup-claim-name` where the value is the name of the
-claim from the PodGroup's `spec.resourceClaims[].name`
-to facilitate mapping a single PodGroup claim to the
-ResourceClaim generated for its PodGroup. This mapping will be recorded in the
-Pod's `status.resourceClaimStatuses` like ResourceClaims generated for Pods.
-Like the `resource.kubernetes.io/podgroup-claim-name` annotation,
+claim from the PodGroup's `spec.resourceClaims[].name` to facilitate mapping a
+single PodGroup claim to the ResourceClaim generated for its PodGroup. This
+mapping will be recorded in the Pod's `status.resourceClaimStatuses` like
+ResourceClaims generated for Pods. Like the
+`resource.kubernetes.io/podgroup-claim-name` annotation,
 `resource.kubernetes.io/podgroup-claim-name` is only to be used by the
 controller and will not be documented as part of the public API.
 
