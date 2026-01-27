@@ -244,6 +244,8 @@ and make progress.
 - Influence scheduling based on the ResourceClaimTemplates and ResourceClaims
   associated with a PodGroup or its Pods (See
   [KEP-5732](https://kep.k8s.io/5732)).
+- Allow claims to be allocated for more than 256 Pods (See
+  [KEP-5194](https://kep.k8s.io/5194)).
 
 ## Proposal
 
