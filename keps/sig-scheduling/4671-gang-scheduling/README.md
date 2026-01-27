@@ -500,41 +500,6 @@ not be split into two. A `LeaderWorkerSet` is a good example of it, where a sing
 of a single leader and `N` workers and that forms a scheduling (and runtime unit), but workload as a whole
 may consist of a number of such replicas.
 
-#### Basic Policy Extension
-
-While Gang Scheduling focuses on atomic, all-or-nothing scheduling, there is a significant class
-of workloads that requires best-effort optimization without the strict blocking semantics of a gang.
-
-In the first alpha version of the Workload API, the `Basic` policy was a no-op.
-We propose extending the `Basic` policy to accept a `desiredCount` field.
-This feature will be gated behind a separate
-feature gate (`WorkloadBasicPolicyDesiredCount`) to decouple it from the core Gang Scheduling graduation path.
-
-```go
-// BasicSchedulingPolicy indicates that standard Kubernetes
-// scheduling behavior should be used.
-type BasicSchedulingPolicy struct {
-	// DesiredCount is the expected number of pods that will belong to this
-	// PodGroup. This field is a hint to the scheduler to help it make better
-	// placement decisions for the group as a whole.
-	//
-	// Unlike gang's minCount, this field does not block scheduling. If the number
-	// of available pods is less than desiredCount, the scheduler can still attempt
-	// to schedule the available pods, but will optimistically try to select a
-	// placement that can accommodate the future pods.
-	//
-	// +optional
-	DesiredCount *int32
-}
-```
-
-This field allows users to express their "true" workloads more easily
-and enables the scheduler to optimize the placement of such pod groups by taking the desired state
-into account. Ideally, the scheduler should prefer placements that can accommodate
-the full `desiredCount`, even if not all pods are created yet.
-When `desiredCount` is specified, the scheduler can delay scheduling the first Pod it sees
-for a short amount of time in order to wait for more Pods to be observed.
-
 ### Scheduler Changes
 
 The kube-scheduler will be watching for `Workload` objects (using informers) and will use them to map pods
@@ -796,9 +761,9 @@ The list and configuration of plugins used by this algorithm will be the same as
      In the pod-by-pod cycle, preemption initiated by the workload pods will be forbidden.
      Allowing it would complicate reasoning about the consistency of the
      Workload Scheduling Cycle and Workload-Aware Preemption. If preemption is necessary
-     (e.g., the nominated node is no longer valid), the gang will either time out
-     or be instantly rejected (when the `minCount` cannot be satisfied) at `WaitOnPermit` and all necessary preemptions
-     will be simulated again in the next Workload Scheduling Cycle.
+     (e.g., the nominated node is no longer valid), the gang will either be instantly rejected
+     (when the `minCount` cannot be satisfied) or time out (safety check) at `WaitOnPermit`
+     and all necessary preemptions will be simulated again in the next Workload Scheduling Cycle.
 
    * If `schedulableCount < minCount`, the cycle fails. Preemptions computed but not actuated
      during this cycle are discarded. Pods go through traditional failure handlers
@@ -873,11 +838,6 @@ optional. In the v1.36 timeframe, this cycle will be applied to
 `Basic` pod groups to leverage the batching performance benefits, but the
 "all-or-nothing" (`minCount`) checks will be skipped; i.e., we will try to
 schedule as many pods from such PodGroup as possible.
-
-If the `Basic` policy has `desiredCount` set, the Workload Scheduling Cycle
-may utilize this value to simulate the full group size during feasibility checks.
-Note that the implementation of this specific logic might follow in a Beta stage
-of this API field.
 
 #### Delayed Preemption
 
@@ -1202,10 +1162,6 @@ This section must be completed when targeting alpha to a release.
     - kube-scheduler
   - Feature gate name: DelayedPreemption
   - Components depending on the feature gate:
-    - kube-scheduler
-  - Feature gate name: WorkloadBasicPolicyDesiredCount
-  - Components depending on the feature gate:
-    - kube-apiserver
     - kube-scheduler
 - [ ] Other
   - Describe the mechanism:

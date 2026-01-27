@@ -54,10 +54,6 @@ feature-gates:
   - name: DelayedPreemption
     components:
       - kube-scheduler
-  - name: WorkloadBasicPolicyDesiredCount
-    components:
-      - kube-apiserver
-      - kube-scheduler
 disable-supported: true
 
 # The following PRR answers are required at beta release
