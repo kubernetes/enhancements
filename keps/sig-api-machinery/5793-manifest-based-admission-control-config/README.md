@@ -248,7 +248,7 @@ spec:
 As a cluster operator, I want to prevent cluster administrators from accidentally or maliciously
 deleting critical admission policies. I can define a manifest-based `ValidatingAdmissionPolicy` that
 intercepts DELETE and UPDATE operations on admission-related resources and denies them if they match
-specific criteria (e.g., have a `platform.kubernetes.example/protected: "true"` label).
+specific criteria (e.g., have a `platform.example.com/protected: "true"` label).
 
 Since this policy is defined on disk and not via the API, it cannot be removed or modified through
 the API, providing a hard backstop against administrative errors.
@@ -269,7 +269,7 @@ spec:
       resources: ["validatingadmissionpolicies", "mutatingadmissionpolicies",
                   "validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
   validations:
-  - expression: "!oldObject.metadata.labels.exists(k, k == 'platform.kubernetes.example/protected' && oldObject.metadata.labels[k] == 'true')"
+  - expression: "!oldObject.metadata.labels.exists(k, k == 'platform.example.com/protected' && oldObject.metadata.labels[k] == 'true')"
     message: "Protected admission resources cannot be modified or deleted"
 ---
 apiVersion: admissionregistration.k8s.io/v1
