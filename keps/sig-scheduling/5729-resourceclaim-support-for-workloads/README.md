@@ -524,12 +524,13 @@ spec:
 The ResourceClaim controller run by kube-controller-manager will be updated to
 manage the lifecycle of ResourceClaims associated with PodGroups like it already
 does for per-Pod ResourceClaims from ResourceClaimTemplates. In short,
-ResourceClaims will be created once the PodGroup is created and deleted when
-they are deallocated and their PodGroup is deleted.
+ResourceClaims will be created once the first Pod in the PodGroup is created and
+deleted when they are deallocated and their PodGroup is deleted.
 
-When a PodGroup is created, the ResourceClaim controller will immediately create
-one ResourceClaim for each of the PodGroup's `spec.resourceClaims` which define
-a `resourceClaimTemplateName`. Generated ResourceClaims will be owned (through
+When a PodGroup is created, the ResourceClaim controller will not take any
+action. Only when a Pod requesting a templated claim from the PodGroup is
+created will a ResourceClaim be generated if one doesn't already exist for the
+PodGroup. Generated ResourceClaims will be owned (through
 `metadata.ownerReferences`) by the PodGroup and annotated with
 `resource.kubernetes.io/podgroup-claim-name` where the value is the name of the
 claim from the PodGroup's `spec.resourceClaims[].name` to facilitate mapping a
