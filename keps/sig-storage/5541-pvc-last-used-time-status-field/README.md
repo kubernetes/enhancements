@@ -62,7 +62,7 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 
 ## Summary
 
-This KEP proposes adding a new `lastUsed` status field on a `PersistentVolumeClaim`
+This KEP proposes adding a new `LastUsedTime` status field on a `PersistentVolumeClaim`
 to determine when a PVC was last used by a Pod. This enables cluster
 administrators to identify unused PVCs and implement cleanup policies for
 storage that is no longer in use.
@@ -80,8 +80,7 @@ this the ideal place to track usage.
 
 ### Goals
 
-- Add a `lastUsedTime` timestamp field to `PersistentVolumeClaimStatus` (the naming is
-   yet to be decided)
+- Add a `LastUsedTime` timestamp field to `PersistentVolumeClaimStatus`
 - Update this field with a timestamp when a PVC is last used by a Pod
 
 ### Non-Goals
@@ -92,7 +91,7 @@ this the ideal place to track usage.
 
 ## Proposal
 
-Add a new field `lastUsedTime` of type `metav1.Time` to the `PersistentVolumeClaimStatus`
+Add a new field `LastUsedTime` of type `metav1.Time` to the `PersistentVolumeClaimStatus`
 struct. This field will be updated by the PVC protection controller (in kube-controller-manager)
 when the PVC transitions from being in use to not being in use.
 
@@ -124,27 +123,22 @@ Notes:
    by a Pod, not continuous usage tracking. A PVC re-mounted by a long-running Pod
    will show the time it was last used, and the current timestamp.
 
-Caveats:
+### Risks and Mitigations
 
-One caveat of this proposal is that admins won't see any immediate changes after
+One risk/caveat of this proposal is that admins won't see any immediate changes after
 this feature has been enabled/disabled. This is because of how and when the new
 status field needs to be added/removed.
 
-### Risks and Mitigations
+Since this may cause confusion for administrators expecting immediate changes on
+existing PVCS, a step to mitigate this would be to document this behavior clearly
+in release notes and the PVC documentation. The field's absence would indicate
+that the PVC has not yet completed a usage cycle since the feature was enabled.
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
-
-TBD
+Another risk/point-of-confusing is when the feature is disabled, existing `LastUsedTime`
+values remain in etcd, but are no longer updated, potentially becoming misleading. A
+similar mitigation approach could be adopted - to document about the fact that
+disabling the feature freezes existing values, and that administrators should not rely
+on the field while the feature is disabled.
 
 ## Design Details
 
@@ -157,17 +151,17 @@ Changes required for this KEP:
      // existing fields...
 
      // LastUsedTime is the timestamp that represents when the PVC last transitioned
-     // to not being in use.
+     // to not being in use. When the PVC is currently in use, this field is nil.
      // It is updated when the last Pod referencing this PVC is deleted or reaches a
-     // terminal state.
+     // terminal state, and cleared when a new Pod starts referencing the PVC.
      // +optional
-     LastUsedTime *metav1.Time `json:"lastUsedTime,omitempty" protobuf:"bytes,10,opt,name=lastUsedTime"`
+     LastUsedTime *metav1.Time `json:"lastUsedTime,omitempty" protobuf:"bytes,10,opt,name=LastUsedTime"`
    }
    ```
 
 1. Update the timestamp whenever the PVC transitions to not being in use anymore.
 
-   - The PVC Protection controller already watched Pod events and checks when a
+   - The PVC Protection controller already watches Pod events and checks when a
       PVC transitions from "in use" to "not in use".
    - The implementation can extend this existing logic:
       - When a Pod is deleted, the controller enqueues all the affected PVCs
@@ -177,8 +171,11 @@ Changes required for this KEP:
       - New behavior: When it determines a PVC is not in use, and the `deletionTimestamp`
          is not set (not queued for deletion), it should update the `status.LastUsedTime`
          timestamp to the current timestamp. (Note: If `deletionTimestamp` is set, we skip
-         updating `lastUsedTime` since the PVC is being deleted and the timestamp
+         updating `LastUsedTime` since the PVC is being deleted and the timestamp
          would serve no purpose)
+         Conversely, when the PVC transitions from not in use to in use (i.e., a Pod starts
+         referencing it) the controller should clear `LastUsedTime` to `nil`. This ensures
+         the field doesn't reflect stale values when its currently in use.
 
 1. Add a Feature Gate named `PVCLastUsedTime` that is disabled by default in alpha.
    The timestamp field exists but is not populated unless gate is enabled.
@@ -198,7 +195,7 @@ to implement this enhancement.
 
 The following packages will be modified and require test coverage:
 
-- `pkg/controller/volume/pvcprotection`: tests for `lastUsedTime` being set when
+- `pkg/controller/volume/pvcprotection`: tests for `LastUsedTime` being set when
 the last Pod referencing a PVC terminates, and not set when other Pods still
 reference the PVC.
 
@@ -208,8 +205,8 @@ reference the PVC.
 
 Integration tests can be added to verify the core controller logic:
 
-- `lastUsedTime` set when last Pod referencing PVC terminates
-- `lastUsedTime` not set when other Pods still reference the PVC
+- `LastUsedTime` set when last Pod referencing PVC terminates
+- `LastUsedTime` not set when other Pods still reference the PVC
 - Feature gate enable/disable behavior
 
 Note: Integration and e2e tests would be pretty identical for this feature.
@@ -244,11 +241,16 @@ TBD
 
 Upgrading and downgrading is safe.
 
-When upgrading, the new status field will be added to all PVC objects, and will
-be updated appropriately next time when the PVC transitions from being in use to
-not in use. PVCs that are never used after upgrade will retain the initial `nil`
-value for this field.
+Upgrade:
+For pre-existing PVCs: After upgrading, the `LastUsedTime` status field will not be
+present on the PVCs until it transitions from being in use to not in use. PVCs that
+are never used after upgrade won't have this field.
 
+For new PVCs: PVCs that are created after upgrading, will be created with `LastUsedTime`
+set to `nil`. The value of the field will be populated on first transition from in use
+to not in use. PVCs that are never used after creation will retain the `nil` value.
+
+Downgrade:
 When downgrading to a version without this feature, the field value (if set) will
 be preserved in etcd. Older controller-managers would simply ignore this field.
 The field value might go stale if transition happens during the downgraded versions
@@ -356,7 +358,7 @@ Operators can check if the PVCs have `status.LastUsedTime` field populated.
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] API .status
-  - Other field: `pvc.status.lastUsedTime`
+  - Other field: `pvc.Status.LastUsedTime`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -420,7 +422,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes. All PVC objects will have an entirely new status field `lastUsedTime` to hold
+Yes. All PVC objects will have an entirely new status field `LastUsedTime` to hold
 the timestamp value. Estimated increase in size would be < 50B.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -439,7 +441,7 @@ No, this feature operates in the control-plane and doesn't affect node resources
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The controller will be unable to update the `lastUsedTime` status field.
+The controller will be unable to update the `LastUsedTime` status field.
 
 ###### What are other known failure modes?
 
