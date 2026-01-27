@@ -784,8 +784,8 @@ The list and configuration of plugins used by this algorithm will be the same as
        but cannot cause additional disruption to do so.
 
      * If preemptions are not needed: Pods are nominated to their chosen nodes,
-       pushed directly to the active queue, and will soon attempt to be scheduled
-       on their nominated nodes in their own, pod-by-pod cycles.
+       pushed directly to the active queue in the order they were evaluated in the Workload Scheduling Cycle.
+       They will soon attempt to be scheduled on their nominated nodes in their own, pod-by-pod cycles.
 
      Pod will be restricted to its nominated node during the individual cycle.
      If the node is unavailable, the pod will remain unschedulable and the `WaitOnPermit` gate will take that
@@ -806,11 +806,10 @@ The list and configuration of plugins used by this algorithm will be the same as
      can be attempted on that place. See *Failure Handling*.
 
    Gang Scheduling is currently implemented as a plugin, meaning the `minCount` constraint
-   is enforced at the plugin level. However, the proposed Workload Scheduling Cycle algorithm
+   is enforced at the plugin level. The proposed Workload Scheduling Cycle algorithm
    needs to know if this constraint is met to decide whether to commit the results.
-   To verify this, a new extension point will be introduced, allowing plugins to validate the group's
-   scheduled pods. This will function similarly to a `Permit` check (likely requiring `Reserve` state)
-   but without the suspension (`WaitOnPermit`) gate. Crucially, this extension should support two checks:
+   To achieve this, we will reuse the existing `Permit` extension point,
+   but without the suspension phase (`WaitOnPermit`). Crucially, this check has to support two modes:
 
    * Validation: Check whether the currently scheduled pods meet the requirements,
      e.g., if the `minCount` pods from a pod group was successfully scheduled.
@@ -818,7 +817,7 @@ The list and configuration of plugins used by this algorithm will be the same as
    * Feasibility: Given the number of pods that have already failed scheduling in this cycle,
      check whether is it still *possible* to meet the constraint. If not, the cycle should abort early
      to save time.
-  
+
 While this algorithm might be suboptimal, it is a solid first step for ensuring we have
 a single-cycle workload scheduling phase. As long as PodGroups consist of homogeneous pods,
 opportunistic batching itself will provide significant improvements.
