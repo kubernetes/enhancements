@@ -486,8 +486,7 @@ spec:
         workloadPodGroupResourceClaim: wl-claim
       workloadRef:
         name: my-workload
-        podGroup: group-1
-        podGroupReplicaKey: "1"
+        podGroupName: my-podgroup-1
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -515,8 +514,7 @@ spec:
         workloadPodGroupResourceClaim: wl-claim
       workloadRef:
         name: my-workload
-        podGroup: group-2
-        podGroupReplicaKey: "1"
+        podGroupName: my-podgroup-2
 ```
 
 ### ResourceClaim Lifecycle
