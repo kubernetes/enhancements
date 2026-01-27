@@ -137,17 +137,17 @@ controls that operates independently of the Kubernetes API.
 
 ### Non-Goals
 
-1. Cross-apiserver synchronization: Synchronization of file-based resource information across
+1. Cross-apiserver synchronization: Synchronization of file-based object information across
    API servers will not be implemented as part of this KEP.
    For control planes running multiple instances of the API server, each API server must be
    configured individually by external means.
    This is similar to how other file-based configurations (e.g., encryption configuration)
    work today.
 
-2. API-dependent references: Manifest-based admission control resources may not depend on the rest API.
+2. API-dependent references: Manifest-based admission control objects may not depend on the rest API.
     1. Param objects for policies: No support for ValidatingAdmissionPolicy/MutatingAdmissionPolicy
     `paramKind` references. Policies configured via manifest cannot reference ConfigMaps or other
-    cluster resources for parameters.
+    cluster objects for parameters.
     2. Service references in webhooks: Only URL-based webhook endpoints are supported. Service
     references (`clientConfig.service`) are not supported because the service network may not be
     available at API server startup.
@@ -156,8 +156,8 @@ controls that operates independently of the Kubernetes API.
    API-fetched credentials are not supported. Credentials that e.g. refer to an external
    OAuth endpoint are permitted.
 
-3. API visibility: Manifest-based admission control resources are not visible through the
-   Kubernetes API. These resources cannot be controlled through the API by design, may not be
+3. API visibility: Manifest-based admission control objects are not visible through the
+   Kubernetes API. These objects cannot be controlled through the API by design, may not be
    synchronized between API servers, and exposing them (similar to mirror pods) has proven
    error-prone in practice.
 
@@ -404,17 +404,17 @@ items:
 
 ### Naming and Conflict Resolution
 
-All resources in manifest files must have unique names within their type. The naming rules are:
+All objects in manifest files must have unique names within their type. The naming rules are:
 
-1. Uniqueness: If two manifest files define resources of the same type with
+1. Uniqueness: If two manifest files define objects of the same type with
    the same name, the API server fails to start with a descriptive error.
 
-2. Coexistence with API-based resources: Manifest-based and API-based resources are treated as
+2. Coexistence with API-based objects: Manifest-based and API-based objects are treated as
    belonging to separate domains. If both a manifest-based and API-based `ValidatingWebhookConfiguration`
    named "example" exist, both will be invoked for matching requests.
 
 3. Recommended naming convention: To avoid confusion, use a distinctive prefix for manifest-based
-   resources (e.g., `platform.`, `system:manifest:`, or similar).
+   objects (e.g., `platform.`, `system:manifest:`, or similar).
 
 ### File Watching and Dynamic Reloading
 
