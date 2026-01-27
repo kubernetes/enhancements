@@ -525,7 +525,7 @@ The ResourceClaim controller run by kube-controller-manager will be updated to
 manage the lifecycle of ResourceClaims associated with PodGroups like it already
 does for per-Pod ResourceClaims from ResourceClaimTemplates. In short,
 ResourceClaims will be created once the PodGroup is created and deleted when
-they become deallocated.
+they are deallocated and their PodGroup is deleted.
 
 When a PodGroup is created, the ResourceClaim controller will immediately create
 one ResourceClaim for each of the PodGroup's `spec.resourceClaims` which define
@@ -555,7 +555,7 @@ ResourceClaims, preventing the ResourceClaim from being deleted until it is
 deallocated. Like other generated ResourceClaims, the ResourceClaim controller
 will unlock deletion of PodGroup-owned claims by removing the finalizer when
 they become deallocated. The garbage collector will then be responsible for
-deleting the ResourceClaim.
+deleting the ResourceClaim once its owning PodGroup is deleted.
 
 ### Test Plan
 
