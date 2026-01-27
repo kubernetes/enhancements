@@ -18,6 +18,7 @@
 - [Former, out-of-tree implementation](#former-out-of-tree-implementation)
   - [New KCM-based controller](#new-kcm-based-controller)
     - [Garbage Collection Cache](#garbage-collection-cache)
+  - [CRD Storage Version Status Update](#crd-storage-version-status-update)
   - [RBAC for SVM](#rbac-for-svm)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -245,6 +246,26 @@ requests should contain minimum information:
   - must also be set in case the object was removed to prevent "immutable field"
     errors when setting UID as discussed above
 
+### CRD Storage Version Status Update
+Prior to a migration, the CRD's `status.storedVersions` field is set to the storage version of the resource
+along with any other previous versions that may still be in use. Once the migration is complete, the `status.storedVersions`
+field is updated to the new storage version only, removing the previous versions. This is done to ensure
+seamless transition for users, since prior to the removal of the previous versions, the user will not be able to
+remove old versions of the resource in the CRD. 
+
+Once this update is complete, users (or management tools such as operators) are at liberty to proceed with removal of the old API versions 
+from the CRD, if they wish, without any risk of data loss. It's also OK to retain old versions (which can be served even if not stored).
+
+Prior to running the migration, the controller will update the CRD's `status.conditions` field to the `Running` condition.
+It will also set the `conditions.observedGeneration` to the generation the controller observes the CRD to be at prior to migration. This
+is done in order to be able to tell that the CRD has not been updated during the migration. Once the SVM `status.conditions` are updated to 
+`Completed`, the controller will update the CRD's `status.storedVersions` field to the new storage version only, removing the previous 
+versions. This will only occur if the generation of the CRD has not been updated during the migration however. 
+
+This removal is done on a best effort basis, as the controller will not update the CRD if the generation has been updated. This
+is done to prevent the controller from removing the previous versions of the CRD if the CRD has been updated during the migration, 
+since it is impossible to tell if those versions have been added while the migration was in progress.
+
 ### RBAC for SVM
 - Storage Version Migrator Controller
     ```yaml
@@ -378,6 +399,7 @@ total:                                                                          
 - Unexpected event handling(i.e. interrupted migrations)
 - Usage of [RealFIFO](https://github.com/kubernetes/kubernetes/pull/129568) and gating on feature enablement
 - Ensuring that migration only runs for API objects that support Create/Update in its discovery document
+- Added support for automatically triggering an update on CRD storage version status field after migration is completed.
 
 ### Upgrade / Downgrade Strategy
 The feature is enabled using the feature gate `StorageVersionMigrator`. During an upgrade, this gate must be set to true. During a downgrade, this gate must be set to false, and any remaining _StorageVersionMigration_ resources should be manually removed.
