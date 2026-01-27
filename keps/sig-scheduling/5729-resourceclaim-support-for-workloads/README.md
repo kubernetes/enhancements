@@ -97,7 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
-    - [Workload](#workload)
+    - [PodGroup](#podgroup)
     - [Pod](#pod)
     - [Example](#example)
   - [ResourceClaim Lifecycle](#resourceclaim-lifecycle)
