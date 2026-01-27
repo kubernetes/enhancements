@@ -318,7 +318,7 @@ for all relevant requests from API server startup, eliminating the bootstrap gap
 
 ### New AdmissionConfiguration Schema
 
-The `AdmissionConfiguration` resource is extended with a `manifestFiles` field for the webhook
+The `AdmissionConfiguration` resource is extended with a `staticManifestsDir` field for the webhook
 admission plugins:
 
 ```yaml
@@ -330,30 +330,29 @@ plugins:
     apiVersion: apiserver.config.k8s.io/v1
     kind: WebhookAdmissionConfiguration
     kubeConfigFile: "<path-to-kubeconfig>"
-    manifestFiles: "/etc/kubernetes/admission/validating/webhooks.yaml"
+    staticManifestsDir: "/etc/kubernetes/admission/validating/"
 - name: MutatingAdmissionWebhook
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
     kind: WebhookAdmissionConfiguration
     kubeConfigFile: "<path-to-kubeconfig>"
-    manifestFiles: "/etc/kubernetes/admission/mutating/"
+    staticManifestsDir: "/etc/kubernetes/admission/mutating/"
 - name: ValidatingAdmissionPolicy
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
     kind: ValidatingAdmissionPolicyConfiguration
-    manifestFiles: "/etc/kubernetes/admission/policies/"
+    staticManifestsDir: "/etc/kubernetes/admission/policies/"
 - name: MutatingAdmissionPolicy
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
     kind: MutatingAdmissionPolicyConfiguration
-    manifestFiles: "/etc/kubernetes/admission/mutating-policies/"
+    staticManifestsDir: "/etc/kubernetes/admission/mutating-policies/"
 ```
 
-The `manifestFiles` field accepts:
-- An absolute path to an individual file
-- An absolute path to a directory (all direct-children `.yaml`, `.yml`, and `.json` files are loaded)
+The `staticManifestsDir` field accepts an absolute path to a directory. All direct-children
+`.yaml`, `.yml`, and `.json` files in the directory are loaded.
 
-Glob is not suported. Relative paths are not supported.
+Glob patterns are not supported. Relative paths are not supported.
 
 Related objects (such as a ValidatingAdmissionPolicy and its associated ValidatingAdmissionPolicyBinding)
 should be placed in the same file to ensure they are loaded and reloaded together atomically.
@@ -495,7 +494,7 @@ Mutation webhook annotations will include a `manifestBased` field:
 
 ### Implementation
 
-1. Configuration types: Add `ManifestFiles []string` to webhook and policy admission configs
+1. Configuration types: Add `StaticManifestsDir string` to webhook and policy admission configs
 2. Manifest loader: New package handling file reading, validation, watching, and atomic reload
 3. Composite accessor: Merge manifest and API-based configurations; evaluate manifest-based first
 4. Feature gate: `ManifestBasedAdmissionControlConfig`, defaulting to false for alpha
@@ -599,7 +598,7 @@ In HA setups with multiple API servers:
   - Components depending on the feature gate: `kube-apiserver`
 - [x] Other
   - Mechanism: `--admission-control-config-file` pointing to an `AdmissionConfiguration` with
-    `manifestFiles` configured
+    `staticManifestsDir` configured
   - Enabling/disabling requires API server restart
   - No impact on nodes
 
@@ -610,7 +609,7 @@ files are explicitly configured in `AdmissionConfiguration`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Remove `manifestFiles` entries from `AdmissionConfiguration` and restart API server.
+Yes. Remove `staticManifestsDir` entries from `AdmissionConfiguration` and restart API server.
 Manifest-based admission controls will no longer be enforced.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -661,7 +660,7 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 - Metric: `apiserver_admission_manifest_configurations_loaded > 0`
-- Check `AdmissionConfiguration` for `manifestFiles` entries
+- Check `AdmissionConfiguration` for `staticManifestsDir` entries
 - Check API server logs for manifest loading messages at startup
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -708,7 +707,7 @@ No new API calls. Manifest-based webhooks make HTTP calls same as API-based webh
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No new REST API types. `manifestFiles` field added to existing admission configuration types.
+No new REST API types. `staticManifestsDir` field added to existing admission configuration types.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
