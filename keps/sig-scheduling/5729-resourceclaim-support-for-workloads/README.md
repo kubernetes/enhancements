@@ -178,10 +178,10 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-This enhancement describes additions to the [Workload API][kep-4671] and [PodGroup API][kep-5832] that
-reference ResourceClaimTemplates which replicate into one ResourceClaim per
-PodGroup. Pods can then reference these generated ResourceClaims
-to share resources with other Pods in the same PodGroup.
+This enhancement describes additions to the [Workload API][kep-4671] and
+[PodGroup API][kep-5832] that reference ResourceClaimTemplates which replicate
+into one ResourceClaim per PodGroup. Pods can then reference these generated
+ResourceClaims to share resources with other Pods in the same PodGroup.
 
 ## Motivation
 
@@ -365,10 +365,10 @@ type WorkloadResourceClaim struct {
 
 #### Pod
 
-When a PodGroup includes a ResourceClaimTemplate, the `name` of the claim in
-the PodGroup can be used on Pods in the group to associate the PodGroup's
-dedicated ResourceClaim. This complements existing references to ResourceClaims
-and ResourceClaimTemplates.
+When a PodGroup includes a ResourceClaimTemplate, the `name` of the claim in the
+PodGroup can be used on Pods in the group to associate the PodGroup's dedicated
+ResourceClaim. This complements existing references to ResourceClaims and
+ResourceClaimTemplates.
 
 ```go
 // PodResourceClaim references exactly one ResourceClaim, either directly,
@@ -662,17 +662,16 @@ If e2e tests are not necessary or useful, explain why.
 New e2e tests will verify correct behavior at key points in the lifecycle of a
 PodGroup.
 
-- When a PodGroup referencing a ResourceClaimTemplate
-  is created, a ResourceClaim is
-  generated and remains unallocated.
-- When the first Pod is created for the PodGroup, the ResourceClaim is allocated.
-- When subsequent Pods in the PodGroup are created, no additional
-  ResourceClaims are generated and the Pods are all allocated the same existing
-  ResourceClaim.
+- When a PodGroup referencing a ResourceClaimTemplate is created, a
+  ResourceClaim is generated and remains unallocated.
+- When the first Pod is created for the PodGroup, the ResourceClaim is
+  allocated.
+- When subsequent Pods in the PodGroup are created, no additional ResourceClaims
+  are generated and the Pods are all allocated the same existing ResourceClaim.
 - When all but one Pod in the PodGroup are deleted, the ResourceClaim is not
   deleted and remains allocated.
-- When all of the Pods in the PodGroup have been deleted, then the
-  ResourceClaim is deallocated, but is not deleted.
+- When all of the Pods in the PodGroup have been deleted, then the ResourceClaim
+  is deallocated, but is not deleted.
 - When the PodGroup is deleted, its generated ResourceClaims are deleted.
 
 
