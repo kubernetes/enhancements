@@ -480,9 +480,15 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
+- [x] Feature gate for stale controller mitigation 
   - Feature gate name: StaleControllerConsistency
   - Components depending on the feature gate: KCM Controllers that are determined to be high scale
+- [x] Feature gate for stale controller monitoring
+  - Feature gate name: MonitorInformerStaleness
+  - Components depending on the feature gate: None, but requires a direct get to the apiserver to determine staleness every 5 seconds.
+- [x] Feature gate for underlying client-go changes
+  - Feature gate names: AtomicFIFO, UnlockWhileProcessingFIFO
+  - Components depending on the feature gate: None, but required by the stale controller handling feature.
 
 ###### Does enabling the feature change any default behavior?
 There is no change to the default behavior of reconcilers, however the
