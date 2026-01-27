@@ -18,7 +18,6 @@
   - [Naming](#naming)
   - [Associating Pod into PodGroups](#associating-pod-into-podgroups)
   - [API](#api)
-    - [Basic Policy Extension](#basic-policy-extension)
   - [Scheduler Changes](#scheduler-changes)
     - [North Star Vision](#north-star-vision)
     - [GangScheduling Plugin](#gangscheduling-plugin)
