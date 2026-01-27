@@ -639,6 +639,8 @@ New integration tests will verify:
     - ResourceClaims should continue to be created and deleted with their
       owning PodGroups such that Pods still schedule and no ResourceClaims are
       orphaned.
+    - At most one generated ResourceClaim should exist for a claim made by a
+      PodGroup at any given time.
 
 ##### e2e tests
 
