@@ -116,7 +116,7 @@ disruptions - the preemption. Given the supply shortages of the newest and most 
 as well as their economics, maximizing their utilization is one of the primary goals for majority of
 users. They achieve it by mixing different kinds of workloads in the same Kubernetes cluster and
 properly prioritizing these workloads against each other to satisfy the business requirements.
-In such capacity-contraint environments, preemption is a critical feature allowing users to balance
+In such capacity-constraint environments, preemption is a critical feature allowing users to balance
 the need to satisfy their business needs (often meaning satisfying certain SLOs for serving workloads)
 with maximizing utilization of their hardware. However, the currently existing preemption mechanism
 doesn't address those needs due its pod-centric nature.
@@ -146,7 +146,7 @@ and many others) and bring the true value for every Kubernetes user.
 - Address arbitrary preemption policies (more preemption policies will be needed,
   but these should be added in a followup KEPs)
 - Introduce workload-awareness for handling different kinds of disruptions
-  (e.g. caused by hardware failures)
+  (e.g. caused by hardware failures) including kubelet eviction
 - Design rescheduling for workloads that will be preempted (rescheduling will
   be addressed in a separate dedicated KEP)
 - Change the preemption principle of avoiding preemption if a workload/pod can be scheduled without it.
@@ -197,7 +197,7 @@ pieces of the solution and discuss them in more detail in the following sections
    pod preemption algorithm used by kube-scheduler.
 1. We introduce a mechanism of "delayed preemption" to postpone actuation of preemption
    decisions until we really know that these are necessary. This is to prevent the situation
-   when preemption is triggerred but the pod/workload that triggerred it in the end cannot
+   when preemption is triggered but the pod/workload that triggered it in the end cannot
    be bound anyway due to inability to schedule the workload as a whole.
 
 The rest of this KEP explains those pieces in more detail.
@@ -229,6 +229,8 @@ disrupted.
 When a long-running AI Training job, its cost of preemption differs over time and depends
 on how long ago it checkpointed its state. I want to be able to somehow influence the
 preemption priority of my job based on how much would it really cost me.
+
+This story is treated directionally and will not be addressed at least in Alpha.
 
 
 ### Notes/Constraints/Caveats (Optional)
@@ -298,15 +300,20 @@ const (
   DisruptionModePodGroup = "PodGroup"
 )
 
-type GangSchedulingPolicy struct {
+type PodGroupPolicy struct {
     // Existing field(s).
 
     // DisruptionMode defines the mode in which a given PodGroup can be disrupted.
     // One of Pod, PodGroup.
     // Defaults to Pod if unset.
-    PreemptionMode *PreemptionMode
+    //
+    // This field is immutable.
+    DisruptionMode *DisruptionMode
 }
 ```
+
+Given that preemption unit shouldn't be larger then the scheduling unit, additional validation
+will be added to prevent `PodGroup` disruption mode for PodGroups with BasicSchedulingPolicy.
 
 While the `PreemptionMode` might seem the more natural name here, we envision that the same
 concept can be later used in `Eviction` API and other usecases, so we already start with a more
@@ -316,7 +323,7 @@ generic name to avoid future confusion.
 
 Prioritizing workload across each other requires answering the question: "What is workload priority?".
 Up until now, only individual pods have assigned priority. But nothing prevents individual pods
-forming a `Workload` or a `PodGroup` from being heterogenuous and having different priorities.
+forming a `Workload` or a `PodGroup` from being heterogeneous and having different priorities.
 
 Intuitively, the priority of a `Workload` or `PodGroup` in such case would be the
 "minimum of priorities of pods that belong to it" - any pod with a priority higher than that can
@@ -344,49 +351,43 @@ type WorkloadSpec struct {
     // Existing field(s).
 
     // PriorityClassName, if specified, indicates the workload's priority that
-    // should be used when scheduling this workload. "system-node-critical" and
-	// "system-cluster-critical" are two special keywords which indicate the
+    // should be considered when scheduling this workload. "system-node-critical"
+    // and "system-cluster-critical" are two special keywords which indicate the
 	// highest priorities with the former being the highest priority. Any other
 	// name must be defined by creating a PriorityClass object with that name.
 	// If not specified, the priority will be default or zero if there is no
 	// default.
+    //
+    // The authoritative priority for this workload is expressed via the
+    // 'status.priority' field.
     //
     // This field is immutable.
     PriorityClassName *string
 }
 ```
 
-If that appears not being enough, we will similarly extend the `PodGroup` API in a follow up.
-In such case, the priority of a pod would be the priority of a smallest unit in the `Workload`
-object (Workload, PodGroup, PodSubGroup, ...) corresponding to this pod.
+With that change, when scheduling or preempting a pod that is part of a workload, the
+priority defined in the `Workload` object will be used (and priority defined in the `Pod`
+itself will be ignored, thus not reflecting the actual pod priority).
 
+We acknowledge that it might be misleading to users. For Alpha, we will simply just
+describe the possible divergence in the documentation.
 
-There is one direct implication of the above - the `pod.Spec.PriorityClassName` and `pod.Spec.Priority`
-may no longer reflect the actual pod priority, which could be misleading to users.
-
-```
-<<[UNRESOLVED priority divergence]>>
-There are several options we can approach it (from least to most invasive):
-- Describe the possible divergence via documentation
-- Expose the information about divergence in the API.
-  This would require introducing a new `Conditions` field in `workload.Status` and introducing
-  a dedicated condition like `PodsNotMatchingPriority` that will be set by either kube-scheduler
-  or a new workload-controller whenever it observes pods referencing a given `Workload` object
-  which priority doesn't match the priority of the workload object.
-- Introducing an admission to validate that if a pod is referencing a workload object, its
-  `pod.Spec.PriorityClassName` equals `workload.Spec.PriorityClassName`. However, we allow creating
-  pods before the workload object, and there doesn't seem to be an easy way to avoid races.
-- Making `pod.Spec.PriorityClassName` and `pod.Spec.Priority` mutable fields and having a new
+For Beta, we will decide if we need additional actions, e.g.:
+- expose the information about divergence in the API by introducing a new `Conditions` field
+  in the `workload.Status` with dedicated condition like `PodsNotMatchingPriority` that will
+  be set by either kube-scheduler or a new workload-controller whenever it observes pods
+  referencing a given `Workload` object which priority doesn't match the priority of the
+  workload object.
+- introduce an admission to validate that if a `Pod` is referencing a `Workload` object, its
+  `pod.Spec.PriorityClassName` equals to `workload.Spec.PriorityClassName`. However, we allow
+  creating pods before the workload object, and there doesn't seem to be an easy way to avoid
+  races.
+- making `pod.Spec.PriorityClassName` and `pod.Spec.Priority` mutable fields and having a new
   workload controller responsible for reconciling these. However, that could introduce another
   divergence between the priority of pods and the priority defined in the PodTemplate in true
-  workload objects which would introduce a similar level of confusion to users.
-
-If we could address the race in validations, that seems like a desired option. However,
-I don't see an easy option for it.
-Given that, we suggest to proceed with just exposing the information about divergence in the
-Workload status (second option) and potentially improving it later.
-<<[/UNRESOLVED]>>
-```
+  workload object (e.g. Job) which would introduce a similar level of confusion to users.
+However, decision if we need any of these will be made when graduating this feature to Beta.
 
 It's worth mentioning here, that we want to introduce the same defaulting rules for
 `workload.Spec.PriorityClassName` that we have for pods. Namely, if `PriorityClassName` is unset
@@ -394,19 +395,47 @@ and there exists PriorityClass marked as `globalDefault`, we default it to that 
 This consistency will allow us to properly handle cases when users set neither pods
 nor workload priorities.
 
+Note that, for workload-aware preemption we will support the `preemptionPolicy` being part
+of requestion `PriorityClass` - namely both currently existing modes: `PreemptLowerPriority`
+and `Never`.
+
 Given that components operate on integer priorities, we will introduce a corresponding fields
-that reflect priority and preemption priority of a workload (similarly to how it's done in
-Pod API). However, since these are derivatives of the fields introduced above and to allow
-future mutability, we propose introducing them as as part of status:
+that reflect priority of a workload (similarly to how it's done in Pod API).
+Since it is effectively a derivative of the field introduced above it would be tempting to
+put that into WorkloadStatus. However, to simplify the potential future extension of adding
+priority also at the PodGroup level (and avoid introducing a corresponding structure of status),
+as well as for consistency with the Pod API, we actually will put that next to the
+`PriorityClassName` in the spec:
 
 ```golang
-type WorkloadStatus struct {
+type WorkloadSpec struct {
+    // Existing field(s).
+
+    // PriorityClassName, if specified, indicates the workload's priority that
+    // should be considered when scheduling this workload. "system-node-critical"
+    // and "system-cluster-critical" are two special keywords which indicate the
+	// highest priorities with the former being the highest priority. Any other
+	// name must be defined by creating a PriorityClass object with that name.
+	// If not specified, the priority will be default or zero if there is no
+	// default.
+    //
+    // The authoritative priority for this workload is expressed via the
+    // 'spec.priority' field.
+    //
+    // This field is immutable.
+    PriorityClassName *string
+
     // Priority reflects the priority of the workload.
     // The higher value, the higher the priority.
     // This field is populated from the PriorityClassName.
     Priority *int32
 }
 ```
+
+If that appears not being enough, we will similarly extend the `PodGroup` API in a follow up.
+In such case, the priority of a pod would be the priority of a smallest unit in the `Workload`
+object (Workload, PodGroup, PodSubGroup, ...) corresponding to this pod.
+
 
 ### Preemption algorithm
 
@@ -486,9 +515,10 @@ with preemption:
       hurt performance we propose to accept this limitation (if needed a better algorithm may be
       proposed as a separate KEP).
 
-   1. For the remaining potential victims, using binary search across priorities find the minimal
-      priority N for which scheduling the preemptor can be achieved without preempting any victims
-      with priority higher than N. This allows to reduce the potential cascaiding preemptions later.
+   1. For the remaining potential victims, using binary search across priorities (not across the list
+      of victims) find the minimal priority N for which scheduling the preemptor can be achieved
+      without preempting any victims with priority higher than N. This allows to reduce the potential
+      cascading preemptions later.
 
    1. Eliminate all victims from the potential victims list that have priority higher than N.
 
@@ -518,11 +548,39 @@ As part of minimizing preemptions goal, arguably the most important thing to do 
 preemptions. However, with the current model of preemption when preemption is triggered immediately
 after the victims are decided (in `PostFilter`) doesn't achieve this goal. The reason for that is
 that the proposed placement (nomination) can actually appear to be invalid and not be proceeded with.
-In such case we will not even proceed to binding and the preemption will be completely unnessary
+In such case we will not even proceed to binding and the preemption will be completely unnecessary
 disruption.
 
 We're addressing it with what we call `delayed preemption` mechanism described in
-[KEP-4671: Introduce Workload Scheduling Cycle]
+[KEP-4671: Introduce Workload Scheduling Cycle].
+
+However, there is one point that requires an update. Namely, how can we avoid or minimize subsequent
+preemptions, if the previous scheduling attempt already triggered some preemptions.
+We have the following two cases:
+
+   1. If the original nomination is still feasible, we can try finding an alternative placement,
+      but can't trigger a new preemption.
+
+   1. If the original nomination is no longer feasible (e.g. some higher priority pods were scheduled
+      there in the meantime), we reject the original placement (clear nominations) and start scheduling
+      from scratch.
+
+The remaining question is why in the second case we can start from scratch and ignore which exact
+preemptions we did instead of trying to first expand the original, now (partially) occupied placement.
+The rationale behind that is that we don't really care which exact preemptions were triggered by
+the workload - what really matters is the current state of the cluster in which we want to minimize
+the cost of additional preemptions. We need to run the preemption algorithm that assumes that all
+triggered preemptions are finished and on top of that minimize the cost of additional preemptions.
+In some cases it may mean expanding the previously freed up space, but it may not always be the case
+(e.g. preempting medium priority small workload to expand the original placement may transitively
+preempt low priority large workload elsewhere, preempting which would be just enough for us).
+
+As a result, the only thing we need is additional scoring function(s) for choosing preemption victims
+(effectively additional sorting criteria for choosing potential victims in the algorithm). With that,
+which is highly desired even for single-step preemption, the subsequent preemption attempt can really
+be done from scratch just in the new cluster state.
+
+However, the additional sorting criteria will be added in Beta.
 
 [KEP-4671: Introduce Workload Scheduling Cycle]: https://github.com/kubernetes/enhancements/pull/5730
 
@@ -557,7 +615,7 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    In addition to non-uniform priorities, we may expect other non-uniform behaviors. As an
    example consider `LeaderWorkerSet` and a usecase where we allow for preempting individual
    workers (with a given unit working in a degraded mode), but don't allow for preempting a
-   leader. The enum-based `PreemptionMode` allows for introducing more sophisticated policies
+   leader. The enum-based `DisruptionMode` allows for introducing more sophisticated policies
    (e.g. only a subset of `PodSubGroups` can be preempted).
 
 1. Dynamic preemption priority
@@ -578,7 +636,7 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    but a user has now an ability to overwrite it.
 
    In the later case, we will also need to avoid preemption cycle, which can be achieved by an
-   additional constraint that preemption prioryt cannot be lower then scheduling priority. This
+   additional constraint that preemption priority cannot be lower then scheduling priority. This
    ensures that if a given workload X was preempted by workload Y (scheduling(Y) > preemption(X)),
    it will not be able to preempt back workload Y because
    preemption(Y) >= scheduling(Y) > preemption(X) >= scheduling(X). This will work fine even if
@@ -595,45 +653,17 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+N/A
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+- `pkg/apis/scheduling/v1alpha1`: `2026-01-29` - `83.3%`
+- `pkg/registry/scheduling/workload`: `2026-01-29` - `76.5%`
+- `pkg/registry/scheduling/workload/storage`: `2026-01-29` -  `83.3%`
+- `pkg/scheduler/framework/plugins/defaultpreemption`: `2026-01-29` - `84.9%`
+- `pkg/scheduler/framework/runtime`: `2026-01-29` - `81.5%`
 
 ##### Integration tests
-
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
-
-If integration tests are not necessary or useful, explain why.
--->
 
 <!--
 This question should be filled when targeting a release.
@@ -645,28 +675,28 @@ This can be done with:
 - permalinks to the GitHub source code
 - links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+-->
+
+We will create integration test(s) to ensure basic functionalities of workload preemption:
+
+- Pods from a single PodGroup with `DisruptionMode=Pod` can be preempted individually by the
+  higher priority Workload (PodGroup)
+- Pods from a single PodGroup with `DisruptionMode=PodGroup` are preempted all together even
+  when preempting a single pod would be enough to free up the space for the higher priority
+  Workload (PodGroup)
+- Pods from a single PodGroup with `DisruptionMode=Pod` can be preempted individuallby by the
+  higher priority individual pod.
+- Pods from a single PodGroup with `DisruptionMode=PodGroup` are preempted all together even
+  when preempting a single pod would be enough to free up the space for the higher priority
+  individual pod.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+Given the new functionality is limited to kube-scheduler change and API extensions,
+we will rely on integration tests described above (as easier and faster to run and debug).
 
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
 
@@ -676,7 +706,9 @@ If e2e tests are not necessary or useful, explain why.
 - Base integration test showing preemption of whole PodGroup in the `PodGroup` mode
 
 #### Beta
-
+- Decision about additional sorting/scoring preemption victims to minimize preemption cost
+- Decision about additional mechanisms for detecting/preventing divergence of priorities
+  between Workload and its Pods.
 - Decision whether we support mutability of Priority for Beta
 - Extended performance benchmarks to ensure satisfying scalability & performance
 - E2E test that can then be promoted to conformance
@@ -689,78 +721,34 @@ If e2e tests are not necessary or useful, explain why.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+Standard procedures for features introducing new API fields should be used:
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+  - on upgrade, kube-apiservers should be upgraded first before kube-scheduler can
+    use the new fields to opt-in for different preemption mode
+  - on downgrade, kube-schedulers should be downgraded first (to stop using the new
+    fields) before kube-apiservers are downgraded; note that downgrade of
+    kube-apiserver(s) and/or disabling the new API fields will not clear their
+    contents for objects already stored in the storage (etcd)
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+Once kube-apiserver and kube-scheduler are involved in the feature.
+The new API fields are needed to configure preemption behavior, thus kube-apiserver
+is required to run in not older version than kube-scheduler.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+However, the new preemption algorithm itself is purely in-memory and version skew
+is not relevant for it.
+
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: WorkloadAwarePreemption
+  - Components depending on the feature gate: kube-apiserver, kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -770,25 +758,25 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+Yes - the preemption victims chosen when scheduling a workload will be chosen using a slightly
+modified version of the algorithm. Thus the exact set of victims may slightly differ.
+
+The bigger changes in preemption victims may appear when workloads start using `PodGroup`
+disruption mode, however that requires an explicit opt-in from the user (or controller)
+creating the Workload object.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
+Yes, the preemption algorithm changes can be disabled by simply disabling the feature gate
+in kube-scheduler.
 
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+The new API changes and admission can also be disabled by disabling the feature gate in
+kube-apiserver. However keep in mind that it doesn't result in clearing the new fields
+for objects that already have them set in the storage.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+The feature starts working again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -804,6 +792,12 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+The scheduler algorithm changes are purely in-memory and doesn't require any dedicated
+enablement/disablement tests - the logic will be covered by regular feature tests.
+
+For the newly introduced API fields, dedicated enablement/disablement tests at the
+kube-apiserver registry layer will be added in Alpha.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -942,91 +936,41 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Not directly. However, with workload-aware preemption, more pods potentially
+needs to be preempted (in PodGroup mode) to free up space for new workloads
+to be scheduled.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+Yes - new fields are added to the Workload API.
+For `PriorityClassName` and `Priority`, expected increase is O(100B) per Workload object.
+For `DisruptionMode`, expected increase is O(30B) per PodGroup in Workload object.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+Although we designed preemption with performance in mind, the scheduling latency (being part of Pod Startup SLO)
+may potentially increase.
+We will measure the exact impact using performance benchmarks and scalability tests and update the section based
+on the results. The complexity of a single preemption cycle is O(#pods), which is comparable to the current algorithm,
+so the benchmarks are primarily to validate the potential inefficiencies of the implementation.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+We don't expect non-negligible CPU increase for kube-scheduler, but it will be confirmed by tests.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No
 
 ### Troubleshooting
 
