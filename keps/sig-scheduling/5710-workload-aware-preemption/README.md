@@ -514,87 +514,19 @@ we will be able to achieve in-place replacement with relatively localized change
 
 ### Delayed preemption
 
-```
-<<[UNRESOLVED delayed preemption]>>
-Should we leave it as part of this KEP or should this be moved to the Gang-Scheduling one?
-<<[/UNRESOLVED]>>
-```
-
 As part of minimizing preemptions goal, arguably the most important thing to do is to avoid unnecessary
 preemptions. However, with the current model of preemption when preemption is triggered immediately
 after the victims are decided (in `PostFilter`) doesn't achieve this goal. The reason for that is
 that the proposed placement (nomination) can actually appear to be invalid and not be proceeded with.
 In such case we will not even proceed to binding and the preemption will be completely unnessary
 disruption.
-Note that this problem already exists in the current gang scheduling implementation. A given gang may
-not proceed with binding if the `minCount` pods from it can't be scheduled. But the preemptions are
-currently triggered immediately after choosing a place for individual pods. So similarly as above,
-we may end up with completely unnecessary disruptions.
 
-We will address it with what we call `delayed preemption` mechanism as following:
+We're addressing it with what we call `delayed preemption` mechanism described in
+[KEP-4671: Introduce Workload Scheduling Cycle]
 
-1. We will modify the `DefaultPreemption` plugin to just compute preemptions, without actuating those.
-   We advice maintainers of custom PostFilter implementations to do the same.
-
-1. We will extend the `PostFilterResult` to include a set of victims (in addition to the existing
-   NominationInfo). This will allow us to clearly decouple the computation from actuation.
-
-   We believe that while custom plugins may want to provide their custom logic for preemption logic,
-   the actuation logic can actually be standardized and implemented directly as part of the framework.
-   If that appears not being true, we will introduce a new plugin extension point (tentatively called
-   Preempt) that will be responsible for actuation. However, for now we don't see evidence for this
-   being needed.
-
-1. For individual pods (not being part of a workload), we will adjust the scheduling framework
-   implementation of `schedulingCycle` to actuate preemptions of returned victims if calling
-   `PostFilter` plugins resulted in finding a feasible placement.
-
-1. For pods being part of a workload, we will rely on the introduction of `WorkloadSchedulingCycle`
-   described in [KEP-5730]. We still have two subcases here:
-
-   1. In a legacy case (without workload-aware preemption), we call PostFilter individually for
-      every pod from a PodGroup. However, the victims computed for already the already processed
-      pods may affect placement decisions for the next pods.
-      To accommodate for that, if a set of victims was returned from a `PostFilter` in addition
-      to keeping them for further actuation we will additionally store them in a `CycleState`.
-      More precisely, the `CycleState` will be storing a new entry containing a map from
-      a nodeName to a list of victims that were already chosen.
-      With that, the `DefaultPreemption` plugin will be extended to remove all already chosen
-      victims from a given node, before processing a give node.
-
-   1. In the target case (with workload-aware preemption), we will have no longer be processing
-      pods individually, so the additional mutations of `CycleState` should not be needed.
-
-1. In both above cases, we will introduce an additional step to the scheduling algorithm at the
-   end. If we managed to find a feasible placement for the PodGroup, we will simply take all
-   the victims and actuate their preemption. If a feasible placement was not found, the victims
-   will be dropped.
-   In both cases, the scheduling of the whole PodGroup (all its pods) will be marked as
-   unschedulable and got back to the scheduling queue.
-
-1. To reduce the number of unnessary preemptions, in case a preemption has already been triggerred
-   and the already nominated placement remains valid, no new preemptions can be triggerred.
-   In other words, a different placement can be chosen in a subsequent scheduling phases only if
-   it doesn't require additional preemptions or the previously chosen placements is no longer
-   feasible (e.g. because higher priority pods were scheduled in the meantime).
-
-The rationale behind the above design is to maintain the current scheduling property where preemption
-doesn't result in a commitment for a particular placement. If a different possible placement appears
-in the meantime (e.g. due to other pods terminating or new nodes appearing), subsequent scheduling
-attempts may pick it up, improving the end-to-end scheduling latency. Returning pods to scheduling
-queue if these need to wait for preemption to become schedulable maintains that property.
-
-We acknowledge the two limitations of the above approach: (a) dependency on the introduction of
-`WorkloadSchedulingCycle` (delayed preemption will not work if workload pods will not be processed
-by `WorkloadSchedulingCycle`) and (b) the fact that the placement computed in
-`WorkloadSchedulingCycle` may be invalidate in pod-by-pod scheduling later. However the simplicity
-of the approach and target architecture outweigh these limitations.
-
-[Kubernetes Scheduling Races Handling]: https://docs.google.com/document/d/1VdE-yCre69q1hEFt-yxL4PBKt9qOjVtasOmN-XK12XU/edit?resourcekey=0-KJc-YvU5zheMz92uUOWm4w
+[KEP-4671: Introduce Workload Scheduling Cycle]: https://github.com/kubernetes/enhancements/pull/5730
 
 [API Design For Gang and Workload-Aware Scheduling]: https://tiny.cc/hvhs001
-
-[KEP-5730]: https://github.com/kubernetes/enhancements/pull/5730
 
 ### Potential future extensions
 
