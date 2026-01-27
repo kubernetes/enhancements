@@ -31,13 +31,14 @@ latest-milestone: "v1.36"
 milestone:
   alpha: "v1.36"
   beta: "v1.37"
-  stable: "v1.38"
+  stable: "v1.39"
 
 feature-gates:
-  - name: GangScheduling-PodGroup
+  - name: GenericWorkloadPodGroup
     components:
       - kube-apiserver
       - kube-controller-manager
+      - kube-scheduler
 disable-supported: true
 
 metrics:
