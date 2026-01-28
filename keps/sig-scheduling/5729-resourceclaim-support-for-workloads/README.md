@@ -97,6 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
+    - [Workload](#workload)
     - [PodGroup](#podgroup)
     - [Pod](#pod)
     - [Example](#example)
@@ -325,15 +326,79 @@ proposal will be implemented, this is the place to discuss them.
 
 The following API changes will be made:
 
-- The PodGroup API will be updated to include references to
-  ResourceClaimTemplates.
+- The Workload and PodGroup APIs will be updated to include references to
+  ResourceClaims and ResourceClaimTemplates, like Pods.
 - The Pod API will be updated to include references to claims listed in its
-  PodGroup.
+  Workload or PodGroup.
+
+#### Workload
+
+The Workload API changes are modeled after the existing Pod API to reference
+ResourceClaims, adding a `spec.resourceClaims` field:
+
+```go
+type WorkloadSpec struct {
+	...
+
+	// ResourceClaims defines which ResourceClaims may be shared among Pods in
+	// the group. Pods must reference these claims in order to consume the
+	// allocated devices.
+	//
+	// This is an alpha-level field and requires that the
+	// WorkloadPodGroupResourceClaimTemplate feature gate is enabled.
+	//
+	// This field is immutable.
+	//
+	// +patchMergeKey=name
+	// +patchStrategy=merge,retainKeys
+	// +listType=map
+	// +listMapKey=name
+	// +featureGate=WorkloadPodGroupResourceClaimTemplate
+	// +optional
+	ResourceClaims []WorkloadResourceClaim `json:"resourceClaims,omitempty"`
+}
+
+// WorkloadResourceClaim references exactly one ResourceClaim, either directly
+// or by naming a ResourceClaimTemplate which is then turned into a ResourceClaim
+// for the Workload.
+//
+// It adds a name to it that uniquely identifies the ResourceClaim inside the Workload.
+// Pods that need access to the ResourceClaim reference it with this name.
+type WorkloadResourceClaim struct {
+	// Name uniquely identifies this resource claim inside the Workload.
+	// This must be a DNS_LABEL.
+	Name string `json:"name"`
+
+	// ResourceClaimName is the name of a ResourceClaim object in the same
+	// namespace as this Workload. The ResourceClaim will be reserved for the
+	// Workload instead of its individual pods.
+	//
+	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
+	// be set.
+	ResourceClaimName *string `json:"resourceClaimName,omitempty"`
+
+	// ResourceClaimTemplateName is the name of a ResourceClaimTemplate
+	// object in the same namespace as this Workload.
+	//
+	// The template will be used to create a new ResourceClaim, which will
+	// be bound to this Workload. When this Workload is deleted, the ResourceClaim
+	// will also be deleted. The Workload name and resource name, along with a
+	// generated component, will be used to form a unique name for the
+	// ResourceClaim, which will be recorded in pod.status.resourceClaimStatuses.
+	//
+	// This field is immutable and no changes will be made to the
+	// corresponding ResourceClaim by the control plane after creating the
+	// ResourceClaim.
+	//
+	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
+	// be set.
+	ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
+}
+```
 
 #### PodGroup
 
-The PodGroup API changes are modeled after the existing Pod API to reference
-ResourceClaims, adding a `spec.resourceClaims` field:
+The PodGroup API changes are similar to those for the Workload API:
 
 ```go
 type PodGroupSpec struct {
@@ -357,31 +422,47 @@ type PodGroupSpec struct {
 	ResourceClaims []WorkloadResourceClaim `json:"resourceClaims,omitempty"`
 }
 
-// WorkloadResourceClaim references exactly one ResourceClaimTemplate which is
-// then turned into a ResourceClaim for the PodGroup.
+// PodGroupResourceClaim references exactly one ResourceClaim, either directly
+// or by naming a ResourceClaimTemplate which is then turned into a ResourceClaim
+// for the PodGroup.
 //
-// It includes a name that uniquely identifies the ResourceClaimTemplate
-// inside the PodGroup. Pods that need access to the ResourceClaim reference it
-// with this name.
-type WorkloadResourceClaim struct {
-	// Name uniquely identifies this resource claim within the PodGroup.
+// It adds a name to it that uniquely identifies the ResourceClaim inside the PodGroup.
+// Pods that need access to the ResourceClaim reference it with this name.
+type PodGroupResourceClaim struct {
+	// Name uniquely identifies this resource claim inside the PodGroup.
 	// This must be a DNS_LABEL.
 	Name string `json:"name"`
 
-	// ResourceClaimTemplateName is the name of a ResourceClaimTemplate object
-	// in the same namespace as this Workload.
+	// ResourceClaimName is the name of a ResourceClaim object in the same
+	// namespace as this PodGroup. The ResourceClaim will be reserved for the
+	// PodGroup instead of its individual pods.
 	//
-	// The template will be used to create a new ResourceClaim, which will be
-	// available to this PodGroup. When all pods in the group are deleted, the
-	// ResourceClaim will also be deleted.
+	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
+	// be set.
+	ResourceClaimName *string `json:"resourceClaimName,omitempty"`
+
+	// ResourceClaimTemplateName is the name of a ResourceClaimTemplate
+	// object in the same namespace as this PodGroup.
 	//
-	// This field is immutable and no changes will be made to the corresponding
-	// ResourceClaim by the control plane after creating the ResourceClaim.
+	// The template will be used to create a new ResourceClaim, which will
+	// be bound to this PodGroup. When this PodGroup is deleted, the ResourceClaim
+	// will also be deleted. The PodGroup name and resource name, along with a
+	// generated component, will be used to form a unique name for the
+	// ResourceClaim, which will be recorded in pod.status.resourceClaimStatuses.
 	//
-	// +required
+	// This field is immutable and no changes will be made to the
+	// corresponding ResourceClaim by the control plane after creating the
+	// ResourceClaim.
+	//
+	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
+	// be set.
 	ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
 }
 ```
+
+`PodGroupResourceClaim` is a distinct type from `WorkloadResourceClaim` to allow
+each to evolve independently. e.g. to potentially reference claims made by a
+Workload from a PodGroup.
 
 #### Pod
 
@@ -393,19 +474,26 @@ ResourceClaimTemplates.
 ```go
 // PodResourceClaim references exactly one ResourceClaim, either directly,
 // by naming a ResourceClaimTemplate which is then turned into a ResourceClaim
-// for the pod, or by naming a claim made for a Workload's PodGroup.
+// for the pod, or by naming a claim made for a Workload or PodGroup.
 //
 // It adds a name to it that uniquely identifies the ResourceClaim inside the Pod.
 // Containers that need access to the ResourceClaim reference it with this name.
 type PodResourceClaim struct {
 	...
 
-	// WorkloadPodGroupResourceClaim refers to the name of a claim associated
+	// WorkloadResourceClaim refers to the name of a claim associated
+	// with this pod's Workload.
+	//
+	// Exactly one of ResourceClaimName, ResourceClaimTemplateName,
+	// WorkloadResourceClaim, or PodGroupResourceClaim must be set.
+	WorkloadResourceClaim *string `json:"workloadResourceClaim,omitempty"`
+
+	// PodGroupResourceClaim refers to the name of a claim associated
 	// with this pod's PodGroup.
 	//
-	// Exactly one of ResourceClaimName, ResourceClaimTemplateName, and
-	// WorkloadPodGroupResourceClaim must be set.
-	WorkloadPodGroupResourceClaim *string `json:"workloadPodGroupResourceClaim,omitempty"`
+	// Exactly one of ResourceClaimName, ResourceClaimTemplateName,
+	// WorkloadResourceClaim, or PodGroupResourceClaim must be set.
+	PodGroupResourceClaim *string `json:"podGroupResourceClaim,omitempty"`
 }
 ```
 
@@ -414,15 +502,16 @@ type PodResourceClaim struct {
 The following example demonstrates the relationships between the new fields.
 
 Here, a Workload organizes Pods managed by two different Deployments into two
-different PodGroups. Each group refers to the same ResourceClaimTemplate,
-`wl-claim-template`. This single ResourceClaimTemplate forms the basis of two
+different PodGroups. The `workload-claim` ResourceClaim is shared among all Pods
+in either PodGroup. Each group refers to the same ResourceClaimTemplate,
+`pg-claim-template`. This single ResourceClaimTemplate forms the basis of two
 different ResourceClaims which will be created by the ResourceClaim controller:
 one for each PodGroup. The Pod templates in the Deployments include a reference
 to the claim listed for the PodGroup, which ultimately resolves to its
 PodGroup's ResourceClaim. The result is that with a single
-ResourceClaimTemplate, Pods in the same group all share the exact same
-allocated device, while Pods in the other group use a equivalent, but
-separately allocated, device.
+ResourceClaimTemplate, Pods in the same group all share the exact same allocated
+device, while Pods in the other group use an equivalent, but separately
+allocated, device.
 
 ```yaml
 apiVersion: scheduling.k8s.io/v1alpha1
@@ -438,6 +527,9 @@ spec:
   - name: group-2
     policy:
       basic: {}
+  resourceClaims:
+    - name: wl-claim
+      resourceClaimName: workload-claim
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
@@ -450,8 +542,8 @@ spec:
   podGroupTemplateRef:
     name: group-1
   resourceClaims:
-  - name: wl-claim
-    resourceClaimTemplateName: wl-claim-template
+  - name: pg-claim
+    resourceClaimTemplateName: pg-claim-template
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
@@ -464,13 +556,25 @@ spec:
   podGroupTemplateRef:
     name: group-2
   resourceClaims:
-  - name: wl-claim
-    resourceClaimTemplateName: wl-claim-template
+  - name: pg-claim
+    resourceClaimTemplateName: pg-claim-template
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: workload-claim
+  namespace: default
+spec:
+  devices:
+    requests:
+    - name: my-device
+      exactly:
+        deviceClassName: example
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  name: wl-claim-template
+  name: pg-claim-template
   namespace: default
 spec:
   spec:
@@ -501,9 +605,13 @@ spec:
         resources:
           claims:
           - name: resource-1
+          claims:
+          - name: resource-2
       resourceClaims:
       - name: resource-1
-        workloadPodGroupResourceClaim: wl-claim
+        workloadResourceClaim: wl-claim
+      - name: resource-2
+        podGroupResourceClaim: pg-claim
       workloadRef:
         name: my-workload
         podGroupName: my-podgroup-1
@@ -529,9 +637,13 @@ spec:
         resources:
           claims:
           - name: resource-1
+          claims:
+          - name: resource-2
       resourceClaims:
       - name: resource-1
-        workloadPodGroupResourceClaim: wl-claim
+        workloadResourceClaim: wl-claim
+      - name: resource-2
+        podGroupResourceClaim: pg-claim
       workloadRef:
         name: my-workload
         podGroupName: my-podgroup-2
