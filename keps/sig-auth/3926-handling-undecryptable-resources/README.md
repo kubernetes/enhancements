@@ -100,6 +100,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -465,15 +466,14 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-New tests will be added to prove:
-- resources that are encrypted and are decryptable can still be deleted as before
-- resources that are malformed throw the new error on read
-- resources that are malformed cannot be removed if the user lacks required
-  permissions but uses the new DeleteOption
-- resources that are malformed can be removed if the user has proper permissions
-  and uses the new DeleteOption
-- if there are too many malformed resources in a return of a LIST action, the
-  error will be truncated
+- [TestAllowUnsafeMalformedObjectDeletionFeature](https://github.com/kubernetes/kubernetes/blob/506e4fed14e38d3dd84ac043dfe66bbc16993fa7/test/integration/controlplane/transformation/secrets_transformation_test.go#L137): [testgrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=AllowUnsafeMalformedObjectDeletion), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestAllowUnsafeMalformedObjectDeletionFeature)
+  - Verifies corrupt secrets can be deleted with feature enabled, the new option set and proper RBAC
+  - Verifies that normal deletion deletion fails with new `StorageError: corrupt object`
+  - Verifies that normal secrets can still be deleted with the feature enabled, even with corrupt objects in the database
+  - Verifies deletion of corrupt objects is blocked when feature is disabled and there is a lack of option and RBAC.
+- [TestListCorruptObjects](https://github.com/kubernetes/kubernetes/blob/506e4fed14e38d3dd84ac043dfe66bbc16993fa7/test/integration/controlplane/transformation/secrets_transformation_test.go#L426): [testgrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=AllowUnsafeMalformedObjectDeletion), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestListCorruptObjects)
+  - Verifies LIST returns errors for corrupt objects when feature is enabled
+  - Verifies error truncation when too many corrupt objects exist
 
 ##### e2e tests
 
@@ -557,6 +557,11 @@ in back-to-back releases.
 
 - Error type is implemented
 - Deletion of malformed etcd objects and its admission can be enabled via a feature flag
+
+#### Beta
+
+- Extended testing is available
+- Dry-Run is implemented
 
 ### Upgrade / Downgrade Strategy
 
@@ -679,7 +684,8 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-The implementation, including tests, is waiting for an approval of this enhancement.
+All tests verify feature enablement / disablement to ensure backwards
+compatibility.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -698,6 +704,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+No impact on rollout or rollback.
 
 ###### What specific metrics should inform a rollback?
 
@@ -705,8 +712,20 @@ will rollout across nodes.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-If the average time of `apiserver_request_duration_seconds{verb="delete"}` of the kube-apiserver
-increases greatly, this feature might have caused a performance regression.
+
+**Important context:** This feature is for emergency cluster recovery. During remediation,
+temporary performance degradation is expected and acceptable. The following metrics will
+spike when corrupt objects are deleted - this is the feature working correctly, not a problem.
+
+Rollback should only be considered if:
+
+1. **Unexpected cache resets** — `apiserver_watch_cache_initializations_total` spikes occur
+   when no corrupt object deletion was performed. This would indicate the feature gate
+   enablement itself is causing unintended side effects.
+
+2. **Recovery does not complete** — After corrupt object deletion, the system should stabilize
+   within minutes. If `apiserver_storage_list_total` remains elevated for an extended period
+   (>10 minutes for typical clusters), clients may be stuck in reconnection loops.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -715,12 +734,19 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+No testing of upgrade->downgrade->upgrade necessary because:
+
+1. **No new persisted state changes**: Either the corrupt object is deleted or not.
+2. **"Atomic" behavior**: Either the feature is enabled and the user can perform unsafe deletes (with proper RBAC), or it's disabled and they cannot.
+3. **Version skew is handled gracefully**: The interpretation of a deletion event of a corrupt object is added to k8s 1.32.
+4. **Rollback is trivial**: Disabling the feature gate simply makes the `DeleteOption` non-functional. No cleanup or migration required.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+No deprecations.
 
 ### Monitoring Requirements
 
@@ -739,6 +765,13 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+This feature is for cluster administrators performing emergency recovery, not for workload automation.
+
+To detect actual usage (i.e., unsafe deletions being performed):
+
+- Audit logs: Search for annotation: `apiserver.k8s.io/unsafe-delete-ignore-read-error`.
+- RBAC: Check RoleBindings/ClusterRoleBindings granting `unsafe-delete-ignore-read-errors` verb.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -755,8 +788,18 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name:
   - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+- Details:
+    1. Attempt to delete a corrupt object with the delete option set but without
+        RBAC permission for `unsafe-delete-ignore-read-errors` verb. Receiving
+        403 Forbidden (instead of 500 StorageReadError) confirms the feature is
+        enabled and recognizing the option.
+    2. Without the delete option, attempting to delete a corrupt object returns
+        the original 500 StorageReadError.
+    3. Use dry-run to safely verify the behavior with various combinations of
+        option and RBAC permissions.
+    4. With proper RBAC permission and the option set, the corrupt object
+        deletion succeeds.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -775,6 +818,14 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+This feature targets emergency cluster recovery scenarios where corrupt objects
+are blocking normal operations. Temporary performance degradation during
+remediation is acceptable - the priority is restoring cluster functionality.
+
+The deletion itself is faster as it bypasses preconditions and finalizers,
+but there are cache resets at the kube-apiserver and its watching clients
+(informers) that may cause performance degradation.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -782,11 +833,26 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: `apiserver_request_duration_seconds`
-  - [Optional] Aggregation method: `verb=delete`
-  - Components exposing the metric: kube-apiserver
+
+  **Note:** During corrupt object deletion remediation, temporary metric spikes are expected
+  and acceptable. The priority is restoring cluster functionality, not maintaining SLOs.
+
+  - Metric name: `apiserver_watch_cache_initializations_total`
+    - Labels: `group`, `resource`
+    - Components exposing the metric: kube-apiserver
+    - Details: Increments when watch cache rebuilds. A spike correlating with corrupt
+      object deletion confirms the expected recovery flow triggered. After remediation
+      completes, this should return to baseline (typically zero or very low).
+  
+  - Metric name: `apiserver_storage_list_total`
+    - Labels: `group`, `resource`
+    - Components exposing the metric: kube-apiserver
+    - Details: Tracks LIST operations hitting etcd storage. Expect a transient spike
+      as clients reconnect and rebuild caches. Recovery is complete when this returns
+      to pre-remediation levels.
+
 - [ ] Other (treat as last resort)
-  - Details:
+    - Details:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -794,6 +860,25 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+The existing metrics provide sufficient observability for tracking cache rebuilds and recovery:
+
+- `apiserver_watch_cache_initializations_total` — confirms cache rebuild occurred
+- `apiserver_storage_list_total` — tracks recovery progress (client re-lists)
+
+**Known gap:** `apiserver_storage_decode_errors_total` only covers decode errors in `store.go`
+operations (GET, LIST, etc.), not in `watcher.go` transform/decode failures. This means the
+metric won't increment specifically for the corrupt object deletion watch flow. This is
+acceptable because:
+
+1. The feature is for emergency recovery where detailed decode error counts are less
+   critical than successful deletion.
+2. The cache rebuild metrics above provide sufficient signal that the flow completed.
+3. Adding watcher-specific decode error metrics would require broader consensus in
+   sig-instrumentation.
+
+For tracking actual feature usage (unsafe deletions performed), operators should use audit logs
+and search for the `apiserver.k8s.io/unsafe-delete-ignore-read-error` annotation.
 
 ### Dependencies
 
@@ -817,6 +902,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+No
 
 ### Scalability
 
@@ -830,10 +916,15 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 The feature itself should not bring any concerns in terms of performance at scale.
+In particular as its usage is supposed to run on potentially broken clusters.
 
-The only issue in terms of scaling comes with the error that attempts to list all
+An issue in terms of scaling comes with the error that attempts to list all
 resources that appeared to be malformed while reading from the storage. A limit
 of 100 presented resources was arbitrarily picked to prevent huge HTTP responses.
+
+Another issue in terms of scaling happens when the corrupt objects are deleted.
+Client reflectors re-list to recover, this causes temporarily increased load on
+the client-side and the kube-apiserver.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -849,6 +940,7 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -858,6 +950,7 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
+No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -866,6 +959,7 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -875,6 +969,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+DeleteOptions gets a new boolean field, but it is transient: no persistence in
+etcd.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -886,6 +982,23 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+DELETE operations:
+
+- Unsafe DELETE path is faster (skips preconditions, validation, finalizers)
+- Decreases latency for the unsafe delete itself
+
+LIST operations:
+
+- Client-side reflectors re-list when their watch breaks (after corrupt object deletion ERROR event)
+- Temporarily increases LIST request volume to apiserver
+- Latency increase depends on: number of watching clients × object count × apiserver resources
+
+Expected impact:
+
+- Negligible under the circumstance that the cluster is in a potentially broken
+  state.
+- Potentially noticeable if: popular resource (many watchers) × many objects × resource-constrained apiserver
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -899,6 +1012,12 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+Temporary increase during cleanup, dependent on object and resource type
+popularity:
+
+- apiserver: CPU / network during re-lists
+- client-side: CPU / memory / network during re-lists / rebuilding cache
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -910,6 +1029,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
