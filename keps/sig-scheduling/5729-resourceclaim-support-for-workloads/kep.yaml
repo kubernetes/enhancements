@@ -4,7 +4,8 @@ authors:
   - "@helayoty"
   - "@nojnhuh"
 owning-sig: sig-scheduling
-participating-sigs: []
+participating-sigs:
+  - sig-node # ResourceClaim controller
 status: implementable
 creation-date: 2025-12-12
 reviewers:
@@ -38,6 +39,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-controller-manager
+      - kube-scheduler
 disable-supported: true
 
 # The following PRR answers are required at beta release

@@ -182,9 +182,20 @@ A good summary is probably at least a paragraph in length.
 -->
 
 This enhancement describes additions to the [Workload API][kep-4671] and
-[PodGroup API][kep-5832] that reference ResourceClaimTemplates which replicate
-into one ResourceClaim per PodGroup. Pods can then reference these generated
-ResourceClaims to share resources with other Pods in the same PodGroup.
+[PodGroup API][kep-5832] which make it possible associate those ResourceClaims
+and ResourceClaimTemplates with those objects to better facilitate sharing
+DRA resources between the Pods they contain.
+
+A ResourceClaim referenced by a Workload or PodGroup will be reserved for that
+Workload or PodGroup as a whole instead of its individual Pods, addressing the
+limit on the number of entries in a ResourceClaim's `status.reservedFor` list.
+
+A ResourceClaimTemplate referenced by a Workload or PodGroup will cause a
+ResourceClaim to be generated once for that Workload or PodGroup, like how
+ResourceClaimTemplates work today when referenced by a Pod. Whereas
+ResourceClaims today can only be shared between Pods by name, this will allow
+ResourceClaims to be shared by Pods in the same Workload or PodGroup where the
+exact name of the ResourceClaim is not known ahead of time.
 
 ## Motivation
 
@@ -219,8 +230,13 @@ shared by multiple Pods must be created one by one, and referenced by name in
 the Pod spec. Those APIs which define replicable groups of Pods are left to
 manage shared ResourceClaims themselves.
 
+Moreover, the current limit of 256 entries in a ResourceClaim's
+`status.reservedFor` list limits a device to being shared by up to that number
+of Pods. Production-scale workloads require larger numbers of Pods to share a
+single claim.
+
 The Workload API defines a common representation of these related sets of Pods
-as a PodGroup. Associating ResourceClaimTemplates with PodGroups allows
+as a PodGroup. Associating ResourceClaimTemplates with Workloads and PodGroups allows
 Kubernetes to manage the lifecycle of the generated ResourceClaims generically
 for all types implementing the Workload API.
 
@@ -232,10 +248,11 @@ know that this has succeeded?
 -->
 
 - Allow users to express sets of DRA resources to be replicated for each
-  PodGroup, and shared by each Pod in the PodGroup.
-- Automatically create and delete PodGroups' ResourceClaims as needed.
-- Reduce the burden of each true workload controller implementing per-PodGroup
+  Workload or PodGroup, and shared by each Pod in the Workload or PodGroup.
+- Automatically create and delete Workloads' and PodGroups' ResourceClaims as needed.
+- Reduce the burden of each true workload controller implementing
   ResourceClaim generation separately (e.g. JobSet, LWS).
+- Allow claims to be allocated for more than 256 Pods.
 
 ### Non-Goals
 
@@ -244,11 +261,9 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Influence scheduling based on the ResourceClaimTemplates and ResourceClaims
-  associated with a PodGroup or its Pods (See
+- Influence how Pods are placed onto Nodes based on the ResourceClaimTemplates and ResourceClaims
+  associated with a Workload, PodGroup or Pod (See
   [KEP-5732](https://kep.k8s.io/5732)).
-- Allow claims to be allocated for more than 256 Pods (See
-  [KEP-5194][kep-5194]).
 
 ## Proposal
 
@@ -728,7 +743,6 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### Beta
 
 - Gather feedback from developers and surveys
-- Integrate with [KEP-5194][kep-5194] to increase scalability
 - Additional tests are in Testgrid and linked in KEP
 - More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - All functionality completed
@@ -1180,6 +1194,5 @@ SIG to get the process for these resources started right away.
 
 
 [kep-4671]: https://kep.k8s.io/4671
-[kep-5194]: https://kep.k8s.io/5194
 [kep-5832]: https://kep.k8s.io/5832
 [dra-topology-model]: https://docs.google.com/document/d/1Fg9ughIRMtt1HmDqiGWV-w9OKdrcKf_PsH4TjuP8Y40/edit?usp=sharing
