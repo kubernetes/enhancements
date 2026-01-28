@@ -1,0 +1,30 @@
+title: NetworkPolicy Controller Name Label
+kep-number: 5790
+authors:
+  - "@danwinship"
+owning-sig: sig-network
+participating-sigs:
+status: implementable
+creation-date: 2026-01-13
+reviewers:
+  - "@aojea"
+  - "@bowei"
+  - "@LionelJouin"
+  - "@mskrocki"
+  - "@npinaeva"
+  - "@tssurya"
+approvers:
+  - "@aojea"
+see-also:
+replaces:
+
+stage: alpha
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.40"
+
+feature-gates: []
+metrics: []
