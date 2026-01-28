@@ -991,9 +991,13 @@ For the DRAExtendedResources feature, the following test scenarios are planned f
 
 **REQUIRED FOR BETA:**
 
+**Note:** All test scenarios below must be executed for both **explicit** and **implicit** extended resources:
+- **Explicit resources**: Use a custom resource name (e.g., `example.com/gpu`) with `DeviceClass.spec.extendedResourceName` set
+- **Implicit resources**: Use the format `deviceclass.resource.kubernetes.io/<device-class-name>` with `DeviceClass.spec.extendedResourceName` unset
+
 1. **Basic Feature Enablement**
    - Deploy workloads requesting extended resources via pod spec (e.g., `example.com/gpu: 1`)
-   - Configure `DeviceClass` with `extendedResourceName` field mapping to DRA devices
+   - Configure `DeviceClass` with appropriate `extendedResourceName` configuration
    - Create `ResourceSlice` advertising devices
    - Verify pods are scheduled and devices are allocated correctly
    - Validate that the special `ResourceClaim` is created by the scheduler
@@ -1006,19 +1010,19 @@ For the DRAExtendedResources feature, the following test scenarios are planned f
    - **Post-enablement validation**:
      - Existing pods with device plugin resources continue to run without disruption
      - New pods can request extended resources backed by DRA
-     - DeviceClass with extendedResourceName is processed correctly
+     - DeviceClass configurations are processed correctly
      - Scheduler creates special ResourceClaims for new pods
      - Resource quota accounting works for both device plugin and DRA-backed resources
    - **Workload transition**:
      - Create DeviceClass mapping to DRA devices on specific nodes
-     - Deploy new pods requesting the same extended resource name
-     - Verify pods are scheduled on the nodes
+     - Deploy new pods requesting the extended resource name
+     - Verify pods are scheduled on the appropriate nodes
      - Verify device allocation through DRA driver
 
 3. **Upgrade and Downgrade Testing** (version n-1 → n → n-1)
    - **Initial state (version n-1)**: Cluster running version n-1 with DRAExtendedResource feature enabled
      - Install test DRA driver with devices on cluster nodes
-     - Create DeviceClass with extendedResourceName mapping
+     - Create DeviceClass with appropriate extendedResourceName configuration
      - Deploy workloads requesting extended resources backed by DRA
      - Verify special ResourceClaims are created by scheduler
      - **Step 1 validation**: Run test workloads and verify device allocation works correctly
@@ -1076,48 +1080,13 @@ The following scenarios provide thorough coverage of edge cases and complex stat
    - Ensure one node cannot have both device plugin and DRA for same resource simultaneously
    - Validate node transition: remove device plugin, add DRA driver on same node
 
-8. **Implicit Extended Resource Name Testing**
-   - Deploy workloads requesting extended resources using the implicit name format `deviceclass.resource.kubernetes.io/<device-class-name>`
-   - Create `DeviceClass` without setting the explicit `extendedResourceName` field
-   - Verify pods can request devices using the implicit extended resource name in their resource requests
-   - Validate that the scheduler creates special `ResourceClaim` for implicit requests
-   - Verify that both explicit and implicit extended resource names can coexist in the cluster
-
 **Test Implementation Location**
 
 Tests can be implemented in:
 - `test/e2e_dra/extendedresources_test.go` - End-to-end upgrade/rollback tests
 - Unit tests in scheduler and kubelet packages - Component-level validation
 
-**Example Test Pattern**
-
-```go
-func TestDRAExtendedResourcesEnablementDisablement(tCtx *ktesting.TC) {
-    tCtx.Run("initial-cluster-setup", func(tCtx *ktesting.TC) {
-        // Create cluster with feature disabled
-    })
-
-    tCtx.Run("feature-enablement", func(tCtx *ktesting.TC) {
-        // Enable DRAExtendedResource feature gate
-        // Deploy DeviceClass, ResourceSlice
-        // Deploy pods requesting extended resources
-        // Verify special ResourceClaim creation
-    })
-
-    tCtx.Run("feature-disablement", func(tCtx *ktesting.TC) {
-        // Disable feature gate
-        // Verify existing workloads continue
-        // Verify new workloads use device plugin only
-    })
-
-    tCtx.Run("feature-re-enablement", func(tCtx *ktesting.TC) {
-        // Re-enable feature
-        // Verify clean state, no stale data
-    })
-}
-```
-
-The testing approach ensures core functionality is validated for beta graduation through the required scenarios (1-4), while comprehensive coverage scenarios (5-8) provide thorough edge case testing that will be prioritized for GA based on available resources and implementation feasibility.
+The testing approach ensures core functionality is validated for beta graduation through the required scenarios (1-4), while comprehensive coverage scenarios (5-7) provide thorough edge case testing that will be prioritized for GA based on available resources and implementation feasibility.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
