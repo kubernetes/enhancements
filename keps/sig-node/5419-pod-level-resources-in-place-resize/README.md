@@ -25,7 +25,7 @@
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.35)](#phase-1-alpha-target-135)
+    - [Phase 1: Alpha (target 1.35) [DONE]](#phase-1-alpha-target-135-done)
     - [Phase 2:  Beta (target 1.36)](#phase-2--beta-target-136)
     - [GA (stable)](#ga-stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -493,7 +493,7 @@ Following scenarios need to be covered:
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.35)
+#### Phase 1: Alpha (target 1.35) [DONE]
 * Feature is disabled by default. It is an opt-in feature which can be enabled by
   enabling the InPlacePodLevelResourcesVerticalScaling feature gate and by setting
   the new resources fields in PodSpec at Pod level.
@@ -828,6 +828,7 @@ Focusing mostly on:
     - One new PATCH PodStatus API call in response to Pod resize request.
     - No additional overhead unless Pod resize is invoked.
   - estimated throughput
+    - Proportional to the number of resize requests ssued by users or controllers (e.g., VPA). For a typical cluster this is expected to be < 1% of total Pod update traffic.
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
     - Kubelet
   focusing mostly on:
@@ -866,7 +867,9 @@ Describe them, providing:
 -->
 Negligible.
 - API type(s):
-- Estimated increase in size: (e.g., new annotation of size 32B)
+- Estimated increase in size: (e.g., new annotation of size 32B): Each Pod object will grow by approximately
+  200-400 bytes due to the addition of `Resources` and `AllocatedResources`
+  fields in `PodStatus`, plus the `Resources` stanza in `PodSpec`.
 - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
   - type PodStatus has 2 new fields of type v1.ResourceRequirements and v1.ResourceList
 
@@ -924,6 +927,10 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server or etcd is unavailable, existing pods will continue to run with their last
+known resource configurations. No new resize requests can be initiated, and the Kubelet
+will be unable to update the `PodStatus` to reflect any locally completed or failed
+resizes until connectivity is restored.
 
 ###### What are other known failure modes?
 
@@ -940,12 +947,35 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- **CRI Runtime doesn't support Pod Sandbox Resize**:
+  - Detection: `PodStatus.Resize` will be stuck in `InProgress` and Kubelet logs will
+    show errors calling `UpdatePodSandboxResources`.
+  - Mitigations: Disable the feature gate or upgrade the container runtime to a
+    compatible version (e.g., latest containerd/CRI-O).
+  - Diagnostics: Kubelet logs (search for `UpdatePodSandboxResources` errors) and
+    `kubectl get pod <name> -o yaml` to check `resizeStatus`.
+- **Cgroup update failure (OS level)**:
+  - Detection: Kubelet will emit an event indicating failure to update cgroups.
+  - Mitigations: Revert the resize request in the Pod spec to a known-good value.
+  - Diagnostics: Kubelet logs and `dmesg` on the node for potential OOM or cgroup
+    permission issues.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Verify if the `InPlacePodLevelResourcesVerticalScaling` feature gate is enabled
+   on all components (apiserver, scheduler, kubelet).
+2. Check `apiserver_request_total{resource="pods", subresource="resize"}` to see
+   if resize requests are being rejected at the API level.
+3. Inspect Kubelet logs for errors related to `UpdatePodSandboxResources` or
+  `ResourceCalculation`.
+4. Monitor `node_collector_evictions_total` to ensure pod-level limits aren't
+  causing unexpected evictions.
 
 ## Implementation History
 
 - **2025-06-18:** KEP draft split from (KEP#2387)[https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2837-pod-level-resource-spec/README.md]
+- **2026-01-28:** KEP moved to beta for 1.36 release
 
 ## Drawbacks
 
