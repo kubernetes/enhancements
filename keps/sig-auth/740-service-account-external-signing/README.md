@@ -370,7 +370,7 @@ experience would be the same as when enabling.
 
 ###### Are there any tests for feature enablement/disablement?
 
-- Unit and E2E tests will be added.
+- Unit and integration tests will be added.
 - The tests would **not** focus on continuing to support the same key set when enabling/disabling but would rather focus on viability of enabling/disabling.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -613,8 +613,15 @@ Initial PRs:
 - kubernetes/kubernetes#125177
 
 1.32: Alpha release
+- kubernetes/kubernetes#128190
+- kubernetes/kubernetes#128192
+- kubernetes/kubernetes#128953
 
 1.34: Beta release
+- kubernetes/kubernetes#131300
+
+1.36: Stable release
+- kubernetes/kubernetes#136118
 
 ## Drawbacks
 
