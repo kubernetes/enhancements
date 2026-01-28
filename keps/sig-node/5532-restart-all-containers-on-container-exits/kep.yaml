@@ -43,4 +43,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-
+  - kube_pod_container_status_restarts_total
