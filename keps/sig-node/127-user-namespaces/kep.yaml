@@ -15,11 +15,12 @@ reviewers:
 approvers:
   - "@derekwaynecarr"
 
-stage: beta
-latest-milestone: "v1.35"
+stage: stable
+latest-milestone: "v1.36"
 milestone:
   alpha: "v1.25"
   beta: "v1.35"
+  stable: "v1.36"
 
 feature-gates:
   - name: UserNamespacesSupport
