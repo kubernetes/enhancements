@@ -40,6 +40,7 @@ feature-gates:
   - name: PersistentVolumeClaimLastPodDetachTime
     components:
       - kube-apiserver
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release

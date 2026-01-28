@@ -259,20 +259,12 @@ occurs.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
-
-TBD
+| API Server | KCM | Behavior |
+| :--- | :--- | :--- |
+| off | off | Existing Kubernetes behavior. |
+| on | off | Existing Kubernetes behavior. The `LastUsedTime` field exists but is never populated by the controller. Only users can set it manually via the API. |
+| off | on | PVC protection controller may attempt to set `LastUsedTime`, which will be dropped by the API server since the field is not recognized. |
+| on | on | New behavior. `LastUsedTime` is updated when a PVC transitions from in use to not in use, and cleared when it transitions to in use. |
 
 ## Production Readiness Review Questionnaire
 
@@ -288,10 +280,11 @@ TBD
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, all PVCs will start to contain the new `LastUsedTime` status field. This field
-however is only updated when a PVC transitions from being in use to not in use. The field
-is not read by any other Kubernetes component for any purposes and so, existing
-workflows that do not explicitly read this field would remain unaffected.
+No. The field is not read by any other Kubernetes component for any purposes
+and so, existing workflows that do not explicitly read this field would remain
+unaffected. The field also is not available on existing PVCs after enabling the
+feature, until it transitions from being in use to not in use, which is when
+the value is populated with the timestamp.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
