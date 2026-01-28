@@ -468,15 +468,29 @@ To distinguish manifest-based admission decisions from API-based ones:
 
 Metrics:
 
-All existing admission metrics will include an additional label `manifest_based`:
-- `apiserver_admission_webhook_admission_duration_seconds{manifest_based="true|false"}`
-- `apiserver_admission_webhook_rejection_count{manifest_based="true|false"}`
-- `apiserver_validating_admission_policy_check_duration_seconds{manifest_based="true|false"}`
-- etc.
+Existing admission metrics (e.g., `apiserver_admission_webhook_admission_duration_seconds`) are STABLE
+and cannot have new labels added. Instead, manifest-based admission uses a parallel set of metrics
+that mirror the existing ones but are specific to manifest-based configurations. This ensures:
+- No impact on clusters not using this feature
+- No confusion in metrics between REST-based and manifest-based admission
+- Clear separation for monitoring and alerting
+
+New metrics for manifest-based webhooks (parallel to existing webhook metrics):
+- `apiserver_admission_manifest_webhook_admission_duration_seconds{name, type, operation, rejected}` - latency histogram
+- `apiserver_admission_manifest_webhook_rejection_count{name, type, operation, error_type, rejection_code}` - rejection counter
+- `apiserver_admission_manifest_webhook_fail_open_count{name, type}` - fail open counter
+- `apiserver_admission_manifest_webhook_request_total{name, type, operation, code, rejected}` - request counter
+
+New metrics for manifest-based CEL policies (parallel to existing policy metrics):
+- `apiserver_validating_admission_manifest_policy_check_total{policy, policy_binding, error_type, enforcement_action}`
+- `apiserver_validating_admission_manifest_policy_check_duration_seconds{policy, policy_binding, error_type, enforcement_action}`
+- `apiserver_mutating_admission_manifest_policy_check_total{policy, policy_binding, error_type}`
+- `apiserver_mutating_admission_manifest_policy_check_duration_seconds{policy, policy_binding, error_type}`
 
 New metrics for manifest loading health (following the existing reload metrics pattern):
-- `apiserver_admission_manifest_config_automatic_reloads_total{plugin="ValidatingAdmissionWebhook|MutatingAdmissionWebhook|ValidatingAdmissionPolicy|MutatingAdmissionPolicy", status="success|failure"}`
-- `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds{plugin="...", status="success|failure"}`
+- `apiserver_admission_manifest_config_automatic_reloads_total{plugin, status}` - reload counter
+- `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds{plugin, status}` - last reload timestamp
+
 
 Audit annotations:
 
@@ -498,7 +512,7 @@ Mutation webhook annotations will include a `manifestBased` field:
 2. Manifest loader: New package handling file reading, validation, watching, and atomic reload
 3. Composite accessor: Merge manifest and API-based configurations; evaluate manifest-based first
 4. Feature gate: `ManifestBasedAdmissionControlConfig`, defaulting to false for alpha
-5. Metrics: Add manifest loading metrics and `manifest_based` label to existing admission metrics
+5. Metrics: Add parallel metrics for manifest-based admission (separate from existing stable metrics)
 
 ### Test Plan
 
@@ -527,7 +541,7 @@ Test scenarios:
 - Hot reload: Adding/removing manifest files updates enforcement
 - Invalid config handling: Server continues with previous valid config on reload errors
 - Coexistence: Both manifest and API-based configurations invoked
-- Metrics: Correct `manifest_based` label application
+- Metrics: Parallel metrics correctly emitted for manifest-based admission
 
 ##### e2e tests
 
@@ -544,7 +558,7 @@ control API server startup flags. The feature does not expose new REST API endpo
   implemented
 - Manifest loading for CEL policies (ValidatingAdmissionPolicy, MutatingAdmissionPolicy, bindings)
   implemented
-- Complete metrics implementation including manifest_based labels on all admission metrics
+- Complete metrics implementation with parallel metrics for manifest-based admission
 - Audit annotation support for manifest-based sources
 - File watching and hot reload fully implemented and tested
 - Documentation for alpha usage
@@ -642,8 +656,8 @@ Mitigation:
 
 ###### What specific metrics should inform a rollback?
 
-- `apiserver_admission_manifest_load_total{result="error"}` increasing
-- `apiserver_admission_webhook_rejection_count{manifest_based="true"}` unexpectedly high
+- `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` increasing
+- `apiserver_admission_manifest_webhook_rejection_count` unexpectedly high
 - API server crash loops (check container restart count)
 - Increased API request latency (webhook timeouts)
 
@@ -659,17 +673,16 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- Metric: `apiserver_admission_manifest_configurations_loaded > 0`
+- Metric: `apiserver_admission_manifest_config_automatic_reloads_total > 0`
 - Check `AdmissionConfiguration` for `staticManifestsDir` entries
 - Check API server logs for manifest loading messages at startup
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Metrics
-  - `apiserver_admission_manifest_configurations_loaded{type="webhook"}` shows expected count
-  - `apiserver_admission_manifest_last_reload_timestamp_seconds` shows recent timestamp
-  - `apiserver_admission_webhook_admission_duration_seconds{manifest_based="true"}` shows webhook
-    activity
+  - `apiserver_admission_manifest_config_automatic_reloads_total{status="success"}` shows successful reloads
+  - `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds` shows recent timestamp
+  - `apiserver_admission_manifest_webhook_admission_duration_seconds` shows webhook activity
 - [x] API server logs
   - Log message at startup: "Loaded N manifest-based webhook configurations"
   - Log message on reload: "Reloaded manifest-based configurations"
@@ -684,8 +697,8 @@ No.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- `apiserver_admission_manifest_load_total{result="success"}` - rate of successful loads
-- `apiserver_admission_manifest_load_total{result="error"}` - rate of failed loads (should be 0)
+- `apiserver_admission_manifest_config_automatic_reloads_total{status="success"}` - rate of successful reloads
+- `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` - rate of failed reloads (should be 0)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -751,12 +764,12 @@ HTTP client pool with API-based webhooks.
 |--------------|-----------|------------|-------------|
 | Invalid manifest at startup | API server fails to start | Fix manifest file; restart | API server logs show validation errors |
 | Webhook endpoint unreachable | `apiserver_admission_webhook_fail_open_count` increases | Fix webhook endpoint; or change `failurePolicy` | Check webhook URL connectivity |
-| File permission errors | `apiserver_admission_manifest_load_total{result="error"}` | Fix file permissions | API server logs show permission errors |
+| File permission errors | `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` | Fix file permissions | API server logs show permission errors |
 | Configuration drift across HA | Inconsistent admission decisions | Use configuration management | Compare manifest files across API servers |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check `apiserver_admission_manifest_load_total{result="error"}` for load failures
+1. Check `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` for reload failures
 2. Check API server logs for manifest-related errors
 3. Verify webhook endpoints are reachable and responding quickly
 4. Compare manifest configurations across API server instances
