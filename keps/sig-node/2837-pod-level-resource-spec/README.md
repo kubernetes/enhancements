@@ -33,6 +33,8 @@
     - [Eviction Manager](#eviction-manager)
     - [Pod Overhead](#pod-overhead)
     - [Hugepages](#hugepages)
+    - [[Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)](#scoped-for-beta-in-136-fix-for-pod-level-limits-default-logic-issue-136120)
+    - [[Scoped for Beta in 1.36] Fix for Kubelet QoS Class Determination (Issue 135082)](#scoped-for-beta-in-136-fix-for-kubelet-qos-class-determination-issue-135082)
     - [[Scoped for Beta] Cluster Autoscaler](#scoped-for-beta-cluster-autoscaler)
     - [[Scoped for Beta] HPA](#scoped-for-beta-hpa)
     - [Cluster Autoscaler](#cluster-autoscaler)
@@ -1178,6 +1180,14 @@ resources.
 
 Containers will still need to mount an emptyDir volume to access the huge page filesystem (typically /dev/hugepages).  This is the standard way for containers to interact with huge pages, and this will not change. 
 
+#### [Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)
+
+The `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36) addresses a bug in current defaulting logic which only implements defaulting for Pod-level requests. However, per the Rows 10 and 12 of the resource matrix, if Pod-level limits are unset but all containers have limits defined, the Pod-level limits should be defaulted to the sum of the container limits. This fix implements the missing logic to ensure consistency between the KEP and the implementation.
+
+#### [Scoped for Beta in 1.36] Fix for Kubelet QoS Class Determination (Issue 135082)
+
+The `PodLevelResourcesFixKubeletQOSClass` feature gate (Beta in 1.36) addresses a bug where `ComputePodQOS` incorrectly handles the distinction between `nil` and empty Pod Level Resources (PLRs). While most of the codebase correctly differentiates between them to determine if a pod has opted into pod-level resources, `ComputePodQOS` fails to do so consistently. This can lead to situations where a pod with container-level resources is misclassified as `BestEffort` because its (absent) pod-level resources are incorrectly interpreted. This fix ensures that pods are assigned the correct QoS class, maintaining expected eviction and scheduling priority behavior.
+
 #### [Scoped for Beta] Cluster Autoscaler
 
 Cluster Autoscaler won't work as expected with pod-level resources in alpha since
@@ -1319,6 +1329,8 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
   `InPlacePodLevelResourcesVerticalScaling` i.e. (Issue#5419)[https://github.com/kubernetes/enhancements/issues/5419]
 * Suggest Karpenter folks to use pod resource requests from k8s.io/component-helper
   or update https://github.com/kubernetes-sigs/karpenter/blob/v1.5.0/pkg/utils/resources/resources.go#L111-L144
+* Resolve defaulting bugs via `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36). [Issue 136120](https://github.com/kubernetes/kubernetes/issues/136120)
+* Resolve Kubelet QoS class determination bugs via `PodLevelResourcesFixKubeletQOSClass` feature gate (Beta in 1.36). [Issue 135082](https://github.com/kubernetes/kubernetes/issues/135082)
 
 #### GA (stable)
 
@@ -1404,7 +1416,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: PodLevelResources
+  - Feature gate name: PodLevelResources, PodLevelResourcesFixUpdateDefaulting, PodLevelResourcesFixKubeletQOSClass
   - Components depending on the feature gate: kubelet, kube-apiserver, kube-scheduler
   - Will enabling / disabling the feature require downtime of the control
     plane? No. Once the feature is disabled, the control plane components reject
@@ -1450,6 +1462,8 @@ To resolve this, users can delete the affected pods and recreate them.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+**Primary feature gate: PodLevelResources**
+
 If the feature is re-enabled after being previously disabled, any new pods will
 again have access to the pod-level resources feature. 
 
@@ -1470,6 +1484,20 @@ To ensure consistent and intuitive resource calculations, it is advisable to
 delete all pods when toggling the feature between enabling and disabling. This
 will help eliminate discrepancies and ensure that all pods operate under the same
 resource management scheme.
+
+**Bug-fix feature gates**
+* PodLevelResourcesFixUpdateDefaulting: Corrects the defaulting logic for Pod-level limits.
+Re-enabling this ensures that Pods with container-level limits—but missing explicit Pod-level 
+limits—are correctly assigned a defaulted Pod-level limit. This prevents "Limit-less" Pods that
+should have been constrained.
+
+* PodLevelResourcesFixKubeletQOSClass: Ensures the Kubelet correctly distinguishes between nil
+and empty Pod Level Resources. Re-enabling this prevents the critical misclassification of 
+Pods as BestEffort.
+
+Unlike the primary feature gate, re-enabling these feature gates primarily corrects the metadata 
+and accounting logic. Re-enabling them is not disruptive to pod execution and is essential to restore
+the intended eviction priority behaviors in Kubernetes.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1575,7 +1603,15 @@ Re-upgrade Phase:
 - Restart the API server with feature gate enabled
 - Restart the kubelet with feature gate enabled
   - verify the existing pods are running
-  - recreate these pods to see the pod-level cgroups set correctly   
+  - recreate these pods to see the pod-level cgroups set correctly 
+
+
+Validation of Bug-Fix Logic (FixUpdateDefaulting & FixKubeletQOSClass):
+- Verify the upgrade path with feature FixUpdateDefaulting enabled: create a Pod with 
+container-level limits but no Pod-level limits. The API server should automatically 
+default the Pod-level limits to the sum of container.
+- Verify the upgrade path with FixKubeletQOSClass enabled: create a pod with empty string values
+in pod-level resources requests and/or limits to ensure that the QOS class is set correctly.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1853,6 +1889,7 @@ resource specs.
 - **2024-05-31:** Revised KEP for alpha
   (#4678)[https://github.com/kubernetes/enhancements/pull/4678]
 - **2025-06-18:** Revised KEP for Beta
+- **2026-01-27:** Revised KEP for 1.36 to include fixes for issues 135082 and 136120.
 
 ## Drawbacks
 
