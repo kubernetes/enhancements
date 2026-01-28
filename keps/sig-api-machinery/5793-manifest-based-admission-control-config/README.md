@@ -10,7 +10,7 @@
   - [Supported Resource Types](#supported-resource-types)
   - [User Stories](#user-stories)
     - [Story 1: Platform Invariants](#story-1-platform-invariants)
-    - [Story 2: Self-Protection of Admission Infrastructure](#story-2-self-protection-of-admission-infrastructure)
+    - [Story 2: Self-Protection and Preventing Name Collisions](#story-2-self-protection-and-preventing-name-collisions)
     - [Story 3: Bootstrapping Cluster Security](#story-3-bootstrapping-cluster-security)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -243,7 +243,7 @@ spec:
         values: ["kube-system"]
 ```
 
-#### Story 2: Self-Protection of Admission Infrastructure
+#### Story 2: Self-Protection and Preventing Name Collisions
 
 As a cluster operator, I want to prevent cluster administrators from accidentally or maliciously
 deleting critical admission policies. I can define a manifest-based `ValidatingAdmissionPolicy` that
@@ -253,34 +253,45 @@ specific criteria (e.g., have a `platform.example.com/protected: "true"` label).
 Since this policy is defined on disk and not via the API, it cannot be removed or modified through
 the API, providing a hard backstop against administrative errors.
 
+**Recommended: Prevent name collisions with static configs**
+
+Admins who want to avoid any possibility of confusion between manifest-based and REST-based
+admission configurations should use a manifest-based policy to prevent creation of REST-based
+objects whose names overlap with their static config. This ensures clear separation in audit
+logs and metrics:
+
 ```yaml
-# /etc/kubernetes/admission/protect-admission.yaml
+# /etc/kubernetes/admission/prevent-name-collision.yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: "platform.protect-admission-policies"
+  name: "platform.prevent-admission-name-collision"
 spec:
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
     - apiGroups: ["admissionregistration.k8s.io"]
       apiVersions: ["*"]
-      operations: ["DELETE", "UPDATE"]
+      operations: ["CREATE", "UPDATE"]
       resources: ["validatingadmissionpolicies", "mutatingadmissionpolicies",
+                  "validatingadmissionpolicybindings", "mutatingadmissionpolicybindings",
                   "validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
   validations:
-  - expression: "!oldObject.metadata.labels.exists(k, k == 'platform.example.com/protected' && oldObject.metadata.labels[k] == 'true')"
-    message: "Protected admission resources cannot be modified or deleted"
+  - expression: "!object.metadata.name.startsWith('platform.')"
+    message: "Names starting with 'platform.' are reserved for manifest-based admission configs"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: "platform.protect-admission-policies-binding"
+  name: "platform.prevent-admission-name-collision-binding"
 spec:
-  policyName: "platform.protect-admission-policies"
+  policyName: "platform.prevent-admission-name-collision"
   validationActions:
   - Deny
 ```
+
+This pattern reserves a naming prefix (e.g., `platform.`) for manifest-based configurations,
+preventing REST-based objects from using the same names and eliminating audit/metrics confusion.
 
 #### Story 3: Bootstrapping Cluster Security
 
@@ -414,7 +425,7 @@ All objects in manifest files must have unique names within their type. The nami
    named "example" exist, both will be invoked for matching requests.
 
 3. Recommended naming convention: To avoid confusion, use a distinctive prefix for manifest-based
-   objects (e.g., `platform.`, `system:manifest:`, or similar).
+   objects (e.g., `platform.`, `static.`, or `manifest.`).
 
 ### File Watching and Dynamic Reloading
 
@@ -494,17 +505,24 @@ New metrics for manifest loading health (following the existing reload metrics p
 
 Audit annotations:
 
-Mutation webhook annotations will include a `manifestBased` field:
+Manifest-based admission adds a new annotation to positively indicate that static configuration
+was evaluated. This is a separate annotation from the existing webhook/policy annotations, not a
+modification to their structure:
+
 ```json
 {
-  "mutation.webhook.admission.k8s.io/round_0_index_0": {
-    "configuration": "platform.mutating-webhook",
-    "webhook": "mutate.platform.example.com",
-    "manifestBased": true,
-    "mutated": true
-  }
+  "source.admission.k8s.io/manifest-webhooks": "platform.mutating-webhook,platform.validating-webhook",
+  "source.admission.k8s.io/manifest-policies": "require-labels,deny-privileged"
 }
 ```
+
+These annotations list the manifest-based configurations that were evaluated for the request.
+Combined with the existing `mutation.webhook.admission.k8s.io/*` and `patch.webhook.admission.k8s.io/*`
+annotations, operators can determine both what was evaluated and whether it came from static config.
+
+**Evaluation order**: Manifest-based configurations are evaluated before REST-based configurations.
+This ensures that platform-level policies enforced via static config take precedence and are always
+recorded in audit logs before any API-based configurations.
 
 ### Implementation
 
