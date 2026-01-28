@@ -18,6 +18,7 @@
 - [Former, out-of-tree implementation](#former-out-of-tree-implementation)
   - [New KCM-based controller](#new-kcm-based-controller)
     - [Garbage Collection Cache](#garbage-collection-cache)
+  - [CRD Storage Version Status Update](#crd-storage-version-status-update)
   - [RBAC for SVM](#rbac-for-svm)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -245,6 +246,16 @@ requests should contain minimum information:
   - must also be set in case the object was removed to prevent "immutable field"
     errors when setting UID as discussed above
 
+### CRD Storage Version Status Update
+Prior to a migration, the CRD's storage version status field is set to the storage version of the resource
+along with other previous versions that may still be in use. Once the migration is complete, the storage version
+status field is updated to the new storage version only, removing the previous versions. This is done to ensure
+seamless transition for users. Once this update is complete, users are able to proceed with removing the old versions from the CRD without any risk of data loss. 
+
+This is done by the StorageVersionMigrator controller setting the StorageMigration condition to 
+`Running` with the ObservedGeneration set to the generation the controller observes the CRD to 
+be at prior to migration. As long as the generation of the CRD is not updated during the migration, the StorageVersionMigrator controller will update the stored versions of the CRD to the new storage version.
+
 ### RBAC for SVM
 - Storage Version Migrator Controller
     ```yaml
@@ -378,6 +389,7 @@ total:                                                                          
 - Unexpected event handling(i.e. interrupted migrations)
 - Usage of [RealFIFO](https://github.com/kubernetes/kubernetes/pull/129568) and gating on feature enablement
 - Ensuring that migration only runs for API objects that support Create/Update in its discovery document
+- Added support for automatically triggering an update on CRD storage version status field after migration is completed.
 
 ### Upgrade / Downgrade Strategy
 The feature is enabled using the feature gate `StorageVersionMigrator`. During an upgrade, this gate must be set to true. During a downgrade, this gate must be set to false, and any remaining _StorageVersionMigration_ resources should be manually removed.
