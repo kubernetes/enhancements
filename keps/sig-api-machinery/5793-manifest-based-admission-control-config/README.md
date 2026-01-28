@@ -589,7 +589,6 @@ control API server startup flags. The feature does not expose new REST API endpo
 #### GA
 
 - At least two production users providing feedback
-- Feature gate removed (always enabled)
 - Stable usage in production environments for at least two releases
 - No regressions in API server startup time
 - All feedback from beta users addressed
