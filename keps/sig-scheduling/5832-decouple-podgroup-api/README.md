@@ -9,7 +9,6 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Scaling a Training Job](#story-1-scaling-a-training-job)
-    - [Story 2: DRA Claims per Replica](#story-2-dra-claims-per-replica)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -86,8 +85,6 @@ The current design embeds PodGroups within the Workload spec, creating several i
   - *Size Limit*: Large Workloads (i.e. large number of PodGroups) may easily hit the 1.5MB etcd object limit.
   - *Contention*: Updating the status of a single PodGroup would require read-modify-write on the central massive Workload object.
 In addition, any status change triggers watches for all controllers observing the Workload.
-- Resource claims (DRA) may belong to a specific subset of a workload (i.e., a specific replica in a LeaderWorkerSet).
-Currently, there is no distinct API object to attach these claims to, making garbage collection difficult.
 
 By decoupling `PodGroup` as a standalone runtime object:
 
@@ -143,10 +140,6 @@ status:
 #### Story 1: Scaling a Training Job
 
 As a user running distributed training jobs, I want to scale my job parallelism from 4 to 8 workers without recreating the Workload object.
-
-#### Story 2: DRA Claims per Replica
-
-As a GPU cluster admin, I want `ResourceClaims` for GPUs to be owned by specific PodGroups so that when a replica is deleted, its GPU claims are properly garbage collected.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -216,11 +209,6 @@ type PodGroupSpec struct {
    // the template for this PodGroup.
    // +required
    PodGroupTemplateName string
-
-   // ResourceClaim references the ResourceClaim or ResourceClaimTemplate for this PodGroup.
-   // Exactly one of ResourceClaim and ResourceClaimTemplate must be set.
-   // +optional
-   ResourceClaim *corev1.PodResourceClaim
 }
 
 type PodGroupStatus struct {
@@ -301,18 +289,15 @@ graph TB
     TW[Job / JobSet / LWS]
     subgraph Objects
       W[Workload API]
-      RC_created[ResourceClaim]
     end
     
     PG[PodGroup]
     P[Pods]
 
-    PG -.->|"owns if via ResourceClaimTemplates"| RC_created
     P -.->|ref| PG
 
     TW ==>|"① creates & owns"| W
     TW ==>|"② creates & owns"| PG
-    TW ==>|"③ creates via ResourceClaimTemplates"| RC_created
     TW ==>|"④ creates"| P
    
     P -.->|ref| W
@@ -322,8 +307,6 @@ graph TB
 The `PodGroup` object is created and owned by the true workload [^1] controller. When the controller needs to create pods that require gang scheduling, it first creates a `PodGroup` based on the `podGroupTemplate` that is defined in `WorkloadReference`.This ensures automatic garbage collection when the parent object is deleted.
 
 Pods reference their PodGroup via `workloadRef.podGroupTemplateName`. The scheduler uses this reference to look up the `PodGroup`, then follows `WorkloadReference` to locate the `Workload` to identify the scheduling policy. The scheduler requires the `PodGroup` to exist before scheduling pods that reference it.
-
-For DRA integration, the`ResourceClaim` either already exist or are created from `resourceClaimTemplate` is owned by the PodGroup, to ensure proper cleanup when this `PodGroup` is deleted.
 
 ### Naming Convention
 
