@@ -237,7 +237,7 @@ usecases. You can read more about it in the [extended proposal] document.
 #### NominatedNodeName impact on filtering performance
 
 Using `.status.nominatedNodeName` as an output of the Workload Scheduling Cycle
-can impact the performance of the standard pod-by-pod scheduling cycle.
+can impact the performance of the standard pod-by-pod scheduling cycle for all other pods.
 Whenever the scheduler filters a node, it must temporarily add nominated pods
 (with equal or higher priority) to the cached NodeInfo. In large clusters,
 the number of such operations multiplied by the scheduling throughput can yield to a visible overhead.
@@ -248,6 +248,8 @@ having to consider such nomination also increases.
 However, this impact is mitigated by several factors:
 * Nominations are temporary. As soon as workload-scheduled pods pass
   their individual scheduling cycle and are assumed, what cleans the in-memory nominations.
+* In case the nominations are no longer feasible,
+  the gang gets rejected as soon as the scheduler determines this.
 * For the workload pods themselves, the performance impact is negligible.
   They will typically only execute filters for the single node they are nominated to,
   rather than evaluating the entire cluster.
@@ -759,9 +761,9 @@ The list and configuration of plugins used by this algorithm will be the same as
 
      In the pod-by-pod cycle, preemption initiated by the workload pods will be forbidden.
      Allowing it would complicate reasoning about the consistency of the
-     Workload Scheduling Cycle and Workload-Aware Preemption. If preemption is necessary
+     Workload Scheduling Cycle and Workload-Aware Preemption. If preemption is necessary,
      (e.g., the nominated node is no longer valid), the gang will either be instantly rejected
-     (when the `minCount` cannot be satisfied) or time out (safety check) at `WaitOnPermit`
+     (when the `minCount` cannot be satisfied) or time out (safety check, in case a bug appears) at `WaitOnPermit`
      and all necessary preemptions will be simulated again in the next Workload Scheduling Cycle.
 
    * If `schedulableCount < minCount`, the cycle fails. Preemptions computed but not actuated
@@ -1031,10 +1033,11 @@ With Workload Scheduling Cycle and Delayed Preemption features, we will signific
 - Pods referencing a `Workload` (both gang and basic policies) are correctly processed via the Workload Scheduling Cycle.
 - `PodGroup` queuing ensures that all available members are retrieved and processed correctly.
 - Deadlocks and livelocks do not occur when multiple gangs compete for resources or interleave with standard pods.
-- Delayed Preemption works correctly for pod-by-pod (non-workload) scheduling.
+- Delayed Preemption feature doesn't break pod-by-pod (non-workload) scheduling.
 - Delayed Preemption ensures atomicity, i.e., victims are deleted only if the scheduler determines the entire gang can fit,
   otherwise, the cycle aborts with zero disruption.
 - Failed pod groups are requeued correctly and retry successfully when resources become available.
+- Gang is rejected if pod-by-pod scheduling cannot follow a nomination. All other nominations should be also cleared.
 
 We will also benchmark the performance impact of these changes to measure:
 
