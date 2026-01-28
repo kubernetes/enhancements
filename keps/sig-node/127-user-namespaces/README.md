@@ -510,27 +510,6 @@ namespace in the pod, and gain the full set of capabilities within a user namesp
 A serial test will be added to validate the functionality with the enabled
 feature gate.
 
-### Unresolved
-
-Here is a list of considerations raised in PRs discussion that hasn't yet
-settle. This list is not exhaustive, we are just trying to put the things that
-we don't want to forget or want to highlight it. Some things that are obvious we
-need to tackle are not listed. Let us know if you think it is important to add
-something else to this list:
-
-- What about windows or VM container runtimes, that don't use linux namespaces?
-  We need a review from windows maintainers once we have a more clear proposal.
-  We can then adjust the needed details, we don't expect the changes (if any) to be big.
-  In my head this looks like this: we merge this KEP in provisional state if
-  we agree on the high level idea, with @giuseppe we do a PoC so we can fill-in
-  more details to the KEP (like CRI changes, changes to container runtimes, how to
-  configure kubelet ranges, etc.), and then the Windows folks can review and we
-  adjust as needed (I doubt it will be a big change, if any). After that we switch
-  the KEP to implementable (or if there are long delays to get a review, we might
-  decide to do it after the first alpha, as the community prefers and time
-  allows). Same applies for VM runtimes.
-  UPDATE: Windows maintainers reviewed and [this change looks good to them][windows-review].
-
 ### Test Plan
 
 <!--
