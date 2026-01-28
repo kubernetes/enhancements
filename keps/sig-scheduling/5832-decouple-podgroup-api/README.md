@@ -8,7 +8,9 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1: Scaling a Training Job](#story-1-scaling-a-training-job)
+    - [Independent PodGroup Lifecycle](#independent-podgroup-lifecycle)
+    - [PodGroup-Level Status](#podgroup-level-status)
+    - [Handling Consistency During Creation](#handling-consistency-during-creation)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -137,9 +139,17 @@ status:
 
 ### User Stories (Optional)
 
-#### Story 1: Scaling a Training Job
+#### Independent PodGroup Lifecycle
 
-As a user running distributed training jobs, I want to scale my job parallelism from 4 to 8 workers without recreating the Workload object.
+As a user running LWS(LeaderWorkerSet), I want to update only the leader `PodGroup` without recreating the Workload object or affecting worker `PodGroups`.
+
+#### PodGroup-Level Status
+
+I have a large-scale training job with multiple replicas, and want to observe the scheduling status of each PodGroup independently, so I can identify which specific replica is having scheduling issues.
+
+#### Handling Consistency During Creation
+
+I have a distributed workload, and want pods that reference a not-yet-created `Workload` or `PodGroup` to remain pending until objects exist, rather than failing immediately, so that the controller can create objects in any order without causing scheduling failures or race conditions.
 
 ### Notes/Constraints/Caveats (Optional)
 
