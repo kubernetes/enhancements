@@ -7,8 +7,6 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Phase 1 (v1.36 - alpha)](#phase-1-v136---alpha)
-  - [Phase 2 (v1.37 - beta)](#phase-2-v137---beta)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Scaling a Training Job](#story-1-scaling-a-training-job)
     - [Story 2: DRA Claims per Replica](#story-2-dra-claims-per-replica)
@@ -24,7 +22,7 @@
   - [Ownership and Object Relationship](#ownership-and-object-relationship)
   - [Naming Convention](#naming-convention)
   - [Future Plans](#future-plans)
-    - [Phase 2: Hierarchical PodGroups](#phase-2-hierarchical-podgroups)
+    - [Hierarchical PodGroups](#hierarchical-podgroups)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -71,10 +69,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes decoupling the PodGroup API from the Workload API by introducing
-PodGroup as a standalone runtime object. In the current design, PodGroups are embedded within the Workload spec,
-which creates challenges around immutability, scaling, and lifecycle management. Under this proposal, the following changes are proposed:
+PodGroup as a standalone runtime object. In the [current design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), 
+PodGroups are embedded within the Workload spec, which creates challenges around immutability, scaling, and lifecycle management. Under this proposal, the following changes are proposed:
 
-- `Workload` becomes a static policy definition that specifies what workload behavior should be applied
+- `Workload` becomes a scheduling policy definition that specifies what workload behavior should be applied
 - `PodGroup` becomes a runtime object that is automatically created by true controllers (Job, JobSet, LeaderWorkerSet)
 when they create workloads, rather than being embedded within the Workload spec. It will be created based on the
 `podGroupTemplate` defined in the referenced Workload.
@@ -83,8 +81,7 @@ when they create workloads, rather than being embedded within the Workload spec.
 
 The current design embeds PodGroups within the Workload spec, creating several integration challenges:
 
-- Tight coupling the lifecycle of individual PodGroups which can be significantly shorter than the Workload as a whole.
-However, changes to one `PodGroup` (i.e., leader policy in LWS) require recreating the entire `Workload`.
+- PodGroups often have shorter lifecycles than the `Workloa` itself, modifying a single `PodGroup` (i.e., the leader podGroup in LWS) requires recreating the entire Workload.
 - Extending the Workload object to store the runtime status for all PodGroups would lead to significant scalability issues.
   - *Size Limit*: Large Workloads (i.e. large number of PodGroups) may easily hit the 1.5MB etcd object limit.
   - *Contention*: Updating the status of a single PodGroup would require read-modify-write on the central massive Workload object.
@@ -118,17 +115,7 @@ By decoupling `PodGroup` as a standalone runtime object:
 > [KEP-4671: Gang Scheduling using Workload Object](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling).
 > It is building on foundations and assumes the knowledge of the concepts introduced there.
 
-This KEP introduces two phases, both covered within this KEP:
-
-### Phase 1 (v1.36 - alpha)
-
- Focuses on static batch workloads with flat PodGroups. In this phase, The `PodGroup` API is
- introduced as a standalone runtime object that is created based on the `podGroupTemplate`
- defined in the referenced `Workload` API. Each `PodGroup` represents a single, flat group of pods requiring gang scheduling.
-
-### Phase 2 (v1.37 - beta)
-
- Extends support to advanced/dynamic batch workloads with hierarchical PodGroups. It will remain within this KEP but will follow the standard graduation process by being promoted to alpha in v1.37. This approach allows Phase 1 to progress independently, while Phase 2 will start fresh at alpha when introduced. See the [Future Plans section](#future-plans) for more details on Phase 2.
+ The KEP introduces the `PodGroup` API in `scheduling.k8s.io/v1alpha1` as a standalone runtime object that is created based on the `podGroupTemplate` defined in the referenced `Workload` API. Each `PodGroup` represents a single scheduling policy for in a batch workloads with flat PodGroups.
 
 ```yaml
 apiVersion: scheduling.k8s.io/v1alpha1
@@ -141,8 +128,6 @@ spec:
     name: training-workload
   podGroupTemplateRef:
     name: pd-1-template
-  replicaIndex: 1
-  # TBD: Add resourceClaimTemplates
 status:
   scheduledPods: 2
   conditions:
@@ -348,15 +333,9 @@ For DRA integration, the`ResourceClaim` either already exist or are created from
 
 ### Future Plans
 
-#### Phase 2: Hierarchical PodGroups
+#### Hierarchical PodGroups
 
-Phase 2 extends support hierarchical PodGroups structure for advanced batch workloads. This phase will follow its own graduation timeline within this KEP.
-
-**Motivation**:
-
-Complex distributed workloads often have sub-groupings that require different scheduling policies. For example, a distributed training job may have a main group of pods that require gang scheduling, and a separate group of pods that require basic scheduling. Or LWS (LeaderWorkerSet) patterns where leader and worker groups have different resource and scheduling requirements and leader must be scheduled before workers start.
-
-**Proposed Features**:
+We plan to extend `PodGroup` and `Workload` APIs to support hierarchical PodGroups structure for advanced batch workloads. Potential features include:
 
 - Allow `PodGroup` objects to reference parent `PodGroup` for hierarchical scheduling structures.
 - Ensure parent `PodGroup` is scheduled before child `PodGroup` to define ordering constraints.
