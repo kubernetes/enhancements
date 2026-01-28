@@ -15,7 +15,7 @@
     - [New Validation Tests](#new-validation-tests)
     - [Ensuring Validation Equivalence With Testing](#ensuring-validation-equivalence-with-testing)
   - [Introduce Feature Gates: <code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code>](#introduce-feature-gates-declarativevalidation--declarativevalidationtakeover)
-    - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code> Will Target Beta From The Beginning](#declarativevalidation--declarativevalidationtakeover-will-target-beta-from-the-beginning)
+    - [<code>DeclarativeValidation</code> Will Target Beta From The Beginning](#declarativevalidation-will-target-beta-from-the-beginning)
     - [Feature Gate Graduation Criteria](#feature-gate-graduation-criteria)
       - [<code>DeclarativeValidation</code> Feature Gate Beta to GA Graduation Criteria](#declarativevalidation-feature-gate-beta-to-ga-graduation-criteria)
   - [Linter](#linter)
@@ -66,15 +66,21 @@
 - [Design Details](#design-details)
   - [Summary of Declarative Validation Components](#summary-of-declarative-validation-components)
   - [<code>validation-gen</code> Implementation Plan](#validation-gen-implementation-plan)
+  - [Shadow Validation Semantic](#shadow-validation-semantic)
+    - [The <code>+k8s:shadow</code> Semantic](#the-k8sshadow-semantic)
+    - [Execution Logic](#execution-logic)
+    - [Validation Modes &amp; Configuration](#validation-modes--configuration)
+    - [Constraints &amp; Safety](#constraints--safety)
+      - [Stability Constraints (Alpha/Beta Tags)](#stability-constraints-alphabeta-tags)
+    - [Example Walkthrough: Two-Field Migration](#example-walkthrough-two-field-migration)
   - [Catalog of Supported Validation Rules &amp; Associated IDL Tags](#catalog-of-supported-validation-rules--associated-idl-tags)
   - [Supporting Declarative Validation IDL tags On Shared Struct Fields](#supporting-declarative-validation-idl-tags-on-shared-struct-fields)
     - [<code>subfield</code> IDL Tag](#subfield-idl-tag)
     - [<code>validation-gen</code> One-deep typedef Issue And Solution](#validation-gen-one-deep-typedef-issue-and-solution)
       - [Solution](#solution)
   - [Migration Plan](#migration-plan)
-    - [Phase1: Initialization (Responsibility of Contributors Implementing the KEP)](#phase1-initialization-responsibility-of-contributors-implementing-the-kep)
-    - [Phase2: Scaling the Migration (Responsibility of Contributors Implementing the KEP and broader community)](#phase2-scaling-the-migration-responsibility-of-contributors-implementing-the-kep-and-broader-community)
-    - [Phase3: Finalization and GA (Core Team and community)](#phase3-finalization-and-ga-core-team-and-community)
+    - [Phase 1: v1.36 - v1.38 - DV featuregate GA (not removed)](#phase-1-v136---v138---dv-featuregate-ga-not-removed)
+    - [Phase 2: v1.39+ - <code>DeclarativeValidation</code> featuregate removed (no emulation)](#phase-2-v139---declarativevalidation-featuregate-removed-no-emulation)
   - [Tagging and Validating Against Versioned Types](#tagging-and-validating-against-versioned-types)
   - [Handling Zero Values in Declarative Validation](#handling-zero-values-in-declarative-validation)
     - [Difficulties with <code>+k8s:required</code> and <code>+k8s:default</code>](#difficulties-with-k8srequired-and-k8sdefault)
@@ -347,15 +353,18 @@ Additionally, to aid in ensuring that the validation is identical across current
 
 Two feature gates were introduced in v1.33 to manage the rollout:
 
-*   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics (see `DeclarativeValidationTakeover` below).  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
+*   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics.  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
+    *   **Status**: Graduated to GA in v1.36.
+    *   **Removal**: Scheduled for removal in v1.39.
 
-*   **`DeclarativeValidationTakeover`**: This gate determines *which* validation result (imperative or declarative) is returned to the user when `DeclarativeValidation` is also enabled.  When `DeclarativeValidationTakeover` is enabled, the declarative validation result is returned. When disabled (and `DeclarativeValidation` is enabled), the imperative result is returned.  `DeclarativeValidationTakeover` has *no effect* if `DeclarativeValidation` is disabled.  This gate allows for a phased rollout where we can first verify equivalence, and *then* switch to using the declarative results.
+*   **`DeclarativeValidationTakeover` (Deprecated)**: This gate was originally designed to determine *which* validation result (imperative or declarative) is returned to the user when `DeclarativeValidation` is also enabled.
+    *   **Status**: Deprecated in v1.36.
+    *   **Removal**: Scheduled for removal in v1.37.
+    *   **Replacement**: We are replacing this global "all-or-nothing" switch with a fine-grained **Shadow Validation Semantic** using a new tag prefix: `+k8s:shadow(introducedVersion=<version>)=`. This allows individual validations on individual fields to opt-in to "shadow mode" (running verification without affecting API behavior) while the DV subsystem itself is globally enabled. See [Shadow Validation Semantic](#shadow-validation-semantic) for details.
 
-#### `DeclarativeValidation` & `DeclarativeValidationTakeover` Will Target Beta From The Beginning
+#### `DeclarativeValidation` Will Target Beta From The Beginning
 
-Declarative Validation will target the Beta stage from the beginning (vs Alpha).  Additionally, `DeclarativeValidation` is targeting Beta with `default:true`.  This is because Declarative Validation is not new functionality, but an alternative implementation of validation, and users should not be able to perceive any changes when swapping hand-written validation with identical declarative validation.  The feature gate, `DeclarativeValidation`, exists as a safety mechanism in case a mistake is made so that users can turn it off and get back to safety. There is prior art for this rationale where other feature gates did not target Alpha as they were not related to new functionality (changing underlying behavior, bugfix, etc.).  An example of this is the current feature gate `AllowParsingUserUIDFromCertAuth`, which was introduced in Beta as `default:true` as it is not a net new feature but fixes a current issue ([PR](https://github.com/kubernetes/kubernetes/pull/127897), [feature gate](https://github.com/kubernetes/kubernetes/blob/master/pkg/features/versioned_kube_features.go#L228-L230)). 
-
-`DeclarativeValidationTakeover` will default to `false` initially in Beta.  This way during the initial rollout we can "soak" and verify that the errors produced for a replaced validation rule (handwritten -> declarative) are identical.  Over time the goal is to flip `DeclarativeValidationTakeover` to be default `true` such that for fields where declarative validation rules exist, they are used as the authoritative validation rule.
+Declarative Validation will target the Beta stage from the beginning (vs Alpha).  Additionally, `DeclarativeValidation` is targeting Beta with `default:true`.  This is because Declarative Validation is not new functionality, but an alternative implementation of validation, and users should not be able to perceive any changes when swapping hand-written validation with identical declarative validation.  The feature gate, `DeclarativeValidation`, exists as a safety mechanism in case a mistake is made so that users can turn it off and get back to safety. There is prior art for this rationale where other feature gates did not target Alpha as they were not related to new functionality (changing underlying behavior, bugfix, etc.).  An example of this is the current feature gate `AllowParsingUserUIDFromCertAuth`, which was introduced in Beta as `default:true` as it is not a net new feature but fixes a current issue ([PR](https://github.com/kubernetes/kubernetes/pull/127897), [feature gate](https://github.com/kubernetes/kubernetes/blob/master/pkg/features/versioned_kube_features.go#L228-L230)).
 
 #### Feature Gate Graduation Criteria
 
@@ -754,6 +763,82 @@ Once validation is generated, it will be easy to opt-in (see below snippet).
 // +k8s:validation-gen-input=k8s.io/api/apps/v1
 ```
 
+### Shadow Validation Semantic
+
+To manage the migration of legacy fields safely without a global "Takeover" switch, we introduce a fine-grained Shadow Semantic. This allows individual validations on individual fields to opt-in to "shadow mode" (running verification without affecting API behavior) while the DV subsystem itself is globally enabled.
+
+#### The `+k8s:shadow` Semantic
+*   **Format**: `+k8s:shadow(<version>)=+k8s:<tag>=<value>`
+*   **Behavior**: The generator produces validation code that executes but suppresses the error results from the API response. Mismatches against handwritten validation are recorded via metrics.
+
+#### Execution Logic
+Declarative Validation executes if EITHER:
+1.  The `DeclarativeValidation` featuregate is Enabled.
+2.  The resource strategy is configured with `WithExplicitDeclarativeValidation()`.
+
+Implied Safety: By using `WithExplicitDeclarativeValidation()`, you guarantee validation runs even if the featuregate is disabled (e.g., via Emulated Version).
+
+#### Validation Modes & Configuration
+We eliminate the need for a specific `+k8s:declarativeValidationNative` tag. Instead, we control the authoritative behavior via the resource's Strategy configuration (`strategy.go`).
+
+| State | Tags | Strategy Config | Behavior |
+| :--- | :--- | :--- | :--- |
+| New/Switched | `+k8s:minimum=1` | `WithExplicitDeclarativeValidation()` | Authoritative. Bypasses featuregate. |
+| Migrating | `+k8s:shadow(introducedVersion=1.35)=+k8s:minimum=1` | `WithExplicitShadowing()` | Shadow. Suppressed by handwritten (Metrics only). |
+| Legacy | `+k8s:minimum=1` | (Default) | Implicit Shadow. Depends on DV FeatureGate. |
+
+#### Constraints & Safety
+*   **New APIs**: Use `WithExplicitDeclarativeValidation()` in `strategy.go`. This ensures validation is authoritative and bypasses feature gate checks.
+*   **Legacy APIs**: May remain in “Implicit Shadow” mode without strategy changes. They transition to Explicit mode only when ready.
+*   **Safe Promotion**: To ensure safe rollout, a new or tightened validation rule must be shadowed for at least 2 releases before being promoted.
+*   **Linting**: Tooling should block the removal of the shadow prefix if the recorded version is less than 2 releases old.
+
+##### Stability Constraints (Alpha/Beta Tags)
+*   **Standard Tags**: MUST be Stable when using `ExplicitShadowing`.
+*   **Legacy Exemption**: Legacy types in "Implicit Shadow" mode are exempt.
+*   **Migration Rule**: Before enabling `WithExplicitShadowing()` for a resource, developers MUST ensure that all existing standard Alpha/Beta tags are converted to `+k8s:shadow=` tags.
+
+#### Example Walkthrough: Two-Field Migration
+
+**Phase 1 - v1.36-1.38 (Implicit Shadow)**
+`strategy.go`:
+```go
+func (s *Strategy) Validate(ctx, obj) {
+    rest.ValidateDeclarativelyWithMigrationChecks(ctx, scheme, obj, nil, errs, operation.Create)
+}
+```
+`types.go`:
+```go
+// +k8s:minimum=1
+FieldA int `json:"fieldA"`
+// No DV migrated
+FieldB int `json:"fieldB"`
+```
+
+**Phase 2 - v1.39 (`DeclarativeValidation` featuregate removed)**
+`strategy.go`:
+```go
+func (s *Strategy) Validate(ctx, obj) {
+    rest.ValidateDeclarativelyWithMigrationChecks(ctx, scheme, obj, nil, errs, operation.Create,
+        rest.WithExplicitShadowing()) // <--- ENABLED
+}
+```
+`types.go`:
+```go
+// +k8s:shadow(v1.36)=+k8s:min=1
+FieldA int `json:"fieldA"`
+FieldB int `json:"fieldB"`
+```
+
+**Phase 2+ (Granular Promotion, v1.39+)**
+`types.go`:
+```go
+// +k8s:minimum=1
+FieldA int `json:"fieldA"` // <--- PREFIX REMOVED (AUTHORITATIVE)
+// +k8s:shadow(v1.39)=+k8s:maximum=10
+FieldB int `json:"fieldB"` // <--- STILL SHADOWED
+```
+
 ### Catalog of Supported Validation Rules & Associated IDL Tags
 A number of the rules in the below sections are not implemented but will be trivial to implement once we are are aligned on the right pattern/syntax for the given validator. Implementing a validator “just-in-time” means we don't add more without real fields using them. We estimate that in the limit we may have 30-40 validators, but today we have less than 10.  
 
@@ -861,67 +946,49 @@ As we get feedback from our design partners, if there is a necessity to extend t
 
 ### Migration Plan
 
-This plan outlines the steps involved in migrating Kubernetes API validation from handwritten code to a declarative approach using validation tags and code generation. The process of migration will be incremental and community-driven. 
+Our goal is to complete the adoption of Explicit Shadowing proactively within a short period (targeting a single release). This eliminates the distinction between implicit and explicit modes and ensures a uniform architecture across the project.
 
-We should be able to start the migration when:
+**Contextual Enforcement**: The decision to enforce validation is not simply based on the tag itself, but on the application of that tag to a specific field and its historical behavior.
 
-*   `validation-gen` is functional with the required set of tags implemented from the list above for Beta and then GA
-*   `DeclarativeValidation` feature gate is introduced.
-*   A linter is available (`validation-gen --lint`).
+**Data-Driven Confidence**: We require verified mismatch data (soak time) before enabling enforcement by default.
+*   **Legacy Fields**: Have effectively soaked for releases (Implicit Shadow).
+*   **New Fields**: Verified by design (Authoritative from Day 1).
+*   **Changed Fields**: Must shadow for 2 releases to gather data.
 
-#### Phase1: Initialization (Responsibility of Contributors Implementing the KEP)
+#### Phase 1: v1.36 - v1.38 - DV featuregate GA (not removed)
 
-1. Implement the test plan: [Validation Test Framework](https://docs.google.com/document/d/143KUaYcrEnxEWwPWrQH5P0MsF_V2Yrr8bsXJY76g86I/edit?resourcekey=0-K-n-yyITXtHbKVZnT9kAtw&tab=t.0#heading=h.hkbvgeat5xy8)
-2. Prototype and Initial API Selection (Core Team)
-*   Select a small set of representative Kubernetes API resources. (core/v1/replicationcontroller)
-*   Implement a working prototype by applying the entire process (adding IDL tags, generating code, updating tests) to these selected resources.
-3. Documentation and Contribution Guide (Core Team):
-*   Write documentation explaining how to:
-    *   Add validation tags (IDL tags).
-    *   Run validation-gen.
-    *   Update unit and E2E tests.
-*   Publish a contribution guide for the declarative validation migration.
+*   **Case: New APIs**
+    *   Newly introduced APIs, whose validation can be covered by DV. Note that it may also have some complex validation that still needs to be handwritten.
+    *   **Action**: `Strategy.go`: adopt `WithExplicitShadowing()` which would let the tag without shadow prefix enforce.
+    *   **Tag Syntax**: Use standard tags without shadow prefix (e.g., `// +k8s:minimum=1`).
+    *   **Runtime Effect**: Authoritative (Blocking). Errors are returned to the user. Safe because it bypasses the feature gate (New APIs rely on this).
 
-#### Phase2: Scaling the Migration (Responsibility of Contributors Implementing the KEP and broader community)
+*   **Case: Legacy DV migrated APIs**
+    *   **Action**: Remain in “Implicit Shadow” mode. No strategy change.
+    *   **Tag Syntax**: Existing standard tags (e.g., `// +k8s:minimum=1`).
+    *   **Runtime Effect**: Shadowed (Metrics Only). Errors are suppressed. (Assuming Implicit Mode default).
 
-1. Tracking Issue and Progress Management:
-*   Create a central tracking issue on GitHub.
-*   Break down the migration into smaller, manageable tasks. There are couple of options:
-    *   Per validation rule (recommended): Migrate a single validation rule for a specific field. E.g., `+k8s:minimum=0` for field `ReplicationControllerSpec.Replicas`
-    *   Per Field (recommended): Migrate all validation rules for a single field.
-    *   Per Type: Migrate all validation rules for a single API. e.g. all validation rules of `ReplicationControllerSpec`.
-    *   Per Group (not recommended): Migrate the entire API group/version.
-*   Label tasks appropriately.
-2. Community-Driven API Migration:
-*   Community:
-    *   Analyze existing handwritten validation.
-    *   Add appropriate IDL tags to API type definitions.
-    *   Run `validation-gen` to generate validation code.
-    *   Update unit tests to use the generated validation and ensure coverage.
-    *   Update E2E tests to verify behavior with declarative validation.
-    *   Submit pull requests (PRs) with the changes.
-*   Core Team:
-    *   Provide technical guidance and support to community contributors.
-    *   Review PRs.
-    *   Monitor the tracking issue and adjust the plan as needed.
-    *   Add/extend validators to enable further progress into non-trivial cases
-3. Using Schemas for Validation (Joint Effort):
-*   Core Team:
-    *   Enable validation through generated schemas for migrated resources (controlled by DeclarativeValidation feature gate).
-    *   Implement logic to populate default values from schemas.
-*   Community:
-    *   Run E2E tests with declarative validation enabled.
+*   **Case: DV migration on legacy APIs**
+    *   **Action**: Add validation to a resource that has not yet adopted the explicit strategy.
+    *   **Tag Syntax**: Existing standard tags (e.g., `// +k8s:minimum=1`).
+    *   **Runtime Effect**: Shadowed (Metrics Only).
 
-#### 	Phase3: Finalization and GA (Core Team and community)
+#### Phase 2: v1.39+ - `DeclarativeValidation` featuregate removed (no emulation)
 
-1. After DeclarativeValidation reaches GA
-    *   The granularity of control for enabling/disabling declarative validation (group, version, type, or field) will be determined based on the experience gained during the Beta phase. The feature gate `DeclarativeValidation` may be retained for a period of time, gradually shifting more validation to the declarative approach, and allowing for a phased rollout and rollback if needed.
-2. Deprecation of Legacy Validation is Announced
-    *   A formal deprecation notice will be issued for the remaining hand-written validation functions. This notice will specify a timeline for the complete removal of the legacy validation code.
-3. Deprecation wait period passes (period adhering to community policy)
-    *   The community will have a defined period to adjust to the full migration to declarative validation. During this time, both hand-written and declarative validation may be used, depending on the feature gate's configuration.
-4. Legacy validation code that is being validated declaratively can safely be deleted
-    *   After the deprecation period, and once the feature gate is removed, the hand-written validation code which has been validated by the generated code will be removed from the codebase.
+*   **Case: Legacy Onboarding**
+    *   **Action**: Legacy resources adopt the `WithExplicitShadowing()` + `+k8s:shadow(version)=` prefix (Atomic Step). This is performed type-by-type.
+    *   **Tag Syntax**: Convert `+k8s:minimum=1` -> `+k8s:shadow(v1.39)=+k8s:minimum=1`.
+    *   **Runtime Effect**: Shadowed (Metrics Only). Explicitly suppressed by the prefix.
+
+*   **Case: Authority Promotion**
+    *   **Action**: Remove shadow: prefix and delete handwritten code.
+    *   **Tag Syntax**: Convert `// +k8s:shadow=+k8s:min=1` -> `// +k8s:min=1`.
+    *   **Runtime Effect**: Authoritative (Blocking). Errors are returned to the user.
+
+*   **Case: Business as Usual (New APIs & Rules)**
+    *   **Action**: Follow the standard Explicit Strategy. Use shadow: only for experimental/soak logic.
+    *   **Tag Syntax**: Standard `+k8s:min=1`.
+    *   **Runtime Effect**: Authoritative.
 
 
 
@@ -1831,9 +1898,9 @@ N/A. This change does not affect any communications going out of the apiserver. 
 *   `DeclarativeValidation`
     *   Beta: Enables running both imperative and declarative validation. Mismatches are logged and reported via metrics. Imperative validation errors are returned to users.
     *   GA: Enables running both imperative and declarative validation. Mismatches are logged and reported via metrics. Imperative validation errors are returned to users.
-*   `DeclarativeValidationTakeover`
+*   `DeclarativeValidationTakeover` (Deprecated)
     *   Beta: When `DeclarativeValidation` is also enabled, returns declarative validation errors to users.  Has no effect if `DeclarativeValidation` is disabled.
-    *   GA: When `DeclarativeValidation` is also enabled, returns declarative validation errors to users.  Has no effect if `DeclarativeValidation` is disabled.
+    *   GA: Removed. Its function is replaced by the fine-grained [Shadow Validation Semantic](#shadow-validation-semantic).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1996,10 +2063,12 @@ If the API server is failing to meet SLOs (latency, validation error-rate, etc.)
 
 ## Implementation History
 
-v1.35: Dual implementation (DV + hand-written) requirement enforced, no DV-Only usage, tag/feature stability data collection and stability codified, validation library for dual implementation
-
-v1.36: Graduate the `DeclarativeValidation` feature gate to GA. (The 
-`DeclarativeValidationTakeover` feature gate remains off by default)
+*   v1.33: Alpha, introduced `validation-gen` and initial migration for `ReplicationController`.
+*   v1.34: Beta, introduced `DeclarativeValidation` and `DeclarativeValidationTakeover` feature gates.
+*   v1.35: Dual implementation (DV + hand-written) requirement enforced, no DV-Only usage, tag/feature stability data collection and stability codified, validation library for dual implementation.
+*   v1.36: Graduate the `DeclarativeValidation` feature gate to GA. Deprecate `DeclarativeValidationTakeover` feature gate. Introduce [Shadow Validation Semantic](#shadow-validation-semantic) for fine-grained control.
+*   v1.37: Removal of `DeclarativeValidationTakeover` feature gate.
+*   v1.39: Removal of GA'ed `DeclarativeValidation` feature gate.
 
 ## Drawbacks
 
