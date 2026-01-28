@@ -1260,6 +1260,11 @@ extending the production code to implement this enhancement.
 - `<package>`: `<date>` - `<test coverage>`
 -->
 
+<!--
+Generated with:
+go test -cover ./pkg/scheduler/framework/plugins/dynamicresources/... ./pkg/controller/resourceclaim ./pkg/kubelet/cm/dra/... ./staging/src/k8s.io/dynamic-resource-allocation/cel ./staging/src/k8s.io/dynamic-resource-allocation/structured ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/incubating ./staging/src/k8s.io/dynamic-resource-allocation/structured/internal/stable | sed -e 's/.*\(k8s.io[a-z/-]*\).*coverage: \(.*\) of statements/- `\1`: \2/' | sort
+-->
+
 Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
 
 - `k8s.io/dynamic-resource-allocation/cel`: 88.8%
@@ -1267,10 +1272,21 @@ Start of v1.32 development cycle (v1.32.0-alpha.1-178-gd9c46d8ecb1):
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: 70.0%
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 72.9%
 
-We also plan to add unit tests to verify that the theoretical maximum size
-of the ResourceSlice resource remains within the size limitations of etcd. As
-the resource has become more complex with additional fields, it has become
-harder to do simple back-of-the-envelope calculations.
+We have integration tests that validates the theoretical maximum size of the
+ResourceSlice resource to make sure it remains within the size limitations
+of etcd.
+
+Start of v1.36 development cycle (01/23/2026):
+- `k8s.io/dynamic-resource-allocation/cel`: 85.2%
+- `k8s.io/dynamic-resource-allocation/structured`: 33.3%
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: 93.1%
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: 92.2%
+- `k8s.io/dynamic-resource-allocation/structured/internal/stable`: 67.7%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 74.6%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 83.3%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 83.5%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 44.2%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.0%
 
 ##### Integration tests
 
@@ -1282,14 +1298,10 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-The existing [integration tests for kube-scheduler which measure
-performance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf#readme)
-will be extended to cover the overhead of running the additional logic to
-support the features in this KEP. These also serve as [correctness
-tests](https://github.com/kubernetes/kubernetes/commit/cecebe8ea2feee856bc7a62f4c16711ee8a5f5d9)
-as part of the normal Kubernetes "integration" jobs which cover [the dynamic
-resource
-controller](https://github.com/kubernetes/kubernetes/blob/294bde0079a0d56099cf8b8cf558e3ae7230de12/test/integration/scheduler_perf/util.go#L135-L139).
+Integration tests to verify performance have been added
+[here](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf/dra/partitionabledevices).
+These tests also serve as correctness tests, but additional integration tests will
+be added to improve coverage.
 
 ##### e2e tests
 
@@ -1303,12 +1315,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-End-to-end testing depends on a working resource driver and a container runtime
-with CDI support. A [test
-driver](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra/test-driver)
-was developed as part of the overall DRA development effort. We are extending
-this test driver to enable support for `PartitionableDevice`s and adding tests to
-ensure they are handled by the scheduler as described in this KEP.
+E2e tests have been added for the Partitionable Devices feature:
+
+- source code: https://github.com/kubernetes/kubernetes/blob/b2ac9e206fdd912f35f2ab5b3c5b5243303ba14b/test/e2e/dra/dra.go#L1789-L1867
+- job: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all&include-filter-by-regex=DRAPartitionableDevices
+- triage: https://storage.googleapis.com/k8s-triage/index.html?test=DRAPartitionableDevices
 
 ### Graduation Criteria
 
@@ -1394,7 +1405,7 @@ of the Partitionable Devices API, allocation of devices will fail as described i
 
 The scheduler may lose track of what devices it has allocated to what pods. Any
 pods that had previously allocated devices with the feature enabled will need
-to be deleted to ensure they are freed back to their corresponding driver  and
+to be deleted to ensure they are freed back to their corresponding driver and
 the accounting for them is updated in the scheduler.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -1404,15 +1415,11 @@ Kubernetes components themselves. They are written by 3rd-party drivers.
 However, the scheduler does consume these objects and track information from
 them in order to make scheduling decisions.
 
-Unit tests in will be written in the scheduler to verify that enabling /
+Unit tests exist in the scheduler that verify that enabling /
 disabling of the DRAPartitionableDevices feature gate is non-disruptive to the
 scheduler.
 
 ### Rollout, Upgrade and Rollback Planning
-
-<!--
-This section must be completed when targeting beta to a release.
--->
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
@@ -1437,132 +1444,94 @@ with counter sets defined in separate `ResourceSlices`.
 Drivers and `ResourceSlices` using the Partitionable Devices feature should be
 removed from the cluster before upgrade/downgrade between 1.34 and 1.35.
 
+For upgrade to 1.36 where the Partitionable Devices feature has been promoted
+to beta, workloads will not be impacted unless a driver is running that publishes
+ResourceSlices that uses the Partitionable Devices feature. If a driver starts
+publishing ResourceSlices that uses the feature before it has been completely
+rolled out, it can cause failure to schedule pods or a failure to run the pods
+on the nodes. Drivers should only use the feature once it has been fully
+rolled out in the cluster. This will not affect running workloads unless they
+have to be restarted.
+
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-Will be considered for beta.
+One indicator are unexpected restarts of the cluster control plane
+components (kube-scheduler, apiserver, kube-controller-manager).
+
+If the scheduler_pending_pods metric in the kube-scheduler suddenly increases or
+remains constant, it can suggest that pods are no longer getting scheduled which
+might be due to a problem with the DRA scheduler plugin. Another measure is an increase
+in the number of pods that fail to start, as indicated by the
+kubelet_started_containers_errors_total metric.
+
+In all cases further analysis of logs and pod events is needed to determine
+whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
-Will be considered for beta.
+This will be done manually before transition to beta by bringing up a KinD cluster with kubeadm
+and changing the feature gate for individual components.
+
+Roundtripping of API types is covered by unit tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
-Will be considered for beta.
+No
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-Will be considered for beta.
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
-Will be considered for beta.
+There will be `ResourceSlices` in the cluster with either:
+* the `spec.SharedCounters` field set, meaning that counter sets are defined in at least one of
+  the resource pools
+* the `spec.perDeviceNodeSelection` field is set to `true`, meaning that devices within a single
+  `ResourceSlice` might have different node selectors.
+
+This would mean that there are drivers running that are using the Partitionable Devices feature and
+that devices are being advertised that rely on the feature.
+
+The feature is in use by workloads if any of those devices have been allocated to `ResourceClaims`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
--->
-Will be considered for beta.
+- [x] API .status
+  - Other field: `.status.allocation.devices.results.device` for a ResourceClaim references a device
+    from a resource pool that has `ResourceSlices` using the Partitionable Devices feature.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+As for normal pod scheduling of pods using ResourceClaims, there is no SLO for scheduling with
+partitionable devices.
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
-Will be considered for beta.
+Since using the feature means more work is needed to determine if a device can be allocated,
+we expect pod scheduling to be slower when this feature is used. Also, this feature is likely
+to result in a higher number of devices listed in a resource pool, which also is likely to mean
+the allocator needs to do more work to select devices.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
+These are the same as for the main DRA feature:
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
--->
-Will be considered for beta.
+- [x] Metrics
+  - Metric name: resourceclaim_controller_create_total
+  - Metric name: resourceclaim_controller_create_failures_total
+  - Metric name: resourceclaim_controller_resource_claims
+  - Metric name: resourceclaim_controller_allocated_resource_claims
+  - Metric name: workqueue with name="resource_claim"
+  - Metric name: scheduler_pending_pods
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
-Will be considered for beta.
+No
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
-Will be considered for beta.
+This feature depends on the DRA structured parameters feature being enabled, and on DRA drivers being deployed.
+There are no requirements beyond those already needed for DRA structured parameters. Core DRA is locked to on in
+1.36, but it can still be disabled through emulation.
 
 ### Scalability
 
@@ -1610,45 +1579,28 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
+The troubleshooting section in https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#troubleshooting
+still applies. The only additional failure modes comes from version skew
+in the cluster and the troubleshooting steps provided through the link above
+should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Will be considered for beta.
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-Will be considered for beta.
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Will be considered for beta.
+N/A since this feature does not come with an SLO.
 
 ## Implementation History
 
 - Kubernetes 1.32: KEP accepted as "implementable".
 - Kubernetes 1.33: Implemented as an alpha feature.
+- Kubernetes 1.36: Partitionable Devices graduates to beta.
 
 ## Drawbacks
 
