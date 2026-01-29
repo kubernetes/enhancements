@@ -81,13 +81,12 @@ when they create workloads, rather than being embedded within the Workload spec.
 
 ## Motivation
 
-The current design embeds PodGroups within the Workload spec, creating several integration challenges:
+The current design embeds PodGroups within the Workload spec which creates several architectural challenges:
 
-- PodGroups often have shorter lifecycles than the `Workloa` itself, modifying a single `PodGroup` (i.e., the leader podGroup in LWS) requires recreating the entire Workload.
-- Extending the Workload object to store the runtime status for all PodGroups would lead to significant scalability issues.
+- `Workload` represents long-lived configuration-intent, whereas `PodGroups` represent transient units of scheduling. Tying runtime execution units to the persistent definition object violates separation of concerns.
+- Extending the Workload object to track the runtime status for all PodGroups would lead to significant scalability issues.
   - *Size Limit*: Large Workloads (i.e. large number of PodGroups) may easily hit the 1.5MB etcd object limit.
   - *Contention*: Updating the status of a single PodGroup would require read-modify-write on the central massive Workload object.
-In addition, any status change triggers watches for all controllers observing the Workload.
 
 By decoupling `PodGroup` as a standalone runtime object:
 
