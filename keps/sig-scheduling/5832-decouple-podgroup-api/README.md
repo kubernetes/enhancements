@@ -16,7 +16,8 @@
   - [API](#api)
     - [1. <code>Pod</code> API](#1-pod-api)
     - [2. <code>PodGroup</code> API](#2-podgroup-api)
-    - [Backward Compatible PodGroup Transition](#backward-compatible-podgroup-transition)
+    - [PodGroup Creation Ordering](#podgroup-creation-ordering)
+    - [Backward Compatibility for PodGroup Transition](#backward-compatibility-for-podgroup-transition)
   - [Scheduler Changes](#scheduler-changes)
     - [Informers and Watches](#informers-and-watches)
     - [GangScheduling plugin](#gangscheduling-plugin)
@@ -206,7 +207,7 @@ type PodGroup struct {
 // PodGroupSpec defines the desired state of a PodGroup.
 type PodGroupSpec struct {
    // WorkloadRef references the Workload that defines the policy.
-   // This allows the scheduler to locate the static policy.
+   // This allows the scheduler to locate the scheduling policy.
    // +required
    WorkloadRef *corev1.ObjectReference
 
@@ -233,22 +234,35 @@ type PodGroupStatus struct {
    ScheduledPods int32
 }
 ```
+#### PodGroup Creation Ordering
 
-#### Backward Compatible PodGroup Transition
+Since `PodGroup` is a runtime object created by true workload[^1] controllers, strict creation ordering (`PodGroup` must exist before `Pods`) is required to ensure the consistency of the scheduling policy.
 
-An important design consideration that we need to discuss is how to handle the transition period when PodGroup doesn't exist yet.
+**Semantics:**
+- Pods with `workloadRef.podGroupName` set to a non-existent `PodGroup` are marked as `UnschedulableAndUnresolvable`
+- The scheduler re-enqueues these pods when the `PodGroup` is created (via informer Add event)
 
-We propose to follow a similar pattern to PVCs by require strict ordering. The `PodGroup` must exist before `Pods`. The scheduler validates `Pod.spec.WorkloadRef.podGroupName` , while pods referencing non-existing `PodGroup` remain pending until objects created.
+This allows controllers to handle transient race conditions during object creation.
 
-This change needs to be backward compatible, since [KEP 4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling) allows pods to reference non-existing `Workload`. Therefore, this KEP needs to ensure that this change:
+**Controller Responsibility:**
+True workload[^1] controllers are responsible for creating `PodGroup` and `Workload` objects before creating `Pods`. the required order is:
+1. Create `Workload` object
+2. Create `PodGroup` runtime object
+3. Create `Pods` with `workloadRef.podGroupName` set to the name of the newly created `PodGroup`
+
+#### Backward Compatibility for PodGroup Transition
+
+An important design consideration that we need to discuss is how to handle the transition period when PodGroup doesn't exist yet (legacy behavior [KEP 4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling)). Hence, we need to allow pods to reference `Workload` objects using `workloadRef.podGroup[]` and `workloadRef.podGroupReplicaKey` without a standalone `PodGroup` object. 
+
+This KEP needs to ensure that this change:
 
 - Doesn't break existing clusters during upgrade
 - Can handle existing pods that reference non-existing `Workloads` that don't have `PodGroups` yet.
 - Allows gradual controller adoption so eventually we can enable strict PodGroup-first ordering
 
-We propose to address these requirements by:
+To support migration from the embedded `PodGroup` model, we propose the following:
 
-**1. Follow three-phase migration:**
+**1. Phase migration:**
 
 - **Phase 1 (alpha):** Soft validation
   - Pods referencing non-existing `Workload` or `PodGroup` will remain pending until objects created
