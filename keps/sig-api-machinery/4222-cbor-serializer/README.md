@@ -1084,6 +1084,7 @@ in back-to-back releases.
   custom CBOR behaviors.
 - All Kubernetes components have opted out of automatic transcoding to JSON for FieldsV1 and
   RawExtension.
+- Other structured endpoints like discovery, statusz, flagz, etc., support CBOR.
 
 #### GA
 
