@@ -336,7 +336,7 @@ difficult to handle gracefully for the community-provided library proposed in th
 
 To address the deficiencies above, we further propose that:
 
-* this KEP reserves a name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args`, which holds
+* this KEP reserves a name in the extensions, `clusterprofiles.multicluster.x-k8s.io/exec/additional-args`, which holds
 additional CLI arguments that would be supplied to the exec plugin when the ClusterProfile API and community-provided
 library are used for authentication.
 
@@ -349,7 +349,7 @@ library are used for authentication.
   For simplicity reasons, the community-provided library will not perform any de-duplication on the CLI arguments
   after the additional arguments are appended.
 
-* this KEP reserves another name in the extensions, `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs`, which
+* this KEP reserves another name in the extensions, `clusterprofiles.multicluster.x-k8s.io/exec/additional-args`, which
 holds additional environment variables that would be supplied upon calling the exec plugin when the ClusterProfile API
 and community-provided library are used for authentication.
 
@@ -424,7 +424,7 @@ secret reader type:
             clusterName: spoke-1
   ```
 
-* This example uses the "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args" extension to pass additional
+* This example uses the `clusterprofiles.multicluster.x-k8s.io/exec/additional-args` extension to pass additional
 CLI arguments (`-audience https://my-on-prem-k8s.example.dev`) to the exec plugin when the `spire-agent` credential
 provider is used, as the cluster's authentication solution is expecting tokens with this specific audience for
 security reasons.
@@ -443,13 +443,13 @@ security reasons.
         server: https://my-on-prem-k8s.example.dev
         ...
         extensions:
-        - name: "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args"
+        - name: "clusterprofiles.multicluster.x-k8s.io/exec/additional-args"
           extension:
           - "-audience"
           - "https://my-on-prem-k8s.example.dev"
   ```
 
-* This example uses the "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs" extension to pass
+* This example uses the `clusterprofiles.multicluster.x-k8s.io/exec/additional-args` extension to pass
 additional environment variables `CLIENT_ID` and `TENANT_ID` to the exec plugin when the `kubelogin` credential
 provider is used; these entries can help the exec plugin exchange for cluster-specific access tokens.
 
@@ -467,7 +467,7 @@ status:
       server: https://braveion-abcxyz.hcp.eastus2.azmk8s.io
       ...
       extensions:
-      - name: "multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs"
+      - name: "clusterprofiles.multicluster.x-k8s.io/exec/additional-args"
         extension:
           "CLIENT_ID": "my-client-id"
           "TENANT_ID": "my-tenant-id"
@@ -490,17 +490,17 @@ type Provider struct {
   CredentialsType string
   ExecutablePath string
   args []string
-  AllowClusterProfileSourcedCLIArgs bool
-  AllowClusterProfileSourcedEnvVars bool
+  ClusterProfileSourcedCLIArgsPolicy ProfileSourcedDataPolicy
+  ClusterProfileSourcedEnvVarsPolicy ProfileSourcedDataPolicy
 }
 ```
 
 Given the plugin is executed directly by the controller, it may expect to have access to the same environment as the controller itself, inclusive of envvars, filesystem and network.
 It is expected that the identity of the plugin is the same as the controller itself.
 
-The `AllowClusterProfileSourcedCLIArgs` and `AllowClusterProfileSourcedEnvVars` flags control whether the library will process
-`multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-args` and `multicluster.x-k8s.io/clusterprofiles/auth/exec/additional-envs`
-extensions, as described earlier. If set to false, additional CLI arguments and/or environment variables cannot be set
+The `ClusterProfileSourcedCLIArgsPolicy` and `ClusterProfileSourcedEnvVarsPolicy` flags control whether the library will process
+`clusterprofiles.multicluster.x-k8s.io/exec/additional-args` and `clusterprofiles.multicluster.x-k8s.io/exec/additional-args`
+extensions, as described earlier. If set to `Ignore`, additional CLI arguments and/or environment variables cannot be set
 from the ClusterProfile side.
 
 ### Plugin Examples
