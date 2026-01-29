@@ -8,3 +8,7 @@ beta:
   # SELinuxMountReadWriteOncePod is beta since 1.29
   # @deads2k for SELinuxMount beta in 1.33
   # @deads2k for SELinuxChangePolicy beta 1.33
+stable:
+  approver: "@deads2k"
+  # @deads2k for SELinuxMount GA in 1.36
+  # @deads2k for SELinuxChangePolicy GA 1.36
