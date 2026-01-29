@@ -17,6 +17,7 @@
   - [API](#api)
     - [1. <code>Pod</code> API](#1-pod-api)
     - [2. <code>PodGroup</code> API](#2-podgroup-api)
+    - [Backward Compatible PodGroup Transition](#backward-compatible-podgroup-transition)
   - [Scheduler Changes](#scheduler-changes)
     - [Informers and Watches](#informers-and-watches)
     - [GangScheduling plugin](#gangscheduling-plugin)
@@ -70,7 +71,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes decoupling the PodGroup API from the Workload API by introducing
-PodGroup as a standalone runtime object. In the [current design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling), 
+PodGroup as a standalone runtime object. In the [current design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling),
 PodGroups are embedded within the Workload spec, which creates challenges around immutability, scaling, and lifecycle management. Under this proposal, the following changes are proposed:
 
 - `Workload` becomes a scheduling policy definition that specifies what workload behavior should be applied
@@ -239,6 +240,76 @@ type PodGroupStatus struct {
 }
 ```
 
+#### Backward Compatible PodGroup Transition
+
+An important design consideration that we need to discuss is how to handle the transition period when PodGroup doesn't exist yet.
+
+We propose to follow a similar pattern to PVCs by require strict ordering. The `PodGroup` must exist before `Pods`. The scheduler validates `Pod.spec.WorkloadRef.podGroupName` , while pods referencing non-existing `PodGroup` remain pending until objects created.
+
+This change needs to be backward compatible, since [KEP 4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling) allows pods to reference non-existing `Workload`. Therefore, this KEP needs to ensure that this change:
+
+- Doesn't break existing clusters during upgrade
+- Can handle existing pods that reference non-existing `Workloads` that don't have `PodGroups` yet.
+- Allows gradual controller adoption so eventually we can enable strict PodGroup-first ordering
+
+We propose to address these requirements by:
+
+**1. Follow three-phase migration:**
+
+- **Phase 1 (alpha):** Soft validation
+  - Pods referencing non-existing `Workload` or `PodGroup` will remain pending until objects created
+  - Pods using legacy `Workload.podGroup[]` continue to work normally
+  - True controllers[^1] can create `PodGroup` objects in any order
+  - Scheduler automatically re-queues pods when `PodGroup` is created
+
+- **Phase 2 (beta):** Strict validation
+  - Pods referencing non-existing `Workload` or `PodGroup` will fail as unschedulable
+  - Legacy[^3] pods still work with deprecation warnings
+  - Users can opt-in for admission-time rejection by enabling `ValidatingAdmissionPolicy`.
+  - Admission-time validation can be optional and requires user's opt-in.
+
+- **Phase 3 (GA):** Remove soft validation
+  - All pods with `workloadRef.podGroupName` will fail as unschedulable if the `PodGroup` does not exist.
+  - Legacy check will be removed from the scheduler.
+  - True controllers[^1] must create `PodGroup` before Pods.
+  - `PodGroupName` becomes a required field for pods when using gang scheduling.
+
+**2. Handle upgrade scenario:**
+
+- **Scenario 1:** Existing clusters with legacy `workloadRef.podGroup[]` (no `pod.spec.workloadRef.podGroupName`)
+  - Cluster is upgraded with existing pods have `workloadRef.podGroup[]` and `workloadRef.podGroupReplicaKey` but `pod.spec.workloadRef.podGroupName` is empty/unset
+  - `PreEnqueue` checks if the `PodGroupName` is set
+  - Since `PodGroupName` is empty/unset, `PreEnqueue` uses legacy[^3] validation logic
+  - Pod continues scheduling as before
+
+- **Scenario 2:** New workload with `PodGroup` runtime object
+  - True controller creates objects in order:
+      1. `Workload` object with `PodGroupTemplate`
+      2. `PodGroup` runtime object referencing the `Workload`
+      3. `Pods` with `workloadRef.podGroupName` set to the name of the newly created `PodGroup`
+  - `PreEnqueue` checks if the `PodGroupName` is set
+  - If `PodGroupName` is set, the scheduler looks up `PodGroup` object
+  - If found, scheduler validates `PodGroup.spec.workloadRef` matches pod's `workloadRef.name`
+  - Pod enters scheduling queue when eligible for scheduling
+
+- **Scenario 3:** Pods created before `PodGroup` exists (race condition)
+  - True controller creates `Workload` object
+  - Then it creates pods with `workloadRef.podGroupName` before creating `PodGroup` object
+  - `PreEnqueue` looks up `PodGroupName` and not found
+  - Scheduler returns `UnschedulableAndUnresolvable` with message "waiting for PodGroup "<PodGroupName>" to appear in scheduling queue"
+  - Pod remains pending (not rejected)
+  - True controller creates `PodGroup` object
+  - Scheduler receives `PodGroup` Add event via informer
+  - Scheduler re-enqueues pods waiting this `PodGroup`
+  - `PreEnqueue` retries and finds `PodGroup` object
+  - Pod enters scheduling queue when eligible for scheduling
+  
+- **Scenario 4:** Mixed clusters with both legacy[^3] and new podGroups (co-existence)
+  - True controller A creates pods with `workloadRef.podGroup[]` and `workloadRef.podGroupReplicaKey`
+  - True controller B creates `PodGroup` object and pods with `workloadRef.podGroupName`
+  - Scheduler handles both types (scenario 1 and 2)
+  - Both workloads schedule successfully
+
 ### Scheduler Changes
 
 > These changes build upon the scheduler framework introduced in [KEP-4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling).
@@ -260,20 +331,20 @@ The kube-scheduler will add a new informer to watch `PodGroup` objects alongside
 // PodGroupInformer provides access to a shared informer and lister for
 // PodGroups.
 type PodGroupInformer interface {
-	Informer() cache.SharedIndexInformer
-	Lister() schedulingv1alpha1.PodGroupLister
+ Informer() cache.SharedIndexInformer
+ Lister() schedulingv1alpha1.PodGroupLister
 }
 
 // podGroupInformer provides access to a shared informer and lister for PodGroups.
 type podGroupInformer struct {
-	factory          internalinterfaces.SharedInformerFactory
-	tweakListOptions internalinterfaces.TweakListOptionsFunc
-	namespace        string
+ factory          internalinterfaces.SharedInformerFactory
+ tweakListOptions internalinterfaces.TweakListOptionsFunc
+ namespace        string
 }
 
 // PodGroups returns a PodGroupInformer.
 func (v *version) PodGroups() PodGroupInformer {
-	return &podGroupInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+ return &podGroupInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 ```
 
@@ -418,6 +489,19 @@ No. PodGroup objects will only be triggered by the existence of Workload objects
 
 Yes. The `GenericWorkloadPodGroup` feature gate needs to be switched off to disable the feature.
 
+- Cluster running new feature  with `GenericWorkloadPodGroup=true` and needs to rollback
+- API server restarts:
+  - New pods cannot set `podGroupName`
+  - New `PodGroup` objects cannot be created
+- Existing `PodGroup` objects remain in etcd but are ignored
+- Scheduler restarts:
+  - All pods use legacy[^3] validation path (since `podGroupName` is empty)
+  - Existing pods with `podGroupName` already set continue to have it
+- For existing pods with `podGroupName`:
+  - Scheduler still attempts to validate `podGroupName`
+  - `PodGroup` lookup may fail if objects were deleted
+  - Pods become unschedulable until admin intervenes (deletes and recreates pods)
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The feature will start working again. However, there might be some Workload objects already stored in etcd and may affect the behavior of some of the existing workloads.
@@ -530,3 +614,5 @@ No.
 [^1]: The true workload controller refers to either in-tree or out-of-tree objects controllers like Job, JobSet, LeaderWorkerSet, etc.
 
 [^2]: DNS subdomain is a naming convention defined in [RFC 1123](https://tools.ietf.org/html/rfc1123) that Kubernetes uses for most resource names.
+
+[^3]: "Legacy" in this context refers to the KEP-4671 where pods use `workloadRef.podGroup` (template name) and `workloadRef.podGroupReplicaKey` without a standalone `PodGroup` runtime object.
