@@ -171,7 +171,7 @@ spec:
     volumeMounts:
     - name: config
       mountPath: /data
-   containers:
+  containers:
   - name: use-envfile
     image: registry.k8s.io/distroless-app
     env:
@@ -215,7 +215,7 @@ spec:
     volumeMounts:
     - name: config
       mountPath: /data
-   containers:
+  containers:
   - name: use-envfile
     image: registry.k8s.io/busybox
     command: [ "/bin/sh", "-c", "env" ]
