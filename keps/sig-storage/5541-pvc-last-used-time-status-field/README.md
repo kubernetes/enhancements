@@ -62,7 +62,7 @@ Items marked with (R) are required _prior to targeting to a milestone / release_
 
 ## Summary
 
-This KEP proposes adding a new `LastUsedTime` status field on a `PersistentVolumeClaim`
+This KEP proposes adding a new `UnusedSince` status field on a `PersistentVolumeClaim`
 to determine when a PVC was last used by a Pod. This enables cluster
 administrators to identify unused PVCs and implement cleanup policies for
 storage that is no longer in use.
@@ -80,7 +80,7 @@ this the ideal place to track usage.
 
 ### Goals
 
-- Add a `LastUsedTime` timestamp field to `PersistentVolumeClaimStatus`
+- Add a `UnusedSince` timestamp field to `PersistentVolumeClaimStatus`
 - Update this field with a timestamp when a PVC is last used by a Pod
 
 ### Non-Goals
@@ -91,7 +91,7 @@ this the ideal place to track usage.
 
 ## Proposal
 
-Add a new field `LastUsedTime` of type `metav1.Time` to the `PersistentVolumeClaimStatus`
+Add a new field `UnusedSince` of type `metav1.Time` to the `PersistentVolumeClaimStatus`
 struct. This field will be updated by the PVC protection controller (in kube-controller-manager)
 when the PVC transitions from being in use to not being in use.
 
@@ -121,7 +121,9 @@ Notes:
    status when the last Pod referencing it goes down.
 - Granularity: The timestamp represents the last time the PVC was referenced
    by a Pod, not continuous usage tracking. A PVC re-mounted by a long-running Pod
-   will show the time it was last used, and the current timestamp.
+   will clear the timestamp to `nil`. If `UnusedSince` is not-nil, that'd mean the
+   PVC is not in use. If it is `nil`, it'd either mean it's currently in use, or
+   that it has never completed a usage cycle.
 
 ### Risks and Mitigations
 
@@ -134,7 +136,7 @@ existing PVCS, a step to mitigate this would be to document this behavior clearl
 in release notes and the PVC documentation. The field's absence would indicate
 that the PVC has not yet completed a usage cycle since the feature was enabled.
 
-Another risk/point-of-confusing is when the feature is disabled, existing `LastUsedTime`
+Another risk/point-of-confusing is when the feature is disabled, existing `UnusedSince`
 values remain in etcd, but are no longer updated, potentially becoming misleading. A
 similar mitigation approach could be adopted - to document about the fact that
 disabling the feature freezes existing values, and that administrators should not rely
@@ -150,12 +152,12 @@ Changes required for this KEP:
    type PersistentVolumeClaimStatus struct {
      // existing fields...
 
-     // LastUsedTime is the timestamp that represents when the PVC last transitioned
+     // UnusedSince is the timestamp that represents when the PVC last transitioned
      // to not being in use. When the PVC is currently in use, this field is nil.
      // It is updated when the last Pod referencing this PVC is deleted or reaches a
      // terminal state, and cleared when a new Pod starts referencing the PVC.
      // +optional
-     LastUsedTime *metav1.Time `json:"lastUsedTime,omitempty" protobuf:"bytes,10,opt,name=LastUsedTime"`
+     UnusedSince *metav1.Time `json:"unusedSince,omitempty" protobuf:"bytes,10,opt,name=UnusedSince"`
    }
    ```
 
@@ -169,15 +171,15 @@ Changes required for this KEP:
       - Existing behavior: If it's not in use, and the `deletionTimestamp` is set,
          it proceeds with finalizer removal. If `deletionTimestamp` is not set, it returns early.
       - New behavior: When it determines a PVC is not in use, and the `deletionTimestamp`
-         is not set (not queued for deletion), it should update the `status.LastUsedTime`
+         is not set (not queued for deletion), it should update the `status.UnusedSince`
          timestamp to the current timestamp. (Note: If `deletionTimestamp` is set, we skip
-         updating `LastUsedTime` since the PVC is being deleted and the timestamp
+         updating `UnusedSince` since the PVC is being deleted and the timestamp
          would serve no purpose)
          Conversely, when the PVC transitions from not in use to in use (i.e., a Pod starts
-         referencing it) the controller should clear `LastUsedTime` to `nil`. This ensures
+         referencing it) the controller should clear `UnusedSince` to `nil`. This ensures
          the field doesn't reflect stale values when its currently in use.
 
-1. Add a Feature Gate named `PVCLastUsedTime` that is disabled by default in alpha.
+1. Add a Feature Gate named `PVCUnusedSince` that is disabled by default in alpha.
    The timestamp field exists but is not populated unless gate is enabled.
 
 Note (definition of in use): A PVC is considered to be in use if a Pod references
@@ -195,7 +197,7 @@ to implement this enhancement.
 
 The following packages will be modified and require test coverage:
 
-- `pkg/controller/volume/pvcprotection`: tests for `LastUsedTime` being set when
+- `pkg/controller/volume/pvcprotection`: tests for `UnusedSince` being set when
 the last Pod referencing a PVC terminates, and not set when other Pods still
 reference the PVC.
 
@@ -205,8 +207,8 @@ reference the PVC.
 
 Integration tests can be added to verify the core controller logic:
 
-- `LastUsedTime` set when last Pod referencing PVC terminates
-- `LastUsedTime` not set when other Pods still reference the PVC
+- `UnusedSince` set when last Pod referencing PVC terminates
+- `UnusedSince` not set when other Pods still reference the PVC
 - Feature gate enable/disable behavior
 
 Note: Integration and e2e tests would be pretty identical for this feature.
@@ -242,11 +244,11 @@ TBD
 Upgrading and downgrading is safe.
 
 Upgrade:
-For pre-existing PVCs: After upgrading, the `LastUsedTime` status field will not be
+For pre-existing PVCs: After upgrading, the `UnusedSince` status field will not be
 present on the PVCs until it transitions from being in use to not in use. PVCs that
 are never used after upgrade won't have this field.
 
-For new PVCs: PVCs that are created after upgrading, will be created with `LastUsedTime`
+For new PVCs: PVCs that are created after upgrading, will be created with `UnusedSince`
 set to `nil`. The value of the field will be populated on first transition from in use
 to not in use. PVCs that are never used after creation will retain the `nil` value.
 
@@ -262,9 +264,9 @@ occurs.
 | API Server | KCM | Behavior |
 | :--- | :--- | :--- |
 | off | off | Existing Kubernetes behavior. |
-| on | off | Existing Kubernetes behavior. The `LastUsedTime` field exists but is never populated by the controller. Only users can set it manually via the API. |
-| off | on | PVC protection controller may attempt to set `LastUsedTime`, which will be dropped by the API server since the field is not recognized. |
-| on | on | New behavior. `LastUsedTime` is updated when a PVC transitions from in use to not in use, and cleared when it transitions to in use. |
+| on | off | Existing Kubernetes behavior. The `UnusedSince` field exists but is never populated by the controller. Only users can set it manually via the API. |
+| off | on | PVC protection controller may attempt to set `UnusedSince`, which will be dropped by the API server since the field is not recognized. |
+| on | on | New behavior. `UnusedSince` is updated when a PVC transitions from in use to not in use, and cleared when it transitions to in use. |
 
 ## Production Readiness Review Questionnaire
 
@@ -273,7 +275,7 @@ occurs.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `PVCLastUsedTime`
+  - Feature gate name: `PVCUnusedSince`
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-controller-manager
@@ -290,14 +292,23 @@ the value is populated with the timestamp.
 
 Yes, disabling the feature will stop the controller from updating the status field.
 The value however, once set, would remain stored in etcd, but become stale - disabling
-doesn't remove it.
+doesn't remove it. If the field was set to nil (either never set, or currently in use),
+it remains nil and cannot be newly populated while the feature gate is disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The controller will resume updating the status field. If the PVC didn't transition
 while the feature was disabled, the data already stored represents the correct last used
-timestamp. If the PVC did transition to not being in used, the stale timestamp is still
-retained and would be updated when the PVCs are used again and then released.
+timestamp. If the PVC did transition while the feature was disabled, the data might either
+be stale or missing. There could be 2 scenarios:
+
+- If a PVC transitioned from not in use to in use, the old timestamp is retained
+  instead of being cleared to nil, thus becoming stale.
+- If a PVC transitioned from in use to not in use, the value remains nil instead
+  of being set to a timestamp
+
+In either case, the value will be corrected on the next transition after the
+feature is re-enabled.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -346,12 +357,12 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Operators can check if the PVCs have `status.LastUsedTime` field populated.
+Operators can check if the PVCs have `status.UnusedSince` field populated.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] API .status
-  - Other field: `pvc.Status.LastUsedTime`
+  - Other field: `pvc.Status.UnusedSince`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -415,7 +426,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes. All PVC objects will have an entirely new status field `LastUsedTime` to hold
+Yes. All PVC objects will have an entirely new status field `UnusedSince` to hold
 the timestamp value. Estimated increase in size would be < 50B.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -434,7 +445,7 @@ No, this feature operates in the control-plane and doesn't affect node resources
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The controller will be unable to update the `LastUsedTime` status field.
+The controller will be unable to update the `UnusedSince` status field.
 
 ###### What are other known failure modes?
 
