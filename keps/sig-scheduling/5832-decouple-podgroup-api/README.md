@@ -10,7 +10,6 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Independent PodGroup Lifecycle](#independent-podgroup-lifecycle)
     - [PodGroup-Level Status](#podgroup-level-status)
-    - [Handling Consistency During Creation](#handling-consistency-during-creation)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -141,15 +140,11 @@ status:
 
 #### Independent PodGroup Lifecycle
 
-As a user running LWS(LeaderWorkerSet), I want to update only the leader `PodGroup` without recreating the Workload object or affecting worker `PodGroups`.
+As a user running LWS(LeaderWorkerSet), I want to observe and manage a leader pod and its associated worker pods as a single unit.
 
 #### PodGroup-Level Status
 
 I have a large-scale training job with multiple replicas, and want to observe the scheduling status of each PodGroup independently, so I can identify which specific replica is having scheduling issues.
-
-#### Handling Consistency During Creation
-
-I have a distributed workload, and want pods that reference a not-yet-created `Workload` or `PodGroup` to remain pending until objects exist, rather than failing immediately, so that the controller can create objects in any order without causing scheduling failures or race conditions.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -225,7 +220,7 @@ type PodGroupStatus struct {
    // Conditions represent the latest observations of the PodGroup's state.
    //
    // Known condition types:
-   // - "PodGroupScheduled": Indicates whether the gang scheduling requirement has been satisfied.
+   // - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
    //   - Status=True: All required pods have been assigned to nodes.
    //   - Status=False: Scheduling failed (i.e., timeout, unschedulable, etc.).
    //   - Status=Unknown: Scheduling is in progress.
@@ -324,28 +319,7 @@ If any object in this chain is missing, the pod remains unschedulable until all 
 
 #### Informers and Watches
 
-The kube-scheduler will add a new informer to watch `PodGroup` objects alongside `Workload` informer:
-
-```go
-// PodGroupInformer provides access to a shared informer and lister for
-// PodGroups.
-type PodGroupInformer interface {
- Informer() cache.SharedIndexInformer
- Lister() schedulingv1alpha1.PodGroupLister
-}
-
-// podGroupInformer provides access to a shared informer and lister for PodGroups.
-type podGroupInformer struct {
- factory          internalinterfaces.SharedInformerFactory
- tweakListOptions internalinterfaces.TweakListOptionsFunc
- namespace        string
-}
-
-// PodGroups returns a PodGroupInformer.
-func (v *version) PodGroups() PodGroupInformer {
- return &podGroupInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-```
+The kube-scheduler will add a new informer to watch `PodGroup` objects alongside `Workload` informer.
 
 #### GangScheduling plugin
 
@@ -353,12 +327,12 @@ And the GangScheduling plugin will maintain both listers for `Workload` and `Pod
 
 **1. PreEnqueue**: The extension will check if the `Workload` and `PodGroup` objects exist. If not, it will return `UnschedulableAndUnresolvable` status. Then check if the Pod scheduling requirement is met for gang scheduling (based on `PodGroupTemplate`).
 
-**2. Permit**: The extension waits for all pods in the `PodGroup` to reach permit stage. It will use `PodGroup` object to identify gang membership instead of `workloadRef` + `ReplicaKey`.
+**2. Permit**: The extension waits for all pods in the `PodGroup` to reach permit stage by using each pod's `workloadRef` to identify the `PodGroup` that the pod belongs to.
 
 **3. EventsToRegister (Enqueue)**: The extension will register new event for `PodGroup` object is created.
 
 **4. PostBind**:
-The kube-scheduler will update `PodGroup.Status` to reflect gang scheduling progress.
+The kube-scheduler will update `PodGroup.Status` to reflect scheduling policy progress.
 
 ### Ownership and Object Relationship
 
@@ -427,7 +401,7 @@ We will add integration tests for `PodGroup`  to ensure the basic functionalitie
 - `PodGroup` status is updated correctly
 - `PodGroup` is garbage collected when the replica is deleted
 - Pods linked to the non-existing workload or podGroup are not scheduled
-- Pods get unblocked when workload or podGroup is created and observed by scheduler
+- Pods get unblocked when workload and podGroup is created and observed by scheduler
 - Pods are not scheduled if there is no space for the whole PodGroup
 
 ##### e2e tests
