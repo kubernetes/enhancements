@@ -766,30 +766,47 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Workloads that do not use the Workload API should not be impacted, since the functionality remains unchanged for them. 
+During a rolling upgrade, if the active scheduler instance has the feature disabled, it will schedule pods using the 
+standard pod-by-pod method. This results in a fallback to the status quo behavior (no regression).
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+The worst-case scenario is a critical bug in the new Workload Scheduling Cycle code causing a scheduler crash-loop. 
+This would stop all scheduling but would not impact already running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+- `scheduler_schedule_attempts_total{result="error"}`: A sudden spike indicates internal errors or panics within 
+the scheduling loop, possibly caused by the new logic.
+- `process_start_time_seconds`: Frequent resets of this metric indicate that the scheduler process is crashing and 
+  restarting (crash loop).
+- `scheduler_pod_scheduling_duration_seconds`: A significant regression in P99 latency for standard (non-gang) pods 
+  would indicate that the overhead of the new logic is unacceptable.
+- `scheduler_pod_group_scheduling_attempts_total` (new metric, TODO: check with Maciek on the metric name): Consistently 
+  high failure rates for valid gangs compared to successful attempts.
+- `scheduler_preemption_attempts_total`, `scheduler_preemption_victims`: A sudden increase might indicate that the 
+  new "delayed preemption" logic is malfunctioning (e.g., triggering unnecessary preemptions).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+We'll perform manual testing of the upgrade -> downgrade -> upgrade path using the following sequence:
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+1. Start a local Kubernetes v1.35 cluster with GenericWorkload and GangScheduling feature gates disabled (default 
+behavior).
+2. Attempt to create a Pod with `spec.workloadRef` set.
+3. The `spec.workloadRef` field is dropped by the API server. The pod is created successfully but without the workload 
+   reference, resulting in immediate standard scheduling (one-by-one).
+4. Restart/Upgrade API Server and Scheduler to v1.36 (with feature gates enabled).
+5. Create a Workload object named gang-test with minCount=2.
+6. Create a Pod test-pod-1 with spec.workloadRef pointing to gang-test.
+7. The Pod stays in Pending state (waiting for the gang). We verified that  
+   `scheduler_pod_group_scheduling_attempts_total` metric is incremented.
+8. Create a Pod test-pod-2 pointing to the same workload.
+9. Both pods are scheduled successfully in the same cycle (Gang Scheduling works). 
+10. Downgrade API Server and Scheduler to v1.35. 
+11. Create test-pod-3 and test-pod-4 pointing to a workload. 
+12. The pods are scheduled immediately one-by-one (Workload logic is ignored/unavailable because the field is dropped). 
+13. Upgrade API Server and Scheduler back to v1.36. 
+14. Create new pods referencing a Workload; verifying that Gang Scheduling functionality is restored (pods wait for minCount before scheduling).
+
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -806,11 +823,11 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Operators can check the new `scheduler_pod_group_scheduling_attempts_total` metric. A value greater than zero 
+indicates that the scheduler is processing Workload Scheduling Cycles.
+
+Alternatively, checking for the existence of `Workload` via `kubectl get workloads` or checking the
+`pod.spec.workloadRef` field confirms that users are actively using the feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -823,50 +840,40 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] API .spec
+  - Other field: workloadRef is set on the Pods.
+- [x] Events 
+  - Event Type: Warning 
+  - Event Reason: FailedScheduling 
+  - Event Message: The message includes details if the scheduling failed due to gang constraints (e.g., "pod group 
+    minCount requirement not met").
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+Since there are no formal SLOs for the kube-scheduler apart from scalability SLOs, we define the objectives for this
+feature primarily in terms of non-regression to ensure the workload scheduling does not degrade the performance of the
+standard scheduling loop.
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+- Scheduling Throughput: There should be no significant regression in the system-wide scheduling throughput (pods/s) 
+when scheduling pods attached to a Workload compared to scheduling an equivalent number of individual pods.
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+- Scheduling Latency: There should be no significant regression in pod scheduling latency 
+(`scheduler_pod_scheduling_duration_seconds`) for both workload and non-workload pods compared to the baseline.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
+- [x] Metrics 
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `scheduler_pod_group_scheduling_attempts_total`
+    - `scheduler_pod_group_scheduling_duration_seconds`
+    - `scheduler_pod_group_scheduling_algorithm_duration_seconds`
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No.
+
+TODO(mm4tt@): Check with others.
 
 ### Dependencies
 
@@ -945,22 +952,33 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The behavior is consistent with the status quo. Since the scheduler cannot bind pods or update statuses without the
+API server, any in-flight workload scheduling will eventually fail at the binding/update stage. These attempts will be
+retried with standard exponential backoff once connectivity is restored.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Pods Pending Indefinitely (Gang Starvation)
+  - Detection: Pods with workloadRef remain in Pending state for an extended period 
+  - Metrics: `scheduler_pod_group_scheduling_attempts_total` with result unschedulable increases constantly for a
+    specific group. 
+  - Events: Repeated `FailedScheduling` events on the Pods with workloadRef. 
+  - Mitigations: If the gang cannot fit due to resource constraints, delete the Workload object which should disable 
+    the gang-scheduling TODO(mm4tt@): Discuss with Wojtek 
+  - Diagnostics: Scheduler logs at V=4 searching for "workload" to see detailed reasons why the 
+    placement failed (e.g., "minCount not met"). 
+  - Testing: Covered by integration tests where gangs larger than available cluster capacity are submitted.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Analyze Latency Metrics: Check `scheduler_pod_group_scheduling_duration_seconds` and 
+   `scheduler_pod_group_scheduling_algorithm_duration_seconds`. High values here indicate that the Workload Scheduling  
+   Cycle logic itself is computationally expensive and causing the regression.
+2. Inspect Logs: Enable scheduler logging at V=4 to trace the execution time of individual Workload Scheduling 
+   Cycles and identify if specific large gangs are blocking the queue. 
+3. Disable Feature: If the regression is critical and impacting cluster health, disable the GangScheduling feature 
+   gate. This will revert the scheduler to the standard pod-by-pod logic, restoring baseline performance (at the 
+   cost of losing gang semantics).
 
 ## Implementation History
 
