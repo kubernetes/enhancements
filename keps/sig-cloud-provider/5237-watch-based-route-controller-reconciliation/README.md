@@ -248,16 +248,12 @@ No
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-In the worst case the route controller no longer runs. This means that any new Nodes will not have their routes setup and the Pod-to-Pod communicationis broken for talking to pods running on that new node.
+In the worst case the route controller no longer runs. This means that any new Nodes will not have their routes setup and the Pod-to-Pod communications broken for talking to pods running on that new node.
 This will not impact already running nodes/workloads, but they might be affected transitively because they rely on workloads scheduled to broken nodes.
 
 ###### What specific metrics should inform a rollback?
 
-The metrics for the new workqueue can be used to determine whether the route controller still runs. If the following query is constant after adding a new node, it means that the new implementation does not reconcile the node routes.
-
-```promql
-workqueue_work_duration_seconds_count{name="Routes"}
-```
+The metric `route_controller_route_sync_total` can be used to determine if the route controller is syncing correctly, when new nodes are added. Furthermore, this metric can indicate if reconciles are happening more frequently than the previous 10s interval.
 
 Note that these metrics are only available from the CCM.
 
@@ -275,7 +271,7 @@ The `--route-reconcile-period` flag can be deprecated, as it's no longer needed 
 
 The feature is only used in the CCM if the `Route` controller is supported by the cloud-provider and enabled (enabled by default, can be disabled in). This is visible in existing clusters through the CCM metric `running_managed_controllers{name="route"}`.
 
-After upgrading, they can look at `workqueue_work_duration_seconds_count{name="Routes"}` to see that the reconciler runs.
+After upgrading, they can look at `route_controller_route_sync_total` to see that routes are being reconciled.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -293,7 +289,7 @@ None
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-      - Metric name: `workqueue_work_duration_seconds_count{name="Routes"}`
+      - Metric name: `route_controller_route_sync_total`
       - [Optional] Aggregation method: `rate`
       - Components exposing the metric: CCMs
 - [ ] Other (treat as last resort)
