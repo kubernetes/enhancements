@@ -49,7 +49,7 @@ feature-gates:
       - kube-apiserver
       - kube-controller-manager
       - kube-scheduler
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:

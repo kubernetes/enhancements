@@ -51,4 +51,4 @@ feature-gates:
     components:
       - kube-apiserver
       - kubelet
-disable-supported: true
+disable-supported: false
