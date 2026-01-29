@@ -627,6 +627,7 @@ the previous in-tree implementations.
 - 2021-08-04 - First Kubernetes release (v1.22) with `DisableCloudProviders` and `DisableKubeletCloudCredentialProviders` feature gates.
 - 2023-09-02 - Enable external CCMs by default for k/k CI.
 - 2023-05-07 - All the in-tree cloud providers have been removed.
+- 2024-05-06 - Removed the last remaining in-tree gcp cloud provider and credential provider. The feature gates are promoted to GA and locked.
 
 ## Drawbacks
 
