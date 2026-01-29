@@ -16,8 +16,9 @@
   - [API](#api)
     - [1. <code>Pod</code> API](#1-pod-api)
     - [2. <code>PodGroup</code> API](#2-podgroup-api)
-    - [PodGroup Creation Ordering](#podgroup-creation-ordering)
-    - [Backward Compatibility for PodGroup Transition](#backward-compatibility-for-podgroup-transition)
+  - [PodGroup Creation Ordering](#podgroup-creation-ordering)
+  - [Backward Compatibility for PodGroup Transition](#backward-compatibility-for-podgroup-transition)
+  - [PodGroup Status Lifecycle](#podgroup-status-lifecycle)
   - [Scheduler Changes](#scheduler-changes)
     - [Informers and Watches](#informers-and-watches)
     - [GangScheduling plugin](#gangscheduling-plugin)
@@ -234,7 +235,7 @@ type PodGroupStatus struct {
    ScheduledPods int32
 }
 ```
-#### PodGroup Creation Ordering
+### PodGroup Creation Ordering
 
 Since `PodGroup` is a runtime object created by true workload[^1] controllers, strict creation ordering (`PodGroup` must exist before `Pods`) is required to ensure the consistency of the scheduling policy.
 
@@ -250,7 +251,7 @@ True workload[^1] controllers are responsible for creating `PodGroup` and `Workl
 2. Create `PodGroup` runtime object
 3. Create `Pods` with `workloadRef.podGroupName` set to the name of the newly created `PodGroup`
 
-#### Backward Compatibility for PodGroup Transition
+### Backward Compatibility for PodGroup Transition
 
 An important design consideration that we need to discuss is how to handle the transition period when PodGroup doesn't exist yet (legacy behavior [KEP 4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling)). Hence, we need to allow pods to reference `Workload` objects using `workloadRef.podGroup[]` and `workloadRef.podGroupReplicaKey` without a standalone `PodGroup` object. 
 
@@ -317,6 +318,18 @@ To support migration from the embedded `PodGroup` model, we propose the followin
   - True controller B creates `PodGroup` object and pods with `workloadRef.podGroupName`
   - Scheduler handles both types (scenario 1 and 2)
   - Both workloads schedule successfully
+
+### PodGroup Status Lifecycle
+
+The `PodGroup.Status` is managed by kube-scheduler and true workload[^1] controllers. For alpha we will introduce `Conditions` and `ScheduledPods` fields, more fields will be added for beta and GA.
+
+The controller is responsible for initializing the `PodGroupScheduled` condition when a new PodGroup is created. The scheduler then takes over responsibility for updating both the `ScheduledPods` counter and the `PodGroupScheduled` condition as it processes the pods.
+
+- When a `PodGroup` is created, the controller initializes the `PodGroupScheduled` condition with status `Unknown` and `ScheduledPods` field by zero
+- At scheduler, each time a pod is successfully scheduled, the scheduler increments the `ScheduledPods` counter
+- For gang scheduling policy, when the `ScheduledPods` counter equals to `MinCount` in `PodGroupTemplate`, the scheduler updates the `PodGroupScheduled` condition to `True`
+- For basic scheduling policy, when the pod related to the `PodGroup` gets scheduled, the scheduler updates the `PodGroupScheduled` condition to `True`
+- If pods are unschedulable(i.e., timeout, resources, affinity, etc.), the scheduler updates the `PodGroupScheduled` condition to `False` and sets the reason fields accordingly
 
 ### Scheduler Changes
 
@@ -591,6 +604,8 @@ No.
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
+
+- 2026-01-23: KEP Created for alpha release
 
 ## Drawbacks
 
