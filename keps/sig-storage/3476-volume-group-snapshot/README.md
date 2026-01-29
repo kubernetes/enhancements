@@ -1066,7 +1066,10 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-N/A
+- v1.27: Alpha release
+- v1.32: Beta release (v1beta1)
+- v1.34: Beta release (v1beta2)
+- v1.36: GA release
 
 ## Drawbacks
 
