@@ -226,8 +226,8 @@ controller, applications or consumers without requiring changes. It also cannot 
 
 The definition is as follows:
 
-```golang
-type CredentialProviders struct {
+```
+type AccessProviders struct {
   // +listType=map
   // +listMapKey=name
   accessProviders []AccessConfig // mapping of access provider types to their config. In some cases the cluster may recognize different identity types and they may have different endpoints or TLS config.
@@ -412,7 +412,7 @@ secret reader type:
     clusterManager:
       name: inhouse-manager
   status:
-    credentialProviders:
+    accessProviders:
     - name: secretreader
       cluster:
         server: https://<spoke-server>
@@ -436,7 +436,7 @@ security reasons.
   spec: ...
   status:
     ...
-    credentialProviders:
+    accessProviders:
     - name: spire-agent
       cluster:
         server: https://my-on-prem-k8s.example.dev
@@ -460,7 +460,7 @@ metadata:
 spec: ...
 status:
   ...
-  credentialProviders:
+  accessProviders:
   - name: kubelogin
     cluster:
       server: https://braveion-abcxyz.hcp.eastus2.azmk8s.io
