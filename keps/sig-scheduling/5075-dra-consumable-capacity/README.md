@@ -105,7 +105,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
@@ -778,20 +778,15 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ###### Coverage
 
-Target changes:
-
-- `k8s.io/dynamic-resource-allocation/structured/internal/experimental:`: `10/15/2025` - `90.7` to `93.8`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `10/15/2025` - `64.8` to `76.1`
-
-No change:
-
-- `k8s.io/dynamic-resource-allocation/structured`: `10/15/2025` - `58.8`
-- `k8s.io/kubernetes/pkg/apis/resource/validation`: `10/15/2025` - `97.9`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `10/15/2025` - `89.4`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `10/15/2025` - `76.4`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `10/15/2025` - `83.2`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `10/15/2025` - `77.9`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `10/15/2025` - `46.2`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `4/2/2026` - `93.1`
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `4/2/2026` - `93.1`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `4/2/2026` - `96.8`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `4/2/2026` - `72.0`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `4/2/2026` - `87.1`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `4/2/2026` - `77.7`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `4/2/2026` - `83.5`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `4/2/2026` - `83.5`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `4/2/2026` - `44.2`
 
 ##### Integration tests
 
@@ -832,8 +827,9 @@ The following functionalities should be covered in E2E tests:
 
 - Feature Gates are enabled by default.
 - No major outstanding bugs.
-- 1 example of real-world use case.
+- 2 examples of real-world use cases.
   - CNI DRA driver (kubernetes-sigs/cni-dra-driver) can use this feature to manage and limit bandwidth quota.
+  - DRA Driver for CPU (kubernetes-sigs/dra-driver-cpu) can use this feature to manage and limit CPU resources.
 - Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
 
 ### GA
@@ -1048,22 +1044,17 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-
-N/A
+When we notice unexpected `scheduler_unschedulable_pods{plugin="DynamicResources"}` or metric `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` in the kube-scheduler suddenly increases.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+The manual test was performed on a local Kind cluster by manually disabling and enabling the feature gate for all control plane components on the Kind node.
 
-N/A
+When this feature is enabled, a `ResourceClaim` with the added fields can be deployed and the driver can advertise 10G of bandwidth. Workloads which requests 5G can request capacity from devices that allow multiple allocations, and the consumed capacity is updated in `ResourceClaim.Status`.
+
+When the feature is disabled, existing workloads continue running, and there is no change to `ResourceClaim`, including the status of consumed capacity. However, new workloads, requesting 2G, that include a capacity request are rejected and remain in a pending state. Additionally, the fields added by this feature are removed when applying a new `ResourceClaimTemplate`.
+
+When the feature is re-enabled, a new `ResourceClaimTemplates` can be created with the added fields. The scheduler can properly prevent over-provisioning of capacity when trying to deploy another workload which requests 8G while allow the workload which requests only 2G to run with their consumed capacity tracked in `ResourceClaim.Status`, as intended by this feature, without impacting on the first workload that was already running.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1132,13 +1123,10 @@ Existing DRA and related SLOs continue to apply.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
 - [x] Metrics
   - Metric names:
-    - `apiserver_request` with `resource="resourceclaims", subresource="status"`
+    - `apiserver_request` with `resource="resourceclaims"`
+    - `scheduler_unschedulable_pods` with `plugin="DynamicResources"`
     - `scheduler_plugin_execution_duration_seconds` with `plugin="DynamicResources"`
         - For state gathering, `extension_point="PreFilter"`
         - For allocation, `extension_point="Filter"`
@@ -1155,7 +1143,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-Will consider in the beta timeframe.
+No.
 
 ### Dependencies
 
@@ -1297,35 +1285,30 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
+The troubleshooting section in https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#troubleshooting
+still applies. The only additional failure modes comes from version skew
+in the cluster and the troubleshooting steps provided through the link above
+should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
+
+- kube-scheduler cannot allocate ResourceClaims.
+
+  The shared device may not have sufficient capacity to satisfy the request. The log message `Device capacity not enough` and the `capacities` field in the log `Allocating one device` can provide further clues for investigation (require -v=7 on kube-scheduler).
+
+If the feature is disabled but a ResourceClaim still requests capacity, the scheduler log will report:
+has capacity requests, but the DRAConsumableCapacity feature is disabled. Nevertheless, when using the allocator in stable mode, no logs related to the DRAConsumableCapacity feature will be emitted.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
 
 ## Implementation History
 
@@ -1351,6 +1334,11 @@ Alpha 1.35:
 - [Fix 134100 - integration with partitionable device PR 134103](https://github.com/kubernetes/kubernetes/pull/134103) has been pushed on 2025-09-17
 - [Fix 134519 - add ShareID to kubelet plugin API PR 134520](https://github.com/kubernetes/kubernetes/pull/134520) has been pushed on 2025-10-10
 - [Increase test coverage PR 134615](https://github.com/kubernetes/kubernetes/pull/134615) has been pushed on 2025-10-15
+
+Beta 1.36:
+
+- [Fix 136734 - missing GetSharedDeviceIDs bug in GatherAllocatedState](https://github.com/kubernetes/kubernetes/pull/136734) has been pushed on 2025-02-04
+- [Promote DRAConsumableCapacity to Beta PR 136611](https://github.com/kubernetes/kubernetes/pull/136611) has been pushed on 2026-01-29
 
 ## Drawbacks
 
