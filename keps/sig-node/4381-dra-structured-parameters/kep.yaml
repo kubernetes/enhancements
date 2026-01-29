@@ -6,7 +6,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-scheduling
   - sig-autoscaling
-status: implementable
+status: implemented
 creation-date: 2024-01-05
 reviewers:
   - "@johnbelamaric"
@@ -20,7 +20,7 @@ see-also:
   - "/keps/sig-node/3063-dynamic-resource-allocation"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -45,7 +45,7 @@ feature-gates:
   - name: DRASchedulerFilterTimeout
     components:
       - kube-scheduler
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
