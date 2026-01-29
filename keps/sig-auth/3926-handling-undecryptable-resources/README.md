@@ -487,7 +487,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-At this time only integration tests are considered.
+Integration tests are functionally equivalent to e2e tests for this feature.
+They exercise the full kube-apiserver stack with a real etcd backend. The
+integration test framework is preferred because it allows direct manipulation of
+etcd contents, encryption configuration during test execution and they are more
+stable to handle such manipulation.
 
 ### Graduation Criteria
 
@@ -577,6 +581,14 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+This feature is contained entirely within kube-apiserver with no persistent state changes:
+
+- **Upgrade:** Enabling the feature gate makes the `IgnoreStoreReadErrorWithClusterBreakingPotential` delete option functional. No configuration migration required.
+- **Downgrade:** Disabling the feature gate makes the delete option non-functional. The option is silently ignored. No cleanup required.
+- **Mixed version clusters:** During rolling updates, some apiservers may have the feature enabled while others don't. Requests with the unsafe delete option will only succeed on apiservers with the feature enabled. This is acceptable for an emergency recovery feature.
+
+No special upgrade or downgrade procedures are required.
+
 ### Version Skew Strategy
 
 <!--
@@ -591,6 +603,17 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This feature is entirely within kube-apiserver with no node component interaction:
+
+- **API server to API server:** In HA setups, some apiservers may have the feature enabled while others don't during rollout. The unsafe delete option only works on apiservers with the feature enabled. This is acceptable behavior.
+- **Kubelet:** No interaction. This feature doesn't affect pod lifecycle or node operations.
+- **Other components:** No interaction. The feature only affects DELETE requests with the specific option set.
+
+No version skew concerns exist because:
+1. The feature doesn't introduce new API fields that need coordination
+2. The DeleteOption is ignored by apiservers without the feature
+3. No persistent state changes that could cause inconsistency
 
 ## Production Readiness Review Questionnaire
 
@@ -684,8 +707,10 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-All tests verify feature enablement / disablement to ensure backwards
-compatibility.
+Yes, the integration tests explicitly toggle the feature gate to verify enablement/disablement:
+
+- [TestAllowUnsafeMalformedObjectDeletionFeature](https://github.com/kubernetes/kubernetes/blob/master/test/integration/controlplane/transformation/secrets_transformation_test.go#L137) - [feature gate toggle at L198](https://github.com/kubernetes/kubernetes/blob/master/test/integration/controlplane/transformation/secrets_transformation_test.go#L198): Parametrized test running with `featureEnabled: true` and `featureEnabled: false`. Verifies deletion is blocked when disabled, works when enabled with proper RBAC.
+- [TestListCorruptObjects](https://github.com/kubernetes/kubernetes/blob/master/test/integration/controlplane/transformation/secrets_transformation_test.go#L426) - [feature gate toggle at L512](https://github.com/kubernetes/kubernetes/blob/master/test/integration/controlplane/transformation/secrets_transformation_test.go#L512): Parametrized test verifying LIST returns `StatusReasonStoreReadError` when enabled, `StatusReasonInternalError` when disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -704,7 +729,13 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-No impact on rollout or rollback.
+Rollout and rollback cannot fail because:
+
+1. **No persistent state changes:** The feature doesn't write new data to etcd or modify existing objects (except deleting them when explicitly requested).
+2. **Contained within kube-apiserver:** No coordination with kubelet, controllers, or other components required.
+3. **Opt-in behavior:** The feature only activates when a client explicitly sets the `IgnoreStoreReadErrorWithClusterBreakingPotential` option AND has RBAC permission for the `unsafe-delete-ignore-read-errors` verb.
+
+Impact on running workloads: None. The feature doesn't affect normal cluster operations.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1047,6 +1078,10 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server is unavailable, no DELETE requests can be processed (including unsafe deletes). This is standard Kubernetes behavior.
+
+If etcd is unavailable, DELETE requests fail with storage errors, including the unsafe delete feature.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1062,7 +1097,32 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+1. **Missing RBAC permission**
+   - Detection: 403 Forbidden responses when using the unsafe delete option
+   - Mitigation: Grant `unsafe-delete-ignore-read-errors` verb permission to the user
+   - Diagnostics: Audit logs show RBAC denial; API server logs show "forbidden" at verbosity 3+
+   - Testing: Covered by TestAllowUnsafeMalformedObjectDeletionFeature
+
+2. **Feature gate disabled**
+   - Detection: Unsafe delete option silently ignored; corrupt object still returns 500 StorageReadError
+   - Mitigation: Enable AllowUnsafeMalformedObjectDeletion feature gate
+   - Diagnostics: Check feature gate status via /healthz or metrics
+   - Testing: Covered by TestAllowUnsafeMalformedObjectDeletionFeature
+
+3. **Object not actually corrupt**
+   - Detection: Normal delete succeeds without needing the option
+   - Mitigation: None needed - use normal delete
+   - Diagnostics: Object is readable via GET
+   - Testing: Covered by integration tests
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+During corrupt object deletion, temporary SLO degradation is expected (see Monitoring Requirements section). If degradation persists:
+
+1. **Check apiserver_watch_cache_initializations_total** - should return to baseline within minutes
+2. **Check apiserver_storage_list_total** - elevated counts indicate clients are still rebuilding caches
+3. **Review audit logs** - confirm the unsafe delete completed successfully
+4. **If recovery doesn't complete** - restart kube-apiserver to force fresh state
 
 ## Implementation History
 
@@ -1077,11 +1137,30 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2023-03-27: KEP created
+- 2023-10-05: KEP merged as provisional
+- v1.32: Alpha implementation:
+  - Deletion of corrupt objects, with client option and RBAC.
+  - Extended listing of corrupt objects
+  - Integration tests
+- v1.36: Targeting beta
+  - Cache reset deemed acceptable in sig-api-machinery bi-weekly meeting
+  - Dry-Run
+  - Additional integration tests for CRs and serialization failures.
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+1. **Potential for misuse:** The unsafe delete option bypasses safety mechanisms (finalizers, garbage collection). Misuse could orphan resources or break cluster state.
+
+2. **Vendor support concerns:** Using this feature may void support from Kubernetes distributions/vendors, as it allows bypassing normal API guarantees.
+
+3. **No undo:** Unsafe deletion is permanent. If used incorrectly, the only recovery is restoring from etcd backup.
+
+These drawbacks are intentional - the feature is designed for emergency recovery where the alternative (direct etcd manipulation) is worse.
 
 ## Alternatives
 
@@ -1090,6 +1169,10 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+**Direct etcd manipulation (status quo)**
+
+Requires etcd access, bypasses all Kubernetes abstractions, risky, not audited.
 
 ## Infrastructure Needed (Optional)
 
