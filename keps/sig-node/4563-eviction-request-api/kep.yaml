@@ -61,5 +61,6 @@ disable-supported: true
 metrics:
   - evictionrequest_controller_imperative_evictions
   - evictionrequest_controller_active_interceptor
+  - evictionrequest_controller_processed_interceptor
   - evictionrequest_controller_active_requester
   - evictionrequest_controller_pod_interceptors

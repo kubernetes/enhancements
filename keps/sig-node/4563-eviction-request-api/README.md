@@ -365,8 +365,8 @@ controller detects that the eviction request progress updates have stopped (due 
 will assign another interceptor. If there is no other interceptor available, it will resort to pod
 eviction by calling the eviction API (taking PodDisruptionBudgets into consideration).
 
-It is also responsible for reconciling the `Complete` condition according to the
-[EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion)
+It is also responsible for reconciling the `Canceled`, `Evicted`, conditions
+according to the [EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion)
 
 ### User Stories (Optional)
 
@@ -511,10 +511,10 @@ If the eviction request already exists for this pod, the requester should still 
 - Processing the eviction request result by the requester once the eviction process is complete.
 
 If the eviction is no longer needed, the requester should remove itself from the `.spec.requesters`
-of the EvictionRequest. If the requester's list is empty, the eviction request will be canceled and 
-the eviction request controller will set a `Complete` condition to `.status.conditions`.
+of the EvictionRequest. If the requester's list is empty, the eviction request will be canceled and
+the eviction request controller will set a `Canceled` condition to `.status.conditions`.
 
-It can observe the `Complete` condition ([EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion))
+It can observe the `Canceled` and `Evicted` conditions ([EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion))
 to decide if the EvictionRequest should be deleted/garbage collected.
 
 Eviction requesters are expected to use Server-Side apply to prevent conflicts and manage ownership
@@ -563,15 +563,14 @@ metadata:
 
 The interceptor should observe the eviction request objects that match the pods that the interceptor
 manages (e.g. through labels and labelSelector). It should start the eviction process only if it
-observes the `.status.activeInterceptorName` in the EvictionRequest object that matches the `name`
-it previously set in the pod's `.spec.evictionInterceptors`. And also if there is no `Complete=True`
-condition in `.status.conditions`.
+observes an interceptor name in the `.status.activeInterceptors` in the EvictionRequest object that
+matches the `name` it previously set in the pod's `.spec.evictionInterceptors`.
 
 If the interceptor is not interested in intercepting/evicting the pod anymore, it should set
-`.status.activeInterceptorCompleted=true`. If the interceptor is unable to respond to the eviction
-request, the interception will time out after 30 minutes and control of the eviction process will
-be passed to the next interceptor at the higher list index. If there is none, the pod will get
-evicted by the eviction request controller.
+`Complete` condition in `.status.interceptors[].conditions`  to `True`. If the interceptor is unable
+to respond to the eviction request, the interception will time out after 30 minutes and control of
+the eviction process will be passed to the next interceptor at the higher list index. If there is
+none, the pod will get evicted by the eviction request controller.
 
 If the interceptor is interested in intercepting/evicting the pod it should ensure to update the
 EvictionRequest status periodically at intervals of less than 30 minutes. Therefore, updating the
@@ -581,17 +580,18 @@ status updates should look as follows:
   type is `Soft` for now.
 - Verify that the `.spec.target` is the desired target (e.g., there is a correct pod in the
   `.spec.target.podRef`)
-- Check that `.status.activeInterceptorName` still matches the `name` previously set
-  in the pod's `.spec.evictionInterceptors`. and that `.status.activeInterceptorCompleted` is still
-  false. If one of these is not correct and the eviction process is still not complete, it should
-  abort the eviction process or output an error (e.g. via an event).
-- Set `.status.heartbeatTime` to the present time to signal that the eviction request is not
-  stuck.
-- Update `.status.expectedInterceptorFinishTime` if a reasonable estimation can be made of how long
-  the eviction process will take for the current interceptor. This can be modified later to change
-  the estimate.
-- Set `.status.message` to inform about the progress of the eviction in human-readable form.
-- Optionally, `.status.conditions` can be set for additional details about the eviction request.
+- Check that the previously set `name` in the pod's `.spec.evictionInterceptors` is still included
+  in  `.status.activeInterceptors`. If not, it should abort the eviction process or output an error
+  (e.g. via an event or a condition).
+- Set `.status.interceptors[].heartbeatTime` to the present time to signal that the eviction request
+  is not stuck. `Started` condition should also be set the first time this field is set.
+- Update `.status.interceptors[].expectedInterceptorFinishTime` if a reasonable estimation can be
+  made of how long the eviction process will take for the current interceptor. This can be modified
+  later to change the estimate.
+- Reconcile  `Complete` condition in `.status.interceptors[].conditions` to indicate whether the
+  eviction process has completed or not.
+- Add additional conditions to `.status.interceptors[].conditions` to inform about the progress of
+  the eviction in human-readable form.
 - Optionally, an event can be emitted to inform about the start/progress of the eviction. Or lack
   thereof, if the eviction request is blocked. The interceptor should ensure that an appropriate
   number of events is emitted. `event.involvedObject` should be set to the current EvictionRequest.
@@ -601,7 +601,7 @@ Interceptors should be aware that the EvictionRequest object can be deleted at a
 
 The completion of the eviction request is communicated by pod termination (usually by an evict or
 delete call) and reaching the terminal phase (`Succeeded` or `Failed`). It can also withdraw from
-the eviction process by setting `.status.activeInterceptorCompleted=true`.
+the eviction process by setting `Complete` condition in `.status.interceptors[].conditions` to`True`.
 
 The interceptor should prefer the eviction API endpoint call for the pod deletion/termination to
 respect the PDBs, unless the eviction process is incompatible with the PDBs and the application has
@@ -610,8 +610,8 @@ better insight into the application availability than the PDB. In these cases, i
 skip the eviction call and use the delete call directly.
 
 Also, the interceptor should not block the eviction request by updating
-the`.status.heartbeatTime` when no work is being done on the eviction. This should be decided
-solely by the user deploying the application and resolved by creating a PDB.
+the `.status.interceptors[].heartbeatTime` when no work is being done on the eviction. This should
+be decided solely by the user deploying the application and resolved by creating a PDB.
 
 ### Eviction Request Controller
 
@@ -623,19 +623,15 @@ solely by the user deploying the application and resolved by creating a PDB.
 Interceptors are populated from pod's `.spec.evictionInterceptors`
 into the `.spec.interceptors` on [EvictionRequest Validation and Admission](#evictionrequest-validation-and-admission).
 
-The eviction request controller reconciles EvictionRequests and first picks the index 0
-interceptor from `.spec.interceptors` and sets its `name` to the
-`.status.activeInterceptorName`.
+The eviction request controller reconciles EvictionRequests and first picks the index 0 interceptor
+from `.spec.interceptors` and sets its `name` to the `.status.activeInterceptors[0]`.
 
-If `.status.activeInterceptorCompleted` is true and the pod exists
-or 30 minutes has elapsed since `.status.heartbeatTime`, then the eviction
-request controller sets `status.activeInterceptorName` to the next interceptor at the higher list
-index from `.spec.interceptors`. During the switch to the new interceptor, the eviction request
-controller will also
-- Set `.status.activeInterceptorCompleted` field to false.
-- Update`.status.heartbeatTime` to the present time.
-- Set `.status.expectedInterceptorFinishTime` to nil.
-- Set `.status.message` to indicate that the interceptors have been switched.
+If active interceptor's `Complete` condition in `.status.interceptors[].conditions` is set to `True`
+or 30 minutes has elapsed since `.status.interceptors[].heartbeatTime`, then
+the eviction request controller sets `.status.activeInterceptors[0]` to the next interceptor at the
+higher list index from `.spec.interceptors`. During the switch to the new interceptor, the eviction
+request controller will also append `.status.processedInterceptors` with the last value of
+`.status.activeInterceptors `.
 
 #### Eviction
 
@@ -643,12 +639,11 @@ The eviction request controller will observe EvictionRequests and evict pods tha
 terminated by calling the eviction API endpoint.
 
 Pods that are unable to be terminated:
-- EvictionRequest's `.status.activeInterceptorName` field is empty.
-- EvictionRequest's `.status.activeInterceptorCompleted` field is true and there is no other
-  interceptor to select.
+- EvictionRequest's `.status.activeInterceptors` list is empty and `.status.processedInterceptors`
+  length is equal to `.spec.interceptors`.
 - 30 minutes has elapsed since EvictionRequest's
-  `.status.heartbeatTime` or from `.metadata.creationTimestamp` if
-  `.status.heartbeatTime` is nil.
+  `.status.interceptors[].heartbeatTime` of the active interceptor or from
+  `.metadata.creationTimestamp` if `.status.interceptors[].heartbeatTime` is nil.
 
 API-initiated eviction of DaemonSet pods and mirror pods is not supported. However, the
 EvictionRequest can still be used to terminate them by other means.
@@ -750,8 +745,6 @@ type EvictionRequestSpec struct {
 	// ownership.
 	//
 	// The maximum length of the requesters list is 100.
-	// This field cannot be modified once the eviction request has been completed (Complete
-	// condition is True).
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
@@ -851,14 +844,14 @@ type Interceptor struct {
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
 type EvictionRequestStatus struct {
-    // Conditions can be used by interceptors to share additional information about the eviction.
-	// request.
+    // Conditions contain information about the eviction request.
 	//
-	// Eviction request specific conditions are: Complete.
+	// Eviction request specific conditions are: Evicted or Canceled.
 	//
-	// Complete condition means that the eviction request is no longer being processed by any
-	// eviction interceptor. This may be either because the pod has been terminated or deleted, or
-	// because the eviction request has been canceled.
+	// - Canceled means that the eviction request is no longer being processed by any eviction
+	//   interceptor because the eviction request has been canceled.
+	// - Evicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
+	// This field is managed by Kubernetes.
     // +optional
     // +patchMergeKey=type
     // +patchStrategy=merge
@@ -866,54 +859,118 @@ type EvictionRequestStatus struct {
     // +listMapKey=type
     Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 
-	// Message is a human readable message indicating details about the eviction request.
-	// This may be an empty string.
-	// +required
-	Message string `json:"message" protobuf:"bytes,2,opt,name=message"`
-
-	// Interceptors of the ActiveInterceptorName can adopt this eviction request by updating the
-	// HeartbeatTime or orphan/complete it by setting ActiveInterceptorCompleted to true.
-	// This field is managed by Kubernetes. It is cleared once the eviction request has completed.
-	// +optional
-	ActiveInterceptorName *string `json:"activeInterceptorName,omitempty" protobuf:"bytes,3,opt,name=activeInterceptorName"`
-
-	// ActiveInterceptorCompleted should be set to true when the interceptor of the
-	// ActiveInterceptorName has either fully or partially completed, which may have resulted in
-	// target eviction (e.g. pod termination).
-	// This field can also be set to true if no interceptor is available.
-	// If this field is true and no additional interceptor is available:
+	// ActiveInterceptors store a list of interceptors that should interact with the eviction
+	// process by updating .status.interceptors[], where .name is the active interceptor name.
+	// InterceptorStatus fields should be updated to indicate the progress or completion of the
+	// eviction process.
+	//
+	// If this field is empty and no additional interceptor is available:
 	// - If the target is a pod that is still running, it will be evicted using the Eviction API.
+	//
+	// The maximum allowed number of active interceptors is 1. An active interceptor is removed from
+	// this list when Complete condition in .status.interceptors[].conditions is set to True.
+	// This field is managed by Kubernetes. 
 	// +optional
-	ActiveInterceptorCompleted bool `json:"activeInterceptorCompleted,omitempty" protobuf:"varint,4,opt,name=activeInterceptorCompleted"`
+	// +listType=set
+	ActiveInterceptors []string `json:"activeInterceptors,omitempty" protobuf:"bytes,2,opt,name=activeInterceptors"`
 
-	// ExpectedInterceptorFinishTime is the time at which the eviction process step is expected to
-	// end for the active interceptor.
-	// May be empty if no estimate can be made.
-	// +optional
-	ExpectedInterceptorFinishTime *metav1.Time `json:"expectedInterceptorFinishTime,omitempty" protobuf:"bytes,5,opt,name=expectedInterceptorFinishTime"`
+    // ProcessedInterceptors store a list of interceptors that have previously been selected
+    // and added to ActiveInterceptors. These interceptors may have reached completion, been
+    // canceled, failed to start or failed to update `.heartbeatTime` in a timely manner.
+    // Please refer to the InterceptorStatus for each interceptor for more details.
+    // This field is managed by Kubernetes.
+    // +optional
+    // +listType=set
+    ProcessedInterceptors []string `json:"processedInterceptors,omitempty" protobuf:"bytes,2,opt,name=processedInterceptors"`
 
-	// HeartbeatTime is the last time at which the eviction process was reported to be in progress
-	// by the interceptor.
-	// Cannot be set to the future time (after taking time skew of up to 10 seconds into account).
-	// +optional
-	HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,6,opt,name=heartbeatTime"`
+	// Interceptors represents the eviction process status of each declared interceptor. Only
+	// ActiveInterceptors should update the interceptor statuses. 
+	//
+	// The interceptor list should be the same length and have the same .name fields as
+	// .spec.interceptors. Only interceptors with .name that are included in
+	// .status.activeInterceptors can be mutated. First initialization of the list is allowed.
+	// 
+	// Each InterceptorStatus is managed by the designated interceptor.
+    // +optional
+    // +patchMergeKey=name
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=name
+    // +k8s:maxLength=100
+	Interceptors []InterceptorStatus `json:"interceptors,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=interceptors"`
 
     // Pod-specific status that is populated during Pod eviction.
     // This field can only be set when .spec.target is a Pod.
     // This field is managed by Kubernetes.
     // +optional
-    PodEvictionStatus *PodEvictionStatus `json:"podEvictionStatus,omitempty" protobuf:"varint,7,opt,name=podEvictionStatus"`
+    PodEvictionStatus *PodEvictionStatus `json:"podEvictionStatus,omitempty" protobuf:"varint,4,opt,name=podEvictionStatus"`
 }
 
 type EvictionRequestConditionType string
 
 // These are built-in conditions of an eviction request.
 const (
-    // EvictionRequestComplete means that the eviction request is no longer being processed by any
-	// eviction interceptor. This may be either because the pod has been terminated or deleted, or
-	// because the eviction request has been canceled.
-    EvictionRequestComplete EvictionRequestConditionType = "Complete"
+    // EvictionRequestConditionCanceled means that the eviction request is no longer being processed
+	// by any eviction interceptor because the eviction request has been canceled.
+    EvictionRequestConditionCanceled EvictionRequestConditionType = "Canceled"
+
+    // EvictionRequestConditionEvicted means that the target has been evicted (e.g. a pod has been
+    // terminated or deleted).
+    EvictionRequestConditionEvicted EvictionRequestConditionType = "Evicted"
 )
+
+// InterceptorStatus represents the last observed status of the eviction process of the interceptor.
+// It should be only updated by the designated interceptor whose name is .name field.
+// +structType=granular
+type InterceptorStatus struct {
+    // Name must be a fully qualified domain name of at most 253 characters in length, consisting
+    // only of lowercase alphanumeric characters, periods and hyphens (e.g. bar.example.com).
+    // This field must be unique for each interceptor.
+    // This field is required and immutable.
+    // +required
+    Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+
+    // HeartbeatTime is the last time at which the eviction process was reported to be in progress
+    // by the interceptor.
+    // Cannot be set to the future time (after taking time skew of up to 10 seconds into account).
+	// The first initialization of this field must also set Started condition.
+    // +optional
+    HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,2,opt,name=heartbeatTime"`
+
+    // ExpectedFinishTime is the time at which the eviction process step is expected to end for the
+	// interceptor.
+    // May be empty if no estimate can be made.
+    // +optional
+    ExpectedFinishTime *metav1.Time `json:"expectedFinishTime,omitempty" protobuf:"bytes,3,opt,name=expectedFinishTime"`
+
+	// Conditions should be used by interceptors to share their state.
+	//
+	// Interceptor's designated conditions are: Complete.
+	//
+	// - Started tracks the time at which the Interceptor first started processing the eviction request.
+	// - Complete means that the interceptors has either fully or partially completed the
+	//   eviction process, which may have resulted in target eviction (e.g. pod termination).
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+
+}
+
+type EvictionRequestInterceptorConditionType string
+
+// These are built-in conditions expected to be set by interceptors.
+const (
+    // Started tracks the time at which the Interceptor first started processing the eviction request.
+    EvictionRequestInterceptorConditionStarted EvictionRequestInterceptorConditionType = "Started"
+
+    // Complete means that the interceptors has either fully or partially completed the
+    // eviction process, which may have resulted in target eviction (e.g. pod termination).
+    EvictionRequestInterceptorConditionComplete EvictionRequestInterceptorConditionType = "Complete"
+)
+
 
 // Pod-specific status that is populated during pod eviction.
 type PodEvictionStatus struct {
@@ -978,19 +1035,14 @@ interceptor names must pass `IsFullyQualifiedDomainName` validation.
 The pod labels are merged with the EvictionRequest labels (pod labels have a preference) to allow
 for custom label selectors when observing the eviction requests.
 
-`.status.activeInterceptorName` should be empty on creation as its selection should be left on the
+`.status.activeInterceptors` should be empty on creation as its selection should be left on the
 eviction request controller. To strengthen the validation, we should check that it is possible to
 set only the index 0 interceptor from the interceptor list in the beginning. After that, it is
 possible to set only the next interceptor at a higher index and so on. We can also condition this
-transition according to the other fields. `.status.activeInterceptorCompleted` should be true or
-`.status.heartbeatTime` has exceeded the 30-minute deadline.
+transition according to the other fields. `Complete` condition in `.status.interceptors[].conditions`
+should be `True` or `.status.interceptors[].heartbeatTime` has exceeded the 30-minute deadline.
 
 `.status.podEvictionStatus.failedAPIEvictionCounter` can be only incremented.
-
-##### UPDATE
-
-Requesters cannot be removed once the eviction request has been completed (`Complete`
-condition is `True`).
 
 ##### CREATE, UPDATE, DELETE
 
@@ -1021,17 +1073,21 @@ The following diagrams describe what the EvictionRequest process will look like 
 
 #### EvictionRequest Completion and Deletion
 
-The eviction request is considered complete if:
-- The referenced pod has reached the terminal phase (`Succeeded` or `Failed`), signaling a
+The eviction request is considered evicted if:
+- The referenced pod/target has reached the terminal phase (`Succeeded` or `Failed`), signaling a
   successful eviction.
 - The referenced pod/target no longer exists (has been deleted from etcd), signaling a successful
   eviction.
-- The request is canceled; the length of the `.spec.requesters` is 0.
 
-Eviction controller will then set the `Complete` condition to `True`.
+The eviction request is considered canceled if:
+- The length of the `.spec.requesters` is 0.
 
-Requesters should be able to delete the EvictionRequest when the `Complete` condition is observed
-to be `True`.
+
+Eviction controller will signal each of these by setting  `Canceled` or `Evicted` conditions to
+`True`.
+
+Requesters should be able to delete the EvictionRequest when the `Canceled` or `Evicted` condition
+is `True`.
 
 ### EvictionRequest Cancellation Examples
 
@@ -1060,7 +1116,7 @@ metadata:
    create an EvictionRequest (named after the pod's UID) for this pod, but the EvictionRequest
    already exists. It sets the `descheduling.avalanche.io` value to the `.spec.requesters`.
 4. The eviction request controller designates Actor B as the next interceptor by updating
-   `.status.activeInterceptorName`.
+   `.status.activeInterceptors[0]`.
 5. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
 6. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
@@ -1069,12 +1125,13 @@ metadata:
    `.spec.requesters`.
 8. The eviction request controller notices the change in `.spec.requesters`, but there is still a
    descheduling requester, so no action is required.
-9. Actor B sets `ActiveInterceptorCompleted=true` on the eviction requests of pod p-1, which is
-    ready to be deleted.
+9. Actor B sets `Complete` condition in `.status.interceptors[].conditions` to`True` on the
+   eviction requests of pod p-1, which is ready to be deleted.
 10. The eviction request controller designates Actor A as the next interceptor by updating
-    `.status.activeInterceptorName`.
-11. Actor A deletes the p-1 pod.
-12. Once the pod terminates, the eviction request controller sets `Complete` condition to `True`. 
+    `.status.activeInterceptors[0]`.
+11. Actor A deletes the p-1 pod and sets `Complete` condition in `.status.interceptors[].conditions`
+    to `True`.
+12. Once the pod terminates, the eviction request controller sets `Evicted` condition to `True`.
 13. The descheduling controller can delete the EvictionRequest.
 
 #### Single Dynamic Requester and EvictionRequest Cancellation
@@ -1084,16 +1141,16 @@ metadata:
    evict it from a node. It sets the `nodemaintenance.disruption-management.org` value to the
    `.spec.requesters`.
 3. The eviction request controller designates Actor B as the next interceptor by updating
-   `.status.activeInterceptorName`.
+   `.status.activeInterceptors[0]`.
 4. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
 5. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
    again.
 6. The node drain controller removes the `nodemaintenance.disruption-management.org` from the
    `.spec.requesters`.
-7. The eviction request controller notices the change in `.spec.requesters`, and sets `Complete`
-   condition to `True`  as there is no requester present. It also clears out active interceptor
-   status fields.
+7. The eviction request controller notices the change in `.spec.requesters`, and sets `Canceled`
+   condition to `True`  as there is no requester present. It also clears out
+   `.status.activeInterceptors` field.
 8. Actor B can detect the cancellation of the EvictionRequest object and notify users of application
    P that the disruption has been canceled.
 
@@ -1145,17 +1202,18 @@ This example can also be applied to other direct or higher level controllers
 3. The node drain controller creates an EvictionRequests for a subset B of pods A to evict them from
    a node.
 4. The eviction request controller designates the deployment controller as the interceptor (index 0)
-   by updating `.status.activeInterceptorName`. No action (termination) is taken on the pods yet.
+   by updating `.status.activeInterceptors[0]`. No action (termination) is taken on the pods
+   yet.
 5. The deployment controller creates a set of surge pods C to compensate for the future loss of
    availability of pods B. The new pods are created by temporarily surging the `.spec.replicas`
    count of the underlying replica sets up to the value of deployments `maxSurge`.
 6. Pods C are scheduled on a new schedulable node that is not under the node drain.
 7. Pods C become available.
 8. The deployment controller scales down the surging replica sets back to their original value.
-9. The deployment controller sets `ActiveInterceptorCompleted=true` on the eviction requests of
-   pods B that are ready to be deleted.
+9. The deployment controller sets `Complete` condition in `.status.interceptors[].conditions` to
+   `True`. on the eviction requests of pods B that are ready to be deleted.
 10. The eviction request controller designates the replica set controller as the next interceptor by
-    updating `.status.activeInterceptorName`.
+    updating `.status.activeInterceptors[0]`.
 11. The replica set controller deletes the pods to which an EvictionRequest object has been
     assigned, preserving the availability of the application.
 
@@ -1370,7 +1428,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 - Test that the eviction of the pod happens if there is no interceptor or the interceptor stops
   responding.
 - Test switching between different interceptors and resetting the EvictionRequest status.
-- Test that the EvictionRequest has the `Complete=True` condition when the pod is terminated,
+- Test that the EvictionRequest has the `Canceled=True` condition when the EvictionRequest is
+  canceled.
+- Test that the EvictionRequest has the `Evicted=True` condition when the pod is terminated.
 
 ##### e2e tests
 
@@ -1402,11 +1462,6 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Consider various kinds of alternative ordering or dependency tracking of the interceptors. For
   example, use numeric priorities or roles.
 - Evaluate the relationship between the EvictionRequest API and Pod Deletion.
-- Consider moving the `.status` fields that are updated by interceptors to a dedicated struct inside
-  a list, in order to separate field ownership between the interceptors. For example introduce
-  `.status.completedInterceptors` field instead of `.status.activeInterceptorCompleted`.
-  Alternatively introduce `.status.interceptors` field to contain all the interceptor controller
-  fields.
 - Consider introducing tge `.spec.heartbeatDeadlineSeconds` field to allow for customization of how
   long a non-cooperating interceptor can take before proceeding to the next one. Lower values would
   improve the responsiveness of the system, while higher values would increase the workload's safety
@@ -1541,7 +1596,7 @@ A manual test will be performed, as follows:
 1. Create a cluster in 1.35.
 2. Upgrade to 1.36.
 3. Create an EvictionRequest A and pod A. Observe that the EvictionRequest evicts the pod and
-   terminates it. Observe that the EvictionRequest has `Complete=True` condition at the end.
+   terminates it. Observe that the EvictionRequest has `Evicted=True` condition at the end.
 4. Create an EvictionRequest B, pod B and PDB B targeting the pod B with `maxUnavailable=0`. Observe
    that the EvictionRequest increases the `.status.podEvictionStatus.failedAPIEvictionCounter`, but
    does not evict the pod.
@@ -1549,7 +1604,7 @@ A manual test will be performed, as follows:
 6. Delete PDB B. Observe that the pod B keeps running without any termination.
 7. Upgrade to 1.36.
 8. Observe that the EvictionRequest B evicts pod B and terminates it. Observe that the
-   EvictionRequest B has `Complete=True` condition at the end.
+   EvictionRequest B has `Evicted=True` condition at the end.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1559,7 +1614,8 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-By observing the `evictionrequest_controller_imperative_evictions`, `evictionrequest_controller_active_interceptor`,
+By observing the `evictionrequest_controller_imperative_evictions`,
+`evictionrequest_controller_active_interceptor`, `evictionrequest_controller_processed_interceptor`,
 `evictionrequest_controller_pod_interceptors` and `workqueue` metrics.
 
 Cluster state can also be checked:
@@ -1587,9 +1643,11 @@ This feature should comply with the existing SLO about processing mutating API c
 - [x] Metrics
   - Metric name: `evictionrequest_controller_imperative_evictions` (number of evictions per EvictionRequest and Pod)
     - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_active_interceptor` (active interceptor per EvictionRequest and Pod)
+  - Metric name: `evictionrequest_controller_active_interceptor` (active interceptors per EvictionRequest and Target)
     - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_active_requester` (active interceptor per EvictionRequest and Pod)
+  - Metric name: `evictionrequest_controller_processed_interceptor` (processed interceptors per EvictionRequest and Target)
+      - Components exposing the metric: kube-controller-manager (new)
+  - Metric name: `evictionrequest_controller_active_requester` (active requesters per EvictionRequest and Target)
       - Components exposing the metric: kube-controller-manager (new)
   - Metric name: `evictionrequest_controller_pod_interceptors` (available interceptors per Pod)
       - Components exposing the metric: kube-controller-manager (new)
@@ -1824,7 +1882,7 @@ prevent EvictionRequest cancellation.
 Requesters are advised to reconcile the EvictionRequest object to ensure that the EvictionRequest is
 present, but they are not required to do so.
 
-The eviction request controller will set the `Completed` condition to `True` as the pod is terminated.
+The eviction request controller will set the `Evicted` condition to `True` as the pod is terminated.
 
 To avoid implementing the cancellation, we could alternatively forbid deletion of EvictionRequests on
 admission, unless the pod has already disappeared. The main drawback is, that there are many
