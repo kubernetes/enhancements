@@ -95,13 +95,19 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2 (Optional)](#story-2-optional)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Higher memory usage by the device_taint_eviction controller](#higher-memory-usage-by-the-device_taint_eviction-controller)
+    - [The number of Pods that can share a ResourceClaim will not be unlimited](#the-number-of-pods-that-can-share-a-resourceclaim-will-not-be-unlimited)
 - [Design Details](#design-details)
+  - [Background](#background)
+    - [Deallocation](#deallocation)
+    - [Finding Pods Using a ResourceClaim](#finding-pods-using-a-resourceclaim)
   - [API](#api)
     - [Workload](#workload)
     - [PodGroup](#podgroup)
     - [Pod](#pod)
     - [Example](#example)
   - [ResourceClaim Lifecycle](#resourceclaim-lifecycle)
+    - [Finding Pods Using a ResourceClaim](#finding-pods-using-a-resourceclaim-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -313,6 +319,20 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+#### Higher memory usage by the device_taint_eviction controller
+
+The device_taint_eviction controller will need to keep an index of which Pods
+are referenced from each ResourceClaim, so it can evict the correct Pods when
+devices are tainted. This will require some additional memory.
+
+#### The number of Pods that can share a ResourceClaim will not be unlimited
+
+Removing this limit does not mean that the number of Pods that can share a
+ResourceClaim will be unlimited. As part of the [scale testing effort for
+DRA](https://github.com/kubernetes/kubernetes/issues/131198), we will test the
+scalability of the number of Pods sharing a ResourceClaim so we can provide
+guidance as to what is a safe number.
+
 ## Design Details
 
 <!--
@@ -321,6 +341,47 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+### Background
+
+The `status.reservedFor` field ResourceClaims is currently used for two
+purposes:
+
+#### Deallocation
+
+Devices are allocated to a ResourceClaim when the first Pod referencing the
+claim is scheduled. Other Pods can also share the ResourceClaim in which case
+they share the devices. Once no Pods are consuming the claim, the devices should
+be deallocated to they can be allocated to other claims. The
+`status.reservedFor` list is used to keep track of pods consuming a
+ResourceClaim. Pods are added to the list by the DRA scheduler plugin during
+scheduling and removed from the list by the resourceclaim controller when pods
+are deleted or finish running. An empty list means there are no current
+consumers of the claim and it can be deallocated.
+
+#### Finding Pods Using a ResourceClaim
+
+`status.reservedFor` is read by the DRA scheduler plugin, the kubelet, and the
+device_taint_eviction controller to find Pods that are using a ResourceClaim:
+
+1. The kubelet uses this to make sure it only runs Pods that where the claims
+   have been allocated to the pod. It can verify this by checking that the Pod
+   is listed in the `status.reservedFor` list.
+
+1. The DRA scheduler plugin uses the list to find claims that have zero or only
+   a single Pod using it, and is therefore a candidate for deallocation in the
+   `PostFilter` function.
+
+1. The device_taint_eviction controller uses the `ReservedFor` list to find the
+   pods that need to be evicted when one or more of the devices allocated to a
+   ResourceClaim is tainted (and the ResourceClaim does not have a toleration).
+
+So the solution needs to:
+
+- Give the ResourceClaim controller a way to know when there are no more
+  consumers of a ResourceClaim so it can be deallocated.
+- Give controllers a way to list the Pods consuming or referencing a
+  ResourceClaim.
 
 ### API
 
@@ -688,6 +749,41 @@ will unlock deletion of PodGroup-owned claims by removing the finalizer when
 they become deallocated. The garbage collector will then be responsible for
 deleting the ResourceClaim once its owning PodGroup is deleted.
 
+#### Finding Pods Using a ResourceClaim
+
+If the reference in the `status.reservedFor` list is to a Workload or PodGroup,
+controllers can no longer use the list to directly find all Pods consuming the
+ResourceClaim. Instead they will look up all Pods referencing the Workload or
+PodGroup, which can be done by using a watch on Pods and maintaining an index of
+Workload or PodGroup to Pods referencing it. This can be done using the informer
+cache.
+
+The list of Pods making up a Workload or PodGroup for which a ResourceClaim is
+reserved is not exactly the same as the list of Pods consuming a ResourceClaim.
+References in the `status.reservedFor` list only contain Pods, or Pods'
+Workloads or PodGroups, that have been processed by the DRA scheduler plugin and
+are scheduled to use the ResourceClaim. It is possible to have Pods that
+reference a Workload or PodGroup that has been allocated a claim, but haven't
+yet been scheduled. This distinction is important for some of the usages of the
+`status.reservedFor` list described above:
+
+<!-- TBD if status.allocation.reservedForAnyPod will be used
+1. If the kubelet sees that the `status.allocation.ReservedForAnyPod` is set, it
+   will skip the check that the Pod is listed in the `ReservedFor` list and just
+   run the pod.
+-->
+
+1. If the DRA scheduler plugin is trying to find candidates for deallocation in
+   the `PostFilter` function and sees a ResourceClaim with a non-Pod reference,
+   it will not attempt to deallocate. The plugin has no way to know how many
+   Pods are actually consuming the ResourceClaim without the explicit list in
+   `status.reservedFor` list and therefore it will not be safe to deallocate.
+
+1. The device_taint_eviction controller will use the list of Pods referencing
+   the Workload or PodGroup to determine the list of pods that needs to be
+   evicted. In this situation, it is ok if the list includes pods that haven't
+   yet been scheduled.
+
 ### Test Plan
 
 <!--
@@ -735,12 +831,15 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/dynamic-resource-allocation/resourceclaim`: `2026-01-21` - `89.3%`
-- `k8s.io/kubernetes/pkg/apis/core/v1`: `2026-01-21` - `79.0%`
-- `k8s.io/kubernetes/pkg/apis/core/validation`: `2026-01-21` - `85.3%`
-- `k8s.io/kubernetes/pkg/apis/scheduling/v1alpha1`: `2026-01-21` - `83.3%`
-- `k8s.io/kubernetes/pkg/apis/scheduling/validation`: `2026-01-21` - `96.6%`
-- `k8s.io/kubernetes/pkg/controller/resourceclaim`: `2026-01-21` - `74.4%`
+- `k8s.io/dynamic-resource-allocation/resourceclaim`: `2026-01-29` - `89.3%`
+- `k8s.io/kubernetes/pkg/apis/core/v1`: `2026-01-29` - `79.0%`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2026-01-29` - `85.3%`
+- `k8s.io/kubernetes/pkg/apis/scheduling/v1alpha1`: `2026-01-29` - `83.3%`
+- `k8s.io/kubernetes/pkg/apis/scheduling/validation`: `2026-01-29` - `96.6%`
+- `k8s.io/kubernetes/pkg/controller/devicetainteviction`: `2026-01-29` - `86.7%`
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: `2026-01-29` - `74.6%`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `2026-01-29` - `83.6%`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `2026-01-29` - `79.2%`
 
 ##### Integration tests
 
@@ -781,6 +880,9 @@ New integration tests will verify:
       orphaned.
     - At most one generated ResourceClaim should exist for a claim made by a
       PodGroup at any given time.
+
+Additionally, scheduler_perf tests will be added, aiming for the same thresholds
+as existing DRA tests.
 
 ##### e2e tests
 
