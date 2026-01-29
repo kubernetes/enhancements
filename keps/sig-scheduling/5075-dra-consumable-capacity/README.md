@@ -105,7 +105,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
@@ -832,8 +832,9 @@ The following functionalities should be covered in E2E tests:
 
 - Feature Gates are enabled by default.
 - No major outstanding bugs.
-- 1 example of real-world use case.
+- 2 examples of real-world use cases.
   - CNI DRA driver (kubernetes-sigs/cni-dra-driver) can use this feature to manage and limit bandwidth quota.
+  - DRA Driver for CPU (kubernetes-sigs/dra-driver-cpu) can use this feature to manage and limit CPU resources.
 - Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
 
 ### GA
@@ -1138,7 +1139,7 @@ Pick one more of these and delete the rest.
 
 - [x] Metrics
   - Metric names:
-    - `apiserver_request` with `resource="resourceclaims", subresource="status"`
+    - `apiserver_request` with `resource="resourceclaims"`
     - `scheduler_plugin_execution_duration_seconds` with `plugin="DynamicResources"`
         - For state gathering, `extension_point="PreFilter"`
         - For allocation, `extension_point="Filter"`
@@ -1297,35 +1298,30 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
+The troubleshooting section in https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#troubleshooting
+still applies. The only additional failure modes comes from version skew
+in the cluster and the troubleshooting steps provided through the link above
+should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
+
+- kube-scheduler cannot allocate ResourceClaims.
+
+  The shared device may not have sufficient capacity to satisfy the request. The log message `Device capacity not enough` and the `capacities` field in the log `Allocating one device` can provide further clues for investigation (require -v=7 on kube-scheduler).
+
+If the feature is disabled but a ResourceClaim still requests capacity, the scheduler log will report:
+has capacity requests, but the DRAConsumableCapacity feature is disabled. Nevertheless, when using the allocator in stable mode, no logs related to the DRAConsumableCapacity feature will be emitted.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
 
 ## Implementation History
 
@@ -1351,6 +1347,10 @@ Alpha 1.35:
 - [Fix 134100 - integration with partitionable device PR 134103](https://github.com/kubernetes/kubernetes/pull/134103) has been pushed on 2025-09-17
 - [Fix 134519 - add ShareID to kubelet plugin API PR 134520](https://github.com/kubernetes/kubernetes/pull/134520) has been pushed on 2025-10-10
 - [Increase test coverage PR 134615](https://github.com/kubernetes/kubernetes/pull/134615) has been pushed on 2025-10-15
+
+Beta 1.36:
+
+- [Promote DRAConsumableCapacity to Beta PR 136611](https://github.com/kubernetes/kubernetes/pull/136611) has been pushed on 2026-01-29
 
 ## Drawbacks
 
