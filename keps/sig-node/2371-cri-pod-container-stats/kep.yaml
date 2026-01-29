@@ -19,10 +19,10 @@ see-also:
 replaces:
   - N/A
 stage: beta
-latest-milestone: "v1.35"
+latest-milestone: "v1.36"
 milestone:
   alpha: "v1.29"
-  beta: "v1.35"
+  beta: "v1.36"
 feature-gates:
   - name: PodAndContainerStatsFromCRI
     components:
