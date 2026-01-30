@@ -193,15 +193,15 @@ This enhancement describes additions to the [Workload API][kep-4671] and
 and ResourceClaimTemplates with those objects to better facilitate sharing
 DRA resources between the Pods they contain.
 
-A ResourceClaim referenced by a Workload or PodGroup will be reserved for that
-Workload or PodGroup as a whole instead of its individual Pods, addressing the
+A ResourceClaim referenced by a PodGroup will be reserved for that
+PodGroup as a whole instead of its individual Pods, addressing the
 limit on the number of entries in a ResourceClaim's `status.reservedFor` list.
 
-A ResourceClaimTemplate referenced by a Workload or PodGroup will cause a
-ResourceClaim to be generated once for that Workload or PodGroup, like how
+A ResourceClaimTemplate referenced by a PodGroup will cause a
+ResourceClaim to be generated once for that PodGroup, like how
 ResourceClaimTemplates work today when referenced by a Pod. Whereas
 ResourceClaims today can only be shared between Pods by name, this will allow
-ResourceClaims to be shared by Pods in the same Workload or PodGroup where the
+ResourceClaims to be shared by Pods in the same PodGroup where the
 exact name of the ResourceClaim is not known ahead of time.
 
 ## Motivation
@@ -243,7 +243,7 @@ of Pods. Production-scale workloads require larger numbers of Pods to share a
 single claim.
 
 The Workload API defines a common representation of these related sets of Pods
-as a PodGroup. Associating ResourceClaimTemplates with Workloads and PodGroups allows
+as a PodGroup. Associating ResourceClaimTemplates with PodGroups allows
 Kubernetes to manage the lifecycle of the generated ResourceClaims generically
 for all types implementing the Workload API.
 
@@ -255,7 +255,7 @@ know that this has succeeded?
 -->
 
 - Allow users to express sets of DRA resources to be replicated for each
-  Workload or PodGroup, and shared by each Pod in the Workload or PodGroup.
+  PodGroup, and shared by each Pod in the PodGroup.
 - Automatically create and delete Workloads' and PodGroups' ResourceClaims as needed.
 - Reduce the burden of each true workload controller implementing
   ResourceClaim generation separately (e.g. JobSet, LWS).
@@ -268,8 +268,10 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
+- Associate ResourceClaims or ResourceClaimTemplates with Workload objects
+  (future work).
 - Influence how Pods are placed onto Nodes based on the ResourceClaimTemplates and ResourceClaims
-  associated with a Workload, PodGroup or Pod (See
+  associated with a PodGroup or Pod (See
   [KEP-5732](https://kep.k8s.io/5732)).
 
 ## Proposal
@@ -387,79 +389,15 @@ So the solution needs to:
 
 The following API changes will be made:
 
-- The Workload and PodGroup APIs will be updated to include references to
+- The PodGroup API will be updated to include references to
   ResourceClaims and ResourceClaimTemplates, like Pods.
 - The Pod API will be updated to include references to claims listed in its
-  Workload or PodGroup.
-
-#### Workload
-
-The Workload API changes are modeled after the existing Pod API to reference
-ResourceClaims, adding a `spec.resourceClaims` field:
-
-```go
-type WorkloadSpec struct {
-	...
-
-	// ResourceClaims defines which ResourceClaims may be shared among Pods in
-	// the group. Pods must reference these claims in order to consume the
-	// allocated devices.
-	//
-	// This is an alpha-level field and requires that the
-	// WorkloadPodGroupResourceClaimTemplate feature gate is enabled.
-	//
-	// This field is immutable.
-	//
-	// +patchMergeKey=name
-	// +patchStrategy=merge,retainKeys
-	// +listType=map
-	// +listMapKey=name
-	// +featureGate=WorkloadPodGroupResourceClaimTemplate
-	// +optional
-	ResourceClaims []WorkloadResourceClaim `json:"resourceClaims,omitempty"`
-}
-
-// WorkloadResourceClaim references exactly one ResourceClaim, either directly
-// or by naming a ResourceClaimTemplate which is then turned into a ResourceClaim
-// for the Workload.
-//
-// It adds a name to it that uniquely identifies the ResourceClaim inside the Workload.
-// Pods that need access to the ResourceClaim reference it with this name.
-type WorkloadResourceClaim struct {
-	// Name uniquely identifies this resource claim inside the Workload.
-	// This must be a DNS_LABEL.
-	Name string `json:"name"`
-
-	// ResourceClaimName is the name of a ResourceClaim object in the same
-	// namespace as this Workload. The ResourceClaim will be reserved for the
-	// Workload instead of its individual pods.
-	//
-	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
-	// be set.
-	ResourceClaimName *string `json:"resourceClaimName,omitempty"`
-
-	// ResourceClaimTemplateName is the name of a ResourceClaimTemplate
-	// object in the same namespace as this Workload.
-	//
-	// The template will be used to create a new ResourceClaim, which will
-	// be bound to this Workload. When this Workload is deleted, the ResourceClaim
-	// will also be deleted. The Workload name and resource name, along with a
-	// generated component, will be used to form a unique name for the
-	// ResourceClaim, which will be recorded in pod.status.resourceClaimStatuses.
-	//
-	// This field is immutable and no changes will be made to the
-	// corresponding ResourceClaim by the control plane after creating the
-	// ResourceClaim.
-	//
-	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
-	// be set.
-	ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
-}
-```
+  PodGroup.
 
 #### PodGroup
 
-The PodGroup API changes are similar to those for the Workload API:
+The PodGroup API changes are modeled after the existing Pod API to reference
+ResourceClaims, adding a `spec.resourceClaims` field:
 
 ```go
 type PodGroupSpec struct {
@@ -521,13 +459,9 @@ type PodGroupResourceClaim struct {
 }
 ```
 
-`PodGroupResourceClaim` is a distinct type from `WorkloadResourceClaim` to allow
-each to evolve independently. e.g. to potentially reference claims made by a
-Workload from a PodGroup.
-
 #### Pod
 
-When a PodGroup includes a ResourceClaimTemplate, the `name` of the claim in the
+When a PodGroup includes claims, the `name` of a claim in the
 PodGroup can be used on Pods in the group to associate the PodGroup's dedicated
 ResourceClaim. This complements existing references to ResourceClaims and
 ResourceClaimTemplates.
@@ -535,25 +469,18 @@ ResourceClaimTemplates.
 ```go
 // PodResourceClaim references exactly one ResourceClaim, either directly,
 // by naming a ResourceClaimTemplate which is then turned into a ResourceClaim
-// for the pod, or by naming a claim made for a Workload or PodGroup.
+// for the pod, or by naming a claim made for a PodGroup.
 //
 // It adds a name to it that uniquely identifies the ResourceClaim inside the Pod.
 // Containers that need access to the ResourceClaim reference it with this name.
 type PodResourceClaim struct {
 	...
 
-	// WorkloadResourceClaim refers to the name of a claim associated
-	// with this pod's Workload.
-	//
-	// Exactly one of ResourceClaimName, ResourceClaimTemplateName,
-	// WorkloadResourceClaim, or PodGroupResourceClaim must be set.
-	WorkloadResourceClaim *string `json:"workloadResourceClaim,omitempty"`
-
 	// PodGroupResourceClaim refers to the name of a claim associated
 	// with this pod's PodGroup.
 	//
 	// Exactly one of ResourceClaimName, ResourceClaimTemplateName,
-	// WorkloadResourceClaim, or PodGroupResourceClaim must be set.
+	// or PodGroupResourceClaim must be set.
 	PodGroupResourceClaim *string `json:"podGroupResourceClaim,omitempty"`
 }
 ```
@@ -623,16 +550,13 @@ metadata:
   name: my-workload
   namespace: default
 spec:
-  podGroupTemplates:
+  podGroups:
   - name: group-1
     policy:
       basic: {}
   - name: group-2
     policy:
       basic: {}
-  resourceClaims:
-    - name: wl-claim
-      resourceClaimName: workload-claim
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
@@ -647,6 +571,8 @@ spec:
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
+  - name: wl-claim
+    resourceClaimName: workload-claim
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
@@ -661,6 +587,8 @@ spec:
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
+  - name: wl-claim
+    resourceClaimName: workload-claim
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -687,7 +615,7 @@ spec:
           - name: resource-2
       resourceClaims:
       - name: resource-1
-        workloadResourceClaim: wl-claim
+        podGroupResourceClaim: wl-claim
       - name: resource-2
         podGroupResourceClaim: pg-claim
       workloadRef:
@@ -719,7 +647,7 @@ spec:
           - name: resource-2
       resourceClaims:
       - name: resource-1
-        workloadResourceClaim: wl-claim
+        podGroupResourceClaim: wl-claim
       - name: resource-2
         podGroupResourceClaim: pg-claim
       workloadRef:
@@ -780,19 +708,19 @@ deleting the ResourceClaim once its owning PodGroup is deleted.
 
 #### Finding Pods Using a ResourceClaim
 
-If the reference in the `status.reservedFor` list is to a Workload or PodGroup,
+If the reference in the `status.reservedFor` list is to a PodGroup,
 controllers can no longer use the list to directly find all Pods consuming the
-ResourceClaim. Instead they will look up all Pods referencing the Workload or
+ResourceClaim. Instead they will look up all Pods referencing the
 PodGroup, which can be done by using a watch on Pods and maintaining an index of
-Workload or PodGroup to Pods referencing it. This can be done using the informer
+PodGroup to Pods referencing it. This can be done using the informer
 cache.
 
-The list of Pods making up a Workload or PodGroup for which a ResourceClaim is
+The list of Pods making up a PodGroup for which a ResourceClaim is
 reserved is not exactly the same as the list of Pods consuming a ResourceClaim.
 References in the `status.reservedFor` list only contain Pods, or Pods'
-Workloads or PodGroups, that have been processed by the DRA scheduler plugin and
+PodGroups, that have been processed by the DRA scheduler plugin and
 are scheduled to use the ResourceClaim. It is possible to have Pods that
-reference a Workload or PodGroup that has been allocated a claim, but haven't
+reference a PodGroup that has been allocated a claim, but haven't
 yet been scheduled. This distinction is important for some of the usages of the
 `status.reservedFor` list described above:
 
@@ -809,7 +737,7 @@ yet been scheduled. This distinction is important for some of the usages of the
    `status.reservedFor` list and therefore it will not be safe to deallocate.
 
 1. The device_taint_eviction controller will use the list of Pods referencing
-   the Workload or PodGroup to determine the list of pods that needs to be
+   the PodGroup to determine the list of pods that needs to be
    evicted. In this situation, it is ok if the list includes pods that haven't
    yet been scheduled.
 
