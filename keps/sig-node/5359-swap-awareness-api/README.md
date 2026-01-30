@@ -40,7 +40,6 @@
 - [Alternatives](#alternatives)
   - [Using Dynamic Resource Allocation](#using-dynamic-resource-allocation)
   - [Using a Device Plugin](#using-a-device-plugin)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Summary
