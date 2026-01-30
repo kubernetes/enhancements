@@ -1,14 +1,14 @@
 title: Swap Awareness API
 kep-number: 5359
 authors:
-  - "@ajaysundar"
+  - "@ajaysundark"
 owning-sig: sig-node
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2025-09-24
 reviewers:
   - "@SergeyKanzhelev"
-  - "@kannon92"
+  - "@haircommander"
 approvers:
   - "@oscar.doe"
 

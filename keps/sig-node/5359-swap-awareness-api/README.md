@@ -39,6 +39,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Using Dynamic Resource Allocation](#using-dynamic-resource-allocation)
+  - [Using a Device Plugin](#using-a-device-plugin)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -53,8 +54,9 @@ removes existing swap restrictions for features like In-Place
 Pod Resize and for Guaranteed pods (e.g. those with CPU pinning), allowing these
 workloads to benefit from swap. This KEP introduces a
 "WorkloadControlledSwap" mode where swap usage is explicitly
-defined by the user for each container. This allows for better resource management
-and safer overcommitment of swap resources on a node.
+defined by the user for each container, defaulting to no swap if unspecified.
+This allows for better resource management and safer overcommitment of swap
+resources on a node.
 
 ## Motivation
 
@@ -89,6 +91,7 @@ KEP are to
     separate KEP for placement control
 -  change eviction behavior for swap enabled nodes; this will be
     investigated with a separate future KEP if improvements are needed. 
+-  deprecate or remove `LimitedSwap` mode.
 
 ## Proposal
 
@@ -160,37 +163,24 @@ proposal adopts the position that limits control usage, not placement.
 
 ### Risks and Mitigations
 
-<<[UNRESOLVED kannon@]>>
+1. Risk: Swap Overcommit and Exhaustion
 
-1. **Risk: Discuss the implications of overcommitting swap further**
+On a node configured with `WorkloadControlledSwap`, it is possible for the sum of swap limits across all containers to exceed the node's total swap capacity. If multiple workloads begin to use swap simultaneously, the node's swap space can be exhausted. This can lead to some processes unable to access the swap space they expect leading to OOM kills.
 
--  what k8s should do to make sure node doesn't end up in a place where all
-    the pods have swap provisioned but cannot utilize anymore.
+Mitigation:
 
-> This can be addressed by the user responding with configuring an
-additional swap. K8s cannot react to swap is full as swap is a node
-resource; with better observability story this concerns could be reduced.  
-  
+The primary mitigation for this risk is enhancing observability, empowering cluster operators to monitor swap allocation and usage effectively. Kubernetes will not automatically intervene if swap is exhausted, as swap is a node-level resource managed by the administrator.
 
--  better observability story; user should be able to know when there is
-    overcommit of swap or there will be swap capacity crunch.
+- To help operators manage swap overcommitment, this KEP proposes to add a  new metric `kubelet_node_swap_allocated_bytes`. This metric will represent the sum of all `resources.limits.swap` for all containers on the node. Operators can use this metric to create alerts based on the ratio of allocated swap to total swap capacity, allowing them to proactively manage risk.
+- A new `HighSwapUtilization` condition can be added to the node status to provide a high-level signal that a node is experiencing heavy swap utilization.
+- If a node runs out of swap, the administrator is expected to provision additional swap space.
 
-> We already have swap metrics for capacity and usage at node, pod and
-container level
-> - Would a new metric for `kubelet_node_swap_allocated_bytes `address this
-concern?
-> - This would be sum of all `resources.limits.swap` for all containers
-running on that node. This can help operators to create precise alert for their
-risk for ( allocated / capacity ).  
-> - New Condition for `SwapPressure` in NPD.
-
-<<[/UNRESOLVED]>>
-
-1. Risk: User confusion between `LimitedSwap` and `WorkloadControlledSwap`
+2. Risk: User confusion between `LimitedSwap` and `WorkloadControlledSwap`
     modes.
 
 Mitigation: Swap behavior will be exposed as a field in node-info to be
 observable by the user.
+
 ## Design Details
 
 ### Node Configuration
@@ -301,7 +291,7 @@ When do we even need LimitedSwap? As WorkloadControlledSwap is more powerful,
 why do we need limited mode? Should we have these as a different mode or have
 these as implicit behavior of swap design?
 
-With LimitedSwap already swap getting adoption in production by many users,
+With LimitedSwap already getting adoption in production by many users,
 overriding to change behavior may not be preferred, WorkloadControlledSwap would
 enable the additional usecases and can coexist with current behavior.   
 <<[/UNRESOLVED]>>
@@ -420,47 +410,17 @@ before the API server.
 
 ## Version Skew Strategy
 
+This feature introduces a new field, `resources.limits.swap`, to the container spec. The behavior of this field depends on the version of the kubelet running on the node.
+
+If the control plane is upgraded to a version that supports this feature, but some nodes are still running older kubelet versions, pods with the `swap` field may be scheduled on those older nodes. The older kubelet will not recognize the `swap` field and will ignore it. The container will be started without any swap limit applied, and there will not be any Pod event to indicate this, as the kubelet is not aware of the feature. The feature will only be enforced once the kubelet on the node is upgraded to a compatible version.
+
+Therefore, the functionality described in this KEP is only guaranteed on nodes where the kubelet version is new enough to support the feature. During a cluster upgrade, the enforcement of swap limits will be best-effort until all kubelets are upgraded.
+
 ## Production Readiness Review Questionnaire
-
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
-
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `WorkloadControlledSwap`
@@ -468,24 +428,9 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
 Yes. KEP introduces safe default with WorkloadControlledSwap - if explicitly specified use the limits for swap, otherwise set it as 0 (no swap). To ensure backward compatibility, this change will be a new node behavior, so existing users who are working with the LimitedSwap swap behavior will not be impacted. The api set limits are not applicable in LimitedSwap configured nodes.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
-
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
 
 Yes. To roll back, the feature gate should be disabled in the API server and
 kubelets, and components should be restarted. If a Pod was created with a
@@ -498,19 +443,6 @@ If the feature is re-enabled, the kubelet will once again recognize and enforce
 the swap limits for any Pods that have the field defined.
 
 ###### Are there any tests for feature enablement/disablement?
-
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
 
 - Unit test for the API's validation with the feature enabled and disabled.
 - Unit test for the kubelet with the feature enabled and disabled.
@@ -545,8 +477,6 @@ feature.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-
-Swap is not configured on the workload even when limits are specified.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -659,104 +589,42 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 -->
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
-
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
 
 No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
 
 Enabling this feature will introduce a new field `resources.limits.swap` to the [Container](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L2601) API spec.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
-
 No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
-
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
 
 This feature adds a new key-value pair to the resources.limits map within the [v1.Container](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/core/types.go#L2601) spec for each container that specifies a swap limit. Key: "swap" (4 bytes) and Value: a string like "1Gi" (3 bytes) or "500Mi" (5 bytes). The total increase per container could be 10-15 bytes per container.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
+The enabling of feature by specifying the `resources.limits.swap` field in a pod spec does not, in itself, add any significant latency to operations like pod creation, and the kubelet's additional work to configure the cgroup is negligible.
 
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
+However, if a node is under heavy memory pressure and multiple pods begin to use swap, the node can start to "thrash" as it moves memory pages between RAM and the swap device. This leads to high disk I/O and increased I/O wait times.
 
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+This performance degradation can directly impact SLIs such as:
+- Pod startup latency: If a node is thrashing, all processes, including the container runtime and the new pod's processes, will be slower to execute. This can lead to a violation of the `pod_startup_latency_seconds` SLI for pods scheduled on that node.
+- API responsiveness from the node's perspective: The Kubelet's ability to post status updates or respond to other requests from the API server might be delayed, affecting the freshness of node and pod status.
 
-No.
+This is an inherent trade-off of using swap. Operators are expected to use the observability features (such as node swap usage metrics) to monitor for signs of thrashing and to configure swap limits appropriately for their workloads.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
 
 When the workload is configured with swap and node is under memory pressure, swap utilization may result in increased CPU and I/O usage to offload memory (RAM) to disk.
 
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
-
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
 
 Enabling this feature will add swap utilization for the workload and can result in resource exhaustion of 'swap resource' if swap is overcommitted.
 
@@ -807,29 +675,15 @@ Major milestones might include:
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
 
 ### Using Dynamic Resource Allocation
 
 Another possible way to realize this KEP is to leverage Dynamic Resource Allocation (DRA) framework to manage swap. In this model, "swap" could be defined as a ResourceClass, and pods would use a ResourceClaim to request a specific swap limit. DRA requires a full ecosystem of CRDs, a node-level driver, and Kubelet plugins. This is massive overhead for what is ultimately setting a single cgroup value (`memory.swap.max`). The simplicity of the `resources.limits` approach is preferable over the complex DRA approach.
 
+### Using a Device Plugin
 
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
-
+It could also be possible to use a device plugin to manage swap. However, this would be an abuse of the device plugin API, which is intended for hardware devices. It would also add unnecessary complexity for what is ultimately setting a single cgroup value.
 
