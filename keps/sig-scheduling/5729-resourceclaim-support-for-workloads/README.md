@@ -996,6 +996,34 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+The feature will no longer work if downgrading to a release without support for
+it. The API server will no longer accept the new fields and the other components
+will not know what to do with them. So the result is that the `ReservedFor` list
+will only have references to pod resources like today.
+
+Any ResourceClaims that have already been allocated when the feature was active
+will have non-pod references in the `ReservedFor` list after a downgrade, but
+the controllers will not know how to handle it. There are two problems that will
+arise as a result of this:
+- The workload controller will also have been downgraded if it is in-tree,
+  meaning that it will not remove the reference to workload resource from the
+  `ReservedFor` list, thus leading to a situation where the claim will never be
+  deallocated.
+- For new pods that gets scheduled, the scheduler will add pod references in the
+  `ReservedFor` list, despite there being a non-pod reference here. So it ends
+  up with both pod and non-pod references in the list. We can manage both pod
+  and non-pod references in the list by letting the workload controllers add the
+  non-pod reference even if it sees pod references and making sure that the
+  resourceclaim controller removes pod references even if there are non-pod
+  references in the list. For deallocation, it is only safe when no pods are
+  consuming the claim, so both workload and pod reference should be removed once
+  that is true.
+
+We will also provide explicit recommendations for how users can manage
+downgrades or disabling this feature. This means manually updating the
+references in the `ReservedFor` list to be pods rather than the reference to
+workload resources. We don't plan on providing automation for this.
+
 ### Version Skew Strategy
 
 <!--
@@ -1010,6 +1038,18 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+If the kubelet is on a version that doesn't support the feature but the rest of
+the components are, workloads will be scheduled, but the kubelet will refuse to
+run it since it will still check whether the `Pod` is references in the
+`ReservedFor` list.
+
+If the API server is on a version that supports the feature, but the scheduler
+is not, the scheduler will not know about the new fields added, so it will put
+the reference to the `Pod` in the `ReservedFor` list rather than the reference
+in the `spec.ReservedFor` list. It will do this even if there is already a
+non-pod reference in the `spec.ReservedFor` list. This leads to the challenge
+described in the previous section.
 
 ## Production Readiness Review Questionnaire
 
