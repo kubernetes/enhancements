@@ -133,6 +133,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Increase the size limit on the ReservedFor field](#increase-the-size-limit-on-the-reservedfor-field)
+  - [Relax validation without API changes](#relax-validation-without-api-changes)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -1415,6 +1417,14 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
+This complicates the allocation and deallocation logic somewhat as there will be
+two separate ways to manage the allocation and deallocation process for
+ResourceClaims.
+
+It also leads to additional work for the device_taint_eviction controller since
+it needs to maintain an index to find all pods using a ResourceClaim rather than
+just looking at the list of pods in the `ReservedFor` list.
+
 ## Alternatives
 
 <!--
@@ -1422,6 +1432,31 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### Increase the size limit on the ReservedFor field
+
+The simplest solution here would be to just increase the size limit on the
+`ReservedFor` field to a larger number. But having a large list of pod
+references is not a good way to handle it and could at least in theory run into
+the size limit of Kubernetes resources. Also, we would need to have some limit
+on the size, and whatever number we choose it might still be too small for the
+largest workloads.
+
+### Relax validation without API changes
+
+The current proposal adds explicit support for non-pod references in the
+`ReservedFor` list by adding the new `spec. An alternative is to let the
+workload controller be responsible for not only removing the reference in the
+`ReservedFor` list when there are no longer any pods consuming the
+`ResourceClaim`, but also adding the reference after creating the
+`ResourceClaim`. This will require that the validation is relaxed to allow
+entries in the `ReservedFor` list without any allocation. This would also
+require that the Kubelet checks for non-Pod references in the `ReservedFor` list
+and skips the check before running pods if it finds any.
+
+This isn't all that different than the proposed solution, but the solution
+described above was considered superior as it makes the new feature more
+explicit.
 
 ## Infrastructure Needed (Optional)
 
