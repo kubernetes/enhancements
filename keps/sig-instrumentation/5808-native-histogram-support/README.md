@@ -76,7 +76,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This KEP proposes adding support for [Prometheus Native Histograms](https://prometheus.io/docs/specs/native_histograms/) to Kubernetes component metrics. Starting with Prometheus v3.8.0, native histograms are supported as a stable feature. Native histograms use exponential bucket boundaries instead of fixed boundaries, providing significant storage efficiency (~10x reduction in time series count per histogram), improved query performance, and finer-grained visibility into distributions while maintaining full backward compatibility with existing monitoring infrastructure through a dual exposition strategy.
 
-The implementation introduces a feature gate (`NativeHistograms`) to provide safe rollout and rollback capabilities. When enabled, Kubernetes components will expose histogram metrics in both classic and native formats simultaneously, ensuring existing dashboards and alerts continue to function while users can migrate to native histograms at their own pace. Rollback is handled primarily through Prometheus-side configuration (for Prometheus 3.x users) or via the K8s feature gate.
+The implementation introduces a feature gate (`NativeHistograms`) to provide safe rollout and rollback capabilities. When enabled, Kubernetes components will expose histogram metrics in both classic and native formats simultaneously (when PrometheusProto format is requested), ensuring existing dashboards and alerts continue to function while users can migrate to native histograms at their own pace. Rollback is handled primarily through Prometheus-side configuration (for Prometheus 3.x users) or via the K8s feature gate.
 
 ## Motivation
 
@@ -157,7 +157,7 @@ Recommended approach:
    - Verify Prometheus version (3.x recommended for per-job control)
    - Set `always_scrape_classic_histograms: true` for all K8s scrape jobs during migration
    - Test dashboard queries in staging before production upgrade
-   - Documentation must clearly state that users enabling `scrape_native_histograms` should **also** set `always_scrape_classic_histograms: true` until dashboard migration is complete
+   - Docs and release notes must clearly state that users enabling `scrape_native_histograms` should **also** set `always_scrape_classic_histograms: true` until dashboard migration is complete
 
 ## Design Details
 
@@ -169,20 +169,25 @@ Kubernetes metrics use the `component-base/metrics` package which wraps `prometh
 
 ### Dual Exposition Strategy
 
-When native histograms are enabled, Kubernetes will expose **BOTH** formats:
+When native histograms are enabled, Kubernetes will expose **BOTH** formats. The format returned depends on the client's `Accept` header:
 
+**Text format** (`text/plain`, OpenMetrics):
 ```
-# Classic format (always present)
+# Classic histogram buckets (always present)
 apiserver_request_duration_seconds_bucket{le="0.005"} 1000
 apiserver_request_duration_seconds_bucket{le="0.01"} 2000
 ...
 apiserver_request_duration_seconds_bucket{le="+Inf"} 10000
 apiserver_request_duration_seconds_count 10000
 apiserver_request_duration_seconds_sum 450.5
-
-# Native format (when enabled, requires protobuf exposition)
-apiserver_request_duration_seconds{} <native histogram encoding>
 ```
+
+**Protobuf format** (`application/vnd.google.protobuf`):
+- Contains both classic buckets AND native histogram data
+- Native histograms use the [Prometheus protobuf schema](https://github.com/prometheus/prometheus/blob/main/prompb/io/prometheus/client/metrics.proto) with `Histogram` message containing exponential bucket spans
+- Binary format, not human-readable
+
+Prometheus negotiates the format via content negotiation. When `scrape_native_histograms: true`, Prometheus requests protobuf format to receive native histogram data.
 
 This ensures:
 - Existing dashboards continue to work
@@ -208,7 +213,6 @@ type HistogramOpts struct {
     // New: Native histogram configuration (used when feature enabled)
     // If nil, uses global defaults when native histograms are enabled.
     NativeHistogramBucketFactor     *float64
-    NativeHistogramZeroThreshold    *float64
     NativeHistogramMaxBucketNumber  *uint32
 }
 ```
@@ -234,8 +238,7 @@ func (o *HistogramOpts) toPromHistogramOpts() prometheus.HistogramOpts {
         }
         
         opts.NativeHistogramBucketFactor = factor
-        opts.NativeHistogramMaxBucketNumber = 160  // Default max buckets
-        opts.NativeHistogramZeroThreshold = prometheus.DefNativeHistogramZeroThreshold
+        opts.NativeHistogramMaxBucketNumber = 145  // Default max buckets
     }
     
     return opts
