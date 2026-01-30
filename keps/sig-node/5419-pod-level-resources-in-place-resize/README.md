@@ -229,11 +229,10 @@ type PodStatus struct {
 
 ##### Resize Restart Policy
 
-Pod-level resize policy is not supported in the alpha stage of Pod-level resource
-feature. While a pod-level resize policy might be beneficial for VM-based runtimes
-like Kata Containers (potentially allowing the hypervisor to restart the entire VM
-on resize), this is a topic for future consideration. We plan to engage with the
-Kata community to discuss this further and will re-evaluate the need for a pod-level
+Pod-level resize policy is not supported in this KEP. While a pod-level resize policy might
+ be beneficial for VM-based runtimes like Kata Containers (potentially allowing the hypervisor
+to restart the entire VM on resize), this is a topic for future consideration as a separate KEP. 
+We plan to engage with the Kata community to discuss this further and will re-evaluate the need for a pod-level
 policy in subsequent development stages.
 
 The absence of a pod-level resize policy means that container restarts are
@@ -477,9 +476,14 @@ necessary to implement this enhancement.
 
 e2e tests provide good test coverage of interactions between the new pod-level
 resource feature and existing Kubernetes components i.e. API server, kubelet, cgroup
-enforcement. We may replicate and/or move some of the E2E tests functionality into integration tests before Beta using data from any issues we uncover that are not covered by planned and implemented tests.
+enforcement. We may replicate and/or move some of the E2E tests functionality into 
+integration tests before GA using data from any issues we uncover that are not
+covered by planned and implemented tests.
 
 #### e2e tests
+
+  * - [Pod Level Resources Resize](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/pod_level_resources_resize.go): [SIG Node](https://testgrid.k8s.io/sig-node-presubmits#pr-kubelet-e2e-podlevelresources-resize), [triage search](https://storage.googleapis.com/k8s-triage/index.html?ci=0&pr=1&sig=node&job=pr-kubelet-e2e-podlevelresources-resize)
+
 
 Following scenarios need to be covered:
 
@@ -511,9 +515,6 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 * Actual pod resource data may be cached in memory, which will be refreshed after
   each successful pod resize or for every cache-miss.
 * Coverage for upgrade->downgrade->upgrade scenarios.
-* Consensus with Kata community to on pod-level resize policy. If it is required to
-  support pod-level resize policy, we will have to do another alpha launch of the
-  feature as it would involve an API change.
 * Extend instrumentation from
   [KEP#1287](https://github.com/kubernetes/enhancements/blob/ef7e11d088086afd84d26c9249a4ca480df2d05a/keps/sig-node/1287-in-place-update-pod-resources/README.md)
   for Pod-level resource resize.
@@ -691,6 +692,9 @@ Testing plan:
 * Restart API server with feature enabled
 * Verify original test pod is still running
 
+Initial manual verification was completed following the Alpha release ([Results](https://docs.google.com/document/d/19dKnTxH34YjSzrQCMqmpNp9iJk4YfWXXf5ytqNvV4c0/edit?usp=sharing)).
+Comprehensive automated testing and E2E coverage are slated for implementation prior to GA graduation."
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No
@@ -828,7 +832,7 @@ Focusing mostly on:
     - One new PATCH PodStatus API call in response to Pod resize request.
     - No additional overhead unless Pod resize is invoked.
   - estimated throughput
-    - Proportional to the number of resize requests ssued by users or controllers (e.g., VPA). For a typical cluster this is expected to be < 1% of total Pod update traffic.
+    - Proportional to the number of resize requests issued by users or controllers (e.g., VPA). For a typical cluster this is expected to be < 1% of total Pod update traffic.
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
     - Kubelet
   focusing mostly on:
@@ -883,6 +887,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No. The computational overhead introduced in API server, scheduler and kubelet due to additional validation for pod level resource specifications should be negligible. Thorough testing and monitoring will ensure the SLIs/SLOs are not impacted.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 No
