@@ -102,7 +102,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Deallocation](#deallocation)
     - [Finding Pods Using a ResourceClaim](#finding-pods-using-a-resourceclaim)
   - [API](#api)
-    - [Workload](#workload)
     - [PodGroup](#podgroup)
     - [Pod](#pod)
     - [Example](#example)
