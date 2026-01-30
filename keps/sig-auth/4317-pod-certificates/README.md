@@ -366,7 +366,8 @@ type PodCertificateRequestSpec struct {
 	//
 	// The subject public key must be one of RSA3072, RSA4096, ECDSAP256,
 	// ECDSAP384, ECDSAP521, or ED25519. Note that this list may be expanded in
-	// the future.
+	// the future, as well as narrowed in the extraordinary event of an algorithm
+	// being broken.
 	//
 	// Signer implementations do not need to support all key types supported by
 	// kube-apiserver and kubelet.  If a signer does not support the key type
