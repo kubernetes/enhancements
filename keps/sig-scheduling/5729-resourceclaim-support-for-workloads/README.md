@@ -1041,16 +1041,16 @@ enhancement:
 -->
 
 If the kubelet is on a version that doesn't support the feature but the rest of
-the components are, workloads will be scheduled, but the kubelet will refuse to
-run it since it will still check whether the `Pod` is references in the
-`ReservedFor` list.
+the components are, Pods referencing a PodGroup will be scheduled, but the
+kubelet will refuse to run those Pods since it will still check whether the
+Pods are referenced in the `status.reservedFor` list.
 
 If the API server is on a version that supports the feature, but the scheduler
 is not, the scheduler will not know about the new fields added, so it will put
-the reference to the `Pod` in the `ReservedFor` list rather than the reference
-in the `spec.ReservedFor` list. It will do this even if there is already a
-non-pod reference in the `spec.ReservedFor` list. This leads to the challenge
-described in the previous section.
+the reference to the Pod in the `status.reservedFor` list rather than the
+PodGroup. It will do this even if there is already a PodGroup reference in the
+`status.reservedFor` list. This leads to the challenge described in the previous
+section.
 
 ## Production Readiness Review Questionnaire
 
