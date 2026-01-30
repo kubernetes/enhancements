@@ -40,6 +40,7 @@
 - [Alternatives](#alternatives)
   - [Using Dynamic Resource Allocation](#using-dynamic-resource-allocation)
   - [Using a Device Plugin](#using-a-device-plugin)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Summary
@@ -674,3 +675,6 @@ Another possible way to realize this KEP is to leverage Dynamic Resource Allocat
 
 It could also be possible to use a device plugin to manage swap. However, this would be an abuse of the device plugin API, which is intended for hardware devices. It would also add unnecessary complexity for what is ultimately setting a single cgroup value.
 
+## Infrastructure Needed (Optional)
+
+No new infrastructure is needed.
