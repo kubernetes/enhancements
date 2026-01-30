@@ -529,6 +529,9 @@ e2e test for spot check of the feature presence.
 
 - Discovery document merging implemented
 - Use egress dialer for network connections made to peer kube-apiservers
+- Error metrics added for peer proxy failures and discovery sync failures
+- Integration tests for peer-aggregated discovery and request proxying
+- Documentation for configuring peer connectivity (--peer-ca-file, --peer-advertise-ip, --peer-advertise-port)
 
 #### GA
 
@@ -756,6 +759,8 @@ that might indicate a serious problem?
 - apiserver_request_total metric that will tell us if there's a spike in the number
 of errors seen meaning the feature is not
  working as expected
+- `apiserver_peer_proxy_errors_total` metric indicating frequent failures when proxying to peers
+- `apiserver_peer_discovery_sync_errors_total` metric indicating problems syncing discovery from peers
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -797,6 +802,13 @@ logs or events for this purpose.
 The following metrics could be used to see if the feature is in use:
 
 - `apiserver_rerouted_request_total` which is incremented anytime a resource request is proxied to a peer apiserver
+- `apiserver_peer_proxy_errors_total` (labels: `type`) which is incremented when a proxy request to a peer fails. The `type` label indicates the failure reason:
+  - `endpoint_resolution`: failed to resolve the network address of a peer apiserver
+  - `proxy_transport`: failed to build the proxy transport for the request
+- `apiserver_peer_discovery_sync_errors_total` (labels: `type`) which is incremented when syncing discovery information from a peer fails. The `type` label indicates the failure reason:
+  - `lease_list`: failed to list apiserver identity leases
+  - `hostport_resolution`: failed to resolve host/port from an identity lease
+  - `fetch_discovery`: failed to fetch discovery document from a peer
 - `aggregator_discovery_peer_aggregated_cache_misses_total` which is incremented everytime we construct a peer-aggregated discovery response by merging resources served by a peer apiserver
 - `aggregator_discovery_peer_aggregated_cache_hits_total` which is incremented everytime peer-aggregated discovery was served from the cache
 - `aggregator_discovery_nopeer_requests_total` which is incremented everytime a no-peer discovery was requested
@@ -849,6 +861,12 @@ Pick one more of these and delete the rest.
 - [X] Metrics
   - Metric name: `apiserver_rerouted_request_total`
     - Components exposing the metric: kube-apiserver
+  - Metric name: `apiserver_peer_proxy_errors_total`
+    - Components exposing the metric: kube-apiserver
+    - Labels: `type` (endpoint_resolution, proxy_transport)
+  - Metric name: `apiserver_peer_discovery_sync_errors_total`
+    - Components exposing the metric: kube-apiserver
+    - Labels: `type` (lease_list, hostport_resolution, fetch_discovery)
   - Metric name: `aggregator_discovery_peer_aggregated_cache_hits_total`
     - Components exposing the metric: kube-apiserver
   - Metric name: `aggregator_discovery_peer_aggregated_cache_misses_total`
@@ -1053,6 +1071,7 @@ a given API server
 - v1.28: Mixed Version Proxy KEP merged and moved to alpha
 - v1.33: Replaced StorageversionAPI with AggregatedDiscovery to fetch served resources by peer apiservers
 - v1.35: Peer-aggregated Discovery implemented
+- v1.36: Added egress dialer, error metrics for peer proxy and discovery sync failures
 
 ## Drawbacks
 
