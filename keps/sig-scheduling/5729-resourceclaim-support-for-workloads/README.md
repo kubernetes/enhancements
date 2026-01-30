@@ -998,31 +998,32 @@ enhancement:
 
 The feature will no longer work if downgrading to a release without support for
 it. The API server will no longer accept the new fields and the other components
-will not know what to do with them. So the result is that the `ReservedFor` list
-will only have references to pod resources like today.
+will not know what to do with them. So the result is that the
+`status.reservedFor` list will only have references to Pod resources like today.
 
 Any ResourceClaims that have already been allocated when the feature was active
-will have non-pod references in the `ReservedFor` list after a downgrade, but
-the controllers will not know how to handle it. There are two problems that will
-arise as a result of this:
-- The workload controller will also have been downgraded if it is in-tree,
-  meaning that it will not remove the reference to workload resource from the
-  `ReservedFor` list, thus leading to a situation where the claim will never be
-  deallocated.
-- For new pods that gets scheduled, the scheduler will add pod references in the
-  `ReservedFor` list, despite there being a non-pod reference here. So it ends
-  up with both pod and non-pod references in the list. We can manage both pod
-  and non-pod references in the list by letting the workload controllers add the
-  non-pod reference even if it sees pod references and making sure that the
-  resourceclaim controller removes pod references even if there are non-pod
-  references in the list. For deallocation, it is only safe when no pods are
-  consuming the claim, so both workload and pod reference should be removed once
-  that is true.
+will have PodGroup references in the `status.reservedFor` list after a
+downgrade, but the controllers will not know how to handle it. There are two
+problems that will arise as a result of this:
+
+- The ResourceClaim controller will also have been downgraded, meaning that it
+  will not remove references to PodGroups from the `status.reservedFor` list,
+  thus leading to a situation where the claim will never be deallocated.
+
+- For new Pods that get scheduled, the scheduler will add Pod references in the
+  `status.reservedFor` list, despite there being a PodGroup reference here. So
+  it ends up with both Pod and PodGroup references in the list. We can manage
+  both Pod and PodGroup references in the list by
+  adding the PodGroup reference even if Pod references exist and
+  making sure that the ResourceClaim controller removes Pod references even if
+  there are PodGroup references in the list. Deallocation is only safe
+  when no Pods are consuming the claim, so both PodGroup and Pod reference
+  should be removed once that is true.
 
 We will also provide explicit recommendations for how users can manage
 downgrades or disabling this feature. This means manually updating the
-references in the `ReservedFor` list to be pods rather than the reference to
-workload resources. We don't plan on providing automation for this.
+`status.reservedFor` list to reference only Pods and not PodGroups. We don't
+plan on providing automation for this.
 
 ### Version Skew Strategy
 
