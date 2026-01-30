@@ -104,8 +104,8 @@ CEL expressions provide a powerful and extensible mechanism for expressing compl
 
 CEL provides a standardized, extensible expression language already used throughout Kubernetes (ValidatingAdmissionPolicy, CRD validation, authorization). By introducing CEL for scheduling constraints, users gain:
 
-- **Semantic version comparisons**: Schedule pods based on kubelet version, kernel version, or driver versions using expressions like `semver.compare(node.labels['node.kubernetes.io/kubelet-version'], '>=1.28.0')`
-- **Compound conditions**: Express multiple conditions in a single expression, such as `semver.compare(node.labels['node.kubernetes.io/kernel-version'], '>=5.10') && semver.compare(node.labels['node.kubernetes.io/container-runtime-version'], '>=2.0')`
+- **Semantic version comparisons**: Schedule pods based on kubelet version, kernel version, or driver versions using expressions like `semver.compare(node.labels['node.example/kubelet-version'], '>=1.28.0')`
+- **Compound conditions**: Express multiple conditions in a single expression, such as `semver.compare(node.labels['operating-system.example/kernel-version'], '>=5.10') && semver.compare(node.labels['another.example/container-runtime-version'], '>=2.0')`
 - **String operations**: Parse and manipulate label values directly, for example extracting version numbers from prefixed strings using `node.labels['runtime'].split('://')[1]`
 - **Flexible taint matching**: Match taints using CEL expressions with access to `taint.key`, `taint.value`, `taint.effect`, and `taint.timeAdded`
 - **Extensibility**: New scheduling capabilities can be added through CEL library extensions without requiring core API changes
@@ -174,7 +174,7 @@ metadata:
   name: compatible-workload
 spec:
   tolerations:
-  - expression: "taint.key == 'cni.projectcalico.org/version' && semver.compare(taint.value, '>=3.25.0')"
+  - expression: "taint.key == 'cni.projectcalico.org/version' && semver.compare(taint.value, '>=3.25.0') && taint.effect == 'NoSchedule'"
   containers:
   - name: app
     image: myapp:latest
@@ -220,7 +220,7 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchCELExpressions:
-          - "semver.compare(node.labels['node.kubernetes.io/kubelet-version'], '>=1.30.0')"
+          - "semver.compare(node.labels['node.example/kubelet-version'], '>=1.30.0')"
   containers:
   - name: app
     image: myapp:latest
@@ -246,7 +246,7 @@ spec:
     required:
       nodeSelectorTerms:
       - matchCELExpressions:
-        - "semver.compare(node.labels['node.kubernetes.io/kernel-version'], '>=5.15.0')"
+        - "semver.compare(node.labels['operating-system.example/kernel-version'], '>=5.15.0')"
         - "'storage-optimized' in node.labels"
   persistentVolumeReclaimPolicy: Retain
   storageClassName: advanced-storage
@@ -349,7 +349,7 @@ This is particularly problematic during rollback/downgrade scenarios or for mult
 **Mitigation**:
 
 - CEL cost limits are enforced at admission time to reject overly complex expressions
-- The maximum expression length is limited to 10 Ki
+- The maximum expression length is limited to 10 KiB
 - Runtime cost tracking prevents runaway evaluations
 - Limited CEL environment exposed for both affinity and tolerations
 

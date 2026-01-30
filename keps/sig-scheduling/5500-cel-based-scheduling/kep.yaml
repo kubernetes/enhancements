@@ -4,7 +4,7 @@ authors:
   - "@galal-hussein"
 owning-sig: sig-scheduling
 participating-sigs:
-  - sig-apps
+  - sig-node
 status: provisional
 creation-date: 2026-01-21
 reviewers:
