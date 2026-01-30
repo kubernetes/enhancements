@@ -9,11 +9,12 @@ participating-sigs: []
 status: implementable
 creation-date: 2021-11-02
 reviewers:
-  - "@mrunalp"
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-reviewer
   - "@thockin"
 approvers:
-  - "@derekwaynecarr"
+  - "@mrunalp" # sig-node-tl
+  - "@derekwaynecarr" # sig-node-tl
+  - "@haircommander" # sig-node-assigned-approver
 
 stage: beta
 latest-milestone: "v1.35"
