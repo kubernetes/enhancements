@@ -106,7 +106,12 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Pod](#pod)
     - [Example](#example)
   - [ResourceClaim Lifecycle](#resourceclaim-lifecycle)
-    - [Finding Pods Using a ResourceClaim](#finding-pods-using-a-resourceclaim-1)
+    - [Create](#create)
+    - [Delete](#delete)
+    - [Allocate](#allocate)
+    - [Deallocate](#deallocate)
+  - [Determining Allowed Pods for a ResourceClaim](#determining-allowed-pods-for-a-resourceclaim)
+  - [Finding Pods Using a ResourceClaim](#finding-pods-using-a-resourceclaim-1)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -668,16 +673,18 @@ allocated, device.
 
 ### ResourceClaim Lifecycle
 
-The ResourceClaim controller run by kube-controller-manager will be updated to
-manage the lifecycle of ResourceClaims associated with PodGroups like it already
-does for per-Pod ResourceClaims from ResourceClaimTemplates. In short,
-ResourceClaims will be created once the first Pod in the PodGroup is created and
-deleted when they are deallocated and their PodGroup is deleted.
+The DynamicResources scheduler plugin and the ResourceClaim controller will
+cooperate to manage key points in the life of a ResourceClaim or
+ResourceClaimTemplate claimed by a PodGroup. Referenced ResourceClaimTemplates
+will replicate into one ResourceClaim per PodGroup. Those generated
+ResourceClaims and ResourceClaims referenced by name by a PodGroup will be
+allocated and deallocated by the Kubernetes control plane.
 
-When a PodGroup is created, the ResourceClaim controller will not take any
-action. Only when a Pod requesting a templated claim from the PodGroup is
-created will a ResourceClaim be generated if one doesn't already exist for the
-PodGroup. Generated ResourceClaims will be owned (through
+#### Create
+
+When a PodGroup is created which references a ResourceClaimTemplate, the
+ResourceClaim controller will create a ResourceClaim from that template if one
+does not already exist for that PodGroup. Generated ResourceClaims will be owned (through
 `metadata.ownerReferences`) by the PodGroup and annotated with
 `resource.kubernetes.io/podgroup-claim-name` where the value is the name of the
 claim from the PodGroup's `spec.resourceClaims[].name` to facilitate mapping a
@@ -688,14 +695,7 @@ ResourceClaims generated for Pods. Like the
 `resource.kubernetes.io/podgroup-claim-name` is only to be used by the
 controller and will not be documented as part of the public API.
 
-Allocation and deallocation of the generated ResourceClaims remains
-fundamentally the same. ResourceClaims will be created in an unallocated state
-(`status.allocation` unset). kube-scheduler will allocate a claim when
-scheduling the first Pod which requests it. The ResourceClaim controller will
-deallocate claims when there are no entries in the ResourceClaim's
-`status.reservedFor`. Generated ResourceClaims will exist in an unallocated
-state until its owning PodGroup is deleted or a new Pod in the PodGroup is
-created.
+#### Delete
 
 The `resource.kubernetes.io/delete-protection` finalizer added to a generated
 ResourceClaim by kube-scheduler serves the same purpose as for other
@@ -705,7 +705,37 @@ will unlock deletion of PodGroup-owned claims by removing the finalizer when
 they become deallocated. The garbage collector will then be responsible for
 deleting the ResourceClaim once its owning PodGroup is deleted.
 
-#### Finding Pods Using a ResourceClaim
+#### Allocate
+
+Generated and standalone ResourceClaims referenced by a PodGroup remain
+unallocated until kube-scheduler allocates the ResourceClaim by setting
+`status.allocation` for the first Pod in the PodGroup that references the
+PodGroup's claim. When a Pod's claim is requested through
+`podGroupResourceClaim`, the ResourceClaim's `status.reservedFor` list will
+reference the PodGroup instead of each individual Pod.
+
+#### Deallocate
+
+The ResourceClaim controller will continue to deallocate claims when there are
+no entries in the ResourceClaim's `status.reservedFor`. References to PodGroups
+in `status.reservedFor` are removed after the PodGroup is deleted. Since
+PodGroups can only be deleted when all of their Pods have been deleted,
+ResourceClaims reserved for a PodGroup will therefore not be deleted before any
+of the Pods in the group which are actively using it. The entity which creates a
+PodGroup is responsible for deleting it when no more Pods in the group are
+expected to run.
+
+### Determining Allowed Pods for a ResourceClaim
+
+Currently, any Pod allowed to utilize a ResourceClaim is listed explicitly in
+the claim's `status.reservedFor`. When the list instead references a PodGroup,
+only the name in the reference must match a Pod's
+`spec.workloadRef.podGroupName`. Since a Pod cannot outlive its PodGroup, a
+reference to the name of a PodGroup in a Pod will always refer to the exact same
+PodGroup, i.e. the PodGroup cannot be deleted and recreated with the same name
+without all of its Pods also being deleted in the meantime.
+
+### Finding Pods Using a ResourceClaim
 
 If the reference in the `status.reservedFor` list is to a PodGroup,
 controllers can no longer use the list to directly find all Pods consuming the
@@ -829,8 +859,7 @@ New integration tests will verify:
   gate.
 - ResourceClaimTemplates specified for PodGroups result in the correct
   ResourceClaims being allocated for the correct Pods.
-- No inconsistent state is reached when PodGroups rapidly come and go as their
-  first Pods are created and their last Pods are deleted.
+- No inconsistent state is reached when PodGroups rapidly come and go.
     - ResourceClaims should continue to be created and deleted with their
       owning PodGroups such that Pods still schedule and no ResourceClaims are
       orphaned.
@@ -868,11 +897,10 @@ PodGroup.
   allocated.
 - When subsequent Pods in the PodGroup are created, no additional ResourceClaims
   are generated and the Pods are all allocated the same existing ResourceClaim.
-- When all but one Pod in the PodGroup are deleted, the ResourceClaim is not
+- When all Pods in the PodGroup are deleted, the ResourceClaim is not
   deleted and remains allocated.
-- When all of the Pods in the PodGroup have been deleted, then the ResourceClaim
-  is deallocated, but is not deleted.
-- When the PodGroup is deleted, its generated ResourceClaims are deleted.
+- When the PodGroup has been deleted, then the ResourceClaim
+  is deallocated, and eventually deleted.
 
 
 ### Graduation Criteria
