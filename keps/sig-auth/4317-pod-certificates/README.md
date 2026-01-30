@@ -212,7 +212,7 @@ PodCertificateRequest validation logic will:
   private key.
 * Verify that the PKCS#10 CSR is empty except for possible IP and DNS SANs.
 * Confirm that the issued chain (if one is set) consists of valid certificates.
-* To stay ahead of tighter certifificate validation coming in future versions of
+* To stay ahead of tighter certificate validation coming in future versions of
   Go, we also check:
   * no DNSNames entries are empty strings
   * no DNSNames entries contain `..` or start/end with `.`
