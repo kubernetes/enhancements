@@ -10,7 +10,9 @@ participating-sigs:
 status: implementable
 creation-date: 2025-12-12
 reviewers:
+  - "@johnbelamaric"
   - "@mortent"
+  - "@wojtek-t"
 approvers:
   - TBD
 
