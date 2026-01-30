@@ -270,13 +270,7 @@ approach avoids disrupting pods that have already been scheduled. For explicit
 placement, users should use node labels and selectors to ensure pods are
 scheduled on nodes with the appropriate `swapBehavior`.
 
-**Note on placement:** For cases, when explicit limit is set, the
-`NodeDeclaredFeatures` KEP is an option to explore for implicit scheduling
-control – a separate Swap Scheduling KEP is exploring this further. Explicit
-limits show clear user intent for these workloads to work with nodes in
-`WorkloadControlledSwap` mode, and the scheduler could place them right. This
-also can protect the conflicting case by not placing explicitly disabled swap
-workloads on a `LimitedSwap` node.
+**Note on placement:** Setting an explicit swap limit on a pod provides a strong signal of user intent. While this KEP does not implement any scheduling logic based on this signal, a separate [Swap Scheduling KEP](https://github.com/kubernetes/enhancements/issues/5424) is exploring this topic. In the future, the scheduler could use this information to ensure that pods requesting swap are placed on nodes configured for `WorkloadControlledSwap`, and that pods explicitly disabling swap are not placed on `LimitedSwap` nodes where they might get swap by default.
 
 **Note on coexistence:**  Kubernetes cannot support ‘built-in' protection when users
 want to have some nodes in `LimitedSwap` and some nodes in
@@ -286,15 +280,9 @@ the path to work with swap-labels, which will help with grouping swap nodes for
 maintenance or migration. Existing workloads in `LimitedSwap` will continue to
 work to protect existing behavior of swap enabled nodes. 
 
-<<[UNRESOLVED skanzhelev@]>>  
-When do we even need LimitedSwap? As WorkloadControlledSwap is more powerful,
-why do we need limited mode? Should we have these as a different mode or have
-these as implicit behavior of swap design?
-
 With LimitedSwap already getting adoption in production by many users,
 overriding to change behavior may not be preferred, WorkloadControlledSwap would
 enable the additional usecases and can coexist with current behavior.   
-<<[/UNRESOLVED]>>
 
 ### NodeInfo Exposure
 
