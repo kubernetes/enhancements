@@ -560,19 +560,61 @@ type PodResourceClaim struct {
 
 #### Example
 
-The following example demonstrates the relationships between the new fields.
+The following example demonstrates the relationships between the new fields. It
+describes the more common case where some higher level true workload controller
+(e.g. LWS, JobSet) is orchestrating the Workload and PodGroup objects vs. the
+user managing those directly.
 
-Here, a Workload organizes Pods managed by two different Deployments into two
-different PodGroups. The `workload-claim` ResourceClaim is shared among all Pods
-in either PodGroup. Each group refers to the same ResourceClaimTemplate,
-`pg-claim-template`. This single ResourceClaimTemplate forms the basis of two
-different ResourceClaims which will be created by the ResourceClaim controller:
-one for each PodGroup. The Pod templates in the Deployments include a reference
-to the claim listed for the PodGroup, which ultimately resolves to its
-PodGroup's ResourceClaim. The result is that with a single
-ResourceClaimTemplate, Pods in the same group all share the exact same allocated
-device, while Pods in the other group use an equivalent, but separately
-allocated, device.
+Here, a user defines a high-level workload with two logical groups of Pods. All
+Pods request a DRA device shared among all Pods. Each of the two groups of Pods
+also request one device to be shared by the Pods in its group.
+
+The user creates the following objects to request DRA devices which will
+be referenced by Pods through their PodGroup:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: workload-claim
+  namespace: default
+spec:
+  devices:
+    requests:
+    - name: my-device
+      exactly:
+        deviceClassName: example
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pg-claim-template
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+      - name: my-device
+        exactly:
+          deviceClassName: example
+---
+apiVersion: example.com/v1
+kind: MyWorkload
+metadata:
+  name: my-workload
+  namespace: default
+spec:
+  ...
+```
+
+The true workload API defines how ResourceClaims and ResourceClaimTemplates
+relate to groups of Pods. If the user is responsible for defining the Pods'
+`spec.resourceClaims` in a Pod template, then the PodGroups'
+`spec.resourceClaims[].name`s must be deterministic for the user to be able to
+reference them in the Pod spec.
+
+The true workload controller then creates the following Workload API resources
+based on the true workload's definition:
 
 ```yaml
 apiVersion: scheduling.k8s.io/v1alpha1
@@ -619,31 +661,6 @@ spec:
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
----
-apiVersion: resource.k8s.io/v1
-kind: ResourceClaim
-metadata:
-  name: workload-claim
-  namespace: default
-spec:
-  devices:
-    requests:
-    - name: my-device
-      exactly:
-        deviceClassName: example
----
-apiVersion: resource.k8s.io/v1
-kind: ResourceClaimTemplate
-metadata:
-  name: pg-claim-template
-  namespace: default
-spec:
-  spec:
-    devices:
-      requests:
-      - name: my-device
-        exactly:
-          deviceClassName: example
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -709,6 +726,18 @@ spec:
         name: my-workload
         podGroupName: my-podgroup-2
 ```
+
+Here, a Workload organizes Pods managed by two different Deployments into two
+different PodGroups. The `workload-claim` ResourceClaim is shared among all Pods
+in either PodGroup. Each group refers to the same ResourceClaimTemplate,
+`pg-claim-template`. This single ResourceClaimTemplate forms the basis of two
+different ResourceClaims which will be created by the ResourceClaim controller:
+one for each PodGroup. The Pod templates in the Deployments include a reference
+to the claim listed for the PodGroup, which ultimately resolves to its
+PodGroup's ResourceClaim. The result is that with a single
+ResourceClaimTemplate, Pods in the same group all share the exact same allocated
+device, while Pods in the other group use an equivalent, but separately
+allocated, device.
 
 ### ResourceClaim Lifecycle
 
