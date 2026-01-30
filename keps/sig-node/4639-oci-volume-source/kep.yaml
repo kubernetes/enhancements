@@ -12,7 +12,7 @@ creation-date: 2024-05-17
 reviewers:
   - "@BigVan"
   - "@ChaoyiHuang"
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-reviewer
   - "@aojea"
   - "@arewm"
   - "@cgwalters"
@@ -36,9 +36,8 @@ reviewers:
   - "@vsoch"
   - "@xing-yang"
 approvers:
-  - "@sig-node-leads"
-  - "@sig-storage-leads"
-  - "@mrunalp"
+  - "@haircommander" # sig-node-assigned-approver
+  - "@mrunalp" # sig-node-tl
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
