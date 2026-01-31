@@ -9,9 +9,10 @@ participating-sigs:
 status: implementable
 creation-date: 2025-09-21
 reviewers:
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-reviewer
 approvers:
-  - "@dchen1107"
+  - "@dchen1107" # sig-node-tl
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/5307"
