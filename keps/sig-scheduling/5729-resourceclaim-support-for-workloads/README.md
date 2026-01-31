@@ -194,8 +194,8 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-This enhancement describes additions to the [Workload API][kep-4671] and
-[PodGroup API][kep-5832] which make it possible associate those ResourceClaims
+This enhancement describes additions to the [Workload API][KEP-4671] and
+[PodGroup API][KEP-5832] which make it possible associate those ResourceClaims
 and ResourceClaimTemplates with those objects to better facilitate sharing
 DRA resources between the Pods they contain.
 
@@ -1465,7 +1465,7 @@ SIG to get the process for these resources started right away.
 -->
 
 
-[kep-4671]: https://kep.k8s.io/4671
-[kep-5832]: https://kep.k8s.io/5832
+[KEP-4671]: https://kep.k8s.io/4671
+[KEP-5832]: https://kep.k8s.io/5832
 [KEP-5194]: https://kep.k8s.io/5194
 [dra-topology-model]: https://docs.google.com/document/d/1Fg9ughIRMtt1HmDqiGWV-w9OKdrcKf_PsH4TjuP8Y40/edit?usp=sharing
