@@ -195,7 +195,7 @@ A good summary is probably at least a paragraph in length.
 -->
 
 This enhancement describes additions to the [Workload API][KEP-4671] and
-[PodGroup API][KEP-5832] which make it possible associate those ResourceClaims
+[PodGroup API][KEP-5832] which make it possible to associate ResourceClaims
 and ResourceClaimTemplates with those objects to better facilitate sharing
 DRA resources between the Pods they contain.
 
@@ -235,6 +235,8 @@ requirements by scheduling Pods within strict topological boundaries:
   host or as large as an entire datacenter, or perhaps even larger.
 - A ResourceClaim requests one of these topological units. Pods which reference
   that same ResourceClaim are scheduled within the same topological boundary.
+- Additionally, the allocation of the ResourceClaim may trigger a controller to
+  reprogram the datacenter fabric to match the selected topological unit.
 
 Large-scale workloads orchestrated by specialized APIs like JobSet and
 LeaderWorkerSet cannot currently practically express granular topological
