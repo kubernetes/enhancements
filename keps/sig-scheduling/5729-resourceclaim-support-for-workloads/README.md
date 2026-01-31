@@ -133,8 +133,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Increase the size limit on the ReservedFor field](#increase-the-size-limit-on-the-reservedfor-field)
-  - [Relax validation without API changes](#relax-validation-without-api-changes)
+  - [Increase the size limit on the <code>status.reservedFor</code> field](#increase-the-size-limit-on-the-statusreservedfor-field)
+  - [Allow ResourceClaims to be reserved for any object](#allow-resourceclaims-to-be-reserved-for-any-object)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -1422,8 +1422,8 @@ two separate ways to manage the allocation and deallocation process for
 ResourceClaims.
 
 It also leads to additional work for the device_taint_eviction controller since
-it needs to maintain an index to find all pods using a ResourceClaim rather than
-just looking at the list of pods in the `ReservedFor` list.
+it needs to maintain an index to find all Pods using a ResourceClaim rather than
+just looking at the list of Pods in the `status.reservedFor` list.
 
 ## Alternatives
 
@@ -1433,30 +1433,28 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### Increase the size limit on the ReservedFor field
+### Increase the size limit on the `status.reservedFor` field
 
-The simplest solution here would be to just increase the size limit on the
-`ReservedFor` field to a larger number. But having a large list of pod
-references is not a good way to handle it and could at least in theory run into
-the size limit of Kubernetes resources. Also, we would need to have some limit
-on the size, and whatever number we choose it might still be too small for the
-largest workloads.
+To allow more Pods to share a single claim, the simplest solution would be to
+increase the size limit on the `status.reservedFor` field. Having a large
+list of Pod references is not a good way to handle it and could at least in
+theory run into the size limit of Kubernetes resources. Also, we would need to
+have some limit on the size, and whatever number we choose might still be too
+small for the largest workloads.
 
-### Relax validation without API changes
+### Allow ResourceClaims to be reserved for any object
 
-The current proposal adds explicit support for non-pod references in the
-`ReservedFor` list by adding the new `spec. An alternative is to let the
-workload controller be responsible for not only removing the reference in the
-`ReservedFor` list when there are no longer any pods consuming the
-`ResourceClaim`, but also adding the reference after creating the
-`ResourceClaim`. This will require that the validation is relaxed to allow
-entries in the `ReservedFor` list without any allocation. This would also
-require that the Kubelet checks for non-Pod references in the `ReservedFor` list
-and skips the check before running pods if it finds any.
+[KEP-5194] originally described the addition of new `spec.reservedFor` and
+`status.reservedForAnyPod` fields for ResourceClaims, to enable references to
+arbitrary objects in `status.reservedFor`. This approach shifts the
+responsibility to remove non-Pod objects from the `status.reservedFor` list to
+each true workload controller supporting DRA.
 
-This isn't all that different than the proposed solution, but the solution
-described above was considered superior as it makes the new feature more
-explicit.
+With the addition of the Workload and PodGroup APIs, the ResourceClaim API no
+longer needs to be as flexible since true workloads can integrate with those
+common APIs. In order to integrate with this feature, true workload controllers
+create and delete PodGroup objects (which will also provide many additional
+features) and don't have to explicitly manage ResourceClaims.
 
 ## Infrastructure Needed (Optional)
 
@@ -1469,4 +1467,5 @@ SIG to get the process for these resources started right away.
 
 [kep-4671]: https://kep.k8s.io/4671
 [kep-5832]: https://kep.k8s.io/5832
+[KEP-5194]: https://kep.k8s.io/5194
 [dra-topology-model]: https://docs.google.com/document/d/1Fg9ughIRMtt1HmDqiGWV-w9OKdrcKf_PsH4TjuP8Y40/edit?usp=sharing
