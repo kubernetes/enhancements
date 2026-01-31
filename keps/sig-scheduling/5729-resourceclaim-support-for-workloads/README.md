@@ -1411,6 +1411,9 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2025-12-12: KEP first draft published for review
+- 2026-01-28: Combined with [KEP-5194]
+
 ## Drawbacks
 
 <!--
