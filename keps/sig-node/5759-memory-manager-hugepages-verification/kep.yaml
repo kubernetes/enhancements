@@ -12,6 +12,7 @@ reviewers:
   - "@mrunalp"
 approvers:
   - "@dchen1107"
+  - "@haircommander"
 
 see-also:
   - "/keps/sig-node/1769-memory-manager"
