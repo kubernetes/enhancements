@@ -423,7 +423,10 @@ Yes. KEP introduces safe default with WorkloadControlledSwap - if explicitly spe
 Yes. To roll back, the feature gate should be disabled in the API server and
 kubelets, and components should be restarted. If a Pod was created with a
 `resources.limits.swap` field while the gate was enabled, those will be ignored by
-kubelets once the feature is disabled.
+kubelets for new pods once the feature is disabled. However, for pods that are
+already running, the swap cgroup limits will remain in effect until those pods
+are recreated. To ensure a complete rollback for all workloads, nodes may need
+to be drained or restarted after disabling the feature.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
