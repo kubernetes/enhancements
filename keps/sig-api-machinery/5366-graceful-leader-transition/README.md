@@ -83,15 +83,22 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Phase 1: Controller Sanitation (Pre-Alpha)](#phase-1-controller-sanitation-pre-alpha)
+  - [Phase 2: Fast Lease Release](#phase-2-fast-lease-release)
+  - [Phase 3: Graceful Transition](#phase-3-graceful-transition)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Phase 1 Implementation](#phase-1-implementation)
+  - [Phase 2 Implementation](#phase-2-implementation)
+  - [Phase 3 Implementation](#phase-3-implementation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
+    - [Alpha 1](#alpha-1)
+    - [Alpha 2](#alpha-2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -238,14 +245,34 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The main control loops for `kube-controller-manager`, `kube-scheduler`, and
-`cloud-controller-manager` will be updated to support graceful leader
-transitions. When a leader fails to renew its lease, instead of exiting, the
-component will rely on client-go's leader election mechanism to cancel the
-context, and stop its internal controllers. It will then immediately return to a
-follower state where it will attempt to reacquire the lease.
+We propose a phased approach to implementing graceful leader transitions. This allows us to incrementally de-risk the change by first ensuring that controllers can safely shut down (Phase 1), then enabling faster failovers (Phase 2), and finally removing the need for process restarts (Phase 3).
 
-This change will be guarded by a new feature gate, `GracefulLeaderTransition`.
+### Phase 1: Controller Sanitation (Pre-Alpha)
+
+This phase ensures that `kube-controller-manager` controllers gracefully terminate without leaking
+goroutines by strictly enforcing context cancellation within their control loops.
+
+*Note: This phase is largely addressed by [PR #134910](https://github.com/kubernetes/kubernetes/pull/134910) and [PR #134945](https://github.com/kubernetes/kubernetes/pull/134945), which standardizes `Run` termination.*
+
+- **Objective**: Ensure that kcm controller goroutines properly terminate when context is cancelled.
+- **Mechanism**: Refactor controller management to track all spawned goroutines via `wg.Go()` and `wg.Wait()`.
+- **Feature Gate**: None (Technical debt cleanup).
+
+### Phase 2: Fast Lease Release
+
+Once we are confident that controllers shut down gracefully (Phase 1), we can optimize the leadership transition. Instead of waiting for the lease TTL to expire, the leader will actively release the lock upon shutdown. Note: `kube-scheduler` already implements this behavior, so this phase only targets `kube-controller-manager`.
+
+- **Objective**: Reduce failover latency.
+- **Mechanism**: Modify `client-go/tools/leaderelection` to perform an active release of the `Lease` object (removing the holder identity) when the context is cancelled.
+- **Feature Gate**: `ControllerManagerReleaseLeaderElectionLockOnExit`
+
+### Phase 3: Graceful Transition
+
+The final state where the process does not exit upon losing leadership.
+
+- **Objective**: Decouple "Stop Leading" from "Process Exit".
+- **Mechanism**: Refactor the main entrypoint to loop `Run()` instead of exiting. Identify and handle metric registration conflicts (Prometheus panic on re-registration) and liveness probe interactions.
+- **Feature Gate**: `GracefulLeaderTransition`
 
 ### Risks and Mitigations
 
@@ -309,13 +336,23 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-The core of this change involves modifying the `OnStoppedLeading` callback to
-not forcefully exit.
+### Phase 1 Implementation
 
-We will wrap leader election with a `wait.Until()` to retry the leader election
-loop similar to how the Coordinated Leader Election controller handles
-gracefully transition of leaders
-([code](https://github.com/kubernetes/kubernetes/blob/release-1.33/pkg/controlplane/controller/leaderelection/run_with_leaderelection.go#L54))
+All controllers must standardize their startup sequences. When the controller returns and the leader
+lock is released, all associated goroutines generally must be cancelled.
+
+### Phase 2 Implementation
+
+The leader lock will be proactively released when the context is cancelled and the leader prepares to
+step down. This release must occur only after all controller goroutines have returned. This behavior will
+be guarded by the `ControllerManagerReleaseLeaderElectionLockOnExit` feature gate.
+
+### Phase 3 Implementation
+
+The core change involves modifying the `OnStoppedLeading` callback to prevent forceful exits. We will
+wrap the leader election in a `wait.Until()` loop to retry election upon loss. This mirrors the pattern
+used by the Coordinated Leader Election controller
+([code](https://github.com/kubernetes/kubernetes/blob/release-1.33/pkg/controlplane/controller/leaderelection/run_with_leaderelection.go#L54)).
 
 The `controller-manager` sets up controller level health checks in
 non-reversible ways and will need to be modified so that handlers can be
@@ -333,6 +370,11 @@ the leader lock are made. Many scheduler resources are created before the leader
 election process. These will be modified to either defer resource creation or
 add a resetting mechanism when the leader is lost.
 
+
+Prometheus clients panic on re-registration. We need to see if the metrics can be unregistered or reset on subsequent attempts at initializing the metrics.
+
+Finally, during the leader-to-follower transition, the `/healthz` endpoint must correctly reflect the
+follower state (healthy but not leading) to prevent Kubelet restarts.
 
 ### Test Plan
 
@@ -435,11 +477,16 @@ See the above scenarios for test plan.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Alpha 1
 
-- Feature implemented behind a feature flag
-- Runtime detection of leaked goroutines
-- Test that controller-manager and scheduler do not leak memory on leadership transitions
+- `ControllerManagerReleaseLeaderElectionLockOnExit` feature gate implemented.
+- Phase 1 implemented and controller startup and shutdown logic is handled gracefully.
+
+#### Alpha 2
+
+- `GracefulLeaderTransition` feature gate implemented.
+- Runtime detection of leaked goroutines.
+- Test that controller-manager and scheduler do not leak memory on leadership transitions.
 
 #### Beta
 
