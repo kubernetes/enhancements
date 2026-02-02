@@ -1,0 +1,41 @@
+title: Integrate Workload APIs with Job Controller
+kep-number: 5547
+authors:
+  - "@helayoty"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-scheduling
+status: implementable
+creation-date: 2026-01-29
+reviewers:
+  - "@kannon92"
+  - "@wojtek-t"
+  - "@mm4tt"
+approvers:
+  - "@soltysh"
+
+see-also:
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5832-decouple-podgroup-api"
+  - "/keps/sig-apps/2232-suspend-jobs"
+  - "/keps/sig-scheduling/2926-job-mutable-scheduling-directives"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.39"
+
+feature-gates:
+  - name: EnableWorkloadWithJob
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+disable-supported: true
+
+metrics:
+  -
