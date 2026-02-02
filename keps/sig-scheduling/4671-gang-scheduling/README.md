@@ -768,10 +768,12 @@ This section must be completed when targeting beta to a release.
 
 Workloads that do not use the Workload API should not be impacted, since the functionality remains unchanged for them. 
 During a rolling upgrade, if the active scheduler instance has the feature disabled, it will schedule pods using the 
-standard pod-by-pod method. This results in a fallback to the status quo behavior (no regression).
+standard pod-by-pod method. This results in a fallback to the status quo behavior, meaning that pods will be still
+scheduled, but PodGroup level scheduling constraints won't be applied.
 
 The worst-case scenario is a critical bug in the new Workload Scheduling Cycle code causing a scheduler crash-loop. 
-This would stop all scheduling but would not impact already running workloads.
+This would stop all scheduling but would not impact already running workloads and rollback is a sufficient
+mitigation method.
 
 ###### What specific metrics should inform a rollback?
 
@@ -792,20 +794,23 @@ We'll perform manual testing of the upgrade -> downgrade -> upgrade path using t
 1. Start a local Kubernetes v1.35 cluster with GenericWorkload and GangScheduling feature gates disabled (default 
 behavior).
 2. Attempt to create a Pod with `spec.workloadRef` set.
-3. The `spec.workloadRef` field is dropped by the API server. The pod is created successfully but without the workload 
+3. The `spec.workloadRef` field is dropped by the API server. The pod is created successfully but without the workload
    reference, resulting in immediate standard scheduling (one-by-one).
 4. Restart/Upgrade API Server and Scheduler to v1.36 (with feature gates enabled).
-5. Create a Workload object named gang-test with minCount=2.
-6. Create a Pod test-pod-1 with spec.workloadRef pointing to gang-test.
-7. The Pod stays in Pending state (waiting for the gang). We verified that  
+5. Create two Workload objects: `gang-test-A` and `gang-test-B` (both with `minCount=2`).
+6. Create a Pod `test-pod-1` with `spec.workloadRef` pointing to `gang-test-A`.
+7. The Pod stays in `Pending` state (waiting for the gang). We verified that
    `scheduler_pod_group_scheduling_attempts_total` metric is incremented.
-8. Create a Pod test-pod-2 pointing to the same workload.
+8. Create a Pod `test-pod-2` pointing to the same workload.
 9. Both pods are scheduled successfully in the same cycle (Gang Scheduling works). 
-10. Downgrade API Server and Scheduler to v1.35. 
-11. Create test-pod-3 and test-pod-4 pointing to a workload. 
-12. The pods are scheduled immediately one-by-one (Workload logic is ignored/unavailable because the field is dropped). 
-13. Upgrade API Server and Scheduler back to v1.36. 
-14. Create new pods referencing a Workload; verifying that Gang Scheduling functionality is restored (pods wait for minCount before scheduling).
+10. Downgrade API Server and Scheduler to v1.35 (with feature gates disabled).
+11. Create `test-pod-3` pointing to `gang-test-B`. Note: We use a workload created in step 5 because creating new
+    Workload objects is disabled.
+12. The pod is scheduled immediately (Workload logic is ignored because the workloadRef field is dropped by
+    the v1.35 API server). If Gang Scheduling were active, this pod would hang pending waiting for a second member.
+13. Upgrade API Server and Scheduler back to v1.36 (feature gates enabled).
+14. Create `test-pod-4` and `test-pod-5` pointing to `gang-test-B`; verifying that Gang Scheduling functionality is
+    restored (these pods wait for `minCount=2` before scheduling).
 
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -872,8 +877,6 @@ when scheduling pods attached to a Workload compared to scheduling an equivalent
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 No.
-
-TODO(mm4tt@): Check with others.
 
 ### Dependencies
 
@@ -958,16 +961,31 @@ retried with standard exponential backoff once connectivity is restored.
 
 ###### What are other known failure modes?
 
-- Pods Pending Indefinitely (Gang Starvation)
-  - Detection: Pods with workloadRef remain in Pending state for an extended period 
-  - Metrics: `scheduler_pod_group_scheduling_attempts_total` with result unschedulable increases constantly for a
-    specific group. 
-  - Events: Repeated `FailedScheduling` events on the Pods with workloadRef. 
-  - Mitigations: If the gang cannot fit due to resource constraints, delete the Workload object which should disable 
-    the gang-scheduling TODO(mm4tt@): Discuss with Wojtek 
-  - Diagnostics: Scheduler logs at V=4 searching for "workload" to see detailed reasons why the 
-    placement failed (e.g., "minCount not met"). 
-  - Testing: Covered by integration tests where gangs larger than available cluster capacity are submitted.
+- Pods Pending Indefinitely - Waiting for Gang Assembly (PreEnqueue)
+  - Detection:
+    - Check Pod Events/Status. Expected reason: a message indicating that the pod is waiting for more gang members.
+    - The number of pending pods belonging to the group is less than minCount.
+  - Mitigations:
+    - Ensure the controller created all required pods.
+    - If intended, delete the Workload object to disable gang scheduling (fallback to best-effort scheduling) if
+      acceptable.
+  - Diagnostics:
+    - Scheduler logs at V=4 searching for "workload" to trace the decision flow.
+    - Verify minCount in the Workload matches the number of pods created by the Job/Controller.
+  - Testing:
+    - Covered by integration tests submitting partial gangs.
+- Pods Pending Indefinitely - Gang cannot fit (Resource Constraints)
+  - Detection: Check Pod Events/Status. Expected reason: a message indicating that minCount pods could not be
+    scheduled.
+  - Metrics: `scheduler_pod_group_scheduling_attempts_total` with result unschedulable.
+  - Mitigations:
+    - Scale up the cluster (add nodes) or delete other real-workloads to free up space.
+    - If intended, delete the Workload object to disable gang scheduling (fallback to best-effort scheduling) if
+      acceptable.
+  - Diagnostics:
+    - Scheduler logs at V=4 searching for "workload" to see detailed reasons why the placement failed.
+  - Testing:
+    - Covered by integration tests submitting gangs larger than cluster capacity.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
