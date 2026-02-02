@@ -3,6 +3,9 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [The &quot;Implicit Shadow&quot; Reality](#the-implicit-shadow-reality)
+  - [Problem: Global vs. Local Control](#problem-global-vs-local-control)
+  - [Solution: Lifecycle Tags](#solution-lifecycle-tags)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -20,23 +23,21 @@
       - [<code>DeclarativeValidation</code> Feature Gate Beta to GA Graduation Criteria](#declarativevalidation-feature-gate-beta-to-ga-graduation-criteria)
   - [Linter](#linter)
   - [Documentation Generation](#documentation-generation)
-- [DV-Only Graduation Plan](#dv-only-graduation-plan)
-  - [Requirements for DV-Only Usage](#requirements-for-dv-only-usage)
-  - [Graduation Criteria for DV Tags and Features](#graduation-criteria-for-dv-tags-and-features)
-  - [Tag Stability Levels](#tag-stability-levels)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
-    - [Stable](#stable)
-  - [DV-Only Implementation Strategy for v1.35](#dv-only-implementation-strategy-for-v135)
-  - [DV-Only Implementation Details](#dv-only-implementation-details)
-  - [DV-Only Rollout Timeline](#dv-only-rollout-timeline)
-  - [Supporting Declarative only validations](#supporting-declarative-only-validations)
-    - [The <code>+k8s:declarativeValidationNative</code> Tag](#the-k8sdeclarativevalidationnative-tag)
-    - [Generator Behavior and Error Marking](#generator-behavior-and-error-marking)
-    - [Stability Enforcement](#stability-enforcement)
-    - [Exception for Alpha and Beta APIs](#exception-for-alpha-and-beta-apis)
-    - [Behavior for Mixed Validation Scenarios](#behavior-for-mixed-validation-scenarios)
-    - [Testing Strategy for Hybrid Types](#testing-strategy-for-hybrid-types)
+- [Rollout Strategy(Timeline)](#rollout-strategytimeline)
+  - [v1.33 - v1.34 (completed):](#v133---v134-completed)
+  - [v1.35 (completed):](#v135-completed)
+  - [Phase 1: v1.36 (Introduction - current release)](#phase-1-v136-introduction---current-release)
+    - [Case: New APIs](#case-new-apis)
+    - [Case: Legacy APIs](#case-legacy-apis)
+    - [Case: Adding Validation to Existing Fields (Implicit)](#case-adding-validation-to-existing-fields-implicit)
+  - [Phase 2: v1.37 - v1.38 (Transition to Beta)](#phase-2-v137---v138-transition-to-beta)
+  - [Phase 3: v1.39+ (Gate Removal &amp; GA)](#phase-3-v139-gate-removal--ga)
+- [Lifecycle: Promotion Process (Continuous)](#lifecycle-promotion-process-continuous)
+  - [Example Walkthrough: Two-Field Migration](#example-walkthrough-two-field-migration)
+    - [Phase 1: Legacy / Implicit Shadowing (v1.36 - v1.38)](#phase-1-legacy--implicit-shadowing-v136---v138)
+    - [Phase 2: Explicit Onboarding (v1.39 / Release N)](#phase-2-explicit-onboarding-v139--release-n)
+    - [Phase 3: Granular Field Graduation (v1.40 / Release N+1)](#phase-3-granular-field-graduation-v140--release-n1)
+    - [Phase 4: Final Permanent Enforcement (v1.41 / Release N+2)](#phase-4-final-permanent-enforcement-v141--release-n2)
 - [Analysis of existing validation rules](#analysis-of-existing-validation-rules)
   - [User Stories (Optional)](#user-stories-optional)
     - [Kubernetes developer wishes to add a field to an existing API version](#kubernetes-developer-wishes-to-add-a-field-to-an-existing-api-version)
@@ -57,16 +58,14 @@
     - [Risk: Added latency to API request handling.](#risk-added-latency-to-api-request-handling)
       - [Mitigation: Resolve Known &quot;Low Hanging Fruit&quot; of Performance Improvements In Current Validation Code](#mitigation-resolve-known-low-hanging-fruit-of-performance-improvements-in-current-validation-code)
       - [Mitigation: Avoid Conversion to Internal Type](#mitigation-avoid-conversion-to-internal-type)
-    - [Risk: Committing to DV Only Makes Future Reversals More Costly](#risk-committing-to-dv-only-makes-future-reversals-more-costly)
-      - [Mitigation: Incremental Adoption and Calculated Risk](#mitigation-incremental-adoption-and-calculated-risk)
-    - [Risk: Altered Feature Gate Semantics for Mixed Validation Types](#risk-altered-feature-gate-semantics-for-mixed-validation-types)
-      - [Mitigation: Controlled Scope and Communication](#mitigation-controlled-scope-and-communication)
-    - [Risk: Panics in Mixed Validation Scenarios Cause Validation to &quot;Fail-Closed&quot;](#risk-panics-in-mixed-validation-scenarios-cause-validation-to-fail-closed)
-      - [Mitigation: Controlled Scope, Initial Code Review, and Comprehensive Testing](#mitigation-controlled-scope-initial-code-review-and-comprehensive-testing)
 - [Design Details](#design-details)
   - [Summary of Declarative Validation Components](#summary-of-declarative-validation-components)
   - [<code>validation-gen</code> Implementation Plan](#validation-gen-implementation-plan)
   - [Catalog of Supported Validation Rules &amp; Associated IDL Tags](#catalog-of-supported-validation-rules--associated-idl-tags)
+  - [Tag Stability Levels](#tag-stability-levels)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Stable](#stable)
   - [Supporting Declarative Validation IDL tags On Shared Struct Fields](#supporting-declarative-validation-idl-tags-on-shared-struct-fields)
     - [<code>subfield</code> IDL Tag](#subfield-idl-tag)
     - [<code>validation-gen</code> One-deep typedef Issue And Solution](#validation-gen-one-deep-typedef-issue-and-solution)
@@ -233,6 +232,24 @@ This generated code will then be used in the kube-apiserver to validate API requ
 
 Kubernetes API validation rules are currently written by hand, which makes them difficult for users to access directly, review, maintain, and test.
 
+The strategic goal of Declarative Validation (DV) is to **meaningfully reduce the project's technical debt** by migrating legacy handwritten validation into a unified, declarative framework.
+
+### The "Implicit Shadow" Reality
+
+Today, the system is in a "hybrid" state. Any field using standard +k8s: tags (without the +k8s:declarativeValidationNative marker) is **implicitly shadowed** because Takeover defaults to false. Mismatches are recorded, but errors are suppressed to prevent duplication.
+
+### Problem: Global vs. Local Control
+
+The Takeover gate is a global "all-or-nothing" switch. Graduation is blocked because we cannot force every migrated field in the cluster to become "Authoritative" simultaneously.
+
+### Solution: Lifecycle Tags
+
+We adopt a standard Alpha/Beta/GA lifecycle for validation rules, controlled by tag prefixes:
+
+*   **+k8s:alpha**: Shadow mode (Metrics only).
+*   **+k8s:beta**: Enforced by default, but disable-able via the global DeclarativeValidationTakeover gate.
+*   **no prefix tag**: Permanently enforced.
+
 Declarative validation will benefit Kubernetes maintainers:
 
 *   It will make it easier to develop, maintain and review APIs.
@@ -268,7 +285,7 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
 *   Retain native (or nearly native) performance.
 *   Improve testing rigor by being vastly easier to test.
 *   Allow for client-side validation experiments.
-*   Establish a low-risk, data-driven path for new APIs to adopt declarative validation natively ("DV-Only") without requiring a handwritten fallback, simplifying API development and review.
+*   Establish a low-risk, data-driven path for new APIs to adopt declarative validation natively via the Validation Lifecycle without requiring a handwritten fallback, simplifying API development and review.
 
 ### Non-Goals
 
@@ -349,7 +366,7 @@ Two feature gates were introduced in v1.33 to manage the rollout:
 
 *   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics (see `DeclarativeValidationTakeover` below).  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
 
-*   **`DeclarativeValidationTakeover`**: This gate determines *which* validation result (imperative or declarative) is returned to the user when `DeclarativeValidation` is also enabled.  When `DeclarativeValidationTakeover` is enabled, the declarative validation result is returned. When disabled (and `DeclarativeValidation` is enabled), the imperative result is returned.  `DeclarativeValidationTakeover` has *no effect* if `DeclarativeValidation` is disabled.  This gate allows for a phased rollout where we can first verify equivalence, and *then* switch to using the declarative results.
+*   **`DeclarativeValidationTakeover`**: The DeclarativeValidationTakeover feature gate is retained as the Global Safety Switch for Beta-stage validation rules. It allows cluster admins to disable "newly enforced" validations if regressions are found, forcing them back to Shadow mode (handwritten fallback).  When `DeclarativeValidationTakeover` is enabled (default for Beta), Beta tags are Enforced. When disabled, Beta tags are Shadowed.  `DeclarativeValidationTakeover` has *no effect* if `DeclarativeValidation` is disabled.
 
 #### `DeclarativeValidation` & `DeclarativeValidationTakeover` Will Target Beta From The Beginning
 
@@ -386,73 +403,24 @@ By having all validators, associated IDL tags, their descriptions, etc.  defined
 *   Publishing documentation on all tags including how they work, their intended usage, examples, etc.
 *   Building a system to auto-gen docs from this
 
-## DV-Only Graduation Plan
 
-### Requirements for DV-Only Usage
-For any validation tag or feature to be used in a DV-Only context, it must meet the following requirements:
-* Guaranteed GA Semantics: All horizontal features/semantics used by DV-Only tags must be GA and cannot be disabled. This ensures consistent behavior across clusters and versions. All tags in DV-Only usage must be GA.
-* Proven Stability: The tag/feature must have been proven stable through on-by-default usage for at least one release cycle with no metric failures observed in production.
-* No Backwards-Incompatible Changes: The validation semantics must not change in backwards-incompatible ways between versions.
+## Rollout Strategy(Timeline)
 
-### Graduation Criteria for DV Tags and Features
-Horizontal Features Must be GA before any DV-Only usage.  An example of such features include ratcheting, subresource support, and update correlation  Individual validation tags must also graduate to GA/stable before any DV-Only usage.   GA/stable is proven by the features and tags meeting the below criteria:
-* One full release cycle (~3-4 months) of production usage with no declarative_validation_mismatch_total or declarative_validation_panic_total metric failures
-* Declarative Validation Workgroup confirmation that the feature is considered GA/stable
+Our goal is to standardize on the Explicit Strategy and Lifecycle mechanism. The rollout is data-driven:
 
-### Tag Stability Levels
+  - Contextual Enforcement: The decision to enforce validation is not simply based on the tag itself, but on the application of that tag to a specific field and its historical behavior.
+  - Data-Driven Confidence: We require verified mismatch data (soak time) before enabling enforcement by default.
+      - **Legacy Fields:** Have effectively soaked for releases (Implicit Shadow) and can move to Beta immediately.
+      - **New API Fields:** Verified by design (Authoritative from Day 1).
+      - **New/Modified Rules on Existing Fields:** Must use **Alpha** (Shadow) for 1 release to gather data before promoting to **Beta**.
 
-Each Declarative Validation tag is assigned one of three stability levels: Alpha, Beta, or Stable. A validation is considered "non-stable" if it uses any non-stable tags in its definition.
-
-#### Alpha
-
-*   **Description**: Alpha tags are experimental, intended for early development and testing, and are subject to backward-incompatible changes.
-*   **Guarantees**: Backward-incompatible changes are allowed. All in-tree tag usage will be updated to adapt to the change, but out-of-tree tag usage may break.
-*   **Usage**: When used in the Kubernetes repository, Alpha tags must be mirrored with a handwritten implementation.
-
-#### Beta
-
-*   **Description**: Beta tags are more mature, have been tested, and are not expected to change in backward-incompatible ways.
-*   **Guarantees**: All modifications to Beta tags must be backward-compatible.
-*   **Usage**: Beta tags may be used in Kubernetes features/APIs that are in the Alpha or Beta stage of their lifecycle. Beta tags may be defined as 'DV-Only' validations i.e., on fields marked with `+k8s:declarativeValidationNative`) when used with Alpha or Beta features/APIs. Stable Kubernetes features/APIs may only use Beta tags when mirrored with hand written validation.
-
-#### Stable
-
-*   **Description**: Stable tags are production-ready and have undergone rigorous testing.
-*   **Guarantees**: All modifications must be backward-compatible.
-*   **Usage**: Stable tags may be used with all features/APIs. Stable tags may be defined as 'DV-Only' validations (i.e., on fields marked with `+k8s:declarativeValidationNative`).
-
-### DV-Only Implementation Strategy for v1.35
-No DV-Only usage will be permitted in v1.35. Instead, the v1.35 release will focus on:
-
-* Data Collection: Use v1.33,  v1.34 and v1.35 to gather stability metrics for:
-  * Ratcheting behavior
-  * Declarative Validation tags used and “on-by-default” in these releases
-* Dual Implementation Requirement: New API fields must implement both declarative validation tags AND handwritten validation code.
-* Simplified Migration Path: To ease the dual implementation requirement and prepare for v1.36 DV-Only we plan on providing a library of validation methods corresponding to DV tags.  This way users can more easily onboard onto declarative tags and in the future allows for more easily migrating fully to declarative validation.
-
-### DV-Only Implementation Details
-
-The implementation of DV-Only support will enable new API fields to be validated using only Declarative Validation (DV) tags without requiring parallel handwritten Go code.
-
-Execution of Declarative Validations: For any API type that includes at least one "DV-Only" validation rule, the generated declarative validation code will always be executed. This ensures that the DV-Only rules are always enforced. As noted in the KEP risks, "The declarative validation code path for these types will always run, regardless of the feature gate's setting, to ensure the authoritative 'DV-Only' rules are enforced".
-
-Error Differentiation: A mechanism will be implemented within the validation runtime to distinguish between errors arising from "DV-Only" rules and those from "Migrated" DV rules (which are still under dual implementation with handwritten code).
-
-"DV-Only" Errors Always Enforced: Validation errors identified as originating from "DV-Only" rules will always be included in the final set of errors returned to the user. Their enforcement is not controlled by the feature gates.
-
-Feature Gate Scope Limited to Migrated Rules: The behavior of the DeclarativeValidation and DeclarativeValidationTakeover feature gates will be limited to the "Migrated" portions of the validation logic. These gates will control whether the handwritten or declarative version of a migrated rule is authoritative and if comparisons are done, but they will not affect the enforcement of "DV-Only" rules.
-
-Panic Handling ("Fail-Closed"): In API types that combine DV-Only and migrated rules, any panic occurring within the declarative validation execution path will cause the entire validation to fail, and an error will be returned. This "fail-closed" behavior is necessary because it's not possible to isolate the source of the panic to a specific rule type, and DV-Only rules must always be enforced to ensure the integrity of new API fields. Rigorous testing, as outlined in the "Mitigation" section of the KEP, will be crucial to prevent panics.
-
-This implementation strategy allows new fields to natively adopt Declarative Validation, streamlining development, while coexisting with the ongoing migration of existing handwritten validations.
-### DV-Only Rollout Timeline
-v1.33 - v1.34 (completed):
+### v1.33 - v1.34 (completed):
 
 * ReplicationController migration with +k8s:minimum, +k8s:optional and default ratcheting
 * CSR migration with +k8s:item, +k8s:zeroOrOneOfMember, +k8s:listType=map, +k8s:listMapKey, and list ratcheting
 * Begin collecting stability metrics
 
-v1.35 (current plan):
+### v1.35 (completed):
 
 * No DV-Only usage permitted
 * Continue migrations and net new API field validation logic with dual implementation (DV + hand-written) requirement
@@ -460,46 +428,150 @@ v1.35 (current plan):
 * Implement validation library for simplified dual implementation
 * CSR migration adds: +k8s:item, +k8s:zeroOrOneOfMember, list ratcheting
 
-v1.36 (target):
+### Phase 1: v1.36 (Introduction - current release)
 
-* Enable DV-Only for GA-graduated tags (pending v1.34/v1.35 metrics validation)
-* Initial set limited to “low-risk” tags with proven stability
-* Maintain dual implementation for non-GA tags
-* Decision point: Review metrics and determine final GA tag set for v1.36
+#### Case: New APIs
 
-v1.37+:
-* Enable DV-Only for expanding set of GA-graduated tags and features (pending v1.36+ metrics validation)
+  - **Action: **Adopt `WithDeclarativeEnforcement()`. Use Standard tags.
+  - **Result:** Enforced.
 
-### Supporting Declarative only validations
-To support declarative only validations rules for new APIs and validations, a new `+k8s:declarativeValidationNative` marker tag will be adopted.
+#### Case: Legacy APIs
 
-#### The `+k8s:declarativeValidationNative` Tag
+  - **Action:** Remain in Implicit Shadow mode - no `+k8s:alpha/beta` prefix.
+  - **Result:** Shadowed.
 
-This field-level tag asserts that the field's validation is handled exclusively by other stable `+k8s:` validation tags on the same field.
+#### Case: Adding Validation to Existing Fields (Implicit)
 
-#### Generator Behavior and Error Marking
+  - **Action:** Use standard tags (`+k8s:minimum=1`).
+  - **Result: **Implicitly shadowed.
 
-The `validation-gen` tool will recognize this tag and wrap generated validation errors with the `.MarkDeclarativeOnly()` method. This allows programmatic identification of native declarative validations.
+### Phase 2: v1.37 - v1.38 (Transition to Beta)
 
-#### Stability Enforcement
+  - **Action:** Legacy APIs adopt `WithDeclarativeEnforcement()`.
+  - **Tag Updates:**
+      - **Verified fields (Legacy): **Convert standard tags to `+k8s:beta`.
+          - **Reasoning:** These fields have soaked. We are ready to enforce, but want the safety switch.
+      - **New Rules:** Use `+k8s:alpha`.
+  - **Runtime Effect:**
+      - Takeover ON: Beta tags are Enforced.
+      - Takeover OFF: Beta tags are Shadowed.
 
-`validation-gen` will enforce that only stable validation tags are used with `+k8s:declarativeValidationNative`. If a field is marked with this tag but uses an Alpha or Beta validation tag, the code generator will fail.
+### Phase 3: v1.39+ (Gate Removal & GA)
 
-#### Exception for Alpha and Beta APIs
+  - **Trigger:** `DeclarativeValidation` feature gate is removed. `DeclarativeValidationTakeover` gate remains as the Beta toggle.
+  - Start to Promotion to GA
+      - Action: Remove `+k8s:beta` prefix and delete handwritten code.
+      - Result: Permanently Enforced.
 
-Alpha and Beta APIs may permitted the use of Alpha and Beta validation tags. This non stable validations must be mirrored by handwritten validations to graduate the API. This enforcement will be done by the code generator, It will fail to generate validation code for non stable types for graduated API's.
+## Lifecycle: Promotion Process (Continuous)
 
-#### Behavior for Mixed Validation Scenarios
+This process applies to any individual validation rule.
 
-For types with declarative-only validations, the `DeclarativeValidation` feature gate is ineffective. All declarative validations will always run, and errors coming from declarative only validations will be filtered and returned.
+**Step 1: Alpha (Shadow)**
 
-#### Testing Strategy for Hybrid Types
+  - **Action:** Add rule with `+k8s:alpha(since:v1.N)=....`
+  - **Status:** Shadowed. Gather metrics.
 
-Specific tests for hybrid types will verify that:
-1.  "DV-Only" validations are always enforced.
-2.  Feature gates only affect migrated rules.
-3.  Errors are correctly aggregated.
-4.  Execution is panic-proof.
+**Step 2: Beta (Gated)**
+
+  - **Prerequisite:** 1 Release of clean metrics.
+  - **Action:** Change prefix to `+k8s:beta(since:v1.N+1)=....`
+  - **Status:** Enforced (Safety Switch active).
+
+**Step 3: GA (Permanent)**
+
+  - **Prerequisite:** Confidence in Beta stability.
+  - **Action:** Remove prefix. Delete handwritten code.
+  - **Status:** Enforced.
+
+### Example Walkthrough: Two-Field Migration
+
+This example follows two fields, FieldA and FieldB, through the adoption process.
+
+#### Phase 1: Legacy / Implicit Shadowing (v1.36 - v1.38)
+
+  - **Status:** Implicit Shadow. Standard tags are suppressed by default.
+  - **strategy.go:**
+
+```go
+// Default validation config
+func (s *Strategy) Validate(ctx, obj) {
+    rest.ValidateDeclarativelyWithMigrationChecks(ctx, scheme, obj, nil, errs, operation.Create) // <--- NO WithDeclarativeEnforcement()
+}
+```
+
+  - **types.go:**
+
+```go
+// +k8s:minimum=1 <---- implicit shadowing
+FieldA int `json:"fieldA"`
+
+// No DV migrated - has handwritten validation maximum=10
+FieldB int `json:"fieldB"`
+```
+
+#### Phase 2: Explicit Onboarding (v1.39 / Release N)
+
+  - **Status:** *Explicit Shadow*. Atomic update of strategy and prefixes.
+  - **strategy.go:**
+
+```go
+// Opt-in to Explicit Strategy
+func (s *Strategy) Validate(ctx, obj) {
+    rest.ValidateDeclarativelyWithMigrationChecks(ctx, scheme, obj, nil, errs,
+        operation.Create,
+        rest.WithDeclarativeEnforcement()) // <--- ENABLED
+}
+```
+
+  - **types.go:**
+
+```go
+// +k8s:beta(since:v1.39)=+k8s:minimum=1 <--- DIRECTLY TO BETA
+FieldA int `json:"fieldA"` // <-- Disable-able enforcement
+
+// +k8s:alpha(since:1.39)=+k8s:maximum=10 <-- NEWLY MIGRATED START FROM ALPHA
+FieldB int `json:"fieldB"`
+```
+
+#### Phase 3: Granular Field Graduation (v1.40 / Release N+1)
+
+  - strategy.go: (Remains unchanged)
+
+```go
+rest.WithDeclarativeEnforcement()
+```
+
+  - types.go:
+
+```go
+// +k8s:minimum=1 // <--- PREFIX REMOVED (CANNOT DISABLE)
+FieldA int `json:"fieldA"`
+
+// +k8s:beta(since:1.40)=+k8s:maximum=10 // <--- Disable-able enforcement
+FieldB int `json:"fieldB"`
+```
+
+#### Phase 4: Final Permanent Enforcement (v1.41 / Release N+2)
+
+*Scenario: FieldB parity is confirmed.*
+
+  - strategy.go: (Remains unchanged)
+
+```go
+rest.WithDeclarativeEnforcement()
+```
+
+  - types.go:
+
+```go
+// +k8s:minimum=1 // <--- PREFIX REMOVED (CANNOT DISABLE)
+FieldA int `json:"fieldA"`
+
+// +k8s:maximum=10 // <--- PREFIX REMOVED (CANNOT DISABLE)
+FieldB int `json:"fieldB"`
+```
+
 
 ## Analysis of existing validation rules
 
@@ -629,32 +701,6 @@ From analyzing the validation code there is "SO MUCH low-hanging fruit" - @thock
 
 Requests are received as the versioned type, so it should be feasible to avoid extra conversions for resources that have no need of handwritten validations.  This is likely not necessary given the known "low hanging fruit" of performance improvements but mentioned for completeness.
 
-#### Risk: Committing to DV Only Makes Future Reversals More Costly
-By allowing new APIs to be developed with "DV-Only" rules (w/ no handwritten fallback), we are establishing DV as an authoritative component for those APIs. If a future decision were made to back out of the Declarative Validation initiative entirely, it would become significantly more work. We would need to perform a reverse migration to generate handwritten validation code from the DV tags for these new APIs before removing the DV tooling.
-##### Mitigation: Incremental Adoption and Calculated Risk
-This is a calculated risk that reflects growing confidence in the Declarative Validation project. The "DV-Only" approach is limited to net-new validations on new fields, which provides a clear and contained path for adoption. All new validations will be on new fields, which are always feature gated.  It does not affect the rollback strategy for existing types that are being migrated. This incremental step allows us to prove the value of DV for new development while the broader migration of legacy code continues under the safety of the existing feature gate mechanism.
-#### Risk: Altered Feature Gate Semantics for Mixed Validation Types
-"DV-Only" rules changes the initial behavior of the DeclarativeValidation feature gate for any API type that adopts them. For the "migrated validation only" cases (w/ no "DV-Only') setting DeclarativeValidation=false acts as a complete off-switch, preventing the execution of any generated declarative validation code.
-
-For new API types that mix "DV-Only" and migrated validations, this is no longer the case. The declarative validation code path for these types will always run, regardless of the feature gate's setting, to ensure the authoritative "DV-Only" rules are enforced. The DeclarativeValidation gate's role is reduced to only controlling whether the system performs a comparison against handwritten rules for the migrated portion of the validation (w/ DeclarativeValidation controlling nothing in these cases and DeclarativeValidationTakeover controlling if handwritten or declarative validation is the authoritative validator). This creates a dual-behavior system for the feature gates, which could be confusing for operators and violates the expectation that a feature gate can fully disable a feature's code path.
-##### Mitigation: Controlled Scope and Communication
-This is a calculated trade-off to enable progress and native adoption of Declarative Validation for new APIs. The mitigation strategy relies on clear distinctions of the implementation patterns and communication:
-
-* **Controlled Scope and Low-Risk Adoption:** The initial scope for "DV-Only" is strictly limited. We will manage risk by targeting:
-    * **Low-Risk Validations:** We will not use the "DV-Only" approach for new, highly complex validation rules. The focus is on clear, straightforward rules.
-    * **Low-Risk Fields:** "DV-Only" validations will only be added to net-new fields, which are independently controlled by their own feature gates. This prevents any impact on the stability of existing, stable API fields.
-
-* **Documentation and Communication:** Documentation will clearly describe this dual-mode behavior, explaining when and why the declarative validation code always runs for certain types. This ensures cluster administrators understand the behaviour of the declarative validation feature gates.
-#### Risk: Panics in Mixed Validation Scenarios Cause Validation to "Fail-Closed"
-For API types that mix "DV-Only" rules with migrated DV rules, the behavior in the event of a panic changes significantly. In the existing migration-only case (eg: ReplicationController, CSR, etc.), if a panic occurs in the declarative validation code while DeclarativeValidationTakeover is false, the panic is recovered and ignored. The system "fails open" by falling back to the trusted handwritten validation result.
-
-However, in a mixed validation scenario, the system cannot distinguish whether a panic originated from a "DV-Only" rule or a feature-gated migrated rule. To ensure new APIs are not left with unenforceable validation, any panic in the declarative validation path will cause the entire validation to fail, returning an error to the user. This "fail-closed" behavior is safer for new APIs but means a bug in a migrated rule—which would have previously been safely ignored—could now block the creation or update of new API types that are adopting DV natively.
-##### Mitigation: Controlled Scope, Initial Code Review, and Comprehensive Testing
-* **Controlled Scope and Low-Risk Adoption:** The initial scope for "DV-Only" is strictly limited. We will manage risk by targeting:
-    * **Low-Risk Validations:** We will not use the "DV-Only" approach for “risky” or complex validation rules. The focus is on clear, straightforward rules.
-    * **Low-Risk Fields:** "DV-Only" validations will only be added to net-new fields (& their validation), which are independently controlled by their own feature gates. This prevents any impact on the stability of existing, stable API fields.
-* **Code Review:** The generated declarative validation code is checked into the repository. This makes the code fully reviewable as we start DV-Only, allowing reviewers to catch potential issues before they are merged.  Once DV-Only is established the generated code can be glimpsed/assumed-correct similar to other k8s generated code.
-* **Comprehensive Unit and Fuzz Testing:** The generated validation logic for these new types will undergo unit and fuzz testing. The primary goal of this testing is to ensure the code is error-proof and, most importantly, panic-proof, directly addressing the "fail-closed" concern.
 
 ## Design Details
 
@@ -781,6 +827,28 @@ The below rules are currently implemented or are very similar to an existing val
 | Immutability | `+k8s:immutable` | N/A | Alpha |
 | UPDATE transition control (granular immutability) | `+k8s:update=[NoSet,NoModify,NoClear]` | N/A | Alpha |
 | List map item (virtual field) | `+k8s:item(key: value)` | N/A | Alpha |
+
+### Tag Stability Levels
+
+Each Declarative Validation tag is assigned one of three stability levels: Alpha, Beta, or Stable. A validation is considered "non-stable" if it uses any non-stable tags in its definition.
+
+#### Alpha
+
+*   **Description**: Alpha tags are experimental, intended for early development and testing, and are subject to backward-incompatible changes.
+*   **Guarantees**: Backward-incompatible changes are allowed. All in-tree tag usage will be updated to adapt to the change, but out-of-tree tag usage may break.
+*   **Usage**: When used in the Kubernetes repository, Alpha tags must be mirrored with a handwritten implementation.
+
+#### Beta
+
+*   **Description**: Beta tags are more mature, have been tested, and are not expected to change in backward-incompatible ways.
+*   **Guarantees**: All modifications to Beta tags must be backward-compatible.
+*   **Usage**: Beta tags may be used in Kubernetes features/APIs that are in the Alpha or Beta stage of their lifecycle. Stable Kubernetes features/APIs may only use Beta tags when mirrored with hand written validation.
+
+#### Stable
+
+*   **Description**: Stable tags are production-ready and have undergone rigorous testing.
+*   **Guarantees**: All modifications must be backward-compatible.
+*   **Usage**: Stable tags may be used with all features/APIs.
 
 ### Supporting Declarative Validation IDL tags On Shared Struct Fields
 
@@ -1996,10 +2064,10 @@ If the API server is failing to meet SLOs (latency, validation error-rate, etc.)
 
 ## Implementation History
 
-v1.35: Dual implementation (DV + hand-written) requirement enforced, no DV-Only usage, tag/feature stability data collection and stability codified, validation library for dual implementation
-
-v1.36: Graduate the `DeclarativeValidation` feature gate to GA. (The 
-`DeclarativeValidationTakeover` feature gate remains off by default)
+- v1.33: Initial Beta implementation of `DeclarativeValidation` and `DeclarativeValidationTakeover` gates.
+- v1.34: Stability metrics collection began.
+- v1.35: Dual implementation requirement enforced, tag/feature stability codified, validation library implemented.
+- v1.36: Introduction of the Validation Lifecycle mechanism and Explicit Strategy. (Current)
 
 ## Drawbacks
 
