@@ -1098,15 +1098,22 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: WorkloadPodGroupResourceClaimTemplate
   - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+    - kubelet
+
+<!--
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
     plane?
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
+-->
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1114,6 +1121,8 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1128,7 +1137,21 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+If the kubelet restarts with the feature disabled, existing containers continue
+to run with all of their allocated devices, including those from claims made by
+their PodGroup when the feature was enabled.
+
+If a DRA device is allocated to a ResourceClaim reserved for a PodGroup and the
+feature is disabled, the PodGroup will continue to be listed in the
+`status.reservedFor` of the ResourceClaim and will not be deallocated.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+If the kubelet restarts with the feature enabled, then containers similarly
+continue to run with all of the devices with which they were first started.
+
+Since no other state is lost when the feature is disabled, other components
+once again operate as described.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1144,6 +1167,10 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
+
+Unit and integration tests will verify behavior both when the feature is enabled
+and when it is disabled. They will also exercise cases where the feature is
+toggled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1307,6 +1334,10 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+- kube-controller-manager will list and watch PodGroup resources.
+- kubelet will `GET` the PodGroup for a Pod when the Pod references a PodGroup
+  claim made through the PodGroup's `resourceClaimName`.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1316,6 +1347,8 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -1323,6 +1356,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -1332,6 +1367,18 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+This feature adds a new `spec.resourceClaims` list to the PodGroup API. It will
+have the same limits as the Pod API's `spec.resourceClaims`.
+
+The Pod API adds a new `spec.resourceClaims[].podGroupResourceClaim` field which
+is mutually exclusive with its sibling `resourceClaimName` and
+`resourceClaimTemplate` fields so it will not meaningfully impact the size of a
+Pod.
+
+The size of a ResourceClaim's `spec.reservedFor` list will be reduced
+significantly when many Pods sharing the same claim make that claim through a
+common PodGroup.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1343,6 +1390,8 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
+No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1356,6 +1405,9 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+- kube-controller-manager will run a new informer for PodGroup resources and
+  index them by ResourceClaims they reference.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1367,6 +1419,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+No.
 
 ### Troubleshooting
 
