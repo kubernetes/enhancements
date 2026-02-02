@@ -434,6 +434,25 @@ deliberate recovery sequence:
    are terminated. Clients see their watch channels close without receiving the
    original error event.
 
+```mermaid
+sequenceDiagram
+    participant etcd
+    participant Watcher as etcd3/watcher
+    participant Cacher
+    participant CacheWatcher as cacheWatcher
+    participant HTTP as HTTP Handler
+
+    etcd->>Watcher: DELETE event (corrupt prevValue)
+    Watcher->>Watcher: transform() fails on prevValue
+    Watcher->>Cacher: watch.Error (StoreReadError)
+    Note over Cacher: Reflector returns, waits 1s
+    Cacher->>CacheWatcher: terminateAllWatchers()
+    CacheWatcher->>HTTP: close(result)
+    HTTP-->>HTTP: return (connection closes)
+    Cacher->>etcd: LIST + WATCH
+    Note over Cacher: Cache rebuilt, new RV window
+```
+
 4. **Client Recovery**: Disconnected clients attempt to resume watching from their
    last known `resourceVersion`. The server rejects this with a "too old resource
    version" error, forcing clients to perform a fresh LIST and rebuild their
