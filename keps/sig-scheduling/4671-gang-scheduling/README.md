@@ -234,33 +234,20 @@ We try to mitigate it by an extensive analysis of usecases and already sketching
 how we envision the direction in which the API will need to evolve to support further
 usecases. You can read more about it in the [extended proposal] document.
 
-#### NominatedNodeName impact on filtering performance
+#### Exacerbating the race window by proceeding directly to binding
 
-Using `.status.nominatedNodeName` as an output of the Workload Scheduling Cycle
-can impact the performance of the standard pod-by-pod scheduling cycle for all other pods.
-Whenever the scheduler filters a node, it must temporarily add nominated pods
-(with equal or higher priority) to the cached NodeInfo. In large clusters,
-the number of such operations multiplied by the scheduling throughput can yield to a visible overhead.
-If the latency between the end of the Workload Scheduling Cycle
-and the actual processing of those pods is high, the number of unrelated pods
-having to consider such nomination also increases.
+Since the entire Workload Scheduling Cycle operates on a single cluster snapshot,
+a long-running cycle means decisions are based on snapshotted state that may become stale.
+This implies that if the cluster state changes in the meantime
+(e.g., a Node suffers a hardware failure or is deleted),
+the binding phase could fail for some pods in the workload, potentially causing the entire gang to fail.
 
-However, this impact is mitigated by several factors:
-* Nominations are temporary. As soon as workload-scheduled pods pass
-  their individual scheduling cycle and are assumed, what cleans the in-memory nominations.
-* In case the nominations are no longer feasible,
-  the gang gets rejected as soon as the scheduler determines this.
-* For the workload pods themselves, the performance impact is negligible.
-  They will typically only execute filters for the single node they are nominated to,
-  rather than evaluating the entire cluster.
-* These pods are expected to be retried quickly after the Workload Scheduling Cycle because
-  their initial timestamps are preserved. This places them near the head of the active queue,
-  minimizing the duration they remain in the "nominated but not assumed" state.
-* While higher-priority or long-standing (equal priority) pods might interleave and be scheduled before the gang pods,
-  the overall window of time where these nominations are active is expected to be short enough
-  to prevent severe degradation.
-
-The real impact will be verified through scalability tests (scheduler-perf benchmark).
+However, assuming all scheduling decisions go through kube-scheduler,
+the primary source of race conditions is external infrastructure events (e.g., Node health changes).
+While this is a valid concern, this race window exists in the standard scheduling cycle as well.
+Although the Workload Scheduling Cycle extends this window,
+the propagation latency of Node status updates or deletions is typically non-trivial,
+meaning the marginal increase in risk is acceptable compared to the benefits of atomic scheduling.
 
 ## Design Details
 
@@ -593,7 +580,7 @@ this will address requirement (5).
 #### The Workload Scheduling Cycle
 
 We introduce a new phase in the main scheduling loop (`scheduleOne`). In the
-end-to-end Pod scheduling flow, it is planned to place this new phase *before*
+end-to-end Pod scheduling flow, it is planned to place this new phase instead of
 the standard pod-by-pod scheduling cycle. When the loop pops a `PodGroup` from
 the active queue, it initiates the Workload Scheduling Cycle.
 
@@ -626,12 +613,11 @@ The cycle proceeds as follows:
 
 4. Outcome:
    * If the group (i.e., at least `minCount` Pods) can be placed,
-     these Pods have the `.status.nominatedNodeName` set.
-     They are then effectively "reserved" on those nodes in the
-     scheduler's internal cache. Pods are then pushed to the
-     active queue (restoring their original timestamps to ensure fairness)
-     to pass through the standard scheduling and binding cycle,
-     which will consider and follow the nomination.
+     these Pods proceed directly to the pod-by-pod binding cycle with their selected nodes.
+     these Pods proceed to the binding bycle with their selected nodes.
+   * In case preemption is required, the PodGroup is moved back to the scheduling queue
+     to wait for the preemption to take effect. This requires a subsequent
+     Workload Scheduling Cycle to verify that the released resources make the placement feasible.
    * If `minCount` cannot be met (even after calculating potential
      preemptions), the scheduler considers the `PodGroup` unschedulable. Standard backoff
      logic applies (see *Failure Handling*), and Pods are returned to
@@ -650,8 +636,8 @@ what will be effectively the weakest link to determine if the whole pod group is
 and reduce unnecessary preemption attempts.
 
 To ensure that we process the `PodGroup` instance at an appropriate time and
-don't starve other pods (including gang pods in the pod-by-pod scheduling phase)
-from being scheduled, we need to have a good queueing mechanism for pod groups.
+don't starve other pods from being scheduled, we need to have a good queueing mechanism
+for pod groups.
 
 We have decided to make the scheduling queue explicitly workload-aware.
 The queue will support queuing `PodGroup` instances alongside individual Pods.
@@ -672,8 +658,7 @@ The queue will support queuing `PodGroup` instances alongside individual Pods.
 
 4. During a Workload Scheduling Cycle, all member Pods are retrieved from the `QueuedPodGroupInfo`.
    Based on the cycle's outcome:
-   * **Success:** Pods are moved to the standard `activeQ` (with nominations set)
-     to proceed to the pod-by-pod scheduling soon.
+   * **Success:** Pods are moved directly to the binding cycle.
    * **Failure/Preemption:** The `QueuedPodGroupInfo` (containing the unschedulable pods) is returned
      to the `unschedulablePodInfos` structure. The `PodGroup` enters a backoff state and is eligible
      for retry only when a relevant cluster event wakes up at least one of its member pods.
@@ -749,22 +734,14 @@ The list and configuration of plugins used by this algorithm will be the same as
        can be scheduled in a different location if resources become available earlier,
        but cannot cause additional disruption to do so.
 
-     * If preemptions are not needed: Pods are nominated to their chosen nodes,
-       pushed directly to the active queue in the order they were evaluated in the Workload Scheduling Cycle.
-       They will soon attempt to be scheduled on their nominated nodes in their own, pod-by-pod cycles.
+     * If preemptions are not needed: Pods proceed directly to their binding cycles
+       using the nodes selected during the Workload Scheduling Cycle.
 
-     Pod will be restricted to its nominated node during the individual cycle.
-     If the node is unavailable, the pod will remain unschedulable and the `WaitOnPermit` gate will take that
-     into consideration. The `minCount` check can consider the number of pods that have passed
-     the Workload Scheduling Cycle to ensure that Pods are not waiting unnecessarily when some have been rejected
-     but other new pods have been added to the cluster.
-
-     In the pod-by-pod cycle, preemption initiated by the workload pods will be forbidden.
-     Allowing it would complicate reasoning about the consistency of the
-     Workload Scheduling Cycle and Workload-Aware Preemption. If preemption is necessary,
-     (e.g., the nominated node is no longer valid), the gang will either be instantly rejected
-     (when the `minCount` cannot be satisfied) or time out (safety check, in case a bug appears) at `WaitOnPermit`
-     and all necessary preemptions will be simulated again in the next Workload Scheduling Cycle.
+     The `WaitOnPermit` gate is retained to ensure that the `minCount` pods are successfully
+     admitted before binding occurs. Additionally, the `minCount` check can consider
+     the number of pods that have passed the Workload Scheduling Cycle to ensure
+     that Pods do not wait unnecessarily if some have been rejected while new pods
+     have been added to the cluster.
 
    * If `schedulableCount < minCount`, the cycle fails. Preemptions computed but not actuated
      during this cycle are discarded. Pods go through traditional failure handlers
@@ -913,13 +890,6 @@ in the meantime (e.g. due to other pods terminating or new nodes appearing), sub
 attempts may pick it up, improving the end-to-end scheduling latency. Returning pods to scheduling
 queue if these need to wait for preemption to become schedulable maintains that property.
 
-We acknowledge the two limitations of the above approach: (a) dependency on the introduction of
-Workload Scheduling Cycle (delayed preemption will not work if workload pods will not be processed
-by Workload Scheduling Cycle) and (b) the fact that the placement computed in
-Workload Scheduling Cycle may be invalidated in pod-by-pod scheduling later.
-However, those features should be used together,
-and the simplicity of the approach and target architecture outweigh these limitations.
-
 #### Workload-aware Preemption
 
 Workload-aware preemption ([KEP-5710](https://kep.k8s.io/5710)) aims to
@@ -1037,13 +1007,10 @@ With Workload Scheduling Cycle and Delayed Preemption features, we will signific
 - Delayed Preemption ensures atomicity, i.e., victims are deleted only if the scheduler determines the entire gang can fit,
   otherwise, the cycle aborts with zero disruption.
 - Failed pod groups are requeued correctly and retry successfully when resources become available.
-- Gang is rejected if pod-by-pod scheduling cannot follow a nomination. All other nominations should be also cleared.
 
 We will also benchmark the performance impact of these changes to measure:
 
-- The scheduling throughput of the workload scheduling, including gang and basic policies and preemptions.
-- The performance impact on standard pod scheduling when there are many nominated pods,
-  for scenarios mentioned in the [NominatedNodeName impact on filtering performance](#nominatednodename-impact-on-filtering-performance).
+- The scheduling throughput of the workload scheduling, including gang and basic policies, and preemptions.
 
 ##### e2e tests
 
