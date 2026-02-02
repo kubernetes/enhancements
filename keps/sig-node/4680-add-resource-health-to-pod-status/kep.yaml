@@ -9,13 +9,14 @@ participating-sigs:
 status: implementable #provisional|X|implemented|deferred|rejected|withdrawn|replaced
 creation-date: 2024-05-31
 reviewers:
-  - "@ffromani"
+  - "@ffromani" # sig-node-assigned-reviewer
   - "@klueska"
   - "@kad"
   - "@pohly"
   - "@johnbelamaric"
 approvers:
-  - "@mrunalp"
+  - "@mrunalp" # sig-node-tl
+  - "@SergeyKanzhelev" # sig-node-assigned-approver"
 
 see-also:
   - "/keps/sig-node/1287-in-place-update-pod-resources" # for AllocatedResources status field
