@@ -275,7 +275,7 @@ API type and the API admission.
 Pods will carry a new field `.spec.evictionInterceptors`, which specifies a list of interceptors
 involved in their lifecycle. This would allow multiple actors to take an action before the pod is
 terminated. Only one interceptor may progress with the eviction at a time. The interceptor with the
-highest index is executed first. If there is no interceptor, or the last interceptor (index 0) has
+index 0 is executed first. If there is no interceptor, or the last interceptor has
 finished without terminating the pod, the eviction request controller will attempt to evict the pod
 using the existing API-initiated eviction.
 
@@ -560,11 +560,11 @@ metadata:
   spec:
     ...
     evictionInterceptors:
-      - name: fallback-interceptor.rescue-company.com
-      - name: replicaset.apps.k8s.io
-      - name: deployment.apps.k8s.io
-      - name: sensitive-workload-operator.fruit-company.com
       - name: horizontalpodautoscaler.autoscaling.k8s.io
+      - name: sensitive-workload-operator.fruit-company.com
+      - name: deployment.apps.k8s.io
+      - name: replicaset.apps.k8s.io
+      - name: fallback-interceptor.rescue-company.com
 ```
 
 The interceptor should observe the eviction request objects that match the pods that the interceptor
@@ -576,7 +576,7 @@ condition in `.status.conditions`.
 If the interceptor is not interested in intercepting/evicting the pod anymore, it should set
 `.status.activeInterceptorCompleted=true`. If the interceptor is unable to respond to the eviction
 request, the `.spec.heartbeatDeadlineSeconds` will time out and control of the eviction process will
-be passed to the next interceptor at the lower list index. If there is none, the pod will get
+be passed to the next interceptor at the higher list index. If there is none, the pod will get
 evicted by the eviction request controller.
 
 If the interceptor is interested in intercepting/evicting the pod it should look at
@@ -633,13 +633,13 @@ solely by the user deploying the application and resolved by creating a PDB.
 Interceptors are populated from pod's `.spec.evictionInterceptors`
 into the `.spec.interceptors` on [EvictionRequest Validation and Admission](#evictionrequest-validation-and-admission).
 
-The eviction request controller reconciles EvictionRequests and first picks the highest index
+The eviction request controller reconciles EvictionRequests and first picks the index 0
 interceptor from `.spec.interceptors` and sets its `name` to the
 `.status.activeInterceptorName`.
 
 If `.status.activeInterceptorCompleted` is true and the pod exists
 or `.spec.heartbeatDeadlineSeconds` has elapsed since `.status.heartbeatTime`, then the eviction
-request controller sets `status.activeInterceptorName` to the next interceptor at the lower list
+request controller sets `status.activeInterceptorName` to the next interceptor at the higher list
 index from `.spec.interceptors`. During the switch to the new interceptor, the eviction request
 controller will also
 - Set `.status.activeInterceptorCompleted` field to false.
@@ -678,8 +678,8 @@ type PodSpec struct {
 	...
 	// EvictionInterceptors reference interceptors that respond to EvictionRequests.
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
-	// the graceful termination of a pod. The interceptors are chosen in reverse order of the list.
-	// In other words, the interceptor with the highest index runs first.
+	// the graceful termination of a pod. The interceptors are selected sequentially, in the order
+	// in which they appear in the list.
 	//
 	// The maximum length of the interceptors list is 100.
 	// Interceptors are not supported when the pod is part of a workload (.spec.workloadRef is set).
@@ -768,8 +768,8 @@ type EvictionRequestSpec struct {
 
 	// Interceptors reference interceptors that respond to this eviction request.
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
-	// the graceful eviction of a target (e.g. termination of a pod). The interceptors are chosen in
-	// reverse order of the list. In other words, the interceptor with the highest index runs first.
+	// the graceful eviction of a target (e.g. termination of a pod). The interceptors are selected
+	// sequentially, in the order in which they appear in the list.
 	//
 	// This field must not be set upon creation. Instead, it is resolved when the EvictionRequest
 	// object is created upon admission. The field is populated from Pod's
@@ -788,7 +788,7 @@ type EvictionRequestSpec struct {
 	// periodically report on an eviction progress by updating the .status.heartbeatTime.
 	// If the .status.heartbeatTime is not updated within the duration of
 	// HeartbeatDeadlineSeconds, the eviction request is passed over to the next interceptor at a
-	// lower index. If there is none and if the target is a pod, it is evicted using the Eviction
+	// higher index. If there is none and if the target is a pod, it is evicted using the Eviction
 	// API.
 	//
 	// The minimum value is 900 (15m) and the maximum value is 86400 (24h).
@@ -984,7 +984,7 @@ type PodEvictionStatus struct {
 #### Remarks on Interceptors
 
 - Other interceptors should insert themselves into the `.spec.evictionInterceptors` according to
-  their own needs. Higher index interceptors are selected first by the eviction request controller. 
+  their own needs. Lower index interceptors are selected first by the eviction request controller. 
 - The number of the interceptors is limited to 100 for the Pod and for the EvictionRequest. If there
   is a need for a larger number of interceptors, the current use case should be re-evaluated.
   Limiting the number of interceptors ensures that the EvictionRequest cannot be blocked
@@ -1034,9 +1034,9 @@ for custom label selectors when observing the eviction requests.
 
 `.status.activeInterceptorName` should be empty on creation as its selection should be left on the
 eviction request controller. To strengthen the validation, we should check that it is possible to
-set only the highest index from the interceptor list in the beginning. After that, it is possible to
-set only the next interceptor at a lower index and so on. We can also condition this transition
-according to the other fields. `.status.activeInterceptorCompleted` should be true or
+set only the index 0 interceptor from the interceptor list in the beginning. After that, it is
+possible to set only the next interceptor at a higher index and so on. We can also condition this
+transition according to the other fields. `.status.activeInterceptorCompleted` should be true or
 `.status.heartbeatTime` has exceeded the deadline.
 
 `.status.evictionRequestCancellationPolicy` is defaulted to `Allow` on creation. Its resolution
@@ -1128,8 +1128,8 @@ metadata:
   spec:
     ...
     evictionInterceptors:
-      - name: actor-a.k8s.io
-      - name: actor-b.k8s.io
+        - name: actor-b.k8s.io
+        - name: actor-a.k8s.io
 ```
 
 #### Multiple Dynamic Requesters and No EvictionRequest Cancellation
@@ -1255,9 +1255,8 @@ This example can also be applied to other direct or higher level controllers
 2. A node drain controller starts draining a node Z and makes it unschedulable.
 3. The node drain controller creates an EvictionRequests for a subset B of pods A to evict them from
    a node.
-4. The eviction request controller designates the deployment controller as the interceptor (highest
-   index) by updating `.status.activeInterceptorName`. No action (termination) is taken on the pods
-   yet.
+4. The eviction request controller designates the deployment controller as the interceptor (index 0)
+   by updating `.status.activeInterceptorName`. No action (termination) is taken on the pods yet.
 5. The deployment controller creates a set of surge pods C to compensate for the future loss of
    availability of pods B. The new pods are created by temporarily surging the `.spec.replicas`
    count of the underlying replica sets up to the value of deployments `maxSurge`.
