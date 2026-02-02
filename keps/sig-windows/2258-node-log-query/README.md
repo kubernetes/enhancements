@@ -46,8 +46,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -176,14 +180,14 @@ Please note that filtering will not be available for logs in `/var/log/` or
 
 The complete list of options that can be used are:
 
-Option | Description
------- | -----------
-`boot` | boot show messages from a specific system boot
-`pattern` | pattern filters log entries by the provided PERL-compatible regular expression
-`query` | query specifies services(s) or files from which to return logs (required)
-`sinceTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp from which to show logs (inclusive)
-`untilTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp until which to show logs (inclusive)
-`tailLines` | specify how many lines from the end of the log to retrieve; the default is to fetch the whole log
+| Option | Description |
+| ------ | ----------- |
+| `boot` | boot show messages from a specific system boot |
+| `pattern` | pattern filters log entries by the provided PERL-compatible regular expression |
+| `query` | query specifies services(s) or files from which to return logs (required) |
+| `sinceTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp from which to show logs (inclusive) |
+| `untilTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp until which to show logs (inclusive) |
+| `tailLines` | specify how many lines from the end of the log to retrieve; the default is to fetch the whole log |
 
 The feature now enables the cluster administrator to interrogate all services.
 This could be prevented by having a whitelist of allowed services. But this
@@ -237,8 +241,11 @@ This job runs tests against both Windows and Linux nodes.
 
 ### Graduation Criteria
 
-The plan is to introduce the feature as alpha in the v1.27 time frame behind the
-`NodeLogQuery` kubelet feature gate and `enableSystemLogQuery` kubelet option.
+#### Alpha
+
+- Feature implemented behind a feature flag (NodeLogQuery)
+- Initial e2e tests completed and enabled
+- Feature introduced in v1.27 behind the `NodeLogQuery` kubelet feature gate and `enableSystemLogQuery` kubelet option
 
 #### Alpha -> Beta Graduation
 
@@ -267,22 +274,31 @@ a 404 will be returned.
 
 ### Feature Enablement and Rollback
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [x] Feature gate
-    - Feature gate name: NodeLogQuery
-    - Components depending on the feature gate: kubelet
+###### How can this feature be enabled / disabled in a live cluster?
 
-* **Does enabling the feature change any default behavior?** No
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: NodeLogQuery
+  - Components depending on the feature gate: kubelet
+- [X] Other
+  - Describe the mechanism: In addition to the feature gate, the `enableSystemLogQuery` kubelet configuration option must be enabled.
+  - Will enabling / disabling the feature require downtime of the control plane? No
+  - Will enabling / disabling the feature require downtime or reprovisioning of a node? Yes, requires kubelet restart
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes. It can be disabled by disabling the `NodeLogQuery` feature
-  gate in the kubelet.
+###### Does enabling the feature change any default behavior?
 
-* **What happens if we reenable the feature if it was previously rolled back?**
-  There will be no adverse effects of enabling the feature gate after it was
-  disabled.
+No. The feature only adds a new capability to query node logs. It does not change any existing behavior.
 
-* **Are there any tests for feature enablement/disablement?** No
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes. It can be disabled by disabling the `NodeLogQuery` feature gate in the kubelet configuration and restarting the kubelet. No other changes are necessary to disable the feature.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+There will be no adverse effects of enabling the feature gate after it was disabled. The feature will become available again after kubelet restart.
+
+###### Are there any tests for feature enablement/disablement?
+
+No. However, the feature has been manually tested for enablement and disablement scenarios as documented in the "Rollout, Upgrade and Rollback Planning" section.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -322,49 +338,114 @@ While this feature does not affect any workloads an operator can determine if th
 is enabled by checking the kubelet logs for "feature gates: {map[NodeLogQuery:true]}".
 
 ###### How can someone using this feature know that it is working for their instance?
-- [x] Other
-  - Details: The cluster administrator can confirm that this feature works by querying the kubelet log proxy
-    endpoint. Example: "kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=kubelet"
+
+- [x] Other (treat as last resort)
+  - Details: The cluster administrator can confirm that this feature works by querying the kubelet log proxy endpoint. Example: "kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=kubelet"
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+This feature provides on-demand log retrieval and does not have continuous operation requirements. Reasonable SLOs include:
+- 99% of log query requests should complete successfully when the kubelet is healthy
+- Log queries should return within 30 seconds (enforced by implementation timeout)
+- The feature should not impact kubelet's primary responsibilities for pod management
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [x] Metrics
+  - Metric name: kubelet_http_requests_total (existing kubelet metric, filtered by endpoint)
+  - Aggregation method: Rate of requests to the /logs/ endpoint, error rate
+  - Components exposing the metric: kubelet
+- [x] Other (treat as last resort)
+  - Details: Kubelet logs will contain error messages if log query operations fail. Operators can monitor for errors related to log query operations in kubelet logs.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+Currently, the feature relies on existing kubelet HTTP metrics. Additional metrics that could be useful include:
+- A dedicated metric for node log query request duration
+- A metric for the size of logs returned
+- A metric for rate-limited or rejected requests
+
+These metrics were not added to minimize the footprint of the feature, but could be considered based on user feedback during the beta phase.
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?**
-  - kubelet
-    - Usage description:
-      - Impact of its outage on the feature: If kubelet is not running on the
-        node this feature will not work.
-      - Impact of its degraded performance or high-error rates on the feature:
-        If the kubelet is degraded this feature will also be degraded i.e. the
-        node logs will not be returned.
+###### Does this feature depend on any specific services running in the cluster?
+
+- kubelet
+  - Usage description: The feature is implemented as part of the kubelet and requires kubelet to be running.
+    - Impact of its outage on the feature: If kubelet is not running on the node this feature will not work.
+    - Impact of its degraded performance or high-error rates on the feature: If the kubelet is degraded this feature will also be degraded i.e. the node logs will not be returned.
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?**
-  No
+###### Will enabling / using this feature result in any new API calls?
 
-* **Will enabling / using this feature result in introducing new API types?**
-  The feature does not introduce a new API from an API server perspective but
-  the existing kubelet proxy/log endpoint will have new features built into it.
+No
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
-  No
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
-  No
+The feature does not introduce a new API from an API server perspective but
+the existing kubelet proxy/log endpoint will have new features built into it.
 
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  No
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  In the case of large logs, there is potential for an increase in RAM and CPU
-  usage on the node when an attempt is made to stream them. However, so far no
-  CPU or memory spikes have been reported from the field.
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+In the case of large logs, there is potential for an increase in RAM and CPU
+usage on the node when an attempt is made to stream them. However, so far no
+CPU or memory spikes have been reported from the field.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. The feature has a built-in timeout of 30 seconds which prevents long-running queries from exhausting resources. Additionally, the feature only responds to explicit API requests and does not consume resources in the background.
 
 ### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature does not directly interact with the API server or etcd. However, the client (kubectl or other API client) needs to communicate with the API server to proxy the request to the kubelet. If the API server is unavailable, the client will not be able to reach the kubelet's /logs endpoint through the proxy. Direct access to the kubelet (if configured) would still work.
+
+###### What are other known failure modes?
+
+- [Log query timeout]
+  - Detection: Log queries that take longer than 30 seconds will timeout. The client will receive a timeout error. This can be detected through HTTP 504 Gateway Timeout responses or similar timeout errors in client logs.
+  - Mitigations: The 30-second timeout is built into the implementation to prevent resource exhaustion. Users should narrow their query scope (e.g., using time ranges or patterns) to retrieve logs within the timeout period.
+  - Diagnostics: Kubelet logs will show timeout errors. Error message: "context deadline exceeded" or similar timeout-related messages.
+  - Testing: Tested manually by attempting to query very large log files.
+
+- [Service/log file not found]
+  - Detection: If the requested service or log file does not exist, a 404 Not Found error will be returned. This can be observed in the API response.
+  - Mitigations: Users should verify the service name or log file path exists on the node. On Linux, use `systemctl list-units` to see available services. Check `/var/log/` for available log files.
+  - Diagnostics: The error response will indicate "No such file or directory" or "Unit not found" depending on the underlying system.
+  - Testing: E2E tests include negative test cases for non-existent services.
+
+- [Permission denied accessing logs]
+  - Detection: If the kubelet process does not have permissions to read the requested logs, a permission error will be returned (typically HTTP 500 or 403).
+  - Mitigations: Ensure the kubelet runs with appropriate permissions to access system logs. On Linux systems with journald, the kubelet should be able to run journalctl. On Windows, the kubelet should have access to event logs.
+  - Diagnostics: Kubelet logs will show permission denied errors. Check kubelet process permissions and SELinux/AppArmor policies if applicable.
+  - Testing: Not explicitly tested in e2e tests, but covered through operational deployment testing.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+If log queries are failing or timing out frequently:
+
+1. Check kubelet health and resource usage (CPU, memory) on the affected nodes
+2. Review kubelet logs for errors related to log query operations
+3. Verify that the requested services/log files exist on the nodes
+4. Check if log files are exceptionally large - consider using time filters or pattern matching to reduce query scope
+5. Monitor the `kubelet_http_requests_total` metric filtered by the /logs endpoint to identify error rates
+6. Verify that the `NodeLogQuery` feature gate and `enableSystemLogQuery` configuration option are properly enabled
+7. Test with a simple query (e.g., querying kubelet logs from a recent time period) to isolate whether the issue is query-specific or systemic
 
 ## Implementation History
 
@@ -382,3 +463,8 @@ Alternatively we could use a client side reader on the nodes to redirect the
 logs. The Windows side would require privileged container support. However this
 would not help scenarios where containers are not launching successfully on the
 nodes.
+
+## Infrastructure Needed (Optional)
+
+No additional infrastructure is needed for this enhancement beyond the existing Kubernetes testing infrastructure.
+
