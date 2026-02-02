@@ -323,8 +323,8 @@ intent directed at that interceptor:
 1. It can decline the interception of the eviction request and wait for the pod to be intercepted by
    another interceptor or evicted by the eviction request controller.
 2. It can do nothing and wait for the pod to be intercepted by another interceptor or evicted by the
-   eviction request controller. This is discouraged because it is slower
-   (see `.spec.heartbeatDeadlineSeconds`) than a simply declining the interception.
+   eviction request controller. This is discouraged because the heartbeat has to timeout out after
+   30 minutes. It is therefore better to simply decline the interception.
 3. It can start the eviction logic and periodically respond to the eviction request intent to signal
    that the eviction request is in progress and not stuck. The eviction logic is at the discretion
    of the interceptor and can take many forms:
@@ -499,8 +499,6 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
 - `.spec.target.podRef` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
-- `.spec.heartbeatDeadlineSeconds` should be set to a reasonable value. It is recommended to leave
-  it at the default value of 1800 (30m) to allow for potential interceptor disruptions.
 - `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation.
 - `.spec.interceptors` value will be resolved on the EvictionRequest admission from the pod's
   `.spec.evictionInterceptors and must not be set by the requester. This is done to ensure the
@@ -575,14 +573,14 @@ condition in `.status.conditions`.
 
 If the interceptor is not interested in intercepting/evicting the pod anymore, it should set
 `.status.activeInterceptorCompleted=true`. If the interceptor is unable to respond to the eviction
-request, the `.spec.heartbeatDeadlineSeconds` will time out and control of the eviction process will
+request, the interception will time out after 30 minutes and control of the eviction process will
 be passed to the next interceptor at the higher list index. If there is none, the pod will get
 evicted by the eviction request controller.
 
-If the interceptor is interested in intercepting/evicting the pod it should look at
-`.spec.heartbeatDeadlineSeconds` and make sure to update the status periodically in less than that
-duration. For example, if `.spec.heartbeatDeadlineSeconds` is set to the default value of 1800 (30m),
-it may update the status every 3 minutes. The status updates should look as follows:
+If the interceptor is interested in intercepting/evicting the pod it should ensure to update the
+EvictionRequest status periodically at intervals of less than 30 minutes. Therefore, updating the
+status every 3 minutes may be sufficient to allow for potential disruption of the interceptor. The
+status updates should look as follows:
 - Verify that it supports the `.spec.type`. Please note that the only supported eviction request
   type is `Soft` for now.
 - Verify that the `.spec.target` is the desired target (e.g., there is a correct pod in the
@@ -638,7 +636,7 @@ interceptor from `.spec.interceptors` and sets its `name` to the
 `.status.activeInterceptorName`.
 
 If `.status.activeInterceptorCompleted` is true and the pod exists
-or `.spec.heartbeatDeadlineSeconds` has elapsed since `.status.heartbeatTime`, then the eviction
+or 30 minutes has elapsed since `.status.heartbeatTime`, then the eviction
 request controller sets `status.activeInterceptorName` to the next interceptor at the higher list
 index from `.spec.interceptors`. During the switch to the new interceptor, the eviction request
 controller will also
@@ -656,7 +654,7 @@ Pods that are unable to be terminated:
 - EvictionRequest's `.status.activeInterceptorName` field is empty.
 - EvictionRequest's `.status.activeInterceptorCompleted` field is true and there is no other
   interceptor to select.
-- EvictionRequest's `.spec.heartbeatDeadlineSeconds` has elapsed since
+- 30 minutes has elapsed since EvictionRequest's
   `.status.heartbeatTime` or from `.metadata.creationTimestamp` if
   `.status.heartbeatTime` is nil.
 
@@ -680,6 +678,12 @@ type PodSpec struct {
 	// Interceptors should observe and communicate through the EvictionRequest API to help with
 	// the graceful termination of a pod. The interceptors are selected sequentially, in the order
 	// in which they appear in the list.
+    //
+	// Interceptors should periodically report on an eviction progress by updating the
+	// .status.heartbeatTime field of the EvictionRequest object. If this field is not updated
+	// within 30 minutes, the eviction request is passed over to the next interceptor at a higher
+	// index. If there is none and if the target is a pod, it is evicted using the imperative
+	// Eviction API.
 	//
 	// The maximum length of the interceptors list is 100.
 	// Interceptors are not supported when the pod is part of a workload (.spec.workloadRef is set).
@@ -727,8 +731,8 @@ type EvictionRequestSpec struct {
 	// 
 	// Soft type attempts to evict the target gracefully.
 	// Each active interceptor is given unlimited time to resolve the eviction request, provided
-	// that it responds periodically (see .spec.heartbeatDeadlineSeconds). This means there is no
-	// deadline for a single interceptor, or for the eviction request as a whole.
+	// that it responds periodically within a timeframe of less than 30 minutes. This means there is
+	// no deadline for a single interceptor, or for the eviction request as a whole.
 	//
 	// For pod targets, the eviction request controller will call the /evict API endpoint when
 	// there are no more interceptors. This call may not succeed due to PodDisruptionBudgets, which
@@ -771,6 +775,11 @@ type EvictionRequestSpec struct {
 	// the graceful eviction of a target (e.g. termination of a pod). The interceptors are selected
 	// sequentially, in the order in which they appear in the list.
 	//
+	// Interceptor should periodically report on an eviction progress by updating the
+	// .status.heartbeatTime field. If this field is not updated within 30 minutes, the eviction
+	// request is passed over to the next interceptor at a higher index. If there is none and if the
+	// target is a pod, it is evicted using the imperative Eviction API.
+	//
 	// This field must not be set upon creation. Instead, it is resolved when the EvictionRequest
 	// object is created upon admission. The field is populated from Pod's
 	// .spec.evictionInterceptors.
@@ -783,19 +792,6 @@ type EvictionRequestSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=interceptors"`
-
-	// HeartbeatDeadlineSeconds is a maximum amount of time that an interceptor should take to
-	// periodically report on an eviction progress by updating the .status.heartbeatTime.
-	// If the .status.heartbeatTime is not updated within the duration of
-	// HeartbeatDeadlineSeconds, the eviction request is passed over to the next interceptor at a
-	// higher index. If there is none and if the target is a pod, it is evicted using the Eviction
-	// API.
-	//
-	// The minimum value is 900 (15m) and the maximum value is 86400 (24h).
-	// The default value is 1800 (30m).
-	// This field is required and immutable.
-	// +required
-	HeartbeatDeadlineSeconds *int32 `json:"heartbeatDeadlineSeconds" protobuf:"varint,5,opt,name=heartbeatDeadlineSeconds"`
 }
 
 
@@ -805,8 +801,8 @@ type EvictionRequestType string
 const (
     // Soft type attempts to evict the target gracefully.
 	// Each active interceptor is given unlimited time to resolve the eviction request, provided
-	// that it responds periodically (see .spec.heartbeatDeadlineSeconds). This means there is no
-	// deadline for a single interceptor, or for the eviction request as a whole.
+	// that it responds periodically within a timeframe of less than 30 minutes. This means there is
+	// no deadline for a single interceptor, or for the eviction request as a whole.
 	//
 	// For pod targets, the eviction request controller will call the eviction API endpoint when
 	// there are no more interceptors. This call may not succeed due to PodDisruptionBudgets, which
@@ -1037,7 +1033,7 @@ eviction request controller. To strengthen the validation, we should check that 
 set only the index 0 interceptor from the interceptor list in the beginning. After that, it is
 possible to set only the next interceptor at a higher index and so on. We can also condition this
 transition according to the other fields. `.status.activeInterceptorCompleted` should be true or
-`.status.heartbeatTime` has exceeded the deadline.
+`.status.heartbeatTime` has exceeded the 30-minute deadline.
 
 `.status.evictionRequestCancellationPolicy` is defaulted to `Allow` on creation. Its resolution
 should then be left to interceptors.
@@ -1075,22 +1071,6 @@ subsequent changes to this field to ensure the predictability of the eviction re
 example, this allows requesters to predict which pods have which interceptors, if any. Also, late
 registration of the interceptor could go unnoticed and be preempted by the eviction request
 controller, resulting in the premature eviction of the pod.
-
-`.spec.heartbeatDeadlineSeconds` could be made mutable, but we choose not to do that to make the
-integration easier on the interceptor side. That is, if the interceptor observes the deadline it can
-rely on it in its eviction process. It would be much harder to ensure correct update behavior if the
-deadline is mutable.
-
-The disadvantage of the immutability is that once the EvictionRequest is created, the eviction
-requester cannot change its decision. The deadline cannot be changed even when the EvictionRequest
-changes its requester, e.g. from node maintenance controller to descheduler. We must either use
-similar deadline values in all requester components, or be okay with different deadlines set by
-other components in the same EvictionRequest instance.
-
-It would be also possible, not to have these fields at all and just declare a global deadline that
-the clients have to meet. But it would be hard to ever change these values in the future. Compared
-to updating a smaller number of eviction requesters, when a better deadline value is agreed upon.
-The validation also ensures that the interval of values that can be set is reasonable.
 
 ### EvictionRequest Process
 
@@ -1518,6 +1498,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   `.status.completedInterceptors` field instead of `.status.activeInterceptorCompleted`.
   Alternatively introduce `.status.interceptors` field to contain all the interceptor controller
   fields.
+- Consider introducing tge `.spec.heartbeatDeadlineSeconds` field to allow for customization of how
+  long a non-cooperating interceptor can take before proceeding to the next one. Lower values would
+  improve the responsiveness of the system, while higher values would increase the workload's safety
+  when the interceptor is disrupted.
 
 #### Beta
 
