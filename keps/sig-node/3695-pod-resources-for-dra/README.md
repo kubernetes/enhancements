@@ -47,7 +47,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -286,10 +286,10 @@ Other improvements are addressed in:
 
 #### GA
 
-- [ ] Allowing time for feedback (1 year).
-- [ ] Risks have been addressed.
-- [ ] Add explicit feature enablement/disablement tests, before the feature is turned on by default.
-- [ ] Additional test cases are needed to verify Get() behavior in diverse scenarios
+- [x] Allowing time for feedback (1 year).
+- [x] Risks have been addressed.
+- [x] Add explicit feature enablement/disablement tests, before the feature is turned on by default.
+- [x] Additional test cases are needed to verify Get() behavior in diverse scenarios
   - Pods with multiple containers.
   - Pods that do not use any exclusive resources.
   - Comparison of List() and Get() on returned pods to validate consistency.
@@ -469,6 +469,8 @@ Check the kubelet logs to learn about resource allocation errors.
 - 2024-09-10: KEP Updated to reflect the current state of the implementation.
 
 - 2025-05-27: Beta version of the KEP.
+
+- 2026-02-02: KEP GA updates.
 
 ## Drawbacks
 
