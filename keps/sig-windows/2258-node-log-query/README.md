@@ -23,6 +23,7 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -37,6 +38,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -48,10 +50,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -259,16 +261,53 @@ for querying the logs more elegantly instead of using raw API calls.
 
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.32 time frame at which point
+The plan is to graduate the feature to stable (GA) in the v1.36 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 
+**GA Requirements met:**
+- Feature has been stable in Beta for at least 2 releases (v1.30, v1.31)
+- No outstanding critical bugs or regressions reported
+- Comprehensive e2e test coverage for all supported platforms (Linux and Windows)
+- User feedback incorporated from Beta usage
+- Documentation complete and reviewed
+- Performance validated under production workloads
+- Upgrade/downgrade paths tested and documented
+- API stability confirmed (no breaking changes planned)
+- All GA e2e tests meet requirements for Conformance Tests
+- Minimum two week window for GA e2e tests to prove flake free
+
 ### Upgrade / Downgrade Strategy
+
+**Upgrade:**
+- When upgrading to a version with this feature enabled, no changes are required to maintain previous behavior if the feature gate is not explicitly enabled.
+- To make use of the enhancement after upgrade, enable the `NodeLogQuery` feature gate and `enableSystemLogQuery` kubelet configuration option.
+- The feature is backward compatible - nodes without the feature can coexist with nodes that have it enabled.
+
+**Downgrade:**
+- When downgrading from a version with this feature to an older version, the feature will simply become unavailable.
+- No data migration or cleanup is required as the feature does not persist any state.
+- Existing workloads are not affected by enabling or disabling this feature.
+
+Testing has been performed covering upgrade/downgrade scenarios as documented in the "Rollout, Upgrade and Rollback Planning" section.
 
 ### Version Skew Strategy
 
-If the API call is made against a kubelet that does not support the new feature,
-a 404 will be returned.
+This feature is kubelet-only and does not involve coordination between control plane components and nodes in terms of feature functionality.
+
+**Kubelet version skew:**
+- If the API call is made against a kubelet that does not support the new feature (older version), a 404 will be returned.
+- Newer kubelet with the feature enabled can coexist with older kubelet without the feature in the same cluster.
+- The feature does not affect pod scheduling, networking, or any other cluster operations.
+
+**Control plane version skew:**
+- This feature does not introduce any new APIs at the API server level.
+- The feature uses the existing kubelet proxy endpoint (`/api/v1/nodes/{node}/proxy/logs/`).
+- No changes are required to kube-apiserver, kube-controller-manager, or kube-scheduler.
+
+**kubectl version skew:**
+- The feature can be accessed using `kubectl get --raw` with any kubectl version.
+- A dedicated [kubectl plugin](https://github.com/kubernetes-sigs/krew-index/blob/master/plugins/node-logs.yaml) is available for improved user experience but is not required.
 
 ## Production Readiness Review Questionnaire
 
@@ -365,7 +404,7 @@ Currently, the feature relies on existing kubelet HTTP metrics. Additional metri
 - A metric for the size of logs returned
 - A metric for rate-limited or rejected requests
 
-These metrics were not added to minimize the footprint of the feature, but could be considered based on user feedback during the beta phase.
+These metrics were not added to minimize the footprint of the feature.
 
 ### Dependencies
 
@@ -454,6 +493,7 @@ If log queries are failing or timing out frequently:
 - Updated on Dec 13th, 2022
 - Updated on May 2nd, 2023
 - Updated on Feb 5th, 2024
+- Updated on Feb 2th, 2026: KEP updated to GA
 
 ## Drawbacks
 
