@@ -1135,7 +1135,7 @@ Impact on existing pods with `SemverGt`/`SemverLt`/`SemverEq` operators when fea
    - These pods will remain in Pending state with events indicating untolerated taints
 
 3. **New pod creation**: 
-   - API server validation will **reject** new pods with Gt/Lt operators
+   - API server validation will **reject** new pods with `SemverGt`, `SemverLt`, or `SemverEq` operators for both Tolerations and Affinity rules.
    - Error in case of tolerations: `spec.tolerations[].operator: Unsupported value: "SemverGt": supported values: "Equal", "Exists"`
    - Error in case of affinity: `spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator: Invalid value: "SemverEq": not a valid selector operator`
 
@@ -1224,7 +1224,6 @@ No.
 2. **API Queries**:
 
    ```bash
-   # Check for pods with numeric toleration operators
    kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="SemverGt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
    kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="SemverLt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
    kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="SemverEq")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
