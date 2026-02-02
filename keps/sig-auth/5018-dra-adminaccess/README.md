@@ -473,6 +473,8 @@ ResourceClaimTemplate and ResourceClaim for admin access
 
 #### GA
 - 1 example of real-world usage
+1. Kubernetes DRA example driver with DRAAdminAccess support in https://github.com/kubernetes-sigs/dra-example-driver/pull/112
+2. NVIDIA DRA driver with DRA admin access integration: https://github.com/NVIDIA/k8s-dra-driver-gpu/pull/817
 - Allowing time for feedback
 - All issues and gaps identified as feedback during beta are resolved
 **Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
