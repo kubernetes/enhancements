@@ -417,23 +417,17 @@ to implement this enhancement.
 
 ##### Integration tests
 
-Tests already implemented:
+Tests:
 [test/integration/scheduler/nominated_node_name](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler/nominated_node_name) : [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=nominated_node_name) , [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=Test_PutNominatedNodeNameInBindingCycle)
 
 Covering scenarios:
 - scheduler sets NNN before PreBind and WaitOnPermit, and does not set NNN when PreBind and Permit phases are skipped for the pod
-
-More tests are WIP https://github.com/kubernetes/kubernetes/pull/133215
-
-We're going to add these integration tests:
 - The scheduler prefers to picking up nodes based on NominatedNodeName on pods, if the nodes are available.
 - The scheduler ignores NominatedNodeName reservations on pods when it's scheduling higher priority pods.
 - The scheduler overwrites NominatedNodeName when it performs the preemption, or when it finds another spot in another node and proceeding to the binding cycle (assuming there's a PreBind plugin).
 - And, the scheduler (actually kube-apiserver, when receiving a binding request) clears NominatedNodeName when the pod is actually bound.
 
-Also, with [scheduler-perf](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf), we'll make sure the scheduling throughputs for pods that go through Permit or PreBind don't get regress too much.
-We need to accept a small regression to some extent since there'll be a new API call to set NominatedNodeName. 
-But, as discussed, assuming PreBind already makes some API calls for the pods, the regression there should be small.
+Also [scheduler-perf](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf) was used to verify that the change did not impact scheduling throughput.
 
 ##### e2e tests
 
@@ -542,7 +536,7 @@ there'll be nothing behaving wrong in the scheduling flow, see [Version Skew Str
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-We will do the following manual test after implementing the feature:
+The following manual test has been executed after implelemting the feature.
 
 1. upgrade
 2. request scheduling of a pod that will need a long preBinding phase (e.g. uses volumes)
@@ -579,7 +573,7 @@ and also what types of scheduler customization you add.
 
 So, here we just give a hint of a reasonable SLO, you need to adjust it based on your cluster's usual behaviors.
 
-In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)), and this feature shouldn't bring any regression there.
+In the default scheduler, we should see the throughput around 100-150 pods/s ([ref](https://perf-dash.k8s.io/#/?jobname=gce-5000Nodes&metriccategoryname=Scheduler&metricname=LoadSchedulingThroughput&TestName=load)). This feature does not bring any regression there.
 
 Based on that: 
 - `schedule_attempts_total` shouldn't be less than 100 in a second.
