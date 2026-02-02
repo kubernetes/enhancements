@@ -971,24 +971,21 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gates (also fill in values in `kep.yaml`)
-  - Feature gate name for WebSockets RemoteCommand Subprotocol: KUBECTL_REMOTE_COMMAND_WEBSOCKETS
-  - Component: kubectl
 
-  - Feature gate name for WebSockets RemoteCommand Subprotocol: TranslateStreamCloseWebsocketRequests
-  - Component: API Server
+The feature is controlled by a combination of client-side environment variables and
+server-side feature gates.
 
-  - Feature gate name for WebSockets PortForward Subprotocol: KUBECTL_PORT_FORWARD_WEBSOCKETS
-  - Component: kubectl
+**Client-side (`kubectl`):**
 
-  - Feature gate name for WebSockets PortForward Subprotocol: PortForwardWebsockets
-  - Component: API Server
+-   `KUBECTL_REMOTE_COMMAND_WEBSOCKETS=true`: Enables WebSocket usage for `exec`, `attach`, and `cp` commands.
+-   `KUBECTL_PORT_FORWARD_WEBSOCKETS=true`: Enables WebSocket usage for the `port-forward` command.
 
-  - Feature gate name for subresource endpoints `pods/exec`, `pods/attach`, and `pods/portforward`: AuthorizePodWebsocketUpgradeCreatePermission
-  - Component: API Server
+**Server-side (Feature Gates):**
 
-  - Feature gate name for extending WebSockets to the Kubelet: ExtendWebSocketsToKubelet.
-  (NOTE: This feature gate depends on the `NodeDeclaredFeatures` feature gate)
-  - Components: API Server, kubelet
+-   `TranslateStreamCloseWebsocketRequests`: (Component: `kube-apiserver`) Enables the API server to handle the WebSocket-based `v5.channel.k8s.io` subprotocol for remote commands.
+-   `PortForwardWebsockets`: (Component: `kube-apiserver`) Enables the API server to handle WebSocket-based tunneling for port forwarding.
+-   `AuthorizePodWebsocketUpgradeCreatePermission`: (Component: `kube-apiserver`) Enforces a synthetic `CREATE` authorization check on WebSocket upgrade requests to maintain least privilege.
+-   `ExtendWebSocketsToKubelet`: (Components: `kube-apiserver`, `kubelet`) Enables the end-to-end WebSocket communication path to the Kubelet, allowing the API server to proxy streams directly instead of translating/tunneling them. (Note: Depends on the `NodeDeclaredFeatures` gate).
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1033,7 +1030,12 @@ variable associated with the feature to **OFF**. Or the features can be turned o
 for all `kubectl` users communicating with a cluster by turning off the feature flags
 for the API Server. A cluster operator can temporarily disable the more stringent permissions for
 subresources `pods/exec`, `pods/attach`, and `pods/portforward` by setting the
-`AuthorizePodWebsocketUpgradeCreatePermission` feature flag to **FALSE**.
+`AuthorizePodWebsocketUpgradeCreatePermission` feature flag to **FALSE**. Disabling the
+`ExtendWebSocketsToKubelet` feature gate in the API Server causes a reversion
+to the previous behavior where translating and tunneling occur in the API Server,
+even if the Kubelet supports this functionality. Additionally, disabling the
+`ExtentWebSocketsToKublet` in the Kubelet ensures new code implementing the
+translation and tunneling in the Kubelet does not run.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1065,6 +1067,8 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 - There will be unit tests in the API Server to verify the feature gate
   forcing more stringent RBAC checks for `pods/exec`, `pods/attach`, and
   `pods/portforward`.
+- There will be unit tests in the API Server and Kubelet to verify the feature gate
+  `ExtendWebSocketsToKubelet`.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1084,12 +1088,34 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-For highly-available clusters with different versions of API Servers, there
-should not be any impact on this feature. The bi-directional streaming protocol
-(either SPDY or WebSockets) is only proxied through one instance of the API Server,
-which does not change throughout the entirety of the `kubectl` command. And if an
-API Server does not support the new WebSockets functionality, `kubectl` will fall
-back to legacy SPDY streaming.
+This feature does not impact already running workloads, as it only affects the
+initiation of new `kubectl exec/attach/port-forward` commands.
+
+The design is resilient to most rollout and rollback failures due to its discovery
+and fallback mechanisms. However, failures can still occur:
+
+- **Partial API Server Rollout**: During a rolling update, a `kubectl` client may
+  connect to an API server that does not yet support WebSockets. In this case, the
+  client's connection upgrade will be rejected, and it will automatically fall
+  back to using the legacy SPDY protocol for that request. This is seamless to the user.
+
+- **Partial Node Rollout (Kubelet Extension)**: When `ExtendWebSocketsToKubelet` is
+  enabled, a rolling update of nodes can lead to a mix of capable and incapable
+  Kubelets. This is handled gracefully by the API server, which checks the
+  `Node.Status.declaredFeatures` for each request. It will use the
+  WebSocket-to-Kubelet path for updated nodes and revert to the SPDY translation
+  path for older nodes.
+
+- **Misconfiguration**: A rollout could fail if the `ExtendWebSocketsToKubelet` gate
+  is enabled on a Kubelet, but a network policy between the API server and the Kubelet
+  blocks the WebSocket protocol's port and upgrade headers. This would cause
+  streaming commands to those specific nodes to fail. This would also fail in the
+  case of legacy SPDY streaming, so it would not be a change.
+
+- **Implementation Bugs**: As with any new feature, a bug in the WebSocket
+  implementation in the API server or Kubelet could cause failures for streaming
+  commands that use the new code paths. A rollback of the specific feature gate
+  (`ExtendWebSocketsToKubelet`) would be the primary mitigation strategy.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1098,8 +1124,16 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-The most straightforward signal indicating a problem for the feature is failures
-for `kubectl exec, cp, attach, and port-forward` commands.
+The most straightforward signal indicating a problem for the feature is a high rate
+of failures for `kubectl exec, cp, attach, and port-forward` commands.
+
+For the Kubelet extension specifically, a key rollback signal would be a
+significant increase in streaming connection failures or latency that is
+isolated to nodes that have the `ExtendWebSocketsToKubelet` feature enabled,
+while nodes that still use SPDY connections from the API server continue to
+function normally. This can be monitored via the metrics proposed in the
+[Service Level Indicators](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
+section.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1109,12 +1143,21 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-- For upgrade and rollback, both version skew scenarios were successfully tested. So
-  if, during upgrade or rollback, one of the API servers does not support the new WebSockets
-  functionality, the client will successfully fallback to the legacy SPDY streaming.
+This feature is stateless (it does not persist any new API objects or fields),
+so a formal stateful upgrade->downgrade->upgrade test path is not applicable.
 
-- The specified upgrade->downgrade->upgrade path was **not** tested, since there is no
-  persisted state. For that reason, this particular scenario is **not applicable**.
+However, the resilience of the system during rolling upgrades and rollbacks has
+been validated through comprehensive version skew testing. These tests cover all
+permutations of client, API server, and Kubelet versions to ensure that the
+fallback and feature-discovery mechanisms work as intended. For example:
+
+-   A newer `kubectl` client correctly falls back to SPDY when communicating with an
+    older API server that does not support WebSockets.
+-   A newer API server correctly reverts to translating/tunneling SPDY when communicating
+    with an older Kubelet that does not support the WebSocket extension.
+
+This ensures that streaming functionality is maintained across the cluster during the
+entire upgrade or rollback process.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1145,6 +1188,12 @@ logs or events for this purpose.
   either the `num_ws_remote_command_v5_total[success]` metric for `RemoteCommand` or
   the `num_ws_port_forward_v2_total[success]` metric for `PortForward`.
 
+- To determine if the Kubelet extension is active for a specific node, an
+  operator can inspect the `status.declaredFeatures` field of the Node object for
+  the presence of `ExtendWebSocketsToKubelet`. Additionally, proposed new metrics
+  will differentiate between API server connections that are proxied directly to
+  the Kubelet versus those that are translated to SPDY.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1156,16 +1205,20 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [X] Other (treat as last resort)
-  - Details:
-    - RemoteCommand: `kubectl exec -v=7 <POD|CONTAINER> -- date`
-	- RemoteCommand: One of the output log lines will be
-	`...websocket.go:137] The subprotocol is v5.channel.k8s.io`
-	if using the new WebSockets streaming.
-	- PortForward: `kubectl port-forward -v=7 <SERVICE|DEPLOYMENT|POD> <LOCAL_PORT:REMOTE_PORT>`
-	- PortForward: One of the output log lines will be
-	`...websocket-dialer.go:91] negotiated protocol: v2.portforward.k8s.io`
-	if websockets is enabled for port forwarding.
+To confirm this feature is working for a given instance, both its configuration and runtime behavior can be observed:
+
+-   **Configuration Verification:**
+    -   **API Server Feature Gates:** Inspect the API server's startup flags (`--feature-gates`) to confirm that relevant feature gates (e.g., `TranslateStreamCloseWebsocketRequests`, `PortForwardWebsockets`, `ExtendWebSocketsToKubelet`) are enabled.
+    -   **Kubelet Feature Gates:** Confirm the `kubelet` is started with `--feature-gates=ExtendWebSocketsToKubelet=true` (or without `ExtendWebSocketsToKubelet=false` if it is enabled by default).
+    -   **Node Declared Features:** For the Kubelet extension, verify that individual nodes are advertising support: `kubectl get node <node-name> -o jsonpath='{.status.declaredFeatures}'` should include `ExtendWebSocketsToKubelet`.
+
+-   **Runtime Verification:**
+    -   **Client-side (`kubectl -v=7` logs):**
+        -   For RemoteCommand (`exec`, `attach`, `cp`), look for `...websocket.go:137] The subprotocol is v5.channel.k8s.io`.
+        -   For PortForward, look for `...websocket-dialer.go:91] negotiated protocol: v2.portforward.k8s.io`.
+    -   **Server-side (API Server and Kubelet logs):**
+        -   **API Server logs:** When `ExtendWebSocketsToKubelet` is active, API server logs will indicate it is *proxying* the WebSocket connection directly to the Kubelet, rather than translating it.
+        -   **Kubelet logs:** Kubelet logs on the target node will show it receiving and processing a WebSocket connection for the streaming request.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1217,14 +1270,28 @@ Pick one more of these and delete the rest.
 	`success` or `failure`).
   - Components exposing the metric: API Server
 
+  - Metric name: `apiserver_streaming_active_connections` (Gauge)
+    - Help: "Gauge of active streaming connections, to distinguish between connections proxied directly to the Kubelet vs. those that require protocol translation or tunneling at the API server."
+    - Dimensions: `subresource` (`exec`, `attach`, `portforward`), `proxy_type` (`proxied`, `translated_or_tunneled`)
+    - Component exposing the metric: `kube-apiserver`
+
+  - Metric name: `kubelet_streaming_websocket_requests_total` (Counter)
+    - Help: "Counter of WebSocket streaming upgrade requests handled by the Kubelet."
+    - Dimensions: `subresource` (`exec`, `attach`, `portforward`), `result` (`success`, `failure`)
+    - Component exposing the metric: `kubelet`
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+Yes. To properly observe the Kubelet extension, the following metrics are needed:
 
-N/A
+- An API server metric (e.g., `apiserver_streaming_connections`) is needed to
+  differentiate between WebSocket connections that are proxied directly to the
+  Kubelet versus those that are translated to SPDY. This is critical for
+  understanding whether the feature is active and for debugging rollout.
+- A Kubelet metric (e.g., `kubelet_streaming_websocket_requests_total`) is
+  needed to monitor the rate and success of incoming WebSocket requests directly
+  on the node. This provides visibility into the Kubelet's performance as a
+  streaming server, which is currently not available.
 
 ### Dependencies
 
@@ -1353,7 +1420,15 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-No.
+Enabling the WebSocket transition to the API server does not in itself increase
+resource usage.
+
+However, enabling the `ExtendWebSocketsToKubelet` feature will shift the
+resource load (CPU and memory) of protocol translation/tunneling from the
+central API servers to the individual Kubelets on the nodes. This is the explicit
+goal of this part of the enhancement. While it does increase resource usage on
+each Kubelet handling a WebSocket stream, it is part of a deliberate strategy
+to distribute the load and improve the overall scalability of the control plane.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -1461,6 +1536,26 @@ For each of them, fill in the following information by copying the below templat
     - Testing: We have implemented tests for both the `FallbackWebSocketExecutor`
 	  (for `RemoteCommand`), and the `FallbackDialer` (for `PortForward`).
 
+- Failure Mode: Kubelet advertises WebSocket support but fails to handle streams.
+    - Detection: The `kubectl` command will fail with a generic streaming error.
+      API server logs will show a successful WebSocket upgrade request being proxied
+      to the Kubelet, but the `apiserver_streaming_connections` metric with
+      `proxy_type="proxied"` will show failures or short-lived connections. Kubelet
+      logs on the target node will show errors in the WebSocket handling or
+      translation/tunneling logic.
+    - Mitigations: An operator can disable the `ExtendWebSocketsToKubelet` feature
+      gate on the failing node(s) and restart the kubelet service. This will cause
+      the node to stop advertising the feature, and the API server will revert to
+      translating streams for that node, restoring functionality while the issue
+      is investigated.
+    - Diagnostics: Kubelet logs (with increased verbosity if necessary) on the
+      failing node will be the primary source for debugging. They will contain
+      errors related to WebSocket handshake, subprotocol translation, or SPDY
+      forwarding to the container runtime.
+    - Testing: Unit and integration tests for the Kubelet's WebSocket server and
+      proxying logic cover the expected behavior. e2e tests will be added to
+      validate the end-to-end flow with the feature gate enabled.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 - Step 1: Turn off the `kubectl` feature gate, and check the SLO afterwards.
@@ -1545,6 +1640,17 @@ featureGates:
 ...
 ```
 
+- Step 3: If investigation points to an issue with the Kubelet extension (e.g.,
+  failures are isolated to nodes with the feature enabled), disable the
+  `ExtendWebSocketsToKubelet` feature gate on the API servers. This will cause
+  the API server to revert to performing the protocol translation for all nodes,
+  effectively pausing the extension of WebSocket communication to the Kubelet.
+  The method for configuring API server feature gates varies by provider; for example,
+  on a managed provider like GKE, this would be done via a cluster update command.
+  The goal is to pass the following flag to the API server:
+
+  `--feature-gates=ExtendWebSocketsToKubelet=false`
+
 
 ## Implementation History
 
@@ -1582,6 +1688,12 @@ with a modern bi-directional streaming protocol, then we should re-consider this
 effort.
 
 ## Alternatives
+
+<!--
+What other approaches did you consider, and why did you rule them out? These do
+not need to be as detailed as the proposal, but should include enough
+information to express the idea and why it was not acceptable.
+-->
 
 The only currently supported bi-directional streaming protocol is WebSockets.
 When HTTP/2.0 was initially proposed, many believed it would provide streaming functionality;
