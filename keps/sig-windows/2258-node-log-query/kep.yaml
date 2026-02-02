@@ -40,3 +40,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - kubelet_http_requests_total
