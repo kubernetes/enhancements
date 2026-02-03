@@ -35,8 +35,3 @@ feature-gates:
       - kube-apiserver
       - kube-scheduler
 disable-supported: true
-
-# The following PRR answers are required at beta release
-metrics:
-  - scheduler_framework_extension_point_duration_seconds
-  - scheduler_plugin_evaluation_total
