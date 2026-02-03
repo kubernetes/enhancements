@@ -592,6 +592,7 @@ There is no runtime behavior change associated with this KEP.
 * 2020: gogo / golang/protobuf incompatibilities stall dependency updates, panic etcd libraries, get resolved in a best-effort way
 * 2021-2022: gogo transitions to deprecated / unmaintained
 * v1.35: This KEP proposed
+* v1.35: code-generator updated to remove runtime dependencies from generated code ([#134256](https://github.com/kubernetes/kubernetes/pull/134256))
 
 ## Drawbacks
 
