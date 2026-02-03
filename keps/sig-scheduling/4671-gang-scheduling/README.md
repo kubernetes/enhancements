@@ -579,10 +579,11 @@ this will address requirement (5).
 
 #### The Workload Scheduling Cycle
 
-We introduce a new phase in the main scheduling loop (`scheduleOne`). In the
-end-to-end Pod scheduling flow, it is planned to place this new phase instead of
-the standard pod-by-pod scheduling cycle. When the loop pops a `PodGroup` from
-the active queue, it initiates the Workload Scheduling Cycle.
+We introduce a new phase in the main scheduling loop (`scheduleOne`).
+This phase replaces the standard pod-by-pod scheduling cycle for all Pods
+belonging to a `PodGroup`. This means that these individual Pods do not enter
+the standard scheduling queue for independent processing. Instead, when the loop pops a
+`PodGroup` from the active queue, it initiates the Workload Scheduling Cycle.
 
 Since the `PodGroup` instance (defined by the group name and replica key)
 is the effective scheduling unit, the Workload Scheduling Cycle will operate
@@ -601,9 +602,8 @@ while the previous attempt hasn't finished yet.
 The cycle proceeds as follows:
 
 1. The scheduler takes pod group from the scheduling queue.
-   If the pod group is unscheduled (even partially), it temporarily removes
-   all group's pods from the queue for processing. The order of processing
-   is determined by the queueing mechanism (see *Queuing and Ordering* below).
+   The retrieved object contains the list of all pending pods belonging to this group.
+   The order of processing is determined by the queueing mechanism (see *Queuing and Ordering* below).
    
 2. A single cluster state snapshot is taken for the entire group operation
    to ensure consistency during the cycle.
@@ -613,8 +613,7 @@ The cycle proceeds as follows:
 
 4. Outcome:
    * If the group (i.e., at least `minCount` Pods) can be placed,
-     these Pods proceed directly to the pod-by-pod binding cycle with their selected nodes.
-     these Pods proceed to the binding bycle with their selected nodes.
+     these Pods proceed directly to the binding bycle with their selected nodes.
    * In case preemption is required, the PodGroup is moved back to the scheduling queue
      to wait for the preemption to take effect. This requires a subsequent
      Workload Scheduling Cycle to verify that the released resources make the placement feasible.
@@ -646,7 +645,7 @@ The queue will support queuing `PodGroup` instances alongside individual Pods.
     is not yet present in the scheduling queue, it is created and enqueued.
     This object will have an aggregated `PreEnqueue` check, evaluating conditions for all its members.
     Crucially, the individual Pods themselves are **not** stored in any standard scheduling queue
-    data structure (active, backoff, or unschedulable) at this stage, but they are effectively managed
+    data structure (active, backoff, or unschedulable), but they are effectively managed
     via the `QueuedPodGroupInfo`.
 
 2. Once the number of accumulated Pods meets the scheduling requirements (e.g., `minCount`),
