@@ -329,33 +329,33 @@ A new feature gate `TolerationAffinitySemverOperators` will be added to the list
 
 ### 3. API Validation
 
-1. **Toleration Validation** (located in `pkg/apis/core/validation/validation.go`):
+1. **Toleration Validation**:
   - A new validation case is added to toleration validation when `SemverGt`, `SemverLt`, or `SemverEq` is used while the feature gate `TolerationAffinitySemverOperators` is enabled.
   - The validation uses `semver.ParseTolerant` to non-strictly parse the version value; if parsing fails, a validation error is appended.
   - If a semver operator is used when the feature gate is disabled, the operator is reported as unsupported.
 
-2. **Pod NodeAffinity Validation** (located in `pkg/apis/core/validation/validation.go`):
+2. **Pod NodeAffinity Validation**:
   - A new validation case is added to NodeAffinity when `SemverGt`, `SemverLt`, or `SemverEq` is used while the feature gate `TolerationAffinitySemverOperators` is enabled.
   - If the values are empty or more than one value is specified in `NodeSelectorRequirement`, validation fails.
   - If exactly one value is specified, the validation uses `semver.ParseTolerant` to non-strictly parse the version value; if parsing fails, a validation error is appended.
 
-3. **PersistentVolume NodeAffinity Validation** (located in `pkg/apis/core/validation/validation.go`):
+3. **PersistentVolume NodeAffinity Validation**:
   - The feature gate `TolerationAffinitySemverOperators` value is passed to the PersistentVolume NodeAffinity validation function.
   - The validation reuses the same Pod NodeAffinity validation logic.
 
 4. **Backward Compatibility Validation**:
   - Backward compatibility logic ensures that semver operators are allowed if they are already in use by an existing object, even after the feature gate is disabled.
-  - **Pod Backward Compatibility** (located in `pkg/api/pod/util.go`):
+  - **Pod Backward Compatibility**
     - During pod validation, the old pod spec is checked to determine whether semver operators should be allowed.
     - Semver operators are allowed if the feature gate is enabled OR if the old pod spec already uses semver operators in tolerations or node affinity.
     - The check inspects tolerations, preferred node affinity terms, and required node affinity terms for `SemverEq`, `SemverGt`, or `SemverLt` operators in `MatchExpressions`.
-  - **PersistentVolume Backward Compatibility** (located in `pkg/apis/core/validation/validation.go` and `pkg/apis/core/helper/helpers.go`):
+  - **PersistentVolume Backward Compatibility**:
     - During PersistentVolume validation, the old PV's node affinity is checked for semver operators.
     - The validation iterates through `NodeSelectorTerms` and checks if any `MatchExpressions` use semver operators.
 
 ### 4. Scheduler Logic
 
-1. **Toleration Matching** (located in `staging/src/k8s.io/api/core/v1/toleration.go`):
+1. **Toleration Matching**:
   - When a pod toleration uses `SemverGt`, `SemverLt`, or `SemverEq` operators, the toleration matching logic performs semver comparison between the toleration value and the taint value.
   - If the feature gate is disabled, the toleration does not match.
   - Both the toleration value and taint value are parsed using `semver.ParseTolerant`. If either parsing fails, the toleration does not match and an error is logged.
@@ -365,7 +365,7 @@ A new feature gate `TolerationAffinitySemverOperators` will be added to the list
     - `SemverLt`: matches if the taint version is less than the toleration version.
   - For `PreferNoSchedule` taints, tolerated taints do not count against the node's score, while untolerated taints reduce the node's score.
 
-2. **Pod Node Affinity Matching** (located in `staging/src/k8s.io/apimachinery/pkg/labels/selector.go`):
+2. **Pod Node Affinity Matching**:
   - When `SemverGt`, `SemverLt`, or `SemverEq` are used in `MatchExpressions`, the matching logic performs semver comparison between the node label value and the requirement value.
   - The values array must contain exactly one element; otherwise, matching returns false.
   - Both the node label value and the requirement value are parsed using `semver.ParseTolerant`. If either parsing fails, the match returns false.
@@ -376,7 +376,7 @@ A new feature gate `TolerationAffinitySemverOperators` will be added to the list
   - For `requiredDuringSchedulingIgnoredDuringExecution`, the pod cannot schedule on nodes that do not satisfy the requirement.
   - For `preferredDuringSchedulingIgnoredDuringExecution`, the weight is added to the node's score if the requirement is satisfied; otherwise, 0 is added.
 
-3. **PersistentVolume Node Affinity Matching** (located in `staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/nodeaffinity.go`):
+3. **PersistentVolume Node Affinity Matching**:
   - PersistentVolume node affinity uses the same matching logic as Pod node affinity through shared `NodeSelectorTerm` implementation.
   - The `VolumeBinding` scheduler plugin calls the node affinity matching logic when filtering nodes for volume attachment.
   - If a node label value cannot be parsed as a valid semver, the node does not satisfy the volume's node affinity requirements.
