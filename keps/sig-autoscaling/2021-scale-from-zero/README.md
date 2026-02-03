@@ -469,11 +469,11 @@ in back-to-back releases.
 
 - Implement the `ScaleToZero` condition recording
 - Ensure that all `minReplicas` state transitions from `0` to `1` are working as expected
-- E2E tests are passing without flakiness
 
 #### Beta
 
 - Allowing time for feedback
+- E2E tests for scale to/from zero have been added
 
 #### GA
 
