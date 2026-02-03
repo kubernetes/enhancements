@@ -12,28 +12,16 @@
     - [Story 2 — Tolerate running workloads on nodes with older versions of CNI](#story-2--tolerate-running-workloads-on-nodes-with-older-versions-of-cni)
     - [Story 3 — Container Runtime version based scheduling for sensitive pods](#story-3--container-runtime-version-based-scheduling-for-sensitive-pods)
     - [Story 4 — Persistent Volume node affinity based on kernel version](#story-4--persistent-volume-node-affinity-based-on-kernel-version)
-    - [Story 5 — Dynamic Resource Allocation (DRA) device selection based on driver version](#story-5--dynamic-resource-allocation-dra-device-selection-based-on-driver-version)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Scheduler Performance Regression](#scheduler-performance-regression)
     - [Invalid SemVer Node Label or Taint](#invalid-semver-node-label-or-taint)
     - [Controller Hot-Loop When Feature Gate is Disabled](#controller-hot-loop-when-feature-gate-is-disabled)
 - [Design Details](#design-details)
-  - [API Changes](#api-changes)
-  - [Semantics](#semantics)
-  - [Implementation](#implementation)
-    - [Feature Gate Definition](#feature-gate-definition)
-    - [API Validation](#api-validation)
-      - [PodValidationOption modification](#podvalidationoption-modification)
-      - [Validate tolerant spec](#validate-tolerant-spec)
-      - [Validate NodeSelectorRequirement for nodeaffinity](#validate-nodeselectorrequirement-for-nodeaffinity)
-      - [Validate the Volume Node affinity by passing the feature gate to volume options](#validate-the-volume-node-affinity-by-passing-the-feature-gate-to-volume-options)
-      - [Backward Compatibility Validation](#backward-compatibility-validation)
-    - [Scheduler Logic](#scheduler-logic)
-      - [Toleration Logic](#toleration-logic)
-      - [Node Affinity Logic for MatchExpressions](#node-affinity-logic-for-matchexpressions)
-      - [Persistent Volumes NodeAffinity](#persistent-volumes-nodeaffinity)
-      - [Additional changes](#additional-changes)
+  - [1. API Changes](#1-api-changes)
+  - [2. Feature Gate](#2-feature-gate)
+  - [3. API Validation](#3-api-validation)
+  - [4. Scheduler Logic](#4-scheduler-logic)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -64,9 +52,9 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -81,7 +69,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement introduces Semantic Versioning (SemVer) comparison capabilities to Kubernetes scheduling and storage. Similar to how KEP-5471 introduces integer operators (Lt, Gt) for Tolerations, this KEP adds `SemverLt`, `SemverGt`, and `SemverEq` operators to **core/v1 Toleration**, **core/v1 NodeAffinity**, **core/v1 PersistentVolume NodeAffinity**, and **Dynamic Resource Allocation (DRA) NodeSelectors** (both `ResourceSlice.spec.nodeSelector` and device-level `ResourceSlice.spec.devices[].basic.allNodes/nodeSelector`). This enables granular control over workload placement, volume attachment, and DRA device selection based on versioned node attributes (e.g., Kubelet version, kernel version, driver versions) without requiring manual enumeration of all target versions.
+This enhancement introduces Semantic Versioning (SemVer) comparison to Taints and Tolerations and NodeAffinity. Similar to [KEP-5471](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5471-enable-sla-based-scheduling), this KEP adds `SemverLt`, `SemverGt`, and `SemverEq` operators to **core/v1 Toleration**, **core/v1 NodeAffinity**, **core/v1 PersistentVolume NodeAffinity**. This enables granular control over workload placement, volume attachment based on versioned node attributes (e.g., Kubelet version, kernel version, GPU driver versions) without requiring manual enumeration of all target versions.
 
 ## Motivation
 
@@ -91,10 +79,8 @@ This restriction forces users to treat ordered versions as unrelated strings. To
 
 ### Goals
 
-- Add semantic version based operators to tolerations so pods can match taints like `node.kubernetes.io/kubelet-version=v1.28.0` using `SemverGt`, `SemverLt`, or `SemverEq` operators.
-- Add semantic version based operators `SemverGt`, `SemverLt`, and `SemverEq` to node affinity so that scheduling and volume attachment decisions can be based on version comparisons. This applies to Pod NodeAffinity and PersistentVolume NodeAffinity.
-- Backward-compatible and opt-in via a feature gate.
-- Zero operational performance impact on existing pod scheduling using `Equal` and `Exists` operators.
+- Add semantic version based comparison capabilities to tolerations so pods can match taints that contain Semver based values.
+- Add semantic version based comparison capabilities to node affinity so that scheduling and volume attachment decisions can be based on version comparisons. This applies to Pod NodeAffinity and PersistentVolume NodeAffinity.
 
 ### Non-Goals
 
@@ -123,10 +109,11 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchExpressions:
-          - key: "node.kubernetes.io/kubelet-version"
+          - key: "node.example/kubelet-version"
             operator: SemverGt
             values: ["v1.31.99"]
 ```
+
 #### Story 2 — Tolerate running workloads on nodes with older versions of CNI
 
 As a cluster operator, I am upgrading Calico CNI to version v3.28.0. During a phased upgrade of all nodes, I tainted nodes that are running an older CNI version. I run some workloads that can tolerate running on an older CNI. I will use semver operators to make sure that the old CNI node is tolerated by this workload.
@@ -155,6 +142,7 @@ spec:
     value: "v3.28.0"
     effect: "NoSchedule"
 ```
+
 #### Story 3 — Container Runtime version based scheduling for sensitive pods
 
 As a cluster operator, I want to deploy a critical workload that utilizes Linux Usernamespaces. However, I still have nodes in the cluster that run containerd version v1.6 that does not support Linux usernamespaces. I want to make sure that the workload will only be deployed on containerd version greater than v2.0.0
@@ -172,10 +160,11 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchExpressions:
-          - key: "node.kubernetes.io/container-runtime-version"
+          - key: "node.example/container-runtime-version"
             operator: "SemverGt"
             values: ["2.0.0"]
 ```
+
 #### Story 4 — Persistent Volume node affinity based on kernel version
 
 As a storage administrator, I am managing persistent volumes that require specific kernel features available only in newer kernel versions. For example, a volume using advanced filesystem features needs kernel version 5.10.0 or higher. I want to ensure the persistent volume can only be attached to nodes running compatible kernel versions.
@@ -196,107 +185,34 @@ spec:
     required:
       nodeSelectorTerms:
       - matchExpressions:
-        - key: "node.kubernetes.io/kernel-version"
+        - key: "node.example/kernel-version"
           operator: "SemverGt"
           values: ["5.10.0"]
   persistentVolumeReclaimPolicy: Retain
   storageClassName: advanced-storage
 ```
 
-#### Story 5 — Dynamic Resource Allocation (DRA) device selection based on driver version
-
-As a cluster operator managing GPU workloads, I am using Dynamic Resource Allocation (DRA) to allocate GPU devices to pods. My cluster has nodes with different GPU driver versions, and some workloads require specific driver features only available in newer versions. I want to use semver operators in ResourceSlice node selectors to ensure devices are only considered available on nodes with compatible driver versions.
-
-**Example Configuration (ResourceSlice-level nodeSelector):**
-
-```yaml
-apiVersion: resource.k8s.io/v1beta1
-kind: ResourceSlice
-metadata:
-  name: gpu-slice-node-1
-spec:
-  nodeName: node-1
-  driver: gpu.example.com
-  pool:
-    name: gpu-pool
-    resourceSliceCount: 1
-  nodeSelector:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: "gpu.example.com/driver-version"
-        operator: "SemverGt"
-        values: ["535.0.0"]
-  devices:
-  - name: gpu-0
-    basic:
-      attributes:
-        gpu.example.com/memory:
-          string: "24Gi"
-```
-
-**Example Configuration (Device-level nodeSelector):**
-
-DRA also supports per-device node selectors via `spec.devices[].basic.nodeSelector`, allowing fine-grained control over which nodes specific devices can be allocated to:
-
-```yaml
-apiVersion: resource.k8s.io/v1beta1
-kind: ResourceSlice
-metadata:
-  name: gpu-slice-mixed-versions
-spec:
-  driver: gpu.example.com
-  pool:
-    name: gpu-pool
-    resourceSliceCount: 1
-  devices:
-  - name: gpu-0
-    basic:
-      attributes:
-        gpu.example.com/memory:
-          string: "24Gi"
-      nodeSelector:
-        nodeSelectorTerms:
-        - matchExpressions:
-          - key: "node.kubernetes.io/kernel-version"
-            operator: "SemverGt"
-            values: ["5.15.0"]
-  - name: gpu-1
-    basic:
-      attributes:
-        gpu.example.com/memory:
-          string: "16Gi"
-      # This device has less strict requirements
-      allNodes: true
-```
-
-This ensures that GPU devices in this ResourceSlice are only considered for allocation when the node meets the version requirements, enabling workloads that require newer CUDA features or kernel capabilities to be scheduled appropriately.
-
 ### Notes/Constraints/Caveats (Optional)
 
 - **SemVer-Only Support**: The implementation will only support versioning comparisons based on SemVer specifications; other versioning schemes will be rejected by the API server during validation.
+
+- **SemVer Library Version**: The current implementation will use `github.com/blang/semver/v4` library to parse and compare Tolerations and Affinity versions, the same library is used in the current code base.
 
 - **Node Affinity Single Element Requirement**: The implementation will validate that if the semantic version operators are used for node affinity, then NodeSelector values array must contain only one element, similar to the behavior of `Gt` and `Lt`.
 
 - **Toleration Parsing Requirements**: The toleration value must be parseable as Semantic Versions for SemVer operators (`SemverLt`, `SemverGt`, `SemverEq`). If parsing fails, the toleration does not match.
 
-- **Node Affinity Parsing Requirements**: The node affinity value must be parseable as Semantic Versions for SemVer operators (`SemverLt`, `SemverGt`, `SemverEq`). If parsing fails, node affinity matching rule does not match
+- **Node Affinity Parsing Requirements**: The node affinity value must be parseable as Semantic Versions for SemVer operators (`SemverLt`, `SemverGt`, `SemverEq`). If parsing fails, the node affinity matching rule does not match.
 
-- **NodeFieldSelector Limitation**: The semver comparison operators (`SemverLt`, `SemverGt`, `SemverEq`) are only supported in `matchExpressions` within NodeSelectorTerms. They are **not** supported in `matchFields` as field selectors have different validation requirements
+- **NodeFieldSelector Limitation**: The semver comparison operators (`SemverLt`, `SemverGt`, `SemverEq`) are only supported in `matchExpressions` within NodeSelectorTerms. They are **not** supported in `matchFields` as field selectors have different validation requirements.
 
 - **Semver Tolerant Parsing**: The implementation will use `semver.ParseTolerant` to parse semver values which currently trims spaces, removes a "v" prefix, adds a 0 patch number to versions with only major and minor components specified, and removes leading 0s.
 
 - **Non-Version Taint Values**: When a pod toleration uses `SemverLt`, `SemverGt`, or `SemverEq` operators, it only matches taints with SemVer values. If a node has a taint with a non-SemVer value, the toleration will not match, and the pod cannot schedule on that node.
   
-  **Example**: 
-  - Node taint: `node.kubernetes.io/containerRuntimeVersion=containerd://2.1.4:NoSchedule`
-  - Pod toleration: `{key: "node.kubernetes.io/containerRuntimeVersion", operator: "SemverLt", value: "2.2.0"}`
-  - **Result**: Toleration does not match and pod cannot schedule on this node because the container runtime version has a `containerd://` prefix
-  - The pod remains `Pending` and can schedule on other nodes with valid version taints
-  - The pod is not failed or rejected entirely
+- **Non-Version Affinity Values**: When a pod node affinity uses `SemverLt`, `SemverGt`, or `SemverEq` operators, the label value in the case of `MatchExpression` must be a parsable semver version; otherwise, the pod will not match scheduling requirements on these nodes.
 
-- **Non-Version Affinity Values**: When a pod node affinity uses `SemverLt`, `SemverGt`, or `SemverEq` operators, Label value in case of `MatchExpression` must be a parsable semver version otherwise the pod will not match scheduling requirements on these nodes.
-
-- **Alpha Restrictions**: When `TaintTolerationNodeAffinitySemverComparisonOperators=false`, the API server rejects pods using the new operators in tolerations matching, and in node affinity matching.
+- **Alpha Restrictions**: When `TolerationAffinitySemverOperators=false`, the API server rejects pods using the new operators in tolerations matching, and in node affinity matching.
 
 - **Parsing Overhead**: Each taint/toleration or affinity rule match with semver operators requires semver parsing.
 
@@ -379,682 +295,147 @@ This is particularly problematic during rollback/downgrade scenarios or for mult
 
 ## Design Details
 
-### API Changes
+### 1. API Changes
 
-**File**: `staging/src/k8s.io/api/core/v1/types.go`
+New semver-based operators will be added for both affinity and toleration:
 
-Extend `core/v1.Toleration.Operator` to accept, in addition to `Equal` and `Exists`:
+**Toleration Operators:** Extend `core/v1.Toleration.Operator` with the following operators:
 
 - `SemverLt`: match if version of toleration.value < version of taint.value
 - `SemverGt`: match if version of toleration.value > version of taint.value
 - `SemverEq`: match if version of toleration.value = version of taint.value
-- `Equal`/`Exists`: Remain unchanged
 
 ```go
-// A toleration operator is the set of operators that can be used in a toleration.
-// +enum
-type TolerationOperator string
-
-const (
-	TolerationOpExists TolerationOperator = "Exists"
-	TolerationOpEqual  TolerationOperator = "Equal"
-
-  // New semver comparison operators (feature-gated)
-  TolerationOpSemverLt TolerationOperator = "SemverLt"    // Version Less than
-  TolerationOpSemverGt TolerationOperator = "SemverGt"    // Version Greater than
-  TolerationOpSemverEq TolerationOperator = "SemverEq"    // Version Equals to
+  TolerationOpSemverLt TolerationOperator = "SemverLt"
+  TolerationOpSemverGt TolerationOperator = "SemverGt"
+  TolerationOpSemverEq TolerationOperator = "SemverEq"
 )
 ```
 
-**File**: `staging/src/k8s.io/api/core/v1/types.go`
-
-Extend `core/v1.NodeSelectorRequirement.Operator` to accept, in addition to `In`, `NotIn`, `Exists`, `DoesNotExists`, `Gt` and `Lt`:
+**NodeSelector Operators**: Extend `core/v1.NodeSelectorRequirement.Operator` with the following operators: 
 
 - `SemverLt`: match if version of value of NodeSelectorRequirement.Key < version of NodeSelectorRequirement.Values[0]
 - `SemverGt`: match if version of value of NodeSelectorRequirement.Key > version of NodeSelectorRequirement.Values[0]
 - `SemverEq`: match if version of value of NodeSelectorRequirement.Key = version of NodeSelectorRequirement.Values[0]
-- `In`/`NotIn`/`Exists`/`DoesNotExists`/`Gt`/`Lt`: Remain unchanged
 
 ```go
-// A node selector requirement is a selector that contains values, a key, and an operator
-// that relates the key and values.
-type NodeSelectorRequirement struct {
-	// The label key that the selector applies to.
-	Key string `json:"key" protobuf:"bytes,1,opt,name=key"`
-	// Represents a key's relationship to a set of values.
-	// Valid operators are In, NotIn, Exists, DoesNotExist. Gt, Lt, SemverGt, SemverLt, and SemverEq.
-	Operator NodeSelectorOperator `json:"operator" protobuf:"bytes,2,opt,name=operator,casttype=NodeSelectorOperator"`
-	// An array of string values. If the operator is In or NotIn,
-	// the values array must be non-empty. If the operator is Exists or DoesNotExist,
-	// the values array must be empty. If the operator is Gt or Lt, the values
-	// array must have a single element, which will be interpreted as an integer.
-  // If the operator is SemverGt, SemverLt, or SemverEq, the values array must have a single
-  // element, which will be interpreted as a string.
-	// This array is replaced during a strategic merge patch.
-	// +optional
-	// +listType=atomic
-	Values []string `json:"values,omitempty" protobuf:"bytes,3,rep,name=values"`
-}
-
-// A node selector operator is the set of operators that can be used in
-// a node selector requirement.
-// +enum
-type NodeSelectorOperator string
-
-const (
-	NodeSelectorOpIn           NodeSelectorOperator = "In"
-	NodeSelectorOpNotIn        NodeSelectorOperator = "NotIn"
-	NodeSelectorOpExists       NodeSelectorOperator = "Exists"
-	NodeSelectorOpDoesNotExist NodeSelectorOperator = "DoesNotExist"
-	NodeSelectorOpGt           NodeSelectorOperator = "Gt"
-	NodeSelectorOpLt           NodeSelectorOperator = "Lt"
-
-  // New semver comparison operators (feature-gated)
   NodeSelectorOpSemverGt  NodeSelectorOperator = "SemverGt"
   NodeSelectorOpSemverLt  NodeSelectorOperator = "SemverLt"
   NodeSelectorOpSemverEq  NodeSelectorOperator = "SemverEq"
 )
-
 ```
 
-### Semantics
-
-1. Pod Node Affinity
-
-- When `SemverGt`, `SemverLt`, or `SemverEq` are used as the `NodeSelectorOperator`, The values array must contain exactly one element. If the values array is empty or contains multiple strings, the Pod is rejected during validation.
-
-- The single value is parsed as a Semantic Version. If the parsing fails, the requirement evaluates to false (does not match).
-
-- For `preferredDuringSchedulingIgnoredDuringExecution` the `weight` is added to the score If the node label or node field satisfies the SemVer comparison. Otherwise 0 will be added to the score if a mismatch.
-
-2. PersistentVolume Node Affinity
-
-- When `SemverGt`, `SemverLt`, or `SemverEq` are used as the `NodeSelectorOperator` in a PersistentVolume's node affinity, the values array must contain exactly one element. If the values array is empty or contains multiple strings, the PersistentVolume is rejected during validation.
-
-- The single value is parsed as a Semantic Version. If the parsing fails during volume attachment, the node does not satisfy the volume's node affinity requirements.
-
-- PersistentVolume node affinity uses the same matching logic as Pod node affinity through shared `NodeSelectorTerm` implementation. This ensures consistent behavior between pod scheduling and volume attachment decisions.
-
-3. Tolerations
-
-- For Taints with the `PreferNoSchedule` effect, the SemVer operators determine whether the taint is tolerated during the scoring phase:
-
-- **Tolerated taints**: Do not count against the node's score.
-- **Intolerated taints**: Count against the node's score.
-- **Scoring**: Unchanged - nodes with fewer intolerable `PreferNoSchedule` taints receive higher scores.
-
-**Example:**
-
-Node `A` has taint `version=v1.0.0:PreferNoSchedule`.
-Node `B` has taint `version=v2.0.0:PreferNoSchedule`.
-Pod has toleration operator: `SemverGt`, value: `v1.5.0`.
-
-Result: The Pod tolerates Node B (2.0 > 1.5) but does not tolerate Node A. Therefore, Node B receives a higher score (no penalty) compared to Node A.
-
-### Implementation
-
-#### Feature Gate Definition
-
-**File**: `pkg/features/kube_features.go`
-
-```go
-const (
-    // TaintTolerationNodeAffinitySemverComparisonOperators enables semver comparison operators (SemverLt, SemverGt, SemverEq) for tolerations and node affinity
-    TaintTolerationNodeAffinitySemverComparisonOperators featuregate.Feature = "TaintTolerationNodeAffinitySemverComparisonOperators"
-)
-
-var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-    TaintTolerationNodeAffinitySemverComparisonOperators: {Default: false, PreRelease: featuregate.Alpha},
-}
-```
-
-#### API Validation
-
-**File**: `pkg/apis/core/validation/validation.go`
-
-##### PodValidationOption modification
-
-```go
-// PodValidationOptions contains the different settings for pod validation
-type PodValidationOptions struct {
-	....
-	// Allow semver node affinity and toleration comparison operators (SemverGt, SemverLt, SemverEq)
-	AllowTaintTolerationNodeAffinitySemverComparisonOperators bool
-```
-
-##### Validate tolerant spec
-
-```go
-func ValidateTolerations(tolerations []core.Toleration, fldPath *field.Path, opts PodValidationOptions) field.ErrorList {
-	allErrors := field.ErrorList{}
-	for i, toleration := range tolerations {
-		....
-		case core.TolerationOpSemverEq, core.TolerationOpSemverGt, core.TolerationOpSemverLt:
-			if !opts.AllowTaintTolerationNodeAffinitySemverComparisonOperators {
-				validValues := []core.TolerationOperator{core.TolerationOpEqual, core.TolerationOpExists}
-				allErrors = append(allErrors, field.NotSupported(idxPath.Child("operator"), toleration.Operator, validValues))
-				break
-			}
-			// non-strictly validate semver version by using semver.ParseTolerant
-			if _, err := semver.ParseTolerant(toleration.Value); err != nil {
-				allErrors = append(allErrors, field.Invalid(idxPath.Child("value"), toleration.Value, err.Error()))
-			}
-		default:
-			validValues := []core.TolerationOperator{core.TolerationOpEqual, core.TolerationOpExists}
-			allErrors = append(allErrors, field.NotSupported(idxPath.Child("operator"), toleration.Operator, validValues))
-		}
-```
-
-##### Validate NodeSelectorRequirement for nodeaffinity
-
-```go
-// ValidateNodeSelectorRequirement tests that the specified NodeSelectorRequirement fields has valid data
-func ValidateNodeSelectorRequirement(rq core.NodeSelectorRequirement, allowInvalidLabelValueInRequiredNodeAffinity bool, fldPath *field.Path, opts PodValidationOptions) field.ErrorList {
-	allErrs := field.ErrorList{}
-	switch rq.Operator {
-	....
-	case core.NodeSelectorOpSemverEq, core.NodeSelectorOpSemverGt, core.NodeSelectorOpSemverLt:
-		if !opts.AllowTaintTolerationNodeAffinitySemverComparisonOperators {
-			allErrs = append(allErrs, field.Invalid(fldPath.Child("operator"), rq.Operator, "not a valid selector operator"))
-			break
-		}
-		if len(rq.Values) != 1 {
-			allErrs = append(allErrs, field.Required(fldPath.Child("values"), "must be specified single value when `operator` is 'SemverLt' or 'SemverGt' or 'SemverEq'"))
-		}
-		// non-strictly validate semver version by using semver.ParseTolerant
-		for _, val := range rq.Values {
-			if _, err := semver.ParseTolerant(val); err != nil {
-				allErrs = append(allErrs, field.Invalid(fldPath.Child("values"), rq.Values, err.Error()))
-			}
-		}
-	default:
-		allErrs = append(allErrs, field.Invalid(fldPath.Child("operator"), rq.Operator, "not a valid selector operator"))
-```
-
-##### Validate the Volume Node affinity by passing the feature gate to volume options
-
-```go
-// PersistentVolumeSpecValidationOptions contains the different settings for PeristentVolume validation
-type PersistentVolumeSpecValidationOptions struct {
-	// Allow users to modify the class of volume attributes
-	EnableVolumeAttributesClass bool
-	// Allow invalid label-value in RequiredNodeSelector
-	AllowInvalidLabelValueInRequiredNodeAffinity bool
-	// Allow semver comparison operators
-	AllowTaintTolerationNodeAffinitySemverComparisonOperators bool
-}
-```
-
-```go
-func validateVolumeNodeAffinity(nodeAffinity *core.VolumeNodeAffinity, opts PersistentVolumeSpecValidationOptions, fldPath *field.Path) (bool, field.ErrorList) {
-	...
-	if nodeAffinity.Required != nil {
-		allErrs = append(allErrs, ValidateNodeSelector(nodeAffinity.Required, opts.AllowInvalidLabelValueInRequiredNodeAffinity, fldPath.Child("required"), PodValidationOptions{AllowTaintTolerationNodeAffinitySemverComparisonOperators: opts.AllowTaintTolerationNodeAffinitySemverComparisonOperators})...)
-	} else {
-		allErrs = append(allErrs, field.Required(fldPath.Child("required"), "must specify required node constraints"))
-	}
-
-	return true, allErrs
-}
-```
-
-##### Backward Compatibility Validation
-
-Backward compatibility logic makes sure to allow semver operators if they are already in use by tolerations or node affinity after the feature gate is being disabled.
-
-**File**: `pkg/api/pod/util.go`
-
-```go
-func GetValidationOptionsFromPodSpecAndMeta(podSpec, oldPodSpec *api.PodSpec, podMeta, oldPodMeta *metav1.ObjectMeta) apivalidation.PodValidationOptions {
-  ...
-opts.AllowTaintTolerationNodeAffinitySemverComparisonOperators = allowTaintTolerationNodeAffinitySemverComparisonOperators(oldPodSpec)
-```
-
-```go
-func tolerationNodeAffinitySemverComparisonOperatorsInUse(podSpec *api.PodSpec) bool {
-	if podSpec == nil {
-		return false
-	}
-	for _, toleration := range podSpec.Tolerations {
-		if toleration.Operator == api.TolerationOpSemverEq || toleration.Operator == api.TolerationOpSemverGt || toleration.Operator == api.TolerationOpSemverLt {
-			return true
-		}
-	}
-	// check if the semver operators are in use by node affinity
-	if podSpec.Affinity != nil && podSpec.Affinity.NodeAffinity != nil {
-		for _, preferredAffinityTerm := range podSpec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-			for _, nodeSelectorReq := range preferredAffinityTerm.Preference.MatchExpressions {
-				if nodeSelectorReq.Operator == api.NodeSelectorOpSemverEq || nodeSelectorReq.Operator == api.NodeSelectorOpSemverGt || nodeSelectorReq.Operator == api.NodeSelectorOpSemverLt {
-					return true
-				}
-			}
-		}
-		if podSpec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
-			for _, reqAffinityTerm := range podSpec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
-				for _, nodeSelectorReq := range reqAffinityTerm.MatchExpressions {
-					if nodeSelectorReq.Operator == api.NodeSelectorOpSemverEq || nodeSelectorReq.Operator == api.NodeSelectorOpSemverGt || nodeSelectorReq.Operator == api.NodeSelectorOpSemverLt {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
-}
-
-func allowTaintTolerationNodeAffinitySemverComparisonOperators(oldPodSpec *api.PodSpec) bool {
-	// allow the operators if the feature gate is enabled or the old pod spec uses
-	// comparison operators
-	if utilfeature.DefaultFeatureGate.Enabled(features.TaintTolerationNodeAffinitySemverComparisonOperators) ||
-		tolerationNodeAffinitySemverComparisonOperatorsInUse(oldPodSpec) {
-		return true
-	}
-	return false
-}
-```
-
-**File**: `pkg/apis/core/helper/helpers.go`
-
-```go
-// HasSemverComparisonOperator checks if there's a semver comparison operator
-// being used in the NodeSelectorTerm MatchExpression opertor
-func HasSemverComparisonOperator(terms []core.NodeSelectorTerm) bool {
-	for _, term := range terms {
-		for _, expression := range term.MatchExpressions {
-			switch expression.Operator {
-			case core.NodeSelectorOpSemverEq, core.NodeSelectorOpSemverGt, core.NodeSelectorOpSemverLt:
-				return true
-			}
-		}
-	}
-	return false
-}
-```
-
-```go
-// for PersistentVolumeSpecValidationOptions
-opts.AllowTaintTolerationNodeAffinitySemverComparisonOperators = helper.HasSemverComparisonOperator(terms)
-```
-
-#### Scheduler Logic
-
-##### Toleration Logic
-
-**File**: `staging/src/k8s.io/component-helpers/scheduling/corev1/helpers.go`
-
-```go
-func (t *Toleration) ToleratesTaint(logger klog.Logger, taint *Taint, enableComparisonOperators, enableSemverComparisonOperators bool) bool {
-	....
-	case TolerationOpLt, TolerationOpGt:
-		// If comparison operators are disabled, this toleration doesn't match
-		if !enableComparisonOperators {
-			return false
-		}
-		return compareNumericValues(logger, t.Value, taint.Value, t.Operator)
-	case TolerationOpSemverLt, TolerationOpSemverGt, TolerationOpSemverEq:
-		// If Semver comparison operators are disabled, this toleration doesn't match
-		if !enableSemverComparisonOperators {
-			return false
-		}
-		return compareSemVerValues(logger, t.Value, taint.Value, t.Operator)
-	default:
-		return false
-	}
-}
-
-// compareSemVerValues performs Semver comparison between toleration and taint values
-func compareSemVerValues(logger klog.Logger, tolerationVal, taintVal string, op TolerationOperator) bool {
-
-	tolerationVersion, err := semver.ParseTolerant(tolerationVal)
-	if err != nil {
-		logger.Error(err, "failed to parse tolartion value as semantic version", "toleration", tolerationVal)
-		return false
-	}
-
-	taintVersion, err := semver.ParseTolerant(taintVal)
-	if err != nil {
-		logger.Error(err, "failed to parse taint value as semantic version", "taint", taintVal)
-		return false
-	}
-
-	switch op {
-	case TolerationOpSemverEq:
-		return taintVersion.EQ(tolerationVersion)
-	case TolerationOpSemverGt:
-		return taintVersion.GT(tolerationVersion)
-	case TolerationOpSemverLt:
-		return taintVersion.LT(tolerationVersion)
-	default:
-		return false
-	}
-}
-```
-
-##### Node Affinity Logic for MatchExpressions
-
-The match logic is the one the does the parsing of the semver if the selection.Operator is one of the three operators used for semver comparison, which are defined earlier.
-
-```go
-func (r *Requirement) Matches(ls Labels) bool {
-	switch r.operator {
-	...
-	case selection.VersionEquals, selection.VersionGreaterThan, selection.VersionLessThan:
-		if !utilfeature.DefaultFeatureGate.Enabled(features.TaintTolerationNodeAffinitySemverComparisonOperators) {
-			return false
-		}
-
-		val, exists := ls.Lookup(r.key)
-		if !exists {
-			return false
-		}
-
-		lsVersion, err := semver.ParseTolerant(val)
-		if err != nil {
-			klog.V(10).Infof("Parse semver failed for value %+v in label %+v, %+v", val, ls, err)
-			return false
-		}
-
-		// There should be only one strValue in r.strValues, and can be converted to a semver.
-		if len(r.strValues) != 1 {
-			klog.V(10).Infof("Invalid values count %+v of requirement %#v, for 'SemverGt', 'SemverLt', `SemverEq` operators, exactly one value is required", len(r.strValues), r)
-			return false
-		}
-
-		var rVersion semver.Version
-		for i := range r.strValues {
-			rVersion, err = semver.ParseTolerant(r.strValues[i])
-			if err != nil {
-				klog.V(10).Infof("Parse semver failed for value %+v in requirement %#v, for 'SemverGt', 'SemverLt', `SemverEq` operators, the value must be a semver", r.strValues[i], r)
-				return false
-			}
-		}
-
-		return (r.operator == selection.VersionGreaterThan && lsVersion.GT(rVersion)) || (r.operator == selection.VersionLessThan && lsVersion.LT(rVersion)) || (r.operator == selection.VersionEquals && lsVersion.EQ(rVersion))
-	default:
-		return false
-	}
-}
-```
-
-The `nodeSelectorRequirementsAsSelector` defines the selection operators and receive the value of the feature gate which we pass all the way from the scheduler framework down to this function.
-
-```go
-// nodeSelectorRequirementsAsSelector converts the []NodeSelectorRequirement api type into a struct that implements
-// labels.Selector.
-func nodeSelectorRequirementsAsSelector(nsm []v1.NodeSelectorRequirement, path *field.Path, enableSemverComparisonOperators bool) (labels.Selector, []error) {
-	if len(nsm) == 0 {
-		return labels.Nothing(), nil
-	}
-	var errs []error
-	selector := labels.NewSelector()
-	for i, expr := range nsm {
-...
-		case v1.NodeSelectorOpSemverEq:
-			if !enableSemverComparisonOperators {
-				errs = append(errs, field.NotSupported(p.Child("operator"), expr.Operator, validSelectorOperators))
-				continue
-			}
-			op = selection.VersionEquals
-		case v1.NodeSelectorOpSemverLt:
-			if !enableSemverComparisonOperators {
-				errs = append(errs, field.NotSupported(p.Child("operator"), expr.Operator, validSelectorOperators))
-				continue
-			}
-			op = selection.VersionLessThan
-		case v1.NodeSelectorOpSemverGt:
-			if !enableSemverComparisonOperators {
-				errs = append(errs, field.NotSupported(p.Child("operator"), expr.Operator, validSelectorOperators))
-				continue
-			}
-			op = selection.VersionGreaterThan
-```
-
-##### Persistent Volumes NodeAffinity
-
-The logic of the PV node affinity is shared by the same NodeSelector functions, and is being called by the `VolumeBinding` plugin:
-
-```
-pkg/scheduler/framework/plugins/volumebinding/
-    - volume_binding.go:424  - Filter() entry point
-    - binder.go:287         - FindPodVolumes()
-    - binder.go:842         - checkBoundClaims()
-    - binder.go:878         - findMatchingVolumes()
-
-  staging/src/k8s.io/component-helpers/storage/volume/
-    - helpers.go:68         - CheckNodeAffinity()
-    - pv_helpers.go:186     - FindMatchingVolume()
-
-  staging/src/k8s.io/component-helpers/scheduling/corev1/
-    - helpers.go:40         - MatchNodeSelectorTerms()
-```
-
-##### Additional changes
-
-**Dynamic Resource Allocation (DRA) Support**
-
-The semver comparison operators are also supported in Dynamic Resource Allocation (DRA) through the `ResourceSlice` API. DRA uses `NodeSelector` in two places within ResourceSlice:
-
-1. **ResourceSlice-level nodeSelector** (`ResourceSlice.spec.nodeSelector`): Applies to all devices in the slice
-2. **Device-level nodeSelector** (`ResourceSlice.spec.devices[].basic.nodeSelector`): Applies to individual devices
-
-Both use the same `core/v1.NodeSelector` type as PersistentVolume node affinity. This means DRA resources can leverage semver operators for device selection based on version attributes at both the slice level and individual device level.
-
-Since the `dynamicresources.go` plugin calls `NewLazyErrorNodeSelector()`:
-
-```
-From DynamicResources Plugin (dynamicresources.go:446):
-    └─> NewNodeSelector()
-        └─> NewLazyErrorNodeSelector()
-            └─> newNodeSelectorTerm()
-                └─> nodeSelectorRequirementsAsSelector()
-```
-
-The implementation passes the feature gate option to the `DynamicResources` plugin, enabling semver operators (`SemverGt`, `SemverLt`, `SemverEq`) to be used in:
-- `ResourceSlice.spec.nodeSelector.nodeSelectorTerms[].matchExpressions`
-- `ResourceSlice.spec.devices[].basic.nodeSelector.nodeSelectorTerms[].matchExpressions`
-
-This allows DRA drivers to specify version-based node constraints for their devices, such as requiring specific GPU driver versions, kernel versions, or firmware versions for device allocation.
-
-**Note:** `AllocationResult` is not affected by this KEP as it is part of `ResourceClaimStatus` (a status field, not a spec field) and reports allocation results rather than specifying constraints.
+### 2. Feature Gate
+
+A new feature gate `TolerationAffinitySemverOperators` will be added to the list of feature gates to allow API validation on Semver operators and to execute semver comparison in the scheduler logic.
+
+### 3. API Validation
+
+1. **Toleration Validation** (located in `pkg/apis/core/validation/validation.go`):
+  - A new validation case is added to toleration validation when `SemverGt`, `SemverLt`, or `SemverEq` is used while the feature gate `TolerationAffinitySemverOperators` is enabled.
+  - The validation uses `semver.ParseTolerant` to non-strictly parse the version value; if parsing fails, a validation error is appended.
+  - If a semver operator is used when the feature gate is disabled, the operator is reported as unsupported.
+
+2. **Pod NodeAffinity Validation** (located in `pkg/apis/core/validation/validation.go`):
+  - A new validation case is added to NodeAffinity when `SemverGt`, `SemverLt`, or `SemverEq` is used while the feature gate `TolerationAffinitySemverOperators` is enabled.
+  - If the values are empty or more than one value is specified in `NodeSelectorRequirement`, validation fails.
+  - If exactly one value is specified, the validation uses `semver.ParseTolerant` to non-strictly parse the version value; if parsing fails, a validation error is appended.
+
+3. **PersistentVolume NodeAffinity Validation** (located in `pkg/apis/core/validation/validation.go`):
+  - The feature gate `TolerationAffinitySemverOperators` value is passed to the PersistentVolume NodeAffinity validation function.
+  - The validation reuses the same Pod NodeAffinity validation logic.
+
+4. **Backward Compatibility Validation**:
+  - Backward compatibility logic ensures that semver operators are allowed if they are already in use by an existing object, even after the feature gate is disabled.
+  - **Pod Backward Compatibility** (located in `pkg/api/pod/util.go`):
+    - During pod validation, the old pod spec is checked to determine whether semver operators should be allowed.
+    - Semver operators are allowed if the feature gate is enabled OR if the old pod spec already uses semver operators in tolerations or node affinity.
+    - The check inspects tolerations, preferred node affinity terms, and required node affinity terms for `SemverEq`, `SemverGt`, or `SemverLt` operators in `MatchExpressions`.
+  - **PersistentVolume Backward Compatibility** (located in `pkg/apis/core/validation/validation.go` and `pkg/apis/core/helper/helpers.go`):
+    - During PersistentVolume validation, the old PV's node affinity is checked for semver operators.
+    - The validation iterates through `NodeSelectorTerms` and checks if any `MatchExpressions` use semver operators.
+
+### 4. Scheduler Logic
+
+1. **Toleration Matching** (located in `staging/src/k8s.io/api/core/v1/toleration.go`):
+  - When a pod toleration uses `SemverGt`, `SemverLt`, or `SemverEq` operators, the toleration matching logic performs semver comparison between the toleration value and the taint value.
+  - If the feature gate is disabled, the toleration does not match.
+  - Both the toleration value and taint value are parsed using `semver.ParseTolerant`. If either parsing fails, the toleration does not match and an error is logged.
+  - The comparison is performed as follows:
+    - `SemverEq`: matches if the taint version equals the toleration version.
+    - `SemverGt`: matches if the taint version is greater than the toleration version.
+    - `SemverLt`: matches if the taint version is less than the toleration version.
+  - For `PreferNoSchedule` taints, tolerated taints do not count against the node's score, while untolerated taints reduce the node's score.
+
+2. **Pod Node Affinity Matching** (located in `staging/src/k8s.io/apimachinery/pkg/labels/selector.go`):
+  - When `SemverGt`, `SemverLt`, or `SemverEq` are used in `MatchExpressions`, the matching logic performs semver comparison between the node label value and the requirement value.
+  - The values array must contain exactly one element; otherwise, matching returns false.
+  - Both the node label value and the requirement value are parsed using `semver.ParseTolerant`. If either parsing fails, the match returns false.
+  - The comparison is performed as follows:
+    - `SemverEq`: matches if the node label version equals the requirement version.
+    - `SemverGt`: matches if the node label version is greater than the requirement version.
+    - `SemverLt`: matches if the node label version is less than the requirement version.
+  - For `requiredDuringSchedulingIgnoredDuringExecution`, the pod cannot schedule on nodes that do not satisfy the requirement.
+  - For `preferredDuringSchedulingIgnoredDuringExecution`, the weight is added to the node's score if the requirement is satisfied; otherwise, 0 is added.
+
+3. **PersistentVolume Node Affinity Matching** (located in `staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/nodeaffinity.go`):
+  - PersistentVolume node affinity uses the same matching logic as Pod node affinity through shared `NodeSelectorTerm` implementation.
+  - The `VolumeBinding` scheduler plugin calls the node affinity matching logic when filtering nodes for volume attachment.
+  - If a node label value cannot be parsed as a valid semver, the node does not satisfy the volume's node affinity requirements.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
 ##### Unit tests
 
-The following unit test files include coverage for semver comparison operators:
+###### Coverage of existing packages
 
-1. **pkg/api/pod/util_test.go**
-   - `TestAllowTaintTolerationNodeAffinitySemverComparisonOperators`: Tests feature gate enabled/disabled scenarios and backward compatibility for pods using semver operators in tolerations and node affinity
+- `k8s.io/kubernetes/pkg/api/pod`: `2026-02-03` - `80.7`
+- `k8s.io/kubernetes/pkg/apis/core/validation`: `2026-02-03` - `85.3`
+- `staging/src/k8s.io/api/core/v1/toleration_test.go`: `2026-02-03` - `75.0`
+- `staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity`: `2026-02-03` - `95.4`
 
-```sh
-/usr/local/go/bin/go test -timeout 30s -run ^TestAllowTaintTolerationNodeAffinitySemverComparisonOperators$ k8s.io/kubernetes/pkg/api/pod | grep -E "(PASS|FAIL)"
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_nil_old_pod_spec
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_nil_old_pod_spec (0.01s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_without_semver_operators
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_without_semver_operators (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_with_SemverEq_operator_in_toleration
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_enabled,_old_pod_spec_with_SemverEq_operator_in_toleration (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_nil_old_pod_spec
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_nil_old_pod_spec (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_semver_operators
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_semver_operators (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverEq_operator_in_toleration
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverEq_operator_in_toleration (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_operator_in_toleration
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_operator_in_toleration (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_operator_in_toleration
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_operator_in_toleration (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_mixed_operators_including_SemverEq
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_mixed_operators_including_SemverEq (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_in_preferred_node_affinity
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverGt_in_preferred_node_affinity (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_in_required_node_affinity
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_with_SemverLt_in_required_node_affinity (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_node_affinity
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_old_pod_spec_without_node_affinity (0.00s)
-=== RUN   TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_empty_old_pod_spec
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators/feature_gate_disabled,_empty_old_pod_spec (0.00s)
---- PASS: TestAllowTaintTolerationNodeAffinitySemverComparisonOperators (0.02s)
-PASS
-ok      k8s.io/kubernetes/pkg/api/pod   0.035s
-```
-
-2. **pkg/apis/core/validation/validation_test.go**
-   - Tests for validating semver operators in pod specifications
-   - Tests for validating semver operators in PersistentVolume specifications
-   - Tests for PersistentVolume validation backward compatibility
-
-```sh
-go test ./pkg/apis/core/validation/ -v 2>&1 | grep -E "semver" | grep -E "(PASS|FAIL)"
-    --- PASS: TestSemverTolerationsWithFeatureGate/SemverEq_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverTolerationsWithFeatureGate/SemverGt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverTolerationsWithFeatureGate/SemverLt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverTolerationsWithFeatureGate/SemverEq_operator_with_invalid_semver_value_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverTolerationsWithFeatureGate/SemverLt_operator_with_missing_patch_semver_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverEq_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverGt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverLt_operator_with_valid_semver_value_and_feature_gate_enabled (0.00s)
-    --- PASS: TestSemverNodeSelectorRequirementWithFeatureGate/SemverEq_operator_with_invalid_semver_value_and_feature_gate_enabled (0.00s)
-```
-
-3. **pkg/apis/resource/validation/validation_test.go**
-   - Tests for validating semver operators in DRA ResourceSliceSpec in NodeSelector and perDevice NodeSelector
-   - Tests for Validating semver operators in DRA AllocationResult of ClaimStatusUpdate
-```sh
-go test ./pkg/apis/resource/validation/ -v 2>&1 | grep -E "semver" | grep -E "(PASS|FAIL)"
-    --- PASS: TestValidateClaimStatusUpdate/required-single-semver-value-in-allocation-nodeselector (0.00s)
-    --- PASS: TestValidateClaimStatusUpdate/invalid-semver-operator-in-allocation-nodeselector (0.00s)
-    --- PASS: TestValidateClaimStatusUpdate/empty-semver-value-in-allocation-nodeselector (0.00s)
-    --- PASS: TestValidateClaimStatusUpdate/good-semver-prerelease-version-in-allocation-nodeselector (0.00s)
-    --- PASS: TestValidateClaimStatusUpdate/semver-operator-in-allocation-matchfields (0.00s)
-    --- PASS: TestValidateClaimStatusUpdate/bad-semver-value-in-allocation-nodeselector (0.00s)
-    --- PASS: TestValidateClaimStatusUpdate/good-semver-operators-in-allocation-nodeselector (0.00s)
-    --- PASS: TestValidateResourceSlice/invalid-semver-operator-in-basicdevice-matchexpression (0.00s)
-    --- PASS: TestValidateResourceSlice/good-semver-prerelease-version (0.00s)
-    --- PASS: TestValidateResourceSlice/semver-operator-in-matchfields (0.00s)
-    --- PASS: TestValidateResourceSlice/invalid-semver-operator-in-matchexpression (0.00s)
-    --- PASS: TestValidateResourceSlice/good-semver-operators-in-matchexpression (0.00s)
-    --- PASS: TestValidateResourceSlice/bad-semver-value-in-matchexpression (0.00s)
-    --- PASS: TestValidateResourceSlice/bad-semver-value-in-basicdevice-matchexpression (0.00s)
-    --- PASS: TestValidateResourceSlice/empty-semver-value (0.00s)
-    --- PASS: TestValidateResourceSlice/required-single-semver-value (0.00s)
-    --- PASS: TestValidateResourceSlice/good-semver-operators-in-basicdevice-matchexpression (0.00s)
-    --- PASS: TestValidateResourceSlice/semver-operator-in-basicdevice-matchfields (0.00s)
-    --- PASS: TestValidateResourceSlice/required-single-semver-value-in-basicdevice-matchexpression (0.00s)
-```
-
-4. **staging/src/k8s.io/api/core/v1/toleration_test.go**
-   - Tests for `compareSemVerValues` function with various version formats
-   - Tests for toleration matching with semver operators
-
-```sh
-go test -v  ./staging/src/k8s.io/api/core/v1/ | grep -i semver | grep -E "(PASS|FAIL)"
---- PASS: TestCompareSemVerValues (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_equal_versions,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_different_versions,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_different_patch_versions,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_with_v_prefix,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_mixed_v_prefix,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_taint_version_greater,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_taint_version_less,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_equal_versions,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_patch_version_greater,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_minor_version_greater,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_taint_version_less,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_taint_version_greater,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_equal_versions,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_patch_version_less,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_invalid_toleration_value,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_empty_toleration_value,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_missing_patch_toleration_semver,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_invalid_taint_value,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_empty_taint_value,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_invalid_taint_value,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_missing_patch_taint_semver,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/Equal_operator_(unsupported_for_semver_comparison),_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/Exists_operator_(unsupported_for_semver_comparison),_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/Gt_operator_(unsupported_for_semver_comparison),_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_versions_with_pre-release,_equal,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverEq_operator_-_versions_with_different_pre-release,_expect_false (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverGt_operator_-_pre-release_version_comparison,_expect_true (0.00s)
-    --- PASS: TestCompareSemVerValues/SemverLt_operator_-_release_vs_pre-release,_expect_true (0.00s)
-```
-5. **staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/nodeaffinity_test.go**
-   - Tests for node affinity matching with semver operators
-   - Tests for version comparison edge cases
-
-```sh
-go test -v -timeout 30s  ./staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/ | grep -i semver | grep -E "(PASS|FAIL)"
---- PASS: TestNodeSelectorSemverOperators (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_with_matching_version_-_feature_enabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_with_non-matching_version_-_feature_enabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_with_greater_version_-_feature_enabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_with_lesser_version_-_feature_enabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverLt_operator_with_lesser_version_-_feature_enabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverLt_operator_with_greater_version_-_feature_enabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_-_feature_disabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_-_feature_disabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverLt_operator_-_feature_disabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverEq_operator_with_v_prefix_-_feature_enabled (0.00s)
-    --- PASS: TestNodeSelectorSemverOperators/SemverGt_operator_with_pre-release_versions_-_feature_enabled (0.00s)
---- PASS: TestPreferredSchedulingTermsSemverOperators (0.00s)
-    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverEq_operator_in_preferred_scheduling_term_-_feature_enabled (0.00s)
-    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverGt_operator_in_preferred_scheduling_term_-_feature_enabled (0.00s)
-    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverLt_operator_in_preferred_scheduling_term_-_feature_enabled (0.00s)
-    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverEq_operator_in_preferred_scheduling_term_-_feature_disabled (0.00s)
-    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverGt_operator_in_preferred_scheduling_term_-_feature_disabled (0.00s)
-    --- PASS: TestPreferredSchedulingTermsSemverOperators/SemverLt_operator_in_preferred_scheduling_term_-_feature_disabled (0.00s)
-```
 ##### Integration tests
 
-Update the following integration tests to include new operators:
+The following integration tests will be added or extended to cover semver comparison operators:
 
-1. **TestTaintTolerationFilter:** (`filters/filters_test.go`)
-2. **TestTaintTolerationScoring:** (`scoring/priorities_test.go`)
-3. **TestTaintNodeByCondition:** (`taint/taint_test.go`)
-4. **TestNodeSelectorRequirementsAsSelector**: (`nodeaffinity/nodeaffinity_test.go`)
-5. **TestPreferredSchedulingTermsScore**: (`nodeaffinity/nodeaffinity_test.go`)
-6. **TestPodMatchesNodeSelectorAndAffinityTerms**: (`nodeaffinity/nodeaffinity_test.go`)
-7. **TestNodeSelectorMatch**: (`nodeaffinity/nodeaffinity_test.go`)
-8. **General Scheduler Tests:** (`scheduler_test.go`):
-9. **PersistentVolume Tests:** (`storage/persistentvolume_test.go`):
+- `test/integration/scheduler/filters/filters_test.go`:
+  - Extend `TestTaintTolerationFilter` to include test cases for `SemverGt`, `SemverLt`, and `SemverEq` operators with feature gate enabled/disabled scenarios
+  - Extend `TestNodeAffinityFilter` to include test cases for semver operators in `MatchExpressions`
+
+- `test/integration/scheduler/scoring/priorities_test.go`:
+  - Extend `TestTaintTolerationScoring` to verify scoring behavior with `PreferNoSchedule` taints and semver tolerations
+  - Extend `TestNodeAffinityScoring` to verify scoring behavior with `preferredDuringSchedulingIgnoredDuringExecution` using semver operators
+
+- `test/integration/scheduler/scheduler_test.go`:
+  - Add `TestTaintTolerationSemverIntegration` to test end-to-end scheduling with semver tolerations, including dynamic taint changes and pod rescheduling scenarios
+
+- `test/integration/scheduler/volumebinding/volume_binding_test.go`:
+  - Extend volume binding tests to verify PersistentVolume node affinity matching with semver operators
 
 ##### e2e tests
 
-The existing e2e tests will be extended to cover the new taints cases and new affinity cases introduced in this KEP:
+The following e2e tests will be added or extended to cover semver comparison operators:
 
-- **Node Taints e2e Tests:** (test/e2e/node/taints.go)
-- **Scheduler Taints e2e Tests:** (test/e2e/scheduling)
-- **PersistentVolume e2e Tests:** (test/e2e/storage/persistent_volumes.go)
+- `test/e2e/scheduling/taints.go`:
+  - Add test cases for pod scheduling with semver toleration operators against node taints
+
+- `test/e2e/scheduling/predicates.go`:
+  - Add test cases for pod scheduling with semver node affinity operators
+
+- `test/e2e/storage/persistent_volumes.go`:
+  - Add test cases for PersistentVolume attachment with semver node affinity constraints
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind `TaintTolerationNodeAffinitySemverComparisonOperators` feature gate (disabled by default)
+- Feature implemented behind `TolerationAffinitySemverOperators` feature gate (disabled by default)
 - API validation for version operators in place
 - Taint/toleration matching logic supports `SemverLt`, `SemverGt`, `SemverEq` operators  
 - Node affinity matching logic supports `SemverLt`, `SemverGt`, `SemverEq` operators  
@@ -1077,7 +458,7 @@ The existing e2e tests will be extended to cover the new taints cases and new af
   Enable the feature gate in kube-apiserver first then kube-scheduler. This ensures the API server can accept and validate pods with the new operators before the kube-scheduler tries to process them.
 
 #### Downgrade
-  Disable the feature gate in in kube-scheduler then kube-apiserver. Since we want to stop the kube-scheduler from processing the new operators first, then stop the API server from accepting new pods with those operators. This prevents the scheduler from trying to handle features the API server would reject.
+  Disable the feature gate in kube-scheduler then kube-apiserver. Since we want to stop the kube-scheduler from processing the new operators first, then stop the API server from accepting new pods with those operators. This prevents the scheduler from trying to handle features the API server would reject.
   
 **What happens when the scheduler doesn't recognize SemverGt/SemverLt/SemverEq operators for tolerations:**
 
@@ -1087,22 +468,21 @@ When the feature gate is disabled and the scheduler encounters a pod with `Semve
 - Pod is considered to have untolerated taints
 - Filter returns `UnschedulableAndUnresolvable` status
 - Pod remains in Pending state.
-   - Feature gate on/off test cases
 
 **What happens when the scheduler doesn't recognize SemverGt/SemverLt/SemverEq operators for nodeAffinity:**
 
 When the feature gate is disabled and the scheduler encounters a pod with `SemverGt`/`SemverLt`/`SemverEq` operator:
 - The affinity match function returns `false` (doesn't match)
 - In case of `requiredDuringSchedulingIgnoredDuringExecution` the pod will remain in pending state.
-- In case of `preferredDuringSchedulingIgnoredDuringExecution` The pod will successfully schedule . However, the specific term containing the SemVer operator will evaluate to false and contribute 0 points to the node's score.
+- In case of `preferredDuringSchedulingIgnoredDuringExecution` the pod will successfully schedule. However, the specific term containing the SemVer operator will evaluate to false and contribute 0 points to the node's score.
 
 ### Version Skew Strategy
 
-The skew between kubelet and control-plane components are not impacted. The kube-scheduler is expected to match the kube-apiserver minor version, but may be up to one minor version older (to allow live upgrades).
+The skew between kubelet and control-plane components is not impacted. The kube-scheduler is expected to match the kube-apiserver minor version, but may be up to one minor version older (to allow live upgrades).
 
-In the release it's been added, the feature is disabled by default and not recognized by other components.
+In the release where it is added, the feature is disabled by default and not recognized by other components.
 
-Whoever enabled the feature manually would take the risk of component like kube-scheduler being old and not recognize the fields.
+Whoever enables the feature manually takes the risk of components like kube-scheduler being old and not recognizing the fields.
 
 ## Production Readiness Review Questionnaire
 
@@ -1111,7 +491,7 @@ Whoever enabled the feature manually would take the risk of component like kube-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `TaintTolerationNodeAffinitySemverComparisonOperators`
+  - Feature gate name: `TolerationAffinitySemverOperators`
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
@@ -1152,18 +532,18 @@ Extended toleration operators will be respected again:
 
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
+Yes, the following unit tests will be added to cover feature gate enablement/disablement scenarios:
 
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+- `pkg/api/pod/util_test.go`:
+  - A test will be added to verify backward compatibility when the feature gate is disabled but existing pods already use semver operators. This will cover scenarios for tolerations and node affinity with feature gate enabled/disabled.
+
+- `pkg/apis/core/validation/validation_test.go`:
+  - A test will be added to verify validation of tolerations with `SemverEq`, `SemverGt`, and `SemverLt` operators when the feature gate is enabled vs disabled.
+  - A test will be added to verify validation of node affinity `NodeSelectorRequirement` with semver operators when the feature gate is enabled vs disabled.
+
+- `staging/src/k8s.io/component-helpers/scheduling/corev1/nodeaffinity/nodeaffinity_test.go`:
+  - A test will be added to verify node selector matching with semver operators when the feature gate is enabled vs disabled.
+  - A test will be added to verify preferred scheduling terms with semver operators when the feature gate is enabled vs disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1196,6 +576,7 @@ https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+Not yet. This will be tested manually before the feature graduates to Beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1205,23 +586,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-1. **Metrics**:
-
-   ```promql
-   # Number of pods evaluated by TaintToleration plugin
-   scheduler_plugin_evaluation_total{plugin="TaintToleration"} > 0
-   
-   # Monitor rate of pods rejected by TaintToleration plugin
-   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status=~"Unschedulable.*"}[5m])
-   
-   # Rate of successful evaluations
-   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status="Success"}[5m])
-   
-   # Plugin execution duration
-   rate(scheduler_framework_extension_point_duration_seconds{plugin="TaintToleration"}[5m])
-   ```
-
-2. **API Queries**:
+The operator can observe running workloads by querying the API and making sure that semver operators are used, for example:
 
    ```bash
    kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tolerations[?(@.operator=="SemverGt")]}{"\n"}{end}' | grep -v "^[^:]*: *$"
@@ -1251,20 +616,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+We should continue to maintain the existing scheduler SLOs.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1276,17 +628,7 @@ question.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes, an extension to an existing metric:
-
-**Extend `scheduler_plugin_evaluation_total` with a `status` label**
-
-Currently, `scheduler_plugin_evaluation_total` tracks plugin evaluation counts with labels: `plugin`, `extension_point`, `profile`. We propose adding a `status` label (similar to `scheduler_plugin_execution_duration_seconds`) to enable monitoring of plugin outcomes, including errors.
-
-The status label will use framework status codes: `Success`, `Unschedulable`, `UnschedulableAndUnresolvable`, `Error`, etc.
-
- >Note: Currently, integer parsing failures for Gt/Lt operators result in the toleration not matching (returning `Unschedulable` status), similar to how label selectors behave. This means parsing errors are not distinguished from legitimate mismatches in metrics. Future enhancements could modify the implementation to return `Error` status for parsing failures to improve debuggability.
-
-In addition, the scheduler has an existing `scheduler_unschedulable_pods` metric that handles the multiple failure reasons by incrementing for each plugin that rejects a pod.
+No new metrics will be added to this feature.
 
 ### Dependencies
 
@@ -1340,20 +682,21 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The feature does not change the behavior when the API or etcd is unavailable, the scheduler will simply not be able to communicate with the API and schedule new pods, which should be the existing behavior regardless the feature.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- [Invalid semver value on node taint/label]
+  - Detection: Pods remain in Pending state with `FailedScheduling` events indicating untolerated taints or unmatched node affinity.
+  - Mitigations: Fix the node taint/label to contain a valid semver value, or update the pod toleration/affinity to use a different operator.
+  - Diagnostics: Scheduler logs at Error level will show `"failed to parse taint value as semantic version"` or at V(10) level `"Parse semver failed for value X in label Y"`.
+  - Testing: Unit tests cover invalid semver parsing scenarios.
+
+- [Controller hot-loop when feature gate is disabled]
+  - Detection: Spike in `apiserver_request_total` metric with validation errors for pod creation.
+  - Mitigations: Update workload controllers to remove semver operators from pod templates before disabling the feature gate.
+  - Diagnostics: API server logs will show repeated validation errors for unsupported operator values.
+  - Testing: Unit tests cover feature gate disabled scenarios.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
