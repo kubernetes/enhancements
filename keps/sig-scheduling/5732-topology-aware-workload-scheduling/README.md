@@ -271,6 +271,39 @@ will be defined in a separate KEP:
 Note: For the initial alpha scope, only a single TopologyConstraint will be
 supported.
 
+#### Basic Policy Extension
+
+In the first alpha version of the Workload API, the `Basic` policy was a no-op.
+We propose extending the `Basic` policy to accept a `desiredCount` field.
+This feature will be gated behind a separate feature gate 
+(`WorkloadBasicPolicyDesiredCount`) to decouple it from the core Gang Scheduling
+and Topology Aware Scheduling features.
+
+```go
+// BasicSchedulingPolicy indicates that standard Kubernetes
+// scheduling behavior should be used.
+type BasicSchedulingPolicy struct {
+	// DesiredCount is the expected number of pods that will belong to this
+	// PodGroup. This field is a hint to the scheduler to help it make better
+	// placement decisions for the group as a whole.
+	//
+	// Unlike gang's minCount, this field does not block scheduling. If the number
+	// of available pods is less than desiredCount, the scheduler can still attempt
+	// to schedule the available pods, but will optimistically try to select a
+	// placement that can accommodate the future pods.
+	//
+	// +optional
+	DesiredCount *int32
+}
+```
+
+This field allows users to express their "true" workloads more easily and enables
+the scheduler to optimize the placement of such pod groups by taking the desired state
+into account. Ideally, the scheduler should prefer placements that can accommodate
+the full `desiredCount`, even if not all pods are created yet. When `desiredCount`
+is specified, the scheduler can delay scheduling the first Pod it sees for a short
+amount of time in order to wait for more Pods to be observed.
+
 ### Scheduling Framework Extensions
 
 The scheduler framework requires new plugin interfaces to handle "Placements". A
@@ -470,6 +503,9 @@ Placements based on distinct values of the designated node label (TAS).
 **PlacementBinPackingPlugin (New)** Implements `PlacementScorerPlugin`. Scores
 Placements to maximize utilization (tightest fit) and minimize fragmentation.
 
+**PlacementPodCountScorerPlugin (New)** Implements `PlacementScorerPlugin`. Scores
+Placements based on the number of pods fiting into each Placement.
+
 **DRATestPlugin (New)** Implements `PlacementGeneratorPlugin` and `PlacementStatePlugin`
 and is used only for testing the algorithm's support for DRA-aware scheduling.
 
@@ -626,7 +662,13 @@ kube-scheduler instance being a leader).
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: TopologyAwareWorkloadScheduling
-  - Components depending on the feature gate: kube-apiserver, kube-scheduler
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-scheduler
+  - Feature gate name: WorkloadBasicPolicyDesiredCount
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
