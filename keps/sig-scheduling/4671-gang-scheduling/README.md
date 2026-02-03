@@ -13,7 +13,7 @@
     - [Story 2: Gang-scheduling of a custom workload](#story-2-gang-scheduling-of-a-custom-workload)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [The API needs to be extended in an unpredictable way](#the-api-needs-to-be-extended-in-an-unpredictable-way)
-    - [NominatedNodeName impact on filtering performance](#nominatednodename-impact-on-filtering-performance)
+    - [Exacerbating the race window by proceeding directly to binding](#exacerbating-the-race-window-by-proceeding-directly-to-binding)
 - [Design Details](#design-details)
   - [Naming](#naming)
   - [Associating Pod into PodGroups](#associating-pod-into-podgroups)
