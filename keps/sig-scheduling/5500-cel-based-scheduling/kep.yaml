@@ -5,12 +5,14 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-node
-status: provisional
+  - sig-apps
+status: implemntable
 creation-date: 2026-01-21
 reviewers:
-  - TBD
+  - "@helayoty"
 approvers:
-  - TBD
+  - "@macsko"
+  - "@sanposhiho"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
