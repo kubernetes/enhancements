@@ -18,7 +18,6 @@
     - [CEL Expression Evaluation Errors](#cel-expression-evaluation-errors)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
-    - [CEL Expression Limits](#cel-expression-limits)
   - [Feature Gate](#feature-gate)
   - [API Validation](#api-validation)
   - [Scheduler Logic](#scheduler-logic)
@@ -91,18 +90,15 @@ CEL provides a standardized, extensible expression language already used through
 
 - Add a `matchCELExpressions` field to `core/v1.NodeSelectorTerm` that accepts CEL expressions for node selection, affecting Pod NodeAffinity and PersistentVolume NodeAffinity.
 - Add an `expression` field to `core/v1.Toleration` that accepts CEL expressions for taint matching.
-- Provide built-in CEL functions for common scheduling use cases, including semantic version comparison (e.g., `semver.compare(node.labels['version'], '>=1.28.0')`).
+- Provide builtin CEL functions for common scheduling use cases, including functions supported by Kubernetes CEL.
 - Ensure CEL expressions are validated at admission time for syntax correctness, type safety, and cost limits.
-- Maintain backward compatibility—existing scheduling configurations continue to work unchanged.
 - Gate the feature behind `TaintTolerationNodeAffinityCEL` feature flag, disabled by default in Alpha.
 
 ### Non-Goals
 
-- Replacing existing NodeAffinity operators (`In`, `NotIn`, `Exists`, `DoesNotExist`, `Gt`, `Lt`). The existing `matchExpressions` and `matchFields` remain fully supported.
-- Replacing existing Toleration operators (`Equal`, `Exists`). The existing operator-based tolerations remain fully supported.
-- Providing CEL support for inter-pod affinity/anti-affinity (this may be considered in a future KEP).
-- Providing CEL support for the `nodeSelector` field in PodSpec (only NodeAffinity is in scope).
-- Providing CEL support for Dynamic Resource Allocation (DRA) NodeSelectors (this may be considered in a future KEP).
+- Replacing existing NodeAffinity `matchExpressions` or `matchFields`.
+- Replacing existing Toleration fields.
+- Providing CEL support for inter-pod affinity/anti-affinity.
 
 ## Proposal
 
@@ -267,7 +263,6 @@ A new `matchCELExpressions` field is added to `core/v1.NodeSelectorTerm`:
 
 - **Field**: `matchCELExpressions []string` is a list of CEL expressions that must all evaluate to `true` for the term to match.
 - **Feature Gate**: Gated by `TaintTolerationNodeAffinityCEL`.
-- **CEL Environment**: Expressions have access to `node.labels` as a `map(string, string)`.
 
 2. **Toleration Changes**
 
@@ -275,13 +270,7 @@ A new `expression` field is added to `core/v1.Toleration`:
 
 - **Field**: `expression string` is a single CEL expression that evaluates whether this toleration matches a taint.
 - **Feature Gate**: Gated by `TaintTolerationNodeAffinityCEL`.
-- **CEL Environment**: Expressions have access to `taint.key`, `taint.value`, `taint.effect` (all strings), and `taint.timeAdded` (timestamp).
-- **Mutual Exclusivity**: When `expression` is set, the `key`, `operator`, `value`, and `effect` fields must be empty. The `tolerationSeconds` field is still respected for `NoExecute` taints.
 
-#### CEL Expression Limits
-
-- **Maximum Length**: 10 KiB per expression.
-- **Maximum Cost**: 1,000,000 cost units per expression evaluation.
 
 ### Feature Gate
 
@@ -342,6 +331,10 @@ type Cache struct {
     compiler     *compiler
 }
 ```
+The compiler will perform cost estimation basead on the following criteria:
+
+- **Maximum Length**: 10 KiB per expression.
+- **Maximum Cost**: 1,000,000 cost units per expression evaluation.
 
 #### TaintToleration Plugin
 
