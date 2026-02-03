@@ -114,7 +114,7 @@ The control model is intentionally simple:
 
 #### Story 1: Platform Engineer Optimizing Monitoring Costs
 
-As a platform engineer managing a large Kubernetes fleet, I want to reduce the storage costs of my Prometheus infrastructure. With native histograms, I can achieve ~10x reduction in time series count for histogram metrics, significantly reducing storage and improving query performance without changing my existing dashboards.
+As a platform engineer managing a large Kubernetes fleet, I want to reduce the storage costs of my Prometheus infrastructure. With native histograms, I can achieve ~10x reduction in time series count for histogram metrics, significantly reducing storage and improving query performance.
 
 #### Story 2: SRE Detecting Performance Regressions
 
@@ -128,6 +128,7 @@ As an SRE responsible for cluster reliability, I need to detect performance regr
 
 
 ### Risks and Mitigations
+**Note:** Using native histograms is opt-in from users perspective: Prometheus only collects them if `scrape_native_histograms: true` is set in the scrape config. Enabling the Kubernetes feature gate by default will only affect users who have already opted in. Those using classic histograms will see no change until they update their Prometheus configuration.
 
 1. **Silent Dashboard/Alert Failures on Upgrade**: When upgrading to a Kubernetes version where `NativeHistograms` feature gate becomes default ON, users with `scrape_native_histograms: true` in Prometheus who forget to also set `always_scrape_classic_histograms: true` can experience silent failures:
    - Classic `_bucket`, `_count`, `_sum` metrics will no longer be ingested
@@ -171,7 +172,8 @@ Kubernetes metrics use the `component-base/metrics` package which wraps `prometh
 
 When native histograms are enabled, Kubernetes will expose **BOTH** formats. The format returned depends on the client's `Accept` header:
 
-**Text format** (`text/plain`, OpenMetrics):
+**Text format** (`text/plain`, OpenMetrics1.0):
+- Remains backward compatible; contains only classic histogram buckets
 ```
 # Classic histogram buckets (always present)
 apiserver_request_duration_seconds_bucket{le="0.005"} 1000
@@ -238,7 +240,7 @@ func (o *HistogramOpts) toPromHistogramOpts() prometheus.HistogramOpts {
         }
         
         opts.NativeHistogramBucketFactor = factor
-        opts.NativeHistogramMaxBucketNumber = 145  // Default max buckets
+        opts.NativeHistogramMaxBucketNumber = 160  // Default max buckets (based on OTel SDK recommendation: https://opentelemetry.io/docs/specs/otel/metrics/sdk/#base2-exponential-bucket-histogram-aggregation)
     }
     
     return opts
