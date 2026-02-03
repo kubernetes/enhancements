@@ -84,10 +84,11 @@ integrating a Topology-Aware and DRA-Aware workload scheduling algorithm into
 the Kubernetes kube-scheduler to address the complex placement requirements of
 modern, high-performance distributed applications.
 
-The proposed algorithm fundamentally alters the scheduling lifecycle for gang
-scheduled workloads. Instead of evaluating pods individually against the cluster
-state - a process prone to fragmentation and deadlocks - the new mechanism
-generates "Placements". These Placements represent candidate domains (sets of
+The proposed topology algorithm leverages the workload-oriented scheduling
+lifecycle introduced in KEP-4671, rather than fundamentally altering the scheduling
+loop itself. It extends this foundation by enabling the evaluation of scheduling
+options within specific "Placements" (subsets of the cluster). These Placements
+represent candidate domains (sets of
 nodes or DRA resources) where the entire workload is theoretically feasible. The
 scheduler then simulates the placement of the full group of pods within these
 domains, utilizing existing filtering and scoring logic to ensure high-fidelity
@@ -468,15 +469,11 @@ The algorithm proceeds in three main phases for a given Workload/PodGroup.
   1. Call `AssumePlacement` (binds context to the specific node selector/DRA
      resources).
 
-  2. Iterate through every pod in the PodGroup.
+  2. Run default workload scheduling algorithm with the given context.
 
-  3. Run standard Pod-level Filter and Score.
+  3. If all pods fit, the Placement is marked Feasible.
 
-  4. Use internal logic to simulate placing the pod on a node.
-
-  5. If all pods fit, the Placement is marked Feasible.
-
-  6. Call `RevertPlacement`.
+  4. Call `RevertPlacement`.
 
 - **Potential Optimization:** Pre-filtering can check aggregate resources
   requested by PodGroup Pods before running the full simulation.
