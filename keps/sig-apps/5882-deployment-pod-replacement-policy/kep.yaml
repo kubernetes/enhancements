@@ -1,10 +1,10 @@
-title: Consider Terminating Pods in Deployments
-kep-number: 3973
+title: Deployment Pod Replacement Policy
+kep-number: 5882
 authors:
   - "@atiratree"
 owning-sig: sig-apps
 status: implementable
-creation-date: 2023-12-12
+creation-date: 2026-02-03
 reviewers:
   - "@jpbetz"
   - "@kannon92"
@@ -15,10 +15,10 @@ approvers:
 
 see-also:
   - "/keps/sig-apps/3939-allow-replacement-when-fully-terminated"
-  - "/keps/sig-apps/5882-deployment-pod-replacement-policy"
+  - "/keps/sig-apps/3973-consider-terminating-pods-deployment"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: alpha
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -27,20 +27,19 @@ latest-milestone: "v1.36"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.33"
-  beta: "v1.35"
+  alpha: "v1.36"
+  beta: ""
   stable: ""
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: DeploymentReplicaSetTerminatingReplicas
+  - name: DeploymentPodReplacementPolicy
     components:
       - kube-apiserver
       - kube-controller-manager
 disable-supported: true
 
-# The following PRR answers are required at beta release
-metrics:
-  - kube_replicaset_status_terminating_replicas
-  - kube_deployment_status_replicas_terminating
+# # The following PRR answers are required at beta release
+# metrics:
+#   - my_feature_metric
