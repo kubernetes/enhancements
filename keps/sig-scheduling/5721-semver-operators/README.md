@@ -167,7 +167,7 @@ spec:
 
 #### Story 4 — Persistent Volume node affinity based on kernel version
 
-As a storage administrator, I am managing persistent volumes that require specific kernel features available only in newer kernel versions. For example, a volume using advanced filesystem features needs kernel version 5.10.0 or higher. I want to ensure the persistent volume can only be attached to nodes running compatible kernel versions.
+As a storage administrator, I am managing persistent volumes that require specific kernel features available only in newer kernel versions. For example, a volume using advanced filesystem features needs a kernel version greater than 5.10.0. I want to ensure the persistent volume can only be attached to nodes running compatible kernel versions.
 
 **Example Configuration:**
 
@@ -301,15 +301,14 @@ New semver-based operators will be added for both affinity and toleration:
 
 **Toleration Operators:** Extend `core/v1.Toleration.Operator` with the following operators:
 
-- `SemverLt`: match if version of toleration.value < version of taint.value
-- `SemverGt`: match if version of toleration.value > version of taint.value
-- `SemverEq`: match if version of toleration.value = version of taint.value
+- `SemverLt`: match if version of taint.value < version of toleration.value
+- `SemverGt`: match if version of taint.value > version of toleration.value
+- `SemverEq`: match if version of taint.value = version of toleration.value
 
 ```go
   TolerationOpSemverLt TolerationOperator = "SemverLt"
   TolerationOpSemverGt TolerationOperator = "SemverGt"
   TolerationOpSemverEq TolerationOperator = "SemverEq"
-)
 ```
 
 **NodeSelector Operators**: Extend `core/v1.NodeSelectorRequirement.Operator` with the following operators: 
@@ -322,7 +321,6 @@ New semver-based operators will be added for both affinity and toleration:
   NodeSelectorOpSemverGt  NodeSelectorOperator = "SemverGt"
   NodeSelectorOpSemverLt  NodeSelectorOperator = "SemverLt"
   NodeSelectorOpSemverEq  NodeSelectorOperator = "SemverEq"
-)
 ```
 
 ### 2. Feature Gate
