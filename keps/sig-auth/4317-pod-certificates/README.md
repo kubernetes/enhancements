@@ -18,7 +18,6 @@
   - [Risks and Mitigations](#risks-and-mitigations)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
-    - [Story 2: ACME-based signer](#story-2-acme-based-signer)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -110,9 +109,9 @@ machinery described in this KEP.
 
 **Support external CA implementations that require PKCS#10 CSRs**: Some CA
 implementations are set up to issue certificates directly to arbitrary public
-keys.  However, there is a significant base of deployed systems (including
-ACME-based CAs, as well as Vault), that need a PKCS#10 certificate signing
-request in order to issue certificates.
+keys.  However, there is a significant base of deployed systems (Vault, for
+example), that need a PKCS#10 certificate signing request in order to issue
+certificates.
 
 ### Non-Goals
 
@@ -144,6 +143,30 @@ order to issue further certificates.  It is, however, possible for a privileged
 workload or human user to create PodCertificateRequests on behalf of other
 workloads.
 
+**Support integration with ACME-based or Web PKI CAs**: Certificate authorities
+that issue publicly-trusted Web PKI certificates often automate issuance via the
+[ACME protocol](https://datatracker.ietf.org/doc/html/rfc8555).  Web PKI CAs
+have constraints that make them poor targets for Pod Certificates:
+* Web PKI CAs may need to take extended downtime in case of actual or suspected
+mis-issuance of certificates.  This is problematic if successful certificate
+issuance is required for application pods to start up.
+* Web PKI CAs have strict rate limits that preclude issuing independent
+  certificates to each pod in an application.  For example, Let's Encrypt
+  [allows](https://letsencrypt.org/docs/rate-limits/#new-certificates-per-exact-set-of-identifiers)
+  the same certificate to be requested 5 times in 7 days.
+* At least one Web PKI CA (Let's Encrypt) makes the assumption that, if the same
+  ACME account request makes a new order for the same set of DNS names, that an
+  existing, finalized order can be re-used.  This assumes that the requester has
+  access to the private key used to create the original order.
+
+For these reasons, provisioning Web PKI certificates is best done with one
+central requester per cluster, that stores the private key and certificate in
+shared storage accessible to all pods that need it.  Examples of integrations that follow this pattern:
+* Gateways or Ingresses with support for automatically issuing certificates to
+  the load balancer.
+* cert-manager (or similar), that generates a key, fetches a certificate, and
+  then stores both in a secret that can then be mounted into individual pods.
+
 ## Design Details
 
 ### PodCertificateRequest Resource
@@ -158,9 +181,6 @@ certificate from Signer Y".  PodCertificateRequests contain:
   * This CSR is normally completely empty, and the signer merely extracts the
     subject public key from it in order to issue a certificate with the signer's
     documented format.
-  * However, to enable integration with ACME-based CAs, the CSR may contain DNS
-    and IP SANs.  The podCertificate projected volume type allows the pod author
-    to request particular SANs to appear in the CSR.
   * The subject public key in the CSR must be one of:
     * An RSA key with modulus size 3072 or 4096,
     * An ECDSA key with curve P256, P384, or P521, or
@@ -210,7 +230,7 @@ PodCertificateRequest validation logic will:
 * Confirm that the public key is one of the supported key types.
 * Verify the signature on the PKCS#10 CSR to confirm proof-of-possession of the
   private key.
-* Verify that the PKCS#10 CSR is empty except for possible IP and DNS SANs.
+* Verify that the PKCS#10 CSR is empty.
 * Confirm that the issued chain (if one is set) consists of valid certificates.
 * To stay ahead of tighter certificate validation coming in future versions of
   Go, we also check:
@@ -339,16 +359,16 @@ type PodCertificateRequestSpec struct {
 	// nodeUID is the UID of the node the pod is assigned to.
 	NodeUID types.UID `json:"nodeUID" protobuf:"bytes,8,opt,name=nodeUID"`
 
-	// DEPRECATED: This field is replaced by UnverifiedPKCS10Request. If
-	// UnverifiedPKCS10Request is set, this field must be empty.
+	// DEPRECATED: This field is replaced by StubPKCS10Request. If
+	// StubPKCS10Request is set, this field must be empty.
 	//
 	// This field will not be carried forward to certificates.k8s.io/v1.
 	//
-	// Signer implementations should extract the public key from UnverifiedPKCS10Request.
+	// Signer implementations should extract the public key from StubPKCS10Request.
 	PKIXPublicKey []byte `json:"pkixPublicKey" protobuf:"bytes,9,opt,name=pkixPublicKey"`
 
-	// DEPRECATED: This field is replaced by UnverifiedPKCS10Request. If
-	// UnverifiedPKCS10Request is set, this field must be empty.
+	// DEPRECATED: This field is replaced by StubPKCS10Request. If
+	// StubPKCS10Request is set, this field must be empty.
 	//
 	// This field will not be carried forward to certificates.k8s.io/v1.
 	//
@@ -375,24 +395,7 @@ type PodCertificateRequestSpec struct {
 	// setting a status.conditions entry with a type of "Denied" and a reason of
 	// "UnsupportedKeyType". It may also suggest a key type that it does support
 	// in the message field.
-	//
-	// Some CA implementations (for example, those using the ACME protocol)
-	// require that the client (the signer implementation, in this case) provide
-	// a PKCS#10 certificate signing request, even if the CA only extracts the
-	// subject public key from the request.  To enable compatibility with these
-	// CAs, Kubelet will generate a stub PKCS#10 request that the signer
-	// implementation can then pass on to the CA.
-	//
-	// By default the request is completely empty, but the pod spec author may
-	// request one or more DNS and IP SANs using the pkcs10RequestParameters field on
-	// the pod certificate projected volume spec.
-	//
-	// The signer and CA implementation MUST NOT trust the contents of this
-	// field.  For example, if the PKCS#10 request contains a DNS subject
-	// alternate name, this only indicates that the pod spec author *requested*
-	// this DNS name.  The signer and/or backing CA MUST verify that the pod is
-	// entitled to use that DNS name (for example, using ACME challenges)
-	UnverifiedPKCS10Request string `json:"unverifiedPKCS10Request" protobuf:"bytes,12,opt,name=unverifiedPKCS10Request"`
+	StubPKCS10Request string `json:"stubPKCS10Request" protobuf:"bytes,12,opt,name=stubPKCS10Request"`
 }
 
 type PodCertificateRequestStatus struct {
@@ -660,45 +663,6 @@ type PodCertificateProjection struct {
 	// Signers should document the keys and values they support. Signers should
 	// deny requests that contain keys they do not recognize.
 	UserAnnotations map[string]string `json:"userAnnotations,omitempty" protobuf:"bytes,7,rep,name=userAnnotations"`
-
-	// Requested customizations for the stub PKCS#10 certificate signing request
-	// that Kubelet will generate using the subject private key.
-	//
-	// Certain CA implementations (for example, those based on the ACME
-	// specification), require a PKCS#10 certificate signing request with
-	// specific values in order to issue a certificate.
-	//
-	// Note that this field is only *advisory* for the signer implementation and its
-	// backing CA.  For example, if you request a DNS SubjectAlternateName that the
-	// CA does not believe is valid for your pod, it will reject your certificate
-	// requests.
-	//
-	// +optional
-	PKCS10RequestParameters *PKCS10RequestParameterSpec `json:"pkcs10RequestParameters,omitempty" protobuf:"bytes,8,rep,name=pkcs10RequestParameters"`
-}
-
-// PKCS10RequestParameterSpec allows the pod author to minimally customize the
-// stub PKCS#10 certificate signing request that Kubelet will generate using the
-// subject private key.
-//
-// See the ACME Identifier Types registry [1] for PKCS#10 fields that
-// ACME-compatible CAs *may* support.
-//
-// In total, up to 100 SANs may be requested.
-//
-// [1] https://www.iana.org/assignments/acme/acme.xhtml#acme-identifier-types
-type PKCS10RequestParameterSpec struct {
-	// DNS Subject Alternate Names that will be included in the request.
-	//
-	// Each entry will be validated as a DNS name (maximum length 253, all
-	// ASCII characters).
-	DNS []string `json:"dns,omitempty" protobuf:"bytes,1,rep,name=dns"`
-
-	// IP Address Subject Alternate Names that will be included in the request.
-	//
-	// Entries must be either IPv4 addresses in dotted-decimal form ("192.0.2.1"),
-	// or IPv6 addresses ("2001:db8::68").
-	IPAddresses []string
 }
 
 // ...
@@ -830,42 +794,6 @@ My application code can then read the private key and certificate chain from
 `/run/workload-spiffe-credentials/credentialbundle.pem`, and use them as an mTLS
 client certificate to authenticate to external APIs.
 
-#### Story 2: ACME-based signer
-
-An application developer wants their pod to have a public CA certificate for a
-certain domain name, issued by Let's Encrypt, or another ACME-based WebPKI CA.
-
-The developer has deployed a hypothetical `mysigner.example/acme-webpki` signer
-implementation into their cluster.
-
-The application developer can then request a certificate for `myapp.example.com`
-to be mounted into their pod.
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  namespace: default
-  name: acme-example
-spec:
-  containers:
-  - name: main
-    image: debian
-    command: ['sleep', 'infinity']
-    volumeMounts:
-    - name: webpki-cert
-      mountPath: /run/webpki-cert
-  volumes:
-  - name: webpki-cert
-    projected:
-      sources:
-      - podCertificate:
-          signerName: "mysigner.example/acme-webpki"
-          keyType: ED25519
-          credentialBundlePath: credentialbundle.pem
-          pkcs10RequestParameters:
-            dns: ["myapp.example.com"]
-```
 
 ### Test Plan
 
@@ -1065,7 +993,7 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-The UnverifiedPKCS10Request field will be added to the v1beta1 API in 1.36, and
+The StubPKCS10Request field will be added to the v1beta1 API in 1.36, and
 at the same time Kubelet will be migrated to generate PodCertificateRequests
 using the new field (leaving PKIXPublicKey and ProofOfPossession empty).  If any
 workloads in the cluster are actively using Pod Certificate projected volumes
