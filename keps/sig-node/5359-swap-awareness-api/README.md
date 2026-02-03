@@ -72,7 +72,7 @@ efficient swap usage, balancing performance, cost and OOM protection.
 To effectively manage swap utilization in workloads, the primary goals of this
 KEP are to
 
--  provide an API that allows application owners to specify the degree of
+-  provide an API that allows application owners to specify the amount of
     swap an application can use.
 -  offer the ability to disable swap entirely for a container by setting
     `swap.limit=0`.
@@ -80,7 +80,7 @@ KEP are to
     their containers.
 -  enable users to configure swap for containers of any QoS class (including
     `Guaranteed` and `BestEffort`), removing QoS-based restrictions on swap
-    while maintaining the safe default of swap being disabled.
+    while maintaining the safe default of swap being disabled (i.e. limit=0).
 -  allow safely overcommit on swap to fully leverage available node capacity.
 -  facilitate kubernetes node features like in-place pod resize and CPU pinning on
     swap enabled nodes by eliminating implicit swap assumptions on pods.
