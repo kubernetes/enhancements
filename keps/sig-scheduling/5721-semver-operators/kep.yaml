@@ -5,12 +5,13 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
-status: provisional
+status: implementable
 creation-date: 2025-12-04
 reviewers:
-  - TBD
+  - "@helayoty"
 approvers:
-  - TBD
+  - "@macsko"
+  - "@sanposhiho"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -29,7 +30,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: TaintTolerationNodeAffinitySemverComparisonOperatorss
+  - name: TolerationAffinitySemverOperators
     components:
       - kube-apiserver
       - kube-scheduler
