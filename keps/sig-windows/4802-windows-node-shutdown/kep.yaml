@@ -3,6 +3,8 @@ kep-number: 4802
 authors:
   - "zylxjtu"
 owning-sig: sig-windows
+participating-sigs:
+  - sig-node
 status: implementable
 creation-date: 2024-09-12
 reviewers:

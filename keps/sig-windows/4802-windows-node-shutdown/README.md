@@ -36,7 +36,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -271,7 +270,7 @@ Until then, we will cover all the scenerios with e2e tests
 
 #### Beta -> GA Graduation
 
-* Addresses feedback from beta
+* Addressed feedback from beta
   * Beta feedback has been collected and incorporated
   * No major issues or API changes identified during beta period
 * Sufficient number of users using the feature
@@ -279,12 +278,10 @@ Until then, we will cover all the scenerios with e2e tests
   * Positive feedback from Windows node operators
 * Confident that no further API / kubelet config configuration options changes are needed
   * Kubelet configuration options (`ShutdownGracePeriod`, `ShutdownGracePeriodCriticalPods`) are stable
-  * Feature gate `WindowsGracefulNodeShutdown` ready for GA
 * Close on any remaining open issues & bugs
   * All known bugs addressed
   * No blocking issues for GA graduation
 * E2E tests are stable and flake-free for 2+ weeks
-  * Windows node level tests added in [PR #129938](https://github.com/kubernetes/kubernetes/pull/129938)
   * Tests enabled in CAPZ cluster via [PR #506](https://github.com/kubernetes-sigs/windows-testing/pull/506)
 * User-facing documentation created for kubernetes.io
 
@@ -491,9 +488,8 @@ details). For now, we leave it here.
 ## Implementation History
 
 *   2024-08-31 - [Initial KEP approved](https://github.com/kubernetes/enhancements/pull/2001)
-*   v1.32 - Feature graduated to Alpha
-*   v1.34 - Feature graduated to Beta
-*   v1.36 - Feature graduated to GA (Stable)   
+*   2026-02 - GA graduation in v1.36
+
 ## Drawbacks
 
 
@@ -509,11 +505,5 @@ details). For now, we leave it here.
 * Use RegKey WaitToKillServiceTimeout to control the shutdown time out value
     * As discussed in the Background part, Windows does not prefer to use this RegKey to update the shutdown
       timeout value, which will have a global affect on the services running on the host.
-
-## Infrastructure Needed (Optional)
-
-
- 
- 
 
 
