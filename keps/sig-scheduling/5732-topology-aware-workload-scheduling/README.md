@@ -518,7 +518,7 @@ future separate KEPs improving and extending the proposed functionality:
 
 5. **Explicit Topology Definition:** Using a Custom Resource (NodeTopology) to
    define and alias topology levels, removing the need for users to know exact
-   node label keys and opening addtional optimization and validation options.
+   node label keys and opening additional optimization and validation options.
 
 6. **Feasible Placements Limit:** Adding an option to provide a limit on the
    number of feasible Placements which need to be found before moving to
@@ -822,7 +822,7 @@ latency / Pod Startup SLO may potentially increase especially for large clusters
 fine grained topology constraints.
 
 We will measure the exact impact using performance benchmarks and scalability tests and
-update the section based on the results. The complexity of scheudling of a single worklaod
+update the section based on the results. The complexity of scheuduling of a single worklaod
 is O(#pods * #nodes), which is comparable to the algorithm not using topology constraints,
 so the benchmarks are primarily to validate the potential inefficiencies of the implementation.
 
