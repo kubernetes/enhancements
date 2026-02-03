@@ -186,7 +186,7 @@ We support two fundamental types of constraints:
    PodGroup are placed onto nodes sharing a common topological characteristic
    (e.g., same rack), defined by a specific node label.
 
-2. **DRA Constraint (Shared Dynamic Resource Allocation)**: Ensures all pods in a
+2. **raint (Shared Dynamic Resource Allocation)**: Ensures all pods in a
    PodGroup bind to a single DRA claim fulfilled from a single, shared,
    co-located resource (e.g., interconnected network interfaces or
    accelerators).
@@ -608,7 +608,6 @@ necessary to implement this enhancement.
 
 #### Beta
 
-- DRA constraints working.
 - Support for "Potential Future Extensions" (Prioritized placement, etc.)
   evaluated.
 - Scalability tests on large clusters with high placement counts.
