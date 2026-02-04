@@ -12,7 +12,7 @@
     - [Story 2 — Tolerate running workloads on nodes with older versions of CNI](#story-2--tolerate-running-workloads-on-nodes-with-older-versions-of-cni)
     - [Story 3 — Container Runtime version based scheduling for sensitive pods](#story-3--container-runtime-version-based-scheduling-for-sensitive-pods)
     - [Story 4 — Persistent Volume node affinity based on kernel version](#story-4--persistent-volume-node-affinity-based-on-kernel-version)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Scheduler Performance Regression](#scheduler-performance-regression)
     - [Invalid SemVer Node Label or Taint](#invalid-semver-node-label-or-taint)
@@ -162,7 +162,7 @@ spec:
         - matchExpressions:
           - key: "node.example/container-runtime-version"
             operator: "SemverGt"
-            values: ["2.0.0"]
+            values: ["v2.0.0"]
 ```
 
 #### Story 4 — Persistent Volume node affinity based on kernel version
@@ -192,11 +192,17 @@ spec:
   storageClassName: advanced-storage
 ```
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 - **SemVer-Only Support**: The implementation will only support versioning comparisons based on SemVer specifications; other versioning schemes will be rejected by the API server during validation.
 
-- **SemVer Library Version**: The current implementation will use `github.com/blang/semver/v4` library to parse and compare Tolerations and Affinity versions, the same library is used in the current code base.
+- **SemVer Library Version**: The current implementation will use `github.com/blang/semver/v4` library to parse and compare Tolerations and Affinity versions, the library implements Semver 2.0.0 spec, the same library is used in the current code base.
+
+- **Semver Tolerant Parsing**: The implementation will use `semver.ParseTolerant` to parse semver values which currently trims spaces, removes a "v" prefix, adds a 0 patch number to versions with only major and minor components specified, and removes leading 0s.
+
+- **Pre-release Version Handling**: The `semver.ParseTolerant` function supports pre-release versions (e.g., `1.2.3-alpha`, `1.2.3-rc.1`). Per SemVer 2.0.0 spec used by the `blang/semver` library, pre-release versions have lower precedence than the normal version (e.g., `1.2.3-alpha < 1.2.3`). Note that short versions (e.g., `1.2` without patch) cannot contain pre-release identifiers and will fail to parse.
+
+- **Build Metadata Handling**: The `semver.ParseTolerant` function parses build metadata (e.g., `1.2.3+build.123`) but it is ignored in comparisons per SemVer 2.0.0 spec. However, Kubernetes label and taint values do not allow the `+` character, so build metadata cannot be used in practice with node labels or taints.
 
 - **Node Affinity Single Element Requirement**: The implementation will validate that if the semantic version operators are used for node affinity, then NodeSelector values array must contain only one element, similar to the behavior of `Gt` and `Lt`.
 
@@ -205,8 +211,6 @@ spec:
 - **Node Affinity Parsing Requirements**: The node affinity value must be parseable as Semantic Versions for SemVer operators (`SemverLt`, `SemverGt`, `SemverEq`). If parsing fails, the node affinity matching rule does not match.
 
 - **NodeFieldSelector Limitation**: The semver comparison operators (`SemverLt`, `SemverGt`, `SemverEq`) are only supported in `matchExpressions` within NodeSelectorTerms. They are **not** supported in `matchFields` as field selectors have different validation requirements.
-
-- **Semver Tolerant Parsing**: The implementation will use `semver.ParseTolerant` to parse semver values which currently trims spaces, removes a "v" prefix, adds a 0 patch number to versions with only major and minor components specified, and removes leading 0s.
 
 - **Non-Version Taint Values**: When a pod toleration uses `SemverLt`, `SemverGt`, or `SemverEq` operators, it only matches taints with SemVer values. If a node has a taint with a non-SemVer value, the toleration will not match, and the pod cannot schedule on that node.
   
@@ -268,12 +272,10 @@ When a pod with valid SemVer operators encounters a node with invalid taint/labe
   - For `NoSchedule`/`NoExecute` taints: Pod cannot schedule on that node
   - For `PreferNoSchedule` taints: Node receives lower score
   - Scheduler event: `0/N nodes are available: X node(s) had untolerated taint {key: invalid-value}`
-  - Scheduler logs (Error level): `"failed to parse taint value as semantic version" taint="invalid-value"`
 
 - **Node Affinity**: If a node label value cannot be parsed as SemVer, the affinity matching returns `false`:
   - For `requiredDuringSchedulingIgnoredDuringExecution`: Pod cannot schedule on that node
   - For `preferredDuringSchedulingIgnoredDuringExecution`: Node receives 0 score contribution for that term (pod can still schedule)
-  - Scheduler logs (V(10) level): `"Parse semver failed for value X in label Y"`
 
 The behavior is **fail-safe**: Invalid values cause matching to fail, preventing pods from scheduling on potentially incompatible nodes.
 
@@ -299,11 +301,27 @@ This is particularly problematic during rollback/downgrade scenarios or for mult
 
 New semver-based operators will be added for both affinity and toleration:
 
-**Toleration Operators:** Extend `core/v1.Toleration.Operator` with the following operators:
+**Toleration Operators:**
 
-- `SemverLt`: match if version of taint.value < version of toleration.value
-- `SemverGt`: match if version of taint.value > version of toleration.value
-- `SemverEq`: match if version of taint.value = version of toleration.value
+The current Toleration operators `Exists` or `Equal` lacks the ability for comparisons, even with the latest operators introduced in [KEP-5471](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5471-enable-sla-based-scheduling) it lacks semantic versioning comparisons, for example to compare that certain taint has a version of value greater than version `v3.28.0` then you will have to declare all possible values in the toleration :
+
+```yaml
+  tolerations:
+  - key: "cni.projectcalico.org/version"
+    operator: "Equal"
+    value: "v3.28.1"
+    effect: "NoSchedule"
+  - key: "cni.projectcalico.org/version"
+    operator: "Equal"
+    value: "v3.28.2"
+....
+```
+
+The feature will extend `core/v1.Toleration.Operator` with the following operators:
+
+- `SemverLt`: matches when the version of taint's value is less than toleration's value
+- `SemverGt`: matches when the version of taint's value is greater than toleration's value
+- `SemverEq`: matches when the version of taint's value is equal to toleration's value
 
 ```go
   TolerationOpSemverLt TolerationOperator = "SemverLt"
@@ -311,11 +329,36 @@ New semver-based operators will be added for both affinity and toleration:
   TolerationOpSemverEq TolerationOperator = "SemverEq"
 ```
 
-**NodeSelector Operators**: Extend `core/v1.NodeSelectorRequirement.Operator` with the following operators: 
+**NodeSelector Operators**:
 
-- `SemverLt`: match if version of value of NodeSelectorRequirement.Key < version of NodeSelectorRequirement.Values[0]
-- `SemverGt`: match if version of value of NodeSelectorRequirement.Key > version of NodeSelectorRequirement.Values[0]
-- `SemverEq`: match if version of value of NodeSelectorRequirement.Key = version of NodeSelectorRequirement.Values[0]
+The current `NodeSelectorRequirement` operators `In`, `NotIn`, `Exists`, `DoesNotExist` lacks ability for comparisons, also `Gt`, and `Lt` operators only compare numercial values which lack the ability to compare semantic versioning, so for example to compare that node label has a version value greater than `v1.2.3` then you would need to either include all possible values for the `In` operators or use different labels for the same version to annotate `major`, `minor`, and `patch` version:
+
+```yaml
+      - matchExpressions:
+        - key: "example/app-version"
+          operator: "In"
+          values: ["v1.2.4", "v1.2.5", "v1.2.6"...]
+```
+Or use different labels to annotate the intended version of the same component:
+
+```yaml
+      - matchExpressions:
+        - key: "example/app-version-major"
+          operator: "Equal"
+          values: ["1"]
+        - key: "example/app-version-minor"
+          operator: "Equal"
+          values: ["2"]
+        - key: "example/app-version-major"
+          operator: "Gt"
+          values: ["3"]
+```
+
+The feature however will make that easier by extending `core/v1.NodeSelectorRequirement.Operator` with the following operators: 
+
+- `SemverLt`: matches when the version node's label value is less than the value
+- `semvergt`: matches when the version node's label value is greater than the value
+- `SemverEq`: matches when the version node's label value is equal to the value
 
 ```go
   NodeSelectorOpSemverGt  NodeSelectorOperator = "SemverGt"
@@ -719,11 +762,13 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+- **Tolerations with Equal operator**: Without semver operators, users must enumerate all possible versions they want to tolerate using the `Equal` operator. This approach is impractical as it requires constant updates when new versions are released and doesn't scale for version ranges.
+
+- **Node Affinity with In operator or multiple labels**: Without semver operators, users have two alternatives:
+
+1. Using the `In` operator with all possible version values enumerated, which suffers from the same scalability issues as tolerations.
+
+2. decomposing the version into multiple labels (e.g., `app-version-major`, `app-version-minor`, `app-version-patch`) and using `Gt`/`Lt` operators on individual components. The second approach adds operational complexity and doesn't handle semver comparison semantics correctly (e.g., `v2.0.0 > v1.9.0` cannot be expressed with separate numeric comparisons on each component).
 
 ## Infrastructure Needed (Optional)
 
