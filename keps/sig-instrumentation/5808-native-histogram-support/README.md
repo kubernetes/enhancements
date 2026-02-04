@@ -76,7 +76,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This KEP proposes adding support for [Prometheus Native Histograms](https://prometheus.io/docs/specs/native_histograms/) to Kubernetes component metrics. Starting with Prometheus v3.8.0, native histograms are supported as a stable feature. Native histograms use exponential bucket boundaries instead of fixed boundaries, providing significant storage efficiency (~10x reduction in time series count per histogram), improved query performance, and finer-grained visibility into distributions while maintaining full backward compatibility with existing monitoring infrastructure through a dual exposition strategy.
 
-The implementation introduces a feature gate (`NativeHistograms`) to provide safe rollout and rollback capabilities. When enabled, Kubernetes components will expose histogram metrics in both classic and native formats simultaneously (when PrometheusProto format is requested), ensuring existing dashboards and alerts continue to function while users can migrate to native histograms at their own pace. Rollback is handled primarily through Prometheus-side configuration (for Prometheus 3.x users) or via the K8s feature gate.
+The implementation introduces a feature gate (`NativeHistograms`) to provide safe rollout and rollback capabilities. When enabled, Kubernetes components will expose histogram metrics in both classic and native formats simultaneously (when requesting a format that supports Native Histograms, such as PrometheusProto), ensuring existing dashboards and alerts continue to function while users can migrate to native histograms at their own pace. Rollback is handled primarily through Prometheus-side configuration (for Prometheus 3.x users) or via the K8s feature gate.
 
 ## Motivation
 
@@ -198,26 +198,9 @@ This ensures:
 
 ### Implementation Phases
 
-We will extend the `HistogramOpts` struct in the `component-base/metrics` histogram wrapper to include the native histogram configuration options required by `prometheus/client_golang`. We will set sensible global defaults (e.g., bucket factor of 1.1, max 160 buckets) that apply to all histograms when the feature is enabled, while allowing per-metric overrides if needed:
+For the alpha phase, we will use sensible global defaults for all native histograms without exposing configuration options to developers. This keeps the initial implementation simple while we gather feedback. The `HistogramOpts` struct in `component-base/metrics` will remain unchanged - no new fields will be added.
 
-```go
-type HistogramOpts struct {
-    // Existing fields...
-    Namespace         string
-    Subsystem         string
-    Name              string
-    Help              string
-    ConstLabels       map[string]string
-    Buckets           []float64
-    DeprecatedVersion string
-    StabilityLevel    StabilityLevel
-    
-    // New: Native histogram configuration (used when feature enabled)
-    // If nil, uses global defaults when native histograms are enabled.
-    NativeHistogramBucketFactor     *float64
-    NativeHistogramMaxBucketNumber  *uint32
-}
-```
+Configuration options may be added in future phases if a need arises based on user feedback and real-world usage patterns.
 
 We will update the conversion function to pass native histogram options to the underlying Prometheus library when the feature gate is enabled:
 
@@ -233,14 +216,9 @@ func (o *HistogramOpts) toPromHistogramOpts() prometheus.HistogramOpts {
     }
     
     if utilfeature.DefaultFeatureGate.Enabled(features.NativeHistograms) {
-        // Use defaults, allow per-metric override if specified
-        factor := 1.1  // Default bucket growth factor
-        if o.NativeHistogramBucketFactor != nil {
-            factor = *o.NativeHistogramBucketFactor
-        }
-        
-        opts.NativeHistogramBucketFactor = factor
-        opts.NativeHistogramMaxBucketNumber = 160  // Default max buckets (based on OTel SDK recommendation: https://opentelemetry.io/docs/specs/otel/metrics/sdk/#base2-exponential-bucket-histogram-aggregation)
+        // Use fixed global defaults for alpha phase
+        opts.NativeHistogramBucketFactor = 1.1   // Default bucket growth factor
+        opts.NativeHistogramMaxBucketNumber = 160 // Default max buckets (based on OTel SDK recommendation: https://opentelemetry.io/docs/specs/otel/metrics/sdk/#base2-exponential-bucket-histogram-aggregation)
     }
     
     return opts
@@ -348,7 +326,7 @@ Existing histogram metric tests should be extended to verify dual exposition beh
 ##### Unit tests
 
 - `staging/src/k8s.io/component-base/metrics`: Test `toPromHistogramOpts()` with feature gate enabled/disabled
-- Test per-metric native histogram option overrides
+- Test that global native histogram defaults are applied when feature gate is enabled
 - Test that classic buckets are always present
 
 ##### Integration tests
@@ -380,6 +358,7 @@ Existing histogram metric tests should be extended to verify dual exposition beh
   - Prometheus configuration examples
   - Clear Prometheus 2.x limitations
 - Performance benchmarks completed showing no regression
+- Migrate select performance tests to use native histograms for early feedback
 
 #### GA
 
@@ -461,7 +440,7 @@ Yes, unit tests will verify:
 **Rollout failure scenarios:**
 1. Prometheus too old to understand native histograms - Prometheus ignores native format, stores classic
 2. Dashboard queries not updated - Dashboards continue to work with classic format
-3. Memory pressure from additional histogram storage - Configurable via `--native-histogram-max-buckets`
+3. Memory pressure from additional histogram storage
 
 **Impact on workloads:** None. This feature only affects metrics exposition, not workload behavior.
 
