@@ -96,6 +96,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
+    - [MutablePodResourcesForSuspendedJobs](#mutablepodresourcesforsuspendedjobs)
+    - [MutableSchedulingDirectivesForSuspendedJobs](#mutableschedulingdirectivesforsuspendedjobs)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -329,6 +331,11 @@ The following unit and integrations tests will be added.
 
 #### Integration tests
 
+#### MutablePodResourcesForSuspendedJobs
+
+Test grid does not provide information on each test case. 
+Due to this, we will link to the job and show that the job 
+
 We will add the following test scenarios to kubernetes/test/integration/jobs.
 
 - When a job is suspended with feature gate enabled, resources are able to be mutated.
@@ -336,12 +343,35 @@ We will add the following test scenarios to kubernetes/test/integration/jobs.
 - When feature gate is disabled and a job is suspended, mutations are not allowed.
 - When a running job is suspended, mutations will be allowed.
 
+The test cases are implemented as part of the [TestUpdateJobPodResources](https://github.com/kubernetes/kubernetes/blob/a66a59fc6fc0e7393e0f7e65f1bbbafd32f29ebe/test/integration/job/job_test.go#L4291).
+This function covers the following use cases:
+- suspended job, feature gate enabled, update resources
+- non-suspended job, feature gate enabled, update resources
+- suspended job, feature gate disabled, update resources
+- started then suspended job, feature gate enabled, update resources
 An integration test will be added to verify the behavior of PodReplacementPolicy with `Failed` and this feature.
 In this case, a running job will be suspended and the pods will go to a terminating state. If `PodReplacementPolicy` is set to `False`, a user should be able to change the resources on the Job but a pod will only be created once the terminating pods are removed. The new pods should have the resized resource.
 
+The PodReplacementPolicy tests have been implemented as part of the [TestMutablePodResourcesWithPodReplacementPolicyFailed](https://github.com/kubernetes/kubernetes/blob/a66a59fc6fc0e7393e0f7e65f1bbbafd32f29ebe/test/integration/job/job_test.go#L5301)
+
+
+Job integration tests can be found in [integration master test grid]([integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master). 
+
+Triage shows no issues with the job integration tests[triage search](https://storage.googleapis.com/k8s-triage/index.html?date=2026-01-20&job=ci-kubernetes-integration-master).
+
+#### MutableSchedulingDirectivesForSuspendedJobs
+
+There was a second feature gate introduced for this feature and integration tests were also covered.
+
+This test covers the updating scheduling directives on jobs that were suspended and resumed.
+The test is covered under [TestMutableSchedulingDirectivesForSuspendedJobs](https://github.com/kubernetes/kubernetes/blob/a66a59fc6fc0e7393e0f7e65f1bbbafd32f29ebe/test/integration/job/job_test.go#L4610C6-L4610C53).
+
 #### e2e tests
 
-Integration tests offer enough coverage.
+These will be implemented on beta promotion and will be linked 
+
+- When a job is suspended with feature gate enabled, resources are able to be mutated.
+- When a running job is suspended, mutations are also allowed.
 
 ### Graduation Criteria
 
@@ -422,7 +452,7 @@ This could also be used to monitor the rollout of this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be done after beta. In 1.36, we will perform the following test:
+The following scenarios were verified on a Kind 1.35 cluster.
 
 - create a kind cluster with feature gate off
   - verify suspend and patching of resources is forbidden
@@ -509,6 +539,10 @@ No.
 
 No.
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
 ### Troubleshooting
 
 For general troubleshooting of API server issues, see [kubernetes.io/docs/tasks/debug/](https://kubernetes.io/docs/tasks/debug/).
@@ -528,7 +562,9 @@ N/A.
 
 ## Implementation History
 
-- July 3rd: draft of KEP
+- July 3rd, 2025: draft of KEP
+- For 1.35, KEP went in for alpha and the implementation also made it into 1.35.
+- 1.36, promote to beta.
 
 ## Drawbacks
 
