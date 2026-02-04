@@ -9,17 +9,17 @@
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Story 1 — Tolerate taints based on semantic version comparison](#story-1--tolerate-taints-based-on-semantic-version-comparison)
-    - [Story 2 — Node affinity matching labels containing specific string](#story-2--node-affinity-matching-labels-containing-specific-string)
+    - [Story 2 — Node affinity matching labels starts with specific string](#story-2--node-affinity-matching-labels-starts-with-specific-string)
     - [Story 3 — Node affinity with semantic version comparison](#story-3--node-affinity-with-semantic-version-comparison)
     - [Story 4 — PersistentVolume node affinity with CEL expression](#story-4--persistentvolume-node-affinity-with-cel-expression)
+    - [Story 5 — Matching multiple node taints](#story-5--matching-multiple-node-taints)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
-    - [Scheduler Performance Regression](#scheduler-performance-regression)
-    - [CEL Expression Evaluation Errors](#cel-expression-evaluation-errors)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
   - [Feature Gate](#feature-gate)
   - [API Validation](#api-validation)
+    - [Examples](#examples)
   - [Scheduler Logic](#scheduler-logic)
     - [CEL Compiler and Cache](#cel-compiler-and-cache)
     - [TaintToleration Plugin](#tainttoleration-plugin)
@@ -75,7 +75,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This enhancement introduces support for Common Expression Language (CEL) in Taint/Toleration and NodeAffinity. The KEP adds a new `matchCELExpressions` field to **core/v1 NodeSelectorTerm**, enabling CEL expressions for node selection in **Pod NodeAffinity** and **PersistentVolume NodeAffinity**. Additionally, a new `expression` field is added to **core/v1 Toleration** for CEL-based taint matching.
 
-CEL expressions provide a powerful and extensible mechanism for expressing complex scheduling constraints, including semantic version comparisons, string manipulation, and compound logical conditions—all within a single, validated expression.
+CEL expressions provide a powerful and extensible mechanism for expressing complex scheduling constraints, including semantic version comparisons, string manipulation, and compound logical conditions all within a single, validated expression.
 
 ## Motivation
 
@@ -88,11 +88,12 @@ CEL provides a standardized, extensible expression language already used through
 
 ### Goals
 
-- Add a `matchCELExpressions` field to `core/v1.NodeSelectorTerm` that accepts CEL expressions for node selection, affecting Pod NodeAffinity and PersistentVolume NodeAffinity.
-- Add an `expression` field to `core/v1.Toleration` that accepts CEL expressions for taint matching.
+- Allow CEL expression evaluation for NodeAffinity by adding `matchCELExpressions` field to `core/v1.NodeSelectorTerm` that accepts CEL expressions for node selection.
+- Allow CEL expression evaluation for Tolerations by adding `expression` field to `core/v1.Toleration` that accepts CEL expressions for taint matching.
 - Provide builtin CEL functions for common scheduling use cases, including functions supported by Kubernetes CEL.
 - Ensure CEL expressions are validated at admission time for syntax correctness, type safety, and cost limits.
 - Gate the feature behind `TaintTolerationNodeAffinityCEL` feature flag, disabled by default in Alpha.
+- Maintain backward compatibility.
 
 ### Non-Goals
 
@@ -133,7 +134,7 @@ spec:
     image: myapp:latest
 ```
 
-#### Story 2 — Node affinity matching labels containing specific string
+#### Story 2 — Node affinity matching labels starts with specific string
 
 As a cluster operator, I label nodes with their rack location (e.g., `topology.kubernetes.io/rack=us-west-2a-rack-42`). I want to schedule pods only on nodes whose rack label contains a specific datacenter prefix.
 
@@ -150,7 +151,7 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchCELExpressions:
-          - "node.labels['topology.kubernetes.io/rack'].contains('us-west-2')"
+          - "node.labels['topology.kubernetes.io/rack'].startsWith('us-west-2')"
   containers:
   - name: app
     image: myapp:latest
@@ -205,6 +206,44 @@ spec:
   storageClassName: advanced-storage
 ```
 
+#### Story 5 — Matching multiple node taints
+
+As a cluster operator I manage in my cluster a node that has multiple taints that start with the same prefix `node.example/` I want to be able to tolerate specific pods to all of these taints without iterating on each of them.
+
+**Example Configuration:**
+
+```yaml
+apiVersion: v1
+kind: Node
+metadata:
+  name: node-1
+spec:
+  taints:
+  - key: "node.example/taint1"
+    value: "foo"
+    effect: NoSchedule
+  - key: "node.example/taint2"
+    value: "foo"
+    effect: NoSchedule
+  - key: "node.example/taint3"
+    value: "foo"
+    effect: NoSchedule
+  - key: "node.example/taint4"
+    value: "foo"
+    effect: NoSchedule
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: compatible-workload
+spec:
+  tolerations:
+  - expression: "taint.key.startsWith('node.example/')"
+  containers:
+  - name: app
+    image: myapp:latest
+```
+
 ### Notes/Constraints/Caveats (Optional)
 
 - **CEL Expression Cost Limits and Expression Length**: CEL expressions are subject to cost limits to prevent resource exhaustion. Expressions that exceed the cost budget will be rejected at admission time. The maximum expression length is 10 KiB, and the estimated cost limit for evaluation is based on logical steps.
@@ -222,20 +261,30 @@ spec:
   - For tolerations with `expression`: The toleration does not match the taint.
 - **Mutual Exclusivity**: The `expression` field in Tolerations is mutually exclusive with the existing `operator`, `key`, and `value` fields. If `expression` is set, the other fields must be empty.
 - **Alpha Restrictions**: When `TaintTolerationNodeAffinityCEL=false`, the API server rejects pods and PersistentVolumes using `matchCELExpressions` in node affinity, and pods using `expression` in tolerations.
-- **Immutability**: CEL expressions in `matchCELExpressions` and toleration `expression` fields follow the same immutability rules as other scheduling constraints—they cannot be modified after pod creation.
+- **Immutability**: CEL expressions in `matchCELExpressions` and toleration `expression` fields follow the same immutability rules as other scheduling constraints they cannot be modified after pod creation.
 - **CEL Expression Caching**: Adding LRU caches for compiled CEL expressions for both NodeAffinity and Tolerations, the expressions are compiled once and cached for reuse across scheduling cycles. 
 
 ### Risks and Mitigations
 
-#### Scheduler Performance Regression
+1. Scheduler Performance Regression
 
-CEL expression evaluation during taint/toleration matching or node affinity matching could degrade scheduler performance, especially in clusters with thousands of nodes and complex expressions, the scheduler however will maintain separate caches for both node affinity and toleration expression, as well as adding cost limit and expression length limits at validation time.
+**Risk**:
 
-#### CEL Expression Evaluation Errors
+CEL expression evaluation during taint/toleration matching or node affinity matching could degrade scheduler performance, especially in clusters with thousands of nodes and complex expressions.
+
+**Mitigation**:
+
+The scheduler will maintain separate LRU caches for both node affinity and toleration expression which will reduce the risk of recompiling expressions during scheduling cycles, as well as adding cost limit and expression length limits at validation time.
+
+2. CEL Expression Evaluation Errors
+
+**Risk**:
 
 CEL expressions may fail at scheduling time, which can lead to:
 - Pods stuck in `Pending` state if all nodes fail expression evaluation
 - Silent scheduling failures for `preferredDuringSchedulingIgnoredDuringExecution` affinity
+
+**Mitigation**:
 
 This can be mitigated at admission time validation by validating syntax errors and type mismatches, for example when admitting a pod that uses a toleration expression `"taint.key == foo && taint.value == 'bar'"`:
 
@@ -246,11 +295,11 @@ spec.tolerations[0].expression: Invalid value: "taint.key == foo && taint.value 
 ```
 Expression evaluation failures at scheduling time are treated as non-matching for both NodeAffinity and Tolerations:
 
-**NodeAffinity**:
+For **NodeAffinity**:
 - For `requiredDuringSchedulingIgnoredDuringExecution`: Pod cannot schedule on that node
 - For `preferredDuringSchedulingIgnoredDuringExecution`: Node receives 0 score contribution
 
-**Tolerations**:
+For **Tolerations**:
 - For tolerations: The toleration does not match the taint
 
 ## Design Details
@@ -304,6 +353,33 @@ Validation of CEL expressions occurs at admission time:
   - For node affinity: If the old pod has any `NodeSelectorTerm` with `matchCELExpressions` set, CEL expressions are allowed in the update.
   - For PersistentVolumes: Similar logic applies - if the existing PV uses `matchCELExpressions` in its node affinity, updates are allowed.
 
+#### Examples
+
+- Toleration fails at validation because it exceeds the maximum expression length of 10KiB
+
+```yaml
+spec:
+  tolerations:
+  - expression: "taint.key == `value1` && taint.value == `value2` && taint.effect == `NoSchedule` && taint.key.startsWith(`prefix`) && taint.value.endsWith(`suffix`) && taint.key.contains(`mid`) && taint.value.contains(`inner`) && taint.key.size() > 0 && taint.value.size() > 0 //...very long expression"
+```
+API will respond with:
+
+```
+The Pod "example" is invalid: spec.tolerations[0].expression: Too long: may not be more than 10240 bytes
+```
+
+- NodeAffinity fails at validation because it exceeds maximum cost
+
+```yaml
+    nodeSelectorTerms:
+    - matchCELExpressions:
+      - 'node.labels.all(k, node.labels.all(v, k.matches(".*") && v.matches(".*")))'
+```
+API will respond with:
+```
+The Pod "example" is invalid: spec: Forbidden: too complex, exceeds cost limit
+```
+
 ### Scheduler Logic
 
 #### CEL Compiler and Cache
@@ -311,6 +387,7 @@ Validation of CEL expressions occurs at admission time:
 The feature introduces two separate CEL compilers and caches for tolerations and node affinity, each with their own CEL environment and variable definitions, each compiler will include all standard Kubernetes CEL libraries, and will perform cost estimation based on the declared field sizes.
 
 - The Toleration compiler environment will expose the following variable:
+
 `taint`:
    - `taint.key`
    - `taint.value`
@@ -318,6 +395,7 @@ The feature introduces two separate CEL compilers and caches for tolerations and
    - `taint.timeAdded`
 
 - The NodeAffinity compiler environment will expose the following variable:
+
 `node`:
    - `node.labels`
 
@@ -508,7 +586,7 @@ No
 
 Yes. Impact on existing pods with CEL fields when feature is disabled:
 
-1. Already-running pods: Continue running normally.
+1. Already-running pods: Continue running normally for pod affinity rules, however pods that were already tolerating a `NoExecute` node taints will be evicted.
 
 2. Unscheduled/pending pods:
 	- **Tolerations**: The scheduler will ignore the `expression` field, fail to match the taint, and the Pod will remain Pending.
@@ -517,24 +595,13 @@ Yes. Impact on existing pods with CEL fields when feature is disabled:
 3. New pod creation:
 	- API server validation will reject new pods using `matchCELExpressions` or `expression` in tolerations.
 
+4. Pod updates: For both Affinity and Toleration the feature will make sure to detect that CEL has been in use in the Pod Validation Options and updates will be allowed.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Pods that were created with CEL expressions while the feature was enabled will resume normal scheduling behavior. The scheduler will recognize and evaluate the `matchCELExpressions` and `expression` fields again. No special migration or manual intervention is required.
 
 ###### Are there any tests for feature enablement/disablement?
-
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
 
 Yes, the following unit tests will be added to cover feature gate enablement/disablement scenarios:
 
@@ -553,7 +620,7 @@ Yes, the following unit tests will be added to cover feature gate enablement/dis
 
 **Rollback**: Can impact workloads if not done carefully:
 
-1. Running pods with `matchCELExpressions` and `expression` fields: continue running (safe)
+1. Running pods with `matchCELExpressions` and `expression` fields: continue running (safe) with an exception for pods were already tolerating a `NoExecute` taint which they will be evicted.
 2. Pending pods with `matchCELExpressions` and `expression` fields: become stuck in Pending state, as:
    - They remain in etcd but validation rejects them
    - The scheduler won't recognize the fields
@@ -566,7 +633,6 @@ Yes, the following unit tests will be added to cover feature gate enablement/dis
 1. Update identified workloads to remove CEL expression fields
 2. Delete pending pods that use `matchCELExpressions` and `expression` fields
 3. Disable feature gate in kube-scheduler first, then kube-apiserver
-
 
 ###### What specific metrics should inform a rollback?
 
@@ -588,23 +654,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-1. **Metrics**:
-
-```promql
-   # Number of pods evaluated by TaintToleration plugin
-   scheduler_plugin_evaluation_total{plugin="TaintToleration"} > 0
-   
-   # Monitor rate of pods rejected by TaintToleration plugin
-   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status=~"Unschedulable.*"}[5m])
-   
-   # Rate of successful evaluations
-   rate(scheduler_plugin_evaluation_total{plugin="TaintToleration", status="Success"}[5m])
-   
-   # Plugin execution duration
-   rate(scheduler_framework_extension_point_duration_seconds{plugin="TaintToleration"}[5m])
-```
-
-2. **API Queries**:
+Operator can use API queries to determine if the fields are used in either NodeAffinity or Toleration:
 
 ```bash
 	kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}: {.spec.tolerations[?(@.expression)]}{"\n"}{end}' | grep -v ": \[\]$"
@@ -634,20 +684,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+The scheduler should maintain the same SLOs as before.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -717,19 +754,6 @@ This feature does not change the behavior when the API server and/or etcd is una
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
 - CEL expression evaluation fails at scheduling time due to missing or malformed node labels/taint values (e.g., invalid semver string for `semver.compare()`).
   - Detection: Pods stuck in `Pending` state with `FailedScheduling` events. Monitor `scheduler_plugin_evaluation_total` for unexpected spikes.
   - Mitigations: Expression evaluation failures are treated as non-matching, so pods remain pending but already running workloads are unaffected. Users can update pod specs to use expressions that handle edge cases.
@@ -752,9 +776,8 @@ For each of them, fill in the following information by copying the below templat
 
 1. Check `scheduler_framework_extension_point_duration_seconds` to identify if TaintToleration or NodeAffinity plugins are causing latency.
 2. Review scheduler logs for CEL evaluation errors.
-3. Check if the LRU cache is being effective by monitoring cache hit rates.
-4. If performance is unacceptable, consider simplifying CEL expressions or reducing the number of pods using CEL-based scheduling.
-5. As a last resort, disable the feature gate to revert to standard scheduling behavior.
+3. If performance is unacceptable, consider simplifying CEL expressions or reducing the number of pods using CEL-based scheduling.
+4. As a last resort, disable the feature gate to revert to standard scheduling behavior.
 
 ## Implementation History
 
