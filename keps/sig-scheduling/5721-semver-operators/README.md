@@ -331,7 +331,7 @@ The feature will extend `core/v1.Toleration.Operator` with the following operato
 
 **NodeSelector Operators**:
 
-The current `NodeSelectorRequirement` operators `In`, `NotIn`, `Exists`, `DoesNotExist` lacks ability for comparisons, also `Gt`, and `Lt` operators only compare numercial values which lack the ability to compare semantic versioning, so for example to compare that node label has a version value greater than `v1.2.3` then you would need to either include all possible values for the `In` operators or use different labels for the same version to annotate `major`, `minor`, and `patch` version:
+The current `NodeSelectorRequirement` operators `In`, `NotIn`, `Exists`, `DoesNotExist` lacks ability for comparisons, also `Gt`, and `Lt` operators only compare numerical values which lack the ability to compare semantic versioning, so for example to compare that node label has a version value greater than `v1.2.3` then you would need to either include all possible values for the `In` operators or use different labels for the same version to annotate `major`, `minor`, and `patch` version:
 
 ```yaml
       - matchExpressions:
