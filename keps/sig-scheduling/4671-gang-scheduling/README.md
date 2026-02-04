@@ -808,6 +808,12 @@ by assigning a lower priority to the dependent pods. Since the algorithm process
 pods first, this ensures that the required pods are scheduled earlier,
 to satisfy the affinity rules of the subsequent dependent pods.
 
+All pods belonging to a single pod group must share the same `.spec.schedulerName`.
+Divergent scheduler names would complicate reasoning about placement decisions
+and make future pod group-based constraints more difficult to manage.
+The scheduler will validate this condition: if a mismatch is detected,
+all pod group's pods will be rejected as unschedulable.
+
 #### Interaction with Basic Policy
 
 For pod groups using the `Basic` policy, the Workload Scheduling Cycle is
