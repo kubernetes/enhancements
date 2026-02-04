@@ -807,17 +807,14 @@ Pods will have to be re-created to use the feature.
 
 ###### Are there any tests for feature enablement/disablement?
 
-We will add.
+Yes, we have unit test to verify this.
 
-We will test for when the field pod.spec.hostUsers is set to true, false
-and not set. All of this with and without the feature gate enabled.
+Tests that exercise  enabling and disabling the feature gate are
+[here](https://github.com/kubernetes/kubernetes/blob/0cf6c382a04d9669db210e95f3d62276376730c2/pkg/kubelet/userns/userns_manager_switch_test.go) 
 
-We will also unit test that, if pods were created with the new field
-pod.specHostUsers, then if the featuregate is disabled all works as expected (no
-user namespace is used).
-
-We will add tests exercising the `switch` of feature gate itself (what happens
-if I disable a feature gate after having objects written with the new field)
+Tests that have the feature gate disabled and test that the public function work as expected are
+[here](https://github.com/kubernetes/kubernetes/blob/0cf6c382a04d9669db210e95f3d62276376730c2/pkg/kubelet/userns/userns_manager_disabled_test.go).
+They do test for all possible values of `hostUsers` too.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -879,7 +876,8 @@ When a pod hits this error returned by the kubelet, the status in `kubectl` is s
   Warning  FailedCreatePodSandBox  12s (x23 over 5m6s)  kubelet            Failed to create pod sandbox: user namespaces is not supported by the runtime
 ```
 
-The following kubelet metrics will be added
+If the kubelet started fine, the following kubelet metrics should be used to detect failures to
+start pods with user namespaces:
 - `started_user_namespaced_pods_total`: Shows the number of pods that have been attempted to be created with a user namespace.
 - `started_user_namespaced_pods_errors_total`: The number of pods that failed to create that had a user namespace.
 
@@ -1002,7 +1000,7 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes, two metrics will be added: `started_user_namespaced_pods_total` and `started_user_namespaced_pods_errors_total`.
+Yes, two metrics: `started_user_namespaced_pods_total` and `started_user_namespaced_pods_errors_total`.
 If error == total for a given node, then there is a problem on that node with user namespace creation.
 
 <!--
