@@ -204,7 +204,7 @@ However, the solution is still in some regards sub-optimal:
    remember to (!) "remove" the permissions in the admission phase.
 1. The user needs to understand two different paradigms at once, and coordinate
    the policies between them.
-1. The principal matching predicate needs to be duplicated between RBAC and VAP.
+1. The principal-matching predicate needs to be duplicated between RBAC and VAP.
 1. The policy author needs permission to both author RBAC rules and VAP objects.
    VAP objects do not have privilege escalation prevention, which means that
    anyone that can create a VAP can author a static `false` condition for
@@ -225,6 +225,10 @@ However, the solution is still in some regards sub-optimal:
    the form "allow create persistentvolumes, only when storageClassName=='foo'",
    as the authorizer cannot mandate or control the admission plugins or cluster
    setup process of the cluster it serves authorization decisions to.
+1. If the policy could not be modelled as a `ValidatingAdmissionPolicy`, but an
+   admission webhook would be needed, that webhook might need to be sent for
+   every request in the worst case, as opposed to only those requests that are
+   conditionally authorized (as in this proposal).
 
 ![Over-grant in RBAC, deny in VAP](images/over-grant-rbac-deny-vap.png)
 
@@ -433,8 +437,8 @@ authorizers do not have direct access to the request body in the authorization
 stage:
 
 1. Conditional Authorization is only supported for certain requests, namely
-   whenever admission is invoked (verbs `create`, `update`, `patch`, `delete`
-   and connect requests).
+   whenever admission is invoked (verbs `create`, `update`, `patch`, `delete`,
+   `deletecollection` and connect requests).
 1. Any request that cannot become authorized, regardless of the value of the
    resource data, is rejected already at the authorization stage, thanks to
    partial evaluation.
@@ -495,9 +499,9 @@ have been if it could have been evaluated directly.
   [this section](#compound-authorization-for-connectible-resources) for more
   details)
 - Keep backwards compatibility within supported version skew, as always.
-- Consider that a patch or update in authorization can turn into a create in
-  admission, patch in authorization can turn into an update in admission, and
-  deletecollection in authorization turns into a delete in admission.
+- Consider that a `patch` or `update` in authorization can turn into a `create`
+  in admission, `patch` in authorization can turn into an `update` in admission,
+  and `deletecollection` in authorization turns into a `delete` in admission.
 - Must work with aggregated API servers.
 - Must work with any authorizer chain that is formed as a DAG.
 
@@ -843,17 +847,40 @@ would evaluate into a `NoOpinion`.
 
 The `WithAuthorization` HTTP filter makes sure that the current request supports
 conditional authorization, and that the decision can become allowed (that is,
-the decision is a concrete or conditional allow) before proceeding.[^4] The
-returned `Decision` is propagated using the context to the validating admission
-phase, just like `UserInfo` and `RequestInfo` is today. Warning: Any aggregated
-API server **MUST** use `kube-apiserver` as its first authorizer; any other
-behavior is unsafe and with undefined behavior.
+the decision is a concrete or conditional allow) before proceeding. The returned
+`Decision` is propagated using the context to the validating admission phase,
+just like `UserInfo` and `RequestInfo` are today. The HTTP filter signature is
+augmented with a function that determines whether the request supports
+conditions or not:
 
-[^4]: Note that this also holds for `kube-apiserver` forwarding requests to an
-aggregated API server. This is safe to do, even if the conditions do not
-propagate directly from `kube-apiserver` to the aggregated API server, as the
-aggregated API server **must be configured** to use `kube-apiserver` as a webhook
-authorizer, and thus get the same conditions for enforcement through that route.
+```go
+func WithAuthorization(hhandler http.Handler, auth authorizer.Authorizer, s runtime.NegotiatedSerializer, supportsAuthorizationsConditions func(ctx context.Context))
+```
+
+If an authorizer returns a conditional response for a request that does not
+support conditions (such as `list` requests, for now), `WithAuthorization` fails
+closed. The function ensures that there is always a "safety net" behind the
+authorization filter, if the request is let to proceed. Aggregated API servers
+that use the `WithAuthorization` function can themselves choose when conditions
+are applicable. Initially, the `kube-apiserver` supports conditional responses
+for the following classes of requests:
+
+- When verb is `create`, `update`, `delete` or `deletecollection`, the API
+  object is served by the same API server, and the GVR doesn't contain
+  wildcards.
+- When the request maps to a `Connect` handler instead of normal CRUD.
+  - Without the `supportsAuthorizationsConditions` function, `WithAuthorization`
+    has no way to know that `get pods/exec` is actually covered by admission,
+    and thus safe to authorize conditionally.
+  - Note that other `get` requests are not necessarily covered by admission
+    (`get pods/log` is a counterexample)
+- When the request belongs to an API group that is served by an aggregated API server.
+  - Warning: Any aggregated API server **MUST** use `kube-apiserver` as its
+    first authorizer; any other behavior is unsafe and with undefined behavior.
+  - When the aggregated API server uses the `kube-apiserver` (acting as an
+    authenticating front proxy) as its first webhook authorizer, the
+    `kube-apiserver` will return the applicable conditions (if any) to the
+    aggregated API server.
 
 However, if no `effect=Allow` condition is present in a returned `ConditionSet`,
 the decision is considered like a "conditional deny". In this case, later
@@ -941,7 +968,7 @@ to:
   to `Deny` (if that there are `effect=Deny` conditions), the structure must be
   able to model both conditional and concrete decisions.
 
-The SubjectAccessReviewStatus API is thus augmented with the following field and
+The `SubjectAccessReviewStatus` API is thus augmented with the following field and
 types:
 
 ```go
@@ -1008,6 +1035,31 @@ const (
 `Status.ConditionsChain != null`. Old implementers that do not recognize
 `Status.ConditionsChain` will just safely assume it was a `NoOpinion`.
 
+The `spec` field is augmented to add the `ConditionsMode`, as described above:
+
+```go
+type SubjectAccessReviewSpec struct {
+    // ConditionalAuthorization specifies caller-specified configuration related
+    // to conditional authorization. If unset, conditions are not supported.
+    ConditionalAuthorization *ConditionalAuthorizationConfiguration `json:"conditionalAuthorization,omitempty"`
+
+    // ... other field as usual.
+}
+
+// ConditionalAuthorizationConfiguration is its own struct/field, to allow
+// possible future expansion of caller-provided knobs (e.g. for version skew).
+type ConditionalAuthorizationConfiguration struct {
+    // Mode describes
+    // a) if the caller supports or wants conditions to be returned, and
+    // b) if supported, how (preferably) conditions should be returned.
+    // To indicate no support for conditional authorization, leave this field empty.
+    // An authorizer must never return conditions when this field is empty.
+    // However, respecting the caller's wish of presentation mode="HumanReadable"
+    // or "Optimized" is voluntary for the authorizer.
+    Mode ConditionsMode `json:"mode,omitempty"`
+}
+```
+
 ### Supporting webhooks through the `AuthorizationConditionsReview` API
 
 The webhook authorizer is augmented to support webhooks returning an ordered
@@ -1040,14 +1092,10 @@ type AuthorizationConditionsReview struct {
 type AuthorizationConditionsRequest struct {
     // TODO: Do we want UID like AdmissionReview here? I guess we don't need it.
 
-    // AuthorizerName describes the authorizer that authored these conditions,
-    // so that a webhook implementation which could have multiple underlying
-    // authorizers, in turn, knows which one to use for evaluation.
-    AuthorizerName string `json:"authorizerName"`
-
-    // ConditionSet is the condition set that the authorizer returned for 
-    // the request in the authorization phase.
-    ConditionSet authorizationv1.SubjectAccessReviewConditionSet `json:"conditionSet,omitempty"`
+    // ConditionSets is the condition sets that the authorizer returned for 
+    // the request in the authorization phase. Order matters, and must be
+    // exactly the same order as the authorizer produced.
+    ConditionSets []authorizationv1.SubjectAccessReviewConditionSet `json:"conditionSets,omitempty"`
 
     // All fields present in the ConditionData interface, not exhaustively listed
     // in this KEP for brevity.
@@ -1155,20 +1203,42 @@ there could be an optimized mode in which the CEL evaluator can evaluate a
 binary-encoded AST directly, to get performance on par with e.g.
 `ValidatingAdmissionPolicy`, which also executes pre-compiled CEL programs.
 
-### Node authorizer
+The built-in CEL condition environment would be similar to that of
+`ValidatingAdmissionPolicy`, including the ability to perform secondary
+authorization checks through the builtin `authorizer` function. This allows an
+authorizer at any point in the authorizer chain to respect other authorizers in
+their configured order for secondary authorization checks. This also makes the
+authorization layer aware of API author-designated secondary checks, e.g. the
+designer of the `CertificateSigningRequest` API can require any writer of its
+objects to also have the `sign` permission of some signer resource.
 
-The Node authorizer was the first conditional authorizer in that it had both an
-authorization and admission part that always were designed and evolved in
-tandem. This proposal generalizes this; now the Node authorizer could return
-conditional responses with type e.g. `k8s.io/node-authorizer` and either
-transparent conditions written in CEL, if possible, or opaque ones, e.g.
-`condition: '{"condition": "require-pod-node-name", "nodeName": "foo"}'`.
+One important point of note is that the authorizer returning conditions might
+not know what the caller's (enforcement point's) CEL capabilities are. Consider
+that the authorizer that wants to return a condition, which can be encoded in
+CEL form. However, if there would be two k8s-supported CEL condition types
+`k8s.io/authorization-cel-v1` and `k8s.io/authorization-cel-v2`, the authorizer
+needs to naturally choose to encode its condition in either form. However, if
+the API server supports only `v1`, and the authorizer returned `v2`, or vice
+versa, the API server cannot necessarily evaluate those conditions in-process
+(if the formats do not round-trip between each other), but might have to "call
+out" to the authorizer again (which can be either a webhook or simple function
+call). This means that even in this case, the evaluation won't fail, it might
+just be slightly slower. If we decide it is worth it, we can add other
+caller-provided knobs to `SubjectAccessReview.spec.conditionalAuthorization` in
+the future.
 
-In the opaque condition case, the Node authorizer will get a callback on its
-then-added `EvaluateConditions()` function to, even in native code, enforce e.g.
-a Pod's `spec.nodeName` actually matches what it should be. If this were the case,
-all logic is centralized in the authorizer, instead of being split between two
-components, and SubjectAccessReview shows what policies apply.
+However, if there was a change in the semantics of evaluating a certain
+condition type that did not lead to a "major version bump", that is, change of
+condition type entirely, there might be risk that an authorizer returns a
+condition that cannot be evaluated in-process. For example, in Kubernetes v1.36,
+say Kubernetes would support evaluating conditions of form
+`k8s.io/authorization-cel` in-process. If in v1.37, a new function was added to
+the CEL environment (say, `datetime` or similar), a new v1.37 authorizer could
+return a CEL condition referencing the new `datetime` function to an old v1.36
+API server, which would error upon evaluation with "no such function exists". If
+this happens, the in-process optimized evaluation is ignored, and the API server
+asks the authorizer to evaluate the conditions directly instead, which will lead
+to the correct result, as the authorizer is new.
 
 ### Feature availability and version skew
 
@@ -1189,14 +1259,29 @@ Conditional authorization is available when all of the following criteria are me
     that AdmissionOptions.Validate will error, such that the API server can
     never start up in such a misconfigured state.
 - The SubjectAccessReview's `apiGroup`, `resource` and `apiVersion` selects
-  exactly one GVR, which is served by the current API server, and the verb is
-  one of `create`, `update`, `patch`, `delete`. In the future, one could
-  consider conditional authorization for reads as well (see below).
+  exactly one GVR (no wildcards allowed), which is served by the current API
+  server, and the verb is one of `create`, `update`, `patch`, `delete`, or
+  `deletecollection`. In the future, one could consider conditional
+  authorization for reads as well (see below).
 
 | Version skew matrix | Old API server | New API server |
 | :---- | :---- | :---- |
 | Old webhook | Conditions never returned | Conditions never returned from webhooks |
 | New webhook | Webhook respects `ConditionsModeNone` and never returns a conditional response | Conditions respected if asked for |
+
+## Other Kubernetes authorization enforcement points, with and without conditions-awareness
+
+In the following section, relevant applications of the conditional authorization
+feature are listed. Existing `Authorize` calls that not mentioned here to
+specifically support conditional authorization, do not support it, and will fail
+closed upon seeing on any conditions.
+
+One thing that needs to be taken into account for secondary authorization
+checks: today some of the checks set `APIVersion="*"` (for unknown reason) when
+there is no logical API version at hand. If such checks would need to start
+supporting conditional authorization, we'd need to propagate a concrete, logical
+API version instead, as conditional authorization requires API version to be
+concrete (not a wildcard).
 
 ### Compound Authorization for Connectible Resources
 
@@ -1215,17 +1300,21 @@ connectible resource. However, this check is not added (yet at least) for
 In relation to these two workstreams, it is proposed that we uniformly and
 generally require the requestor to have the `create` verb using compound
 authorization in the `ConnectResource` handler, whenever the feature gate (or a
-new one) is enabled. This compound check would support conditional authorization
-as well, with `operation == CONNECT`, `object == null`, `oldobject == null` but
-`options != null`. Such a check thus becomes a generalization of
-[KEP-2862: Fine-grained Kubelet API Authorization](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2862-fine-grained-kubelet-authz/README.md),
-as now an authorizer can say “allow lucas to create nodes/proxy, but only when
-`options.path == "/configz"`”, or any other such policy that the administrator
+new one) is enabled. Both the initial (`get`) and compound (`create`) check
+would support conditional authorization, with `operation == CONNECT`,
+`object == <connect-data>` (e.g. `PodExecOptions`), `oldobject == null`, and
+`options == null`, just like connect admission today.
+
+Such a check thus becomes a generalization of [KEP-2862: Fine-grained Kubelet
+API
+Authorization](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2862-fine-grained-kubelet-authz/README.md),
+as now an authorizer can say "allow lucas to `create nodes/proxy`, but only when
+`options.path == "/configz"`", or any other such policy that the administrator
 might fancy.
 
 ### Compound Authorization for update/patch → create
 
-If an update or patch turns into a create, the API server performs compound
+If an `update` or `patch` turns into a `create`, the API server performs compound
 authorization to make sure the requestor also has the privilege to create the
 resource. This KEP also applies conditional authorization support for this
 compound authorization check.
@@ -1256,10 +1345,10 @@ impersonatedRequest.resource == "pods" &&
 impersonatedRequest.verb == "get"
 ```
 
-The first five ANDed expressions can be evaluated to true directly, just based
-on the data that is available in the normal impersonation SubjectAccessReview.
-However, impersonatedRequest is unknown, and thus does the residual expression
-yield conditions in the SubjectAccessReview response, e.g. as follows:
+The first five ANDed expressions can be evaluated to `true` directly, just based
+on the data that is available in the normal impersonation `SubjectAccessReview`.
+However, `impersonatedRequest` is unknown, and thus does the residual expression
+yield conditions in the `SubjectAccessReview` response, e.g. as follows:
 
 ```yaml
 apiVersion: authorization.k8s.io/v1
@@ -1294,13 +1383,202 @@ KEP, but also other types of expressions, for instance:
   - The current Constrained Impersonation KEP does not allow distinguishing what
     the impersonator can do for what target user.
 
-For clarity: note that a non-goal of this is to allow expressing predicates over
-the request/stored object when authorizing impersonation requests. It could be
-done, but would add a lot of complexity that I do not see needed at the moment.
-In other words, with this proposal, it is *not* (initially at least) possible to
-say "allow user `ai-agent-foo` to impersonate user `lucas` to
-`create serviceaccounts/token`, but only when
-`.spec.audiences.contains("foo")`".
+In the future, it would be possible to even restrict impersonation based on the
+`object` and `oldObject`. For example, consider the following abstract policy
+which allows lucas to impersonate any user for `create` and `update` requests,
+but only if lucas annotates changed resources with the `lucas-impersonated=true`
+label:
+
+```cel
+request.userInfo.username == "lucas" &&  
+request.verb == "impersonate" && 
+request.resource == "users" &&  
+request.apiGroup == "" &&
+impersonatedRequest.verb in ["create", "update"] &&
+has(object.metadata.labels["lucas-impersonated"]) &&
+object.metadata.labels["lucas-impersonated"] == "true"
+```
+
+For fully evaluating this request, three stages are needed.
+
+1. First, in the normal `SubjectAccessReview`, only metadata about the
+   requesting user, and the user to be impersonated can be populated in the SAR
+   fields. The user to be impersonated is modelled as the "resource", and the
+   verb is `impersonate`. In the CEL environment, this data corresponds to the
+   `request` variable. For an applicable request for the policy above, the
+   condition produced look like:
+
+    ```cel
+    impersonatedRequest.verb in ["create", "update"] &&
+    has(object.metadata.labels["lucas-impersonated"]) &&
+    object.metadata.labels["lucas-impersonated"] == "true"
+    ```
+
+1. The impersonation filter does know up front, however, the metadata of the
+   request that is being performed, and if some authorizer returned a
+   conditional response in the first stage, the impersonation filter could
+   directly afterwards run `EvaluateConditions()` / `AdmissionConditionsReview`
+   with more information: namely the `impersonatedRequest` metadata. After this
+   step, the condition produced by partial evaluation with this additional
+   information yields:
+
+    ```cel
+    has(object.metadata.labels["lucas-impersonated"]) &&
+    object.metadata.labels["lucas-impersonated"] == "true"
+    ```
+
+1. As impersonation might happen in an authenticating front proxy (e.g.
+   `kube-apiserver`), but object decoding and admission run in another process
+   (e.g. an aggregated API server), the impersonation filter running in the
+   former process does not have access to the request object. Thus, if we
+   allowed impersonation expressing conditions on the request/stored object, the
+   condition residual shown in 2. needs to be propagated from the front proxy to
+   the aggregated API server.
+
+   1. One backwards-compatible way to do this in practice, is to reserve one
+      userinfo extra key (e.g. `k8s.io/impersonation-conditions`) to propagate
+      the conditions. As we already require and assume that the aggregated API
+      server uses the front proxy `kube-apiserver` as its first webhook
+      authorizer, `kube-apiserver` can treat the conditions found in the
+      userextra as the first deny-only conditional authorizer, and thus return
+      these `object`-scoped conditions to the aggregated API server like usual.
+   1. The conditions-aware impersonation authorizer would need to either cache
+      the conditions internally using a context key, or pass the conditions
+      transparently to the client, so that it can evaluate those later itself
+      when passed back.
+
+Initially, however, we do not need to go this far as to implement object-level
+constraints during impersonation, but this design should be future-proof as
+keeps the option open.
+
+### Node authorizer
+
+The Node authorizer was the first conditional authorizer in that it had both an
+authorization and admission part that always were designed and evolved in
+tandem. This proposal generalizes this; now the Node authorizer could return
+conditional responses with type e.g. `k8s.io/node-authorizer` and either
+transparent conditions written in CEL, if possible, or opaque ones, e.g.
+`condition: '{"condition": "require-pod-node-name", "nodeName": "foo"}'`.
+
+In the opaque condition case, the Node authorizer will get a callback on its
+then-added `EvaluateConditions()` function to, even in native code, enforce e.g.
+a Pod's `spec.nodeName` actually matches what it should be. If this were the case,
+all logic is centralized in the authorizer, instead of being split between two
+components, and `SubjectAccessReview` shows what policies apply.
+
+### ValidatingAdmissionPolicies
+
+`ValidatingAdmissionPolicies` support secondary authorization checks through the
+`authorizer` function in the CEL environment. This could be used, for example, to
+check that the requestor also has the
+`sign certificates.k8s.io signers <signerName>` permission, for the signer
+specified in the `CertificateSigningRequest` API.
+
+Secondary checks in VAP *could* support conditionally-authorized requests too,
+given that the secondary check using the authorizer also supplies the relevant
+`object` and/or `oldobject` against which conditions could be written. However,
+this does not seem to be a major use-case, as most secondary checks that have
+been seen in the wild check permissions against some resource, subresource or
+verb that is not served by the API server.
+
+The loss of power of not supporting conditions in secondary VAP checks is minor.
+The VAP authorizer can perform secondary permission checks for permissions
+independently from each other, e.g. "this write request of the `VM` resource is
+only allowed if the requestor also has the `backup` privilege on the referenced
+storage bucket (when backups are enabled) and when the requestor can `use` the
+referenced network". Without conditional authorization in this context, the
+authorizer cannot express an intersection of the two, e.g. "the requestor can
+only `backup` VM objects using this storage bucket when the VM is using this
+given network".
+
+If conditions were supported in VAP, it would be possible to decouple the
+authorization policy (in the authorizer) from the enforcement code (in VAP), as
+long as the data exchanged between them is consistent. Without conditions
+supported in VAP, the enforcement code there needs to choose based on what
+attributes to perform secondary checks.
+
+To give users more information about what they can do (for debugging), the
+`SelfSubjectAccessReview` endpoint could also show partially-evaluated CEL from
+`ValidatingAdmissionPolicy` objects. However, if this is done, the user could
+know better how to create an object that passes authorization and admission, for
+better and worse.
+
+### `deletecollection` support
+
+Although not immediately obvious, conditional authorization would also work for
+`verb=deletecollection` requests. In this case, the condition is written just as
+it would for `verb=delete`, the same admission chain (which has the conditions
+enforcement as the first validating admission plugin) is run once for all
+objects.
+
+## Authorizer requirements
+
+To recap, the authorizer must adhere to the following requirements to be
+considered functional:
+
+- If the `ConditionsMode` is `None` (that is, unset), no conditions must be
+  returned, and it is up to the authorizer if it should fold a response it
+  wanted to be conditional to either `NoOpinion` or `Deny`.
+- If any of the conditions that the authorizer would have returned would have
+  been of `effect=Deny`, it is recommended for the authorizer to fold to
+  `decision=Deny`.
+- Only ever produce a conditional response if producing an unconditional
+  response is not possible.
+  - The effect of authorizer-internal policies determines this. If there is an
+    authorizer which has `effect=Allow|NoOpinion (soft deny)|Deny (hard deny)`
+    policies, then the strength of policies are ordered as `Deny`
+    (unconditional) > `Deny` (conditional) > `NoOpinion` (unconditional) >
+    `NoOpinion` (conditional) > `Allow` (unconditional) > `Allow` (conditional).
+  - For example, if an unconditional `Deny` policy matches, the output is always
+    an unconditional `Deny`, regardless of other matches.
+  - If no `Deny` or `NoOpinion` policies match, only a conditional and
+    unconditional `Allow`, the unconditional `Allow` takes precedence.
+  - However, if a conditional `Deny` policy matches together with an
+    unconditional `Allow`, the response needs to be conditional, as before
+    producing a final response, one needs to know whether the conditional `Deny`
+    will override the unconditional `Allow`.
+- The authorizer can only return a conditional response with an `effect=Allow`
+  if there is a path for the request to become authorized. All pruning that is
+  possible to do with the initial authorizer Attributes MUST be used.
+  - For example, a policy of form `object.metadata.labels.foo == "bar" &&
+    request.verb == "create"` MUST not yield a conditional response for a
+    `verb="update"` request, as the LHS of `&&` is then always `false`.
+- An authorizer must be API version-aware, and should only let a policy author
+  refer to a field in a version-dependent manner, and/or validate that the
+  policy applies successfully to all known versions.
+  - The request object version might not equal the storage version, and the API
+    server cannot necessarily convert between the versions (due to CRD
+    conversion webhooks failing). For in-tree, one can always convert without
+    errors and reasonably fast. The new (request) object is always the request
+    API version. The authorizer could ask the API server to convert, if we want,
+    but this is not necessarily error-free.
+    - TODO(Lucas): See what happens for a CRD + VAP, if the request version !=
+      storage version, or if the CRD schema changes.
+  - For example, VAP policies today use the latter technique, which rejects
+    expressions that do not compile under all possible API version-specific CEL
+    environments.
+  - Another technique could be to expose the object through a version-specific
+    fieldpath, e.g. `v1.spec.foo` and `v2.spec.bar` could refer to logically the
+    same value of a field that was renamed from `foo` in `v1` to `bar` in `v2`.
+- To fail closed when new API versions are added, the authorizer could
+  automatically insert restrictions that only API versions that are referenced
+  in the policy can yield an allowed response. In the following example, write
+  requests fail closed for API version `v3` until the policy author has had time
+  to add the restriction specific to that version, as follows:
+
+  ```cel
+  request.verb in ["create", "update"] &&
+  if has(v1) then
+    v1.spec.foo == "baz"
+  else if has(v2) then
+    v2.spec.bar == "baz"
+  else
+    false
+  ```
+
+- An authorizer must be able to evalute any condition they authored, such that
+  the API server always can call the authorizer to evaluate the condition
+  (regardless of in-process evaluation capabilities).
 
 ## Open Questions
 
