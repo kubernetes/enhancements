@@ -14,6 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Workload API Changes](#workload-api-changes)
+    - [Basic Policy Extension](#basic-policy-extension)
   - [Scheduling Framework Extensions](#scheduling-framework-extensions)
     - [1. Data Structures](#1-data-structures)
     - [2. New Plugin Interfaces](#2-new-plugin-interfaces)
