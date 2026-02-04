@@ -9,6 +9,7 @@ authors:
  - "@andreyvelich" 
  - "@thockin"
  - "@macsko"
+ - "@mm4tt"
 
 owning-sig: sig-scheduling
 participating-sigs:
@@ -38,7 +39,7 @@ latest-milestone: "v1.36"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.35"
-  beta: "v1.36"
+  beta: "v1.37"
   stable: "v1.38"
 
 # The following PRR answers are required at alpha release
