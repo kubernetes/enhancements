@@ -7,7 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Independent PodGroup Lifecycle](#independent-podgroup-lifecycle)
     - [PodGroup-Level Status](#podgroup-level-status)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -138,7 +138,7 @@ status:
     message: "All required pods (2/2) have been assigned to nodes"
 ```
 
-### User Stories (Optional)
+### User Stories
 
 #### Independent PodGroup Lifecycle
 
@@ -454,7 +454,7 @@ We will add basic API tests for the the new `PodGroup` API for alpha release. Mo
 
 ### Upgrade / Downgrade Strategy
 
-> This KEP is completely additive and can safely fallback to the original behavior on downgrade.
+This KEP is completely additive and can safely fallback to the original behavior on downgrade.
 
 ### Version Skew Strategy
 
@@ -561,13 +561,13 @@ Yes.
 
 1. Watching for PodGroups:
 
-- API call type: LIST+WATCH PodGroups
+- API call type: **list** and / or **watch** PodGroups
 - estimated throughput: < XX/s
 - originating component: kube-scheduler
 
 1. Status updates:
 
-- API call type: PUT/PATCH PodGroups
+- API call type: **update** and / or **patch** PodGroups
 - estimated throughput: < XX/s
 - originating component: kube-scheduler
 
