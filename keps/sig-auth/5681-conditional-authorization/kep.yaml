@@ -4,7 +4,7 @@ authors:
   - "@luxas"
   - "@micahhausler"
 owning-sig: sig-auth
-status: provisional
+status: implementable
 creation-date: 2025-11-05
 reviewers:
   - "@deads2k"
