@@ -4,7 +4,7 @@ authors:
   - "@omerap12"
   - "@adrianmoisey"
 owning-sig: sig-autoscaling
-status: provisional
+status: implementable
 creation-date: 2025-04-11
 reviewers:
   - "@jackfrancis"
