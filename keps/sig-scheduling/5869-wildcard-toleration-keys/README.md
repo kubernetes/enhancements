@@ -318,13 +318,16 @@ No. Only pods using the new wildcard syntax in their tolerations will have diffe
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes.
+Yes, but it is disruptive for workloads using the feature.
 
 If disabled,
-- Running pods will continue running.
-- New pods if they use `*` in tolerations, validation will fail (if disabled at
-  `kube-apiserver`). If only disabled in `kube-scheduler`, they will
-  schedule but the wildcard will be treated literally matching nothing.
+1.  Pods utilizing wildcard tolerations to tolerate `NoExecute` taints will no
+longer be protected. The kube-controller-manager fail to match the taint with
+wildcard toleration, and immediately evict these pods.
+2.  Workload controllers (Deployments, DaemonSets, etc.) with wildcard tolerations in their Pod templates will fail to create new Pods. The kube-apiserver validation will reject the `*` character, causing the controller to stall with validation errors.
+3.  Pods utilizing wildcard tolerations for `NoSchedule` taints will fail to schedule as the kube-scheduler will treat the wildcard key.
+
+To mitigate these failure modes, administrators must identify and update all their workloads using wildcard tolerations to use explicit keys or standard `Exists` operators before disabling the feature gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -338,7 +341,14 @@ Integration tests will cover enabling/disabling the feature gate.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Rollback causes pods relying on wildcard tolerations to potentially become unschedulable (pending) or be evicted (if `NoExecute` taints are present and the literal key doesn't match).
+Rollback Failure Modes:
+- Mass Eviction
+: As described above, disabling the feature causes immediate eviction of running pods that relied on wildcards to tolerate `NoExecute` taints.
+- Stalled Workloads
+: Workloads defined with wildcard tolerations will be unable to scale up or replace terminated pods due to API validation failures.
+
+To avoid the impact, rollback should be preceded by cleaning up usage of the
+wildcard keys in the cluster.
 
 ###### What specific metrics should inform a rollback?
 
@@ -430,13 +440,15 @@ No
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Due to regex parsing and validation overhead, it could add to the time taken for
+Due to glob matching overhead, it could add to the time taken for
 scheduler pass, but the impact should be minimal as the number of tolerations
 are minimal. 
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No
+It is expected to be minimal, but increased CPU usage in `kube-scheduler` is possible due to the overhead of glob matching in the critical scheduling path.
+
+To monitor this, we will introduce a metric `scheduler_wildcard_match_duration_seconds` to track the latency of wildcard matching operations. This will allow us to quantify the performance impact during Alpha.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
