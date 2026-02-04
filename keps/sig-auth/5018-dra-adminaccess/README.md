@@ -577,11 +577,11 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-This will be done manually before transition to beta by bringing up a cluster with kubeadm and changing the feature gate for individual components.
+Manual testing has been done to bring up a kind cluster and changing the feature gate for individual components.
 
-Manual upgrade of the control plane to a version with the feature enabled will be tested. Existing pods not using the feature remained running. Creation of new pods and ResourceClaims that do not use the feature should be unaffected.
+Manual upgrade of the control plane to a version with the feature enabled has been tested. Existing pods not using the feature remained running. Creation of new pods and ResourceClaims that do not use the feature are unaffected.
 
-Manual downgrade of the control plane to a version with the feature disabled was tested. Existing pods using the feature remained running. Creation of new pods and ResourceClaims that use the feature should be blocked.
+Manual feature toggle of the control plane to disable the feature was tested. Existing pods using the feature remained running. Creation of new pods and ResourceClaims that use the feature have their adminAccess field dropped and scheduling fails if devices are in use by other pods.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
