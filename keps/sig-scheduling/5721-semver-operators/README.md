@@ -7,7 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1 — Cluster operator ensures Kubelet version before scheduling pod](#story-1--cluster-operator-ensures-kubelet-version-before-scheduling-pod)
     - [Story 2 — Tolerate running workloads on nodes with older versions of CNI](#story-2--tolerate-running-workloads-on-nodes-with-older-versions-of-cni)
     - [Story 3 — Container Runtime version based scheduling for sensitive pods](#story-3--container-runtime-version-based-scheduling-for-sensitive-pods)
@@ -90,7 +90,7 @@ This restriction forces users to treat ordered versions as unrelated strings. To
 
 ## Proposal
 
-### User Stories (Optional)
+### User Stories
 
 #### Story 1 — Cluster operator ensures Kubelet version before scheduling pod
 
