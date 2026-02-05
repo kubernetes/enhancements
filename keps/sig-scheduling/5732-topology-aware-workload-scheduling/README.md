@@ -14,7 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Workload API Changes](#workload-api-changes)
-    - [Basic Policy Extension](#basic-policy-extension)
+    - [Basic and Gang Policy Extension](#basic-and-gang-policy-extension)
   - [Scheduling Framework Extensions](#scheduling-framework-extensions)
     - [1. Data Structures](#1-data-structures)
     - [2. New Plugin Interfaces](#2-new-plugin-interfaces)
@@ -273,13 +273,21 @@ will be defined in a separate KEP:
 Note: For the initial alpha scope, only a single TopologyConstraint will be
 supported.
 
-#### Basic Policy Extension
+#### Basic and Gang Policy Extension
 
 In the first alpha version of the Workload API, the `Basic` policy was a no-op.
-We propose extending the `Basic` policy to accept a `desiredCount` field.
+We propose extending the `Basic` and `Gang` policies to accept a `desiredCount`
+field. This field serves as a scheduler hint to improve placement decisions
+without imposing hard scheduling constraints.
+
 This feature will be gated behind a separate feature gate 
 (`WorkloadBasicPolicyDesiredCount`) to decouple it from the core Gang Scheduling
 and Topology Aware Scheduling features.
+
+**1. Basic Policy Update**
+
+We introduce `desiredCount` to the `Basic` policy to allow users to signal the
+expected group size for optimization purposes.
 
 ```go
 // BasicSchedulingPolicy indicates that standard Kubernetes
@@ -299,7 +307,38 @@ type BasicSchedulingPolicy struct {
 }
 ```
 
-This field allows users to express their "true" workloads more easily and enables
+**2. Gang Policy Update**
+
+We similarly extend the `Gang` policy. While `minCount` provides a hard constraint
+for admission, `desiredCount` provides a soft target for placement optimization.
+
+```go
+// GangSchedulingPolicy defines the parameters for gang scheduling.
+type GangSchedulingPolicy struct {
+	// MinCount is the minimum number of pods that must be schedulable or scheduled
+	// at the same time for the scheduler to admit the entire group.
+	// It must be a positive integer.
+	//
+	// +required
+	MinCount int32
+
+	// DesiredCount is the expected number of pods that will belong to this
+	// PodGroup. This field is a hint to the scheduler to help it make better
+	// placement decisions for the group as a whole.
+    //
+	// Unlike gang's minCount, this field does not block scheduling. If the number
+	// of available pods is less than desiredCount but at least minCount, the scheduler
+    // can still attempt to schedule the available pods, but will optimistically try
+    // to select a placement that can accommodate the future pods.
+    //
+    // When provided desiredCount must be greater or equal to minCount.
+	//
+	// +optional
+	DesiredCount *int32
+}
+```
+
+Those fields allow users to express their "true" workloads more easily and enables
 the scheduler to optimize the placement of such pod groups by taking the desired state
 into account. Ideally, the scheduler should prefer placements that can accommodate
 the full `desiredCount`, even if not all pods are created yet. When `desiredCount`
