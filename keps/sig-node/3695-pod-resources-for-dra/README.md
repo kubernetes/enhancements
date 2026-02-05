@@ -38,12 +38,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -296,6 +296,8 @@ Other improvements are addressed in:
   - Pod exists but container name is invalid
   - Get() is called on terminated pods to validate appropriate error handling.
 
+Note on Conformance Tests: Sincce PodResources API is a node local gRPC interface (similar to CRI or Device Plugin APIs), it is validated through the test/e2e_node suite. Following standard practice for node level features, these tests are marked with [NodeFeature:PodResourcesAPI] to ensure stability and reliability across deployments without requiring the global [Conformance] tag.
+
 ### Upgrade / Downgrade Strategy
 
 With gRPC the version is part of the service name.
@@ -389,14 +391,20 @@ Call the PodResources API and see the result.
 - [ ] API .status
   - Condition name:
   - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Users can verify the feature by querying the Kubelet PodResources gRPC endpoint (at /var/lib/kubelet/pod-resources/kubelet.sock) and receiving a valid PodResourcesResponse. Additionally, operators can also verify functionality by observing the following Kubelet metrics:
+     - `pod_resources_endpoint_requests_get_total`: increments on every Get request.
+     - `pod_resources_endpoint_errors_get_total`: tracks the number of failed Get requests.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-100% in normal operation. The proposed API exposes in read only mode kubelet internal data, critical for functioning of the kubelet.
-This data has to be available 100% of the time for the proper functioning of the kubelet, thus is expected to be available 100% of time.
-The only possible error source is the API calls being throttled by the rate-limiting introduced with the GA graduation of the parent KEP 606.
+The reliability and performance of the PodResources API are defined by:
+- Endpoint availability: > 99.9% success rate for `Get` and `List` requests over a rolling 5-minute window.
+- Success Rate: measured by the ratio of pod_resources_endpoint_errors_get to pod_resources_endpoint_requests_get (and the equivalent _list counters).
+- excluding:
+  - Rate-limiting: Throttling events introduced by KEP-606.
+  - Client Errors: Invalid requests, such as gRPC NotFound statuses for pods that do not exist or have already been deleted.
+- Latency: 99th percentilen (P99) for all v1 unary calls should be < 100ms. The API fulfills requests by reading from the Kubelet's internal in-memory caches (populated by the CPU, Memory, Device, and DRA managers). Because these calls do not involve blocking disk I/O or network round-trips, latency should remain consistently low.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
