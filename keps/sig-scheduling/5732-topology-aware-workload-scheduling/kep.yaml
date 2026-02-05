@@ -41,7 +41,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-scheduler  
-  - name: WorkloadBasicPolicyDesiredCount
+  - name: PodGroupDesiredCount
     components:
       - kube-apiserver
       - kube-scheduler
