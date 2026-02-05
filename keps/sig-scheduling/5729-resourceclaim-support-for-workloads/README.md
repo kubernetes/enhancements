@@ -90,9 +90,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1 (Optional)](#story-1-optional)
-    - [Story 2 (Optional)](#story-2-optional)
+  - [User Stories](#user-stories)
+    - [Sharing a ResourceClaim among many Pods](#sharing-a-resourceclaim-among-many-pods)
+    - [Shareable and replicable ResourceClaims](#shareable-and-replicable-resourceclaims)
+    - [Integrating DRA with high-level APIs](#integrating-dra-with-high-level-apis)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Higher memory usage by the device_taint_eviction controller](#higher-memory-usage-by-the-device_taint_eviction-controller)
@@ -293,7 +294,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -302,9 +303,29 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1 (Optional)
+#### Sharing a ResourceClaim among many Pods
 
-#### Story 2 (Optional)
+As a workload author administering large deployments, I want to be able to share
+a single ResourceClaim among more than 256 Pods. That opens up the possibility
+for DRA to orchestrate scheduling large groups of Pods that all share a large
+device, such as a virtual device representing a topological domain.
+
+#### Shareable and replicable ResourceClaims
+
+As a workload author administering a deployment composed of multiple groups of
+Pods, I want to be able to express DRA resources which are replicated once for
+each group and can be shared by all of the Pods within a particular group.
+
+Currently, ResourceClaims generated for an individual Pod from
+ResourceClaimTemplate cannot be declaratively shared among other Pods, and
+standalone ResourceClaims would need to be managed separately from the rest of
+the workload.
+
+#### Integrating DRA with high-level APIs
+
+As a maintainer of a high-level workload API like LWS or JobSet, I want to
+manage the lifecycle of ResourceClaims associated with the groups of Pods
+defined by my API.
 
 ### Notes/Constraints/Caveats (Optional)
 
