@@ -243,7 +243,7 @@ type PodGroup struct {
     Name *string
 
     // SchedulingConstraints defines group-level scheduling requirements,
-    // including topology and DRA colocation.
+    // including topology.
     SchedulingConstraints *PodGroupSchedulingConstraints
 }
 
@@ -280,7 +280,7 @@ field. This field serves as a scheduler hint to improve placement decisions
 without imposing hard scheduling constraints.
 
 This feature will be gated behind a separate feature gate 
-(`WorkloadBasicPolicyDesiredCount`) to decouple it from the core Gang Scheduling
+(`PodGroupDesiredCount`) to decouple it from the core Gang Scheduling
 and Topology Aware Scheduling features.
 
 **1. Basic Policy Update**
@@ -701,7 +701,7 @@ kube-scheduler instance being a leader).
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
-  - Feature gate name: WorkloadBasicPolicyDesiredCount
+  - Feature gate name: PodGroupDesiredCount
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
