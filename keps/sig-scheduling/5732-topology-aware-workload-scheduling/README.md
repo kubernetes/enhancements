@@ -217,7 +217,7 @@ workload's pods to them.
 ### Risks and Mitigations
 
 - **Scheduling Latency:** Evaluating multiple placements involves running
-  filter/score plugins multiple times.
+  filter/score plugins multiple times (multiple attempts to schedule a PodGroup considering all topology options).
 
   - **Mitigation:** Implement pre-filtering optimizations to reject infeasible
     placements early based on aggregate resource availability.
