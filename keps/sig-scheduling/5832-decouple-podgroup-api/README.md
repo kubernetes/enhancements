@@ -394,15 +394,13 @@ The controller is responsible for initializing the `PodGroupScheduled` condition
 When a pod with `workloadRef` is submitted for scheduling, the kube-scheduler performs the following lookup chain:
 
 - Read `pod.spec.workloadRef.podGroupName` to identify the PodGroup
-- Lookup the `PodGroup` object in the scheduler's cache
-- Read `podGroup.spec.workloadRef` and `podGroup.spec.podGroupTemplateName`
-- Lookup the `Workload` object and locate the corresponding `podGroupTemplate` and retrieve the scheduling policy from the template
+- Lookup the `PodGroup` object to get the scheduling policy
 
 If any object in this chain is missing, the pod remains unschedulable until all required objects are created and observed by the scheduler.
 
 #### Informers and Watches
 
-The kube-scheduler will add a new informer to watch `PodGroup` objects alongside `Workload` informer.
+The kube-scheduler will add a new informer to watch `PodGroup` objects.
 
 #### GangScheduling plugin
 
@@ -441,9 +439,9 @@ graph TB
     PG -.->|ref| W  
 ```
 
-The `PodGroup` object is created and owned by the true workload [^1] controller. When the controller needs to create pods that require gang scheduling, it first creates a `PodGroup` based on the `podGroupTemplate` that is defined in `WorkloadReference`.This ensures automatic garbage collection when the parent object is deleted.
+The `PodGroup` object is created and owned by the true workload controller [^1]. When the controller needs to create pods that require gang scheduling, it first creates a `PodGroup` based on the `podGroupTemplate` that is defined in `WorkloadReference`.This ensures automatic garbage collection when the parent object is deleted.
 
-Pods reference their PodGroup via `workloadRef.podGroupTemplateName`. The scheduler uses this reference to look up the `PodGroup`, then follows `WorkloadReference` to locate the `Workload` to identify the scheduling policy. The scheduler requires the `PodGroup` to exist before scheduling pods that reference it.
+Pods reference their PodGroup via `workloadRef.podGroupTemplateName` which allows the scheduler to look up the `PodGroup` object. The scheduler requires the `PodGroup` to exist before scheduling pods that reference it.
 
 ### Naming Convention
 
@@ -458,9 +456,7 @@ Pods reference their PodGroup via `workloadRef.podGroupTemplateName`. The schedu
 We plan to extend `PodGroup` and `Workload` APIs to support hierarchical PodGroups structure for advanced batch workloads. Potential features include:
 
 - Allow `PodGroup` objects to reference parent `PodGroup` for hierarchical scheduling structures.
-- Ensure parent `PodGroup` is scheduled before child `PodGroup` to define ordering constraints.
-- Parent `PodGroup` status is able to reflect the collective state of children `PodGroup`s.
-- Support dynamic creation and deletion of child `PodGroup` without affecting the parent.
+- Design Hierarchical `PodGroup` lifecycle management and status tracking.
 
 ### Test Plan
 
