@@ -192,8 +192,7 @@ We support two fundamental types of constraints:
    co-located resource (e.g., interconnected network interfaces or
    accelerators).
 
-The scheduler is extended to interpret these constraints and find a "Placement"
-(a subset of nodes and DRA resources) that satisfies them.
+The scheduler is extended to interpret these new PodGroup level scheduling constraints and similarly to scheduling pods on nodes (available scheduling options), find a "Placement" for this PodGroup among the feasible options (subsets of nodes and DRA resources) that satisfies them.
 
 ### User Stories (Optional)
 
