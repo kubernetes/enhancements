@@ -27,7 +27,6 @@
     - [Regarding the previous implementation for volumes](#regarding-the-previous-implementation-for-volumes)
     - [Non-conformant volume types](#non-conformant-volume-types)
   - [Pod Security Standards (PSS) integration](#pod-security-standards-pss-integration)
-  - [Unresolved](#unresolved)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -67,10 +66,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
@@ -81,6 +80,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
 
 ## Summary
 
@@ -510,27 +513,6 @@ namespace in the pod, and gain the full set of capabilities within a user namesp
 A serial test will be added to validate the functionality with the enabled
 feature gate.
 
-### Unresolved
-
-Here is a list of considerations raised in PRs discussion that hasn't yet
-settle. This list is not exhaustive, we are just trying to put the things that
-we don't want to forget or want to highlight it. Some things that are obvious we
-need to tackle are not listed. Let us know if you think it is important to add
-something else to this list:
-
-- What about windows or VM container runtimes, that don't use linux namespaces?
-  We need a review from windows maintainers once we have a more clear proposal.
-  We can then adjust the needed details, we don't expect the changes (if any) to be big.
-  In my head this looks like this: we merge this KEP in provisional state if
-  we agree on the high level idea, with @giuseppe we do a PoC so we can fill-in
-  more details to the KEP (like CRI changes, changes to container runtimes, how to
-  configure kubelet ranges, etc.), and then the Windows folks can review and we
-  adjust as needed (I doubt it will be a big change, if any). After that we switch
-  the KEP to implementable (or if there are long delays to get a review, we might
-  decide to do it after the first alpha, as the community prefers and time
-  allows). Same applies for VM runtimes.
-  UPDATE: Windows maintainers reviewed and [this change looks good to them][windows-review].
-
 ### Test Plan
 
 <!--
@@ -828,17 +810,14 @@ Pods will have to be re-created to use the feature.
 
 ###### Are there any tests for feature enablement/disablement?
 
-We will add.
+Yes, we have unit test to verify this.
 
-We will test for when the field pod.spec.hostUsers is set to true, false
-and not set. All of this with and without the feature gate enabled.
+Tests that exercise  enabling and disabling the feature gate are
+[here](https://github.com/kubernetes/kubernetes/blob/0cf6c382a04d9669db210e95f3d62276376730c2/pkg/kubelet/userns/userns_manager_switch_test.go) 
 
-We will also unit test that, if pods were created with the new field
-pod.specHostUsers, then if the featuregate is disabled all works as expected (no
-user namespace is used).
-
-We will add tests exercising the `switch` of feature gate itself (what happens
-if I disable a feature gate after having objects written with the new field)
+Tests that have the feature gate disabled and test that the public function work as expected are
+[here](https://github.com/kubernetes/kubernetes/blob/0cf6c382a04d9669db210e95f3d62276376730c2/pkg/kubelet/userns/userns_manager_disabled_test.go).
+They do test for all possible values of `hostUsers` too.
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -900,7 +879,8 @@ When a pod hits this error returned by the kubelet, the status in `kubectl` is s
   Warning  FailedCreatePodSandBox  12s (x23 over 5m6s)  kubelet            Failed to create pod sandbox: user namespaces is not supported by the runtime
 ```
 
-The following kubelet metrics will be added
+If the kubelet started fine, the following kubelet metrics should be used to detect failures to
+start pods with user namespaces:
 - `started_user_namespaced_pods_total`: Shows the number of pods that have been attempted to be created with a user namespace.
 - `started_user_namespaced_pods_errors_total`: The number of pods that failed to create that had a user namespace.
 
@@ -1023,7 +1003,7 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes, two metrics will be added: `started_user_namespaced_pods_total` and `started_user_namespaced_pods_errors_total`.
+Yes, two metrics: `started_user_namespaced_pods_total` and `started_user_namespaced_pods_errors_total`.
 If error == total for a given node, then there is a problem on that node with user namespace creation.
 
 <!--
@@ -1322,6 +1302,7 @@ be the cause of the problem.
 - Kubernetes 1.30: Feature went off-by-default beta
 - Kubernetes 1.33: Feature goes on-by-default beta
 - Kubernetes 1.34: Feature adds metrics
+- Kubernetes 1.36: Feature goes GA
 
 ## Drawbacks
 
