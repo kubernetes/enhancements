@@ -652,6 +652,7 @@ necessary to implement this enhancement.
   evaluated.
 - Scalability tests on large clusters with high placement counts.
 - Comprehensive e2e testing.
+- Cluster autoscaling compomnents are aware of workload topology constraints. 
 
 ### Upgrade / Downgrade Strategy
 
