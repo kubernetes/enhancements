@@ -142,14 +142,14 @@ A non-exhaustive list, in addition to the ones mentioned above:
   `(Self)SubjectAccessReview`
 - Initially support enforcement of write and connect requests in the
   `k8s.io/apiserver` `WithAuthorization` HTTP filter, with options to expand
-  coverage to read[^2] and impersonate verbs later. However, conditions can be
-  returned for any verb in `SubjectAccessReview` responses, so extensions can be
-  built arbitrarily on top. For instance, aggregated API servers can choose to
-  enforce conditions on whatever custom verbs it wants, and authorizer can
-  return conditions for any verb it likes.
-- Allow conditions to be expressed in both transparent, analyzable forms (like
-  Cedar or CEL), or opaque ones (like just `policy16`)
-- Support expressing both “Allow” and “Deny” effect conditions.
+  coverage to read[^2] and impersonate verbs later.
+  - However, conditions can be returned for any verb in `SubjectAccessReview`
+    responses, so extensions can be built arbitrarily on top. For instance,
+    aggregated API servers can choose to enforce conditions on whatever custom
+    verbs it wants, and authorizer can return conditions for any verb it likes.
+- Allow any authorizer's conditions to be expressed in both transparent,
+  analyzable forms (like Cedar or CEL), or opaque ones (like just `policy16`).
+- Support expressing conditions with either “Allow” and “Deny” effects.
 - Provide the foundational framework on top of which we can build other
   authorization features, such as Constrained Impersonation, RBAC++ and
   Referential Authorization.
@@ -505,8 +505,10 @@ have been if it could have been evaluated directly.
   one-phase model (that is, if the request / stored object were given directly
   to the authorizer). This for example implies that the order of the authorizers
   must be preserved.
+- Capabilities and decision logic must be exactly the same for both in-tree and
+  out-of-tree authorizers.
 - Only proceed to decode the object if the request *can become authorized*, to
-  avoid DoS.
+  avoid Denial-of-Service attack vectors.
 - Must work for connectible resources (see
   [this section](#compound-authorization-for-connectible-resources) for more
   details)
@@ -532,6 +534,20 @@ package authorizer // k8s.io/apiserver/pkg/authorization/authorizer
 // whether that error is critical or not.
 type Authorizer interface {
     Authorize(ctx context.Context, a Attributes) (Decision, error)
+
+    // All authorizers are required to implement the conditions evaluation method,
+    // even though they just return an error saying "unsupported".
+    // This ensures composite authorizers do not "forget" to implement the
+    // EvaluateConditions method, even if it'd wrap a conditions-aware authorizer
+    ConditionSetEvaluator
+}
+
+type ConditionSetEvaluator interface {
+    // EvaluateConditions evaluates a condition set into
+    // a concrete decision (Allow, Deny, NoOpinion), given full information
+    // about the request (ConditionData, which includes e.g. the old and new objects).
+    // The returned Decision must be concrete.
+    EvaluateConditions(ctx context.Context, conditionSet *ConditionSet, data ConditionData) (Decision, error)
 }
 
 type Attributes interface {
@@ -755,29 +771,6 @@ type ConditionSet struct {
 // The FailureMode of the ConditionalAuthorizer determines how to
 // handle invalid Type values.
 func (c *ConditionSet) Type() string {}
-```
-
-What distinguishes a "normal" authorizer from one that is able to handle
-conditions? The ability to evaluate conditions.
-
-```go
-package authorizer
-
-type ConditionSetEvaluator interface {
-    // EvaluateConditions evaluates a condition set into
-    // a concrete decision (Allow, Deny, NoOpinion), given full information
-    // about the request (ConditionData, which includes e.g. the old and new objects).
-    // The returned Decision must be concrete.
-    EvaluateConditions(ctx context.Context, conditionSet *ConditionSet, data ConditionData) (Decision, error)
-}
-
-type ConditionalAuthorizer interface {
-    Authorizer
-    // Every conditional authorizer must be able to evaluate the conditions it authored.
-    ConditionSetEvaluator
-    // FailureMode determines how to treat an error from EvaluateConditions
-    FailureMode() FailureMode
-}
 ```
 
 ### Computing a concrete decision from a ConditionSet
@@ -1086,7 +1079,8 @@ the API server can evaluate the conditions returned by the webhook natively,
 another webhook needs to be made. To facilitate this, a new
 `AuthorizationConditionsReview` API, very similar to `AdmissionReview` is added.
 Because `kube-apiserver` acts as a webhook server, `kube-apiserver` must also
-serve this API. A sketch of the new API is as follows:
+serve this API. The `AuthorizationConditionsReview` API implementation is not
+subject to admission in `kube-apiserver`. A sketch of the new API is as follows:
 
 ```go
 // AuthorizationConditionsReview describes a request to evaluate authorization conditions.
@@ -1158,6 +1152,9 @@ authorizers:
     # The authorizer MUST support evaluating any condition type it returns
     # in the SubjectAccessReview.
     conditionsEndpointKubeConfigContext: authorization-conditions
+    # New: What version of the AuthorizationConditionsReview to use.
+    # This field has no default.
+    authorizationConditionsReviewVersion: v1alpha1
     # Existing struct, pointer to KubeConfig file where the context exists
     connectionInfo:
       type: KubeConfigFile
@@ -1179,6 +1176,26 @@ table:
 | :---- | :---- | :---- |
 | Condition Type Not Supported by Builtin Condition Evaluators | Authorize() + EvaluateConditions() | EvaluateConditions() |
 | Condition Type Supported | Authorize() | Neither |
+
+Rollouts of new `AuthorizationConfig` configurations in multi-API server
+scenarios such as shown in this picture might need some special care.
+
+![Possible failure scenario of AuthorizationConfig rollout](images/rollout-of-authz-config.png)
+
+For this reason, it is recommended that conditions-aware authorizers with a
+loadbalancer in between itself and the client either:
+
+- (preferred) configure the load balancer to perform a blue-green rollout of the
+  API server configuration, initially only sending requests to old API servers
+  (without the API server configured), and then, at once, sending requests to
+  new API servers.
+  - If the rollout is such that a conditional authorizer is removed in the new
+    configuration, the authorizer should send only `NoOpinion` decisions before
+    the blue-green rollout, to make sure there are no
+    `AuthorizationConfigReview` requests pending to be sent to it.
+- make the authorizer respond with `NoOpinion` until it is known that the
+  rollout of all intermediate kube-apiservers to the new configuration has
+  completed.
 
 ### Built-in CEL conditions evaluator
 
@@ -1523,6 +1540,30 @@ it would for `verb=delete`, the same admission chain (which has the conditions
 enforcement as the first validating admission plugin) is run once for all
 objects.
 
+### Complete list of all `Authorize` calls in `kube-apiserver`
+
+- `k8s.io/kubernetes/pkg/certauthorization.IsAuthorizedForSignerName`: Secondary
+  authorization check for the `sign/approve/attest` virtual verbs on the
+  `certificates.k8s.io signers` resource.
+  - Does not support conditions (for now at least), for the same reasoning as VAP.
+- `k8s.io/kubernetes/pkg/kubelet/server.InstallAuthFilter`: Primary
+  authorization for the kubelet server.
+  - Would support conditions, so that conditions can apply to the path called of
+    the `nodes/proxy` resource.
+- `k8s.io/kubernetes/pkg/registry/admissionregistration/{validating,mutating}admissionpolicy{,binding}`
+  Performs secondary checks of the requestor being able to `get` the referenced
+  parameter resource object or all objects.
+  - Does not support conditions, verb is `get`
+- `k8s.io/kubernetes/pkg/registry/authorization/{local,self,}subjectaccessreview`:
+  Serving the SAR endpoints
+  - Would be conditions-aware, so conditions can be propagated further (e.g. to
+    aggregated API servers)
+- `k8s.io/kubernetes/pkg/registry/core/pod/rest.ensureAuthorizedForVerb`:
+  Ensures that the requestor also has the `create` verb on certain connectible
+  subresources for pods, as discussed above.
+  - Would be conditions-aware, as discussed [above](#compound-authorization-for-connectible-resources).
+- `k8s.io/kubernetes/pkg/registry`
+
 ## Authorizer requirements
 
 To recap, the authorizer must adhere to the following requirements to be
@@ -1590,7 +1631,8 @@ considered functional:
 
 - An authorizer must be able to evalute any condition they authored, such that
   the API server always can call the authorizer to evaluate the condition
-  (regardless of in-process evaluation capabilities).
+  (regardless of in-process evaluation capabilities). An authorizer only ever
+  evaluates its own conditions.
 
 ## Open Questions
 
