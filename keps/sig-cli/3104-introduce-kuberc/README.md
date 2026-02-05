@@ -294,7 +294,7 @@ This might be a good place to talk about core concepts and how they relate.
 1. [How are subcommand aliases indicated?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r896179267)
 1. [How do we handle tying these settings to cluster contexts?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898239057)
 1. [Do we want this file to live elsewhere i.e. XDG_CONFIG?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r896177353)
-1. [How do we exectue subcommands and do we want to support variable substitution i.e. `$1`](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898227148)
+1. [How do we execute subcommands and do we want to support variable substitution i.e. `$1`](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898227148)
 
 ### Risks and Mitigations
 
