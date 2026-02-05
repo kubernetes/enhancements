@@ -91,9 +91,9 @@ The current design embeds PodGroups within the Workload spec which creates sever
 
 By decoupling `PodGroup` as a standalone runtime object:
 
-- `Workload` defines scheduling policy that describes scheduling constraints and requirements.
-- `PodGroupTemplate` provides the blueprint for runtime PodGroup creation.
-- `PodGroup` becomes a mutable, controller-owned object with its own lifecycle
+- `Workload` defines scheduling policy that describes scheduling constraints and requirements
+- `PodGroupTemplate` provides the blueprint for runtime PodGroup creation
+- `PodGroup` is a controller-owned runtime object with its own lifecycle
 
 ### Goals
 
@@ -115,7 +115,7 @@ By decoupling `PodGroup` as a standalone runtime object:
 > [KEP-4671: Gang Scheduling using Workload Object](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling).
 > It is building on foundations and assumes the knowledge of the concepts introduced there.
 
- The KEP introduces the `PodGroup` API in `scheduling.k8s.io/v1alpha1` as a standalone runtime object that is created based on the `podGroupTemplate` defined in the referenced `Workload` API. Each `PodGroup` represents a single scheduling policy for in a batch workloads with flat PodGroups.
+ The KEP introduces the `PodGroup` API in `scheduling.k8s.io/v1alpha1` as a standalone runtime object that is created based on the `podGroupTemplate` defined in the referenced `Workload` API. Each `PodGroup` represents a single scheduling policy for in a batch workloads with flat PodGroups. More details about the north star vision is stated in the design doc [^4].
 
 ```yaml
 apiVersion: scheduling.k8s.io/v1alpha1
@@ -618,3 +618,6 @@ No.
 [^2]: DNS subdomain is a naming convention defined in [RFC 1123](https://tools.ietf.org/html/rfc1123) that Kubernetes uses for most resource names.
 
 [^3]: "Legacy" in this context refers to the KEP-4671 where pods use `workloadRef.podGroup` (template name) and `workloadRef.podGroupReplicaKey` without a standalone `PodGroup` runtime object.
+
+[^4]: [API Proposal: Decoupled PodGroup and Workload API
+](https://docs.google.com/document/d/1B3kLWh_U1a2g-VQ6ExokMjmb7pA8lGkF9MafSSg3JmQ/edit?tab=t.0)
