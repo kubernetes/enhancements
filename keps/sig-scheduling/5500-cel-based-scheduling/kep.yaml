@@ -6,7 +6,7 @@ owning-sig: sig-scheduling
 participating-sigs:
   - sig-node
   - sig-apps
-status: implemntable
+status: implementable
 creation-date: 2026-01-21
 reviewers:
   - "@helayoty"
@@ -33,7 +33,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: TaintTolerationNodeAffinityCEL
+  - name: TaintTolerationCEL
     components:
       - kube-apiserver
       - kube-scheduler
