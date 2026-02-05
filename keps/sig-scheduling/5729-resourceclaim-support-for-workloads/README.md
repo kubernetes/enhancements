@@ -103,6 +103,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Deallocation](#deallocation)
     - [Finding Pods Using a ResourceClaim](#finding-pods-using-a-resourceclaim)
   - [API](#api)
+    - [Workload](#workload)
     - [PodGroup](#podgroup)
     - [Pod](#pod)
     - [Example](#example)
@@ -418,18 +419,18 @@ So the solution needs to:
 
 The following API changes will be made:
 
-- The PodGroup API will be updated to include references to
+- The Workload and PodGroup APIs will be updated to include references to
   ResourceClaims and ResourceClaimTemplates, like Pods.
 - The Pod API will be updated to include references to claims listed in its
   PodGroup.
 
-#### PodGroup
+#### Workload
 
-The PodGroup API changes are modeled after the existing Pod API to reference
-ResourceClaims, adding a `spec.resourceClaims` field:
+The Workload API changes are modeled after the existing Pod API to reference
+ResourceClaims, adding a `spec.podGroupTemplates[].resourceClaims` field:
 
 ```go
-type PodGroupSpec struct {
+type PodGroupTemplate struct {
 	...
 
 	// ResourceClaims defines which ResourceClaims may be shared among Pods in
@@ -447,7 +448,7 @@ type PodGroupSpec struct {
 	// +listMapKey=name
 	// +featureGate=WorkloadPodGroupResourceClaimTemplate
 	// +optional
-	ResourceClaims []WorkloadResourceClaim `json:"resourceClaims,omitempty"`
+	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty"`
 }
 
 // PodGroupResourceClaim references exactly one ResourceClaim, either directly
@@ -485,6 +486,34 @@ type PodGroupResourceClaim struct {
 	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
 	// be set.
 	ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
+}
+```
+
+#### PodGroup
+
+The PodGroup API will be updated similarly to contain the ResourceClaim
+references from its template defined in the Workload:
+
+```go
+type PodGroupSpec struct {
+	...
+
+	// ResourceClaims defines which ResourceClaims may be shared among Pods in
+	// the group. Pods must reference these claims in order to consume the
+	// allocated devices.
+	//
+	// This is an alpha-level field and requires that the
+	// WorkloadPodGroupResourceClaimTemplate feature gate is enabled.
+	//
+	// This field is immutable.
+	//
+	// +patchMergeKey=name
+	// +patchStrategy=merge,retainKeys
+	// +listType=map
+	// +listMapKey=name
+	// +featureGate=WorkloadPodGroupResourceClaimTemplate
+	// +optional
+	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty"`
 }
 ```
 
@@ -579,13 +608,23 @@ metadata:
   name: my-workload
   namespace: default
 spec:
-  podGroups:
+  podGroupTemplates:
   - name: group-1
     policy:
       basic: {}
+    resourceClaims:
+    - name: pg-claim
+      resourceClaimTemplateName: pg-claim-template
+    - name: wl-claim
+      resourceClaimName: workload-claim
   - name: group-2
     policy:
       basic: {}
+    resourceClaims:
+    - name: pg-claim
+      resourceClaimTemplateName: pg-claim-template
+    - name: wl-claim
+      resourceClaimName: workload-claim
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
