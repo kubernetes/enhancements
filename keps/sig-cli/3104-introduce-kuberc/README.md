@@ -461,6 +461,30 @@ This gives us the opportunity to standardize kuberc files.
 
 `--appendarg` is an arbitrary list of strings that accepts anything in string array format.
 
+### kubectl kuberc set --section credentialplugin
+
+`kubectl kuberc set --section credentialplugin` sets values in the top-level `credentialPluginPolicy` and
+`credentialPluginPolicyAllowlist` fields, according to the given options.
+
+#### policy
+
+The required `--policy` flag sets the credential plugin policy. The value must be one of `AllowAll`, `DenyAll`, or
+`AllowList` (case-insensitive). If `--policy=Allowlist` is used, it must be accompanied by the `--allowlistentry` flag.
+
+#### allowlistentry
+
+`--allowlistentry` may be supplied one or multiple times if (and only if) the `--policy` flag is set to `Allowlist`. In order
+to build an allowlist with multiple entries, you must supply the flag multiple times. The argument to `--allowlistentry` is a
+list of `key=value` pairs separated by a comma. In the below example, we add two entries to the allowlist, one with `command`
+`cloudplatform-credential-helper`, and another with `command` `custom-credential-script`:
+
+```bash
+kubectl kuberc set --section credentialplugin \
+    --policy=allowlist \
+    --allowlistentry="command=cloudplatform-credential-helper" \
+    --allowlistentry="command=custom-credential-script"
+```
+
 ### Allowlist Design Details
 
 `credentialPluginAllowlist` allows the end-user to provide an array of objects
@@ -516,6 +540,10 @@ unaffected.
 In future updates, other allowlist entry fields MAY be added. Specifically,
 fields allowing for verification by digest or public key have been discussed.
 The initial design MUST accommodate such future additions.
+
+*note*: While kuberc is in beta, `name` may be used as an alias for `command`.
+When kubrc reaches the `stable` stage, `name` will be deprecated in favor of
+`command`.
 
 ### Test Plan
 
