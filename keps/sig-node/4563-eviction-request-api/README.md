@@ -493,7 +493,7 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
   as the name is predictable. For more details, see
   [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects) alternatives
   section.
-- `.spec.type` should be set to `Soft` (default value) since it is currently the only supported type.
+- `.spec.type` should be set to `Soft` since it is currently the only supported type.
 - `.spec.target.podRef` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
@@ -684,8 +684,7 @@ type PodSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	// +mapType=granular
-	// +structType=granular
+	// +k8s:maxLength=100
 	EvictionInterceptors []Interceptor `json:"evictionInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,42,rep,name=evictionInterceptors"`
 }
 
@@ -717,8 +716,10 @@ type EvictionRequest struct {
 
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
+	// Type of the eviction request defines how much time of how much time and control each
+	// interceptor has to gracefully evict the target. 
+	//
 	// Valid types are Soft.
-    // The default value is Soft.
 	// 
 	// Soft type attempts to evict the target gracefully.
 	// Each active interceptor is given unlimited time to resolve the eviction request, provided
@@ -748,6 +749,7 @@ type EvictionRequestSpec struct {
 	// by other controllers (e.g. via Server-Side Apply) in order to prevent conflicts and manage
 	// ownership.
 	//
+	// The maximum length of the requesters list is 100.
 	// This field cannot be modified once the eviction request has been completed (Complete
 	// condition is True).
 	// +optional
@@ -755,8 +757,7 @@ type EvictionRequestSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	// +mapType=granular
-	// +structType=granular
+	// +k8s:maxLength=100
 	Requesters []Requester `json:"requesters,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=requesters"`
 
 	// Interceptors reference interceptors that respond to this eviction request.
@@ -780,6 +781,7 @@ type EvictionRequestSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
+    // +k8s:maxLength=100
 	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=interceptors"`
 }
 
@@ -802,27 +804,14 @@ const (
 
 // EvictionTarget contains a reference to an object that should be evicted.
 // +union
-type EvictionTarget struct {
-    // Type indicates which target will be evicted.
-    // Valid options are:
-    //   EvictionTargetTypePod - a pod should be evicted.
-    // +unionDiscriminator
-    Type EvictionTargetTypePod `json:"type" protobuf:"bytes,1,opt,name=type,casttype=EvictionTargetTypePod"`
-	
+type EvictionTarget struct {	
     // PodRef references a pod that is subject to eviction/termination.
-	// Must be set if and only if type is "Pod".
 	// Pods that are part of the workload (.spec.workloadRef is set) are not supported.
     // This field is immutable.
     // +optional
+	// +k8s:unionMember
     PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,2,opt,name=podRef"`
 }
-
-type EvictionTargetType string
-
-const (
-    // EvictionTargetTypePod indicates a pod should be evicted.
-    EvictionTargetTypePod EvictionTargetType = "Pod"
-)
 
 // LocalPodReference contains enough information to locate the referenced pod inside the same namespace.
 type LocalPodReference struct {
@@ -837,9 +826,10 @@ type LocalPodReference struct {
 }
 
 // Requester allows you to identify the entity, that requested the eviction of the target.
+// +structType=atomic
 type Requester struct {
-    // Name must be a fully qualified domain name, with an optional path, in accordance with
-    // RFC 1123 identifying the requester (e.g. foo.example.com).
+	// Name must be a fully qualified domain name of at most 253 characters in length, consisting
+	// only of lowercase alphanumeric characters, periods and hyphens (e.g. foo.example.com).
 	// This field must be unique for each requester.
     // This field is required.
     // +required
@@ -849,9 +839,10 @@ type Requester struct {
 // Interceptor allows you to identify the interceptor responding to the EvictionRequest.
 // Interceptors should observe and communicate through the EvictionRequest API to help with
 // the graceful eviction of a target (e.g. termination of a pod).
+// +structType=atomic
 type Interceptor struct {
-    // Name must be a fully qualified domain name, with an optional path, in accordance with
-	// RFC 1123 identifying the interceptor (e.g. bar.example.com).
+    // Name must be a fully qualified domain name of at most 253 characters in length, consisting
+    // only of lowercase alphanumeric characters, periods and hyphens (e.g. bar.example.com).
 	// This field must be unique for each interceptor.
 	// This field is required.
 	// +required
@@ -860,9 +851,14 @@ type Interceptor struct {
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
 type EvictionRequestStatus struct {
-    // Conditions can be used by interceptors to share additional information about the eviction
-	// See EvictionRequestConditionType for eviction request specific conditions.
-    // request.
+    // Conditions can be used by interceptors to share additional information about the eviction.
+	// request.
+	//
+	// Eviction request specific conditions are: Complete.
+	//
+	// Complete condition means that the eviction request is no longer being processed by any
+	// eviction interceptor. This may be either because the pod has been terminated or deleted, or
+	// because the eviction request has been canceled.
     // +optional
     // +patchMergeKey=type
     // +patchStrategy=merge
@@ -903,7 +899,7 @@ type EvictionRequestStatus struct {
 	HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,6,opt,name=heartbeatTime"`
 
     // Pod-specific status that is populated during Pod eviction.
-    // This field can only be set when .spec.target.type is Pod.
+    // This field can only be set when .spec.target is a Pod.
     // This field is managed by Kubernetes.
     // +optional
     PodEvictionStatus *PodEvictionStatus `json:"podEvictionStatus,omitempty" protobuf:"varint,7,opt,name=podEvictionStatus"`
@@ -972,12 +968,12 @@ pods referencing Workloads will be ignored. Therefore, we will reject any Evicti
 `.spec.workloadRef`. We will consider [Workload API Support](#workload-api-support) later.
 
 `.spec.requesters` must have at least one requester. The requester names must pass
-`IsFullyQualifiedDomainName` and `IsDomainPrefixedPath` validation. 
+`IsFullyQualifiedDomainName` validation. 
 
 `.spec.interceptors` are populated from pod's `.spec.evictionInterceptors` (see
 [Interceptor](#interceptor) and [Pod and EvictionRequest API](#pod-and-evictionrequest-api)) in the
 same order. This field must not be set by the requester creating this EvictionRequest. The 
-interceptor names must pass `IsFullyQualifiedDomainName` and `IsDomainPrefixedPath` validation.
+interceptor names must pass `IsFullyQualifiedDomainName` validation.
 
 The pod labels are merged with the EvictionRequest labels (pod labels have a preference) to allow
 for custom label selectors when observing the eviction requests.
