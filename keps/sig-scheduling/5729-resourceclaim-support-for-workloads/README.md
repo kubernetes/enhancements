@@ -264,7 +264,7 @@ know that this has succeeded?
 
 - Allow users to express sets of DRA resources to be replicated for each
   PodGroup, and shared by each Pod in the PodGroup.
-- Automatically create and delete Workloads' and PodGroups' ResourceClaims as needed.
+- Automatically create and delete PodGroups' ResourceClaims as needed.
 - Reduce the burden of each true workload controller implementing
   ResourceClaim generation separately (e.g. JobSet, LWS).
 - Allow claims to be allocated for more than 256 Pods.
