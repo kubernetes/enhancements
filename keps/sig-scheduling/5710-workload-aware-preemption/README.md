@@ -756,6 +756,11 @@ is not relevant for it.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
 
+Note that this feature depends on the Workload API and gang-scheduling, so in addition
+to the `WorkloadAwarePreemption` feature gate, the `GenericWorkload` and `GangScheduling`
+feature gates also need to be enable. It is represented by adding dependency on those
+in the feature-gate framework.
+
 ###### Does enabling the feature change any default behavior?
 
 Yes - the preemption victims chosen when scheduling a workload will be chosen using a slightly
