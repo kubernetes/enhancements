@@ -10,12 +10,14 @@
   - [User Stories](#user-stories)
     - [Independent PodGroup Lifecycle](#independent-podgroup-lifecycle)
     - [PodGroup-Level Status](#podgroup-level-status)
+    - [Controller Scalability](#controller-scalability)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
     - [1. <code>Pod</code> API](#1-pod-api)
     - [2. <code>PodGroup</code> API](#2-podgroup-api)
+  - [SchedulingPolicy Reference vs. Copy/Inline in PodGroup](#schedulingpolicy-reference-vs-copyinline-in-podgroup)
   - [PodGroup Creation Ordering](#podgroup-creation-ordering)
   - [Backward Compatibility for PodGroup Transition](#backward-compatibility-for-podgroup-transition)
   - [PodGroup Status Lifecycle](#podgroup-status-lifecycle)
@@ -86,14 +88,15 @@ The current design embeds PodGroups within the Workload spec which creates sever
 
 - `Workload` represents long-lived configuration-intent, whereas `PodGroups` represent transient units of scheduling. Tying runtime execution units to the persistent definition object violates separation of concerns.
 - Extending the Workload object to track the runtime status for all PodGroups would lead to significant scalability issues.
-  - *Size Limit*: Large Workloads (i.e. large number of PodGroups) may easily hit the 1.5MB etcd object limit.
+  - *Size Limit*: Large Workloads (i.e., large number of PodGroups) may easily hit the 1.5MB etcd object limit.
   - *Contention*: Updating the status of a single PodGroup would require read-modify-write on the central massive Workload object.
+  - *Lifecycle coupling*: Standalone `PodGroup` objects enable other resources (i.e., ResourceClaims) to be owned by and garbage-collected with specific scheduling units, rather than the entire Workload or individual Pods.
 
 By decoupling `PodGroup` as a standalone runtime object:
 
-- `Workload` defines scheduling policy that describes scheduling constraints and requirements
+- `Workload` becomes scheduling policy object that defines scheduling constraints and requirements
 - `PodGroupTemplate` provides the blueprint for runtime PodGroup creation
-- `PodGroup` is a controller-owned runtime object with its own lifecycle
+- `PodGroup` is a controller-owned runtime object with its own lifecycle that represents a single scheduling unit.
 
 ### Goals
 
@@ -111,9 +114,7 @@ By decoupling `PodGroup` as a standalone runtime object:
 
 ## Proposal
 
-> This KEP depends heavily on
-> [KEP-4671: Gang Scheduling using Workload Object](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling).
-> It is building on foundations and assumes the knowledge of the concepts introduced there.
+> This KEP depends heavily on [KEP-4671: Gang Scheduling using Workload Object](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling) and is building on its foundations and assumes the knowledge of the concepts introduced there.
 
  The KEP introduces the `PodGroup` API in `scheduling.k8s.io/v1alpha1` as a standalone runtime object that is created based on the `podGroupTemplate` defined in the referenced `Workload` API. Each `PodGroup` represents a single scheduling policy for in a batch workloads with flat PodGroups. More details about the north star vision is stated in the design doc [^4].
 
@@ -126,16 +127,14 @@ metadata:
 spec:
   workloadRef:
     name: training-workload
-  podGroupTemplateRef:
-    name: pd-1-template
+  podGroupTemplateName: pd-1-template
+  schedulingPolicy:
+    gang:
+      minCount: 2
 status:
-  scheduledPods: 2
   conditions:
   - type: PodGroupScheduled
     status: "True"
-    lastTransitionTime: "2024-01-26T10:00:00Z"
-    reason: MinCountSatisfied
-    message: "All required pods (2/2) have been assigned to nodes"
 ```
 
 ### User Stories
@@ -148,11 +147,21 @@ As a user running LWS(LeaderWorkerSet), I want to observe and manage a leader po
 
 I have a large-scale training job with multiple replicas, and want to observe the scheduling status of each PodGroup independently, so I can identify which specific replica is having scheduling issues.
 
+#### Controller Scalability  
+
+As a workload controller author, I want `PodGroup` status to be stored in a separate object, so that per-replica scheduling updates do not require read-modify-write operations on a large, shared `Workload` object, which would otherwise create scalability and contention issues at scale.
+
 ### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
 
-TBD
+- Increase API calls volume: More objects means more API calls for creation, updates, and watches. The mitigation is split the responsibility.`Workload` is rarely updated (as a policy object) while `PodGroup` handles runtime state. In addition, `PodGroups` allow per-replica sharding of status updates.
+
+- Consistency: State is spread across multiple objects (`Workload` and `PodGroup`). The mitigation is that the `PodGroup` inlines all runtime state making it self-contained.
+
+- Race conditions during objects creation: While the design requires controllers to create objects in order (`Workload` -> `PodGroup` -> `Pods`), there is still a possibility of race condition to happen anyway. The mitigation is to introduce admission controller to validate the object creation order. In addition, `UnschedulableAndUnresolvable` status will be set to serve as last line of defense if `Pods` are created before `PodGroup` is created.
+
+- Increased etcd size: New object per replica which means more objects in etcd. The mitigation is `PodGroups` are owned by controllers with `ownerReferences`, so they are automatically garbage collected when the replica is deleted. Also, each `PodGroup` object is small (~1KB) compared to potentially large `Workload` object (~1.5MB) with the embedded `PodGroup` design.
 
 ## Design Details
 
@@ -160,7 +169,7 @@ TBD
 
 #### 1. `Pod` API
 
-The `Pod` API will have a new field `podGroupName` to reference the `PodGroup` runtime object. While `PodGroupReplicaKey` will be deprecated, since each `PodGroup` object represents a single replica instance.
+The `Pod` API will have a new field `PodGroupName` to reference the `PodGroup` runtime object that this pod belongs to, since each `PodGroup` object represents a single replica instance. While `PodGroupReplicaKey` and `PodGroup` fields are **Tombstoned** (effectively removed)
 
 ```go
 type WorkloadReference struct {
@@ -168,14 +177,43 @@ type WorkloadReference struct {
    // +required
    Name string
 
+    // Tombstoned 
+    // change from +required to +optional
+    PodGroup string
+
+    // Tombstoned 
+    // change from +required to +optional
+    PodGroupReplicaKey string
+
+    //New field
+
    // PodGroupName is the name of the Runtime PodGroup object that tracks 
    // the collective status of this group.
-   // +required
+   // +optional
    PodGroupName string
 
    // PodGroupReplicaKey will be deprecated
 }
 ```
+
+**Why do we need Pod to reference its PodGroup?**
+The scheduler needs to efficiently be able to answer questions like "give me all pods from that PodGroup" or "are those two pods from the same PodGroup?".
+
+If PodGroup used a selector to find its pods, every scheduling cycle would require evaluating the selector across pods (since labels can change, we need to handle mutability). 
+
+In addition, we learned that explicit pointers perform better which is a pretty important aspect here, specially in the scalability area.
+
+**Why is podGroupName an explicit field in PodSpec rather than using ownerReferences or labels?**
+This decision was mainly based on the mutability requirement for this field. So far, we don't see any use case where `Pods` would need to move between `PodGroups`. Therefore, the decision was make `PodGroupName` an immutable field.
+If we allow for mutations, we need to handle many corner cases (i.e., I'm scheduling a gang, I found nodes for all pods, but suddenly one of the pods was removed from my `PodGroup`, etc.).
+
+**If PodTemplate is immutable in the true workload object, how controllers should set PodGroupName per-pod?**
+There are two main cases:
+(a) Controller-managed PodGroups: when a controller creates a Pod, it determines the creation context that allow it to define the PodGroup this Pod should belong to. This is similar to the pattern in [DaemonSet controller](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/daemon/daemon_controller.go#L1028-L1029), where during pod creation we explicitly set the NodeAffinity for each pod.
+
+For hierarchical controllers ( i.e., JobSet), when there's a 1:1 mapping between lower-level workload and PodGroup, the higher-level controller can manage PodGroups and set `podGroupName` in the `PodTemplate` of the child workloads.
+
+(b) User-managed PodGroups: users can manage PodGroup themselves by setting `podGroupName` directly in the `PodTemplate`. Note this is distinct from "bring your own Workload" where a user might reference a custom Workload (to change scheduling policy, gang configuration, TAS constraints, etc.) but still expect the controller to create PodGroups based on that Workload's template. User-managed PodGroups is specifically for cases where the user wants to control PodGroup creation.
 
 #### 2. `PodGroup` API
 
@@ -216,6 +254,11 @@ type PodGroupSpec struct {
    // the template for this PodGroup.
    // +required
    PodGroupTemplateName string
+
+   // SchedulingPolicy defines the scheduling policy for this instance of the PodGroup.
+   // It is copied from the template on PodGroup creation.
+   // +required
+   SchedulingPolicy *PodGroupSchedulingPolicy
 }
 
 type PodGroupStatus struct {
@@ -229,12 +272,27 @@ type PodGroupStatus struct {
    //
    // +optional
    Conditions []metav1.Condition
-
-   // ScheduledPods is the count of pods that have been assigned to nodes.
-   // +optional
-   ScheduledPods int32
 }
 ```
+
+### SchedulingPolicy Reference vs. Copy/Inline in PodGroup
+
+We evaluated two architectural approaches for linking PodGroup to its scheduling policy:
+- Reference: where PodGroup points to `Workload.PodGroupTemplates[x]` 
+- Copy/Inline: where PodGroup contains an inline copy of the policy (snapshot on creation)
+
+The Reference model offers a single source of truth and lower write amplification, but introduces "action at a distance" 
+semantics where modifying a Workload can break all existing PodGroups.
+
+The Copy/Inline model makes PodGroup a self-contained object, matching the familiar `ReplicaSet.spec.template` in `Pod` 
+pattern. It reduces blast radius (Workload changes only affect newly created PodGroups) and simplifies debugging. 
+
+We propose adopting Copy/Inline for Alpha. If scalability concerns emerge, the model can be extended by adding an optional 
+reference field alongside the inline policy (with validation ensuring exactly one is set), preserving a mitigation path.
+
+While this argument works both ways, stability and extensibility are concrete risks we should address from the start, 
+whereas performance concerns remain theoretical.
+
 ### PodGroup Creation Ordering
 
 Since `PodGroup` is a runtime object created by true workload[^1] controllers, strict creation ordering (`PodGroup` must exist before `Pods`) is required to ensure the consistency of the scheduling policy.
@@ -321,13 +379,11 @@ To support migration from the embedded `PodGroup` model, we propose the followin
 
 ### PodGroup Status Lifecycle
 
-The `PodGroup.Status` is managed by kube-scheduler and true workload[^1] controllers. For alpha we will introduce `Conditions` and `ScheduledPods` fields, more fields will be added for beta and GA.
+The `PodGroup.Status` is managed by kube-scheduler and true workload[^1] controllers. For alpha we will introduce `Conditions` field, more fields will be added for beta and GA.
 
-The controller is responsible for initializing the `PodGroupScheduled` condition when a new PodGroup is created. The scheduler then takes over responsibility for updating both the `ScheduledPods` counter and the `PodGroupScheduled` condition as it processes the pods.
+The controller is responsible for initializing the `PodGroupScheduled` condition when a new PodGroup is created.
 
-- When a `PodGroup` is created, the controller initializes the `PodGroupScheduled` condition with status `Unknown` and `ScheduledPods` field by zero
-- At scheduler, each time a pod is successfully scheduled, the scheduler increments the `ScheduledPods` counter
-- For gang scheduling policy, when the `ScheduledPods` counter equals to `MinCount` in `PodGroupTemplate`, the scheduler updates the `PodGroupScheduled` condition to `True`
+- When a `PodGroup` is created, the controller initializes the `PodGroupScheduled` condition with status `Unknown`
 - For basic scheduling policy, when the pod related to the `PodGroup` gets scheduled, the scheduler updates the `PodGroupScheduled` condition to `True`
 - If pods are unschedulable(i.e., timeout, resources, affinity, etc.), the scheduler updates the `PodGroupScheduled` condition to `False` and sets the reason fields accordingly
 
@@ -532,7 +588,7 @@ No.
   - Event Reason:
 - [x] API .status
   - Condition name: `PodGroupScheduled`
-  - Other field: `ScheduledPods`
+  - Other field:
 - [ ] Other (treat as last resort)
   - Details:
 
