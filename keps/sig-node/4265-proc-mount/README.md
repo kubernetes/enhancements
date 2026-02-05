@@ -32,7 +32,6 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -52,9 +51,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -509,9 +508,7 @@ Major milestones might include:
 2024-05-31: Added e2e [tests](https://github.com/kubernetes/kubernetes/pull/123303)
 2024-05-31: KEP updated to Beta
 2025-01-31: KEP updated to on by default Beta
-
-## Drawbacks
-
+2026-01-29: KEP updated to GA
 
 ## Alternatives
 - `--oci-worker-no-process-sandbox` like in [BuildKit](https://github.com/moby/buildkit/blob/v0.12.2/examples/kubernetes/job.rootless.yaml#L31)
