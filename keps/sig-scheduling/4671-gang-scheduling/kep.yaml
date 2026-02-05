@@ -1,13 +1,14 @@
 title: Gang Scheduling
 kep-number: 4671
 authors:
- -    "@erictune"
- -    "@wojtek-t"
- -    "@helayoty" 
- -    "@dom4ha"
- -    "@44past4"
- -    "@andreyvelich" 
- -    "@thockin"
+ - "@erictune"
+ - "@wojtek-t"
+ - "@helayoty" 
+ - "@dom4ha"
+ - "@44past4"
+ - "@andreyvelich" 
+ - "@thockin"
+ - "@macsko"
 
 owning-sig: sig-scheduling
 participating-sigs:
@@ -32,7 +33,7 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.35"
+latest-milestone: "v1.36"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -48,6 +49,9 @@ feature-gates:
       - kube-apiserver
       - kube-scheduler
   - name: GangScheduling
+    components:
+      - kube-scheduler
+  - name: DelayedPreemption
     components:
       - kube-scheduler
 disable-supported: true
