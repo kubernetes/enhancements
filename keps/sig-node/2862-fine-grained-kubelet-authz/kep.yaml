@@ -12,7 +12,7 @@ reviewers:
   - "@SergeyKanzhelev"
   - "@liggitt"
 approvers:
-  - "@tallclair"
+  - "@tallclair" # sig-node-assigned-approver
   - "@liggitt"
 
 see-also:

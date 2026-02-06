@@ -9,9 +9,9 @@ status: implementable
 creation-date: 2023-09-05
 reviewers:
   - "@ffromani"
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-reviewer
 approvers:
-  - "@dchen1107"
+  - "@dchen1107" # sig-node-tl
   - "@mrunalp"
 see-also: []
 replaces: []

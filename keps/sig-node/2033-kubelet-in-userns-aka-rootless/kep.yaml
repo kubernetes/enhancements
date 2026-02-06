@@ -15,7 +15,7 @@ reviewers:
   - "@dims"
   - "@sftim"
 approvers:
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
 see-also:
   # `add KEP for cgroups v2 support`
   - "https://github.com/kubernetes/enhancements/pull/1370"

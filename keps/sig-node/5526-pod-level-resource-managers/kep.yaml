@@ -9,10 +9,11 @@ participating-sigs:
 status: implementable
 creation-date: 2025-09-10
 reviewers:
-  - "@ndixita"
+  - "@ndixita" # sig-node-assigned-reviewer
   - "@ffromani"
+  - "@tallclair" # sig-node-assigned-reviewer
 approvers:
-  - "@dchen1107"
+  - "@dchen1107" # sig-node-tl
 
 see-also:
   - "/keps/sig-node/2837-pod-level-resource-spec"
