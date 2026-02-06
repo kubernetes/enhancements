@@ -1236,7 +1236,7 @@ themselves, but instead delegates actual authorization decisions to a set of
 ordered sub-authorizers. As long as there are no clearly circular dependencies
 in the authorizer call chain, this is supported. Consider the following example:
 
-![Directed Acyclic Graph](images/rollout-of-authz-config.png)
+![Directed Acyclic Graph](images/composite-chain.png)
 
 1. A user sends a conditionally-authorized request (e.g. `create`) to an
    aggregated API server.
