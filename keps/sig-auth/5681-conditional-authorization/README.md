@@ -980,23 +980,25 @@ types:
 type SubjectAccessReviewStatus struct {
     // ... Allowed, Denied, Reason and EvaluationError here as normal
 
-    // ConditionsChain is an ordered list of condition sets, where every item of the list represents one authorizer's ConditionSet response.
-    // When evaluating the conditions, the first condition set must be evaluated as a whole first, and only if that condition set
+    // ConditionSetChain is an ordered list of condition sets, where every item
+    // of the list represents one authorizer's ConditionSet response.
+    // When evaluating the conditions, the first condition set must be evaluated
+    // as a whole first, and only if that condition set
     // evaluates to NoOpinion, can the subsequent condition sets be evaluated.
     //
-    // When ConditionsChain is non-null, Allowed and Denied must be false.
+    // When ConditionSetChain is non-null, Allowed and Denied must be false.
     //
     // +optional
     // +listType=atomic
-    ConditionsChain []SubjectAccessReviewConditionSet `json:"conditionsChain,omitempty"`
+    ConditionSetChain []SubjectAccessReviewConditionSet `json:"conditionSetChain,omitempty"`
 }
 
 type SubjectAccessReviewConditionSet struct {
     // Allowed specifies whether this condition set is unconditionally allowed.
-    // Mutually exclusive with Denied and Conditions.
+    // Mutually exclusive with Denied, Conditions, and ConditionSetChain.
     Allowed bool `json:"allowed,omitempty"`
     // Denied specifies whether this condition set is unconditionally denied.
-    // Mutually exclusive with Allowed and Conditions.
+    // Mutually exclusive with Allowed, Conditions, and ConditionSetChain.
     Denied bool `json:"denied,omitempty"`
 
     // FailureMode specifies the failure mode for this condition set.
@@ -1008,20 +1010,42 @@ type SubjectAccessReviewConditionSet struct {
     // conditions that need to be evaluated through the AuthorizationConditionsReview API.
     AuthorizerName string `json:"authorizerName"`
 
+    // ConditionsType describes the type of all conditions in the Conditions slice.
+    // It does not apply at all to nested conditions in ConditionSetChain.
+    //
+    // Mutually exclusive with Allowed, Denied, and ConditionSetChain.
+    ConditionsType string `json:"authorizerName,omitempty"`
+
     // Conditions is an unordered set of conditions that should be evaluated
     // against admission attributes, to determine
     // whether this authorizer allows the request.
+    //
+    // Mutually exclusive with Allowed, Denied, and ConditionSetChain.
     //
     // +listType=map
     // +listMapKey=id
     // +optional
     Conditions []SubjectAccessReviewCondition `json:"conditions,omitempty"`
+
+    // ConditionSetChain is an ordered list of condition sets, where every item
+    // of the list represents one authorizer's ConditionSet response.
+    // When evaluating the conditions, the first condition set must be evaluated
+    // as a whole first, and only if that condition set
+    // evaluates to NoOpinion, can the subsequent condition sets be evaluated.
+    //
+    // This field is used by composite authorizers, such as the kube-apiserver,
+    // that in turn delegate their decisions to other sub-authorizers.
+    //
+    // Mutually exclusive with Allowed, Denied, and Conditions.
+    //
+    // +optional
+    // +listType=atomic
+    ConditionSetChain []SubjectAccessReviewConditionSet `json:"conditionSetChain,omitempty"`
 }
 
 type SubjectAccessReviewCondition struct {
     ID string                                       `json:"id"`
     Effect      SubjectAccessReviewConditionEffect  `json:"effect"`
-    Type        string                              `json:"type"`
     Condition   string                              `json:"condition"`
     Description string                              `json:"description,omitempty"`
 }
@@ -1035,10 +1059,10 @@ const (
 )
 ```
 
-`Status.ConditionsChain` is mutually exclusive with `Status.Allowed` and
+`Status.ConditionSetChain` is mutually exclusive with `Status.Allowed` and
 `Status.Denied`. A conditional response is characterized by
-`Status.ConditionsChain != null`. Old implementers that do not recognize
-`Status.ConditionsChain` will just safely assume it was a `NoOpinion`.
+`Status.ConditionSetChain != null`. Old implementers that do not recognize
+`Status.ConditionSetChain` will just safely assume it was a `NoOpinion`.
 
 The `spec` field is augmented to add the `ConditionsMode`, as described above:
 
@@ -1098,10 +1122,23 @@ type AuthorizationConditionsReview struct {
 type AuthorizationConditionsRequest struct {
     // TODO: Do we want UID like AdmissionReview here? I guess we don't need it.
 
-    // ConditionSets is the condition sets that the authorizer returned for 
-    // the request in the authorization phase. Order matters, and must be
-    // exactly the same order as the authorizer produced.
-    ConditionSets []authorizationv1.SubjectAccessReviewConditionSet `json:"conditionSets,omitempty"`
+    // ConditionSetChain is an ordered list of condition sets, where every item
+    // of the list represents one authorizer's ConditionSet response.
+    // When evaluating the conditions, the first condition set must be evaluated
+    // as a whole first, and only if that condition set
+    // evaluates to NoOpinion, can the subsequent condition sets be evaluated.
+    //
+    // Composite authorizers (such as the kube-apiserver), which delegate their
+    // decisions to other sub-authorizers, might return a ConditionSetChain in
+    // SubjectAccessReview. That ConditionSetChain must be sent back unmodified
+    // by the client in this field.
+    //
+    // This list contains exactly one element for non-composite authorizers,
+    // which returned a simple list of their own conditions in SubjectAccessReview.
+    //
+    // +optional
+    // +listType=atomic
+    ConditionSetChain []SubjectAccessReviewConditionSet `json:"conditionSetChain,omitempty"`
 
     // All fields present in the ConditionData interface, not exhaustively listed
     // in this KEP for brevity.
@@ -1127,6 +1164,21 @@ type AuthorizationConditionsResponse struct {
 
     // EvaluationError describes a possible error that happened during evaluation.
     EvaluationError string `json:"evaluationError,omitempty"`
+
+    // ConditionSetChain is an ordered list of condition sets, where every item
+    // of the list represents one authorizer's ConditionSet response.
+    // When evaluating the conditions, the first condition set must be evaluated
+    // as a whole first, and only if that condition set
+    // evaluates to NoOpinion, can the subsequent condition sets be evaluated.
+    //
+    // In order to support constrained impersonation that is also conditional
+    // on the object, evaluating a ConditionSet might yield another ConditionSet.
+    //
+    // When ConditionSetChain is non-null, Allowed and Denied must be false.
+    //
+    // +optional
+    // +listType=atomic
+    ConditionSetChain []SubjectAccessReviewConditionSet `json:"conditionSetChain,omitempty"`
 
     // TODO: Add AuditAnnotations and/or Warnings as in AdmissionReview?
 }
@@ -1176,6 +1228,260 @@ table:
 | :---- | :---- | :---- |
 | Condition Type Not Supported by Builtin Condition Evaluators | Authorize() + EvaluateConditions() | EvaluateConditions() |
 | Condition Type Supported | Authorize() | Neither |
+
+### Composite / Union Authorizer Support
+
+Some authorizers, like kube-apiserver itself, do not perform authorization logic
+themselves, but instead delegates actual authorization decisions to a set of
+ordered sub-authorizers. As long as there are no clearly circular dependencies
+in the authorizer call chain, this is supported. Consider the following example:
+
+![Directed Acyclic Graph](images/rollout-of-authz-config.png)
+
+1. A user sends a conditionally-authorized request (e.g. `create`) to an
+   aggregated API server.
+1. The aggregated API server, as per our contract, must be configured with the
+   `kube-apiserver` as its first webhook authorizer, and thus sends a
+   `SubjectAccessReview` to it.
+1. `kube-apiserver` in turn is configured with a webhook authorizer `foo`, to
+   which it sends another `SubjectAccessReview`. `foo` responds with two
+   ConditionSets (each ConditionSet which maps to an authorizer-internal concept
+   of "tiers", modelled as a composite authorizer of two smaller authorizers:
+   `system` and `user`). The response is:
+
+   ```yaml
+   kind: SubjectAccessReview
+   status:
+     allowed: false
+     conditionSetChain:
+     - authorizerName: system
+       # Supported by both the kube-apiserver and the aggregated API server
+       conditionsType: k8s.io/cel
+       conditions:
+       - id: foo-system-1
+         effect: Deny
+         condition: <something>
+     - authorizerName: user
+       conditionsType: foo-opaque-type
+       conditions:
+       - id: foo-user-1
+         effect: NoOpinion
+         condition: <something>
+       - id: foo-user-2
+         effect: Allow
+         condition: <something>
+   ```
+
+1. Although it is at this stage known that the request can be authorized (if the
+   `Deny` and `NoOpinion` conditions are false, and the `Allow` condition is true),
+   the evaluation of the authorizer chain proceeds eagerly until an
+   unconditional response is found, or the end of the chain is reached. (See
+   [this](#computing-a-concrete-decision-from-a-conditionset) section for a
+   comparison of eager and lazy evaluation, lazy evaluation is only available
+   when the authorizer resides in the same process as the request)
+1. Thus, `kube-apiserver` performs a webhook to authorizer `bar`, which responds
+   with one ConditionSet of one `effect=Allow` condition.
+
+   ```yaml
+   kind: SubjectAccessReview
+   status:
+     allowed: false
+     conditionSetChain:
+     - authorizerName: whatever
+       # Supported by both the kube-apiserver and the aggregated API server
+       conditionsType: k8s.io/cel
+       conditions:
+       - id: bar-1
+         effect: Allow
+         condition: <something>
+   ```
+
+1. As `bar` also responded with a conditional allow, the authorizer queries next
+   the Node authorizer, which responds with `NoOpinion`, and finally, the RBAC
+   authorizer responds with `NoOpinion`.
+1. If an unconditional response would have been found, `kube-apiserver` would
+   have been able to soundly short-circuit the evaluation. Now it reached the
+   end of the authorizer chain, and thus returned the following aggregated
+   response to the aggregated API server is:
+
+   ```yaml
+   kind: SubjectAccessReview
+   status:
+     allowed: false
+     conditionSetChain:
+     - authorizerName: foo
+       conditionSetChain: # nested composite authorizer
+       - authorizerName: system
+         conditionsType: k8s.io/cel
+         conditions:
+         - id: foo-system-1
+           effect: Deny
+           condition: <something>
+       - authorizerName: user
+         conditionsType: foo-opaque-type
+         conditions:
+         - id: foo-user-1
+           effect: NoOpinion
+           condition: <something>
+         - id: foo-user-2
+           effect: Allow
+           condition: <something>
+     - authorizerName: bar # authorizer name in kube-apiserver, "whatever" was ignored.
+       conditionsType: k8s.io/cel
+       conditions:
+       - id: bar-1
+         effect: Allow
+         condition: <something>
+     # node authorizer ignored, as it responded NoOpinion
+     # - authorizerName: node
+     #  denied: true # unconditional deny
+     # rbac authorizer ignored, as it responded NoOpinion
+     # if it would have answered Allow, it would have been communicated as:
+     # - authorizerName: rbac
+     #  allowed: true # unconditional allow
+   ```
+
+1. The aggregated API server sees that given this aggregate conditional response
+   from `kube-apiserver`, the request can become authorized, if certain
+   conditions are met, so it saves the conditions in the request context, and
+   proceeds with the request.
+1. Next, the `AuthorizationConditionsEnforcer` admission controller enforces
+   that the conditions hold. It walks the ConditionSets from top to bottom.
+   First up is the `foo` authorizer's `system` ConditionSet, which uses the
+   condition type `k8s.io/cel` which is supported by the aggregated API server.
+   Evaluation of the `foo-system-1` condition is thus directly done against the
+   object, which yields `false`, in other words, the Deny condition does not
+   apply, and thus can the evaluation proceed.
+1. The `foo` authorizer's `user` ConditionSet uses the opaque condition type
+   `foo-opaque-type` which cannot readily be evaluated by the aggregated API
+   server, and thus does the aggregated API server send the following request to
+   `kube-apiserver`:
+
+   ```yaml
+   kind: AuthorizationConditionsReview
+   spec:
+     conditionSetChain:
+     - authorizerName: foo
+       conditionSetChain:
+       # The "system" ConditionSet was already evaluated to NoOpinion,
+       # and is thus omitted
+       - authorizerName: user
+         conditionsType: foo-opaque-type
+         conditions:
+         - id: foo-user-1
+           effect: NoOpinion
+           condition: <something>
+         - id: foo-user-2
+           effect: Allow
+           condition: <something>
+     - authorizerName: bar
+       conditionsType: k8s.io/cel
+       conditions:
+       - id: bar-1
+         effect: Allow
+         condition: <something>
+     object: {} # request object
+     # ... + other metadata
+   ```
+
+1. `kube-apiserver` can correlate what authorizer authored what condition
+   through the `authorizerName` field, and thus calls the `foo` authorizer's
+   `EvaluateConditions` method. In the webhook authorizer case, this yields
+   another webhook to the foo authorizer:
+
+   ```yaml
+   kind: AuthorizationConditionsReview
+   spec:
+     conditionSetChain:
+     # The "system" ConditionSet was already evaluated to NoOpinion,
+       # and is thus omitted
+     - authorizerName: user
+       conditionsType: foo-opaque-type
+       conditions:
+       - id: foo-user-1
+         effect: NoOpinion
+         condition: <something>
+       - id: foo-user-2
+         effect: Allow
+         condition: <something>
+     object: {} # request object
+     # ... + other metadata
+   ```
+
+1. Authorizer `foo` authorizer responds with a `NoOpinion`, as both the
+   `foo-user-1` and `foo-user-2` conditions evaluated to `false`:
+
+   ```yaml
+   kind: AuthorizationConditionsReview
+   spec: {}
+   status:
+     allowed: false
+     denied: false
+   ```
+
+1. Next, `kube-apiserver` evaluates the ConditionSet from `bar`. These
+   conditions are of the built-in CEL condition type, so the `kube-apiserver`
+   tries to directly evaluate them. However, the condition used a CEL function
+   `cidr`, which was introduced in, say v1.37, and `kube-apiserver` is of v1.36.
+   As the "fast-path" of in-tree evaluation failed, the `kube-apiserver` falls
+   back to webhook evaluation and sends this to authorizer `bar`:
+
+   ```yaml
+   kind: AuthorizationConditionsReview
+   spec:
+     conditionSetChain:
+     - authorizerName: bar
+       conditionsType: k8s.io/cel
+       conditions:
+       - id: bar-1
+         effect: Allow
+         condition: <something>
+     object: {} # request object
+     # ... + other metadata
+   ```
+
+1. The `bar` authorizer who built a CEL condition using the `cidr` function,
+   naturally also has a CEL environment that is capable of evaluating it, which
+   means that evaluation succeeds. The result is again `false` (so that we can
+   illustrate the whole end-to-end flow), which means the ConditionSet as a
+   whole evaluates to `NoOpinion`, in the same way as `foo`.
+1. As both the ConditionSet of `foo` and `bar` evaluated to `NoOpinion`, does
+   the `kube-apiserver` also return `NoOpinion` to the aggregated API server.
+1. As evaluation of the aggregated API server's first authorizer's conditional
+   allow turned out to be `NoOpinion`, evaluation of the other authorizers in
+   the chain is lazily resumed.
+1. Thus, is the `Authorize` method on the RBAC authorizer called. Say it also
+   returns `NoOpinion`.
+1. Finally, `Authorize` on webhook `baz` is called, which sends a
+   `SubjectAccessReview` to `baz`. Say the response is the following:
+
+   ```yaml
+   kind: SubjectAccessReview
+   status:
+     allowed: false
+     conditionSetChain:
+     - authorizerName: baz
+       conditionsType: k8s.io/cel
+       conditions:
+       - id: baz-1
+         effect: Allow
+         condition: <something>
+       - id: baz-2
+         effect: Deny
+         condition: <something>
+       - id: baz-3
+         effect: Allow
+         condition: <something>
+   ```
+
+1. Because the aggregated API server supports evaluating `k8s.io/cel`, it
+   evaluates the conditions in order of importance, that is, Deny conditions
+   (`baz-2`) first. As `baz-2` returns `false`, Allow conditions `baz-1` and
+   `baz-3` are evaluated to `false` and `true` respectively. As either of them
+   returned `true` (order of conditions within a set does not matter, only
+   ordering of the sets themselves), the `baz` ConditionSet evaluates to an
+   `Allow`. Thus is the request allowed, and can proceed to other validating
+   admission controllers.
 
 Rollouts of new `AuthorizationConfig` configurations in multi-API server
 scenarios such as shown in this picture might need some special care.
@@ -1277,7 +1583,7 @@ Conditional authorization is available when all of the following criteria are me
   - In-tree authorizer: through implementing the
     `authorizer.ConditionSetEvaluator` interface, and
   - Webhook authorizer: when needed, responds with a non-null
-    `.status.conditionsChain` array, along with `.status.allowed=false` and
+    `.status.conditionSetChain` array, along with `.status.allowed=false` and
     `.status.denied=false`.
 - The `ConditionalAuthorization` feature gate is enabled AND the
   `AuthorizationConditionsEnforcer` admission plugin is enabled
@@ -1384,7 +1690,7 @@ apiVersion: authorization.k8s.io/v1
 kind: SubjectAccessReview
 status:
   allowed: false
-  conditionsChain:
+  conditionSetChain:
   - conditionsSet:
     - type: k8s.io/authorization-cel
       id: "lucas-only-impersonate-node-get-pods"
