@@ -367,7 +367,7 @@ Three feature gates are involved in the rollout, reflecting the transition to th
 
 *   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics (see `DeclarativeValidationBeta` below).  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
 
-*   **`DeclarativeValidationTakeover`**:  Deprecated in v1.36. Previously determined whether declarative validation results were authoritative.
+*   **`DeclarativeValidationTakeover`**:  Deprecated in v1.36. Previously determined whether declarative validation results were authoritative. As `DeclarativeValidationTakeover` does not change user-visible behavior (it is internal to validation mechanics), we do not intend to honor it in 1.36. Users of emulation version will be allowed to set the gate (e.g., when upgrading a cluster that had it set), but it will have no impact on implementation. This prevents upgrade failures (e.g., "gate not recognized") while immediately moving behavior to the new lifecycle model.
 
 *   **`DeclarativeValidationBeta`**: Introduced in v1.36. This feature gate acts as the Global Safety Switch for Beta-stage validation rules. It allows cluster admins to disable "newly enforced" validations if regressions are found, forcing them back to Shadow mode.  When `DeclarativeValidationBeta` is enabled (default for Beta), Beta tags are Enforced. When disabled, Beta tags are Shadowed.  `DeclarativeValidationBeta` has *no effect* if `DeclarativeValidation` is disabled.
 
