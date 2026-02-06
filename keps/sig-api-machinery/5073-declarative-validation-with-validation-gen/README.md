@@ -17,8 +17,9 @@
     - [New Validations Vs Migrating Validations](#new-validations-vs-migrating-validations)
     - [New Validation Tests](#new-validation-tests)
     - [Ensuring Validation Equivalence With Testing](#ensuring-validation-equivalence-with-testing)
-  - [Introduce Feature Gates: <code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code>](#introduce-feature-gates-declarativevalidation--declarativevalidationtakeover)
-    - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationTakeover</code> Will Target Beta From The Beginning](#declarativevalidation--declarativevalidationtakeover-will-target-beta-from-the-beginning)
+  - [Introduce Feature Gates: <code>DeclarativeValidation</code>, <code>DeclarativeValidationTakeover</code>, &amp; <code>DeclarativeValidationBeta</code>](#introduce-feature-gates-declarativevalidation-declarativevalidationtakeover--declarativevalidationbeta)
+    - [<code>DeclarativeValidation</code> &amp; <code>DeclarativeValidationBeta</code> Will Target Beta From The Beginning](#declarativevalidation--declarativevalidationbeta-will-target-beta-from-the-beginning)
+    - [Execution &amp; Authority Logic](#execution--authority-logic)
     - [Feature Gate Graduation Criteria](#feature-gate-graduation-criteria)
       - [<code>DeclarativeValidation</code> Feature Gate Beta to GA Graduation Criteria](#declarativevalidation-feature-gate-beta-to-ga-graduation-criteria)
   - [Linter](#linter)
@@ -236,18 +237,18 @@ The strategic goal of Declarative Validation (DV) is to **meaningfully reduce th
 
 ### The "Implicit Shadow" Reality
 
-Today, the system is in a "hybrid" state. Any field using standard +k8s: tags (without the +k8s:declarativeValidationNative marker) is **implicitly shadowed** because Takeover defaults to false. Mismatches are recorded, but errors are suppressed to prevent duplication.
+Today, the system is in a "hybrid" state. Any field using standard +k8s: tags (without the +k8s:declarativeValidationNative marker) is **implicitly shadowed** because `DeclarativeValidationBeta` defaults to false for legacy fields (or they remain in implicit mode). Mismatches are recorded, but errors are suppressed to prevent duplication.
 
 ### Problem: Global vs. Local Control
 
-The Takeover gate is a global "all-or-nothing" switch. Graduation is blocked because we cannot force every migrated field in the cluster to become "Authoritative" simultaneously.
+The `DeclarativeValidationBeta` gate is a global "all-or-nothing" switch for rules in the Beta stage. Graduation is blocked because we cannot force every migrated field in the cluster to become "Authoritative" simultaneously without a granular lifecycle.
 
 ### Solution: Lifecycle Tags
 
 We adopt a standard Alpha/Beta/GA lifecycle for validation rules, controlled by tag prefixes:
 
 *   **+k8s:alpha**: Shadow mode (Metrics only).
-*   **+k8s:beta**: Enforced by default, but disable-able via the global DeclarativeValidationTakeover gate.
+*   **+k8s:beta**: Enforced by default, but disable-able via the global `DeclarativeValidationBeta` gate.
 *   **no prefix tag**: Permanently enforced.
 
 Declarative validation will benefit Kubernetes maintainers:
@@ -308,8 +309,8 @@ Please feel free to try out the [prototype](https://github.com/jpbetz/kubernetes
 *   Introduce new validation tests, test framework and migration test utilities
     * No field can go thru migration without a robust test for the field in question and maintainer review scrutiny which proves that it is validated correctly before the change and after.
     *   Create migration test pattern and utilities which support testing equivalence between hand-written validation and declarative validation (de-risks migration problems)
-*   Introduce featuregate: `DeclarativeValidation` and `DeclarativeValidationTakeover`
-    *   Combined allow for safety mechanism in case a mistake is made so that we can safely compare validation errors but have the handwritten validations still be authoritative along the request path.  Additionally users can turn off Declarative Validation and get back to a healthy validation state if necessary.  (de-risks migration problems)
+*   Introduce featuregate: `DeclarativeValidation` and `DeclarativeValidationBeta`
+    *   Combined allow for safety mechanism in case a mistake is made so that we can safely compare validation errors but have the handwritten validations still be authoritative along the request path.  Additionally users can turn off Declarative Validation or disable newly enforced rules via the Beta gate and get back to a healthy validation state if necessary.  (de-risks migration problems)
 *   Introduce runtime verification testing which emit
     * `declarative_validation_mismatch_total` metric allowing for tests and users to identify any mismatching validation logic between hand-written and declarative validations.
     * `declarative_validation_panic_total` metric which counts the number of panics (recovered) that occur in declarative validation code as an extra precaution.
@@ -359,20 +360,34 @@ For testing the migration and ensuring that the validation is identical across c
 
 Verifying that a field/type that is migrated is appropriately tested with proper changes to validation_test.go, equivalence testing, etc. will be human-driven enforced in PR review for the related community migration PR.
 
-Additionally, to aid in ensuring that the validation is identical across current hand-written validation and declarative validations, we will create a runtime check controlled by the `DeclarativeValidation` and `DeclarativeValidationTakeover` feature gates. When `DeclarativeValidation` is enabled, both hand-written and declarative validation will be run.  Any mismatches will be logged and a `declarative_validation_mismatch_total` metric will be incremented.  The `DeclarativeValidationTakeover` gate controls which result (imperative or declarative) is returned to the user.
-### Introduce Feature Gates: `DeclarativeValidation` & `DeclarativeValidationTakeover`
+Additionally, to aid in ensuring that the validation is identical across current hand-written validation and declarative validations, we will create a runtime check controlled by the `DeclarativeValidation` and `DeclarativeValidationBeta` feature gates. When `DeclarativeValidation` is enabled, both hand-written and declarative validation will be run.  Any mismatches will be logged and a `declarative_validation_mismatch_total` metric will be incremented.  The `DeclarativeValidationBeta` gate controls which result (imperative or declarative) is returned to the user for Beta-stage rules.
+### Introduce Feature Gates: `DeclarativeValidation`, `DeclarativeValidationTakeover`, & `DeclarativeValidationBeta`
 
-Two feature gates were introduced in v1.33 to manage the rollout:
+Three feature gates are involved in the rollout, reflecting the transition to the lifecycle model:
 
-*   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics (see `DeclarativeValidationTakeover` below).  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
+*   **`DeclarativeValidation`**:  This gate controls whether declarative validation is *enabled* for a given resource or field.  When enabled, both imperative (hand-written) and declarative validation will run.  The results will be compared, and any mismatches will be logged and reported via metrics (see `DeclarativeValidationBeta` below).  The imperative validation result will be returned to the user.  When disabled, only imperative validation runs.
 
-*   **`DeclarativeValidationTakeover`**: The DeclarativeValidationTakeover feature gate is retained as the Global Safety Switch for Beta-stage validation rules. It allows cluster admins to disable "newly enforced" validations if regressions are found, forcing them back to Shadow mode (handwritten fallback).  When `DeclarativeValidationTakeover` is enabled (default for Beta), Beta tags are Enforced. When disabled, Beta tags are Shadowed.  `DeclarativeValidationTakeover` has *no effect* if `DeclarativeValidation` is disabled.
+*   **`DeclarativeValidationTakeover`**:  Deprecated in v1.36. Previously determined whether declarative validation results were authoritative.
 
-#### `DeclarativeValidation` & `DeclarativeValidationTakeover` Will Target Beta From The Beginning
+*   **`DeclarativeValidationBeta`**: Introduced in v1.36. This feature gate acts as the Global Safety Switch for Beta-stage validation rules. It allows cluster admins to disable "newly enforced" validations if regressions are found, forcing them back to Shadow mode.  When `DeclarativeValidationBeta` is enabled (default for Beta), Beta tags are Enforced. When disabled, Beta tags are Shadowed.  `DeclarativeValidationBeta` has *no effect* if `DeclarativeValidation` is disabled.
+
+#### `DeclarativeValidation` & `DeclarativeValidationBeta` Will Target Beta From The Beginning
 
 Declarative Validation will target the Beta stage from the beginning (vs Alpha).  Additionally, `DeclarativeValidation` is targeting Beta with `default:true`.  This is because Declarative Validation is not new functionality, but an alternative implementation of validation, and users should not be able to perceive any changes when swapping hand-written validation with identical declarative validation.  The feature gate, `DeclarativeValidation`, exists as a safety mechanism in case a mistake is made so that users can turn it off and get back to safety. There is prior art for this rationale where other feature gates did not target Alpha as they were not related to new functionality (changing underlying behavior, bugfix, etc.).  An example of this is the current feature gate `AllowParsingUserUIDFromCertAuth`, which was introduced in Beta as `default:true` as it is not a net new feature but fixes a current issue ([PR](https://github.com/kubernetes/kubernetes/pull/127897), [feature gate](https://github.com/kubernetes/kubernetes/blob/master/pkg/features/versioned_kube_features.go#L228-L230)). 
 
-`DeclarativeValidationTakeover` will default to `false` initially in Beta.  This way during the initial rollout we can "soak" and verify that the errors produced for a replaced validation rule (handwritten -> declarative) are identical.  Over time the goal is to flip `DeclarativeValidationTakeover` to be default `true` such that for fields where declarative validation rules exist, they are used as the authoritative validation rule.
+`DeclarativeValidationBeta` will default to `true` initially. This is because we want to enable the beta validations by default, but provide a safety switch to disable them if necessary.
+
+#### Execution & Authority Logic
+
+Execution and authority are determined by two feature gates (`DeclarativeValidation`, `DeclarativeValidationBeta`) and the resource strategy (`WithDeclarativeEnforcement()`).
+
+1.  **Execution (Is it running?)**:
+    1.  DV runs if `DeclarativeValidation` is Enabled OR the resource uses `WithDeclarativeEnforcement()`.
+    2.  Note: Using the strategy ensures New APIs run even if the main gate is disabled.
+2.  Enforcement:
+    1.  **Standard Tags:** Always Enforced (Bypasses Beta Gate).
+    2.  **Beta Tags:** Enforced if `DeclarativeValidationBeta` is Enabled. Otherwise Shadowed.
+    3.  **Alpha Tags:** Always Shadowed.
 
 #### Feature Gate Graduation Criteria
 
@@ -432,7 +447,7 @@ Our goal is to standardize on the Explicit Strategy and Lifecycle mechanism. The
 
 #### Case: New APIs
 
-  - **Action: **Adopt `WithDeclarativeEnforcement()`. Use Standard tags.
+  - **Action:** Adopt `WithDeclarativeEnforcement()`. Use Standard tags.
   - **Result:** Enforced.
 
 #### Case: Legacy APIs
@@ -443,22 +458,22 @@ Our goal is to standardize on the Explicit Strategy and Lifecycle mechanism. The
 #### Case: Adding Validation to Existing Fields (Implicit)
 
   - **Action:** Use standard tags (`+k8s:minimum=1`).
-  - **Result: **Implicitly shadowed.
+  - **Result:** Implicitly shadowed.
 
 ### Phase 2: v1.37 - v1.38 (Transition to Beta)
 
   - **Action:** Legacy APIs adopt `WithDeclarativeEnforcement()`.
   - **Tag Updates:**
-      - **Verified fields (Legacy): **Convert standard tags to `+k8s:beta`.
+      - **Verified fields (Legacy):** Convert standard tags to `+k8s:beta`.
           - **Reasoning:** These fields have soaked. We are ready to enforce, but want the safety switch.
       - **New Rules:** Use `+k8s:alpha`.
   - **Runtime Effect:**
-      - Takeover ON: Beta tags are Enforced.
-      - Takeover OFF: Beta tags are Shadowed.
+      - `DeclarativeValidationBeta` ON: Beta tags are Enforced.
+      - `DeclarativeValidationBeta` OFF: Beta tags are Shadowed.
 
 ### Phase 3: v1.39+ (Gate Removal & GA)
 
-  - **Trigger:** `DeclarativeValidation` feature gate is removed. `DeclarativeValidationTakeover` gate remains as the Beta toggle.
+  - **Trigger:** `DeclarativeValidation` feature gate is removed. `DeclarativeValidationBeta` gate remains as the Beta toggle.
   - Start to Promotion to GA
       - Action: Remove `+k8s:beta` prefix and delete handwritten code.
       - Result: Permanently Enforced.
@@ -711,7 +726,7 @@ Requests are received as the versioned type, so it should be feasible to avoid e
     *   Test fixture
     *   Linter
     *   Documentation generator
-*   Feature gates - `DeclarativeValidation`& `DeclarativeValidationTakeover`
+*   Feature gates - `DeclarativeValidation`, `DeclarativeValidationTakeover` (deprecated), & `DeclarativeValidationBeta`
 *   Metrics - `declarative_validation_mismatch_total` & `declarative_validation_panic_total`
 *   Testing
     *   Equivalency tests (verifyVersionedValidationEquivalence in prototype)
@@ -975,7 +990,7 @@ We should be able to start the migration when:
     *   Add/extend validators to enable further progress into non-trivial cases
 3. Using Schemas for Validation (Joint Effort):
 *   Core Team:
-    *   Enable validation through generated schemas for migrated resources (controlled by DeclarativeValidation feature gate).
+    *   Enable validation through generated schemas for migrated resources (controlled by `DeclarativeValidation` and `DeclarativeValidationBeta` feature gates).
     *   Implement logic to populate default values from schemas.
 *   Community:
     *   Run E2E tests with declarative validation enabled.
@@ -1735,13 +1750,13 @@ When the `DeclarativeValidation` feature gate is enabled, both imperative and de
 If the errors do not match, a 'declarative_validation_mismatch_total' metric will be incremented and information
 about the mismatch will be written to the apiserver's logs.
 
-The `DeclarativeValidationTakeover` feature gate controls *which* set of validation errors (imperative or declarative) are returned to the user.  When `DeclarativeValidationTakeover` is true, the declarative errors are returned; otherwise, the imperative errors are returned.
+The `DeclarativeValidationBeta` feature gate controls *which* set of validation errors (imperative or declarative) are returned to the user.  When `DeclarativeValidationBeta` is true, the declarative errors are returned; otherwise, the imperative errors are returned.
 
 This can then be used to minimize risk when rolling out Declarative Validation in production, by following these steps:
-- Enable `DeclarativeValidation` (with `DeclarativeValidationTakeover` *disabled*).
+- Enable `DeclarativeValidation` (with `DeclarativeValidationBeta` *disabled*).
 - Soak for a desired duration across some number of clusters.
 - Check the metrics to ensure no mismatches have been found.
-- Enable `DeclarativeValidationTakeover`.
+- Enable `DeclarativeValidationBeta`.
 ##### Integration tests
 
 ###### 	Migration Equivalency Tests
@@ -1887,7 +1902,7 @@ N/A. This change does not affect any communications going out of the apiserver. 
 1. Feature gate (also fill in values in `kep.yaml`)
     *   Feature gate name: DeclarativeValidation
     *   Components depending on the feature gate: kube-apiserver
-    *   Feature gate name: DeclarativeValidationTakeover
+    *   Feature gate name: DeclarativeValidationBeta
     *   Components depending on the feature gate: kube-apiserver
 2. Other
     *   Describe the mechanism:
@@ -1899,7 +1914,7 @@ N/A. This change does not affect any communications going out of the apiserver. 
 *   `DeclarativeValidation`
     *   Beta: Enables running both imperative and declarative validation. Mismatches are logged and reported via metrics. Imperative validation errors are returned to users.
     *   GA: Enables running both imperative and declarative validation. Mismatches are logged and reported via metrics. Imperative validation errors are returned to users.
-*   `DeclarativeValidationTakeover`
+*   `DeclarativeValidationBeta`
     *   Beta: When `DeclarativeValidation` is also enabled, returns declarative validation errors to users.  Has no effect if `DeclarativeValidation` is disabled.
     *   GA: When `DeclarativeValidation` is also enabled, returns declarative validation errors to users.  Has no effect if `DeclarativeValidation` is disabled.
 
@@ -2053,8 +2068,8 @@ If the API server is failing to meet SLOs (latency, validation error-rate, etc.)
     *   If the logs show repeated mismatches or errors for certain resource types, compare the declarative validation tags in `types.go` with the original hand-written logic to identify gaps or typos
         *   ^ Be sure to submit this information when filing an issue (see step 5)
 4. **Compare Feature Gate Settings**
-    *   Verify whether `DeclarativeValidation` is enabled for all API servers in an HA environment. Partial enablement can sometimes lead to inconsistent behavior or unexpected rejections.
-    *   Temporarily disabling `DeclarativeValidation` can help isolate if new validation logic is the root cause. Bear in mind that rolling back may block updates on objects that were only valid under declarative validation rules if there is a bug related to this, so review “Can the feature be disabled once it has been enabled?” in this KEP in this case.
+    *   Verify whether `DeclarativeValidation` and `DeclarativeValidationBeta` are enabled for all API servers in an HA environment. Partial enablement can sometimes lead to inconsistent behavior or unexpected rejections.
+    *   Temporarily disabling `DeclarativeValidation` or `DeclarativeValidationBeta` can help isolate if new validation logic is the root cause. Bear in mind that rolling back may block updates on objects that were only valid under declarative validation rules if there is a bug related to this, so review “Can the feature be disabled once it has been enabled?” in this KEP in this case.
 5. **File or Triage Issues**
     *   If you confirm that Declarative Validation logic is producing incorrect results or performance regressions, open a Github issue in the kubernetes/kubernetes repository. Include:
         *   The exact failing resource object or field that triggers errors.
@@ -2067,7 +2082,7 @@ If the API server is failing to meet SLOs (latency, validation error-rate, etc.)
 - v1.33: Initial Beta implementation of `DeclarativeValidation` and `DeclarativeValidationTakeover` gates.
 - v1.34: Stability metrics collection began.
 - v1.35: Dual implementation requirement enforced, tag/feature stability codified, validation library implemented.
-- v1.36: Introduction of the Validation Lifecycle mechanism and Explicit Strategy. (Current)
+- v1.36: Introduction of the Validation Lifecycle mechanism and Explicit Strategy. Introduction of `DeclarativeValidationBeta` and deprecation of `DeclarativeValidationTakeover`. (Current)
 
 ## Drawbacks
 
