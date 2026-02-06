@@ -12,12 +12,15 @@ status: implementable
 creation-date: 2025-06-11
 reviewers:
   - "@mrunalp"
-  - "@haircommander"
+  - "@haircommander" # sig-node-assigned-reviewer
   - "@porterdavid"
   - "@rphillips"
+  - "@ndixita" # sig-node-assigned-reviewer
 
 approvers:
   - "@sig-node-leads"
+  - "@mrunalp" # sig-node-tl
+  - "@dchen1107" # sig-node-tl
 
 see-also: []
 replaces: []

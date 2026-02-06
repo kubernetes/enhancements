@@ -10,6 +10,7 @@ creation-date: 2018-05-07
 reviewers:
 approvers:
   - "@mrunalp"
+  - "@haircommander" # sig-node-assigned-approver
 
 replaces:
   - "https://github.com/kubernetes/community/pull/1934/"

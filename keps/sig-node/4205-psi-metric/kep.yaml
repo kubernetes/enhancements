@@ -18,6 +18,7 @@ reviewers:
 approvers:
   - '@mrunalp' # sig-node-tl
   - '@haircommander' # sig-node-assigned-approver
+  - "@haircommander" # sig-node-assigned-approver
 
 see-also: []
 replaces: []

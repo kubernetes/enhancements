@@ -1,0 +1,8 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+# Scaling up SIG Node KEP approvers: https://github.com/kubernetes/community/blob/master/sig-node/CONTRIBUTING.md#scaling-up-kep-approvers
+
+reviewers:
+
+approvers:
+  - haircommander # sig-node-assigned-approver

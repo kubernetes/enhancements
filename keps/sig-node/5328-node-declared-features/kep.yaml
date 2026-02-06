@@ -20,6 +20,7 @@ approvers:
 - '@tallclair' # sig-node-assigned-approver
 - '@dom4ha'
 - '@macsko'
+- "@tallclair" # sig-node-assigned-approver
 status: implementable
 stage: alpha
 latest-milestone: "v1.35"
