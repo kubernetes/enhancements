@@ -352,7 +352,7 @@ New tests will be added to cover the following:
 - The backward compatibility logic when the feature gate is disabled but existing pods already use CEL expressions in `k8s.io/kubernetes/pkg/api/pod` pkg
 - The use of celcache in different plugins for `tainttoleration`, `podtopologyspread`, `nodeunschedulable` plugins
 - The `TaintEviction` controller that handles the `tolerationSeconds` settings in each toleration
-- The cel compiler and cache in `k8s.io/kubernetes/pkg/util/taints/cel` new pkg
+- The cel compiler and cache tests in `k8s.io/kube-scheduler`
 
 ##### Integration tests
 
