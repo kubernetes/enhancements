@@ -600,7 +600,7 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-Metrics in kube-controller-manager about total (resourceclaim_controller_resource_claims_adminaccess) and allocated ResourceClaims with adminAccess (resourceclaim_controller_allocated_resource_claims_adminaccess).
+Metrics in kube-controller-manager for total number of ResourceClaims creation requests with adminAccess(resourceclaim_controller_creates_total) count metric with labels `admin_access` (true or false) and allocated ResourceClaims with adminAccess (resourceclaim_controller_resource_claims) gauge metric with labels `admin_access` (true or false).
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -612,7 +612,7 @@ logs or events for this purpose.
 
 ".status.allocation.devices.results[*].adminAccess" will be set to true for a claim using adminAccess when needed by a pod.
 
-Metrics in kube-controller-manager about total (resourceclaim_controller_resource_claims_adminaccess) and allocated ResourceClaims with adminAccess (resourceclaim_controller_allocated_resource_claims_adminaccess).
+Metrics in kube-controller-manager for  total number of ResourceClaims creation requests with adminAccess(resourceclaim_controller_creates_total) count metric with labels `admin_access` (true or false) and allocated ResourceClaims with adminAccess (resourceclaim_controller_resource_claims) gauge metric with labels `admin_access` (true or false).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -823,6 +823,7 @@ If SLOs are not being met, not all 100% of unauthorized access attempts are deni
 
 - Kubernetes 1.33: Alpha version of the KEP.
 - Kubernetes 1.34: Beta version of the KEP.
+- Kubernetes 1.36: GA version of the KEP.
 
 ## Drawbacks
 

@@ -43,4 +43,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  #- my_feature_metric
+  - resourceclaim_controller_creates_total
+  - resourceclaim_controller_resource_claims
