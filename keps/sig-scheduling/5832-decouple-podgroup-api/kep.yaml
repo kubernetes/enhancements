@@ -34,7 +34,7 @@ milestone:
   stable: "v1.39"
 
 feature-gates:
-  - name: GenericWorkloadPodGroup
+  - name: GenericWorkload
     components:
       - kube-apiserver
       - kube-scheduler
