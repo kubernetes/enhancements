@@ -15,13 +15,13 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
-  - [Feature Gate](#feature-gate)
+  - [CEL Compiler and Cache](#cel-compiler-and-cache)
   - [API Validation](#api-validation)
     - [Examples](#examples)
   - [Scheduler Logic](#scheduler-logic)
-    - [CEL Compiler and Cache](#cel-compiler-and-cache)
     - [TaintToleration Plugin](#tainttoleration-plugin)
-    - [Other Affected Plugins](#other-affected-plugins)
+      - [Toleration Seconds](#toleration-seconds)
+    - [Other Affected Plugins and Components](#other-affected-plugins-and-components)
     - [Semantics For CEL Toleration Matching](#semantics-for-cel-toleration-matching)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -46,7 +46,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -64,7 +63,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -212,18 +211,58 @@ A new `expression` field is added to `core/v1.Toleration`:
 ```go
 type Toleration struct {
     ...
-    // Expression is a CEL expression that evaluates whether this toleration matches a taint.
-	// If set, the Key, Operator, Value, and Effect fields are ignored, and the CEL expression
-	// is used instead to determine if the toleration matches.
-	// The expression must evaluate to a boolean value.
+    // Expression is a CEL expression that evaluates whether this toleration matches a taint,
+	// if set, the CEL expression will be evaluated to determine toleration matching.
+    // The expression must evaluate to a boolean value.
 	// +featureGate=TaintTolerationCEL
 	// +optional
 	Expression string
 ```
+Two new constants will be added to the API to represent the expression length limit and the cost limit:
 
-### Feature Gate
+```go
+// CELTolerationExpressionMaxCost specifies the cost limit for a single toleration
+// CEL expression evaluation during pod scheduling.
+// This is the same value as PerCallLimit in k8s.io/apiserver/pkg/apis/cel/config.go
+// which gives roughly 0.1 second for each expression evaluation.
+const CELTolerationExpressionMaxCost = 1000000
 
-The `TaintTolerationCEL` feature gate will be added, when disabled the API server will reject pods using the `expression` field in validation, as well as scheduler evaluation of CEL expression during toleration matching.
+// CELTolerationExpressionMaxLength specifies the maximum length for CEL expression
+// used in Toleration.
+const CELTolerationExpressionMaxLength = 10 * 1024
+```
+
+Both values follow the same constraints used by DRA's CEL device selection in KEP-4381. The cost limit of 1,000,000 comes from the Kubernetes apiserver CEL `PerCallLimit` constant, which is the same limit used by ValidatingAdmissionPolicy and CRD validation as well.
+
+### CEL Compiler and Cache
+
+The feature introduces a CEL compiler and cache implementation for tolerations, following the same pattern used by DRA's implementation for device selection in [KEP-4381](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters). The compiler and cache will use the constraints constants described in the previous section. The compiler will include all standard Kubernetes CEL libraries. The toleration compiler environment will expose the following variables:
+
+```go
+type Taint struct {
+	Key       string
+	Value     string
+	Effect    string
+}
+```
+The cache is a thread-safe LRU cache that stores compiled CEL programs:
+
+```go
+type Cache struct {
+    compileMutex keymutex.KeyMutex
+    cacheMutex   sync.RWMutex
+    cache        *lru.Cache
+    compiler     *compiler
+}
+```
+
+**Cost Estimation**
+
+The cost limit is checked at two points:
+
+1. **At admission time**: The compiler estimates the worst case cost of the expression based on the declared maximum sizes of the taint variables (`taint.key`, `taint.value`, `taint.effect`). If the estimated cost exceeds `CELTolerationExpressionMaxCost`, the pod admission will fail stating the expression is too complex.
+
+2. **At evaluation time**: The compiled program has the same cost limit configured. When the expression is evaluated during scheduling, the CEL runtime tracks the actual cost of each operation and aborts if it exceeds the limit. This is needed because the compile time estimate is a worst case approximation and may underestimate the actual cost in some cases.
 
 ### API Validation
 
@@ -255,41 +294,28 @@ The Pod "compatible-workload" is invalid: spec.tolerations[0].expression: Invali
 
 ### Scheduler Logic
 
-#### CEL Compiler and Cache
-
-The feature introduces a CEL compiler and cache implementation for tolerations, following the same pattern used by DRA's implementation for device selection in [KEP-4381](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters). The compiler and cache share the same cost and length constraints as DRA's implementation. The compiler will include all standard Kubernetes CEL libraries and will perform cost estimation based on the declared field sizes. The toleration compiler environment will expose the following variable:
-
-`taint`:
-   - `taint.key`
-   - `taint.value`
-   - `taint.effect`
-
-The cache is a thread-safe LRU cache that stores compiled CEL programs:
-
-```go
-type Cache struct {
-    compileMutex keymutex.KeyMutex
-    cacheMutex   sync.RWMutex
-    cache        *lru.Cache
-    compiler     *compiler
-}
-```
-
-The compiler will perform cost estimation based on the following criteria:
-
-- **Maximum Length**: 10 KiB per expression.
-- **Maximum Cost**: 1,000,000 cost units per expression evaluation.
-
 #### TaintToleration Plugin
 
 The TaintToleration plugin will initialize the CEL cache and evaluates toleration expressions during the Filter and Score phase. When a toleration has an `expression` field, it is evaluated against each taint using the cached compiled expression.
 
-#### Other Affected Plugins
+The plugin calls a helper function that does the actual toleration matching against node taints `helper.TolerationsTolerateTaint`, this where the cache will be passed and used to get or compile the CEL expression and evaluated against node taints.
 
-The following plugins will also need to maintain a CEL cache since they make use of toleration matching checks:
+##### Toleration Seconds
 
-- **NodeUnschedulable Plugin**: will add toleration CEL cache
-- **PodTopologySpread Plugin**: will add toleration CEL cache
+As the [API Validation](#api-validation) describes, each toleration will be validated such that the `expression` field can not be used along with `key`, `value`, `opertor`, or `effect` fields, however the `tolerationSeconds` can still be used, this will cause any expression that tolerated a `NoExecute` taint to follow the same logic and be evicted after the tolerationSeconds passes, an extra logic will be added to the taint eviction controller to support handling of the expression field if set for toleration.
+
+#### Other Affected Plugins and Components
+
+The following plugins and integration point will also need to initialize a CEL toleration cache since they perform toleration matching:
+
+- **NodeUnschedulable Plugin**
+- **PodTopologySpread Plugin**
+- **Scheduler EventHandler**
+- **DaemonSet Controller** 
+- **TaintEviction Controller**
+- **Kubelet Lifecycle Predicate**
+
+There is no extra logic that will be added for the previous plugins or components, since they all call the same logic for toleration matching, they just need to pass the initialized CEL cache to the call.
 
 #### Semantics For CEL Toleration Matching
 
@@ -299,37 +325,34 @@ The following plugins will also need to maintain a CEL cache since they make use
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
 ##### Unit tests
 
 ###### Existing Coverage
+
 - `k8s.io/component-helpers/scheduling/corev1/`: `2026-02-03` - `100%`
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeunschedulable`: `2026-02-03` - `84.4%`
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2026-02-03` - `88.1%`
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration`: `2026-02-03` - `85.9%`
 - `k8s.io/kubernetes/pkg/apis/core/validation/`: `2026-02-03` - `85.3%`
 - `k8s.io/kubernetes/pkg/api/pod`: `2026-02-03` - `80.3%`
+- `k8s.io/kubernetes/pkg/controller/daemon`: `2026-02-06` - `69.7%`
+- `k8s.io/kubernetes/pkg/controller/tainteviction`: `2026-02-06` - `78.4%`
+- `k8s.io/kubernetes/pkg/kubelet/lifecycle`: `2026-02-06` - `63.4%`
+
+New tests will be added to cover the following:
+
+- The toleration matching logic in `k8s.io/component-helpers/scheduling/corev1` pkg
+- The API valication logic when the feature gate is enabled in `k8s.io/kubernetes/pkg/apis/core/validation` pkg
+- The backward compatibility logic when the feature gate is disabled but existing pods already use CEL expressions in `k8s.io/kubernetes/pkg/api/pod` pkg
+- The use of celcache in different plugins for `tainttoleration`, `podtopologyspread`, `nodeunschedulable` plugins
+- The `TaintEviction` controller that handles the `tolerationSeconds` settings in each toleration
+- The cel compiler and cache in `k8s.io/kubernetes/pkg/util/taints/cel` new pkg
 
 ##### Integration tests
 
@@ -414,11 +437,8 @@ No
 Yes. Impact on existing pods with CEL fields when feature is disabled:
 
 1. Already-running pods: Continue running normally for Pod tolerations rules, however pods that were already tolerating `NoExecute` node taints will be evicted.
-
 2. Unscheduled/pending pods: The scheduler will ignore the `expression` field, fail to match the taint, and the Pod will remain Pending.
-
 3. New pod creation: API server validation will reject new pods using `expression` in tolerations.
-
 4. Pod updates: The feature will make sure to detect that CEL has been in use in the Pod Validation Options and updates will be allowed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -484,15 +504,6 @@ Operator can use API queries to determine if the field is used in tolerations:
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
 - [x] Events
 	- Event Reason: FailedScheduling
 	- Event Message:
@@ -555,17 +566,6 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 This feature does not change the behavior when the API server and/or etcd is unavailable. The scheduler already depends on the API server for pod and node information. If the API server is unavailable, scheduling operations are paused regardless of this feature.
@@ -599,16 +599,6 @@ This feature does not change the behavior when the API server and/or etcd is una
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
 - `2026-01-22`: Initial KEP Implementation
 
 ## Drawbacks
@@ -619,20 +609,6 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
 1. Wildcard matching in toleration keys This was proposed in [KEP-5869](https://github.com/kubernetes/enhancements/pull/5880).this approach covers prefix matching for taint keys, however it can't handle version comparisons, compound conditions, or value-based matching.
 
 2. Adding more built-in operators to tolerations similar to [KEP-5471](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5471-enable-sla-based-scheduling) which introduces `Gt`, and `Lt` operators toleration can support other operators that can provide more functionality for taint matching.
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
