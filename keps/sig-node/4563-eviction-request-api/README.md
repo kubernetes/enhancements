@@ -292,7 +292,8 @@ The following items provide further information on the evolution and adoption of
 ### Eviction Requester
 
 The eviction requester can be any entity in the system: node maintenance controller, descheduler,
-cluster autoscaler, or any application/controller interfacing with the affected application/pods.
+cluster autoscaler, or any application/controller interfacing with the affected application/pods. It
+can also be manually invoked by a human actor if necessary.
 
 The requester's responsibility is to communicate an intent to a pod that it should be evicted via
 the EvictionRequest, according to the requester's own internal rules. It should reconcile its intent
@@ -497,7 +498,7 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
   after the previous pod is removed.
 - `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation.
 - `.spec.interceptors` value will be resolved on the EvictionRequest admission from the pod's
-  `.spec.evictionInterceptors and must not be set by the requester. This is done to ensure the
+  `.spec.evictionInterceptors` and must not be set by the requester. This is done to ensure the
   predictability of the eviction request process
 
 If the eviction request already exists for this pod, the requester should still add itself to the
@@ -933,6 +934,7 @@ type InterceptorStatus struct {
     // HeartbeatTime is the last time at which the eviction process was reported to be in progress
     // by the interceptor.
     // Cannot be set to the future time (after taking time skew of up to 10 seconds into account).
+	// There must be at least 60 second increments during subsequent updates.
 	// The first initialization of this field must also set Started condition.
     // +optional
     HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,2,opt,name=heartbeatTime"`
@@ -1024,9 +1026,9 @@ pods referencing Workloads will be ignored. Therefore, we will reject any Evicti
 
 `.spec.interceptors` are populated from pod's `.spec.evictionInterceptors` (see
 [Interceptor](#interceptor) and [Pod and EvictionRequest API](#pod-and-evictionrequest-api)) in the
-same order. This field must not be set by the requester creating this EvictionRequest. A default
-`imperative-eviction.k8s.io` interceptor is appended to the end of the list for pod targets. The
-interceptor names must pass `IsFullyQualifiedDomainName` validation.
+same order. This field must not be set by the requester creating this EvictionRequest, otherwise the
+API validation will fail. A default `imperative-eviction.k8s.io` interceptor is appended to the end
+of the list for pod targets. The interceptor names must pass `IsFullyQualifiedDomainName` validation.
 
 The pod labels are merged with the EvictionRequest labels (pod labels have a preference) to allow
 for custom label selectors when observing the eviction requests.
@@ -1396,7 +1398,30 @@ N/A
 
 ##### Unit tests
 
-- `pkg/apis/core/validation`: `2024-06-03` - `84.1%`
+<!--
+In principle every added code should have complete unit test coverage, so providing
+the exact set of tests will not bring additional value.
+However, if complete unit test coverage is not possible, explain the reason of it
+together with explanation why this is acceptable.
+-->
+
+<!--
+Additionally, for Alpha try to enumerate the core package you will be touching
+to implement this enhancement and provide the current unit coverage for those
+in the form of:
+- <package>: <date> - <current test coverage>
+The data can be easily read from:
+https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+
+This can inform certain test coverage improvements that we want to do before
+extending the production code to implement this enhancement.
+-->
+
+- `pkg/apis/core/validation`: `2026-02-06` - `85.3%`
+- `pkg/apis/coordination/validation`: `2026-02-06` - `97.1%`
+- `pkg/registry/coordination`: `2026-02-06` - `N/A`
+- `pkg/controller`: `2026-02-06` - `71.9%`
+
 
 ##### Integration tests
 
@@ -1464,18 +1489,25 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   signal that cancelling the EvictionRequest is not possible. This could be used, for example, when
   the migration of the pod has mostly completed and it would be expensive or impossible to interrupt
   it.
+- Consider introducing a mechanism that allows potential interceptors to register their intent
+  about upcoming pods. This would likely require a new API where I can express my intent to be
+  added as an interceptor for pods satisfying certain rules (e.g. by selector, CEL expression or
+  other criteria). Then an additional admission logic would propagate that.
+- Consider adding garbage collection for EvictionRequests.
 
 #### Beta
 
-- Feature gate enabled by default.
 - Unit, integration and e2e tests passing.
 - Manual test for upgrade->downgrade->upgrade path will be performed.
-- Add support for the eviction of the Workload Resource (a group of pods). More in [Workload API Support](#workload-api-support).
-- Re-evaluate the immutability of `.spec.evictionInterceptors`.
-- Consider [Preemption Support](#preemption-support).
+- Re-evaluate the immutability of `.spec.evictionInterceptors`. It might be better to introduce
+  interceptor registration mechanism suggested in `Alpha2`, to prevent performance issues (every
+  pod creation may have N additional API calls if N interceptors want to register themselves).
 - Asses the state of the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212),
   and [Specialized Lifecycle Management ](https://github.com/kubernetes/enhancements/issues/5683),
   and other components interested in using the EvictionRequest API.
+- The KEP should be up-to-date regarding the [Workload API Support](#workload-api-support) and
+  [Preemption Support](#preemption-support). We should also ensure that these APIs are and will
+  remain compatible with the EvictionRequest API.
 - Re-evaluate whether adding additional metrics and events would be helpful. And update the KEP
   with existing ones.
 - Consider adding information to a pod to indicate that it is being evicted by EvictionRequest. For
@@ -1483,9 +1515,12 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### GA
 
+- Feature gate enabled by default.
 - Every bug report is fixed.
 - E2E tests should be graduated to conformance.
 - Re-evaluate whether adding additional metrics would be helpful.
+- Add support for the eviction of the Workload Resource (a group of pods). More in [Workload API Support](#workload-api-support).
+- Consider [Preemption Support](#preemption-support).
 - At least one Kubernetes workload (e.g., Deployment) should support eviction request to fully test
   the new API and flow.
 - Adoption: look at all the consumers of the API, especially the requesters and interceptors. Look
@@ -1500,7 +1535,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 ### Upgrade / Downgrade Strategy
 
-The feature is gated and no changes are required for an existing cluster to use the enhancement.
+The feature is gated. kube-apiserver should be updated first and downgraded last to ensure that the
+new EvictionRequest API is served and that it can be reconciled by kube-controller-manager.
 
 ### Version Skew Strategy
 
@@ -1533,8 +1569,12 @@ requests. This means that pods that have been requested to be evicted, will cont
 any component that depends on the EvictionRequest API (e.g. eviction requester, interceptor) will
 also stop working or will not operate correctly.
 
-It is not advisable to disable this feature, as it may leave the pods in the cluster in an undefined
-state. This may be especially harmful for applications that are in the middle of data migration.
+Administrators should be careful when disabling the feature and watch for the following consequences:
+- It may leave the pods in the cluster in an undefined state. This may be especially harmful for
+  applications that are in the middle of data migration.
+- The EvictionRequest API serves as an integration and collaboration point. Third-party components
+  and systems (even those outside the cluster) may experience various disruptions or unwanted
+  behaviors.
 
 Cluster admin should take the following precautions, before disabling this feature.
 - Ensure that no eviction requests are in progress and no new eviction requests will occur during
@@ -1572,8 +1612,8 @@ During a rollout a bug could occur, resulting in a high load on the apiserver. A
 recommended to use the EvictionRequest API during a rollout, as mentioned in the
 [Version Skew Strategy](#version-skew-strategy)
 
-As mentioned in [Feature Enablement and Rollback](#feature-enablement-and-rollback), it is not
-recommended to disable this feature. Cluster admin should take special precautions before disabling
+As mentioned in [Feature Enablement and Rollback](#feature-enablement-and-rollback), administrators
+should be careful when disabling the feature. They should take special precautions before disabling
 the feature.
 
 ###### What specific metrics should inform a rollback?
@@ -1673,12 +1713,22 @@ New API calls by the kube-controller-manager:
   situations as today. Instead of repeating the eviction API call manually with a components/cli
   (e.g. kubectl drain), it will be done by a controller.
 
+Interceptor calls and interactions with the Pod and EvictionRequest APIs
+- Alpha1 still locks the mutation of Pod's `.spec.evictionInterceptors`. If the mutability
+  constraint is lifted in the future, it could result in N interceptor registration calls for each
+  pod when it is created, which could result in performance issues.
+- There are N interceptors per one EvictionRequest. Only one interceptor is instructed to interact
+  with it at a time. This interceptor is instructed to update the
+  `.status.interceptors[].heartbeatTime` and the rest of the interceptor status
+  `.status.interceptors[]`. We validate the `heartbeatTime` and only allow periodic updates that are
+  60+ seconds to prevent frequent interceptor status updates.
+
 
 ###### Will enabling / using this feature result in introducing new API types?
 
 - API type: EvictionRequest
-- Supported number of objects per cluster: 150000 (same as pods)
-- Supported number of objects per namespace 3000 (same as pods)
+- Supported number of objects per cluster: TBD; eventually could be up to the number of pods per cluster (150000).
+- Supported number of objects per namespace: TBD; eventually could be up to the number of pods per namespace.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1686,7 +1736,12 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+Yes.
+
+- API type(s): v1.Pod
+- Estimated increase in size: a new field;`.spec.evictionInterceptors` list of struts of length 100.
+  Each struct has a name that has at most 253 characters in length. At worst the new field should
+  increase the size of a Pod by 25 KiB.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1716,7 +1771,7 @@ No.
 
 ###### What are other known failure modes?
 
-N/A
+TBD before beta graduation.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
