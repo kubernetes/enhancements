@@ -11,7 +11,7 @@
     - [Independent PodGroup Lifecycle](#independent-podgroup-lifecycle)
     - [PodGroup-Level Status](#podgroup-level-status)
     - [Controller Scalability](#controller-scalability)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [APIs](#apis)
@@ -49,6 +49,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+    - [Embedded PodGroups (Status Quo)](#embedded-podgroups-status-quo)
+    - [Support both embedded and standalone PodGroup](#support-both-embedded-and-standalone-podgroup)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -153,7 +155,7 @@ I have a large-scale training job with multiple replicas, and want to observe th
 
 As a workload controller author, I want `PodGroup` status to be stored in a separate object, so that per-replica scheduling updates do not require read-modify-write operations on a large, shared `Workload` object, which would otherwise create scalability and contention issues at scale.
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 ### Risks and Mitigations
 
@@ -304,7 +306,6 @@ type PodGroupStatus struct {
    // - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
    //   - Status=True: All required pods have been assigned to nodes.
    //   - Status=False: Scheduling failed (i.e., timeout, unschedulable, etc.).
-   //   - Status=Unknown: Scheduling is in progress.
    //
    // Known reasons for PodGroupScheduled condition:
    // - "Scheduled": All required pods have been successfully scheduled.
@@ -636,10 +637,43 @@ No.
 ## Implementation History
 
 - 2026-01-23: KEP Created for alpha release
+- 2026-02-06: KEP Updated to sync with API decision of keep Workload API in alpha release
 
 ## Drawbacks
 
 ## Alternatives
+
+#### Embedded PodGroups (Status Quo)
+
+`PodGroups` remain embedded within the `Workload` object, with no standalone `PodGroup` API.
+
+**Pros:**
+- Single object to learn and look up, synchronize, and manage mutations
+- No coordination required across API objects
+- Fastest time to market (graduate to beta)
+
+**Cons:**
+- Lifecycle management is getting complex.
+- DRA integration is difficult
+- Scalability is limited by `Workload` object size (1.5MB etcd limit)
+- Per-`PodGroup` status within a large `Workload` may be misleading to users and hit scalability limits
+
+#### Support both embedded and standalone PodGroup
+
+Support both embedded `PodGroups` inside `Workload` and external standalone `PodGroups`.
+
+**Pros:**
+- Allows sharding when using external `PodGroups`
+- Decoupled lifecycle supported for external `PodGroups`
+
+**Cons:**
+- Two top-level object types without clear responsibility split
+- `Workload` is an aggregating object but can also contain `PodGroups`
+- Users who created internal/embedded PodGroups are stuck if they need to change (requires workload recreation)
+- Exposed to all limitations of embedded option, combined with unintuitive additional external `PodGroups`
+- Most complex to reason about and maintain
+
+For more details about the alternatives, please refer to the [PodGroup as top-level object document](https://docs.google.com/document/d/1zVdNyMGuSi861Uw16LAKXzKkBgZaICOWdPRQB9YAwTk/edit?resourcekey=0-bD8cjW_B6ZfOpSGgDrU6Mg&tab=t.0).
 
 ## Infrastructure Needed (Optional)
 
