@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-scheduling
-  - sig-cli
+  - sig-auth
   - sig-api-machinery
 
 status: provisional
@@ -20,7 +20,6 @@ approvers:
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
-  - "/keps/sig-scheduling/5075-dra-consumable-capacity"
   - "/keps/sig-node/3063-dynamic-resource-allocation"
 
 stage: alpha
@@ -31,14 +30,13 @@ milestone:
   alpha: "v1.36"
 
 feature-gates:
-  - name: DRAResourceAvailabilityVisibility
+  - name: DRAResourcePoolStatus
     components:
       - kube-apiserver
       - kube-controller-manager
 disable-supported: true
 
-# The following PRR answers are required at beta release
 metrics:
-  - resourcepool_controller_sync_duration_seconds
-  - resourcepool_controller_sync_errors_total
-  - resourcepool_controller_pools_total
+  - resourcepoolstatus_request_processing_duration_seconds
+  - resourcepoolstatus_request_processing_errors_total
+  - resourcepoolstatus_requests_processed_total

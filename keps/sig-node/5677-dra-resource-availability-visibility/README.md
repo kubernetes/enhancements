@@ -7,26 +7,31 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Part 1: ResourcePool Object (API-visible)](#part-1-resourcepool-object-api-visible)
-  - [Part 2: Client-Side Utility (kubectl)](#part-2-client-side-utility-kubectl)
+  - [Architecture](#architecture)
   - [User Stories](#user-stories)
-    - [Story 1: Cluster Administrator Monitoring Resources](#story-1-cluster-administrator-monitoring-resources)
+    - [Story 1: Cluster Administrator Checking Pool Status](#story-1-cluster-administrator-checking-pool-status)
     - [Story 2: Developer Debugging Resource Allocation](#story-2-developer-debugging-resource-allocation)
-    - [Story 3: Capacity Planning](#story-3-capacity-planning)
+    - [Story 3: Automation and Monitoring](#story-3-automation-and-monitoring)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Scaling Risks](#scaling-risks)
+    - [Operational Risks](#operational-risks)
   - [Security Considerations](#security-considerations)
+    - [RBAC](#rbac)
+    - [Information Exposure](#information-exposure)
+    - [Security Risks](#security-risks)
+    - [Controller Security](#controller-security)
+    - [Future Consideration: Namespace-scoped Requests](#future-consideration-namespace-scoped-requests)
 - [Design Details](#design-details)
-  - [API Changes](#api-changes)
-    - [ResourcePool Object](#resourcepool-object)
-    - [ResourcePool Status Fields](#resourcepool-status-fields)
+  - [API Definition](#api-definition)
+    - [ResourcePoolStatusRequest Object](#resourcepoolstatusrequest-object)
+    - [Spec Fields](#spec-fields)
+    - [Status Fields](#status-fields)
   - [Controller Implementation](#controller-implementation)
-    - [ResourcePool Controller](#resourcepool-controller)
-    - [Cross-Slice Validation](#cross-slice-validation)
-  - [Client-Side Utility Library](#client-side-utility-library)
+    - [Controller in KCM](#controller-in-kcm)
+    - [One-time Processing](#one-time-processing)
+    - [Reusing Existing Informers](#reusing-existing-informers)
   - [kubectl Integration](#kubectl-integration)
-    - [kubectl describe resourcepool](#kubectl-describe-resourcepool)
-    - [kubectl describe node](#kubectl-describe-node)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -48,11 +53,10 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Alternative 1: Status in ResourceSlice](#alternative-1-status-in-resourceslice)
-  - [Alternative 2: Status in ResourceClaim](#alternative-2-status-in-resourceclaim)
-  - [Alternative 3: Metrics-based visibility only](#alternative-3-metrics-based-visibility-only)
-  - [Alternative 4: Client-side only (no API changes)](#alternative-4-client-side-only-no-api-changes)
-  - [Alternative 5: Custom apiserver endpoint with report generator](#alternative-5-custom-apiserver-endpoint-with-report-generator)
+  - [Alternative 1: Out-of-tree Aggregated API Server](#alternative-1-out-of-tree-aggregated-api-server)
+  - [Alternative 2: Synchronous Review Pattern](#alternative-2-synchronous-review-pattern)
+  - [Alternative 3: Status in ResourceSlice](#alternative-3-status-in-resourceslice)
+  - [Alternative 4: Client-side only](#alternative-4-client-side-only)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -60,660 +64,549 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+  [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and
+  SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests]
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) [all GA Endpoints] must be hit by [Conformance Tests]
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] User-facing documentation has been created in [kubernetes/website], for
+  publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to
+  mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
+[Conformance Tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
+[all GA Endpoints]: https://github.com/kubernetes/community/pull/1806
 
 ## Summary
 
-This KEP addresses a critical visibility gap in Dynamic Resource Allocation (DRA) by enabling users to view available device capacity across resource pools. While ResourceSlices store capacity data and ResourceClaims track consumption, there is currently no straightforward way for users to view the available capacity remaining in a pool or on a node.
+This KEP addresses a visibility gap in Dynamic Resource Allocation (DRA) by
+enabling users to view available device capacity across resource pools. While
+ResourceSlices store capacity data and ResourceClaims track consumption, there
+is currently no straightforward way for users to view the available capacity
+remaining in a pool or on a node.
 
-This enhancement introduces:
-1. A new **ResourcePool** cluster-scoped object that aggregates availability information across ResourceSlices
-2. A **ResourcePool controller** that watches ResourceSlices and ResourceClaims to maintain pool-level summaries
-3. A **client-side utility library** for detailed allocation debugging (used by kubectl)
-4. Enhanced **kubectl describe** commands for ResourcePool and Node to display availability information
+This enhancement introduces a **ResourcePoolStatusRequest** API following the
+CertificateSigningRequest (CSR) pattern:
+
+1. User creates a ResourcePoolStatusRequest object with optional filters
+2. A controller in kube-controller-manager watches for new requests
+3. Controller computes pool availability and writes result to status
+4. User reads the status to see pool availability
+5. To recalculate, user deletes and recreates the request
+
+This in-tree approach was chosen based on API review feedback to:
+- Provide an always-available, in-sync solution with Kubernetes releases
+- Follow established patterns (CSR, device taints with "None" effect)
+- Control permissions via standard RBAC on the request object
+- Avoid continuous controller overhead (one-time computation per request)
 
 ## Motivation
 
-Dynamic Resource Allocation (DRA) provides a flexible framework for managing specialized hardware resources like GPUs, FPGAs, and other accelerators. However, the current implementation lacks visibility into resource availability:
+Dynamic Resource Allocation (DRA) provides a flexible framework for managing
+specialized hardware resources like GPUs, FPGAs, and other accelerators.
+However, the current implementation lacks visibility into resource availability:
 
 **Current State:**
-- ResourceSlices are cluster-scoped resources that publish total capacity of devices in a pool
+- ResourceSlices are cluster-scoped resources that publish total capacity of
+  devices in a pool
 - ResourceClaims are namespaced and track individual allocations
-- Most users cannot see all ResourceClaims consuming resources from a pool (due to namespace boundaries and RBAC)
+- Users with limited RBAC permissions cannot see ResourceClaims outside their
+  namespace
 - No API-level view of "available" vs "allocated" capacity
 - Difficult to understand why scheduling is failing or plan capacity
 
 **Problems this creates:**
-1. **Debugging difficulty**: When pods fail to schedule due to insufficient resources, users cannot easily see what is available vs. what is consumed
-2. **Capacity planning**: Cluster administrators cannot easily determine if more resources are needed
-3. **Quota management**: Without visibility into consumption, it's hard to understand quota usage
-4. **Cross-namespace visibility**: Since ResourceClaims are namespaced, even cluster admins need to query multiple namespaces to understand total consumption
+1. **Debugging difficulty**: When pods fail to schedule due to insufficient
+   resources, users cannot easily see what is available vs. what is consumed
+2. **Capacity planning**: Cluster administrators cannot easily determine if
+   more resources are needed
+3. **Cross-namespace visibility**: Even cluster admins need to query multiple
+   namespaces to understand total consumption
 
 ### Goals
 
-- Introduce a new **ResourcePool** object that provides pool-level availability summaries
-- Implement a **ResourcePool controller** that aggregates information from ResourceSlices and ResourceClaims
-- Provide **cross-slice validation** to surface pool consistency issues (e.g., duplicate device names, missing slices)
-- Create a **client-side utility library** for detailed allocation debugging
-- Enhance **kubectl describe resourcepool** to show capacity, allocated, and available resources
-- Enhance **kubectl describe node** to show DRA resource information for node-local resources
-- Ensure the solution works for both node-local and network-attached devices
-- Support single-device, consumable capacity (multi-allocatable), and partitionable devices
+- Provide pool-level availability summaries via a standard Kubernetes API
+- Follow established request/status patterns (like CSR)
+- Compute availability on-demand (only when requested)
+- Always available in-tree, in-sync with Kubernetes releases
+- Support filtering by driver and/or pool name
+- Provide cross-slice validation to surface pool consistency issues
+- Control access via standard RBAC on the request object
+- Keep ResourceClaim and ResourceSlice APIs unchanged, requiring no
+  modifications to existing DRA drivers or scheduler
+- Allow less-privileged users to access resource usage information without
+  exposing data beyond their normal RBAC access (e.g., cross-namespace claims)
 
 ### Non-Goals
 
-- Modifying the core scheduling algorithm (this is purely about visibility)
-- Changing how ResourceClaims are allocated
-- Adding real-time metrics/monitoring (this is API-level status, not metrics)
+- Adding real-time metrics/monitoring (this is point-in-time status)
 - Implementing quotas or limits based on availability (future work)
-- **Modifying ResourceSlice or ResourceClaim APIs** (no status added to these objects)
-- Providing historical consumption data (this is point-in-time status)
-- Exposing individual claim references in the API (kept client-side for RBAC reasons)
+- Providing historical consumption data (use multiple requests for that)
+- Watch support for continuous updates (create new requests instead)
 
 ## Proposal
 
-This KEP proposes a two-part solution:
+This KEP proposes a **ResourcePoolStatusRequest** API following the
+CertificateSigningRequest (CSR) pattern - an established Kubernetes pattern
+for imperative operations through declarative APIs.
 
-### Part 1: ResourcePool Object (API-visible)
+### Architecture
 
-A new **ResourcePool** cluster-scoped object that provides:
-- **Summary counts**: total, allocated, available, unavailable devices
-- **Pool validation status**: conditions indicating pool health
-- **Cross-slice validation errors**: issues like duplicate device names
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              User Workflow                                  │
+│                                                                             │
+│   Step 1: CREATE               Step 2: WAIT              Step 3: READ       │
+│   $ kubectl create             $ kubectl wait            $ kubectl get      │
+│     resourcepoolstatusrequest    --for=condition=Complete  rpsr/my-check    │
+└───────────┬─────────────────────────┬─────────────────────────┬─────────────┘
+            │                         │                         │
+            ▼                         ▼                         ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            kube-apiserver                                   │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │              ResourcePoolStatusRequest  (stored in etcd)              │  │
+│  │                                                                       │  │
+│  │  metadata:                                                            │  │
+│  │    name: my-check                                                     │  │
+│  │                                                                       │  │
+│  │  spec:                              status:                           │  │
+│  │    driver: example.com/gpu    ───►    observationTime: <timestamp>    │  │
+│  │    poolName: node-1                   pools:                          │  │
+│  │                                       - driver: example.com/gpu       │  │
+│  │                                         poolName: node-1              │  │
+│  │                                         totalDevices: 4               │  │
+│  │                                         allocatedDevices: 3           │  │
+│  │                                         availableDevices: 1           │  │
+│  │                                       conditions:                     │  │
+│  │                                       - type: Complete                │  │
+│  │                                         status: "True"                │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        ▲
+                                        │ Watch + UpdateStatus
+                                        │
+┌───────────────────────────────────────┴─────────────────────────────────────┐
+│                          kube-controller-manager                            │
+│                                                                             │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                ResourcePoolStatusRequest Controller                    │ │
+│  │                                                                        │ │
+│  │  1. Watch for new ResourcePoolStatusRequest objects                    │ │
+│  │  2. Skip if status.observationTime already set (one-time processing)   │ │
+│  │  3. Read ResourceSlices matching spec filters (driver, poolName)       │ │
+│  │  4. Read ResourceClaims to determine allocations                       │ │
+│  │  5. Compute availability summary per pool                              │ │
+│  │  6. Write result to status with timestamp                              │ │
+│  │  7. Set condition Complete=True                                        │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  Reuses existing informers:                                                 │
+│  ┌─────────────────┐  ┌─────────────────┐                                   │
+│  │ ResourceSlices  │  │ ResourceClaims  │                                   │
+│  └─────────────────┘  └─────────────────┘                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-ResourcePool contains **only summaries** - no individual claim references. This keeps the object:
-- Constant size (O(1), not O(claims))
-- Free of RBAC/permission issues (no namespace-scoped data exposed)
-- Lightweight for API server and etcd
+**Key design points:**
 
-### Part 2: Client-Side Utility (kubectl)
-
-A **utility library** that takes ResourceSlices + ResourceClaims and computes:
-- Detailed per-device allocation status
-- Which claims are using which devices
-- Validation issues
-
-This is used by `kubectl describe` to show detailed information **when the user has permission** to fetch the relevant ResourceClaims. Users without permission still see the ResourcePool summary.
+1. **CSR-like pattern**: User creates request, controller processes, user reads
+   status - established pattern in Kubernetes
+2. **One-time processing**: Controller skips requests that already have status,
+   ensuring each request is processed exactly once
+3. **Reuses existing informers**: Controller reuses ResourceSlice and
+   ResourceClaim informers already in KCM, adding minimal overhead
+4. **Always available**: In-tree implementation, no additional deployment needed
+5. **Standard RBAC**: Access controlled via RBAC on ResourcePoolStatusRequest
 
 ### User Stories
 
-#### Story 1: Cluster Administrator Monitoring Resources
+#### Story 1: Cluster Administrator Checking Pool Status
 
-As a cluster administrator, I want to see at a glance how many GPU resources are available across my cluster so that I can:
-- Understand current resource utilization
-- Plan for capacity expansion
-- Debug why pods are not scheduling
+As a cluster administrator, I want to see at a glance how many GPU resources
+are available across my cluster so that I can understand current utilization
+and plan for capacity expansion.
 
-**Current experience:**
+**Workflow:**
 ```bash
-$ kubectl get resourceslices
-NAME                    DRIVER              POOL        DEVICES
-node-1-gpu-slice-1     example.com/gpu     node-1      4
-node-2-gpu-slice-1     example.com/gpu     node-2      4
+# Create a status request for all GPU pools
+$ kubectl create -f - <<EOF
+apiVersion: resource.k8s.io/v1alpha1
+kind: ResourcePoolStatusRequest
+metadata:
+  name: check-gpus-$(date +%s)
+spec:
+  driver: example.com/gpu
+EOF
+resourcepoolstatusrequest.resource.k8s.io/check-gpus-1707300000 created
 
-# No way to see how many are allocated/available!
-# Must query all ResourceClaims across all namespaces and manually correlate
-```
+# Wait for processing
+$ kubectl wait --for=condition=Complete rpsr/check-gpus-1707300000 --timeout=30s
+resourcepoolstatusrequest.resource.k8s.io/check-gpus-1707300000 condition met
 
-**Proposed experience:**
-```bash
-$ kubectl get resourcepools
-NAME                      DRIVER            TOTAL   ALLOCATED   AVAILABLE
-example.com-gpu.node-1    example.com/gpu   4       3           1
-example.com-gpu.node-2    example.com/gpu   4       1           3
+# View results
+$ kubectl get rpsr/check-gpus-1707300000 -o yaml
+apiVersion: resource.k8s.io/v1alpha1
+kind: ResourcePoolStatusRequest
+metadata:
+  name: check-gpus-1707300000
+spec:
+  driver: example.com/gpu
+status:
+  observationTime: "2026-02-07T10:30:00Z"
+  pools:
+  - driver: example.com/gpu
+    poolName: node-1
+    nodeName: node-1
+    totalDevices: 4
+    allocatedDevices: 3
+    availableDevices: 1
+  - driver: example.com/gpu
+    poolName: node-2
+    nodeName: node-2
+    totalDevices: 4
+    allocatedDevices: 1
+    availableDevices: 3
+  conditions:
+  - type: Complete
+    status: "True"
+    reason: CalculationComplete
+    lastTransitionTime: "2026-02-07T10:30:00Z"
 
-$ kubectl describe resourcepool example.com-gpu.node-1
-Name:         example.com-gpu.node-1
-Driver:       example.com/gpu
-Pool:         node-1
-Node:         node-1
-
-Status:
-  Summary:
-    Total Devices:       4
-    Allocated Devices:   3
-    Available Devices:   1
-    Unavailable Devices: 0
-  Conditions:
-    Type: Complete   Status: True   Reason: AllSlicesPresent
-    Type: Valid      Status: True   Reason: ValidationPassed
-  Observed Slice Count:   1
-  Expected Slice Count:   1
-
-# With admin permissions, kubectl fetches claims and shows details:
-Device Details (from ResourceSlices + ResourceClaims):
-  gpu-0:  Allocated  -> default/ml-training-claim
-  gpu-1:  Allocated  -> default/ml-inference-claim
-  gpu-2:  Allocated  -> team-a/batch-job-claim
-  gpu-3:  Available
+# Cleanup
+$ kubectl delete rpsr/check-gpus-1707300000
 ```
 
 #### Story 2: Developer Debugging Resource Allocation
 
-As a developer, when my pod fails to schedule because "insufficient DRA resources", I want to understand:
-- What resources are required
-- What resources are available
-- Why the match failed
+As a developer, when my pod fails to schedule because "insufficient DRA
+resources", I want to understand what resources are available.
 
-**Current experience:**
-- Pod event: "0/3 nodes are available: 3 Insufficient example.com/gpu"
-- No visibility into which nodes have what available
-- Cannot see resource consumption details
-
-**Proposed experience:**
+**Workflow:**
 ```bash
-$ kubectl describe resourcepool example.com-gpu.node-1
-Name:         example.com-gpu.node-1
-...
-Status:
-  Summary:
-    Total Devices:       4
-    Allocated Devices:   4
-    Available Devices:   0   # <-- No GPUs available on this node!
+# Quick one-liner to check GPU availability
+$ kubectl create -f - <<EOF && sleep 2 && \
+  kubectl get rpsr/debug-check -o jsonpath='{.status.pools[*]}'
+apiVersion: resource.k8s.io/v1alpha1
+kind: ResourcePoolStatusRequest
+metadata:
+  name: debug-check
+spec:
+  driver: example.com/gpu
+EOF
 
-# Developer can see node-1 is fully allocated, try another node
-$ kubectl describe resourcepool example.com-gpu.node-2
-Status:
-  Summary:
-    Total Devices:       4
-    Allocated Devices:   1
-    Available Devices:   3   # <-- GPUs available here
+# Output shows which nodes have available GPUs:
+# node-1: 0 available (fully allocated)
+# node-2: 3 available
+# node-3: 0 available (fully allocated)
 ```
 
-#### Story 3: Capacity Planning
+#### Story 3: Automation and Monitoring
 
-As a capacity planner, I want to query resource availability across the cluster to:
-- Identify nodes or pools that are under-utilized
-- Understand trends in resource consumption
-- Plan for workload placement
+As an automation system, I want to periodically check resource availability
+to trigger alerts or scaling actions.
 
-**Proposed experience:**
+**Workflow:**
 ```bash
-$ kubectl get resourcepools -o custom-columns=\
-NAME:.metadata.name,\
-DRIVER:.spec.driver,\
-TOTAL:.status.summary.totalDevices,\
-ALLOCATED:.status.summary.allocatedDevices,\
-AVAILABLE:.status.summary.availableDevices
+#!/bin/bash
+# Cron job that runs every 5 minutes
 
-NAME                      DRIVER            TOTAL   ALLOCATED   AVAILABLE
-example.com-gpu.node-1    example.com/gpu   4       3           1
-example.com-gpu.node-2    example.com/gpu   4       1           3
-example.com-gpu.node-3    example.com/gpu   4       4           0
+REQUEST_NAME="monitor-$(date +%s)"
+
+# Create request
+kubectl create -f - <<EOF
+apiVersion: resource.k8s.io/v1alpha1
+kind: ResourcePoolStatusRequest
+metadata:
+  name: $REQUEST_NAME
+spec: {}  # All pools
+EOF
+
+# Wait and get result
+kubectl wait --for=condition=Complete rpsr/$REQUEST_NAME --timeout=60s
+AVAILABLE=$(kubectl get rpsr/$REQUEST_NAME -o jsonpath='{.status.pools[*].availableDevices}' | tr ' ' '+' | bc)
+
+# Alert if low
+if [ "$AVAILABLE" -lt 5 ]; then
+  echo "ALERT: Only $AVAILABLE devices available cluster-wide"
+fi
+
+# Cleanup
+kubectl delete rpsr/$REQUEST_NAME
 ```
 
 ### Notes/Constraints/Caveats
 
-1. **Eventually consistent**: The ResourcePool status is eventually consistent. There may be a brief period where the status doesn't reflect very recent allocations.
+1. **Asynchronous operation**: Unlike SubjectAccessReview (synchronous), this
+   uses the CSR pattern where user must wait for controller processing.
 
-2. **Summary only in API**: Individual claim references are NOT stored in ResourcePool. This avoids RBAC issues and keeps the object small. Detailed allocation info is computed client-side by kubectl.
+2. **One-time calculation**: Each request is processed once. To get updated
+   data, delete and recreate the request.
 
-3. **User permissions for details**: `kubectl describe resourcepool` shows detailed allocation info only if the user has permission to list ResourceClaims in the relevant namespaces. Otherwise, only the summary is shown.
+3. **Object persists in etcd**: Requests are stored until deleted. Users should
+   clean up old requests or use unique names with timestamps.
 
-4. **Multi-allocatable devices**: For devices that support consumable capacity (KEP-5075), the summary tracks device counts, not capacity details. Capacity details are available via kubectl's client-side computation.
+4. **Controller processing delay**: Status is not immediate - controller must
+   process the request. Typically completes within seconds.
 
-5. **Partitionable devices**: Devices may be "Unavailable" (not allocated but cannot accept allocations due to shared resource constraints). The summary includes an `unavailableDevices` count.
+5. **RBAC controls access**: Users need RBAC permission to create/read
+   ResourcePoolStatusRequest objects to use this feature.
+
+6. **Partitionable devices**: Device counts may be misleading for partitionable
+   devices (e.g., a single GPU that can be split into 15 mutually exclusive
+   partitions). The controller counts devices as listed in ResourceSlices
+   without understanding partition relationships. Future versions may add
+   driver-provided metadata to indicate partitioning.
+
+7. **Generation handling**: ResourceSlices with older pool generations are
+   ignored during computation (not counted as errors). Drivers are expected
+   to delete old-generation slices eventually. The `generation` field in
+   status reflects the highest generation observed.
 
 ### Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| ResourcePool controller overhead | Additional controller watching slices/claims | Efficient informers with indexing; rate limiting |
-| Stale ResourcePool status | Users may see outdated availability | Document eventual consistency; use observedGeneration |
-| Version skew for kubectl utility | Old kubectl may not compute correctly | Document requirement to use kubectl >= cluster version |
-| Many ResourcePools in large clusters | API server load for listing | ResourcePools are O(pools), not O(devices) - manageable |
+#### Scaling Risks
+
+| Risk | Mitigation |
+|------|------------|
+| Request accumulation in etcd | Document cleanup; consider TTL for Beta |
+| Large status objects (many pools) | `limit` field caps response size |
+| Controller processing spike | Work queue with rate limiting |
+| Simultaneous request flood | Rate limiting per user (Beta) |
+
+#### Operational Risks
+
+| Risk | Mitigation |
+|------|------------|
+| Stale data if not recalculated | Timestamp shows age; recreate for fresh |
+| Controller not running | Condition stays pending; user can detect |
+| Feature gate mismatch | Document both apiserver and KCM required |
 
 ### Security Considerations
 
-**RBAC and Information Exposure:**
+#### RBAC
 
-1. **ResourcePool is cluster-scoped**: Any user with permission to read ResourcePool objects can see summary counts (total, allocated, available) for all pools. This reveals aggregate resource utilization but not which namespaces or workloads are consuming resources.
+Access is controlled via standard RBAC on the ResourcePoolStatusRequest API:
 
-2. **No claim references in API**: Individual ResourceClaim namespace/name pairs are NOT stored in ResourcePool. This prevents information leakage where a user could discover claim names in namespaces they don't have access to.
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pool-status-reader
+rules:
+- apiGroups: ["resource.k8s.io"]
+  resources: ["resourcepoolstatusrequests"]
+  verbs: ["create", "get", "list", "delete"]
+```
 
-3. **Client-side claim resolution**: When kubectl fetches detailed allocation info, it only shows claims the user has permission to read. Users without cross-namespace ResourceClaim access see only the summary from ResourcePool.
+Cluster administrators should carefully consider who receives this role,
+as it exposes infrastructure information (see below).
 
-4. **Graceful degradation**: If a user lacks permission to list ResourceClaims in certain namespaces, kubectl shows:
-   - Devices allocated to accessible claims: full details
-   - Devices allocated to inaccessible claims: shown as "Allocated" without claim reference
-   - This preserves the count accuracy while respecting RBAC boundaries
+#### Information Exposure
 
-**Threat Model:**
+| User Role | Can See |
+|-----------|---------|
+| No RPSR access | Nothing |
+| RPSR create/read | Pool summaries (counts only) |
+| RPSR + Claim reader | Could correlate with claim data separately |
 
-| Threat | Mitigation |
-|--------|------------|
-| User discovers claim names in other namespaces | Claim references are client-side only, respecting user's RBAC |
-| User infers workload patterns from allocation counts | Summary counts are intentionally coarse; acceptable for cluster-scoped visibility |
-| Malicious driver creates misleading ResourcePool | ResourcePool is controller-managed, not driver-managed |
+**What is exposed:**
+- Pool names, driver names, node names
+- Device counts (total, allocated, available)
+- Validation errors (pool consistency issues)
+
+**What is NOT exposed:**
+- Which specific claims are using which devices
+- Claim contents or pod information
+- Raw ResourceSlice data
+- Cross-namespace claim information
+
+#### Security Risks
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Infrastructure info disclosure | Low | RBAC controls access |
+| DoS via request flooding | Medium | Work queue rate limiting |
+| Cross-namespace claim leak | None | Design excludes claim details |
+| Privilege escalation | None | Controller has read-only access |
+
+#### Controller Security
+
+The controller runs in KCM with existing permissions to read ResourceSlices
+and ResourceClaims. No additional permissions are needed beyond what
+device-taint-eviction controller already has.
+
+#### Future Consideration: Namespace-scoped Requests
+
+For environments requiring stricter isolation, a namespace-scoped variant
+(similar to LocalSubjectAccessReview) could be added in future versions.
+This would allow users to only see pools with devices allocated to claims
+in their namespace.
 
 ## Design Details
 
-### API Changes
+### API Definition
 
-#### ResourcePool Object
+#### ResourcePoolStatusRequest Object
 
-A new cluster-scoped resource in the `resource.k8s.io` API group:
+```yaml
+apiVersion: resource.k8s.io/v1alpha1
+kind: ResourcePoolStatusRequest
+metadata:
+  name: my-request
+  # Cluster-scoped (no namespace)
+spec:
+  # All fields optional - empty spec means "all pools"
 
-```go
-// ResourcePool provides aggregated availability information for a pool of resources.
-// ResourcePool objects are created and maintained by the ResourcePool controller,
-// not by users or DRA drivers.
-type ResourcePool struct {
-    metav1.TypeMeta   `json:",inline"`
-    metav1.ObjectMeta `json:"metadata,omitempty"`
+  # Filter by driver name
+  driver: example.com/gpu
 
-    // Spec identifies the pool this object represents.
-    // This is immutable after creation.
-    Spec ResourcePoolSpec `json:"spec"`
+  # Filter by pool name (requires driver if set)
+  poolName: node-1
 
-    // Status contains the current availability and validation status.
-    // +optional
-    Status ResourcePoolStatus `json:"status,omitempty"`
-}
+  # Limit number of pools returned (default: 100, max: 1000)
+  # Prevents large responses in clusters with many pools
+  limit: 100
 
-// ResourcePoolSpec identifies a resource pool.
-type ResourcePoolSpec struct {
-    // Driver is the name of the DRA driver that manages this pool.
-    // +required
-    Driver string `json:"driver"`
+status:
+  # Timestamp when calculation was performed
+  observationTime: "2026-02-07T10:30:00Z"
 
-    // PoolName is the name of the pool as specified in ResourceSlice.Spec.Pool.Name.
-    // +required
-    PoolName string `json:"poolName"`
+  # List of pools matching the filter
+  pools:
+  - driver: example.com/gpu
+    poolName: node-1
+    nodeName: node-1              # Empty for non-node-local pools
+    totalDevices: 4
+    allocatedDevices: 3
+    availableDevices: 1
+    unavailableDevices: 0         # Devices with constraints
+    sliceCount: 1                 # ResourceSlices in this pool
+    generation: 5                 # Pool generation observed
 
-    // NodeName is set if this pool is associated with a specific node.
-    // +optional
-    NodeName string `json:"nodeName,omitempty"`
-}
+  # Conditions indicating processing status
+  conditions:
+  - type: Complete
+    status: "True"
+    reason: CalculationComplete
+    message: "Processed 2 pools"
+    lastTransitionTime: "2026-02-07T10:30:00Z"
 
-// ResourcePoolStatus describes the current state of a resource pool.
-type ResourcePoolStatus struct {
-    // Summary provides aggregate device counts for this pool.
-    // +optional
-    Summary ResourcePoolSummary `json:"summary,omitempty"`
+  # Validation errors found (max 10 entries, max 256 chars each)
+  validationErrors:
+  - "pool node-1: device gpu-0 appears in multiple slices"
 
-    // Conditions represent observations about the pool's state.
-    // +optional
-    // +listType=map
-    // +listMapKey=type
-    Conditions []metav1.Condition `json:"conditions,omitempty"`
+  # True if more pools exist but were not included due to limit
+  truncated: false
 
-    // ValidationErrors contains errors found during cross-slice validation.
-    // Limited to the first 10 errors.
-    // +optional
-    // +listType=atomic
-    ValidationErrors []string `json:"validationErrors,omitempty"`
-
-    // TruncatedErrorCount is the total count when ValidationErrors is truncated.
-    // Zero if not truncated.
-    // +optional
-    TruncatedErrorCount int32 `json:"truncatedErrorCount,omitempty"`
-
-    // ObservedSliceCount is the number of ResourceSlices observed for this pool.
-    // +optional
-    ObservedSliceCount int32 `json:"observedSliceCount,omitempty"`
-
-    // ExpectedSliceCount is the expected number of ResourceSlices
-    // (from ResourceSlice.Spec.Pool.ResourceSliceCount).
-    // +optional
-    ExpectedSliceCount int32 `json:"expectedSliceCount,omitempty"`
-
-    // ObservedGeneration is the pool generation this status corresponds to.
-    // +optional
-    ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-
-    // LastUpdateTime is when the status was last updated.
-    // +optional
-    LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
-}
-
-// ResourcePoolSummary provides aggregate information about pool resources.
-type ResourcePoolSummary struct {
-    // TotalDevices is the total number of devices across all ResourceSlices in this pool.
-    TotalDevices int32 `json:"totalDevices"`
-
-    // AllocatedDevices is the number of devices that have at least one allocation.
-    AllocatedDevices int32 `json:"allocatedDevices"`
-
-    // AvailableDevices is the number of devices that are fully available for allocation.
-    AvailableDevices int32 `json:"availableDevices"`
-
-    // UnavailableDevices is the number of devices that cannot accept allocations
-    // due to constraints (e.g., partitionable device shared resource exhaustion).
-    // +optional
-    UnavailableDevices int32 `json:"unavailableDevices,omitempty"`
-
-    // PartiallyAllocatedDevices is the number of multi-allocatable devices
-    // that have some but not all capacity allocated (consumable capacity).
-    // +optional
-    PartiallyAllocatedDevices int32 `json:"partiallyAllocatedDevices,omitempty"`
-}
+  # Total number of pools matching filter (even if truncated)
+  totalMatchingPools: 2
 ```
 
-**Key design decisions:**
-- **No claim references**: Individual claim namespace/name are NOT stored. This avoids RBAC issues and keeps size O(1).
-- **Summary only**: Counts provide visibility without exposing sensitive allocation details.
-- **Controller-managed**: Users don't create ResourcePools; the controller does.
-- **Immutable spec**: The spec identifies the pool and doesn't change.
+#### Spec Fields
 
-#### ResourcePool Status Fields
+The spec is **immutable after creation**, following the CSR pattern. The
+controller only processes each request once, so spec changes would have no
+effect. To query with different filters or get fresh data, delete and create
+a new request.
 
 | Field | Description |
 |-------|-------------|
-| `summary.totalDevices` | Total devices in all ResourceSlices for this pool |
-| `summary.allocatedDevices` | Devices with at least one allocation |
-| `summary.availableDevices` | Devices fully available |
-| `summary.unavailableDevices` | Devices unavailable due to constraints (partitionable) |
-| `summary.partiallyAllocatedDevices` | Devices with partial capacity used (consumable) |
-| `conditions[Complete]` | All expected ResourceSlices are present |
-| `conditions[Valid]` | Cross-slice validation passed |
-| `validationErrors` | Specific validation issues (max 10) |
-| `observedSliceCount` | Number of slices found |
-| `expectedSliceCount` | Number of slices expected |
+| `driver` | Filter by driver name (optional) |
+| `poolName` | Filter by pool name (optional, requires driver) |
+| `limit` | Max pools to return (default: 100, max: 1000) |
+
+#### Status Fields
+
+| Field | Description |
+|-------|-------------|
+| `observationTime` | Timestamp when calculation was performed |
+| `pools[]` | List of pools matching filter (up to limit) |
+| `pools[].driver` | DRA driver name |
+| `pools[].poolName` | Pool name from ResourceSlice |
+| `pools[].nodeName` | Node name (for node-local pools) |
+| `pools[].totalDevices` | Total devices across all slices |
+| `pools[].allocatedDevices` | Devices allocated to claims |
+| `pools[].availableDevices` | Devices available for allocation |
+| `pools[].unavailableDevices` | Devices unavailable (constraints) |
+| `pools[].sliceCount` | Number of ResourceSlices in pool |
+| `pools[].generation` | Pool generation observed |
+| `conditions[Complete]` | Processing completed successfully |
+| `validationErrors` | Pool consistency issues (max 10, 256 chars each) |
+| `truncated` | True if more pools exist beyond limit |
+| `totalMatchingPools` | Total pools matching filter |
 
 ### Controller Implementation
 
-#### ResourcePool Controller
+#### Controller in KCM
 
-A new controller in kube-controller-manager maintains ResourcePool objects:
+The controller is added to kube-controller-manager as a separate controller
+with its own client and QPS limits (not part of the resourceclaim controller).
+This ensures client-side throttling does not impact scheduling.
 
-**Responsibilities:**
-1. Watch ResourceSlices - detect new pools, pool changes
-2. Watch ResourceClaims - detect allocation changes
-3. Create ResourcePool objects when new pools appear
-4. Update ResourcePool status with current summary and validation
-5. Delete ResourcePool objects when all slices for a pool are gone
+The controller:
+1. Watches ResourcePoolStatusRequest objects via informer
+2. Maintains a rate-limited work queue for processing
+3. Reuses existing ResourceSlice and ResourceClaim informers from KCM
+4. Uses `UpdateStatus` to write results to the status subresource
 
-**Implementation:**
-```go
-type ResourcePoolController struct {
-    resourcePoolClient  resourcev1.ResourcePoolInterface
-    resourceSliceLister listers.ResourceSliceLister
-    resourceClaimLister listers.ResourceClaimLister
+#### One-time Processing
 
-    // Index: pool key -> slice names
-    slicesByPool cache.Indexer
-    // Index: driver+pool -> claim names
-    claimsByPool cache.Indexer
+Following the CSR pattern, the controller processes each request exactly once:
 
-    workqueue workqueue.RateLimitingInterface
-}
+1. When a new ResourcePoolStatusRequest is created, it is added to work queue
+2. Controller checks if `status.observationTime` is already set
+3. If set, the request was already processed - controller skips it
+4. If not set, controller computes pool status and writes to status
+5. Once status is written, the request is never processed again
 
-func (c *ResourcePoolController) Reconcile(ctx context.Context, poolKey string) error {
-    driver, poolName := parsePoolKey(poolKey)
+To get fresh data, users delete and recreate the request.
 
-    // Get all ResourceSlices for this pool
-    slices := c.slicesByPool.ByIndex("pool", poolKey)
-    if len(slices) == 0 {
-        // Pool gone - delete ResourcePool
-        return c.deleteResourcePool(ctx, poolKey)
-    }
+#### Reusing Existing Informers
 
-    // Get all ResourceClaims that allocate from this pool
-    claims := c.claimsByPool.ByIndex("pool", poolKey)
+The controller reuses ResourceSlice and ResourceClaim informers that are
+already running in KCM for the device-taint-eviction controller. This adds
+minimal overhead since the informers are already cached in memory.
 
-    // Build device allocation map
-    allocations := c.buildAllocationMap(slices, claims)
-
-    // Calculate summary
-    summary := c.calculateSummary(slices, allocations)
-
-    // Validate cross-slice consistency
-    validationErrors := c.validatePool(slices)
-
-    // Build conditions
-    conditions := c.buildConditions(slices, validationErrors)
-
-    // Create or update ResourcePool
-    return c.updateResourcePool(ctx, driver, poolName, slices, summary, conditions, validationErrors)
-}
-
-func (c *ResourcePoolController) calculateSummary(
-    slices []*ResourceSlice,
-    allocations map[string][]AllocationInfo,
-) ResourcePoolSummary {
-    var total, allocated, available, unavailable, partial int32
-
-    for _, slice := range slices {
-        for _, device := range slice.Spec.Devices {
-            total++
-            allocs := allocations[device.Name]
-
-            switch {
-            case len(allocs) == 0 && !isUnavailable(device, slice):
-                available++
-            case len(allocs) == 0 && isUnavailable(device, slice):
-                unavailable++
-            case isPartiallyAllocated(device, allocs):
-                partial++
-                allocated++ // Also counted as allocated
-            default:
-                allocated++
-            }
-        }
-    }
-
-    return ResourcePoolSummary{
-        TotalDevices:              total,
-        AllocatedDevices:          allocated,
-        AvailableDevices:          available,
-        UnavailableDevices:        unavailable,
-        PartiallyAllocatedDevices: partial,
-    }
-}
-```
-
-**ResourcePool naming convention:**
-- Name: `<sanitized-driver>.<pool-name>`
-- Example: `example.com-gpu.node-1` for driver `example.com/gpu`, pool `node-1`
-- Driver name sanitized: `/` → `-`, must be valid DNS subdomain
-
-#### Cross-Slice Validation
-
-The controller validates consistency across ResourceSlices in a pool:
-
-1. **Device name uniqueness**: No device name appears in multiple slices
-2. **Generation consistency**: All slices should have the same pool generation
-3. **Pool completeness**: Observed slice count matches expected count
-
-```go
-func (c *ResourcePoolController) validatePool(slices []*ResourceSlice) []string {
-    var errors []string
-
-    // Check device name uniqueness
-    deviceNames := make(map[string]string) // device -> slice name
-    for _, slice := range slices {
-        for _, device := range slice.Spec.Devices {
-            if existing, ok := deviceNames[device.Name]; ok {
-                errors = append(errors, fmt.Sprintf(
-                    "device %q appears in both %s and %s",
-                    device.Name, existing, slice.Name))
-            }
-            deviceNames[device.Name] = slice.Name
-        }
-    }
-
-    // Check generation consistency
-    generations := make(map[int64]int)
-    for _, slice := range slices {
-        generations[slice.Spec.Pool.Generation]++
-    }
-    if len(generations) > 1 {
-        errors = append(errors, "ResourceSlices have inconsistent pool generations")
-    }
-
-    // Truncate errors if needed
-    if len(errors) > 10 {
-        errors = errors[:10]
-    }
-
-    return errors
-}
-```
-
-### Client-Side Utility Library
-
-A Go library for detailed allocation computation, used by kubectl:
-
-```go
-// Package drausage provides utilities for computing DRA resource usage.
-package drausage
-
-// PoolUsage contains detailed usage information for a resource pool.
-type PoolUsage struct {
-    Driver   string
-    PoolName string
-    NodeName string
-
-    Devices []DeviceUsage
-    Summary PoolSummary
-
-    ValidationErrors []string
-}
-
-// DeviceUsage contains allocation details for a single device.
-type DeviceUsage struct {
-    Name        string
-    State       DeviceState // Available, Allocated, PartiallyAllocated, Unavailable
-    StateReason string      // For Unavailable state
-
-    // Allocations lists claims using this device.
-    // Only populated if caller has permission to fetch those claims.
-    Allocations []AllocationInfo
-
-    // For consumable capacity devices
-    TotalCapacity     v1.ResourceList
-    AllocatedCapacity v1.ResourceList
-    AvailableCapacity v1.ResourceList
-}
-
-// AllocationInfo describes a single allocation.
-type AllocationInfo struct {
-    ClaimNamespace string
-    ClaimName      string
-    ClaimUID       types.UID
-    Request        string
-    Capacity       v1.ResourceList // For consumable capacity
-}
-
-// ComputePoolUsage calculates detailed usage for a pool.
-// The caller must provide ResourceSlices and ResourceClaims they have access to.
-func ComputePoolUsage(
-    slices []*resourcev1.ResourceSlice,
-    claims []*resourcev1.ResourceClaim,
-) (*PoolUsage, error) {
-    // ... implementation
-}
-```
-
-**Benefits of client-side approach:**
-- No RBAC issues: Only shows claims the user can access
-- No API bloat: Detailed data not stored in ResourcePool
-- Fresh data: Computed on demand from current state
-- Flexible: Can be used by any Go client, not just kubectl
+The controller constructor accepts these shared informers rather than
+creating its own, following the established KCM pattern.
 
 ### kubectl Integration
 
-#### kubectl describe resourcepool
+Standard kubectl commands work:
 
-Shows ResourcePool status plus optional detailed allocation info:
+```bash
+# Create request
+$ kubectl create -f request.yaml
 
-```
-$ kubectl describe resourcepool example.com-gpu.node-1
-Name:         example.com-gpu.node-1
-Labels:       <none>
-Annotations:  <none>
-API Version:  resource.k8s.io/v1beta2
-Kind:         ResourcePool
+# Wait for completion
+$ kubectl wait --for=condition=Complete rpsr/my-request
 
-Spec:
-  Driver:     example.com/gpu
-  Pool Name:  node-1
-  Node Name:  node-1
+# Get status
+$ kubectl get rpsr/my-request -o yaml
 
-Status:
-  Summary:
-    Total Devices:              4
-    Allocated Devices:          3
-    Available Devices:          1
-    Unavailable Devices:        0
-    Partially Allocated Devices: 0
-  Conditions:
-    Type: Complete   Status: True   LastTransitionTime: 2025-06-15T10:00:00Z
-    Type: Valid      Status: True   LastTransitionTime: 2025-06-15T10:00:00Z
-  Observed Slice Count:    1
-  Expected Slice Count:    1
-  Observed Generation:     5
-  Last Update Time:        2025-06-15T12:30:00Z
+# List all requests
+$ kubectl get rpsr
 
-# If user has permission to list ResourceClaims, kubectl fetches them
-# and computes detailed allocation info using the client-side library:
-
-Device Details:
-  NAME    STATE      ALLOCATED TO
-  gpu-0   Allocated  default/ml-training-claim
-  gpu-1   Allocated  default/ml-inference-claim
-  gpu-2   Allocated  team-a/batch-job-claim
-  gpu-3   Available  -
-
-Events:  <none>
+# Delete request
+$ kubectl delete rpsr/my-request
 ```
 
-**For users without ResourceClaim access:**
-```
-$ kubectl describe resourcepool example.com-gpu.node-1
-...
-Status:
-  Summary:
-    Total Devices:       4
-    Allocated Devices:   3
-    Available Devices:   1
-
-Device Details:
-  (Requires permission to list ResourceClaims for detailed allocation info)
-
-Events:  <none>
-```
-
-#### kubectl describe node
-
-For node-local pools, shows DRA resource summary:
-
-```
-$ kubectl describe node node-1
-Name:               node-1
-...
-
-DRA Resources:
-  Pool: example.com-gpu.node-1
-    Driver:     example.com/gpu
-    Total:      4
-    Allocated:  3
-    Available:  1
-```
-
-**Implementation:**
-- kubectl queries ResourcePools where `spec.nodeName` matches
-- Displays summary from ResourcePool status
-- Optionally shows device details if user has permission
+Short name `rpsr` is registered for convenience.
 
 ### Test Plan
 
@@ -723,128 +616,83 @@ None required.
 
 #### Unit tests
 
-Coverage targets for Alpha:
-- `k8s.io/kubernetes/pkg/controller/resourcepool`: 80%+
-  - Pool discovery from ResourceSlices
-  - Summary calculation
-  - Cross-slice validation
-  - ResourcePool lifecycle (create/update/delete)
-
-- `k8s.io/kubernetes/staging/src/k8s.io/kubectl/pkg/drausage`: 80%+
-  - Client-side usage computation
-  - Allocation mapping
-  - Permission handling
-
-- `k8s.io/kubectl/pkg/describe`: 75%+
-  - ResourcePool describe formatting
-  - Node describe DRA section
+Coverage targets:
+- Pool status computation: 80%+
+- Cross-slice validation: 80%+
+- Controller logic: 75%+
 
 Test cases:
-- Empty pool (no slices)
-- Single slice pool
-- Multi-slice pool
-- Allocation changes
+- Empty spec (all pools)
+- Filter by driver only
+- Filter by driver and pool
+- No matching pools
+- Various allocation states
 - Cross-slice validation errors
-- Generation changes
-- Consumable capacity devices
-- Partitionable devices
+- Generation handling
+- One-time processing (skip if processed)
 
 #### Integration tests
 
-Integration tests will verify:
-1. Controller creates ResourcePool when ResourceSlices appear
-2. ResourcePool status updates when ResourceClaims change
-3. Cross-slice validation detects errors
-4. ResourcePool deleted when all slices removed
-5. Summary counts are accurate
-6. Rate limiting prevents API server overload
-
-Test scenarios:
-- Create ResourceSlice → ResourcePool created
-- Create ResourceClaim → summary updated
-- Delete ResourceClaim → summary updated
-- Multiple slices for one pool → aggregated correctly
-- Validation error → surfaced in status
-- Delete all slices → ResourcePool deleted
+1. Controller starts and watches requests
+2. New request triggers processing
+3. Status updated with correct pool data
+4. Processed requests are skipped
+5. Validation errors detected
+6. RBAC enforced correctly
 
 #### e2e tests
 
-E2E tests will verify end-to-end functionality:
-1. Deploy DRA driver that publishes ResourceSlices
-2. Verify ResourcePool created with correct summary
-3. Create ResourceClaim
-4. Verify ResourcePool summary shows allocation
-5. Run `kubectl describe resourcepool` and verify output
-6. Verify `kubectl describe node` shows DRA resources
-7. Delete ResourceClaim
-8. Verify summary updated
+1. Create ResourcePoolStatusRequest
+2. Wait for condition Complete
+3. Verify status contains expected pools
+4. Create ResourceClaim, create new request, verify updated counts
+5. Delete and recreate request, verify fresh data
+6. Test with multiple drivers and pools
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind `DRAResourceAvailabilityVisibility` feature gate
-- ResourcePool API added to resource.k8s.io/v1beta2
-- ResourcePool controller implemented in kube-controller-manager
-- Client-side utility library implemented
-- kubectl describe enhancements implemented
-- Unit and integration tests completed
-- Documentation for API and kubectl usage
+- API defined and implemented
+- Controller in KCM behind feature gate
+- Basic kubectl workflow works
+- Unit and integration tests
+- Documentation
 
 #### Beta
 
-- Feature enabled by default
-- E2E tests in Testgrid and passing
-- At least one DRA driver tested with the feature
-- Performance testing with large numbers of pools and claims
-- Metrics for monitoring controller performance
+- E2E tests passing in CI
+- Tested with multiple DRA drivers
+- Performance validated at scale (100+ pools)
 - User feedback incorporated
-
-**Potential Beta enhancements:**
-- Vendor-defined summarization attributes
-- Additional filters for kubectl get resourcepools
+- Add TTL field for automatic cleanup (`ttlSecondsAfterComplete`)
+- Add per-user rate limiting for request creation
+- Consider namespace-scoped variant if requested
 
 #### GA
 
 - At least 2 releases as beta
-- Multiple DRA drivers using the feature in production
-- Performance validated at scale (1000+ pools, 10000+ claims)
-- No major bugs or design issues reported
-- Documentation complete and accurate
+- Validated at scale (1000+ pools)
+- kubectl plugin for better UX (optional)
+- Documentation complete
 
 ### Upgrade / Downgrade Strategy
 
 **Upgrade:**
-- When feature gate is enabled, controller starts creating ResourcePool objects
-- ResourcePools are created asynchronously for existing pools
-- No impact on existing allocations or scheduling
-- kubectl gracefully handles missing ResourcePools
+- Enable feature gate
+- New API becomes available
+- No migration needed
 
 **Downgrade:**
-- When feature gate is disabled, controller stops running
-- Existing ResourcePool objects can be cleaned up manually or left (harmless)
-- No impact on scheduling or DRA functionality
-
-**API compatibility:**
-- ResourcePool is a new type, safe to add
-- Old clients don't know about ResourcePool (graceful degradation)
-- New clients handle missing ResourcePools gracefully
+- Disable feature gate
+- Existing requests become inaccessible
+- No impact on workloads
 
 ### Version Skew Strategy
 
-**Control plane components:**
-- kube-controller-manager: Runs ResourcePool controller when feature gate enabled
-- kube-apiserver: Serves ResourcePool API
-- kube-scheduler: Does not use ResourcePool (no dependency)
-
-**Skew scenarios:**
-1. **New apiserver, old controller-manager**: ResourcePool API exists but objects not created
-2. **Old apiserver, new controller-manager**: Controller cannot create ResourcePools (feature disabled)
-3. **Multiple controller-managers**: Leader election ensures only one runs
-
-**kubectl:**
-- New kubectl with old cluster: ResourcePool commands return "not found"
-- Old kubectl with new cluster: ResourcePool commands not available
+- API server and KCM must both have feature enabled
+- Older kubectl can still create/read objects (standard API)
+- No special version skew concerns
 
 ## Production Readiness Review Questionnaire
 
@@ -853,56 +701,47 @@ E2E tests will verify end-to-end functionality:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate
-  - Feature gate name: DRAResourceAvailabilityVisibility
-  - Components depending on the feature gate:
-    - kube-controller-manager (ResourcePool controller)
-    - kube-apiserver (ResourcePool API)
-    - kubectl (describe enhancements)
+  - Feature gate name: DRAResourcePoolStatus
+  - Components: kube-apiserver, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
-No. This feature only adds new ResourcePool objects. It does not change:
-- How ResourceSlices are created or managed by drivers
-- How ResourceClaims are allocated
-- How pods are scheduled
-- Any existing API fields or behaviors
+No. Users must explicitly create ResourcePoolStatusRequest objects.
 
 ###### Can the feature be disabled once it has been enabled?
 
-Yes. Disabling the feature gate will:
-- Stop the ResourcePool controller from running
-- Stop kubectl from using ResourcePool-related commands
-
-ResourcePool objects will remain but not be updated. They can be manually deleted or left (harmless).
+Yes. Disable the feature gate. Existing requests become inaccessible but
+no workload impact.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The controller will resume, update existing ResourcePools, and create any missing ones.
+Existing requests (if any) become visible again. Unprocessed requests will
+be processed by the controller.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, integration tests will verify enable/disable behavior.
+Yes, integration tests verify behavior with feature gate on/off.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 **Rollout failures:**
-- Controller bugs could fail to create/update ResourcePools (user-facing only)
-- No impact on running workloads (ResourcePool is informational)
+- Feature gate not enabled on both apiserver and KCM
+- RBAC not configured for users
 
 **Impact on workloads:**
-- None. ResourcePool is read-only information for visibility.
+- None. This is a read-only visibility feature.
 
 ###### What specific metrics should inform a rollback?
 
-- `resourcepool_controller_sync_errors_total` - High error rate
-- `resourcepool_controller_sync_duration_seconds` - High latency
-- `workqueue_depth{name="resourcepool"}` - Growing unbounded
+- High error rate on request processing
+- Controller crash loops
+- Excessive API server load from requests
 
 ###### Were upgrade and rollback tested?
 
-Will be tested in integration tests.
+Will be tested in e2e tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals?
 
@@ -912,59 +751,55 @@ No.
 
 ###### How can an operator determine if the feature is in use?
 
-- Check for ResourcePool objects: `kubectl get resourcepools`
-- Check controller metrics in kube-controller-manager
+- ResourcePoolStatusRequest objects exist
+- Controller metrics show processing
 
 ###### How can someone using this feature know that it is working?
 
-- ResourcePool objects exist for each pool
-- ResourcePool status reflects current allocations
-- `kubectl describe resourcepool` shows expected information
+- Create request, wait for Complete condition
+- Status contains expected pool data
 
 ###### What are the reasonable SLOs for the enhancement?
 
-- ResourcePool status update latency: 95% within 10 seconds of allocation change
-- ResourcePool accuracy: 99% consistent with actual allocations
+- Request processing: 95% complete within 10 seconds
+- No impact on scheduling SLOs
 
 ###### What are the SLIs?
 
-- `resourcepool_controller_sync_duration_seconds` (histogram)
-- `resourcepool_controller_sync_errors_total` (counter)
-- `resourcepool_controller_pools_total` (gauge)
+- `resourcepoolstatus_request_processing_duration_seconds`
+- `resourcepoolstatus_request_processing_errors_total`
+- `resourcepoolstatus_requests_processed_total`
 
 ###### Are there any missing metrics?
 
-For Beta: staleness metric, claim tracking count.
+No, controller will expose standard metrics.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No external dependencies. Requires:
-- kube-apiserver
-- kube-controller-manager
-- DRA drivers creating ResourceSlices (existing requirement)
+- kube-controller-manager (for controller)
+- DRA drivers creating ResourceSlices (existing)
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
 Yes:
-- Controller watches ResourceSlices and ResourceClaims
-- Controller creates/updates ResourcePool objects
-- kubectl fetches ResourcePools and optionally ResourceClaims
+- Create/Get/Delete ResourcePoolStatusRequest
+- Controller reads ResourceSlices and ResourceClaims (via existing informers)
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes: ResourcePool (cluster-scoped)
+Yes: ResourcePoolStatusRequest
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 No.
 
-###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+###### Will enabling / using this feature result in increasing size or count of existing API objects?
 
-No. ResourceSlice and ResourceClaim are unchanged.
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -972,128 +807,116 @@ No impact on scheduling or pod startup.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage?
 
-**kube-controller-manager:**
-- CPU: Low (watching and reconciling)
-- RAM: Moderate (informer caches) - ~10-50MB for typical clusters
-- Network: Minimal (watch streams + ResourcePool updates)
+Minimal:
+- etcd: Small objects, users should clean up (TTL in Beta)
+- KCM: Reuses existing informers, adds small controller
+- API server: Standard API operations
+- Response size: Bounded by `limit` field (default 100, max 1000 pools)
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Controller retries with backoff. No impact on workloads.
+Requests cannot be created or read. No workload impact.
 
 ###### What are other known failure modes?
 
-- **ResourcePool becomes stale**: Check controller logs, verify feature gate
-- **Validation errors not surfacing**: Check controller is running
+- **Controller not running**: Requests stay without status
+- **Informers not synced**: Controller waits for sync
+- **Request accumulation**: Users should delete old requests
 
 ###### What steps should be taken if SLOs are not being met?
 
-1. Check controller-manager health
+1. Check KCM logs for controller errors
 2. Check controller metrics
-3. Verify feature gate enabled
-4. Check API server health
+3. Verify informers are synced
+4. Check for excessive request volume
 
 ## Implementation History
 
 - 2025-12-20: KEP created in provisional state
-- 2026-01-15: Major design revision based on API review feedback - changed from ResourceSlice status to ResourcePool object
+- 2026-01-15: Design revision - ResourceSlice status to ResourcePool
+- 2026-02-05: Design revision - out-of-tree aggregated API server
+- 2026-02-07: Design revision - in-tree CSR-like pattern per API review
 
 ## Drawbacks
 
-1. **New API type**: Adds ResourcePool to the API surface
-   - Mitigation: Clean separation of concerns, doesn't modify existing types
+1. **Asynchronous operation**: User must wait for controller, unlike sync APIs
+   - Mitigation: Processing is fast (seconds); kubectl wait helps
 
-2. **Controller overhead**: Additional controller watching slices and claims
-   - Mitigation: Efficient informers, rate limiting, only updates on changes
+2. **Objects persist in etcd**: Users must clean up old requests
+   - Mitigation: Document cleanup; consider TTL in future
 
-3. **Eventual consistency**: ResourcePool may lag behind actual allocations
-   - Mitigation: Document behavior, use observedGeneration
-
-4. **Limited detail in API**: Individual claim references only available via kubectl (client-side)
-   - Mitigation: This is intentional for RBAC reasons; admins can still debug via kubectl
+3. **Not real-time**: Shows point-in-time snapshot, not live data
+   - Mitigation: Timestamp shows age; recreate for fresh data
 
 ## Alternatives
 
-### Alternative 1: Status in ResourceSlice
+### Alternative 1: Out-of-tree Aggregated API Server
 
-The original design added a Status field to ResourceSlice to track per-device allocations.
+Deploy a separate aggregated API server (like metrics-server) that computes
+pool status on-demand.
+
+**Pros:**
+- On-demand computation (no persistence)
+- Independent release cycle
+- No etcd storage
+
+**Cons:**
+- Additional deployment to manage
+- Not always available by default
+- Duplicate informers add API server load
+
+**Rejected because:** API review preferred in-tree solution that is always
+available and in-sync with Kubernetes releases.
+
+### Alternative 2: Synchronous Review Pattern
+
+Use SubjectAccessReview-like pattern where status is computed synchronously
+in the API server during the Create call.
+
+**Pros:**
+- Immediate response
+- No persistence needed
+- Simpler user flow
+
+**Cons:**
+- Cannot reuse KCM informers (would need informers in API server)
+- Computation in API server request path
+- No established pattern for this in resource.k8s.io
+
+**Rejected because:** Would require new informers in API server; CSR pattern
+is more established for operations that need controller processing.
+
+### Alternative 3: Status in ResourceSlice
+
+Add a Status field to ResourceSlice to track per-device allocations.
 
 **Pros:**
 - No new API type
-- Allocation details in API
 
 **Cons:**
-- Increases ResourceSlice size (O(allocations) per slice)
-- Increases ResourceSlice write churn
-- RBAC issues: claim namespace/name exposed to anyone who can read ResourceSlices
-- Cross-slice pool status awkward (which slice holds pool status?)
+- Increases ResourceSlice size significantly
+- RBAC issues: claim info exposed to slice readers
+- Cross-pool aggregation awkward
 
-**Rejected because:** API review feedback indicated concerns about size, churn, and RBAC. ResourcePool provides a cleaner separation.
+**Rejected because:** Size, churn, and RBAC concerns from API review.
 
-### Alternative 2: Status in ResourceClaim
+### Alternative 4: Client-side only
 
-Add pool availability to ResourceClaim status.
-
-**Cons:**
-- ResourceClaims are namespaced - can't show cross-namespace availability
-- Users can't see availability before creating a claim
-- Duplication if multiple claims need pool info
-
-**Rejected because:** Doesn't solve the cross-namespace visibility problem.
-
-### Alternative 3: Metrics-based visibility only
-
-Expose availability only through Prometheus metrics.
-
-**Cons:**
-- Not queryable via kubectl
-- May not be available in all clusters
-- Can't correlate with specific claims
-
-**Rejected because:** Poor user experience for the primary kubectl use case.
-
-### Alternative 4: Client-side only (no API changes)
-
-Only provide kubectl utilities, no ResourcePool object.
+Only provide kubectl plugin that computes everything locally.
 
 **Pros:**
-- No API changes
-- No runtime controller cost
+- No server-side changes
+- Zero cluster overhead
 
 **Cons:**
-- No API-visible pool status
-- Can't see pool validation errors without running kubectl
-- Other tools can't access availability info
+- Each invocation fetches all slices and claims
+- Poor performance for large clusters
+- No API for automation tools
 
-**Rejected because:** API-visible pool status is valuable for monitoring and automation. However, this approach is still used for detailed allocation info.
-
-### Alternative 5: Custom apiserver endpoint with report generator
-
-Add a custom aggregated API endpoint (e.g., `/apis/resource.k8s.io/v1/poolreports`) that dynamically generates availability reports on-demand rather than storing ResourcePool objects.
-
-**Pros:**
-- Always fresh data (computed on request)
-- No storage cost in etcd
-- No controller reconciliation overhead
-- Could support flexible query parameters (filter by driver, node, etc.)
-
-**Cons:**
-- Higher API server CPU cost per request (must compute on every call)
-- No caching benefits - repeated queries recompute
-- More complex implementation (custom aggregated API server)
-- Harder to watch for changes (no resourceVersion semantics)
-- Inconsistent with Kubernetes resource model (not a persisted object)
-- Cannot be used with standard tooling expecting resources (informers, controllers, kubectl get --watch)
-- Latency scales with cluster size on every request
-
-**Rejected because:** The ResourcePool approach fits better with Kubernetes conventions - it's a standard resource that can be watched, cached by informers, and used with existing tooling. The controller overhead is minimal (only updates on changes), while the custom endpoint would compute on every request. For large clusters, amortizing the computation cost via a controller is more efficient than recomputing per-request.
+**Rejected because:** Poor performance at scale; no API for automation.
 
 ## Infrastructure Needed
 
-No special infrastructure required. Implementation uses:
-- Existing Kubernetes API infrastructure
-- Existing kube-controller-manager framework
-- Existing kubectl framework
-- Standard e2e test infrastructure
+None - this is an in-tree feature.
