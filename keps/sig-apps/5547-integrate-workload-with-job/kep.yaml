@@ -34,7 +34,6 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-controller-manager
-      - kube-scheduler
 disable-supported: true
 
 metrics:

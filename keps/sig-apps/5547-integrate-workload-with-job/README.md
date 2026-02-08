@@ -310,10 +310,9 @@ N/A for alpha release
 
 - **Upgrade:**
   1. Upgrade kube-apiserver
-  2. Upgrade kube-scheduler
-  3. Enable feature gate on kube-controller-manager
-  4. New Jobs automatically get Workload/PodGroup objects
-  5. Existing Jobs continue to work (no Workload created for them)
+  2. Enable feature gate on kube-controller-manager
+  3. New Jobs automatically get Workload/PodGroup objects
+  4. Existing Jobs continue to work (no Workload created for them)
 
 - **Downgrade:**
   1. Disable feature gate on kube-controller-manager
@@ -328,7 +327,6 @@ N/A for alpha release
 ### Version Skew Strategy
 
 - kube-apiserver must be upgraded first to serve Workload API
-- kube-scheduler should be upgraded next to handle gang scheduling
 - kube-controller-manager can be upgraded last
 
 If kube-controller-manager creates `Workload` but scheduler doesn't understand it:
@@ -350,7 +348,6 @@ If scheduler supports gang scheduling but controller doesn't create `Workload` o
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-controller-manager
-    - kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
