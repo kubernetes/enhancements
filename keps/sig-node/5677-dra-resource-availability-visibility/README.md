@@ -64,7 +64,7 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in
   [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
@@ -77,7 +77,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints] must be hit by [Conformance Tests]
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for
   publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to
@@ -388,6 +388,17 @@ kubectl delete rpsr/$REQUEST_NAME
 | Controller processing spike | Work queue with rate limiting |
 | Simultaneous request flood | Rate limiting per user (Beta) |
 
+**Alpha approach:** For Alpha, we rely on documentation, the `limit` field to
+bound response size, and controller-side rate limiting. Cluster administrators
+can enforce object count limits using admission webhooks (e.g., Gatekeeper,
+Kyverno) if needed for their environment. This is sufficient for initial
+adoption while we gather feedback on usage patterns.
+
+**Beta improvements:** TTL-based auto-cleanup (`ttlSecondsAfterComplete`) and
+per-user rate limiting will be added. If Alpha feedback indicates a need, we
+may also add a built-in cluster-wide object limit (similar to how some APIs
+cap total objects).
+
 #### Operational Risks
 
 | Risk | Mitigation |
@@ -400,7 +411,15 @@ kubectl delete rpsr/$REQUEST_NAME
 
 #### RBAC
 
-Access is controlled via standard RBAC on the ResourcePoolStatusRequest API:
+Access is controlled via standard RBAC on the ResourcePoolStatusRequest API.
+**No new default ClusterRoles are created** - administrators must explicitly
+grant access to users who need this feature.
+
+- `cluster-admin` has full access automatically (existing wildcard permissions)
+- Other users require explicit RBAC grants via custom ClusterRole/ClusterRoleBinding
+- This feature is **not** added to `system:aggregate-to-admin` or similar roles
+
+Example ClusterRole for granting access:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -519,10 +538,9 @@ status:
 
 #### Spec Fields
 
-The spec is **immutable after creation**, following the CSR pattern. The
-controller only processes each request once, so spec changes would have no
-effect. To query with different filters or get fresh data, delete and create
-a new request.
+The spec is **immutable after creation**, following the CSR pattern. Updates
+to the spec fields will be rejected by API validation. To query with different
+filters or get fresh data, delete and create a new request.
 
 | Field | Description |
 |-------|-------------|
@@ -633,21 +651,38 @@ Test cases:
 
 #### Integration tests
 
+Integration tests verify controller logic using **fake clients and informers**
+without requiring a real cluster or DRA driver. These tests focus on the
+controller's internal behavior.
+
+Test cases:
 1. Controller starts and watches requests
 2. New request triggers processing
 3. Status updated with correct pool data
-4. Processed requests are skipped
-5. Validation errors detected
+4. Processed requests are skipped (one-time processing)
+5. Validation errors detected and reported
 6. RBAC enforced correctly
+7. Limit field respected, truncated flag set correctly
 
 #### e2e tests
 
-1. Create ResourcePoolStatusRequest
-2. Wait for condition Complete
-3. Verify status contains expected pools
+E2E tests will be added to the existing DRA e2e test suite at `test/e2e/dra/`,
+using the **existing test-driver** (`test/e2e/dra/test-driver/`) that is
+already available in CI. This test-driver publishes ResourceSlices and
+supports creating ResourceClaims, which is sufficient for testing
+ResourcePoolStatusRequest functionality.
+
+Test cases:
+1. Create ResourcePoolStatusRequest via kubectl
+2. Wait for condition Complete using `kubectl wait`
+3. Verify status contains expected pools via `kubectl get`
 4. Create ResourceClaim, create new request, verify updated counts
 5. Delete and recreate request, verify fresh data
-6. Test with multiple drivers and pools
+6. Test with multiple pools from the test-driver
+7. Delete request via `kubectl delete`, verify cleanup
+
+Note: Testing with production DRA drivers (e.g., GPU drivers) is outside
+the scope of CI and would be validated separately by driver vendors.
 
 ### Graduation Criteria
 
@@ -661,8 +696,8 @@ Test cases:
 
 #### Beta
 
-- E2E tests passing in CI
-- Tested with multiple DRA drivers
+- E2E tests passing in CI (using test-driver)
+- Validated with at least one production DRA driver (out-of-tree testing)
 - Performance validated at scale (100+ pools)
 - User feedback incorporated
 - Add TTL field for automatic cleanup (`ttlSecondsAfterComplete`)
@@ -708,7 +743,7 @@ Test cases:
 
 No. Users must explicitly create ResourcePoolStatusRequest objects.
 
-###### Can the feature be disabled once it has been enabled?
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Disable the feature gate. Existing requests become inaccessible but
 no workload impact.
@@ -739,59 +774,89 @@ Yes, integration tests verify behavior with feature gate on/off.
 - Controller crash loops
 - Excessive API server load from requests
 
-###### Were upgrade and rollback tested?
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be tested in e2e tests.
+Will be tested manually before Beta promotion and documented here. For Alpha,
+the feature is behind a feature gate and has no persistent state that could
+cause issues during upgrade/downgrade cycles.
 
-###### Is the rollout accompanied by any deprecations and/or removals?
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No.
 
 ### Monitoring Requirements
 
-###### How can an operator determine if the feature is in use?
+###### How can an operator determine if the feature is in use by workloads?
 
-- ResourcePoolStatusRequest objects exist
-- Controller metrics show processing
+- Check if ResourcePoolStatusRequest objects exist: `kubectl get resourcepoolstatusrequests`
+- Check controller metrics: `resourcepoolstatus_requests_processed_total > 0`
 
-###### How can someone using this feature know that it is working?
+###### How can someone using this feature know that it is working for their instance?
 
-- Create request, wait for Complete condition
-- Status contains expected pool data
+- [ ] Events
+  - Event Reason: N/A (no events emitted)
+- [x] API .status
+  - Condition name: `Complete` (status: "True" when processing finished)
+  - Other field: `status.observationTime` is set when calculation is performed
+- [ ] Other (Alarm, К8s resources status)
 
-###### What are the reasonable SLOs for the enhancement?
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-- Request processing: 95% complete within 10 seconds
-- No impact on scheduling SLOs
+- Request processing: 99% of requests complete within 30 seconds
+- No impact on existing scheduling or pod startup SLOs
 
-###### What are the SLIs?
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- `resourcepoolstatus_request_processing_duration_seconds`
-- `resourcepoolstatus_request_processing_errors_total`
-- `resourcepoolstatus_requests_processed_total`
+- [x] Metrics
+  - Metric name: `resourcepoolstatus_request_processing_duration_seconds`
+    - Aggregation method: histogram
+    - Components exposing the metric: kube-controller-manager
+  - Metric name: `resourcepoolstatus_request_processing_errors_total`
+    - Aggregation method: counter
+    - Components exposing the metric: kube-controller-manager
+  - Metric name: `resourcepoolstatus_requests_processed_total`
+    - Aggregation method: counter
+    - Components exposing the metric: kube-controller-manager
+- [ ] Other (describe)
 
-###### Are there any missing metrics?
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No, controller will expose standard metrics.
+No, the controller will expose the standard metrics listed above.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-- kube-controller-manager (for controller)
-- DRA drivers creating ResourceSlices (existing)
+| Dependency | Usage | Impact of Unavailable | Impact of Degraded | Can Operate Without |
+|------------|-------|----------------------|-------------------|---------------------|
+| kube-controller-manager | Runs the ResourcePoolStatusRequest controller | Requests will not be processed (status stays empty) | Slower processing | No (required for status computation) |
+| DRA drivers | Create ResourceSlices that are aggregated | No pools to report (empty results) | Incomplete pool data | Yes (returns empty/partial results) |
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
 Yes:
-- Create/Get/Delete ResourcePoolStatusRequest
-- Controller reads ResourceSlices and ResourceClaims (via existing informers)
+
+| API Call Type | Estimated Throughput | Originating Component |
+|---------------|---------------------|----------------------|
+| CREATE ResourcePoolStatusRequest | User-driven, typically < 1/min per user | kubectl / client applications |
+| GET ResourcePoolStatusRequest | User-driven, typically < 10/min per user | kubectl / client applications |
+| DELETE ResourcePoolStatusRequest | User-driven, typically < 1/min per user | kubectl / client applications |
+| UPDATE ResourcePoolStatusRequest/status | 1 per request created | kube-controller-manager |
+| LIST/WATCH ResourceSlices | Reuses existing informer (no new calls) | kube-controller-manager |
+| LIST/WATCH ResourceClaims | Reuses existing informer (no new calls) | kube-controller-manager |
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes: ResourcePoolStatusRequest
+Yes:
+
+| API Type | Supported Operations | Estimated Max Objects |
+|----------|---------------------|----------------------|
+| ResourcePoolStatusRequest | CREATE, GET, LIST, DELETE, WATCH | Hundreds per cluster (user-managed, ephemeral) |
+
+Note: Objects are intended to be short-lived. Users should delete requests after reading
+the status. TTL-based auto-cleanup will be added in Beta.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -813,6 +878,14 @@ Minimal:
 - API server: Standard API operations
 - Response size: Bounded by `limit` field (default 100, max 1000 pools)
 
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. This feature runs entirely in kube-controller-manager and kube-apiserver:
+- No node-level resources are consumed
+- No new processes or sockets created on nodes
+- No file system operations on nodes
+- Controller uses existing informers (no additional watch connections)
+
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
@@ -821,9 +894,11 @@ Requests cannot be created or read. No workload impact.
 
 ###### What are other known failure modes?
 
-- **Controller not running**: Requests stay without status
-- **Informers not synced**: Controller waits for sync
-- **Request accumulation**: Users should delete old requests
+| Failure Mode | Description | Detection | Mitigations | Diagnostics | Testing |
+|--------------|-------------|-----------|-------------|-------------|---------|
+| Controller not running | ResourcePoolStatusRequest controller in KCM is not running or crashed | Requests stay in pending state (no `status.observationTime`), `resourcepoolstatus_requests_processed_total` metric stays at 0 | Restart KCM, check KCM logs | Check KCM logs for controller startup errors, verify feature gate enabled | Covered by integration tests |
+| Informers not synced | ResourceSlice or ResourceClaim informers have not completed initial sync | Controller logs warning, requests delayed | Wait for informer sync, check API server connectivity | Check KCM logs for informer sync status | Covered by integration tests |
+| Request accumulation | Users create many requests without cleanup | etcd storage grows, `kubectl get rpsr` shows many objects | Delete old requests, implement cleanup automation | List requests with `kubectl get rpsr`, check etcd metrics | Documented, TTL planned for Beta |
 
 ###### What steps should be taken if SLOs are not being met?
 
@@ -836,7 +911,6 @@ Requests cannot be created or read. No workload impact.
 
 - 2025-12-20: KEP created in provisional state
 - 2026-01-15: Design revision - ResourceSlice status to ResourcePool
-- 2026-02-05: Design revision - out-of-tree aggregated API server
 - 2026-02-07: Design revision - in-tree CSR-like pattern per API review
 
 ## Drawbacks
