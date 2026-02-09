@@ -284,8 +284,11 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
     - PSI metrics collection doesn't introduce excessive CPU or memory usage increase in the kubelet
 
 #### GA
-- Gather evidence of real world usage.
-- No major issue reported.
+- Quantify the cAdvisor and kubelet-level overhead of PSI metric collection, especially where PSI is disabled at the kernel level.
+- Validate with SIG Node that collection overhead is acceptable for general use cases, or include opt-out knobs.
+- Expanded stress testing with diverse environments and scenarios, while maintining acceptable minimal resource consumption like outlined in Beta perf testing.
+- Gather evidence of real-world usage from beta users.
+- No major issues reported.
 
 #### Deprecation
 
@@ -375,7 +378,7 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes
+Yes, but starting in v1.36 where this feature graduates to GA, the KubeletPSI feature gate will be locked to true and can no longer be disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 No PSI metrics will be available in kubelet Summary API nor Prometheus metrics if the
