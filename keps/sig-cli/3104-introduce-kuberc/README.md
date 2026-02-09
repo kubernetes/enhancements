@@ -105,6 +105,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [option](#option-1)
     - [prependarg](#prependarg)
     - [appendarg](#appendarg)
+  - [kubectl kuberc set --section credentialplugin](#kubectl-kuberc-set---section-credentialplugin)
+    - [policy](#policy)
+    - [allowlist-entry](#allowlist-entry)
   - [Allowlist Design Details](#allowlist-design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -294,7 +297,7 @@ This might be a good place to talk about core concepts and how they relate.
 1. [How are subcommand aliases indicated?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r896179267)
 1. [How do we handle tying these settings to cluster contexts?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898239057)
 1. [Do we want this file to live elsewhere i.e. XDG_CONFIG?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r896177353)
-1. [How do we exectue subcommands and do we want to support variable substitution i.e. `$1`](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898227148)
+1. [How do we execute subcommands and do we want to support variable substitution i.e. `$1`](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898227148)
 
 ### Risks and Mitigations
 
@@ -461,6 +464,30 @@ This gives us the opportunity to standardize kuberc files.
 
 `--appendarg` is an arbitrary list of strings that accepts anything in string array format.
 
+### kubectl kuberc set --section credentialplugin
+
+`kubectl kuberc set --section credentialplugin` sets values in the top-level `credentialPluginPolicy` and
+`credentialPluginPolicyAllowlist` fields, according to the given options.
+
+#### policy
+
+The required `--policy` flag sets the credential plugin policy. The value must be one of `AllowAll`, `DenyAll`, or
+`AllowList` (case-insensitive). If `--policy=Allowlist` is used, it must be accompanied by the `--allowlist-entry` flag.
+
+#### allowlist-entry
+
+`--allowlist-entry` may be supplied one or multiple times if (and only if) the `--policy` flag is set to `Allowlist`. In order
+to build an allowlist with multiple entries, you must supply the flag multiple times. The argument to `--allowlist-entry` is a
+list of `key=value` pairs separated by a comma. In the below example, we add two entries to the allowlist, one with `command`
+`cloudplatform-credential-helper`, and another with `command` `custom-credential-script`:
+
+```bash
+kubectl kuberc set --section credentialplugin \
+    --policy=Allowlist \
+    --allowlist-entry="command=cloudplatform-credential-helper" \
+    --allowlist-entry="command=custom-credential-script"
+```
+
 ### Allowlist Design Details
 
 `credentialPluginAllowlist` allows the end-user to provide an array of objects
@@ -516,6 +543,11 @@ unaffected.
 In future updates, other allowlist entry fields MAY be added. Specifically,
 fields allowing for verification by digest or public key have been discussed.
 The initial design MUST accommodate such future additions.
+
+*note*: While kuberc is in beta, `name` may be used as an alias for `command`.
+From 1.36 onward, `name` will be considered deprecated in favor of `command`.
+Because these are security knobs, supplying both `name` and `command` will be
+considered an error until `name` is removed entirely at promotion to GA.
 
 ### Test Plan
 
