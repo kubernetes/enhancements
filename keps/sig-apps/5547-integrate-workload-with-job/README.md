@@ -104,7 +104,8 @@ For the alpha release, this feature is optimized for static batch workloads with
   - Jobs with `parallelism > 1` use gang scheduling policy where `minCount` equals the Job's parallelism.
   - Jobs without indexed completion mode or `completions = 1` use basic scheduling policy (pod-by-pod scheduling).
 - Elastic Jobs (changing parallelism at runtime) are not supported when gang scheduling is active.
-- Jobs created by higher-level controllers (i.e., JobSet) are skipped, the parent controller manages Workload/PodGroup lifecycle
+- The Job controller does not create Workload/PodGroup when `Job.spec.template.spec.podGroupRef` is set. Higher-level controllers that want to own the `Workload` and `PodGroup` (i.e., JobSet) set this field when they create the Job.
+- Jobs created by CronJob do not have `podGroupRef` set, the Job controller creates one `Workload` and one `PodGroup` per Job for them.
 
 An example of the Job and the corresponding Workload/PodGroup creation:
 
