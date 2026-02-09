@@ -588,7 +588,7 @@ The true workload controller then creates the following Workload API resources
 based on the true workload's definition:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1alpha1
+apiVersion: scheduling.k8s.io/v1alpha2
 kind: Workload
 metadata:
   name: my-workload
@@ -596,42 +596,40 @@ metadata:
 spec:
   podGroupTemplates:
   - name: group-1
-    policy:
+    schedulingPolicy:
       basic: {}
     resourceClaims:
     - name: pg-claim
       resourceClaimTemplateName: pg-claim-template
   - name: group-2
-    policy:
+    schedulingPolicy:
       basic: {}
     resourceClaims:
     - name: pg-claim
       resourceClaimTemplateName: pg-claim-template
 ---
-apiVersion: scheduling.k8s.io/v1alpha1
+apiVersion: scheduling.k8s.io/v1alpha2
 kind: PodGroup
 metadata:
   name: my-podgroup-1
   namespace: default
 spec:
-  workloadRef:
-    name: my-workload
   podGroupTemplateRef:
-    name: group-1
+    workloadName: my-workload
+    podGroupTemplateName: group-1
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
 ---
-apiVersion: scheduling.k8s.io/v1alpha1
+apiVersion: scheduling.k8s.io/v1alpha2
 kind: PodGroup
 metadata:
   name: my-podgroup-2
   namespace: default
 spec:
-  workloadRef:
-    name: my-workload
   podGroupTemplateRef:
-    name: group-2
+    workloadName: my-workload
+    podGroupTemplateName: group-2
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
