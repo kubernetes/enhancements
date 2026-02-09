@@ -13,8 +13,6 @@
   - [API Warnings](#api-warnings)
   - [Updated Validation](#updated-validation)
     - [Ratcheting validation for pre-existing objects](#ratcheting-validation-for-pre-existing-objects)
-    - [Ratcheting validation for immutable fields](#ratcheting-validation-for-immutable-fields)
-  - [Dealing with pre-existing invalid values](#dealing-with-pre-existing-invalid-values)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -38,6 +36,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Ratcheting validation for immutable fields](#ratcheting-validation-for-immutable-fields)
+  - [Fixing pre-existing invalid values](#fixing-pre-existing-invalid-values)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -101,123 +101,17 @@ finally moving forward on that.
   invalid according to the new rules cause apiserver warnings. (This
   is [already done for IPs and CIDRs in Service].)
 
-- Also add apiserver warnings when people specify IPv6 addresses in
-  non-canonical form. (e.g., `"FC99:0:0::0123"` rather than
-  `"fc99::123"`.) (This is also already done for IPs and CIDRs in
-  Service.)
-
-- Add warnings/logs/events in some form when invalid IP/CIDR values
-  are seen in old objects, so users can fix them themselves. (The plan
-  for this is still vague.)
+- For all new IP/CIDR-valued API fields, require that IPv6 addresses
+  be in canonical form (e.g., `"fc99::123"`, not `"FC99:0:0::0123"`).
+  ("New fields" here effectively means "since v1.27", because all of
+  the IP/CIDR-valued fields added since then already had that
+  validation requirement anyway.) For "legacy" fields, add apiserver
+  warnings for IPv6 addresses in non-canonical form.
 
 - Update the [CEL IP/CIDR validation helpers] to use the same code as
   the new core API validation. (The CEL helpers already have the
   correct semantics; this is just about not having two separate
   implementations.)
-
-(Note: all of the following UNRESOLVED Goals are initially assumed to
-not be Goals.)
-
-```
-<<[UNRESOLVED immutable ]>>
-
-- MAYBE allow immutable fields to be fixed if they are invalid. E.g.,
-  if an existing Service has `clusterIP: 172.030.099.099`, allow
-  changing it to `clusterIP: 172.30.99.99` even though `clusterIP` is
-  normally immutable. (This was listed as a Goal in the original
-  version of the KEP, but has been downgraded to UNRESOLVED and may be
-  removed.) See discussion below,
-  [Ratcheting validation for immutable fields](#ratcheting-validation-for-immutable-fields)
-
-<<[/UNRESOLVED]>>
-
-
-<<[UNRESOLVED legacy-fixup ]>>
-
-- MAYBE eventually fix all remaining invalid IPs/CIDRs in existing
-  objects in etcd. This was briefly discussed in #108074 but with no
-  resolution. See below, [Dealing with pre-existing invalid
-  values](#dealing-with-pre-existing-invalid-values).
-
-<<[/UNRESOLVED]>>
-
-
-<<[UNRESOLVED ipv6-canonical-form ]>>
-
-- MAYBE make a plan to require IPv6 addresses to always be in
-  canonical form, at least in _new_ APIs
-
-    - FTR ServiceCIDR already does this.
-
-    - Forcing all values to be in canonical form means you can
-      compare/sort/uniquify them as strings rather than needing to
-      parse them first.
-
-    - (Only relevant to IPv6 because all of the non-canonical forms
-      for IPv4 addresses are now invalid.)
-
-    - (It doesn't make sense to force new values of _existing_ API
-      fields to be canonical, unless we also do the "legacy-fixup"
-      UNRESOLVED, because the "compare the values as strings" thing
-      doesn't work if you have to worry about some objects having
-      legacy non-canonical values.)
-
-<<[/UNRESOLVED]>>
-
-
-<<[UNRESOLVED LoadBalancerSourceRanges ]>>
-
-- MAYBE additionally tighten LoadBalancerSourceRanges validation to
-  remove the historical accident that values are allowed to be
-  whitespace padded. Because you could argue that the current
-  situation with that field could also potentially lead to security
-  issues if one agent is able to parse the LoadBalancerSourceRanges
-  value but another fails (because it wasn't expecting whitespace) and
-  so decides the value is unset.
-
-<<[/UNRESOLVED]>>
-
-
-<<[UNRESOLVED non-ip-fields ]>>
-
-- MAYBE tighten/make-more-consistent the validation of other
-  networking-related fields at the same time. In particular, there are
-  some fields that are supposed to be validated as being "hostnames"
-  but which accidentally end up being validated as "either hostname or
-  IPv4 address" (because they use `utilvalidation.IsDNS1123Subdomain`,
-  which requires basically "alphanumeric separated by dots", which
-  IPv4 addresses are). This could be fixed with a
-  `utilvalidation.IsHostname` that allows hostnames but rejects IP
-  addresses (but this would also be a potentially-breaking change that
-  would require ratcheting).
-
-<<[/UNRESOLVED]>>
-
-
-<<[UNRESOLVED non-special-ip ]>>
-
-- MAYBE revisit the use of `ValidateNonSpecialIP`: certain kinds of
-  IPs (loopback, multicast, link-local, etc) do not make sense in many
-  contexts, but we only prohibit them in a few places (endpoints and
-  external IPs).
-
-<<[/UNRESOLVED]>>
-
-
-<<[UNRESOLVED cli-validation ]>>
-
-- MAYBE do something about the validation of IP/CIDR values in CLI
-  args / component configs, since these also sometimes get passed to
-  external APIs. There is less room for changing the mandatory
-  validation here without possibly completely breaking people on
-  upgrade, but we could at least (a) try to ensure that *new* IP/CIDR
-  config fields/args get validated correctly, and (b) consistently
-  warn when old IP/CIDR config fields/args have invalid values. (e.g.,
-  we could have `utilvalidation.IsValidLegacyIP` that accepts invalid
-  IPs but logs or returns a warning message.)
-
-<<[/UNRESOLVED]>>
-```
 
 [already done for IPs and CIDRs in Service]: https://github.com/kubernetes/kubernetes/blob/v1.31.1/pkg/api/service/warnings.go
 [CEL IP/CIDR validation helpers]: https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/cel/library/ip.go
@@ -230,7 +124,47 @@ not be Goals.)
 - Providing `netip.Addr`/`netip.Prefix`-based utilities or increasing
   the usage of those types. (There is a separate plan for this.)
 
-- (Any of the UNRESOLVEDs above that we decide not to do.)
+- Adding cluster-level warnings/logs/events when invalid IP/CIDR
+  values are seen in old objects, so admins can ensure that they
+  eventually get fixed. (This was originally listed as a Goal, but was
+  not implemented.)
+
+- Allowing immutable fields to be fixed if they are invalid. (E.g., if
+  an existing Service has `clusterIP: 172.030.099.099`, allow changing
+  it to `clusterIP: 172.30.99.99` even though `clusterIP` is normally
+  immutable. This was originally a Goal, but there was not a
+  consensus that it was a good idea _in general_, and it doesn't seem
+  particularly important for the specific fields that would actually
+  be affected.)
+
+- Fixing invalid IPs/CIDRs in existing objects in etcd. (We could
+  still potentially do this later in another KEP.)
+
+- Requiring IPv6 addresses in "legacy" fields to be in canonical form.
+  While this would be nice (because it lets you reliably
+  compare/hash/sort values as strings rather than needing to parse
+  them first), it only really works if we forcibly fix up all legacy
+  non-canonical values as well, and we decided against that.
+
+- Any other "drive-by" IP/CIDR-related validation improvements, such
+  as:
+
+    - fixing `LoadBalancerSourceRanges` to not allow whitespace around
+      the CIDRs
+
+    - fixing Pod `HostAliases` to correctly validate that the
+      `Hostnames` field *doesn't* contain IP addresses.
+
+    - expanding the use of `ValidateNonSpecialIP` and making various
+      fields stricter about whether they accept loopback, multicast,
+      etc.
+
+- Any changes to IP/CIDR validation of CLI arguments / component
+  configs. We may want to do some follow-up work here, though in
+  general things are a lot better there than with API fields (in that
+  CLI/config values generally just get immediately used by the
+  component that receives them, and are never seen by any other
+  components that might interpret them differently).
 
 ## Proposal
 
@@ -293,8 +227,8 @@ have various problems:
   `192.168.1.0/24` or `192.168.1.5/32`, so again, this could result in
   problems.
 
-  **The updated validation will require all CIDR values to have only 0
-  bits beyond the prefix length.**
+  **The updated validation will have separate validation functions for
+  subnet/mask-like CIDRs and ifaddr-like CIDRs.**
 
 - Though not a problem with _existing_ validation, it is also
   important to note that the new `netip.ParseAddr` function accepts
@@ -343,23 +277,15 @@ As of 1.32, the IP/CIDR-valued fields in `k8s.io/api` are:
   - in `resource`:
     - `resourceclaim.status.devices[].networkData.ips[]`
 
-`ipaddr.metadata.name` and `servicecidr.spec.cidrs[]` already have
-stricter semantics than we propose here (they require canonical form
-for IPv6 values), so while their validation functions will be updated
-to make better use of shared code, their semantics will not actually
-change.
+`ipaddr.metadata.name` and `servicecidr.spec.cidrs[]` already have the
+semantics we propose here, so while their validation functions will be
+updated to make better use of shared code, their semantics will not
+actually change.
 
-`resourceclaim.status.devices[].networkData.ips[]` is part of the
-`DRAResourceClaimDeviceStatus` feature, which is currently alpha, so
-we will also just make it unconditionally require the stricter
-validation. (This field contains "ifaddr"-style CIDR strings, so it
-will either require custom validation or else an additional validation
-helper function used only for that one field.)
-
-`service.spec.loadBalancerSourceRanges[]` has slightly anomalous
-syntax (allowing whitespace around values) for historical reasons. The
-current plan is to require valid CIDR strings to be used, but to not
-be any stricter about whitespace than we are now.
+Similarly, `resourceclaim.status.devices[].networkData.ips[]` is part
+of a feature that was still Alpha when implementation of this KEP
+began, so we were able to just make it unconditionally require the
+stricter validation rather than having to ratchet it forward.
 
 ### Canonicalization of Kubernetes-controlled values
 
@@ -419,25 +345,22 @@ they will be added to other objects in the Alpha phase of this KEP.)
 ### Updated Validation
 
 After several releases with the warnings, we will update the
-validation code to reject new invalid values. (We do not currently
-plan to reject non-canonical IPv6 addresses; that will remain a
-warning only.)
+validation code to reject new invalid values. (For "legacy" fields, we
+will still only warn, rather than reject, on non-canonical IPv6
+addresses.)
 
 All in-tree API types have already been modified to use appropriate
 `utilvalidation` methods for IP/CIDR validation ([kubernetes #122931],
 [kubernetes #123174]), so we just need to update the validation
 functions themselves to allow only unambiguous values.
 
-(UPDATE: the newly-added DRA `NetworkDeviceData` field uses
-`netutils.ParseCIDRSloppy` directly and needs to be fixed.)
-
 [kubernetes #122931]: https://github.com/kubernetes/kubernetes/pull/122931
 [kubernetes #123174]: https://github.com/kubernetes/kubernetes/pull/123174
 
 #### Ratcheting validation for pre-existing objects
 
-We want to allow making changes to objects containing invalid
-IPs/CIDRs, as long as the IPs/CIDRs themselves are not changed.
+We will apply [ratcheting validation] to existing resources containing
+IP and CIDR values.
 
 In the case of the four fields above which are not arrays themselves,
 and not contained within arrays, this is simple: if `pod.spec.hostIP`,
@@ -451,39 +374,16 @@ a service has `clusterIPs: ["001.002.003.004"]`, should it be possible
 to update it to `clusterIPs: ["001.002.003.004", "fd00::1234"]`? Does
 that count as not changing the original invalid IP or not?
 
-The current implementation of this KEP allows such changes in the case
-of array-valued fields that are not themselves within arrays
-(`node.spec.podCIDRs[]`, `pod.spec.dnsConfig.nameservers[]`,
-`service.spec.clusterIPs[]`, `service.spec.externalIPs[]`,
-`service.spec.loadBalancerSourceRanges[]`, and
-`serviceCIDR.spec.cidrs[]`) and fields whose immediate parent is an
-array but is not within any other array (`pod.spec.hostAliases[].ip`,
-`pod.status.hostIPs[].ip`, `pod.status.podIPs[].ip`,
-`service.status.loadBalancer.ingress[].ip`, and
-`ingress.status.loadBalancer.ingress[].ip`). In these cases, any
-invalid IP that appears anywhere in the array in the old object is
-allowed to appear anywhere in the array in the updated object.
-However, newly-added IPs/CIDRs must still validate (even if there are
-also invalid pre-existing IPs/CIDRs in the array).
+The approach we have used for all types except Endpoints and
+EndpointSlice is: when doing an update, collect the IPs/CIDRs from the
+old version of the object, and pass them to the validation function as
+a `validOldIPs`/`validOldCIDRs` argument. The validation function will
+then allow any of those values to appear anywhere in the array,
+without worrying about whether they are new values or were just moved
+around. Any IPs/CIDRs that are not in that array will be required to
+be valid.
 
-For the case of NetworkPolicy, Endpoints, EndpointSlice, and
-NetworkDeviceData, validation is more complicated, because there are
-multiple levels of arrays above the IP/CIDR values
-(`networkpolicy.spec.egress[].to[].ipBlock.cidr`,
-`networkpolicy.spec.egress[].to[].ipBlock.except[]`,
-`networkpolicy.spec.ingress[].from[].ipBlock.cidr`,
-`networkpolicy.spec.ingress[].from[].ipBlock.except[]`,
-`endpoints.subsets[].addresses[].ip`,
-`endpoints.subsets[].notReadyAddresses[].ip`,
-`endpointslice.endpoints[].addresses[]`,
-`resourceclaim.status.devices[].networkData.ips[]`).
-
-In the current implementation, NetworkPolicy obeys an extended version
-of the simple array rule: any invalid CIDR value that appears in any
-field of the old object is allowed to appear in any field of the new
-object.
-
-On the other hand, Endpoints and EndpointSlice are treated
+Endpoints and EndpointSlice are treated
 differently, because (a) they are large enough that doing additional
 address-by-address validation on them could be noticeably slow, (b) in
 most cases, they are generated by controllers that only write out
@@ -492,97 +392,13 @@ to allow moving bad IPs around within a slice without revalidation,
 then we ought to allow moving them between related slices too, which
 we can't really do.
 
-So for Endpoints and EndpointSlice, the rule will be that invalid IPs
+So for Endpoints and EndpointSlice, the rule is that invalid IPs
 are only allowed to remain unfixed if the update leaves the entire
 top-level `.subsets` / `.endpoints` unchanged. So you can edit the
 labels or annotations without fixing invalid endpoint IPs, but you
 can't add a new IP while leaving existing invalid IPs in place.
 
-For ResourceClaim, since the field in question is part of an alpha
-feature, we will just update its validation to unconditionally require
-strict validation of all IP values.
-
-```
-<<[UNRESOLVED array ratcheting ]>>
-
-Is this behavior actually what we want, for all cases?
-
-<<[/UNRESOLVED]>>
-```
-
-#### Ratcheting validation for immutable fields
-
-Four of the fields listed above are immutable:
-
-  - `pod.spec.dnsConfig.nameservers[]`
-  - `pod.spec.hostAliases[].ip`
-  - `service.spec.clusterIP`
-  - `service.spec.clusterIPs[]`
-
-It has been suggested that we should allow fixing invalid values in
-such fields. That is, you would be allowed to modify them if:
-
-  - the old value does not pass current validation rules, _and_
-  - the new value is the canonical representation of the old value.
-
-So given `clusterIP: 172.030.099.099`, you would be allowed to modify
-it to `clusterIP: 172.30.99.99`, but not to any other value. (For
-example, you could not modify it to `clusterIP: 172.30.99.099`,
-because while that is less wrong than the original value, it is still
-wrong, and not the canonical representation of that IP.)
-
-This allows people to fix bad values in existing objects, but adds
-complexity to validation, and potentially could cause problems with
-code that was expecting a more literal definition of "immutable".
-
-Also, in the case of the `Pod` fields, it shouldn't be too difficult
-to simply recreate the pods with correct values, and in the case of
-the `Service` fields, it is unlikely that many objects with invalid
-`clusterIP` values exist, since in most cases they are assigned by the
-controller (which never assigns invalid values), and if a user did
-assign an invalid `clusterIP` value by hand, there is already an
-apiserver warning about it.
-
-So maybe there is no real point in doing this.
-
-```
-<<[UNRESOLVED immutable ratcheting ]>>
-
-Do we want to do this? (It is currently implemented, but could be
-removed. It could also potentially be added later even if we didn't
-add it now.)
-
-(We are leaning toward "No".)
-
-<<[/UNRESOLVED]>>
-```
-
-### Dealing with pre-existing invalid values
-
-We would eventually like to be able to know for sure that there are no
-invalid IP/CIDR values anywhere in any Kubernetes clusters after a
-certain release. If we don't do this, then theoretically all
-Kubernetes users have to continue dealing correctly with legacy
-IP/CIDR values literally forever (but also it's impossible to have e2e
-tests of your legacy IP/CIDR handling behavior because there's no way
-to create the legacy values in a new cluster).
-
-Fixing existing invalid values up ourselves, either by updating them
-in etcd, or by fixing them on read, is tricky and could possibly break
-some users in weird ways.
-
-One way to mitigate the potential damage is to get users to fix up the
-invalid values themselves. This could be done by having warnings,
-logs, or events that are triggered when the apiserver notices objects
-with existing invalid values.
-
-```
-<<[UNRESOLVED warnings about existing invalid values ]>>
-
-Come up with a plan for this.
-
-<<[/UNRESOLVED]>>
-```
+[ratcheting validation]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#ratcheting-validation
 
 ### Risks and Mitigations
 
@@ -724,7 +540,22 @@ longer be possible to test behavior regarding them.)
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+Admins and users should address any warnings they receive about
+objects during the Alpha period, to ensure that they do not run into
+problems trying to modify or recreate those objects after the stricter
+validation is enabled. In particular, admins should not upgrade to
+Beta if they have local tooling/automation that creates objects that
+trigger the warnings about values that "will be considered invalid in
+a future Kubernetes release".
+
+Admins should also ensure that they have no third-party components in
+their cluster that try to create objects with invalid IP/CIDR values.
+(Note that we are not aware of any third-party components that have
+this problem, and weren't aware of any even before the work on this
+KEP began. Indeed, the entire point of the KEP is that many
+third-party components already had stricter validation than the
+apiserver, so upgrading is more likely to increase compatibility with
+third-party components than to decreate it.)
 
 ### Version Skew Strategy
 
@@ -765,7 +596,22 @@ The same thing as happened when it was enabled the first time.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No
+There are unit tests in the `core`, `networking`, and `discovery`
+validation code for both the enabled and disabled states. For
+instance, [`TestValidateServiceCreate`] checks that an invalid
+`.spec.clusterIP` is [allowed with the feature gate disabled] and
+[causes an error with the feature gate enabled].
+
+(The [corresponding validation tests in `resource`] are not feature
+gated, since `ResourceClaim` always requires valid IPs. There are no
+e2e tests for the functionality because it is not possible to create
+bad IPs to test with when the feature gate is enabled, as discussed
+[above](#e2e-tests).)
+
+[`TestValidateServiceCreate`]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/core/validation/validation_test.go#L16422
+[allowed with the feature gate disabled]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/core/validation/validation_test.go#L16580-L16586
+[causes an error with the feature gate enabled]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/core/validation/validation_test.go#L16588-L16593
+[corresponding validation tests in `resource`]: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/apis/resource/validation/validation_resourceclaim_test.go#L1461
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -794,7 +640,10 @@ metrics" question below).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD.
+No.
+
+The feature does not do anything during the actual upgrade/downgrade,
+so it can be tested adequately against "static" clusters.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -812,11 +661,12 @@ It is automatically in use in any cluster where it is enabled.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+It should not noticeably affect the SLOs of the API server (or any
+other component).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A
+Existing API server SLIs.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -827,6 +677,12 @@ out _why_. A more useful approach might be to make sure that the
 warnings get logged, with information about specific objects, which
 would be more useful in helping to track down the offending
 users/controllers.
+
+(Neither of these was done. There is no real reason why people would
+have been creating objects with invalid IPs anyway, and we have not
+seen any evidence that anyone is actually encountering the warnings
+about the impending validation change, so any additional
+metrics/logging seems unnecessary.)
 
 ### Dependencies
 
@@ -878,7 +734,18 @@ N/A; it is part of the API server.
 
 ###### What are other known failure modes?
 
-None
+Anything that requires an object to be recreated could potentially run
+into problems starting in Beta, if it is trying to recreate the object
+from a template containing an invalid IP or CIDR. This could happen
+automatically (as with the DaemonSet example in the "How can a rollout
+or rollback fail?" section above), or as a result of some external
+controller or user action (for example, trying to recreate a Service
+object with a bad IP after the original is deleted).
+
+In general, there is little reason why users would have intentionally
+been creating objects with these invalid values before, so this is not
+likely to be common, and hopefully where it does happen, users will
+see warnings during Alpha and have a chance to fix things.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -888,6 +755,7 @@ N/A.
 
 - 2024-01-01: Proposed as a PR ([kubernetes #122550])
 - 2024-10-02: Proposed as a KEP
+- 2025-04-25: Alpha in Kubernetes v1.33
 
 ## Drawbacks
 
@@ -897,4 +765,66 @@ necessary to fix the security problems.
 
 ## Alternatives
 
-(TBD after the UNRESOLVEDs are resolved.)
+A few ideas from the original KEP proposal were not implemented.
+
+### Ratcheting validation for immutable fields
+
+Four of the fields listed above are immutable:
+
+  - `pod.spec.dnsConfig.nameservers[]`
+  - `pod.spec.hostAliases[].ip`
+  - `service.spec.clusterIP`
+  - `service.spec.clusterIPs[]`
+
+It has been suggested that we should allow fixing invalid values in
+such fields. That is, you would be allowed to modify them if:
+
+  - the old value does not pass current validation rules, _and_
+  - the new value is the canonical representation of the old value.
+
+So given `clusterIP: 172.030.099.099`, you would be allowed to modify
+it to `clusterIP: 172.30.99.99`, but not to any other value. (For
+example, you could not modify it to `clusterIP: 172.30.99.099`,
+because while that is less wrong than the original value, it is still
+wrong, and not the canonical representation of that IP.)
+
+This allows people to fix bad values in existing objects, but adds
+complexity to validation, and potentially could cause problems with
+code that was expecting a more literal definition of "immutable".
+
+We decided against implementing this, because people weren't sure that
+it was a good idea in general, and for these specific fields:
+
+  - Even if we allowed changing `pod.spec.dnsConfig.nameservers[]` or
+    `pod.spec.hostAliases[].ip` after a Pod was created, the change
+    would not actually be reflected into the Pod's environment.
+
+  - Pods are intended to be ephemeral anyway, so it shouldn't be too
+    problematic to simply delete the bad Pods and recreate them with
+    fixed IP values.
+
+  - For Service `clusterIPs`, in most cases the values are assigned
+    (correctly) by the Service controller anyway, so Services with
+    invalid `clusterIPs` should be rare (and there has been a warning
+    about them at creation time for quite a while anyway).
+
+### Fixing pre-existing invalid values
+
+We would eventually like to be able to know for sure that there are no
+invalid IP/CIDR values anywhere in any Kubernetes clusters after a
+certain release. If we don't do this, then theoretically all
+Kubernetes users have to continue dealing correctly with legacy
+IP/CIDR values literally forever (but also it's impossible to have e2e
+tests of your legacy IP/CIDR handling behavior because there's no way
+to create the legacy values in a new cluster).
+
+Fixing existing invalid values up ourselves, either by updating them
+in etcd, or by fixing them on read, is tricky and could possibly break
+some users in weird ways.
+
+One way to mitigate the potential damage is to get users to fix up the
+invalid values themselves. This could be done by having warnings,
+logs, or events that are triggered when the apiserver notices objects
+with existing invalid values.
+
+We did not take any action here.
