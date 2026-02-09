@@ -107,7 +107,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [appendarg](#appendarg)
   - [kubectl kuberc set --section credentialplugin](#kubectl-kuberc-set---section-credentialplugin)
     - [policy](#policy)
-    - [allowlistentry](#allowlistentry)
+    - [allowlist-entry](#allowlist-entry)
   - [Allowlist Design Details](#allowlist-design-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -472,20 +472,20 @@ This gives us the opportunity to standardize kuberc files.
 #### policy
 
 The required `--policy` flag sets the credential plugin policy. The value must be one of `AllowAll`, `DenyAll`, or
-`AllowList` (case-insensitive). If `--policy=Allowlist` is used, it must be accompanied by the `--allowlistentry` flag.
+`AllowList` (case-insensitive). If `--policy=Allowlist` is used, it must be accompanied by the `--allowlist-entry` flag.
 
-#### allowlistentry
+#### allowlist-entry
 
-`--allowlistentry` may be supplied one or multiple times if (and only if) the `--policy` flag is set to `Allowlist`. In order
-to build an allowlist with multiple entries, you must supply the flag multiple times. The argument to `--allowlistentry` is a
+`--allowlist-entry` may be supplied one or multiple times if (and only if) the `--policy` flag is set to `Allowlist`. In order
+to build an allowlist with multiple entries, you must supply the flag multiple times. The argument to `--allowlist-entry` is a
 list of `key=value` pairs separated by a comma. In the below example, we add two entries to the allowlist, one with `command`
 `cloudplatform-credential-helper`, and another with `command` `custom-credential-script`:
 
 ```bash
 kubectl kuberc set --section credentialplugin \
     --policy=Allowlist \
-    --allowlistentry="command=cloudplatform-credential-helper" \
-    --allowlistentry="command=custom-credential-script"
+    --allowlist-entry="command=cloudplatform-credential-helper" \
+    --allowlist-entry="command=custom-credential-script"
 ```
 
 ### Allowlist Design Details
