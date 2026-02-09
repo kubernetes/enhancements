@@ -109,15 +109,11 @@ their spec to the `PodGroup` they belong to. The `Workload` and `PodGroup` objec
 future KEPs to support additional kube-scheduler improvements, such as topology-aware scheduling.
 
 In 1.36, we redesigned the API in order to clearly decouple Workload API from the runtime PodGroup API. The design 
-for this can be found in the [^4] and the change itself is part of the separate KEP-5832.
+for this can be found in the [^4] and the change itself is part of the separate `[KEP-5832](https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md).`
 
 In the updated design, `Workload` represents a static template defining the scheduling hierarchy and policies. A 
 separate runtime object, `PodGroup`, represents the actual runtime instance of grouped pods. `Pods` reference their 
 execution context (PodGroup) via the `workloadRef` field.
-
-To ensure long-term API quality, the Workload API remains in Alpha for the 1.36 cycle. This allows for the 
-finalization of the decoupled model and ensures that the graduated Beta API will be clean and free of transitional 
-technical debt.
 
 ## Motivation
 
@@ -165,6 +161,10 @@ The 1.36 revision, as detailed in the KEP-5832 and [^4], addresses feedback rega
 "monolithic" Workload. By decoupling policy (Workload) from runtime grouping (PodGroup), we improve clarity,
 scalability and lifecycle management. This approach also provides a more readable and intuitive structure for
 complex workloads like JobSet and LeaderWorkerSet.
+
+To ensure long-term API quality, the Workload API remains in Alpha for the 1.36 cycle. This allows for the
+finalization of the decoupled model and ensures that the graduated Beta API will be clean and free of transitional
+technical debt.
 
 The `spec.workloadRef` field in the Pod API identifies the scheduling context. In the 1.36 implementation, a Pod is 
 associated with a workload and a specific runtime instance. A sample pod with these new fields looks like this:
@@ -357,8 +357,8 @@ metadata:
   name: jobset
 spec:
   podGroupTemplates:
-      - name: "job-1"
-        schedulingPolicy:
+    - name: "job-1"
+      schedulingPolicy:
         gang:
           minCount: 100
 ```
@@ -371,10 +371,9 @@ kind: PodGroup
 metadata:
   name: job-instance-worker-0
 spec:
-  workloadRef:
-    name: job-policy
-  templateRef:
-    name: worker-template
+  podGroupTemplateRef:
+    workloadName: job-policy
+    podGroupTemplateName: worker-template
   # schedulingPolicy is copied from template on PodGroup creation.
   schedulingPolicy:
     gang:
@@ -449,7 +448,7 @@ type WorkloadSpec struct {
     // +optional
     ControllerRef *TypedLocalObjectReference
     
-    // PodGroups is the list of templates that make up the Workload.
+    // PodGroupTemplates is the list of templates that make up the Workload.
     // The maximum number of podGroupTemplates is 8. This field is immutable.
     //
     // +optional
@@ -510,7 +509,6 @@ type PodGroupSchedulingPolicy struct {
     Gang *GangSchedulingPolicy
 }
 
-
 // BasicSchedulingPolicy indicates that standard Kubernetes
 // scheduling behavior should be used.
 type BasicSchedulingPolicy struct {
@@ -531,8 +529,11 @@ type GangSchedulingPolicy struct {
 }
 ```
 
-
-The `PodGroup` resource will be introduced with the following structure:
+The PodGroup resource will be introduced as a separate API object defined in [KEP-5832](https://github.
+com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md).
+The structure below represents a current snapshot of the API, but [KEP-5832](https://github.
+com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md) should be treated 
+as the source of truth.
 
 ```go
 // API Group: scheduling.k8s.io/v1alpha2
@@ -560,15 +561,10 @@ type PodGroup struct {
 
 // PodGroupSpec defines the desired state of a PodGroup.
 type PodGroupSpec struct {
-    // WorkloadRef references the Workload that defines the policy.
-    // This allows the scheduler to locate the scheduling policy.
-    // +required
-    WorkloadRef *corev1.ObjectReference
-    
-    // PodGroupTemplateName references the PodGroupTemplate name that defines 
-    // the template for this PodGroup.
-    // +required
-    PodGroupTemplateName string
+    // PodGroupTemplateRef references the PodGroupTemplate within the Workload object that was used to create
+	// the PodGroup.
+    // +optional
+    PodGroupTemplateRef *PodGroupTemplateReference
     
     // SchedulingPolicy defines the scheduling policy for this instance of the PodGroup.
     // It is copied from the template on PodGroup creation.
@@ -581,11 +577,21 @@ type PodGroupStatus struct {
     // +optional
     Conditions []metav1.Condition
 }
+
+// PodGroupTemplateReferenve references the PodGroupTemplate within the Workload object.
+type PodGroupTemplateReference struct {
+    // WorkloadName defines the name of the Workload object.
+	// +optional
+	WorkloadName string
+		
+    // PodGroupTemplateName defines the PodGroupTemplate name within the Workload object.
+    PodGroupTemplateName string
+}
 ```
 
 
-Individual `PodGroup` objects are treated as independent gangs. If a `Workload` defines multiple templates or if 
-multiple `PodGroup` objects are created referencing the same template, each `PodGroup` instance is scheduled 
+Individual `PodGroup` objects are treated as independent scheduling units. If a `Workload` defines multiple templates 
+or if  multiple `PodGroup` objects are created referencing the same template, each `PodGroup` instance is scheduled 
 independently. A LeaderWorkerSet is a good example of this, where a controller creates a standalone `PodGroup` 
 instance for each replica (consisting of a leader and its workers) to form an atomic scheduling and runtime unit.
 If the underlying user intention is to have multiple groups run together, they should use the future hierarchical 
