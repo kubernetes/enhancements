@@ -750,6 +750,13 @@ PodGroup's claim. When a Pod's claim is requested through
 `podGroupResourceClaim`, the ResourceClaim's `status.reservedFor` list will
 reference the PodGroup instead of each individual Pod.
 
+The name of a ResourceClaim referenced by a PodGroup via `resourceClaimName`
+will be recorded in the `status.resourceClaimStatuses` of each Pod that
+requests that PodGroup's claim. Along with names of ResourceClaims generated
+from templates (for the Pod or its PodGroup), this keeps all information about
+exactly which ResourceClaims are requested by the Pod in the Pod itself so the
+kubelet does not need to look up a Pod's PodGroup.
+
 #### Deallocate
 
 The ResourceClaim controller will continue to deallocate claims when there are
@@ -1368,8 +1375,6 @@ Focusing mostly on:
 -->
 
 - kube-controller-manager will list and watch PodGroup resources.
-- kubelet will `GET` the PodGroup for a Pod when the Pod references a PodGroup
-  claim made through the PodGroup's `resourceClaimName`.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
