@@ -587,6 +587,8 @@ status updates should look as follows:
 - Update `.status.interceptors[].expectedInterceptorFinishTime` if a reasonable estimation can be
   made of how long the eviction process will take for the current interceptor. This can be modified
   later to change the estimate.
+- Add `Started` condition to `.status.interceptors[].conditions` when it first starts processing the
+  eviction process.
 - Reconcile  `Complete` condition in `.status.interceptors[].conditions` to indicate whether the
   eviction process has completed or not.
 - Add additional conditions to `.status.interceptors[].conditions` to inform about the progress of
@@ -630,7 +632,7 @@ or 30 minutes has elapsed since `.status.interceptors[].heartbeatTime`, then
 the eviction request controller sets `.status.activeInterceptors[0]` to the next interceptor at the
 higher list index from `.spec.interceptors`. During the switch to the new interceptor, the eviction
 request controller will also append `.status.processedInterceptors` with the last value of
-`.status.activeInterceptors `.
+`.status.activeInterceptors`.
 
 #### Eviction
 
@@ -660,7 +662,7 @@ Example FailedEvictions condition:
 ```yaml
 - type: FailedEvictions
   status: "True"
-  reason: EvictionRequestFailed # Blocking PDB 
+  reason: EvictionRequestFailed # or BlockingPDB 
   message "Could not evict a pod, number of retries: 7"
 ```
 
@@ -676,9 +678,9 @@ type PodSpec struct {
 	// in which they appear in the list.
     //
 	// Interceptors should periodically report on an eviction progress by updating the
-	// .status.heartbeatTime field of the EvictionRequest object. If this field is not updated
-	// within 30 minutes, the eviction request is passed over to the next interceptor at a higher
-	// index. If there is no other interceptor, the last default imperative-eviction.k8s.io
+	// .status.interceptors[].heartbeatTime field of the EvictionRequest object. If this field is
+	// not updated within 30 minutes, the eviction request is passed over to the next interceptor at
+	// a higher index. If there is no other interceptor, the last default imperative-eviction.k8s.io
 	// interceptor will evict the pod using the imperative Eviction API (/evict endpoint).
 	//
 	// The maximum length of the interceptors list is 100.
@@ -700,8 +702,8 @@ type EvictionRequest struct {
 	// Object's metadata.
 	// .metadata.name should match the .metadata.uid of the pod being evicted.
 	// .metadata.generateName is not supported.
-	// The labels of the eviction request object will be merged with pod's .metadata.labels. The
-	// labels of the pod have a preference.
+	// The labels of the eviction request object will be merged with eviction request target's
+	// .metadata.labels. The labels of the target have a preference.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
@@ -713,7 +715,7 @@ type EvictionRequest struct {
 	Spec EvictionRequestSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
 	// Status represents the most recently observed status of the eviction request.
-	// Populated by the current interceptor and eviction request controller.
+	// Populated by interceptors and eviction request controller.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status EvictionRequestStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
@@ -721,8 +723,8 @@ type EvictionRequest struct {
 
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
-	// Type of the eviction request defines how much time of how much time and control each
-	// interceptor has to gracefully evict the target. 
+	// Type of the eviction request defines how much time and control each interceptor has,
+	// to gracefully evict the target. 
 	//
 	// Valid types are Soft.
 	// 
@@ -766,17 +768,17 @@ type EvictionRequestSpec struct {
 	// sequentially, in the order in which they appear in the list.
 	//
 	// Interceptor should periodically report on an eviction progress by updating the
-	// .status.heartbeatTime field. If this field is not updated within 30 minutes, the eviction
-	// request is passed over to the next interceptor at a higher index. If there is no other
-	// interceptor and the target is a pod, the last default imperative-eviction.k8s.io interceptor
-	// will evict the pod using the imperative Eviction API (/evict endpoint).
+	// .status.interceptors[].heartbeatTime field. If this field is not updated within 30 minutes,
+	// the eviction request is passed over to the next interceptor at a higher index. If there is no
+	// other interceptor and the target is a pod, the last default imperative-eviction.k8s.io
+	// interceptor will evict the pod using the imperative Eviction API (/evict endpoint).
 	//
 	// This field must not be set upon creation. Instead, it is resolved when the EvictionRequest
-	// object is created upon admission. The field is populated from Pod's
+	// object is created upon admission. If the target is a pod, the field is populated from Pod's
 	// .spec.evictionInterceptors. 
 	//
 	// A default interceptor called imperative-eviction.k8s.io is appended to the end of the list if
-	// target is a pod. It will call the /evict API endpoint. This call may not succeed due to
+	// the target is a pod. It will call the /evict API endpoint. This call may not succeed due to
 	// PodDisruptionBudgets, which may block the pod termination. It will set the FailedEvictions
 	// interceptor condition and try again with a backoff.
 	//
@@ -812,6 +814,7 @@ type EvictionTarget struct {
 	// Pods that are part of the workload (.spec.workloadRef is set) are not supported.
     // This field is immutable.
     // +optional
+	// +oneOf=TargetSelection
 	// +k8s:unionMember
     PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,2,opt,name=podRef"`
 }
@@ -883,7 +886,8 @@ type EvictionRequestStatus struct {
 
     // ProcessedInterceptors store a list of interceptors that have previously been selected
     // and added to ActiveInterceptors. These interceptors may have reached completion, been
-    // canceled, failed to start or failed to update `.heartbeatTime` in a timely manner.
+    // canceled, failed to start or failed to update .interceptors[].heartbeatTime` in a timely
+	// manner.
     // Please refer to the InterceptorStatus for each interceptor for more details.
     // This field is managed by Kubernetes.
     // +optional
@@ -934,13 +938,15 @@ type InterceptorStatus struct {
     // HeartbeatTime is the last time at which the eviction process was reported to be in progress
     // by the interceptor.
     // Cannot be set to the future time (after taking time skew of up to 10 seconds into account).
-	// There must be at least 60 second increments during subsequent updates.
+	// The time can only be incremented. There must be at least 60 second increments during
+	// subsequent updates.
 	// The first initialization of this field must also set Started condition.
     // +optional
     HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,2,opt,name=heartbeatTime"`
 
     // ExpectedFinishTime is the time at which the eviction process step is expected to end for the
 	// interceptor.
+	// The time cannot be set to the past.
     // May be empty if no estimate can be made.
     // +optional
     ExpectedFinishTime *metav1.Time `json:"expectedFinishTime,omitempty" protobuf:"bytes,3,opt,name=expectedFinishTime"`
@@ -1493,7 +1499,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   about upcoming pods. This would likely require a new API where I can express my intent to be
   added as an interceptor for pods satisfying certain rules (e.g. by selector, CEL expression or
   other criteria). Then an additional admission logic would propagate that.
-- Consider adding garbage collection for EvictionRequests.
+- Consider adding garbage collection for EvictionRequests to avoid the permanent leakage of
+  EvictionRequest objects, eventually leading to hitting storage limits.
 
 #### Beta
 
@@ -1505,9 +1512,13 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Asses the state of the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212),
   and [Specialized Lifecycle Management ](https://github.com/kubernetes/enhancements/issues/5683),
   and other components interested in using the EvictionRequest API.
-- The KEP should be up-to-date regarding the [Workload API Support](#workload-api-support) and
-  [Preemption Support](#preemption-support). We should also ensure that these APIs are and will
-  remain compatible with the EvictionRequest API.
+- Asses the state and maturity of [Workload API Support](#workload-api-support) and
+  [Preemption Support](#preemption-support). Ensure that these APIs remain compatible with the
+  EvictionRequest API. Either prepare a detailed integration plan for evicting the Workload Resource
+  (a group of pods), which can be added later after GA in backwards compatible way. Alternatively
+  consider adding this support in Beta (either this KEP or an additional KEP) if the Workload API
+  and Preemption Support features are sufficiently stable and consensus is reached on how to
+  approach this (mainly with SIG Scheduling).
 - Re-evaluate whether adding additional metrics and events would be helpful. And update the KEP
   with existing ones.
 - Consider adding information to a pod to indicate that it is being evicted by EvictionRequest. For
@@ -1517,11 +1528,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - Feature gate enabled by default.
 - Every bug report is fixed.
+- All issues and gaps identified as feedback during beta are resolved.
 - E2E tests should be graduated to conformance.
-- Re-evaluate whether adding additional metrics would be helpful.
-- Add support for the eviction of the Workload Resource (a group of pods). More in [Workload API Support](#workload-api-support).
-- Consider [Preemption Support](#preemption-support).
-- At least one Kubernetes workload (e.g., Deployment) should support eviction request to fully test
+- At least one workload (e.g., Deployment) should support eviction request to fully test
   the new API and flow.
 - Adoption: look at all the consumers of the API, especially the requesters and interceptors. Look
   at how the API is being used and see if there are any pain points that we could address.
