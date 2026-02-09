@@ -359,10 +359,11 @@ Existing histogram metric tests should be extended to verify dual exposition beh
   - Clear Prometheus 2.x limitations
 - Performance benchmarks completed showing no regression
 - Migrate select performance tests to use native histograms for early feedback
+- Refactor histograms created in `init()` functions to use lazy initialization (e.g., `sync.Once` with getter functions) so native histogram options are properly applied after feature gates are parsed
 
 #### GA
 
-- TBD based on feedback
+- Consider whether to make Native Histogram options configurable
 
 ### Upgrade / Downgrade Strategy
 
@@ -371,6 +372,17 @@ Existing histogram metric tests should be extended to verify dual exposition beh
 2. When feature gate is enabled:
    - Classic histogram format continues to be exposed
    - Native format is additionally exposed
+
+**Downgrade:**
+When downgrading from a Kubernetes version with native histogram support to an older version:
+
+1. Metrics automatically revert to classic histogram format only (`_bucket`, `_count`, `_sum`)
+2. Prometheus behavior:
+   - If `always_scrape_classic_histograms: true`: Prometheus continues to scrape classic histograms
+   - If `always_scrape_classic_histograms: false`: Prometheus will NOT scrape histograms (data loss until config is updated)
+3. Dashboard/Alert impact:
+   - Classic histogram queries: work only if `always_scrape_classic_histograms: true`, otherwise break
+   - Native histogram queries stop receiving new data and will break
 
 **Enabling Native Histograms (Opt-in):**
 

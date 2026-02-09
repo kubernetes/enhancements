@@ -8,9 +8,9 @@ participating-sigs:
 status: provisional
 creation-date: 2026-01-16
 reviewers:
-  - TBD
+  - "@dgrisonnet"
 approvers:
-  - TBD
+  - "@dashpole"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
