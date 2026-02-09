@@ -296,7 +296,7 @@ The Pod "compatible-workload" is invalid: spec.tolerations[0].expression: Invali
 
 #### TaintToleration Plugin
 
-The TaintToleration plugin will initialize the CEL cache and evaluates toleration expressions during the Filter and Score phase. When a toleration has an `expression` field, it is evaluated against each taint using the cached compiled expression.
+The TaintToleration plugin will initialize the CEL cache in PreFilter and evaluate toleration expressions during the Filter and Score phase. When a toleration has an `expression` field, it is evaluated against each taint using the cached compiled expression.
 
 The plugin calls a helper function that does the actual toleration matching against node taints `helper.TolerationsTolerateTaint`, this where the cache will be passed and used to get or compile the CEL expression and evaluated against node taints.
 
@@ -306,16 +306,31 @@ As the [API Validation](#api-validation) describes, each toleration will be vali
 
 #### Other Affected Plugins and Components
 
-The following plugins and integration point will also need to initialize a CEL toleration cache since they perform toleration matching:
+The following plugins and integration points will also need to initialize a CEL toleration cache since they perform toleration matching:
 
 - **NodeUnschedulable Plugin**
+
+The plugin calls the helper function `TolerationsTolerateTaint` in two occurrences, during the filter extension point to make sure that the pod tolerates the unschedulable taint, the second call happens when the pod tolerations are updated in the QueueingHint handler, both occurrences would require the cel cache to be passed to the helper function to evaluate cel tolerations against the unschedulable taint.
+
 - **PodTopologySpread Plugin**
+
+The plugin calls the helper function `FindMatchingUntoleratedTaint` when `NodeInclusionPolicyInPodTopologySpread` feature is enabled and the inclusion policy is set to honor node taints, the cel cache needs to be passed to the helper function as well to evaluate the cel expression if found for tolerations.
+
 - **Scheduler EventHandler**
-- **DaemonSet Controller** 
+
+The scheduler event handler will call the toleration matching helper function `FindMatchingUntoleratedTaint` on node updates, the scheduler event handler should also initialize the cel cache and pass the cache to the helper function to evaluate tolerations with cel expressions.
+
+- **DaemonSet Controller**
+
+The daemonset controller calls `FindMatchingUntoleratedTaint` in function `NodeShouldRunDaemonPod` to make sure that the pod can run on a node, the controller should also initialize and pass a cel cache to the helper function to evaluate tolerations with cel expressions.
+
 - **TaintEviction Controller**
+
+The taint eviction controller also calls helper function `GetMatchingTolerations` to make sure that the pod tolerates all node taints, the controller should also initialize and pass the cel cache to the helper function to evaluate tolerations with cel expressions.
+
 - **Kubelet Lifecycle Predicate**
 
-There is no extra logic that will be added for the previous plugins or components, since they all call the same logic for toleration matching, they just need to pass the initialized CEL cache to the call.
+Kubelet will call `FindMatchingUntoleratedTaint` during lifecycle predicate checks, it will also need to initialize a cel cache and pass it to the helper function to evaluate tolerations with cel expressions.
 
 #### Semantics For CEL Toleration Matching
 
