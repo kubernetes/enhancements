@@ -95,15 +95,15 @@ Prometheus Native Histograms, introduced in Prometheus 2.40, address these limit
 
 ### Non-Goals
 
-1. Removing classic histogram exposition format
+1. Remove classic histogram exposition format
 2. Remove existing histogram metrics
 
 ## Proposal
 
 Add native histogram support to the `component-base/metrics` package with:
 
-1. **Feature Gate**: A new `NativeHistograms` feature gate controlling whether K8s exposes native histogram format
-2. **Extended HistogramOpts**: New fields in `HistogramOpts` for native histogram configuration
+1. **Feature Gate**: A new `NativeHistograms` feature gate controlling whether K8s components expose metrics with native histogram format
+2. **Global Defaults**: Use sensible global defaults for native histogram configuration (alpha phase)
 3. **Dual Exposition**: When enabled, expose both classic and native histogram formats
 
 The control model is intentionally simple:
@@ -128,7 +128,7 @@ As an SRE responsible for cluster reliability, I need to detect performance regr
 
 
 ### Risks and Mitigations
-**Note:** Using native histograms is opt-in from users perspective: Prometheus only collects them if `scrape_native_histograms: true` is set in the scrape config. Enabling the Kubernetes feature gate by default will only affect users who have already opted in. Those using classic histograms will see no change until they update their Prometheus configuration.
+**Note:** Using native histograms is opt-in from users perspective: Prometheus only collects them if `scrape_native_histograms: true` is set in the scrape config. Enabling the Kubernetes feature gate by default will only affect users who have already opted in (i.e., configured `scrape_native_histograms: true`). Those using classic histograms will see no change until they update their Prometheus configuration.
 
 1. **Silent Dashboard/Alert Failures on Upgrade**: When upgrading to a Kubernetes version where `NativeHistograms` feature gate becomes default ON, users with `scrape_native_histograms: true` in Prometheus who forget to also set `always_scrape_classic_histograms: true` can experience silent failures:
    - Classic `_bucket`, `_count`, `_sum` metrics will no longer be ingested
@@ -198,9 +198,7 @@ This ensures:
 
 ### Implementation Phases
 
-For the alpha phase, we will use sensible global defaults for all native histograms without exposing configuration options to developers. This keeps the initial implementation simple while we gather feedback. The `HistogramOpts` struct in `component-base/metrics` will remain unchanged - no new fields will be added.
-
-Configuration options may be added in future phases if a need arises based on user feedback and real-world usage patterns.
+For the alpha phase, we will use sensible global defaults for all native histograms without exposing configuration options to developers. This keeps the initial implementation simple while we gather feedback. The `HistogramOpts` struct in `component-base/metrics` will remain unchanged - no new fields will be added (configuration options may be added in future phases if a need arises based on user feedback and real-world usage patterns).
 
 We will update the conversion function to pass native histogram options to the underlying Prometheus library when the feature gate is enabled:
 
@@ -259,7 +257,7 @@ scrape_configs:
 ```
 - Per-job control available
 - Can enable native histograms for K8s while keeping other jobs on classic only
-- Feature flag still works as global default
+- Prometheus feature flag (`--enable-feature=native-histograms`) still works as global default
 
 **Prometheus 3.8:**
 ```yaml
@@ -269,10 +267,11 @@ scrape_configs:
     scrape_native_histograms: true
     always_scrape_classic_histograms: true
 
-# Feature flag now ONLY sets scrape_native_histograms default to true
-# prometheus --enable-feature=native-histograms  # Sets default, not recommended
+# Feature flag now ONLY changes the global default value of scrape_native_histograms to true FOR ALL JOBS
+# Individual jobs can still override with explicit scrape_native_histograms: false
+# prometheus --enable-feature=native-histograms  # Changes default for all jobs, explicit per-job config preferred
 ```
-- Feature flag's only remaining effect: sets `scrape_native_histograms: true` as default
+- Prometheus feature flag (`--enable-feature=native-histograms`) only remaining effect: sets `scrape_native_histograms: true` as default for all jobs
 - Per-job settings override the default
 - Transition period: migrate from flag to explicit per-job config
 
@@ -284,7 +283,7 @@ scrape_configs:
     scrape_native_histograms: true
     always_scrape_classic_histograms: true
 ```
-- Feature flag fully deprecated and removed
+- Prometheus feature flag (`--enable-feature=native-histograms`) fully deprecated and removed
 - Must use per-job `scrape_native_histograms` and `always_scrape_classic_histograms`
 - Default for both settings is `false`
 
@@ -293,12 +292,14 @@ scrape_configs:
 Prometheus 2.x users with `--enable-feature=native-histograms` enabled are in a **difficult position**:
 
 **Scenario:**
-- User has `prometheus --enable-feature=native-histograms` (maybe enabled for other workloads that benefit from native histograms)
-- K8s upgrades start exposing native histograms
+- User has `prometheus --enable-feature=native-histograms` enabled for other workloads that benefit from native histograms
+- K8s starts exposing native histograms when the feature gate is enabled
 
 **Problem:**
-- Global flag means ALL jobs ingest native format
-- No way to keep native for app X but classic for K8s
+- Prometheus 2.x global flag means ALL scrape jobs (including K8s) now ingest native format only
+- Other workloads that were prepared for this change continue working
+- But K8s dashboards that weren't updated for native histograms suddenly break
+- No way to selectively keep classic format just for K8s while maintaining native for other apps
 
 **Mitigation options:**
 
@@ -311,7 +312,8 @@ Prometheus 2.x users with `--enable-feature=native-histograms` enabled are in a 
 
 3. **Upgrade to Prometheus 3.x**
    - Major version upgrade, may not be quick/easy
-   - Then can use per-job `scrape_native_histograms: false`
+   - Then can use per-job `scrape_native_histograms: false` to keep K8s on classic only
+   - OR use `always_scrape_classic_histograms: true` to get both native and classic formats
 
 ### Test Plan
 
@@ -357,8 +359,7 @@ Existing histogram metric tests should be extended to verify dual exposition beh
   - Troubleshooting procedures
   - Prometheus configuration examples
   - Clear Prometheus 2.x limitations
-- Performance benchmarks completed showing no regression
-- Migrate select performance tests to use native histograms for early feedback
+- Performance benchmarks completed showing no regression (Migrate select performance tests to use native histograms for early feedback)
 - Refactor histograms created in `init()` functions to use lazy initialization (e.g., `sync.Once` with getter functions) so native histogram options are properly applied after feature gates are parsed
 
 #### GA
