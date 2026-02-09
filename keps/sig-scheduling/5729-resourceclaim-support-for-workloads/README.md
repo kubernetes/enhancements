@@ -360,10 +360,8 @@ devices are tainted. This will require some additional memory.
 #### The number of Pods that can share a ResourceClaim will not be unlimited
 
 Removing this limit does not mean that the number of Pods that can share a
-ResourceClaim will be unlimited. As part of the [scale testing effort for
-DRA](https://github.com/kubernetes/kubernetes/issues/131198), we will test the
-scalability of the number of Pods sharing a ResourceClaim so we can provide
-guidance as to what is a safe number.
+ResourceClaim will be unlimited. New scale tests will determine how many Pods
+can practically share a single ResourceClaim.
 
 ## Design Details
 
@@ -396,7 +394,7 @@ consumers of the claim and it can be deallocated.
 `status.reservedFor` is read by the DRA scheduler plugin, the kubelet, and the
 device_taint_eviction controller to find Pods that are using a ResourceClaim:
 
-1. The kubelet uses this to make sure it only runs Pods that where the claims
+1. The kubelet uses this to make sure it only runs Pods where the claims
    have been allocated to the pod. It can verify this by checking that the Pod
    is listed in the `status.reservedFor` list.
 
@@ -794,10 +792,11 @@ expected to run.
 Currently, any Pod allowed to utilize a ResourceClaim is listed explicitly in
 the claim's `status.reservedFor`. When the list instead references a PodGroup,
 only the name in the reference must match a Pod's
-`spec.workloadRef.podGroupName`. Since a Pod cannot outlive its PodGroup, a
-reference to the name of a PodGroup in a Pod will always refer to the exact same
-PodGroup, i.e. the PodGroup cannot be deleted and recreated with the same name
-without all of its Pods also being deleted in the meantime.
+`spec.workloadRef.podGroupName`. Since a finalizer will protect a PodGroup from
+being deleted before any of its Pods, a reference to the name of a PodGroup in a
+Pod will always refer to the exact same PodGroup, i.e. the PodGroup cannot be
+deleted and recreated with the same name without all of its Pods also being
+deleted in the meantime or if its finalizer is manually removed.
 
 ### Finding Pods Using a ResourceClaim
 
@@ -810,7 +809,7 @@ cache.
 
 The list of Pods making up a PodGroup for which a ResourceClaim is
 reserved is not exactly the same as the list of Pods consuming a ResourceClaim.
-References in the `status.reservedFor` list only contain Pods, or Pods'
+The `status.reservedFor` list only references Pods, or Pods'
 PodGroups, that have been processed by the DRA scheduler plugin and
 are scheduled to use the ResourceClaim. It is possible to have Pods that
 reference a PodGroup that has been allocated a claim, but haven't
