@@ -16,7 +16,7 @@ reviewers:
   - "@liggitt"
   - "@pohly"
 approvers:
-  - TBD
+  - "@mrunalp"
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
