@@ -15,8 +15,11 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Job Controller Changes](#job-controller-changes)
+    - [Workload and PodGroup Discovery](#workload-and-podgroup-discovery)
+    - [Controller Workflow](#controller-workflow)
     - [Object Creation Order](#object-creation-order)
-  - [Admission Validation for Parallelism Changes](#admission-validation-for-parallelism-changes)
+  - [Validation for Parallelism Changes](#validation-for-parallelism-changes)
+  - [Naming Conventions](#naming-conventions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -202,7 +205,7 @@ As a data engineer, I want to run a batch processing job that processes files se
 - Each Job maps to one `PodGroup`. All pods in the Job are identical from a scheduling policy perspective.
 - The `minCount` field in the Workload's `GangSchedulingPolicy` mirrors the Job's parallelism.
 - The opt-out mechanism is supported by setting `Job.spec.template.spec.workloadRef` to reference an existing `Workload`. Or when the Job has `ownerReferences` which indicates it is managed by higher-level controller (i.e., JobSet). In both cases, the Job controller will not create `Workload`/`PodGroup` objects.
-- When gang scheduling is active (`GangSchedulingPolicy`), changes to `spec.parallelism` (scaling up/down) are blocked via admission validation because this would require changing `minCount` in the `Workload` object, which is immutable. This will disable [Elastic Indexed Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs).
+- When gang scheduling is active (`GangSchedulingPolicy`), changes to `spec.parallelism` (scaling up/down) are rejected via conditional validation (depends on feature enablement). This is because this would require changing `minCount` in the `Workload` object, which is immutable. This will disable [Elastic Indexed Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs).
 
 ### Risks and Mitigations
 
@@ -214,36 +217,79 @@ As a data engineer, I want to run a batch processing job that processes files se
 
 ### Job Controller Changes
 
-The Job controller reconciliation loop for processes each Job will be extended to ensure `Workload` and `PodGroup` objects exist before creating pods. The modified workflow proceeds as follows:
+The Job controller reconciliation loop for processes each Job will be extended to ensure `Workload` and `PodGroup` objects exist before creating pods. 
 
-- Check if a `Workload` object already exists for this `Job`.
-  - If not, determine the appropriate scheduling policy and create the `Workload` object with the determined policy.
-  - If it already exists, verify the existing `Workload` matches the `Job` spec. If not, update the `Workload` object.
-- Check if a `PodGroup` object already exists for this `Job`.
-  - If not, create the `PodGroup` object referencing the `Workload`
-  - If it already exists, verify the existing `PodGroup` correctly references the `Workload`.
-- Execute existing pod management logic to create pods, include `workloadRef.podGroupName` in the pod spec to associate pods with the `PodGroup`.
+#### Workload and PodGroup Discovery
 
-The Job Controller will create `Workload` and `PodGroup` based on Job configuration:
- - `GangSchedulingPolicy` with `minCount=parallelism`: when `parallelism > 1` and `completionMode: Indexed` and `parallelism = completions`
- - `BasicSchedulingPolicy`: in all other cases, including:
-  - `parallelism = 1`
-  - `completions` no equal to `parallelism`
-  - `completionMode` is not `Indexed` (non-indexed Jobs)
+Discovery of those objects is based on references (`workload.spec.controllerRef` and `podGroup.spec.podGroupTemplateRef`), not on ownership. `ownerReference` is used only for controller-created objects so that they are garbage-collected when the Job is deleted. Workloads which are created by user or higher-level controller are not given ownerReferences to the Job, so they are not deleted when the Job is deleted.
+
+A `Workload` is considered the Workload for this Job object if:
+- The `Workload` is in the Job’s namespace
+- It has `workload.spec.controllerRef` field that is associated with this Job
+
+Similarly, a `PodGroup` is considered "the PodGroup for this Job" if:
+- The `PodGroup` is in the Job’s namespace
+- It has a controller `ownerReference` pointing to this Job
+- Its `spec.podGroupTemplateReference.workloadName` equals the name of the `Workload` for this Job. 
+
+#### Controller Workflow
+
+The controller discovers or creates `Workload` and `PodGroup` as follows:
+
+1. Look up `Workload`(s) in Job’s namespace whose `spec.ControllerRef` points to this Job. If the Workload was created by the Job controller, it also has a controller `ownerReference` pointing to this Job (`controller: true`)
+  - If none found, create one with `ownerReference` and `spec.ControllerRef` pointing to this Job
+  - If more than one, treat as ambiguous and fall back (update a condition or trigger an event)
+  - If exactly one, that’s the Workload for this Job. No changes to its `ownerReference`
+
+2. When creating a new Workload, determine the appropriate scheduling policy and create the `Workload` object with the determined policy based on Job configuration:
+  - `GangSchedulingPolicy` with `minCount=parallelism`: when `parallelism > 1` and `completionMode: Indexed` and `parallelism = completions`
+  - `BasicSchedulingPolicy`: in all other cases, including
+    - `parallelism = 1`
+    - `completions` no equal to `parallelism`
+    - `completionMode` is not `Indexed` (non-indexed Jobs)
+
+3. Look up `PodGroup`(s) in Job’s namespace whose `podGroup.spec.podGroupTemplateRef` is associated with the `Workload` for this Job. If the PodGroup was created by the Job controller, it has two ownerReferences; the Job controller and the `Workload` object
+  - If none found, create one with `ownerReference` to Job, `spec.podGroupTemplateRef` to that `Workload`
+  - If exactly one, that’s the PodGroup for this Job. No changes to its `ownerReference`
+  - If multiple PodGroups, fall back as it's not supported in alpha
+
+4. Execute existing pod management logic to create pods, include `workloadRef.podGroupName` in the pod spec to associate pods with the `PodGroup`.
+
+Note that the controller will not update the `Workload` or `PodGroup` objects if they already exist.
 
 The controller will require additional informers and listers for `Workload` and `PodGroup` objects. Both `Workload` and `PodGroup` are automatically garbage collected when the `Job` is deleted.
 
+If the `Workload` was created by someone else and the scheduling policy was set to `GangSchedulingPolicy` while it shouldn't (and vice versa) or other cases that controller doesn't expect, the Job controller will treat that as an opt-out, the `Workload` and `PodGroup` objects will be ignored and the Job will continue to work with normal workflow. A condition or event should be triggered to inform the user. 
+
 #### Object Creation Order
 
-The Job controller must create objects in a strict order to ensures that the scheduler can properly validate pods 
-against their scheduling policy before attempting to schedule them. The order is as follows:
+The Job controller creates objects in the following order so that references point to existing objects and to satisfy any API validation that Workload exists before PodGroup is created. The order is as follows:
 1. `Workload` object
 2. `PodGroup` object that will references the `Workload`
 3. `Pod` objects which will reference `PodGroup` and `Workload`
 
-### Admission Validation for Parallelism Changes
+The kube-scheduler waits for PodGroup when Pods have workloadRef, so scheduling does not depend on this order, the order is for consistency and API validity.
 
-When gang scheduling is active, the Job controller relies on admission validation to block changes to `Job.spec.parallelism`. Since changing this field would require changing `minCount` in the `Workload` object, which is immutable.
+### Validation for Parallelism Changes
+
+The Job API Validation rejects updates that change `spec.parallelism` when the feature gate is enabled and the Job uses gang scheduling. Since changing this field would require changing `minCount` in the `Workload` object, which is immutable.
+
+### Naming Conventions
+
+We will not use naming for discovery due to limitations related to naming. Naming is for human readability and logical linking between Job, Workload, and PodGroup. Because discovery does not depend on it, the naming pattern can be changed in later releases if needed. 
+
+Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/deployment/sync.go#L560-L568), the naming convention can be as follows:
+
+**1. Workload**
+  - Pattern: `<(truncated-if-needed)job-name>-<hash>`
+  - Truncation of the Job name is applied when necessary to respect object name length limits.
+  - The hash is used for collision avoidance (implementation may use a generated suffix or a hash of relevant identity).
+  - Object type (Workload vs PodGroup) is identified by other metadata (`ownerReferences[].kind`), not by the name pattern.
+
+**2. PodGroup**
+  - Pattern: `<(truncated-if-needed)workload-name>-<(truncated-if-needed)podgroup-name>-<hash>`
+  - Truncation of workload name and podGroup name is applied when necessary to respect name length limits.
+  - The hash allows multiple PodGroups within a `Workload` and `PodGroupTemplate` to have distinct names. For alpha, the controller creates a single `PodGroup` per Job, however, the pattern still supports future multi-PodGroup cases.
 
 ### Test Plan
 
@@ -252,7 +298,6 @@ existing tests to make this code solid enough prior to committing the changes ne
 to implement this enhancement.
 
 ##### Prerequisite testing updates
-
 
 ##### Unit tests
 
@@ -291,7 +336,7 @@ We will add the following integration tests to the Job controller `https://githu
 - Gang scheduling policy applied to indexed parallel Jobs (`parallelism > 1`, `completions = parallelism`, `completionMode: Indexed`)
 - Basic scheduling policy applied to all other Job types
 - Jobs managed by higher-level controllers skip Workload/PodGroup creation
-- Admission validation blocks `parallelism` changes for gang scheduling Jobs
+- API validation rejects updates that change `spec.parallelism` for gang scheduling Jobs
 - Unit tests for all new Job controller logic
 - Integration tests for Workload/PodGroup creation flow
 - Documentation for enabling and using the feature
@@ -302,6 +347,7 @@ We will add the following integration tests to the Job controller `https://githu
   - How users opt-in or opt-out of gang scheduling. Disable gang scheduling must not rely on turning off the feature gate
   - When and how `Workload` and `PodGroup` are created/updated (i.e., only at creation vs. also when scaling)
   - Define the scaling up/down mechanism for gang scheduling Jobs (elastic indexed jobs are not supported)
+- Evaluate whether the Job controller’s [current batch-create](https://github.com/kubernetes/kubernetes/blob/2023f445eca52e6baa72139e56c6e4e01be0ee97/pkg/controller/job/job_controller.go#L1780-L1838) pods should be changed when gang scheduling is active (it slows down the pod creations), and document the decision.
 - Elastic Indexed Jobs must be supported (beta blocker)
 - Feature gate `EnableWorkloadWithJob` is enabled by default
 - Address feedback from alpha
@@ -321,12 +367,12 @@ N/A for alpha release
 
 - **Upgrade:**
   1. Upgrade kube-apiserver
-  2. Enable feature gate on kube-controller-manager
+  2. Enable feature gate and upgrade kube-controller-manager
   3. New Jobs automatically get Workload/PodGroup objects
   4. Existing Jobs continue to work (no Workload created for them)
 
 - **Downgrade:**
-  1. Disable feature gate on kube-controller-manager
+  1. Disable feature gate and downgrade kube-controller-manager
   2. New Jobs no longer get Workload/PodGroup objects
   3. Existing `Workload` and `PodGroup` objects remain
   4. Jobs with `workloadRef` on pods continue to run (field ignored)
@@ -337,27 +383,29 @@ N/A for alpha release
 
 ### Version Skew Strategy
 
-- kube-apiserver must be upgraded first to serve Workload API
-- kube-controller-manager can be upgraded last
+Gang scheduling only occurs when:
+- The API server can serve the Workload and PodGroup APIs
+- The Job controller is able to create Workload/PodGroup and sets `workloadRef` on pods
+- The scheduler supports Workload/PodGroup
 
-If kube-controller-manager creates `Workload` but scheduler doesn't understand it:
-  - Pods will have `workloadRef` but scheduler ignores it
-  - Standard pod-by-pod scheduling occurs with no gang scheduling benefit
+Therefore, for a safe rollout:
+- kube-apiserver must be upgraded first so it can serve the Workload and PodGroup APIs.
+- kube-controller-manager can be upgraded before or after the scheduler
+- kube-scheduler should be upgraded before or together with kube-controller-manager. Gang semantics will not apply until the scheduler is upgraded.
 
-If scheduler supports gang scheduling but controller doesn't create `Workload` objects, pods without `workloadRef` are scheduled normally with no gang scheduling benefit
+There are different Skew scenarios involving the kube-scheduler:
+- kube-controller-manager new, kube-scheduler old: The controller creates Workload and PodGroup and sets `workloadRef` on pods but the scheduler does not understand these objects and ignores `workloadRef`. In this case, pods are scheduled normally (pod-by-pod) with no gang scheduling benefit until the scheduler is upgraded.
+- kube-controller-manager old, kube-scheduler new: The controller does not create Workload/PodGroup and does not set `workloadRef` on pods. The scheduler has no workload information for those Jobs. Pods are scheduled normally with no gang scheduling benefit.
 
 ## Production Readiness Review Questionnaire
 
-
 ### Feature Enablement and Rollback
-
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `EnableWorkloadWithJob`
   - Components depending on the feature gate:
-    - kube-apiserver
     - kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
