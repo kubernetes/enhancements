@@ -29,10 +29,10 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Data format: text](#data-format-text)
       - [Request](#request)
       - [Sample response](#sample-response)
-    - [Data format: JSON (v1alpha1)](#data-format-json-v1alpha1)
+    - [Structured API format (v1alpha1)](#structured-api-format-v1alpha1)
       - [Request](#request-1)
       - [Response Body: <code>Statusz</code> object](#response-body-statusz-object)
-      - [Sample Response](#sample-response-1)
+      - [Sample Response (JSON)](#sample-response-json)
   - [API Versioning and Deprecation Policy](#api-versioning-and-deprecation-policy)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -167,9 +167,9 @@ The scope of this endpoint is intentionally limited to the status of the primary
 
 3. **API Stability and Evolution**
 
-  The alpha release will support both a plain text format and a versioned JSON format (`v1alpha1`). The feature will be secured behind a feature gate that is disabled by default, ensuring users opt-in consciously. The `v1alpha1` JSON format is explicitly marked as alpha-quality, intended for early feedback, and is subject to change.
+  The alpha release will support both a plain text format and a versioned structured API format (`v1alpha1`, supporting JSON, YAML, and CBOR). The feature will be secured behind a feature gate that is disabled by default, ensuring users opt-in consciously. The `v1alpha1` structured API format is explicitly marked as alpha-quality, intended for early feedback, and is subject to change.
 
-  For Beta, to provide a stable contract for consumers, the JSON response API will be promoted to `v1beta1` or `v1` based on feedback and will be considered stable. The plain text format remains the default for human consumption and backward compatibility.
+  For Beta, to provide a stable contract for consumers, the structured API response will be promoted to `v1beta1` or `v1` based on feedback and will be considered stable. The plain text format remains the default for human consumption and backward compatibility.
 
 ## Design Details
 
@@ -177,20 +177,20 @@ The scope of this endpoint is intentionally limited to the status of the primary
 
 The `/statusz` endpoint defaults to a `text/plain` response format, which is intended for human consumption and should not be parsed by automated tools.
 
-For programmatic access, a structured, versioned JSON format is available with an initial alpha version of `v1alpha1`. This version is not stable and is intended for feedback and iteration during the Alpha phase.
+For programmatic access, a structured, versioned API format is available (supporting JSON, YAML, and CBOR) with an initial alpha version of `v1alpha1`. This version is not stable and is intended for feedback and iteration during the Alpha phase.
 
 - **Group**: `config.k8s.io`
 - **Version**: `v1alpha1` (initial version, subject to change)
 - **Kind**: `Statusz`
 
-To receive the structured JSON response, a client **must** explicitly request it using an `Accept` header specifying these parameters. For example:
+To receive the structured API response, a client **must** explicitly request it using an `Accept` header specifying these parameters. For example:
 
 ```
 GET /statusz
 Accept: application/json;as=Statusz;v=v1alpha1;g=config.k8s.io
 ```
 
-This negotiation mechanism ensures clients are explicit about the exact API they want, preventing accidental dependencies on unstable or incorrect formats. If a client requests `application/json` without the required parameters, the server will respond with a `406 Not Acceptable` error.
+This negotiation mechanism ensures clients are explicit about the exact API they want, preventing accidental dependencies on unstable or incorrect formats. If a client requests `application/json` without the required parameters, the server will respond with a `406 Not Acceptable` error. YAML and CBOR are also supported (CBOR is gated by the `CBORServingAndStorage` feature gate).
 
 ### Authz and authn
 
@@ -213,7 +213,7 @@ rules:
 
 ### Endpoint Response Format
 
-The `/statusz` endpoint supports both plain text and structured JSON formats. The default format is `text/plain`.
+The `/statusz` endpoint supports both plain text and structured API (JSON/YAML/CBOR) formats. The default format is `text/plain`.
 
 #### Data format: text
 
@@ -245,19 +245,21 @@ readyz:/readyz
 sli metrics:/metrics/slis
 ```
 
-#### Data format: JSON (v1alpha1)
+#### Structured API format (v1alpha1)
 
-This format is available in Alpha for programmatic access and must be explicitly requested. It is considered an alpha-level format.
+This format is available in Alpha for programmatic access and must be explicitly requested. It is considered an alpha-level format. The structured API supports JSON, YAML, and (if the CBORServingAndStorage feature gate is enabled) CBOR serialization.
 
 ##### Request
 * Method: **GET**
 * Endpoint: **/statusz**
-* Header: `Accept: application/json;as=Statusz;v=v1alpha1;g=config.k8s.io`
+* Header: `Accept: application/json;as=Statusz;v=v1alpha1;g=config.k8s.io` (for JSON)
+  or `Accept: application/yaml;as=Statusz;v=v1alpha1;g=config.k8s.io` (for YAML)
+  or `Accept: application/cbor;as=Statusz;v=v1alpha1;g=config.k8s.io` (for CBOR, if enabled)
 * Body: empty
 
 ##### Response Body: `Statusz` object
 
-The response is a `Statusz` object.
+The response is a `Statusz` object, serialized in the requested format (JSON, YAML, or CBOR).
 
 ###### Go Struct Definition
 ```go
@@ -299,7 +301,7 @@ type Statusz struct {
 }
 ```
 
-###### JSON Structure
+###### Example Structure (JSON)
 ```json
 {
   "kind": "Statusz",
@@ -323,8 +325,9 @@ type Statusz struct {
   ]
 }
 ```
+YAML and CBOR follow the same structure, serialized in their respective formats.
 
-##### Sample Response
+##### Sample Response (JSON)
 
 ```json
 {
@@ -365,11 +368,11 @@ N/A
 
 ##### Unit tests
 
-- `staging/src/k8s.io/component-base/zpages/statusz`: Unit tests will be added to cover both the plain text and structured JSON output, including serialization and content negotiation logic.
+- `staging/src/k8s.io/component-base/zpages/statusz`: Unit tests will be added to cover both the plain text and structured output, including serialization and content negotiation logic.
 
 ##### Integration tests
 
-- Integration tests will be added for each component to verify that the `/statusz` endpoint is correctly registered and serves both `text/plain` and the versioned `application/json` content types.
+- Integration tests will be added for each component to verify that the `/statusz` endpoint is correctly registered and serves both `text/plain` and the versioned `application/json`, `application/yaml`, `application/cbor` content types.
 
 ##### e2e tests
 
@@ -386,18 +389,18 @@ N/A
 - Feature gate `ComponentStatusz` is disabled by default.
 - A structured JSON response (`config.k8s.io/v1alpha1`) is introduced for feedback, alongside the default `text/plain` format.
 - Feature is implemented for at least one component (e.g., kube-apiserver).
-- E2E tests are added for both plain text and the new JSON response format.
+- E2E tests are added for both plain text and the new structured response format.
 - Gather feedback from users and developers on the structured format.
 
 #### Beta
 
 - Feature gate `ComponentStatusz` is enabled by default.
-- The JSON response API is promoted to `v1beta1` or `v1` based on feedback and is considered stable.
+- The structured API is promoted to `v1beta1` or `v1` based on feedback and is considered stable.
 - Feature is implemented for all core Kubernetes components.
 
 #### GA
 
-- The JSON response API is promoted to a stable `v1` version after bake-in.
+- The structured API is promoted to a stable `v1` version after bake-in.
 - Conformance tests are in place for the endpoint.
 
 #### Deprecation
@@ -532,7 +535,7 @@ Yes, enabling this feature will result in a new HTTP endpoint (/statusz) being s
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No, this feature does not introduce new Kubernetes API types or resources. While the statusz endpoint uses a structured JSON response with Group/Version/Kind for content negotiation and consistency, it is not a Kubernetes API object and is not managed or persisted by the API server. The GVK is used solely to provide a predictable format for clients querying the endpoint.
+No, this feature does not introduce new Kubernetes API types or resources. While the statusz endpoint uses a structured JSON/YAML/CBOR response with Group/Version/Kind for content negotiation and consistency, it is not a Kubernetes API object and is not managed or persisted by the API server. The GVK is used solely to provide a predictable format for clients querying the endpoint.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -573,6 +576,8 @@ The feature can be disabled by setting the feature-gate to false if the performa
  - v1.33: `/statusz` enablement extended to [kubelet](https://github.com/kubernetes/kubernetes/pull/128811), [scheduler](https://github.com/kubernetes/kubernetes/pull/128987), [controller-manager](https://github.com/kubernetes/kubernetes/pull/128991), and [kube-proxy](https://github.com/kubernetes/kubernetes/pull/128989)
  - v1.34: `/statusz` response enhanced to add a `Paths` field listing down all debug endpoints available for [apiserver](https://github.com/kubernetes/kubernetes/pull/132581)
  - v1.35: `Paths` field added for [kubelet](https://github.com/kubernetes/kubernetes/pull/133239), [scheduler](https://github.com/kubernetes/kubernetes/pull/132606), [controller-manager](https://github.com/kubernetes/kubernetes/pull/133218), and [kube-proxy](https://github.com/kubernetes/kubernetes/pull/133190)
+ - v1.35: Converted the `/statusz` endpoint to a structured API ([#134313](https://github.com/kubernetes/kubernetes/pull/134313)).
+ - v1.36: Added support for YAML and CBOR serialization for the `/statusz` endpoint ([#135309](https://github.com/kubernetes/kubernetes/pull/135309)). CBOR support is gated by the `CBORServingAndStorage` feature gate.
  
 
 ## Drawbacks
