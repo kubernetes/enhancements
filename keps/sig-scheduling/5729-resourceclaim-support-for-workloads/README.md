@@ -548,26 +548,14 @@ describes the more common case where some higher level true workload controller
 (e.g. LWS, JobSet) is orchestrating the Workload and PodGroup objects vs. the
 user managing those directly.
 
-Here, a user defines a high-level workload with two logical groups of Pods. All
-Pods request a DRA device shared among all Pods. Each of the two groups of Pods
-also request one device to be shared by the Pods in its group.
+Here, a user defines a high-level workload with two logical groups of Pods. Each
+of the two groups of Pods also request one device to be shared by the Pods in
+its group.
 
 The user creates the following objects to request DRA devices which will
 be referenced by Pods through their PodGroup:
 
 ```yaml
-apiVersion: resource.k8s.io/v1
-kind: ResourceClaim
-metadata:
-  name: workload-claim
-  namespace: default
-spec:
-  devices:
-    requests:
-    - name: my-device
-      exactly:
-        deviceClassName: example
----
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
@@ -613,16 +601,12 @@ spec:
     resourceClaims:
     - name: pg-claim
       resourceClaimTemplateName: pg-claim-template
-    - name: wl-claim
-      resourceClaimName: workload-claim
   - name: group-2
     policy:
       basic: {}
     resourceClaims:
     - name: pg-claim
       resourceClaimTemplateName: pg-claim-template
-    - name: wl-claim
-      resourceClaimName: workload-claim
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
@@ -637,8 +621,6 @@ spec:
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
-  - name: wl-claim
-    resourceClaimName: workload-claim
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
@@ -653,8 +635,6 @@ spec:
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
-  - name: wl-claim
-    resourceClaimName: workload-claim
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -676,13 +656,9 @@ spec:
         image: "registry.k8s.io/pause:3.6"
         resources:
           claims:
-          - name: resource-1
-          claims:
-          - name: resource-2
+          - name: resource
       resourceClaims:
-      - name: resource-1
-        podGroupResourceClaim: wl-claim
-      - name: resource-2
+      - name: resource
         podGroupResourceClaim: pg-claim
       workloadRef:
         name: my-workload
@@ -708,13 +684,9 @@ spec:
         image: "registry.k8s.io/pause:3.6"
         resources:
           claims:
-          - name: resource-1
-          claims:
-          - name: resource-2
+          - name: resource
       resourceClaims:
-      - name: resource-1
-        podGroupResourceClaim: wl-claim
-      - name: resource-2
+      - name: resource
         podGroupResourceClaim: pg-claim
       workloadRef:
         name: my-workload
@@ -722,8 +694,8 @@ spec:
 ```
 
 Here, a Workload organizes Pods managed by two different Deployments into two
-different PodGroups. The `workload-claim` ResourceClaim is shared among all Pods
-in either PodGroup. Each group refers to the same ResourceClaimTemplate,
+different PodGroups.
+Each group refers to the same ResourceClaimTemplate,
 `pg-claim-template`. This single ResourceClaimTemplate forms the basis of two
 different ResourceClaims which will be created by the ResourceClaim controller:
 one for each PodGroup. The Pod templates in the Deployments include a reference
