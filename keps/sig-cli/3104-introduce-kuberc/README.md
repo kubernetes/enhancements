@@ -483,7 +483,7 @@ list of `key=value` pairs separated by a comma. In the below example, we add two
 
 ```bash
 kubectl kuberc set --section credentialplugin \
-    --policy=allowlist \
+    --policy=Allowlist \
     --allowlistentry="command=cloudplatform-credential-helper" \
     --allowlistentry="command=custom-credential-script"
 ```
@@ -545,8 +545,9 @@ fields allowing for verification by digest or public key have been discussed.
 The initial design MUST accommodate such future additions.
 
 *note*: While kuberc is in beta, `name` may be used as an alias for `command`.
-When kubrc reaches the `stable` stage, `name` will be deprecated in favor of
-`command`.
+From 1.36 onward, `name` will be considered deprecated in favor of `command`.
+Because these are security knobs, supplying both `name` and `command` will be
+considered an error until `name` is removed entirely at promotion to GA.
 
 ### Test Plan
 
