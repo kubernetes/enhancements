@@ -383,9 +383,9 @@ Devices are allocated to a ResourceClaim when the first Pod referencing the
 claim is scheduled. Other Pods can also share the ResourceClaim in which case
 they share the devices. Once no Pods are consuming the claim, the devices should
 be deallocated to they can be allocated to other claims. The
-`status.reservedFor` list is used to keep track of pods consuming a
+`status.reservedFor` list is used to keep track of Pods consuming a
 ResourceClaim. Pods are added to the list by the DRA scheduler plugin during
-scheduling and removed from the list by the resourceclaim controller when pods
+scheduling and removed from the list by the ResourceClaim controller when Pods
 are deleted or finish running. An empty list means there are no current
 consumers of the claim and it can be deallocated.
 
@@ -395,7 +395,7 @@ consumers of the claim and it can be deallocated.
 device_taint_eviction controller to find Pods that are using a ResourceClaim:
 
 1. The kubelet uses this to make sure it only runs Pods where the claims
-   have been allocated to the pod. It can verify this by checking that the Pod
+   have been allocated to the Pod. It can verify this by checking that the Pod
    is listed in the `status.reservedFor` list.
 
 1. The DRA scheduler plugin uses the list to find claims that have zero or only
@@ -403,7 +403,7 @@ device_taint_eviction controller to find Pods that are using a ResourceClaim:
    `PostFilter` function.
 
 1. The device_taint_eviction controller uses the `ReservedFor` list to find the
-   pods that need to be evicted when one or more of the devices allocated to a
+   Pods that need to be evicted when one or more of the devices allocated to a
    ResourceClaim is tainted (and the ResourceClaim does not have a toleration).
 
 So the solution needs to:
