@@ -7,10 +7,10 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [ML Training Job with Gang Scheduling](#ml-training-job-with-gang-scheduling)
     - [Standard Batch Job with Workload Tracking](#standard-batch-job-with-workload-tracking)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
     - [Alpha Constraints](#alpha-constraints)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -73,16 +73,18 @@ The Kubernetes Job Controller currently creates pods independently without workl
 
 ### Goals
 
-- Job controller automatically creates `Workload` and `PodGroup` objects for Jobs that require gang scheduling.
-- Job with `parallelism > 1` will use `GangSchedulingPolicy` with `minCount = parallelism`
-- Jobs that don't qualify for gang scheduling will use `BasicSchedulingPolicy`
-- Ensure proper ordering of Workload/PodGroup creation before pods creation
+- Job controller automatically creates `Workload` and `PodGroup` objects for Jobs that require gang scheduling
+- Support opt-out mechanism to define when Job controller skips creating `Workload` and `PodGroup` objects
+- Use`GangSchedulingPolicy` with `minCount = parallelism` for Jobs with `parallelism > 1`, `completionMode: Indexed`, and `parallelism = completions`.
+- Jobs that don't qualify for gang scheduling will use `BasicSchedulingPolicy` and still get `Workload` and `PodGroup` objects created.
+- Ensure proper ordering of `Workload` and `PodGroup` creation before pods creation
 - Existing Jobs without gang scheduling continue to work normally
 
 ### Non-Goals
 
 - Supporting dynamic changes to `minCount` or gang membership at runtime
 - Complex workload structures with multiple nested PodGroups are not supported in alpha.
+- Support for scaling up/down gang scheduling Jobs is not supported in alpha.
 
 ## Proposal
 > This KEP depends on:
@@ -90,14 +92,14 @@ The Kubernetes Job Controller currently creates pods independently without workl
 > - [KEP-5832: Decouple PodGroup API from Workload API](https://github.com/kubernetes/enhancements/pull/5833)
 
 The Job controller will be extended to create `Workload` and `PodGroup` objects as part of its pod management lifecycle. 
-This integration ensures that pods belonging to a Job are scheduled according to the appropriate scheduling policy (gang or basic) before they are created. 
+This integration ensures that pods belonging to a Job are scheduled according to the appropriate scheduling policy (gang or basic) before they are created. If `Job.spec.template.spec.workloadRef` is set, the Job controller does not create or update `Workload`/`PodGroup` (opt-out due to preexisting or parent-managed controller).
 
 For the alpha release, this feature is optimized for static batch workloads with a flat API structure where 
 `minCount` is immutable. The key design principles are:
 - One `Job` creates one `Workload` with one `PodGroup` representing a single homogeneous group of pods.
 - The automatic policy selection is based on `Job` Type
   - Jobs with `parallelism > 1` use gang scheduling policy where `minCount` equals the Job's parallelism.
-  - Jobs without indexed completion mode or `completions = 1`, use basic scheduling policy (pod-by-pod scheduling - `minCount`).
+  - Jobs without indexed completion mode or `completions = 1` use basic scheduling policy (pod-by-pod scheduling).
 - Elastic Jobs (changing parallelism at runtime) are not supported when gang scheduling is active.
 - Jobs created by higher-level controllers (i.e., JobSet) are skipped, the parent controller manages Workload/PodGroup lifecycle
 
@@ -181,7 +183,7 @@ spec:
   - name: ...
 ```
 
-### User Stories (Optional)
+### User Stories
 
 #### ML Training Job with Gang Scheduling
 
@@ -192,19 +194,21 @@ If only 7 workers can be scheduled, I don't want any pods to start because parti
 
 As a data engineer, I want to run a batch processing job that processes files sequentially without gang scheduling requirements.
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 #### Alpha Constraints
 
 - The alpha release targets simple, static batch workloads where the workload requirements are known at creation time.
 - Each Job maps to one `PodGroup`. All pods in the Job are identical from a scheduling policy perspective.
 - The `minCount` field in the Workload's `GangSchedulingPolicy` mirrors the Job's parallelism.
-- There is no mechanism to opt-out of `Workload`/`PodGroup` creation for indexed (parallel) jobs if feature gate is enabled.
-- When gang scheduling is active (parallel jobs), changes to `spec.parallelism` are blocked via admission validation because this would require changing `minCount`
-- If a Job has `ownerReferences` indicating it is managed by another controller (i.e., JobSet), the Job controller 
-will not create `Workload`/`PodGroup` objects.
+- The opt-out mechanism is supported by setting `Job.spec.template.spec.workloadRef` to reference an existing `Workload`. Or when the Job has `ownerReferences` which indicates it is managed by higher-level controller (i.e., JobSet). In both cases, the Job controller will not create `Workload`/`PodGroup` objects.
+- When gang scheduling is active (`GangSchedulingPolicy`), changes to `spec.parallelism` (scaling up/down) are blocked via admission validation because this would require changing `minCount` in the `Workload` object, which is immutable. This will disable [Elastic Indexed Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs).
 
 ### Risks and Mitigations
+
+- `JobSet` or other higher-level controllers will create `Workload`/`PodGroup` objects for their Workload, the Job controller will duplicate or update the objects and create a conflict. We can mitigate this by ensuring the Job controller will not create `Workload`/`PodGroup` objects if the Job has `ownerReferences` indicating it is managed by higher-level controller.
+
+- When the feature is enabled, Jobs that identify as gang scheduling cannot have `spec.parallelism` changed. That effectively disables [Elastic Indexed Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs) for those Jobs. This is accepted for alpha with clear documentation and a committed path to beta to not break Elastic Indexed Jobs.
 
 ## Design Details
 
@@ -221,10 +225,11 @@ The Job controller reconciliation loop for processes each Job will be extended t
 - Execute existing pod management logic to create pods, include `workloadRef.podGroupName` in the pod spec to associate pods with the `PodGroup`.
 
 The Job Controller will create `Workload` and `PodGroup` based on Job configuration:
- - `parallelism > 1`: `GangSchedulingPolicy` with `minCount=parallelism`
- - `parallelism = 1` (default): `BasicSchedulingPolicy`
- - `completions = 1, parallelism = 1`: `BasicSchedulingPolicy`
- - `completions > 1, parallelism = 1`: `BasicSchedulingPolicy`
+ - `GangSchedulingPolicy` with `minCount=parallelism`: when `parallelism > 1` and `completionMode: Indexed` and `parallelism = completions`
+ - `BasicSchedulingPolicy`: in all other cases, including:
+  - `parallelism = 1`
+  - `completions` no equal to `parallelism`
+  - `completionMode` is not `Indexed` (non-indexed Jobs)
 
 The controller will require additional informers and listers for `Workload` and `PodGroup` objects. Both `Workload` and `PodGroup` are automatically garbage collected when the `Job` is deleted.
 
@@ -283,7 +288,7 @@ We will add the following integration tests to the Job controller `https://githu
 - Feature is implemented behind feature gate `EnableWorkloadWithJob` (default: disabled)
 - Job controller creates `Workload` and `PodGroup` objects for Jobs when feature gate is enabled
 - Job controller sets `podGroupKind: PodGroup` in pod specs, opting into the explicit runtime PodGroup model
-- Gang scheduling policy applied to indexed parallel Jobs (`parallelism > 1` with `Indexed` completion mode)
+- Gang scheduling policy applied to indexed parallel Jobs (`parallelism > 1`, `completions = parallelism`, `completionMode: Indexed`)
 - Basic scheduling policy applied to all other Job types
 - Jobs managed by higher-level controllers skip Workload/PodGroup creation
 - Admission validation blocks `parallelism` changes for gang scheduling Jobs
@@ -292,6 +297,12 @@ We will add the following integration tests to the Job controller `https://githu
 - Documentation for enabling and using the feature
 
 #### Beta
+
+- Before beta, the Job API must clearly define: 
+  - How users opt-in or opt-out of gang scheduling. Disable gang scheduling must not rely on turning off the feature gate
+  - When and how `Workload` and `PodGroup` are created/updated (i.e., only at creation vs. also when scaling)
+  - Define the scaling up/down mechanism for gang scheduling Jobs (elastic indexed jobs are not supported)
+- Elastic Indexed Jobs must be supported (beta blocker)
 - Feature gate `EnableWorkloadWithJob` is enabled by default
 - Address feedback from alpha
 - E2e tests covering gang scheduling scenarios
@@ -358,7 +369,7 @@ If scheduler supports gang scheduling but controller doesn't create `Workload` o
 ###### Does enabling the feature change any default behavior?
 Yes. When the feature gate is enabled:
 
-1. The Job controller creates `Workload` and `PodGroup` objects for all Indexed parallel Jobs before creating pods.
+1. The Job controller creates `Workload` and `PodGroup` objects for all Indexed parallel Jobs (`parallelism > 1`, `completions = parallelism`, `completionMode: Indexed`) before creating pods.
 2. Jobs (`parallelism > 1` with `Indexed` completion mode) use gang scheduling, meaning all pods must be scheduled together or none are scheduled.
 3. Updates to `Job.spec.parallelism` are rejected for Jobs using gang scheduling.
 4. Pod creation is delayed until the `PodGroup` object is acknowledged by the scheduler.
