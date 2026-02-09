@@ -104,16 +104,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 In this KEP, kube-scheduler is modified to support gang scheduling[^1]. We focus on framework support and building blocks, not the ideal gang-scheduling algorithm - it can come as a follow-up. We start with simpler implementation of gang scheduling, kube-scheduler identifies pods that are in a group and waits until all pods reach the same stage of the scheduling/binding cycle before allowing any pods from the group to advance past that point.  If not all pods can reach that point before a timeout expires, then the scheduler stops trying to schedule that group, and all pods release all their resources.  This allows other workloads to try to allocate those resources.
 
 New core types called `Workload` and `PodGroup` are introduced to tell the kube-scheduler that a group of pods 
-should be scheduled together and any policy options related to gang scheduling. Pods may have an object reference in 
-their spec to the `PodGroup` they belong to. The `Workload` and `PodGroup` objects are intended to evolve[^2] via 
-future KEPs to support additional kube-scheduler improvements, such as topology-aware scheduling.
+should be scheduled together and to define policy options related to gang scheduling. Pods may have an object 
+reference in their spec to the `PodGroup` they belong to. The `Workload` and `PodGroup` objects are intended to 
+evolve[^2] via  future KEPs to support additional kube-scheduler improvements, such as topology-aware scheduling.
 
 In 1.36, we redesigned the API in order to clearly decouple Workload API from the runtime PodGroup API. The design 
-for this can be found in the [^4] and the change itself is part of the separate `[KEP-5832](https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md).`
+for this can be found in the design [^4] and the change itself is part of the separate KEP-5832 [^KEP-5832].
 
 In the updated design, `Workload` represents a static template defining the scheduling hierarchy and policies. A 
-separate runtime object, `PodGroup`, represents the actual runtime instance of grouped pods. `Pods` reference their 
-execution context (PodGroup) via the `workloadRef` field.
+separate runtime object. `PodGroup` represents a self-contained runtime scheduling unit (group of pods), 
+encapsulating both the scheduling policy and status. `Pods` reference PodGroup` which is their immediate execution 
+context.
 
 ## Motivation
 
@@ -123,8 +124,10 @@ Gang scheduling has been implemented outside of kube-scheduler at least 4 times[
 
 Workloads that require gang scheduling often also need all members of the gang to be as topologically "close" to one another as possible, in order to perform adequately. Existing Pod affinity rules influence pod placement, but they do not consider the gang as a unit of scheduling and they do not cause the scheduler to efficiently try multiple mutually exclusive placement options for a set of pods. The design of the Workload object introduced in this KEP anticipates how Gang Scheduling support can evolve over subsequent KEPs into full Topology-aware scheduling support in kube-scheduler.
 
-The `PodGroup` object will allow kube-scheduler to be aware that pods are part of a `Workload` with complex internal structure. Those workloads include builtins like `Job` and `StatefulSet`, and custom workloads, like `JobSet`, `LeaderWorkerSet`, `MPIJob` and `TrainJob`. All of 
-these workload types are used for AI training and inference use cases.
+The `PodGroup` object will reflect the intended `Workload` internal structure and allow kube-scheduler to schedule 
+workload pods accordingly. Those workloads include builtins like `Job` and `StatefulSet`, and custom workloads, like 
+`JobSet`, `LeaderWorkerSet`, `MPIJob` and `TrainJob`. All of  these workload types are used for AI training and 
+inference use cases.
 
 ### Goals
 - Introduce a concept of a `Workload` as a primary building block for workload-aware scheduling vision
@@ -157,10 +160,10 @@ See [Future plans](#future-plans) for more details.
 
 ## Proposal
 
-The 1.36 revision, as detailed in the KEP-5832 and [^4], addresses feedback regarding the ambiguity of the original
-"monolithic" Workload. By decoupling policy (Workload) from runtime grouping (PodGroup), we improve clarity,
-scalability and lifecycle management. This approach also provides a more readable and intuitive structure for
-complex workloads like JobSet and LeaderWorkerSet.
+The 1.36 revision, as detailed in the KEP-5832 [^KEP-5832] and the original design [^4], addresses feedback regarding 
+the ambiguity of the original "monolithic" Workload. By decoupling policy (Workload) from runtime grouping (PodGroup)
+, we improve clarity,  scalability and lifecycle management. This approach also provides a more readable and 
+intuitive structure for complex workloads like JobSet and LeaderWorkerSet.
 
 To ensure long-term API quality, the Workload API remains in Alpha for the 1.36 cycle. This allows for the
 finalization of the decoupled model and ensures that the graduated Beta API will be clean and free of transitional
@@ -410,7 +413,8 @@ to identify pods belonging to it. However, with this pattern:
 
 Decoupling `Workload` from `PodGroup` (in 1.36) clearly separates the role of a Pod (runtime grouping, status and 
 scheduling policy) from its template (Workload). We decided on this approach because it improves etcd scalability 
-(sharding status updates across PodGroup objects) and clarifies object lifecycle management as described in [^4].
+(sharding status updates across PodGroup objects) and clarifies object lifecycle management as described in
+the original design [^4].
 
 ### API
 
@@ -529,10 +533,8 @@ type GangSchedulingPolicy struct {
 }
 ```
 
-The PodGroup resource will be introduced as a separate API object defined in [KEP-5832](https://github.
-com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md).
-The structure below represents a current snapshot of the API, but [KEP-5832](https://github.
-com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md) should be treated 
+The PodGroup resource will be introduced as a separate API object defined in KEP-5832 [^KEP-5832].
+The structure below represents a current snapshot of the API, but KEP-5832 [^KEP-5832] should be treated 
 as the source of truth.
 
 ```go
@@ -603,8 +605,9 @@ The kube-scheduler will be watching for `PodGroup` objects (using informers) and
 to and from their `PodGroup` objects.
 
 In the initial implementation, we expect users to create the `Workload` and `PodGroup` objects. In the next steps 
-controllers will be updated to create an appropriate `Workload` and `PodGroup` objects themselves whenever they can 
-appropriately infer the intention from the desired state.
+controllers will be updated (e.g. Job controller in [KEP-5547](https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5547-decouple-podgroup-api/README.md))
+to create an appropriate `Workload` and `PodGroup` objects themselves whenever they can  appropriately infer the 
+intention from the desired state.
 Note that given scheduling policies are stored in the `PodGroup` object, pods linked to the `PodGroup`
 object will not be scheduled until this `PodGroup` object is created and observed by the kube-scheduler.
 
@@ -1654,3 +1657,5 @@ SIG to get the process for these resources started right away.
 [^3]: Volcano.sh, Co-scheduling plugin, Preferred Networks Plugin, and Kueue all implement gang scheduling outside of kube-scheduler.  Additionally, two previous proposals have been made on this KEP's issue.  These alternatives are compared in detail in the [Background tab of the API Design for Gang Scheduling](https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?pli=1&tab=t.3zjbiyx2yldg).
 
 [^4]: [API Proposal: Decoupled PodGroup and Workload API](https://docs.google.com/document/d/1B3kLWh_U1a2g-VQ6ExokMjmb7pA8lGkF9MafSSg3JmQ/edit?tab=t.0)
+
+[^KEP-5832]: [KEP-5832](https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md)
