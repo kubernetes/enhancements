@@ -329,7 +329,16 @@ No. The feature only adds a new capability to query node logs. It does not chang
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. It can be disabled by disabling the `NodeLogQuery` feature gate in the kubelet configuration and restarting the kubelet. No other changes are necessary to disable the feature.
+**For versions v1.35 and earlier (Beta):**
+Yes. The feature can be disabled by setting the `NodeLogQuery` feature gate to false in the kubelet configuration and
+restarting the kubelet. No other changes are necessary to disable the feature.
+
+**For versions v1.36 and later (GA):**
+No. The `NodeLogQuery` feature gate is locked to enabled and cannot be disabled. (LockToDefault: true). The feature 
+is considered stable and is always available. 
+
+The feature can be effectively disabled by setting the `enableSystemLogQuery` kubelet configuration option to `false`
+and restarting the kubelet. This will disable the log query functionality while keeping the feature gate enabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
