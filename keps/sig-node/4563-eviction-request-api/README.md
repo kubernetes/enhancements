@@ -322,7 +322,7 @@ intent directed at that interceptor:
    another interceptor or evicted by the eviction request controller.
 2. It can do nothing and wait for the pod to be intercepted by another interceptor or evicted by the
    eviction request controller. This is discouraged because the heartbeat has to timeout out after
-   30 minutes. It is therefore better to simply decline the interception.
+   20 minutes. It is therefore better to simply decline the interception.
 3. It can start the eviction logic and periodically respond to the eviction request intent to signal
    that the eviction request is in progress and not stuck. The eviction logic is at the discretion
    of the interceptor and can take many forms:
@@ -499,7 +499,8 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
 - `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation.
 - `.spec.interceptors` value will be resolved on the EvictionRequest admission from the pod's
   `.spec.evictionInterceptors` and must not be set by the requester. This is done to ensure the
-  predictability of the eviction request process
+  predictability of the eviction request process. I.e. the validation of the EvictionRequest will
+  fail on admission if this field is set.
 
 If the eviction request already exists for this pod, the requester should still add itself to the
 `.spec.requesters`. This has the following advantages:
@@ -566,13 +567,13 @@ observes an interceptor name in the `.status.activeInterceptors` in the Eviction
 matches the `name` it previously set in the pod's `.spec.evictionInterceptors`.
 
 If the interceptor is not interested in intercepting/evicting the pod anymore, it should set
-`Complete` condition in `.status.interceptors[].conditions`  to `True`. If the interceptor is unable
-to respond to the eviction request, the interception will time out after 30 minutes and control of
-the eviction process will be passed to the next interceptor at the higher list index. If there is
-none, the pod will get evicted by the eviction request controller.
+`Complete` condition in EvictionRequest's `.status.interceptors[].conditions` to `True`. If the
+interceptor is unable to respond to the eviction request, the interception will time out after 20
+minutes and control of the eviction process will be passed to the next interceptor at the higher
+list index. If there is none, the pod will get evicted by the eviction request controller.
 
 If the interceptor is interested in intercepting/evicting the pod it should ensure to update the
-EvictionRequest status periodically at intervals of less than 30 minutes. Therefore, updating the
+EvictionRequest status periodically at intervals of less than 20 minutes. Therefore, updating the
 status every 3 minutes may be sufficient to allow for potential disruption of the interceptor. The
 status updates should look as follows:
 - Verify that it supports the `.spec.type`. Please note that the only supported eviction request
@@ -628,7 +629,7 @@ The eviction request controller reconciles EvictionRequests and first picks the 
 from `.spec.interceptors` and sets its `name` to the `.status.activeInterceptors[0]`.
 
 If active interceptor's `Complete` condition in `.status.interceptors[].conditions` is set to `True`
-or 30 minutes has elapsed since `.status.interceptors[].heartbeatTime`, then
+or 20 minutes has elapsed since `.status.interceptors[].heartbeatTime`, then
 the eviction request controller sets `.status.activeInterceptors[0]` to the next interceptor at the
 higher list index from `.spec.interceptors`. During the switch to the new interceptor, the eviction
 request controller will also append `.status.processedInterceptors` with the last value of
@@ -644,7 +645,7 @@ Pods that are unable to be terminated:
 - EvictionRequest's `.status.activeInterceptors` list contains `imperative-eviction.k8s.io`
   interceptor. All the other interceptors from `.spec.interceptors` should be in
  `.status.processedInterceptors`.
-- 30 minutes has elapsed since EvictionRequest's
+- 20 minutes has elapsed since EvictionRequest's
   `.status.interceptors[].heartbeatTime` of the active interceptor or from
   `.metadata.creationTimestamp` if `.status.interceptors[].heartbeatTime` is nil.
 
@@ -679,7 +680,7 @@ type PodSpec struct {
     //
 	// Interceptors should periodically report on an eviction progress by updating the
 	// .status.interceptors[].heartbeatTime field of the EvictionRequest object. If this field is
-	// not updated within 30 minutes, the eviction request is passed over to the next interceptor at
+	// not updated within 20 minutes, the eviction request is passed over to the next interceptor at
 	// a higher index. If there is no other interceptor, the last default imperative-eviction.k8s.io
 	// interceptor will evict the pod using the imperative Eviction API (/evict endpoint).
 	//
@@ -703,7 +704,7 @@ type EvictionRequest struct {
 	// .metadata.name should match the .metadata.uid of the pod being evicted.
 	// .metadata.generateName is not supported.
 	// The labels of the eviction request object will be merged with eviction request target's
-	// .metadata.labels. The labels of the target have a preference.
+	// .metadata.labels on admission. The labels of the target have a preference.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
@@ -730,7 +731,7 @@ type EvictionRequestSpec struct {
 	// 
 	// Soft type attempts to evict the target gracefully.
 	// Each active interceptor is given unlimited time to resolve the eviction request, provided
-	// that it responds periodically within a timeframe of less than 30 minutes. This means there is
+	// that it responds periodically within a timeframe of less than 20 minutes. This means there is
 	// no deadline for a single interceptor, or for the eviction request as a whole. A successful
 	// soft eviction request should ideally result in the graceful eviction of a target (e.g.
 	// termination of a pod)
@@ -768,7 +769,7 @@ type EvictionRequestSpec struct {
 	// sequentially, in the order in which they appear in the list.
 	//
 	// Interceptor should periodically report on an eviction progress by updating the
-	// .status.interceptors[].heartbeatTime field. If this field is not updated within 30 minutes,
+	// .status.interceptors[].heartbeatTime field. If this field is not updated within 20 minutes,
 	// the eviction request is passed over to the next interceptor at a higher index. If there is no
 	// other interceptor and the target is a pod, the last default imperative-eviction.k8s.io
 	// interceptor will evict the pod using the imperative Eviction API (/evict endpoint).
@@ -800,7 +801,7 @@ type EvictionRequestType string
 const (
     // Soft type attempts to evict the target gracefully.
 	// Each active interceptor is given unlimited time to resolve the eviction request, provided
-	// that it responds periodically within a timeframe of less than 30 minutes. This means there is
+	// that it responds periodically within a timeframe of less than 20 minutes. This means there is
 	// no deadline for a single interceptor, or for the eviction request as a whole. A successful
 	// soft eviction request should ideally result in the graceful eviction of a target (e.g.
 	// termination of a pod)
@@ -1044,7 +1045,7 @@ eviction request controller. To strengthen the validation, we should check that 
 set only the index 0 interceptor from the interceptor list in the beginning. After that, it is
 possible to set only the next interceptor at a higher index and so on. We can also condition this
 transition according to the other fields. `Complete` condition in `.status.interceptors[].conditions`
-should be `True` or `.status.interceptors[].heartbeatTime` has exceeded the 30-minute deadline.
+should be `True` or `.status.interceptors[].heartbeatTime` has exceeded the 20-minute deadline.
 
 ##### CREATE, UPDATE, DELETE
 
