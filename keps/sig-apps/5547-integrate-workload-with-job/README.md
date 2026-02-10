@@ -211,6 +211,8 @@ As a data engineer, I want to run a batch processing job that processes files se
 
 - When the feature is enabled, Jobs that identify as gang scheduling cannot have `spec.parallelism` changed. That effectively disables [Elastic Indexed Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs) for those Jobs. This is accepted for alpha with clear documentation and a committed path to beta to not break Elastic Indexed Jobs.
 
+- Suspended Jobs and resource release rely only on GC, which does not address releasing resources (DRA) while a Job is suspended. This behavior is acceptable for alpha. Future work may require the controller to delete `PodGroup`/`Workload` on suspend and recreate on resume.
+
 ## Design Details
 
 ### Job Controller Changes
@@ -289,6 +291,13 @@ Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blo
   - Truncation of workload name and podGroup name is applied when necessary to respect name length limits.
   - The hash allows multiple PodGroups within a `Workload` and `PodGroupTemplate` to have distinct names. For alpha, the controller creates a single `PodGroup` per Job, however, the pattern still supports future multi-PodGroup cases.
 
+  ### Deletion and Garbage Collection
+
+  The Job controller does not explicitly delete Workload or PodGroup. However, in the case of the controller creating them, it sets `ownerReferences` so that garbage collection removes them when the Job is deleted. No additional controller logic is required for deletion in the current design.
+
+  For the Suspended Jobs, Workload and PodGroup will not be deleted by the controller on suspend. This is acceptable for alpha. In the future, we may need the controller to delete (and optionally recreate) Workload/PodGroup on suspend/resume.
+
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -310,6 +319,9 @@ to implement this enhancement.
   - Job deletion cascades to Workload and PodGroup deletion
   - Feature gate disabled: Jobs work without Workload/PodGroup creation
   - Jobs with ownerReferences (managed by higher-level controllers) do not create Workload/PodGroup
+  - ownerReferences on controller-created Workload and PodGroup match the expected structure:
+    - Workload has controller ownerRef to Job
+    - PodGroup has controller ownerRef to Job and non-controller ownerRef to Workload
 
 ##### Integration tests
 
@@ -347,6 +359,7 @@ We will add the following integration tests to the Job controller `https://githu
   - Define the scaling up/down mechanism for gang scheduling Jobs (elastic indexed jobs are not supported)
 - Evaluate whether the Job controller’s [current batch-create](https://github.com/kubernetes/kubernetes/blob/2023f445eca52e6baa72139e56c6e4e01be0ee97/pkg/controller/job/job_controller.go#L1780-L1838) pods should be changed when gang scheduling is active (it slows down the pod creations), and document the decision.
 - Elastic Indexed Jobs must be supported (beta blocker)
+- The controller needs a mechanism to delete `PodGroup`/`Workload` in the case of suspended Jobs and recreate on resume.
 - Feature gate `EnableWorkloadWithJob` is enabled by default
 - Address feedback from alpha
 - E2e tests covering gang scheduling scenarios
