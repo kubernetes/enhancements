@@ -19,6 +19,7 @@ reviewers:
   - TBD
 approvers:
   - "@sanposhiho"
+  - "@dom4ha"
 
 see-also:
   - "/keps/sig-scheduling/583-coscheduling"

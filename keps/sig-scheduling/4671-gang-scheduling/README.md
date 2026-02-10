@@ -125,9 +125,9 @@ Gang scheduling has been implemented outside of kube-scheduler at least 4 times[
 Workloads that require gang scheduling often also need all members of the gang to be as topologically "close" to one another as possible, in order to perform adequately. Existing Pod affinity rules influence pod placement, but they do not consider the gang as a unit of scheduling and they do not cause the scheduler to efficiently try multiple mutually exclusive placement options for a set of pods. The design of the Workload object introduced in this KEP anticipates how Gang Scheduling support can evolve over subsequent KEPs into full Topology-aware scheduling support in kube-scheduler.
 
 The `PodGroup` object will reflect the intended `Workload` internal structure and allow kube-scheduler to schedule 
-workload pods accordingly. Those workloads include builtins like `Job` and `StatefulSet`, and custom workloads, like 
-`JobSet`, `LeaderWorkerSet`, `MPIJob` and `TrainJob`. All of  these workload types are used for AI training and 
-inference use cases.
+workload pods accordingly. Those workloads include builtins like `Job` ([KEP-5547]) and `StatefulSet`, and custom 
+workloads, like `JobSet`, `LeaderWorkerSet`, `MPIJob` and `TrainJob`. All of these workload types are used for AI 
+training and inference use cases.
 
 ### Goals
 - Introduce a concept of a `Workload` as a primary building block for workload-aware scheduling vision
@@ -601,10 +601,10 @@ type PodGroupTemplateReference struct {
 	WorkloadName string
 		
     // PodGroupTemplateName defines the PodGroupTemplate name within the Workload object.
+	// +optional
     PodGroupTemplateName string
 }
 ```
-
 
 Individual `PodGroup` objects are treated as independent scheduling units. If a `Workload` defines multiple templates 
 or if  multiple `PodGroup` objects are created referencing the same template, each `PodGroup` instance is scheduled 
@@ -613,13 +613,17 @@ instance for each replica (consisting of a leader and its workers) to form an at
 If the underlying user intention is to have multiple groups run together, they should use the future hierarchical 
 model.
 
+Note: Similarly to `PodSchedulingGroup`, all fields in `PodGroupTemplateReference` and `PodGroupTemplateRef` field
+itself are intentionally made optional. The validation logic for those fields being set will be implemented
+in the code to allow for extending this structure if needed in the future.
+
 ### Scheduler Changes
 
 The kube-scheduler will be watching for `PodGroup` objects (using informers) and will use them to map pods
 to and from their `PodGroup` objects.
 
 In the initial implementation, we expect users to create the `Workload` and `PodGroup` objects. In the next steps 
-controllers will be updated (e.g. Job controller in [KEP-5547](https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5547-decouple-podgroup-api/README.md))
+controllers will be updated (e.g. Job controller in [KEP-5547])
 to create an appropriate `Workload` and `PodGroup` objects themselves whenever they can  appropriately infer the 
 intention from the desired state.
 Note that given scheduling policies are stored in the `PodGroup` object, pods linked to the `PodGroup`
@@ -1675,3 +1679,4 @@ SIG to get the process for these resources started right away.
 [^5]: [Evolution of the Runtime Object](https://docs.google.com/document/d/1cqESqXK2HMGETultLIaAPng28f3-aWfGrJsFfftD_j8/edit?tab=t.auqspd6w1lg1#bookmark=id.68wh4ir354o2)
 
 [KEP-5832]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/5832-decouple-podgroup-api/README.md
+[KEP-5547]: https://github.com/kubernetes/enhancements/pull/5871
