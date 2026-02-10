@@ -5,7 +5,7 @@ authors:
   - "@ffromani" # ONLY for GA graduation and PRR review
 owning-sig: sig-node
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: "2025-02-15"
 reviewers:
   - "@klueska"
@@ -41,7 +41,7 @@ feature-gates:
   - name: "TopologyManagerPolicyOptions"
     components:
       - kubelet
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics: 
