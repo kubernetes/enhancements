@@ -1,0 +1,40 @@
+title: Manifest Based Admission Control Config
+kep-number: 5793
+authors:
+  - "@aramase"
+  - "@BenTheElder"
+owning-sig: sig-api-machinery
+status: implementable
+creation-date: 2026-01-15
+reviewers:
+  - "@liggitt"
+  - "@jpbetz"
+approvers:
+  - "@liggitt"
+  - "@jpbetz"
+
+see-also:
+  - "/keps/sig-api-machinery/3962-mutating-admission-policies"
+  - "/keps/sig-api-machinery/3488-cel-admission-control"
+replaces:
+  - "/keps/sig-api-machinery/1872-manifest-based-admission-webhooks"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+  beta:
+  stable:
+
+feature-gates:
+  - name: ManifestBasedAdmissionControlConfig
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics:
+  # Config loading metrics
+  - apiserver_admission_manifest_config_automatic_reloads_total
+  - apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds
