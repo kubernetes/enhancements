@@ -4,11 +4,10 @@ authors:
   - "@nmn3m"
 owning-sig: sig-node
 participating-sigs:
-  - sig-scheduling
   - sig-auth
   - sig-api-machinery
 
-status: provisional
+status: implementable
 creation-date: 2025-12-20
 reviewers:
   - "@johnbelamaric"
