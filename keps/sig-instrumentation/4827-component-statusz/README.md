@@ -519,7 +519,7 @@ This enhancement proposes data that can be used to determine the health of the c
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No. We are open to input.
+Requests to `/statusz` will be tracked in the existing `apiserver_request_total` and `apiserver_request_duration_seconds` metrics.
 
 ### Dependencies
 

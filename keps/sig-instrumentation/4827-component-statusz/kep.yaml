@@ -39,3 +39,7 @@ feature-gates:
       - kubelet
       - kube-proxy
 disable-supported: true
+# The following PRR answers are required at beta release
+metrics:
+  - apiserver_request_total
+  - apiserver_request_duration_seconds
