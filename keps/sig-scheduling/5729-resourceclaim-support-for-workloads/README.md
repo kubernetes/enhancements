@@ -757,12 +757,12 @@ kubelet does not need to look up a Pod's PodGroup.
 
 The ResourceClaim controller will continue to deallocate claims when there are
 no entries in the ResourceClaim's `status.reservedFor`. References to PodGroups
-in `status.reservedFor` are removed after the PodGroup is deleted. Since
-PodGroups can only be deleted when all of their Pods have been deleted,
-ResourceClaims reserved for a PodGroup will therefore not be deleted before any
-of the Pods in the group which are actively using it. The entity which creates a
-PodGroup is responsible for deleting it when no more Pods in the group are
-expected to run.
+in `status.reservedFor` are removed after the PodGroup is deleted. PodGroup
+deletion should be gated by a finalizer managed by the creator of the PodGroup
+to prevent the PodGroup from being removed from `status.reservedFor` before all
+of its Pods are done using the ResourceClaim. When no more Pods in the group are
+expected to run, the creator of the PodGroup is responsible for removing the
+finalizer and deleting the PodGroup.
 
 ### Determining Allowed Pods for a ResourceClaim
 
