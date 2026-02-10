@@ -346,7 +346,18 @@ There will be no adverse effects of enabling the feature gate after it was disab
 
 ###### Are there any tests for feature enablement/disablement?
 
-No. However, the feature has been manually tested for enablement and disablement scenarios as documented in the "Rollout, Upgrade and Rollback Planning" section.
+**Feature Gate Tests:**
+Yes. E2E tests verify the `NodeLogQuery` feature gate can be enabled and disabled. 
+These tests are part of the [sig-windows e2e tests](https://github.com/kubernetes/test-infra/blob/9c058c9bcdaa4d60ebc2649dd2cb955b3f732f57/config/jobs/kubernetes-sigs/sig-windows/release-master-windows.yaml#L460).
+
+**Configuration Option Tests:**
+Yes. Unit tests in [`pkg/kubelet/apis/config/validation/validation_test.go`](https://github.com/kubernetes/kubernetes/blob/7b0310aaddb6ccd921679db6b26345c836a6cd5e/pkg/kubelet/apis/config/validation/validation_test.go#L615) 
+verify the `enableSystemLogQuery` kubelet configuration option validation behavior.
+
+Additionally, the feature has been manually tested for both enablement mechanisms as documented in the "Rollout, Upgrade and Rollback Planning" section, including:
+- Both mechanisms disabled (feature should not work)
+- Feature gate enabled with config option disabled (feature should not work)
+- Feature gate enabled with config option enabled (feature should work)
 
 ### Rollout, Upgrade and Rollback Planning
 
