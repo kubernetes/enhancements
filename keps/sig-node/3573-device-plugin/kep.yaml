@@ -36,7 +36,7 @@ feature-gates:
   - name: DevicePlugins
     components:
       - kubelet
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
