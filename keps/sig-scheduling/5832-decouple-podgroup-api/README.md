@@ -80,8 +80,9 @@ This KEP proposes decoupling the `PodGroup` API from the `Workload` API by intro
 `PodGroup` as a standalone runtime object. In the [current design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling),
 PodGroups are embedded within the Workload spec, which creates challenges around immutability, scaling, and lifecycle management. Under this proposal, the following changes are proposed:
 
-- `Workload` becomes a scheduling policy definition that specifies what workload behavior should be applied
-- `PodGroup` becomes a runtime object that is automatically created by true controllers (Job, JobSet, LeaderWorkerSet)
+- `Workload` becomes a static template defining scheduling hierarchy and scheduling policy definition that specifies what workload behavior should be applied
+- `PodGroup` becomes a runtime self-contained runtime scheduling unit for a group of pods that encapsulates both the 
+scheduling policy and status. It is automatically created by true controllers (Job, JobSet, LeaderWorkerSet)
 when they create workloads, rather than being embedded within the Workload spec. It will be created based on the
 `podGroupTemplate` defined in the referenced Workload.
 
@@ -179,9 +180,9 @@ In [KEP-4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-sc
 
 ```go
 type WorkloadSpec struct {
-    // PodGroupTemplates defines the templates for creating PodGroup runtime objects.
-    // Each template specifies the scheduling policy (e.g., minCount for gang scheduling)
-    // that controllers use when creating PodGroups.
+  ...
+    // PodGroupTemplates is the list of templates that make up the Workload.
+    // The maximum number of podGroupTemplates is 8. This field is immutable.
     //
     // +optional
     // +listType=map
@@ -196,40 +197,40 @@ type PodGroupTemplate struct {
 
 #### 2. Updated `Pod` API
 
-The `Pod` API will rename the field `workloadRef` to `podGroupRef` to reference the `PodGroup` runtime object name 
-`name` and `workloadName` that this pod belongs to, since each `PodGroup` object represents a single replica 
-instance. While `PodGroupReplicaKey` and `PodGroup` fields are **Tombstoned** (effectively removed).
+The `Pod` API will replace the field `spec.workloadRef` with `spec.schedulingGroup` to reference the `PodGroup` runtime
+object name `podGroupName` and other scheduling context that this pod belongs to, since each `PodGroup` object represents 
+a single replica instance. This aligns with the decoupling architecture for the `PodGroup` from `Workload` and allows for future extensibility.
 
 ```go
-// WorkloadReference identifies the Workload object and PodGroup instance
-// that a Pod belongs to. The scheduler uses this information to apply
-// workload-aware scheduling semantics.
-type WorkloadReference struct {
-  // Name defines the name of the Workload object this Pod belongs to.
-    // Workload must be in the same namespace as the Pod.
-    // It must be a DNS subdomain.
-    //
-    // +optional
-    Name string
-  
-    // Tombstoned since the field in 1.36 was replaced with PodGroupName.
-    // change from +required to +optional
-    // +optional
-    PodGroup string
+type PodSpec struct {
+	...
+	
+    // WorkloadRef is tombstoned since the field in 1.36 was replaced with SchedulingGroup.
+    // WorkloadRef *WorkloadReference
+	
+	// SchedulingGroup provides a reference to the immediate scheduling runtime grouping object that this Pod 
+	// belongs to. In the current implementation, this is always a PodGroup, but it may evolve in the future to support
+	// other concepts like PodSubGroups.
+	// This field is used by the scheduler to identify the PodGroup and apply the
+	// correct group scheduling policies. The PodGroup object referenced
+	// by this field may not exist at the time the Pod is created.
+	// This field is immutable, but a PodGroup object with the same name
+	// may be recreated with different policies. Doing this during pod scheduling
+	// may result in the placement not conforming to the expected policies.
+	//
+	// +featureGate=GenericWorkload
+	// +optional
+	SchedulingGroup *PodSchedulingGroup
+}
 
-    // Tombstoned is tombstoned since the field in 1.36
-    // change from +required to +optional
+// PodSchedulingGroup identifies the runtime scheduling group instance that a Pod belongs to. 
+// The scheduler uses this information to apply workload-aware scheduling semantics.
+type PodSchedulingGroup struct {
+    // PodGroupName specifies the name of the standalone PodGroup object 
+    // that represents the runtime instance of this group.
     // +optional
-    PodGroupReplicaKey string
-
-    //New fields
-
-    // PodGroupName is the name of the runtime PodGroup object that this Pod
-    // belongs to. If it doesn't match any existing PodGroup,
-    // the Pod will remain unschedulable until the PodGroup object is created
-    // and observed by the kube-scheduler. It must be a DNS label.
-    // +optional
-   PodGroupName string  `json:"podGroupName,omitempty"`
+    // +oneOf=GroupSelection
+    PodGroupName *string `json:"podGroupName,omitempty"`
 }
 ```
 
@@ -259,42 +260,42 @@ The `PodGroup` type will be defined with the following structure:
 ```go
 // API Group: scheduling.k8s.io/v1alpha2
 
-// PodGroup represents a runtime instance of pods grouped for workload-aware scheduling.
+// PodGroup represents a runtime instance of pods grouped for gang scheduling.
 // PodGroups are created by workload controllers (Job, LWS, JobSet, etc...) from
-// Workload.podGroupTemplates. Each PodGroup represents a single scheduling unit.
+// Workload.podGroupTemplates. Each PodGroup corresponds to one replica of the workload.
 type PodGroup struct {
-   metav1.TypeMeta
-   
-   // Standard object's metadata.
-   //
-   // +optional
-   metav1.ObjectMeta
-
-   // Spec defines the desired state of the PodGroup.
-   // +required
-   Spec PodGroupSpec
-
-   // Status represents the current observed state of the PodGroup.
-   // +optional
-   Status PodGroupStatus
+    metav1.TypeMeta
+    
+    // Standard object's metadata.
+    // Name must be a DNS subdomain.
+    //
+    // +optional
+    metav1.ObjectMeta
+    
+    // Spec defines the desired state of the PodGroup.
+    // +required
+    Spec PodGroupSpec
+    
+    // Status represents the current observed state of the PodGroup.
+    // +optional
+    Status PodGroupStatus
 }
 
 // PodGroupSpec defines the desired state of a PodGroup.
 type PodGroupSpec struct {
-  // PodGroupTemplateRef references the PodGroupTemplate that was used
-  // to create the PodGroup.
-  //
-  // +optional
-   PodGroupTemplateRef *PodGroupTemplateReference
-
-   // SchedulingPolicy defines the scheduling policy for this instance of the PodGroup.
-   // It is copied from the template on PodGroup creation.
-   // +required
-   SchedulingPolicy *PodGroupSchedulingPolicy
+    // PodGroupTemplateRef references the PodGroupTemplate within the Workload object that was used to create
+	// the PodGroup.
+    // +optional
+    PodGroupTemplateRef *PodGroupTemplateReference
+    
+    // SchedulingPolicy defines the scheduling policy for this instance of the PodGroup.
+    // It is copied from the template on PodGroup creation.
+    // +required
+    SchedulingPolicy *PodGroupSchedulingPolicy
 }
 
-// PodGroupTemplateReference references the PodGroupTemplate object that 
-// defines the template used to create the PodGroup.
+// PodGroupTemplateReference references the PodGroupTemplate name within 
+// the Workload object.
 type PodGroupTemplateReference struct {
    // WorkloadName defines the name of the Workload object this PodGroup is part of.
    //
@@ -334,12 +335,12 @@ type PodGroupStatus struct {
 
 The `PodGroup` lifecycle needs to make sure that `PodGroup` will not be deleted while any pod that references it is in a non-terminal phase (i.e. not `Succeeded` or `Failed`). 
 
-`PodGroup` objects are created with a dedicated finalizer that the controller is responsible for removing only when the deletion-safe condition is met. The mechanism for this is:
+`PodGroup` objects are created with a dedicated finalizer that a dedicated controller for `PodGroup` is responsible for removing only when the deletion-safe condition is met. The mechanism for this is:
 - Each `PodGroup` is created with a dedicated finalizer. If `PodGroup` objects exist without this finalizer (i.e., created before the feature), the controller adds it when processing them
 - The controller watches `PodGroup` and `Pod` objects. For a `PodGroup` that has `deletionTimestamp` set and still has the finalizer (a deletion candidate), it checks whether all pods that reference this `PodGroup` have reached a terminal phase (`Succeeded` or `Failed`)
 - If all referencing pods are terminal, only then the controller removes the finalizer, allowing the `PodGroup` to be deleted
 - Any referencing pod is non-terminal, the controller leaves the finalizer in place and re-enqueues (i.e., on pod updates)
-- To find the referencing pods, we can use an index keyed by `workloadRef.podGroupName` (and optionally namespace) so the controller can efficiently list pods that reference a given `PodGroup`
+- To find the referencing pods, we can use an index keyed by `schedulingGroup.podGroupName` (and optionally namespace) so the controller can efficiently list pods that reference a given `PodGroup`
 
 Deletion protection is not required for alpha (nice-to-have), however it is required for beta graduation.
 
@@ -366,7 +367,7 @@ whereas performance concerns remain theoretical.
 Since `PodGroup` is a runtime object created by true workload[^1] controllers, strict creation ordering (`PodGroup` must exist before `Pods`) is required to ensure the consistency of the scheduling policy.
 
 **Semantics:**
-- Pods with `workloadRef.podGroupName` set to a non-existent `PodGroup` are marked as `UnschedulableAndUnresolvable`
+- Pods with `schedulingGroup.podGroupName` set to a non-existent `PodGroup` are marked as `UnschedulableAndUnresolvable`
 - The scheduler re-enqueues these pods when the `PodGroup` is created (via informer Add event)
 
 This allows controllers to handle transient race conditions during object creation.
@@ -375,7 +376,7 @@ This allows controllers to handle transient race conditions during object creati
 True workload[^1] controllers are responsible for creating `PodGroup` and `Workload` objects before creating `Pods`. the required order is:
 1. Create `Workload` object
 2. Create `PodGroup` runtime object
-3. Create `Pods` with `podGroupRef.name` set to the name of the newly created `PodGroup` and `podGroupRef.workloadName` set to the name of the newly created `Workload`
+3. Create `Pods` with `schedulingGroup.podGroupName` set to the name of the newly created `PodGroup`
 
 ### PodGroup Status Lifecycle
 
@@ -404,7 +405,7 @@ The GangScheduling plugin will maintain a lister for `PodGroup` and check if the
 
 **1. PreEnqueue**: The extension will check if the `PodGroup` object exist. If not, it will return `UnschedulableAndUnresolvable` status. Then check if the Pod scheduling requirement is met for gang scheduling (based on minCount value in `PodGroup` object).
 
-**2. Permit**: The extension waits for all pods in the `PodGroup` to reach permit stage by using each pod's `podGroupRef.name` to identify the `PodGroup` that the pod belongs to.
+**2. Permit**: The extension waits for all pods in the `PodGroup` to reach permit stage by using each pod's `schedulingGroup.podGroupName` to identify the `PodGroup` that the pod belongs to.
 
 **3. EventsToRegister (Enqueue)**: The extension will register new event for `PodGroup` object is created.
 
@@ -428,15 +429,15 @@ graph TB
 
     TW ==>|"① creates & owns"| W
     TW ==>|"② creates & owns"| PG
-    TW ==>|"④ creates"| P
+    TW ==>|"③ creates & owns"| P
    
-    P -.->|ref| W
+
     PG -.->|ref| W  
 ```
 
 The `PodGroup` object is created and owned by the true workload controller [^1]. When the controller needs to create pods that require gang scheduling, it first creates the `Workload` object if not exists yet and then creates a `PodGroup` based on the `podGroupTemplate` that is defined in this `Workload`.This ensures automatic garbage collection when the parent object is deleted.
 
-Pods reference their `PodGroup` via `podGroupRef.name` and  their `Workload` via `podGroupRef.workloadName` which allows the scheduler to look up these objects. The scheduler requires both objects to exist before scheduling pods that reference it.
+Pods reference their `PodGroup` via `schedulingGroup.podGroupName`, which allows the scheduler to look up for the `PodGroup` object. The scheduler requires both `Workload` and `PodGroup` objects to exist before scheduling pods that reference it.
 
 ### Naming Convention
 
@@ -626,7 +627,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No.
+Yes, minimal increase in size of existing Pod objects.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -634,7 +635,9 @@ No. (Need to check if we should add Workload or Pod into the SLIs/SLOs time)
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-The increase of CPU/MEM consumption of kube-apiserver and kube-scheduler should be negligible percentage of the current resource usage.
+Since the scheduler replaces the Workload informer with a PodGroup informer, it's expected there can be more PodGroups than Workloads,
+kube-scheduler and kube-apiserver load may grow with PodGroup cardinality. The increase is expected to remain reasonable 
+under typical use but could be non-negligible on clusters with very large numbers of concurrent PodGroups.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 

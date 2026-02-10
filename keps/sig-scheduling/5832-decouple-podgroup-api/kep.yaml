@@ -18,6 +18,7 @@ reviewers:
 approvers:
   - "@macsko"
   - "@sanposhiho"
+  - "@dom4ha"
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
