@@ -2,6 +2,7 @@ title: Extend the PodResources API to include resources allocated by DRA
 kep-number: 3695
 authors:
   - "@moshe010"
+  - "@guptaNswati"
 owning-sig: sig-node
 participating-sigs: []
 status: implementable
