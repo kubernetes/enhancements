@@ -4,7 +4,7 @@ authors:
   - "@44past4"
 owning-sig: sig-scheduling
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2025-12-10
 reviewers:
   - sanposhiho
