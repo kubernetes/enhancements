@@ -258,7 +258,7 @@ Before returning a hint, the operation validates that the cached batch state is 
 
 1. **Cycle continuity:** The current scheduling cycle must be exactly one greater than the last cycle (no other pods were scheduled).
 2. **Signature match:** The pod's signature must exactly match the cached signature.
-3. **Cache freshness:** The cached data must be less than 500ms old to prevent using stale scheduling decisions.
+3. **Cache freshness:** The cached data must be sufficiently recent to avoid relying on stale scheduling decisions.
 4. **Last node is full:** The node chosen in the previous scheduling cycle must now be infeasible for the new pod. This is verified by running filter plugins against that node. This validation ensures the 1-pod-per-node constraint that allows us to reuse scoring results without rescoring.
 
 If all validations pass, the operation pops the next best node from the cached sorted list and returns it as a hint (see "Integration with Scheduling Cycle" below for how the hint is used).
@@ -268,13 +268,6 @@ If any validation fails, the batch state is invalidated (with the reason recorde
 #### StoreScheduleResults
 
 The `StoreScheduleResults` operation is called after a pod has been scheduled (after filtering, scoring, and node selection). It stores scheduling results for potential reuse with subsequent pods.
-
-The operation receives:
-- The pod's signature
-- The node that was hinted (if any)
-- The node that was actually chosen
-- The sorted list of remaining feasible nodes (excluding the chosen node)
-- The current scheduling cycle number
 
 The operation first records information about the last scheduling cycle (cycle number and chosen node) for use in the next cycle's validation.
 
@@ -289,10 +282,10 @@ Then it determines whether to store new batch state:
 - If the pod has a valid signature and there are remaining nodes in the sorted list, new batch state is created containing:
   - The pod's signature
   - The sorted list of remaining feasible nodes
-  - Creation timestamp (for the 500ms expiration check)
+  - Creation timestamp (for the expiration check)
 - If the pod has no signature or no remaining nodes, no batch state is stored.
 
-The batch state is kept in memory only and is limited to a 500ms lifetime to prevent stale data from affecting scheduling decisions.
+The batch state is kept in memory only and is constrained to a short-lived validity window to prevent stale data from affecting scheduling decisions.
 
 #### Integration with Scheduling Cycle
 
