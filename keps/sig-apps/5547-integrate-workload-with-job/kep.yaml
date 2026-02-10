@@ -11,8 +11,10 @@ reviewers:
   - "@kannon92"
   - "@wojtek-t"
   - "@mm4tt"
+  - "@andreyvelich"
 approvers:
   - "@soltysh"
+  - "@dom4ha"
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
