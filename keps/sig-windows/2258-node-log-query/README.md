@@ -466,7 +466,46 @@ CPU or memory spikes have been reported from the field.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No. The feature has a built-in timeout of 30 seconds which prevents long-running queries from exhausting resources. Additionally, the feature only responds to explicit API requests and does not consume resources in the background.
+The feature only responds to explicit API requests and does not consume resources in the background, has 
+a built-in timeout of 30 seconds which prevents long-running queries from exhausting resources. However, if a large
+number of concurrent requests are made to the log query endpoint, there is potential risk for resource exhaustion. 
+The kubelet and API server have existing safeguards to handle concurrent requests, but it is important to monitor 
+resource usage when this feature is enabled. 
+
+Concurrent requests could potentially exhaust the following resources:
+- **File descriptors**: Each query may open log files or pipes (for `journalctl`/`Get-WinEvent`)
+- **PIDs**: Each query spawns a subprocess (journalctl on Linux, PowerShell on Windows)
+- **Memory**: Large logs being streamed could consume memory
+- **CPU**: Log processing and regex pattern matching
+
+**Example attack scenario:**
+
+A malicious or misconfigured client making 10,000 concurrent requests to `/api/v1/nodes/{node}/proxy/logs/?query=kubelet` could:
+- Spawn 10,000 subprocesses (exhausting PIDs)
+- Open 10,000+ file descriptors (pipes/sockets)
+- Consume significant CPU for concurrent log processing
+
+**Mitigations:**
+
+1. **RBAC protection**: The feature requires cluster administrator privileges (`nodes/proxy` resource access). Only trusted users or roles can access this endpoint.
+
+2. **Authentication/authorization overhead**: Every request must pass through API server authentication and authorization before reaching the kubelet, providing natural rate limiting through API server request handling.
+
+3. **Built-in timeout**: Each query is limited to 30 seconds, preventing indefinite resource consumption per request.
+
+4. **Kubelet request limits**: The kubelet has existing safeguards for handling concurrent HTTP requests through its HTTP server configuration.
+
+**Recommendations for production deployments:**
+
+- Monitor kubelet resource usage (CPU, memory, file descriptors, PIDs) when this feature is enabled
+- Consider implementing additional rate limiting at the API server level for the `/proxy/logs/` endpoint if needed
+- Audit and restrict RBAC permissions to the `nodes/proxy` resource to only necessary service accounts and users
+- Set appropriate resource limits on the kubelet process itself
+
+**Considerations for future improvements:**
+- Implement explicit per-client rate limiting in the kubelet for log query requests
+- Add metrics for tracking concurrent log query operations
+- Consider a maximum concurrent requests limit specifically for the `/logs/` endpoint
 
 ### Troubleshooting
 
