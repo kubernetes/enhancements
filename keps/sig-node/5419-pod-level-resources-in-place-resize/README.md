@@ -25,7 +25,7 @@
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.35)](#phase-1-alpha-target-135)
+    - [Phase 1: Alpha (target 1.35) [DONE]](#phase-1-alpha-target-135-done)
     - [Phase 2:  Beta (target 1.36)](#phase-2--beta-target-136)
     - [GA (stable)](#ga-stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -229,11 +229,10 @@ type PodStatus struct {
 
 ##### Resize Restart Policy
 
-Pod-level resize policy is not supported in the alpha stage of Pod-level resource
-feature. While a pod-level resize policy might be beneficial for VM-based runtimes
-like Kata Containers (potentially allowing the hypervisor to restart the entire VM
-on resize), this is a topic for future consideration. We plan to engage with the
-Kata community to discuss this further and will re-evaluate the need for a pod-level
+Pod-level resize policy is not supported in this KEP. While a pod-level resize policy might
+ be beneficial for VM-based runtimes like Kata Containers (potentially allowing the hypervisor
+to restart the entire VM on resize), this is a topic for future consideration as a separate KEP. 
+We plan to engage with the Kata community to discuss this further and will re-evaluate the need for a pod-level
 policy in subsequent development stages.
 
 The absence of a pod-level resize policy means that container restarts are
@@ -477,9 +476,14 @@ necessary to implement this enhancement.
 
 e2e tests provide good test coverage of interactions between the new pod-level
 resource feature and existing Kubernetes components i.e. API server, kubelet, cgroup
-enforcement. We may replicate and/or move some of the E2E tests functionality into integration tests before Beta using data from any issues we uncover that are not covered by planned and implemented tests.
+enforcement. We may replicate and/or move some of the E2E tests functionality into 
+integration tests before GA using data from any issues we uncover that are not
+covered by planned and implemented tests.
 
 #### e2e tests
+
+  * - [Pod Level Resources Resize](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/pod_level_resources_resize.go): [SIG Node](https://testgrid.k8s.io/sig-node-presubmits#pr-kubelet-e2e-podlevelresources-resize), [triage search](https://storage.googleapis.com/k8s-triage/index.html?ci=0&pr=1&sig=node&job=pr-kubelet-e2e-podlevelresources-resize)
+
 
 Following scenarios need to be covered:
 
@@ -493,7 +497,7 @@ Following scenarios need to be covered:
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.35)
+#### Phase 1: Alpha (target 1.35) [DONE]
 * Feature is disabled by default. It is an opt-in feature which can be enabled by
   enabling the InPlacePodLevelResourcesVerticalScaling feature gate and by setting
   the new resources fields in PodSpec at Pod level.
@@ -511,9 +515,6 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 * Actual pod resource data may be cached in memory, which will be refreshed after
   each successful pod resize or for every cache-miss.
 * Coverage for upgrade->downgrade->upgrade scenarios.
-* Consensus with Kata community to on pod-level resize policy. If it is required to
-  support pod-level resize policy, we will have to do another alpha launch of the
-  feature as it would involve an API change.
 * Extend instrumentation from
   [KEP#1287](https://github.com/kubernetes/enhancements/blob/ef7e11d088086afd84d26c9249a4ca480df2d05a/keps/sig-node/1287-in-place-update-pod-resources/README.md)
   for Pod-level resource resize.
@@ -691,6 +692,9 @@ Testing plan:
 * Restart API server with feature enabled
 * Verify original test pod is still running
 
+Initial manual verification was completed following the Alpha release ([Results](https://docs.google.com/document/d/19dKnTxH34YjSzrQCMqmpNp9iJk4YfWXXf5ytqNvV4c0/edit?usp=sharing)).
+Comprehensive automated testing and E2E coverage are slated for implementation prior to GA graduation."
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No
@@ -828,6 +832,7 @@ Focusing mostly on:
     - One new PATCH PodStatus API call in response to Pod resize request.
     - No additional overhead unless Pod resize is invoked.
   - estimated throughput
+    - Proportional to the number of resize requests issued by users or controllers (e.g., VPA). For a typical cluster this is expected to be < 1% of total Pod update traffic.
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
     - Kubelet
   focusing mostly on:
@@ -866,7 +871,9 @@ Describe them, providing:
 -->
 Negligible.
 - API type(s):
-- Estimated increase in size: (e.g., new annotation of size 32B)
+- Estimated increase in size: (e.g., new annotation of size 32B): Each Pod object will grow by approximately
+  200-400 bytes due to the addition of `Resources` and `AllocatedResources`
+  fields in `PodStatus`, plus the `Resources` stanza in `PodSpec`.
 - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
   - type PodStatus has 2 new fields of type v1.ResourceRequirements and v1.ResourceList
 
@@ -880,6 +887,7 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+No. The computational overhead introduced in API server, scheduler and kubelet due to additional validation for pod level resource specifications should be negligible. Thorough testing and monitoring will ensure the SLIs/SLOs are not impacted.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 No
@@ -924,6 +932,10 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server or etcd is unavailable, existing pods will continue to run with their last
+known resource configurations. No new resize requests can be initiated, and the Kubelet
+will be unable to update the `PodStatus` to reflect any locally completed or failed
+resizes until connectivity is restored.
 
 ###### What are other known failure modes?
 
@@ -940,12 +952,35 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- **CRI Runtime doesn't support Pod Sandbox Resize**:
+  - Detection: `PodStatus.Resize` will be stuck in `InProgress` and Kubelet logs will
+    show errors calling `UpdatePodSandboxResources`.
+  - Mitigations: Disable the feature gate or upgrade the container runtime to a
+    compatible version (e.g., latest containerd/CRI-O).
+  - Diagnostics: Kubelet logs (search for `UpdatePodSandboxResources` errors) and
+    `kubectl get pod <name> -o yaml` to check `resizeStatus`.
+- **Cgroup update failure (OS level)**:
+  - Detection: Kubelet will emit an event indicating failure to update cgroups.
+  - Mitigations: Revert the resize request in the Pod spec to a known-good value.
+  - Diagnostics: Kubelet logs and `dmesg` on the node for potential OOM or cgroup
+    permission issues.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Verify if the `InPlacePodLevelResourcesVerticalScaling` feature gate is enabled
+   on all components (apiserver, scheduler, kubelet).
+2. Check `apiserver_request_total{resource="pods", subresource="resize"}` to see
+   if resize requests are being rejected at the API level.
+3. Inspect Kubelet logs for errors related to `UpdatePodSandboxResources` or
+  `ResourceCalculation`.
+4. Monitor `node_collector_evictions_total` to ensure pod-level limits aren't
+  causing unexpected evictions.
 
 ## Implementation History
 
 - **2025-06-18:** KEP draft split from (KEP#2387)[https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2837-pod-level-resource-spec/README.md]
+- **2026-01-28:** KEP moved to beta for 1.36 release
 
 ## Drawbacks
 
