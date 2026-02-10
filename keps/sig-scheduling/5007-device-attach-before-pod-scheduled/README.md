@@ -226,6 +226,7 @@ Moving to beta aims to validate the feature at scale, gather real-world feedback
 - While this KEP introduces a mechanism that supports such use cases, broader architectural questions — such as how to model attachment workflows or coordinate between node-local and fabric-aware components — will be addressed in follow-up discussions.
 - Defining autoscaling strategies for fabric-attached devices (covered in future proposals).
 - Guaranteeing zero rescheduling in all failure scenarios.
+- A mechanism to safely move devices between different pools, achieving this as a happy-path flow without relying on re-scheduling triggered by BindingFailureConditions.
 
 ## Proposal
 
@@ -743,12 +744,14 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
     - A few bugs were identified in the external controller (CoHDI component), but all of them were resolvable with fixes and do not indicate a fatal problem with the use of BindingCondition.
     - Scenarios where devices in a ResourceSlice for a resource pool decrease were also tested, with no issues detected.
     - Please refer [here](https://github.com/CoHDI/composable-dra-driver/tree/main/doc/Usecase_and_feedback_for_BindingCondition.md) for more details.
-- Resolve the following issues
-  - If Scheduler picks up another node for the Pod after the restart, devices are unnecessarily left on the original nodes
-    (Composable DRA controller needs to have the function to detach a device automatically if it is not used by a Pod for a certain period of time)
-  - Pods which are not bound yet (in api-server) and not unschedulable (in api-server) are not visible by cluster autoscaler, so there is a risk that the node will be turned down
-- Additional tests are in Testgrid and linked in KEP
-- Scheduler supports timeout configuration via command-line argument
+    - In this use case, the attachment scenario for moving devices between different pools is achieved through re-scheduling triggered by BindingFailureConditions. However, there remains an issue that device migration needs to be implemented using BindingConditions as a happy‑path flow. This will be addressed in a separate KEP and will be considered out of scope for the beta-graduation criteria.
+  - Feedback form NVIDIA DRA Driver (https://github.com/NVIDIA/k8s-dra-driver-gpu)
+    - ComputeDomain is an NVIDIA GPU Operator concept that groups multiple Kubernetes pods into a secure, isolated domain so they can share GPU memory across nodes using Multi‑Node NVLink and IMEX technology.
+    - BindingConditions let Kubernetes delay pod start until the ComputeDomain's prerequisites are truly ready - specifically, until IMEX daemons are scheduled and healthy - without resorting to fail‑and‑retry loops.
+    - This yields faster, more predictable pod startup and a simpler driver/controller design because the pod is only bound once all ComputeDomain resources signal ready via BindingConditions.
+    - Please refer [here](https://github.com/NVIDIA/k8s-dra-driver-gpu/issues/653) for more details.
+- Resolve the issues listed in the following:  
+  https://github.com/kubernetes/kubernetes/issues/135472
 
 #### GA
 
@@ -780,10 +783,9 @@ enhancement:
 -->
 
 This feature exposes new fields such as `BindingConditions` in the
-`ResourceClaim` and `ResourceSlice`, the fields willeither be present or not.
+`ResourceClaim` and `ResourceSlice`, the fields will either be present or not.
 
-This feature uses the DRA interface and will follow the DRA upgrade/downgrade
-strategy.
+This feature uses the DRA interface and will follow standard Kubernetes feature flag semantics.
 
 ### Version Skew Strategy
 
@@ -800,8 +802,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-This feature affects only the kube-apiserver and kube-scheduler, so there is no
-issue with version skew with other Kubernetes components.
+Older schedulers, or schedulers with the feature flag disabled, will not see the values in the new fields, and so will proceed to binding even if the ResourceSlice contains BindingConditions. The exact behavior when the Pod reaches the kubelet will depend on the driver; in many cases it is likely the associated Pods will fail in this case.
 
 ## Production Readiness Review Questionnaire
 
@@ -919,10 +920,18 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-When this feature is enabled, if a Pod requests a resource that has
-BindingConditions, the Pod will wait in the PreBind phase until all
-BindingConditions are set to True. This means that this feature only affects the
-behavior before the Pod is scheduled, and does not affect running workloads.
+It is safest to perform rollout and feature enablement in the following order:
+
+1. Enable the feature gate on the kube-apiserver
+2. Enable the feature gate on the kube-scheduler
+3. Deploy the DRA driver that publishes ResourceSlice with BindingConditions
+4. Deploy the controller related to that device ( = the binding controller)
+
+For rollback, it is recommended to reverse this order.
+
+An example of a rollout failure would be when step 3 is completed but step 4 is not.
+In this situation, a Pod may be allocated to a device with BindingConditions and remain in a scheduling wait state.
+However, since the binding controller responsible for provisioning the device is not deployed, the provisioning never occurs, and scheduling cannot succeed.
 
 ###### What specific metrics should inform a rollback?
 
@@ -931,9 +940,21 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-When a timeout occurs in BindingConditions, the Pod is repeatedly re-scheduled, which leads to an increase in the `scheduler_schedule_attempts_total` metric with the label `result=unschedulable`.
+Two metrics will be introduced.
 
-Additionally, since the waiting time within the Pre-Bind phase increases, the `scheduler_framework_extension_point_duration_seconds` metric - especially the higher latency histogram buckets with labels `extension_point=PreBind` and `status=1` (Error) - will show elevated counts.
+- `scheduler_dra_bindingconditions_allocations_total` (type: `CounterVec`)
+  - This metric counts the number of scheduling attempts (PreBind executions) in which BindingConditions are required.
+  - The metric includes a label `status` - `"success"`, `"failure"`, or `"timeout"`, allowing operators to understand the processing result of BindingConditions.
+  - By tracking this metric over time, operators can determine, at each point in time, whether the BindingConditions feature is being used
+
+- `scheduler_dra_bindingconditions_prebind_duration_seconds` (type: `HistogramVec`)
+  - This metric observes the full PreBind duration for DRA flows.
+  - The metric includes a label `status` - `"success"`, `"failure"`, or `"timeout"`, allowing operators to classify the duration by processing status.
+  - The metric includes a label `requires_bindingconditions` - `"true"` or `"false"`, allowing operators to switch the duration based on with or without BindingConditions.
+
+When a timeout occurs in BindingConditions, the Pod is repeatedly re-scheduled, which leads to an increase in the `scheduler_dra_bindingconditions_allocations_total` metric with the label `status=timeout`.
+
+Additionally, since the waiting time within the Pre-Bind phase increases, the `scheduler_dra_bindingconditions_prebind_duration_seconds` metric - especially the higher latency histogram buckets with labels `requires_bindingconditions=true` - will show elevated counts.
 
 In all cases further analysis of logs and pod events is needed to determine whether errors are related to this feature.
 
@@ -972,12 +993,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Operators can determine if this feature is in use by workloads by checking
-the following:
-
-- Presence of elements in `ResourceClaim.status.allocation.devices.results.bindingConditions`.
-- Presence of elements in `ResourceSlice.spec.devices.bindingConditions`.
-- Existence of a "BindingConditionsPending" message in the Pod's Event logs.
+Operators can determine whether this feature is being used by workloads by checking the metric `scheduler_dra_bindingconditions_allocations_total`.
+By tracking this metric over time, operators can determine, at each point in time, whether the BindingConditions feature is being used.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1026,8 +1043,10 @@ consistently low.
 Pick one more of these and delete the rest.
 -->
 
-This can be determined by comparing the time required for binding, specifically:
-The time from "BindingConditionsPending" to "Scheduled" in the Pod's event logs.
+This can be determined by monitoring the histogram metric `scheduler_dra_bindingconditions_prebind_duration_seconds`
+with the labels `"status=success"` and `"requires_bindingconditions=true"`.  
+This metric shows the time it takes for BindingConditions to be processed and for the Pod to be scheduled.  
+If this duration increases, it indicates that the SLI is degrading.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1064,10 +1083,13 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-Yes. The proper functioning and latency of this feature depend on external
-controllers (e.g., composable DRA controllers).
-This is because the scheduler expects state updates from external controllers
-to satisfy the BindingConditions and allow the schedule to complete.
+- [External controller]
+  - Usage description:  
+    The external controller is responsible for provisioning the resource state and satisfying BindingConditions so that the scheduler can complete the scheduling process.
+    - Impact of its outage on the feature:  
+      If the external controller is not deployed or is completely unavailable, Pods that require devices with BindingConditions will remain in a pending state. Scheduling cannot succeed because the controller never provisions the device or updates the conditions.
+    - Impact of its degraded performance or high error rates on the feature:  
+      If the controller is slow or error-prone, scheduling latency will increase significantly. Pods may experience long delays before becoming runnable, and in some cases, scheduling may fail if timeouts occur.
 
 ### Scalability
 
@@ -1096,7 +1118,7 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-Yes, there will be additional Get() calls to ResourceClaim for communication
+Yes, there will be additional Get() and Watch() calls to ResourceClaim for communication
 with the external controller. However, these calls are executed with a
 backoff interval and are therefore negligible.
 
@@ -1166,6 +1188,9 @@ time it takes for a Pod to transition from creation to a Running state, as well
 as on Pod creation throughput. This is due to waiting for status updates from
 external controllers in the scheduler's PreBind phase.
 
+This impact can be observed through the metric `scheduler_dra_bindingconditions_prebind_duration_seconds`.
+By switching `requires_bindingconditions="true"/"false"`, it's possible to choose to display only requests that exclude BindingConditions, allowing to verify the transition times limited to requests involving BindingConditions.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -1178,7 +1203,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-Yes, CPU utilization will slightly increase for evaluating BindingConditions,
+No, CPU utilization will slightly increase for evaluating BindingConditions,
 but this increase is negligible, because these operations are processed with a
 backoff interval. And the addition of fields to existing structs will also
 slightly increase memory consumption, but as mentioned in the previous item,
@@ -1235,7 +1260,7 @@ Failure of the external controller, or the absence of a corresponding external
 controller, will lead to a scheduling timeout, causing Pods that were waiting
 in the PreBind phase to be re-queued for scheduling.
 
-- Detection: Timeout of scheduling using the BindingConditions feature can be detected from the Pod's logs.
+- Detection: Timeout of scheduling using the BindingConditions feature can be detected from the metrics.
 - Mitigations: To prevent resources using the BindingConditions feature from being deployed, stop the controller that generates ResourceSlices with BindingConditions, and then delete those ResourceSlices.
 - Diagnostics: Depends on the implementation of external controllers corresponding to BindingConditions.
 - Testing: From the scheduler's perspective, this has been addressed through integration tests and unit tests, which confirm that timeouts do not occur under appropriate conditions and verify the behavior after a timeout occurs.
