@@ -1,0 +1,41 @@
+title: DRA Resource Availability Visibility
+kep-number: 5677
+authors:
+  - "@nmn3m"
+owning-sig: sig-node
+participating-sigs:
+  - sig-auth
+  - sig-api-machinery
+
+status: implementable
+creation-date: 2025-12-20
+reviewers:
+  - "@johnbelamaric"
+  - "@mortent"
+  - "@liggitt"
+  - "@pohly"
+approvers:
+  - "@mrunalp"
+
+see-also:
+  - "/keps/sig-node/4381-dra-structured-parameters"
+  - "/keps/sig-node/3063-dynamic-resource-allocation"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+
+feature-gates:
+  - name: DRAResourcePoolStatus
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - resourcepoolstatus_request_processing_duration_seconds
+  - resourcepoolstatus_request_processing_errors_total
+  - resourcepoolstatus_requests_processed_total
