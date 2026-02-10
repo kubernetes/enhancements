@@ -101,7 +101,7 @@ remaining in a pool or on a node.
 This enhancement introduces a **ResourcePoolStatusRequest** API following the
 CertificateSigningRequest (CSR) pattern:
 
-1. User creates a ResourcePoolStatusRequest object with optional filters
+1. User creates a ResourcePoolStatusRequest object specifying a driver (required) and optional pool filter
 2. A controller in kube-controller-manager watches for new requests
 3. Controller computes pool availability and writes result to status
 4. User reads the status to see pool availability
@@ -142,7 +142,7 @@ However, the current implementation lacks visibility into resource availability:
 - Follow established request/status patterns (like CSR)
 - Compute availability on-demand (only when requested)
 - Always available in-tree, in-sync with Kubernetes releases
-- Support filtering by driver and/or pool name
+- Require driver specification, with optional pool name filter
 - Provide cross-slice validation to surface pool consistency issues
 - Control access via standard RBAC on the request object
 - Keep ResourceClaim and ResourceSlice APIs unchanged, requiring no
@@ -326,6 +326,7 @@ to trigger alerts or scaling actions.
 # Cron job that runs every 5 minutes
 
 REQUEST_NAME="monitor-$(date +%s)"
+DRIVER="example.com/gpu"
 
 # Create request
 kubectl create -f - <<EOF
@@ -333,7 +334,8 @@ apiVersion: resource.k8s.io/v1alpha1
 kind: ResourcePoolStatusRequest
 metadata:
   name: $REQUEST_NAME
-spec: {}  # All pools
+spec:
+  driver: $DRIVER
 EOF
 
 # Wait and get result
@@ -384,12 +386,13 @@ kubectl delete rpsr/$REQUEST_NAME
 | Risk | Mitigation |
 |------|------------|
 | Request accumulation in etcd | Document cleanup; consider TTL for Beta |
-| Large status objects (many pools) | `limit` field caps response size |
+| Large status objects (many pools) | Required `driver` field bounds response; `limit` field caps further |
 | Controller processing spike | Work queue with rate limiting |
 | Simultaneous request flood | Rate limiting per user (Beta) |
 
-**Alpha approach:** For Alpha, we rely on documentation, the `limit` field to
-bound response size, and controller-side rate limiting. Cluster administrators
+**Alpha approach:** For Alpha, the required `driver` field naturally bounds
+response size to one driver's pools, with `limit` as an additional cap. We rely
+on documentation and controller-side rate limiting. Cluster administrators
 can enforce object count limits using admission webhooks (e.g., Gatekeeper,
 Kyverno) if needed for their environment. This is sufficient for initial
 adoption while we gather feedback on usage patterns.
@@ -489,16 +492,15 @@ metadata:
   name: my-request
   # Cluster-scoped (no namespace)
 spec:
-  # All fields optional - empty spec means "all pools"
-
-  # Filter by driver name
+  # Driver is REQUIRED - bounds response to one driver's pools
   driver: example.com/gpu
 
-  # Filter by pool name (requires driver if set)
+  # Filter by pool name (optional)
   poolName: node-1
 
-  # Limit number of pools returned (default: 100, max: 1000)
-  # Prevents large responses in clusters with many pools
+  # Limit number of pools returned (optional)
+  # Default and max values will be determined at implementation time
+  # based on max-size calculations to ensure the object fits in etcd
   limit: 100
 
 status:
@@ -544,9 +546,9 @@ filters or get fresh data, delete and create a new request.
 
 | Field | Description |
 |-------|-------------|
-| `driver` | Filter by driver name (optional) |
-| `poolName` | Filter by pool name (optional, requires driver) |
-| `limit` | Max pools to return (default: 100, max: 1000) |
+| `driver` | Driver name (**required**) - bounds response to one driver's pools |
+| `poolName` | Filter by pool name (optional) |
+| `limit` | Max pools to return (optional, values determined at implementation based on size calculations) |
 
 #### Status Fields
 
@@ -640,10 +642,10 @@ Coverage targets:
 - Controller logic: 75%+
 
 Test cases:
-- Empty spec (all pools)
-- Filter by driver only
-- Filter by driver and pool
-- No matching pools
+- Driver only (all pools for that driver)
+- Driver and pool name filter
+- No matching pools for driver
+- Missing driver field (validation error)
 - Various allocation states
 - Cross-slice validation errors
 - Generation handling
@@ -876,7 +878,7 @@ Minimal:
 - etcd: Small objects, users should clean up (TTL in Beta)
 - KCM: Reuses existing informers, adds small controller
 - API server: Standard API operations
-- Response size: Bounded by `limit` field (default 100, max 1000 pools)
+- Response size: Bounded by required `driver` field (one driver's pools) and optional `limit` field (values determined at implementation based on size calculations)
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
