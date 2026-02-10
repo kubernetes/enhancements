@@ -21,6 +21,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -43,11 +44,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -299,15 +300,26 @@ N/A. This feature requires a e2e test for testing.
 - Add test cases to ensure and report incompatibility with existing CPUManager options that are not supported with prefer-align-cpus-by-uncore-cache
 - Add E2E test coverage for feature
 
+#### Stable
+
+- No changes to implementation
+- Test criteria met at beta stage
+
 ### Upgrade / Downgrade Strategy
 
-N/A
+`prefer-align-by-uncorecache` was introduced as an alpha and beta CPUManager policy option prior to its stable graduation. The table below summarizes the additional feature gates needed to enable based on Kubelet versions.
+| Version | Stage | Additional Feature Gate |
+| --- | --- | --- |
+| < v1.32 | N/A | N/A |
+| v1.32 - v1.33  | alpha | CPUManagerPolicyAlphaOptions |
+| v1.34 - v1.35 | beta | CPUManagerPolicyBetaOptions (enabled by default) |
+| v1.36 + | stable | CPUManagerPolicyOptions (enabled by default) |
 
 
 ### Version Skew Strategy
 
-N/A
-
+Because CPUManager configuration is validated at Kubelet startup, any version skew involving an unsupported Kubelet for the feature will result in a Kubelet initialization failure.
+Kubelet versions earlier than v1.32 do not support this option. Providing it will cause a configuration parsing error and the Kubelet will fail to start.
 
 ## Production Readiness Review Questionnaire
 
@@ -342,7 +354,7 @@ To enable this feature requires enabling the feature gates for static policy in 
 For `CPUManager` it is a requirement going from `none` to `static` policy cannot be done dynamically because of the `cpu_manager_state file`. The node needs to be drained and the policy checkpoint file (`cpu_manager_state`) need to be removed before restarting Kubelet. This feature specifically relies on the `static` policy being enabled.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `CPUManagerBetaPolicyOptions`
+  - Feature gate name: "CPUManagerPolicyOptions", "CPUManagerPolicyBetaOptions", "CPUManagerPolicyAlphaOptions"
   - Components depending on the feature gate: `kubelet`
 - [x] Other
   - Describe the mechanism: Change the `kubelet` configuration to set a `CPUManager` policy of static then setting the policy option of `prefer-align-cpus-by-uncorecache`
@@ -353,11 +365,14 @@ For `CPUManager` it is a requirement going from `none` to `static` policy cannot
 
 ###### Does enabling the feature change any default behavior?
 
-No, to enable this feature, it must be explicitly set in the `CPUManager` static policy and the policy option `prefer-align-cpus-by-uncorecache` must be set.
+To enable this feature, it must be explicitly set in the `CPUManager` static policy and the policy option `prefer-align-cpus-by-uncorecache` must be set.
+The static default behavior will change from a packed CPU method to best-effort alignment to the CPUs of uncore caches as outlined above.
+For nodes with monolithic uncore caches, the static default behavior will be the same. 
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes this feature can be disabled it will just require a restart of `kubelet`. The Kubelet configuration will need to be set with the static policy option and prefer-align-cpus-by-uncorecache flag removed.
+Remove the cpu_manager_state file if disabling the static policy.
 
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -415,8 +430,10 @@ Reference podresources API to determine CPU assignment.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-In default Kubernetes installation, 99th percentile per cluster-day <= X
-This feature is best-effort and will not cause failed admission, but can introduce admission delay.
+This feature is best-effort and will not cause failed admission, but can introduce negligible admission delay.
+CPU and corresponding uncore cache topology is built once at initialization. This is a one-time cost that does not impact Pod admission.
+This policy option stays at O(N) complexity since it scans through each uncore cache ID to find a CPU fit. 
+Any admission delay is estimated to be negligible at sub-millisecond. 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -466,7 +483,7 @@ No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-NA. 
+N/A 
 
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
@@ -529,11 +546,15 @@ For each of them, fill in the following information by copying the below templat
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+Time each step/function performed to determine CPU allocation when feature is enabled to assess what needs to be optimized. 
+
 ## Implementation History
 
 - The outlined sections were filled out was created 2024-08-27.
 
 - 2025-06-09: Submitted PR to promote feature to beta
+
+- 2026-01-28: Promote feature to GA for v1.36
 
 ## Drawbacks
 
