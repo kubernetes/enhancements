@@ -77,8 +77,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes decoupling the `PodGroup` API from the `Workload` API by introducing
-`PodGroup` as a standalone runtime object. In the [current design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling),
-PodGroups are embedded within the Workload spec, which creates challenges around immutability, scaling, and lifecycle management. Under this proposal, the following changes are proposed:
+`PodGroup` as a standalone runtime object. In [alpha1 design](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling) for gang scheduling,
+PodGroups were embedded within the Workload spec, which creates challenges around immutability, scaling, and lifecycle management. Under this proposal, the following changes are proposed as alpha2:
 
 - `Workload` becomes a static template defining scheduling hierarchy and scheduling policy definition that specifies what workload behavior should be applied
 - `PodGroup` becomes a runtime self-contained runtime scheduling unit for a group of pods that encapsulates both the 
