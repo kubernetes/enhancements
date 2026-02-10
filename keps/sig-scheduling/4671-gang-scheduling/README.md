@@ -349,13 +349,10 @@ type PodSchedulingGroup struct {
     // PodGroupName specifies the name of the standalone PodGroup object 
     // that represents the runtime instance of this group.
     // +optional
+    // +oneOf=GroupSelection
     PodGroupName *string `json:"podGroupName,omitempty"`
 }
 ```
-
-Note: All fields in PodSchedulingGroup are intentionally made optional. The validation logic for the PodGroupName
-field presence will be implemented in the code to allow for extending this structure (via oneoff) with more scheduling
-grouping concepts (e.g. PodSubGroupName) in the future.
 
 At least for Alpha, we start with `PodSchedulingGroup` to be immutable field in the Pod.
 In further phases, we may decide to relax validation and allow for setting some of the fields later.
