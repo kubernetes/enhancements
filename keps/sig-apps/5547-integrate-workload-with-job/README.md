@@ -329,6 +329,12 @@ We will add the following integration tests to the Job controller `https://githu
 - Gang and Basic Scheduling Lifecycle Test (create, update, delete Job, verify Workload and PodGroup creation, verify pods have `podGroupRef`, verify Job deletion cascades to Workload and PodGroup deletion)
 - Failure Recovery Test (create Job with Workload API unavailable, verify Job controller retries, verify Workload is eventually created)
 - Feature gate disable/enable (Jobs work without Workload/PodGroup creation (Jobs with ownerReferences managed by higher-level controllers do not create Workload/PodGroup))
+- Jobs created by CronJob get one Workload and one PodGroup per Job:
+  - CronJob does not set `podGroupRef` on the pod template
+  - Verify Workload/PodGroup creation and GC when the CronJob-created Job completes or is deleted
+- When a Job is suspended, pods are deleted but Workload and PodGroup remain. For alpha, check that on resume, the same Workload/PodGroup are used and pods are recreated with correct `podGroupRef`
+- For a Job using gang scheduling, verify that parallelism change is rejected
+- Verify controller-created Workload/PodGroup has the correct owner references
 
 ##### e2e tests
 
