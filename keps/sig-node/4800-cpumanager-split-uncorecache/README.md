@@ -430,8 +430,10 @@ Reference podresources API to determine CPU assignment.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-In default Kubernetes installation, 99th percentile per cluster-day <= X
-This feature is best-effort and will not cause failed admission, but can introduce admission delay.
+This feature is best-effort and will not cause failed admission, but can introduce negligible admission delay.
+CPU and corresponding uncore cache topology is built once at initialization. This is a one-time cost that does not impact Pod admission.
+This policy option stays at O(N) complexity since it scans through each uncore cache ID to find a CPU fit. 
+Any admission delay is estimated to be negligible at sub-millisecond. 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -481,7 +483,7 @@ No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-NA. 
+N/A 
 
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
