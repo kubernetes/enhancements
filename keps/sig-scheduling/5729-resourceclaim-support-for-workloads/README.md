@@ -658,8 +658,7 @@ spec:
       resourceClaims:
       - name: resource
         podGroupResourceClaim: pg-claim
-      workloadRef:
-        name: my-workload
+      schedulingGroup:
         podGroupName: my-podgroup-1
 ---
 apiVersion: apps/v1
@@ -686,8 +685,7 @@ spec:
       resourceClaims:
       - name: resource
         podGroupResourceClaim: pg-claim
-      workloadRef:
-        name: my-workload
+      schedulingGroup:
         podGroupName: my-podgroup-2
 ```
 
@@ -771,7 +769,7 @@ expected to run.
 Currently, any Pod allowed to utilize a ResourceClaim is listed explicitly in
 the claim's `status.reservedFor`. When the list instead references a PodGroup,
 only the name in the reference must match a Pod's
-`spec.workloadRef.podGroupName`. Since a finalizer will protect a PodGroup from
+`spec.schedulingGroup.podGroupName`. Since a finalizer will protect a PodGroup from
 being deleted before any of its Pods, a reference to the name of a PodGroup in a
 Pod will always refer to the exact same PodGroup, i.e. the PodGroup cannot be
 deleted and recreated with the same name without all of its Pods also being
