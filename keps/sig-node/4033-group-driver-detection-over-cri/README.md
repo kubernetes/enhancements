@@ -186,14 +186,14 @@ cgroupDriver option has been deprecated and will be dropped in a future release.
 The `--cgroup-driver` flag and the cgroupDriver configuration option will be
 deprecated when support for the feature is graduated to GA.
 The configurations flags (and the related fallback behavior) will be removed in
-Kubernetes 1.36. This aligns well with containerd v1.7 going out of support, which is the last
+Kubernetes 1.37. This aligns well with containerd v1.7 going out of support, which is the last
 remaining supported CRI that doesn't have support for this field.
 At the point the kubelet refuses to start if the CRI runtime does not support
 the feature.
 
 Between version 1.34 and 1.36, the kubelet will emit a counter metric (`cri_losing_support`) when a CRI implementation is
 used that doesn't have support for the RuntimeConfig CRI call. This metric will have a label describing the version support will be dropped by.
-If one node in a cluster has containerd running with 1.7, the metric will look like `cri_losing_support{,version="1.36"} 1`.
+If one node in a cluster has containerd running with 1.7, the metric will look like `cri_losing_support{,version="1.37"} 1`.
 
 Kubelet startup is modified so that connection to the CRI server (container
 runtime) is established and RuntimeConfig is queried before initializing the
@@ -332,8 +332,8 @@ CgroupDriver as they must be today.
 
 ###### What specific metrics should inform a rollback?
 
-`cri_losing_support` metric will be populated on nodes where the CRI implementation will one day lose support. After 1.36, kubelet will fatally error,
-so admins should upgrade their out of support CRI implementations (if `version==1.36`).
+`cri_losing_support` metric will be populated on nodes where the CRI implementation will one day lose support. After 1.37, kubelet will fatally error,
+so admins should upgrade their out of support CRI implementations (if `version==1.37`).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -360,7 +360,7 @@ info`).
 
 ###### How can someone using this feature know that it is working for their instance?
 
-The metric `cri_losing_support` when `version == 1.36` will indicate those nodes will be out of support in 1.36.
+The metric `cri_losing_support` when `version == 1.37` will indicate those nodes will be out of support in 1.37.
 If that metric is unpopulated, the feature is on (as it's GA) and the flag fallback is not being used.
 
 After GA, the CgroupDriver configuration option and the `--cgroup-driver` flag
@@ -381,7 +381,7 @@ N/A.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-The metric `cri_losing_support` when `version == 1.36` will indicate those nodes will be out of support in 1.36.
+The metric `cri_losing_support` when `version == 1.37` will indicate those nodes will be out of support in 1.37.
 If that metric is unpopulated, the feature is on (as it's GA) and the flag fallback is not being used.
 
 ### Dependencies
