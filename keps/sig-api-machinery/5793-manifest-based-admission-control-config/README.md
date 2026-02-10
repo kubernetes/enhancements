@@ -10,7 +10,7 @@
   - [Supported Resource Types](#supported-resource-types)
   - [User Stories](#user-stories)
     - [Story 1: Platform Invariants](#story-1-platform-invariants)
-    - [Story 2: Self-Protection and Preventing Name Collisions](#story-2-self-protection-and-preventing-name-collisions)
+    - [Story 2: Self-Protection of Critical Admission Policies](#story-2-self-protection-of-critical-admission-policies)
     - [Story 3: Bootstrapping Cluster Security](#story-3-bootstrapping-cluster-security)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -99,8 +99,8 @@ These admission controls are registered by creating API objects (`MutatingWebhoo
 binding resources). This creates several gaps:
 
 1. Bootstrap gap: Policy enforcement is not active until these objects are created and picked up
-   by the dynamic admission controller. This creates a window between API server startup and webhook
-   registration where policies are not enforced.
+   by the dynamic admission controller. This creates a window during initial cluster setup
+   where policies are not yet enforced.
 
 2. Self-protection gap: Cluster administrators cannot protect webhook and policy configurations
    from deletion or modification, as these objects are not themselves subject to webhook admission
@@ -134,6 +134,11 @@ controls that operates independently of the Kubernetes API.
 
 5. Provide clear observability: Metrics and audit annotations MUST clearly distinguish between
    manifest-based and API-based admission decisions.
+
+6. Clear namespace separation: Manifest-based objects use a reserved `.static.k8s.io` suffix
+   that cannot be used by REST-based objects. Existing REST-based configurations that need to
+   be converted to manifest-based configurations must have the `.static.k8s.io` suffix added
+   to their names.
 
 ### Non-Goals
 
@@ -214,7 +219,7 @@ API server starts, before any other workloads can be created.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: "platform.deny-privileged-containers"
+  name: "deny-privileged.static.k8s.io"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -230,9 +235,9 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: "platform.deny-privileged-containers-binding"
+  name: "deny-privileged-binding.static.k8s.io"
 spec:
-  policyName: "platform.deny-privileged-containers"
+  policyName: "deny-privileged.static.k8s.io"
   validationActions:
   - Deny
   matchResources:
@@ -243,55 +248,16 @@ spec:
         values: ["kube-system"]
 ```
 
-#### Story 2: Self-Protection and Preventing Name Collisions
+#### Story 2: Self-Protection of Critical Admission Policies
 
 As a cluster operator, I want to prevent cluster administrators from accidentally or maliciously
-deleting critical admission policies. I can define a manifest-based `ValidatingAdmissionPolicy` that
-intercepts DELETE and UPDATE operations on admission-related resources and denies them if they match
-specific criteria (e.g., have a `platform.example.com/protected: "true"` label).
+deleting or modifying critical REST-based admission policies. By defining a manifest-based
+`ValidatingAdmissionPolicy`, I can intercept DELETE and UPDATE operations on admission-related
+resources and deny them if they match specific criteria (e.g., have a
+`platform.example.com/protected: "true"` label).
 
 Since this policy is defined on disk and not via the API, it cannot be removed or modified through
 the API, providing a hard backstop against administrative errors.
-
-**Recommended: Prevent name collisions with static configs**
-
-Admins who want to avoid any possibility of confusion between manifest-based and REST-based
-admission configurations should use a manifest-based policy to prevent creation of REST-based
-objects whose names overlap with their static config. This ensures clear separation in audit
-logs and metrics:
-
-```yaml
-# /etc/kubernetes/admission/prevent-name-collision.yaml
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicy
-metadata:
-  name: "platform.prevent-admission-name-collision"
-spec:
-  failurePolicy: Fail
-  matchConstraints:
-    resourceRules:
-    - apiGroups: ["admissionregistration.k8s.io"]
-      apiVersions: ["*"]
-      operations: ["CREATE", "UPDATE"]
-      resources: ["validatingadmissionpolicies", "mutatingadmissionpolicies",
-                  "validatingadmissionpolicybindings", "mutatingadmissionpolicybindings",
-                  "validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
-  validations:
-  - expression: "!object.metadata.name.startsWith('platform.')"
-    message: "Names starting with 'platform.' are reserved for manifest-based admission configs"
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicyBinding
-metadata:
-  name: "platform.prevent-admission-name-collision-binding"
-spec:
-  policyName: "platform.prevent-admission-name-collision"
-  validationActions:
-  - Deny
-```
-
-This pattern reserves a naming prefix (e.g., `platform.`) for manifest-based configurations,
-preventing REST-based objects from using the same names and eliminating audit/metrics confusion.
 
 #### Story 3: Bootstrapping Cluster Security
 
@@ -320,7 +286,7 @@ for all relevant requests from API server startup, eliminating the bootstrap gap
 | Risk | Description | Mitigation |
 |------|-------------|------------|
 | Silent failures | If a manifest file is malformed, policies might not load, leaving the cluster unprotected. | API server fails to start if initial manifest loading encounters validation errors. Runtime reload failures are logged and exposed via metrics; previous valid configuration is retained. |
-| Name collisions | A manifest-based configuration might share a name with an API-based configuration, causing confusion. | Manifest-based and API-based configurations are treated as separate domains. Both will be invoked independently. Metrics and audit annotations clearly distinguish the source. Recommend using a naming convention (e.g., `platform.*` prefix) for manifest-based configurations. |
+| Name collisions | A manifest-based configuration might share a name with an API-based configuration, causing confusion. | Manifest-based objects are required to have names ending in `.static.k8s.io`. When the feature gate is enabled, creation of REST-based objects with this suffix is blocked. This ensures manifest-based and REST-based configurations are always distinguishable by name. |
 | Configuration drift | In HA setups, different API servers might have different manifest configurations. | This is documented as expected behavior (similar to other file-based configs). Operators must use external tooling to ensure consistency. |
 | Versioning | Manifest format must match API server version. | Standard API machinery decoding is used, supporting version conversion where applicable. |
 | Debugging difficulty | Manifest-based configurations are not visible via the API. | Dedicated metrics expose loaded configuration counts and health. Audit annotations indicate manifest-based sources. API server logs show loaded configurations at startup. |
@@ -378,7 +344,7 @@ Single resource example:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  name: "platform.security-webhook"
+  name: "security-webhook.static.k8s.io"
 webhooks:
 - name: "security.platform.example.com"
   clientConfig:
@@ -402,37 +368,38 @@ items:
 - apiVersion: admissionregistration.k8s.io/v1
   kind: ValidatingAdmissionPolicy
   metadata:
-    name: "platform.require-labels"
+    name: "require-labels.static.k8s.io"
   spec:
     # ... policy spec
 - apiVersion: admissionregistration.k8s.io/v1
   kind: ValidatingAdmissionPolicyBinding
   metadata:
-    name: "platform.require-labels-binding"
+    name: "require-labels-binding.static.k8s.io"
   spec:
     # ... binding spec
 ```
 
 ### Naming and Conflict Resolution
 
-All objects in manifest files must have unique names within their type. The naming rules are:
+All objects in manifest files must have unique names within their type and must use the reserved
+`.static.k8s.io` suffix (e.g., `deny-privileged.static.k8s.io`). Objects without this suffix
+fail validation and prevent API server startup.
 
-1. Uniqueness: If two manifest files define objects of the same type with
-   the same name, the API server fails to start with a descriptive error.
+When the `ManifestBasedAdmissionControlConfig` feature gate is enabled, creation of REST-based
+admission objects with names ending in `.static.k8s.io` is blocked. When the feature gate is
+disabled, a warning is returned instead. Operators on pre-1.36 clusters can deploy a VAP to
+block this suffix early.
 
-2. Coexistence with API-based objects: Manifest-based and API-based objects are treated as
-   belonging to separate domains. If both a manifest-based and API-based `ValidatingWebhookConfiguration`
-   named "example" exist, both will be invoked for matching requests.
-
-3. Recommended naming convention: To avoid confusion, use a distinctive prefix for manifest-based
-   objects (e.g., `platform.`, `static.`, or `manifest.`).
+If two manifest files define objects of the same type with the same name, the API server fails
+to start with a descriptive error.
 
 ### File Watching and Dynamic Reloading
 
 The API server watches the configured manifest files/directories for changes:
 
-1. Initial load: At startup, all configured paths are read and validated. The API server blocks
-   until all manifests are successfully loaded. Invalid manifests cause startup failure.
+1. Initial load: At startup, all configured paths are read and validated. The API server does
+   not mark itself as ready until all manifests are successfully loaded. Invalid manifests
+   cause startup failure.
 
 2. Runtime reloading: Changes to manifest files trigger a reload:
    - File modifications are detected using filesystem watching (similar to other config file
@@ -475,54 +442,24 @@ In addition to standard validation, manifest-based configurations undergo additi
 
 ### Metrics and Audit Annotations
 
-To distinguish manifest-based admission decisions from API-based ones:
-
 Metrics:
 
-Existing admission metrics (e.g., `apiserver_admission_webhook_admission_duration_seconds`) are STABLE
-and cannot have new labels added. Instead, manifest-based admission uses a parallel set of metrics
-that mirror the existing ones but are specific to manifest-based configurations. This ensures:
-- No impact on clusters not using this feature
-- No confusion in metrics between REST-based and manifest-based admission
-- Clear separation for monitoring and alerting
+Since manifest-based objects are required to have names ending in `.static.k8s.io`, the existing
+admission metrics can be reused. The `name` label in existing metrics is sufficient to identify
+whether a policy was loaded from disk.
 
-New metrics for manifest-based webhooks (parallel to existing webhook metrics):
-- `apiserver_admission_manifest_webhook_admission_duration_seconds{name, type, operation, rejected}` - latency histogram
-- `apiserver_admission_manifest_webhook_rejection_count{name, type, operation, error_type, rejection_code}` - rejection counter
-- `apiserver_admission_manifest_webhook_fail_open_count{name, type}` - fail open counter
-- `apiserver_admission_manifest_webhook_request_total{name, type, operation, code, rejected}` - request counter
-
-New metrics for manifest-based CEL policies (parallel to existing policy metrics):
-- `apiserver_validating_admission_manifest_policy_check_total{policy, policy_binding, error_type, enforcement_action}`
-- `apiserver_validating_admission_manifest_policy_check_duration_seconds{policy, policy_binding, error_type, enforcement_action}`
-- `apiserver_mutating_admission_manifest_policy_check_total{policy, policy_binding, error_type}`
-- `apiserver_mutating_admission_manifest_policy_check_duration_seconds{policy, policy_binding, error_type}`
-
-New metrics for manifest loading health (following the existing reload metrics pattern):
+New metrics for manifest loading health:
 - `apiserver_admission_manifest_config_automatic_reloads_total{plugin, status}` - reload counter
 - `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds{plugin, status}` - last reload timestamp
 
-
 Audit annotations:
 
-Manifest-based admission adds a new annotation to positively indicate that static configuration
-was evaluated. This is a separate annotation from the existing webhook/policy annotations, not a
-modification to their structure:
+Existing audit annotations (e.g., `mutation.webhook.admission.k8s.io/*`, `validation.policy.admission.k8s.io/*`)
+already include the object name. Since manifest-based objects are required to have names ending in
+`.static.k8s.io`, operators can identify manifest-based admission decisions by filtering on this suffix.
 
-```json
-{
-  "source.admission.k8s.io/manifest-webhooks": "platform.mutating-webhook,platform.validating-webhook",
-  "source.admission.k8s.io/manifest-policies": "require-labels,deny-privileged"
-}
-```
-
-These annotations list the manifest-based configurations that were evaluated for the request.
-Combined with the existing `mutation.webhook.admission.k8s.io/*` and `patch.webhook.admission.k8s.io/*`
-annotations, operators can determine both what was evaluated and whether it came from static config.
-
-**Evaluation order**: Manifest-based configurations are evaluated before REST-based configurations.
-This ensures that platform-level policies enforced via static config take precedence and are always
-recorded in audit logs before any API-based configurations.
+Evaluation order: Manifest-based configurations are evaluated before REST-based configurations.
+This ensures that platform-level policies enforced via static config take precedence.
 
 ### Implementation
 
@@ -530,7 +467,7 @@ recorded in audit logs before any API-based configurations.
 2. Manifest loader: New package handling file reading, validation, watching, and atomic reload
 3. Composite accessor: Merge manifest and API-based configurations; evaluate manifest-based first
 4. Feature gate: `ManifestBasedAdmissionControlConfig`, defaulting to false for alpha
-5. Metrics: Add parallel metrics for manifest-based admission (separate from existing stable metrics)
+5. Metrics: Add reload metrics for manifest loading health
 
 ### Test Plan
 
@@ -559,12 +496,13 @@ Test scenarios:
 - Hot reload: Adding/removing manifest files updates enforcement
 - Invalid config handling: Server continues with previous valid config on reload errors
 - Coexistence: Both manifest and API-based configurations invoked
-- Metrics: Parallel metrics correctly emitted for manifest-based admission
+- Metrics: Existing metrics include manifest-based admission with `.static.k8s.io` names
 
 ##### e2e tests
 
-None required. This is an operator-facing feature best tested via integration tests that can
-control API server startup flags. The feature does not expose new REST API endpoints.
+Not possible. e2e tests run against a cluster configured outside of the test, so we cannot
+modify API server startup flags or place files on the control plane host. This feature is
+best tested via integration tests.
 
 ### Graduation Criteria
 
@@ -576,8 +514,7 @@ control API server startup flags. The feature does not expose new REST API endpo
   implemented
 - Manifest loading for CEL policies (ValidatingAdmissionPolicy, MutatingAdmissionPolicy, bindings)
   implemented
-- Complete metrics implementation with parallel metrics for manifest-based admission
-- Audit annotation support for manifest-based sources
+- Metrics for manifest loading health
 - File watching and hot reload fully implemented and tested
 - Documentation for alpha usage
 
@@ -675,7 +612,7 @@ Mitigation:
 ###### What specific metrics should inform a rollback?
 
 - `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` increasing
-- `apiserver_admission_manifest_webhook_rejection_count` unexpectedly high
+- `apiserver_admission_webhook_rejection_count{name=~".*\\.static\\.k8s\\.io"}` unexpectedly high
 - API server crash loops (check container restart count)
 - Increased API request latency (webhook timeouts)
 
@@ -700,7 +637,7 @@ No.
 - [x] Metrics
   - `apiserver_admission_manifest_config_automatic_reloads_total{status="success"}` shows successful reloads
   - `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds` shows recent timestamp
-  - `apiserver_admission_manifest_webhook_admission_duration_seconds` shows webhook activity
+  - Existing admission metrics show activity for names ending in `.static.k8s.io`
 - [x] API server logs
   - Log message at startup: "Loaded N manifest-based webhook configurations"
   - Log message on reload: "Reloaded manifest-based configurations"

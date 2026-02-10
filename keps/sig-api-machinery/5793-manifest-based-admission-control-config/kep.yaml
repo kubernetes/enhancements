@@ -38,13 +38,3 @@ metrics:
   # Config loading metrics
   - apiserver_admission_manifest_config_automatic_reloads_total
   - apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds
-  # Webhook metrics (parallel to existing stable webhook metrics)
-  - apiserver_admission_manifest_webhook_admission_duration_seconds
-  - apiserver_admission_manifest_webhook_rejection_count
-  - apiserver_admission_manifest_webhook_fail_open_count
-  - apiserver_admission_manifest_webhook_request_total
-  # CEL policy metrics (parallel to existing VAP metrics)
-  - apiserver_validating_admission_manifest_policy_check_total
-  - apiserver_validating_admission_manifest_policy_check_duration_seconds
-  - apiserver_mutating_admission_manifest_policy_check_total
-  - apiserver_mutating_admission_manifest_policy_check_duration_seconds
