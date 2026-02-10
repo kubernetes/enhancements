@@ -253,10 +253,7 @@ restarts).
 
 ##### Integration tests
 
- These cases will be added in the existing integration tests:
-  - Feature gate enable/disable tests.
-  - Get API work with DRA and device plugin.
-  - List API work with DRA and Device plugin.
+N/A - node local feature covered by e2e test (test/e2e_node)
 
 ##### e2e tests
 
@@ -265,7 +262,7 @@ These cases will be added in the existing e2e tests:
   - Get API work with DRA and device plugin.
   - List API work with DRA and Device plugin.
 
-[Get](https://github.com/kubernetes/kubernetes/pull/116846): [sig-node-kubelet](https://testgrid.k8s.io/sig-node-kubelet?include-filter-by-regex=PodResources), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=PodResources)
+[Get](https://github.com/kubernetes/kubernetes/pull/116846): [sig-node-kubelet](https://testgrid.k8s.io/sig-node-kubelet?include-filter-by-regex=PodResourcesAPI), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=PodResourcesAPI)
 
 Other improvements are addressed in:
 - https://github.com/kubernetes/kubernetes/pull/132028
@@ -341,7 +338,7 @@ No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, through feature gates.
+Yes, through feature gates. Once GA, the feature can't be disabled and is always enabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -419,6 +416,9 @@ As part of this feature enhancement, per-API-endpoint resources metrics are bein
 ### Dependencies
 
 The container runtime must support CDI.
+ - Minimum versions:
+   - containerd v1.7.2+
+   - CRI-O v1.28.0+
 
 ###### Does this feature depend on any specific services running in the cluster?
 
