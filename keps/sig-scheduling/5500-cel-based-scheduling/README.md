@@ -306,31 +306,31 @@ As the [API Validation](#api-validation) describes, each toleration will be vali
 
 #### Other Affected Plugins and Components
 
-The following plugins and integration points will also need to initialize a CEL toleration cache since they perform toleration matching:
+The following plugins and integration points also perform toleration matching and will use a CEL toleration cache. The scheduler creates a single shared cache at startup and passes it to all scheduler plugins via the framework. The DaemonSet controller, TaintEviction controller, and kubelet each initialize their own independent cache.
 
 - **NodeUnschedulable Plugin**
 
-The plugin calls the helper function `TolerationsTolerateTaint` in two occurrences, during the filter extension point to make sure that the pod tolerates the unschedulable taint, the second call happens when the pod tolerations are updated in the QueueingHint handler, both occurrences would require the cel cache to be passed to the helper function to evaluate cel tolerations against the unschedulable taint.
+The plugin calls the helper function `TolerationsTolerateTaint` in two occurrences, during the filter extension point to make sure that the pod tolerates the unschedulable taint, the second call happens when the pod tolerations are updated in the QueueingHint handler, both occurrences use the shared scheduler cache passed to the helper function to evaluate CEL tolerations against the unschedulable taint.
 
 - **PodTopologySpread Plugin**
 
-The plugin calls the helper function `FindMatchingUntoleratedTaint` when `NodeInclusionPolicyInPodTopologySpread` feature is enabled and the inclusion policy is set to honor node taints, the cel cache needs to be passed to the helper function as well to evaluate the cel expression if found for tolerations.
+The plugin calls the helper function `FindMatchingUntoleratedTaint` when `NodeInclusionPolicyInPodTopologySpread` feature is enabled and the inclusion policy is set to honor node taints, the shared scheduler cache is passed to the helper function to evaluate the CEL expression if found for tolerations.
 
 - **Scheduler EventHandler**
 
-The scheduler event handler will call the toleration matching helper function `FindMatchingUntoleratedTaint` on node updates, the scheduler event handler should also initialize the cel cache and pass the cache to the helper function to evaluate tolerations with cel expressions.
+The scheduler event handler calls the toleration matching helper function `FindMatchingUntoleratedTaint` on node updates, the shared scheduler cache is passed to the helper function to evaluate tolerations with CEL expressions.
 
 - **DaemonSet Controller**
 
-The daemonset controller calls `FindMatchingUntoleratedTaint` in function `NodeShouldRunDaemonPod` to make sure that the pod can run on a node, the controller should also initialize and pass a cel cache to the helper function to evaluate tolerations with cel expressions.
+The DaemonSet controller calls `FindMatchingUntoleratedTaint` in function `NodeShouldRunDaemonPod` to make sure that the pod can run on a node, the controller initializes its own CEL cache and passes it to the helper function to evaluate tolerations with CEL expressions.
 
 - **TaintEviction Controller**
 
-The taint eviction controller also calls helper function `GetMatchingTolerations` to make sure that the pod tolerates all node taints, the controller should also initialize and pass the cel cache to the helper function to evaluate tolerations with cel expressions.
+The TaintEviction controller calls helper function `GetMatchingTolerations` to make sure that the pod tolerates all node taints, the controller initializes its own CEL cache and passes it to the helper function to evaluate tolerations with CEL expressions.
 
 - **Kubelet Lifecycle Predicate**
 
-Kubelet will call `FindMatchingUntoleratedTaint` during lifecycle predicate checks, it will also need to initialize a cel cache and pass it to the helper function to evaluate tolerations with cel expressions.
+Kubelet calls `FindMatchingUntoleratedTaint` during lifecycle predicate checks, it initializes its own CEL cache and passes it to the helper function to evaluate tolerations with CEL expressions.
 
 #### Semantics For CEL Toleration Matching
 
@@ -411,10 +411,10 @@ The existing e2e tests will be extended to cover the new toleration cases introd
 ### Upgrade / Downgrade Strategy
 
 #### Upgrade
-  Enable the feature gate in kube-apiserver first then kube-scheduler. This ensures the API server can accept and validate pods with the CEL expressions before the kube-scheduler tries to process them.
+Enable the feature gate on kubelet first, then kube-controller-manager, then kube-scheduler, and finally kube-apiserver. This ensures all consuming components can handle CEL tolerations before the API server starts accepting them.
 
 #### Downgrade
-  Disable the feature gate in kube-scheduler first, then kube-apiserver. Since we want to stop the kube-scheduler from processing the CEL expressions first, then stop the API server from accepting new pods with CEL expressions. This prevents the scheduler from trying to handle features the API server would reject.
+Disable the feature gate on kube-apiserver first to stop new CEL tolerations from entering the system, then kube-scheduler, kube-controller-manager, and finally kubelet.
   
 **What happens when the scheduler doesn't recognize CEL expression field for tolerations:**
 
@@ -427,9 +427,32 @@ When the feature gate is disabled and the scheduler encounters a pod `expression
 
 ### Version Skew Strategy
 
-The skew between kubelet and control-plane components is not impacted. The kube-scheduler is expected to match the kube-apiserver minor version, but may be up to one minor version older (to allow live upgrades).
+The feature impacts four components in total: `kube-apiserver`, `kube-scheduler`, `kube-controller-manager`, and `kubelet` as described in [Other Affected Plugins and Components](#other-affected-plugins-and-components) section. The feature gate must be enabled on all four components for the feature to be fully functional, there are different scenarios that need to be covered when versions differ or when the feature gate is enabled on some components but not others.
 
-In the release where it is added, the feature is disabled by default and not recognized by other components.
+1. New version of `kube-apiserver`
+
+For older versions of `kube-scheduler` or if the feature is disabled the API server will accept and persist pods with `expression` field, however the scheduler will not recognize the `expression` field and will treat the toleration as an empty toleration with no key, effect, value, or operator. Pods relying solely on CEL tolerations to tolerate `NoSchedule` or `NoExecute` taints will remain Pending. 
+
+For older versions `kube-controller-manager` or if the feature is disabled the API server will accept and persist pods with `expression` field, however the controller-manager will not recognize the field in two situations:
+
+- **Taint Eviction Controller**: The CEL toleration will be treated as non-matching. Running pods that rely on a CEL expression to tolerate a `NoExecute` taint will be **incorrectly evicted** because the controller does not understand the expression match.
+
+- **DaemonSet Controller**: Without CEL support, CEL tolerations are treated as non-matching. The controller may incorrectly decide not to create DaemonSet pods on nodes where the CEL toleration should match, resulting in DaemonSet pods missing from nodes they should run on.
+
+For `kubelet` without the feature: the API server will accept the pods with CEL tolerations and the scheduler (if enabled) will correctly evaluate and schedule the pod to a node, however the kubelet will fail to match the taint in the lifecycle predicate admission check. The pod would be rejected by the kubelet at admission even though the scheduler placed it correctly. Users must ensure the feature is enabled on kubelet before scheduling pods with CEL tolerations to those nodes.
+
+2. `kube-apiserver` does not have the feature, other components do
+
+The API server will reject any new pods with `expression` field at validation time, so no CEL tolerations can enter the system and other components are not impacted. If already existing pods with CEL tolerations are found in the system (e.g. after an API server rollback), the scheduler, controller-manager, and kubelet will evaluate the CEL expressions normally since they have the feature enabled.
+
+The correct enablement order of the feature is as follows:
+
+1. **kubelet** 
+2. **kube-controller-manager** 
+3. **kube-scheduler** 
+4. **kube-apiserver** 
+
+The disablement order should be the reverse of the previous list: disable on `kube-apiserver` first to stop new CEL tolerations from entering the system, then `kube-scheduler`, `kube-controller-manager`, and finally `kubelet`.
 
 ## Production Readiness Review Questionnaire
 
@@ -442,6 +465,8 @@ In the release where it is added, the feature is disabled by default and not rec
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-scheduler
+    - kube-controller-manager
+    - kubelet
 
 ###### Does enabling the feature change any default behavior?
 
@@ -454,7 +479,12 @@ Yes. Impact on existing pods with CEL fields when feature is disabled:
 1. Already-running pods: Continue running normally for Pod tolerations rules, however pods that were already tolerating `NoExecute` node taints will be evicted.
 2. Unscheduled/pending pods: The scheduler will ignore the `expression` field, fail to match the taint, and the Pod will remain Pending.
 3. New pod creation: API server validation will reject new pods using `expression` in tolerations.
-4. Pod updates: The feature will make sure to detect that CEL has been in use in the Pod Validation Options and updates will be allowed.
+4. Pod updates:
+   - Adding tolerations: If the feature gate is disabled, the API server will reject adding new tolerations with the `expression` field.
+   - Removing tolerations: Removing tolerations with the `expression` field will always be allowed, regardless of the feature gate state.
+5. Taint eviction controller: With the feature gate disabled on controller manager, the controller will not evaluate CEL expressions. Running pods that relied on a CEL expression to tolerate a `NoExecute` taint will be evicted.
+6. DaemonSet controller: With the feature gate disabled, the controller will treat CEL tolerations as non-matching. DaemonSet pods that relied on CEL expressions to tolerate node taints may not be created on those nodes.
+7. Kubelet: With the feature gate disabled, the kubelet lifecycle predicate will not evaluate CEL expressions. Pods that relied on a CEL expression to tolerate a taint will fail the lifecycle admission check.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -573,7 +603,13 @@ Potentially yes.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-CEL expression compilation and evaluation will consume CPU during scheduling cycles. The LRU cache initialized at scheduler startup will help reduce CPU time by caching compiled expressions and reusing them across scheduling cycles instead of recompiling on every evaluation. The cache is also bounded by size to limit memory usage.
+CEL expression compilation and evaluation will consume CPU in all components that perform toleration matching. Each component initializes its own bounded LRU cache for compiled CEL expressions:
+
+- `kube-scheduler`: A single shared cache is created at scheduler startup and shared across all scheduler plugins (TaintToleration, NodeUnschedulable, PodTopologySpread, EventHandler).
+- `kube-controller-manager`: The DaemonSet controller and the TaintEviction controller each initialize their own cache.
+- `kubelet`: The lifecycle predicate handler initializes its own cache.
+
+The caches should reduce CPU time by reusing compiled expressions instead of recompiling on every evaluation. Each cache is bounded by size to limit memory usage.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
