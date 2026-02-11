@@ -1126,14 +1126,12 @@ that might indicate a serious problem?
 -->
 
 `apiserver_authorization_decisions_total` shows greatly increased number.
-However, we cannot identify the impersonation action from the metrics today.
-We could introduce a new metrics `apiserver_authorization_decisions_total_by_verb` so that filtering
-based on impersonation related verbs can tell the number.
-We could also introduce a new metrics `apiserver_authorization_decisions_duration_seconds`.
 
 When webhook authorizer is used, if `apiserver_authorization_webhook_evaluations_total` and
 `apiserver_authorization_webhook_duration_seconds` shows greatly increase number, users should
 also pay attention.
+
+See `Monitoring Requirements` below.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1177,6 +1175,56 @@ There are existing metrics to record authz latency and request number:
 - webhook authorizer match condition latency
 - webhook authorizer match condition success
 
+These will be expanded to include metrics that cover the impersonation handler
+to give an overall sense for the cost of impersonation:
+
+- `apiserver_impersonation_attempts_total{status}`
+
+This will be incremented whenever impersonation is attempted.  On success, the
+`status` label will capture which mode was successful.  On failure, the `status`
+label will be set to `failed`.
+
+Labels and possible values:
+
+`status`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`, `failed`
+
+- `apiserver_impersonation_duration_seconds{status}`
+
+This is a Histogram metric that will track the time impersonation took to resolve
+the impersonated user whenever impersonation is attempted.  On success, the
+`status` label will capture which mode was successful.  On failure, the `status`
+label will be set to `failed`.
+
+Note that because of the caching performed within the handler, we expect this metric
+to reflect the amortized cost (in latency) of impersonation requests.
+
+Labels and possible values:
+
+`status`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`, `failed`
+
+To give a sense for how many authorization checks are being performed, the
+following metrics will wrap all calls to the authorizer used by the handler:
+
+- `apiserver_impersonation_authorization_attempts_total{mode, decision}`
+
+This will be incremented whenever an impersonation attempt causes the authorizer
+to be used.
+
+Labels and possible values:
+
+`mode`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`
+`decision`: `allowed`, `denied`
+
+- `apiserver_impersonation_authorization_duration_seconds{mode, decision}`
+
+This is a Histogram metric that will track the time the authorizer took
+whenever an impersonation attempt causes the authorizer to be used.
+
+Labels and possible values:
+
+`mode`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`
+`decision`: `allowed`, `denied`
+
 ###### How can an operator determine if the feature is in use by workloads?
 
 <!--
@@ -1185,8 +1233,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-It should be user to set the permissions for the controllers. The operator should
-not set these permissions for the workload.
+Check the metrics mentioned above as well as the audit logs.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1206,7 +1253,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Other field: 
 - [x] Other (treat as last resort)
   - Details: User creates the permission and check if the impersonate on certain action
-  works.
+  works.  Confirm via audit logs that the expected impersonation mode was used.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1242,11 +1289,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-There are already metrics for the layers this feature is adding to:
-- authorization latency
-- authorization success
-- webhook authorizer match condition latency
-- webhook authorizer match condition success
+No.
 
 ### Dependencies
 
@@ -1303,6 +1346,8 @@ receives an impersonation request.
 - A SAR request to check if the impersonator is authorized to impersonate the target user.
 - A SAR request to check if the impersonater is authorized to perform the action via impersonation.
 
+Successful impersonation attempts are cached for a short period to amortize the cost across multiple requests.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -1349,6 +1394,8 @@ feature is enabled:
   - 2 access review check if the new access rule is passed.
   - 3 access review check if the new access rule is not passed, and the legacy impersonate access rule is passed.
 - When the check is disallowed, it will introduce 3 access review checks for request with impersonation.
+
+Successful impersonation attempts are cached for a short period to amortize the cost across multiple requests.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
