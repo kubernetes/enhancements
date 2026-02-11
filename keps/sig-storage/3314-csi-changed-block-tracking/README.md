@@ -1252,7 +1252,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-Link: [SnapshotMetadata E2E test PR](https://github.com/kubernetes/kubernetes/pull/130918)
+The E2E tests can be found in
+[test/e2e/storage/testsuites/snapshot-metadata.go](https://github.com/kubernetes/kubernetes/blob/8b09f925a77a82c13231a6d8b486263e9fb0c84a/test/e2e/storage/testsuites/snapshot-metadata.go)
+in the `kubernetes` repository.
 
 The prototype project of this KEP contains a [sample gRPC client][2] that can be
 used to simulate gRPC requests to the `SnapshotMetadata` service.
