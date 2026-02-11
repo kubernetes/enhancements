@@ -27,6 +27,7 @@
   - [Eviction Requester](#eviction-requester-1)
   - [Interceptor](#interceptor)
   - [Eviction Request Controller](#eviction-request-controller-1)
+    - [Validation](#validation)
     - [Label Synchronization](#label-synchronization)
     - [Interceptor Selection](#interceptor-selection)
     - [Eviction](#eviction)
@@ -34,6 +35,7 @@
     - [Remarks on Interceptors](#remarks-on-interceptors)
     - [EvictionRequest Validation and Admission](#evictionrequest-validation-and-admission)
       - [CREATE](#create)
+      - [UPDATE](#update)
       - [CREATE, UPDATE, DELETE](#create-update-delete)
     - [Immutability of EvictionRequest Fields](#immutability-of-evictionrequest-fields)
   - [EvictionRequest Process](#evictionrequest-process)
@@ -268,7 +270,7 @@ For completeness here is a complete list of open PDB issues. Most are relevant t
 We will introduce a new declarative API called EvictionRequest, whose purpose is to coordinate the
 eviction of a pod from a node. It creates a contract between the eviction requester, the pod, and
 the interceptor (described later). The contract is enforced by the eviction request controller, the
-API type and the API admission.
+API type and validation.
 
 Pods will carry a new field `.spec.evictionInterceptors`, which specifies a list of interceptors
 involved in their lifecycle. This would allow multiple actors to take an action before the pod is
@@ -531,7 +533,7 @@ interceptors can be used if all other concrete ones fail or are unavailable.
 First, the interceptor should register itself with all the pods it is interested in
 evicting/intercepting (either partially or fully) by adding itself to the
 `.spec.evictionInterceptors` field of the pod. This list is then added to the
-[EvictionRequest](#pod-and-evictionrequest-api) on admission.
+[EvictionRequest](#pod-and-evictionrequest-api) after creation by the eviction request controller.
 
 The Interceptor type should set the `name` field. For more
 details see [Pod and EvictionRequest API](#pod-and-evictionrequest-api) and
@@ -612,6 +614,24 @@ be decided solely by the user deploying the application and resolved by creating
 ### Eviction Request Controller
 
 [Eviction Request Controller](#eviction-request-controller) section provides a general overview.
+
+#### Validation
+
+The controller will perform validation to ensure this is a valid eviction request.
+
+The target will be obtained from a lister and if it doesn't exist the controller will cancel the
+eviction request by setting a `Canceled` condition to `.status.conditions` with an appropriate
+reason (`ValidationFailed`) and a message (`Target Pod xyz was not found.`).
+
+The new Workload API groups a set of pods that may not handle individual pod evictions well. It may
+be preferable to target the Workload resource. In the alpha version of the EvictionRequest API,
+pods referencing Workloads will be ignored. Therefore, we will reject any EvictionRequest that has a
+`.spec.workloadRef`. We will consider [Workload API Support](#workload-api-support) later.
+The rejection will be done again by setting a `Canceled` condition with an appropriate
+reason (`ValidationFailed`) and a message
+(`Target Pod xyz is part of a Workload/PodGroup. Eviction of such pods is currently not supported.`). 
+
+If the validation fails, the eviction request will no longer be processed.
 
 #### Label Synchronization
 
@@ -824,7 +844,7 @@ type EvictionRequestStatus struct {
 	
     // Conditions contain information about the eviction request.
 	//
-	// Eviction request specific conditions are: Evicted or Canceled.
+	// Eviction request specific conditions are: Evicted or Canceled (managed by Kubernetes),
 	//
 	// - Canceled means that the eviction request is no longer being processed by any eviction
 	//   interceptor because the eviction request has been canceled.
@@ -989,11 +1009,7 @@ const (
   any names with `k8s.io` suffix outside the main Kubernetes project on admission.
 
 
-#### EvictionRequest Validation and Admission
-
-Special admission rules should be implemented as an admission plugin. An alternative would be to
-use ValidatingAdmissionPolicy, but this is not possible because we need to list the pods during the
-CREATE and DELETE requests and list EvictionRequests (.spec) during DELETE requests.
+#### EvictionRequest Validation on Admission
 
 ##### CREATE
 
@@ -1003,24 +1019,19 @@ not expect the interceptors to support interaction with multiple EvictionRequest
 `.metadata.generateName` is not supported. If it is set, the request will be rejected.
 
 `.metadata.name` must be identical to `.spec.podRef.uid` or the request will be rejected.
-The Pod matching the `.spec.target.podRef.name` will be obtained from the admission plugin lister.
-If the `.spec.target.podRef.uid` does not match with the pod's UID or no pod is found, the request
-will be rejected. For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
+For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
 section in the Alternatives.
 
-The API is designed to be extensible to include additional evictable targets (e.g.,
-Workload, PVCs). Currently, the `.spec.target.podRef` field is required, but we might change this to include
+The API is designed to be extensible to include additional evictable targets (e.g., Workload, PVCs).
+Currently, the `.spec.target.podRef` field is required, but we might change this to include
 additional references in the future. 
-
-The new Workload API groups a set of pods that may not handle individual pod evictions well. It may
-be preferable to target the Workload resource. In the v1alpha1 version of the EvictionRequest API,
-pods referencing Workloads will be ignored. Therefore, we will reject any EvictionRequest that has a
-`.spec.workloadRef`. We will consider [Workload API Support](#workload-api-support) later.
 
 `.spec.requesters` must have at least one requester. The requester names must pass
 `IsFullyQualifiedDomainName` validation. 
 
 `.status` is set to empty on creation.
+
+Additional validation will be done on the controller side. For more details, see: [Validation](#validation).
 
 ##### UPDATE
 
@@ -1072,6 +1083,8 @@ The eviction request is considered evicted if:
   eviction.
 
 The eviction request is considered canceled if:
+- Validation fails after eviction request is created, for example the target pod is not found. This
+  additional validation is enforced by the eviction request controller. 
 - The length of the `.spec.requesters` is 0.
 
 
@@ -1451,7 +1464,7 @@ https://storage.googleapis.com/k8s-triage/index.html
   responding.
 - Test switching between different interceptors and resetting the EvictionRequest status.
 - Test that the EvictionRequest has the `Canceled=True` condition when the EvictionRequest is
-  canceled.
+  canceled or when validation fails.
 - Test that the EvictionRequest has the `Evicted=True` condition when the pod is terminated.
 
 ##### e2e tests
@@ -1495,7 +1508,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Consider introducing a mechanism that allows potential interceptors to register their intent
   about upcoming pods. This would likely require a new API where I can express my intent to be
   added as an interceptor for pods satisfying certain rules (e.g. by selector, CEL expression or
-  other criteria). Then an additional admission logic would propagate that.
+  other criteria). Then an eviction request controller would propagate that.
 - Consider adding garbage collection for EvictionRequests to avoid the permanent leakage of
   EvictionRequest objects, eventually leading to hitting storage limits.
 - Consider allowing each requester to specify a different type of eviction in the
@@ -1759,8 +1772,6 @@ Yes.
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 No.
-
-We will add an admission plugin, but it should not significantly increase the time for operations.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
