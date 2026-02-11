@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-5825: CRI Pagination
+# KEP-5825: CRI List Streaming
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -96,14 +96,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
-    - [ListContainers](#listcontainers)
-    - [ListPodSandbox](#listpodsandbox)
-    - [Other List Operations](#other-list-operations)
+    - [StreamContainers](#streamcontainers)
+    - [StreamPodSandboxes](#streampodsandboxes)
+    - [Other Stream Operations](#other-stream-operations)
     - [Behavior Matrix](#behavior-matrix)
-  - [Runtime Implementation](#runtime-implementation)
-    - [Page Size](#page-size)
-    - [Consistency](#consistency)
-    - [Token Implementation](#token-implementation)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -127,7 +123,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Increase gRPC message limit](#increase-grpc-message-limit)
   - [Improve garbage collection](#improve-garbage-collection)
-  - [Server-side streaming](#server-side-streaming)
+  - [Token-based pagination](#token-based-pagination)
   - [Offset-based pagination](#offset-based-pagination)
 - [References](#references)
   - [Standards and Documentation](#standards-and-documentation)
@@ -178,11 +174,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes adding token-based pagination to CRI's `List*` RPCs. Currently, these APIs return all results in a single response, causing failures on nodes with 10k+ containers when responses exceed the 16 MB gRPC message limit. The proposed solution follows [AIP-158 pagination patterns](https://google.aip.dev/158) without a default page size.
+This KEP proposes adding server-side streaming RPCs to CRI's `List*` operations. Currently, these APIs return all results in a single unary response, causing failures on nodes with 10k+ containers when responses exceed the 16 MB gRPC message limit. The proposed solution introduces new streaming RPCs (e.g., `StreamContainers`, `StreamPodSandboxes`) that stream results one item at a time, bypassing the per-message size limit.
 
 ## Motivation
 
-CRI's `List*` RPCs currently return all results without pagination. On nodes with many containers, responses exceeding the gRPC limit (currently 16 MB) cause complete RPC failures.
+CRI's `List*` RPCs currently return all results in a single unary response without any way to break up large result sets. On nodes with many containers, responses exceeding the gRPC limit (currently 16 MB) cause complete RPC failures.
 
 ### Message Size Analysis
 
@@ -202,19 +198,20 @@ CRI's `List*` RPCs currently return all results without pagination. On nodes wit
 
 ### Goals
 
-- Add pagination support to `List*` RPCs
+- Add streaming support to `List*` operations via new streaming RPCs
 - Maintain backward compatibility with existing kubelet/runtime combinations
-- Follow established pagination patterns (AIP-158) as much as possible
+- Eliminate the gRPC message size limit as a bottleneck for list operations
 
 ### Non-Goals
 
 - Changing the default gRPC message size limit
 - Modifying container/pod garbage collection behavior
 - Implementing server-side filtering beyond existing `ContainerFilter`/`PodSandboxFilter`
+- Modifying the existing unary `List*` RPCs
 
 ## Proposal
 
-Add optional pagination fields to `List*` request/response messages.
+Add new server-side streaming RPCs alongside the existing unary `List*` RPCs. Each new RPC (e.g., `StreamContainers`, `StreamPodSandboxes`) accepts the same filter as its unary counterpart and streams results back one item per message.
 
 ### User Stories
 
@@ -228,156 +225,109 @@ As a platform engineer managing CI nodes that run many short-lived containers, I
 
 ### Notes/Constraints/Caveats
 
-1. **Pagination is not needed for network efficiency**: Kubelet and CRI runtimes communicate over Unix sockets. Pagination is primarily beneficial when the message size exceeds the gRPC limit.
+1. **Streaming does not reduce kubelet memory usage**: Because kubelet uses a wrapper function that collects all streamed items into a single list before processing, the full result set is still held in memory. Streaming solely addresses the gRPC per-message size limit, not memory pressure.
 
 ### Risks and Mitigations
 
-1. **Consistency during modifications**: Containers are created/deleted frequently. During pagination:
-  - New containers may be missed
-  - Deleted containers may still appear
-    - These are not new risks; container creation/deletion during List operations can cause the same issues even without pagination.
-    - Kubelet reconciliation handles eventual consistency.
-  - Duplicates are possible if ordering shifts
-    - Runtime implementations can mitigate this. See [Runtime Implementation](#runtime-implementation) section.
+1. **Consistency during modifications**: Containers are created/deleted frequently during streaming. It is the runtime's responsibility to maintain consistency and ensure no duplicate containers appear across the streamed results.
 
 2. **Kubelet atomic view**: Kubelet is designed to see an atomic view of all pods.
 
-   Mitigation: Set `pagination_mode` to `GRPC_LIMIT` and create a wrapper function that calls the CRI API until all pages are loaded.
-   The runtime decides the page size (e.g., 10k containers = ~15 MB), so this approach won't require multiple calls until the container count approaches the limit, and even when it does, the wrapper presents the aggregated result as a single response to the caller.
+   Mitigation: Kubelet creates a wrapper function that receives all streamed items and presents the aggregated result as a single list to the caller.
+
+3. **Stream interruption**: If the runtime crashes or the stream is interrupted mid-transfer, partial results are discarded.
+
+   Mitigation: Kubelet discards any partial results received so far and retries the entire streaming call. This is no worse than the unary RPC failure case.
 
 ## Design Details
 
 ### API Changes
 
-#### ListContainers
+New server-side streaming RPCs are added to the `RuntimeService` and `ImageService`. The existing unary RPCs remain unchanged for backward compatibility.
 
-**PaginationMode:**
+#### StreamContainers
+
+**Service definition:**
 ```protobuf
-// PaginationMode controls how the runtime paginates list results. Defined as an enum to allow future pagination strategies.
-// Runtimes that do not support pagination will ignore this field and return the full list.
-enum PaginationMode {
-    DISABLED = 0;    // no pagination (backward compat)
-    GRPC_LIMIT = 1;  // runtime paginates to stay within gRPC message size limit
+service RuntimeService {
+    // Existing unary RPC (unchanged)
+    rpc ListContainers(ListContainersRequest) returns (ListContainersResponse) {}
+
+    // New server-side streaming RPC
+    rpc StreamContainers(StreamContainersRequest) returns (stream StreamContainersResponse) {}
 }
 ```
 
-**ListContainersRequest:**
+**StreamContainersRequest:**
 ```protobuf
-message ListContainersRequest {
+message StreamContainersRequest {
     ContainerFilter filter = 1;
-    PaginationMode pagination_mode = 2;
-    string page_token = 3;    // empty = first page
 }
 ```
 
-**ListContainersResponse:**
+**StreamContainersResponse:**
 ```protobuf
-message ListContainersResponse {
-    repeated Container containers = 1;
-    string next_page_token = 2;  // empty = no more pages
+message StreamContainersResponse {
+    Container container = 1;
 }
 ```
 
-#### ListPodSandbox
+The runtime sends one `StreamContainersResponse` message per container over the stream.
+How the runtime iterates over containers is an implementation detail; the simplest approach is to build the full list (as the unary RPC already does) and iterate over it.
+When all containers have been sent, the runtime returns `nil` from the gRPC handler, which closes the stream and signals `io.EOF` to the kubelet.
 
-**ListPodSandboxRequest:**
+#### StreamPodSandboxes
+
+**Service definition:**
 ```protobuf
-message ListPodSandboxRequest {
+service RuntimeService {
+    // Existing unary RPC (unchanged)
+    rpc ListPodSandbox(ListPodSandboxRequest) returns (ListPodSandboxResponse) {}
+
+    // New server-side streaming RPC
+    rpc StreamPodSandboxes(StreamPodSandboxesRequest) returns (stream StreamPodSandboxesResponse) {}
+}
+```
+
+**StreamPodSandboxesRequest:**
+```protobuf
+message StreamPodSandboxesRequest {
     PodSandboxFilter filter = 1;
-    PaginationMode pagination_mode = 2;
-    string page_token = 3;    // empty = first page
 }
 ```
 
-**ListPodSandboxResponse:**
+**StreamPodSandboxesResponse:**
 ```protobuf
-message ListPodSandboxResponse {
-    repeated PodSandbox items = 1;
-    string next_page_token = 2;  // empty = no more pages
+message StreamPodSandboxesResponse {
+    PodSandbox pod_sandbox = 1;
 }
 ```
 
-In gRPC with Protocol Buffers (proto3), the receiver silently ignores unknown fields. Even if the runtime does not support pagination, the request will succeed as if pagination were not requested.
+#### Other Stream Operations
 
-#### Other List Operations
+The same streaming pattern will be applied to the following existing unary RPCs:
 
-The same pagination fields will be added to:
-- ListContainerStats
-- ListPodSandboxStats
-- ListMetricDescriptors
-- ListPodSandboxMetrics
-- ListImages (ImageService)
+| Existing Unary RPC    | New Streaming RPC       | Service        |
+|-----------------------|-------------------------|----------------|
+| ListContainers        | StreamContainers        | RuntimeService |
+| ListPodSandbox        | StreamPodSandboxes      | RuntimeService |
+| ListContainerStats    | StreamContainerStats    | RuntimeService |
+| ListPodSandboxStats   | StreamPodSandboxStats   | RuntimeService |
+| ListPodSandboxMetrics | StreamPodSandboxMetrics | RuntimeService |
+| ListImages            | StreamImages            | ImageService   |
+
+Each streaming RPC follows the same pattern: a request message containing the same fields as the existing unary request, and a streamed response where each message contains a single item of the corresponding resource type.
+
+`ListMetricDescriptors` is excluded because it returns a fixed set of metric descriptors whose total size will not approach the gRPC message limit.
 
 #### Behavior Matrix
 
-| Kubelet | Runtime | pagination_mode | Result    |
-|---------|---------|-----------------|-----------|
-| Old     | Old     | (none)          | Full list |
-| Old     | New     | (none)          | Full list |
-| New     | Old     | GRPC_LIMIT      | Full list |
-| New     | New     | GRPC_LIMIT      | Paginated |
-
-
-### Runtime Implementation
-
-This section describes the requirements for implementing pagination in CRI runtimes.
-
-#### Page Size
-
-When `pagination_mode` is `GRPC_LIMIT`, runtimes decide the appropriate page size.
-They should return as many results as possible without exceeding the gRPC message size limit.
-
-#### Consistency
-
-Newly created containers may not appear, and recently deleted containers may still appear in the result.
-However, runtime implementations must guarantee that no duplicate containers appear in the result
-and that no containers are missed due to **ordering shifts**.
-
-Runtimes can implement one of the following strategies:
-- Stable Ordering + Cursor-based Token
-  - Maintain stable ordering. The specific order is runtime-dependent, but it must be consistent across all pages.
-  - This strategy cannot use offset-based pagination because offsets do not guarantee consistency across pages.
-- Snapshot
-  - Create a snapshot of the list if pagination is required and return subsequent pages based on the snapshot. There is no limitation on what the token is based on.
-
-#### Token Implementation
-
-Tokens must be opaque and tamper-resistant.
-Token implementation can vary among runtimes. Here is an example using HMAC-signed tokens:
-
-```go
-type PageToken struct {
-    CreatedAt int64  `json:"c"`  // last seen creation timestamp
-    ID        string `json:"i"`  // last seen container/sandbox ID
-    Version   int    `json:"v"`  // token version for future changes
-}
-
-func (t *PageToken) Encode(secret []byte) string {
-    payload, _ := json.Marshal(t)
-    mac := hmac.New(sha256.New, secret)
-    mac.Write(payload)
-    sig := mac.Sum(nil)[:16]
-    return base64.RawURLEncoding.EncodeToString(append(sig, payload...))
-}
-
-func DecodePageToken(token string, secret []byte) (*PageToken, error) {
-    data, err := base64.RawURLEncoding.DecodeString(token)
-    if err != nil || len(data) < 16 {
-        return nil, errors.New("invalid token")
-    }
-    sig, payload := data[:16], data[16:]
-    mac := hmac.New(sha256.New, secret)
-    mac.Write(payload)
-    if !hmac.Equal(sig, mac.Sum(nil)[:16]) {
-        return nil, errors.New("invalid token signature")
-    }
-    var t PageToken
-    if err := json.Unmarshal(payload, &t); err != nil {
-        return nil, err
-    }
-    return &t, nil
-}
-```
+| Kubelet | Runtime | Behavior                                                                   |
+|---------|---------|----------------------------------------------------------------------------|
+| Old     | Old     | Unary RPC, full list                                                       |
+| Old     | New     | Unary RPC, full list (streaming RPCs exist but are not called)             |
+| New     | Old     | Kubelet calls streaming RPC, gets `UNIMPLEMENTED`, falls back to unary RPC |
+| New     | New     | Streaming RPC used                                                         |
 
 ### Test Plan
 
@@ -387,9 +337,9 @@ func DecodePageToken(token string, secret []byte) (*PageToken, error) {
 
 #### Unit tests
 
-The kubelet-side implementation is a thin wrapper that aggregates paginated
-responses, so dedicated unit tests provide limited value.
-Pagination behavior will instead be validated through e2e tests using CRI-proxy.
+- Test kubelet streaming wrapper: verify it correctly aggregates all items from a mock stream into a single list.
+- Test fallback behavior: verify kubelet falls back to the unary RPC when the streaming RPC returns `UNIMPLEMENTED`.
+- Test stream error handling: verify kubelet discards partial results and returns an error when the stream fails mid-transfer.
 
 #### Integration tests
 
@@ -397,34 +347,36 @@ kubelet does not have integration tests.
 
 #### e2e tests
 
-- End-to-end pagination on nodes with high container counts.
+- End-to-end streaming on nodes with high container counts.
 - Using CRI-proxy, verify that:
-  - kubelet sends subsequent requests with `page_token` when the runtime returns a non-empty `next_page_token`.
-  - kubelet requests only once when the runtime returns an empty `next_page_token`.
-- Cover the [behavior matrix](#behavior-matrix) scenarios (old/new kubelet × old/new runtime).
+  - kubelet calls the streaming RPC when the feature gate is enabled.
+  - kubelet falls back to the unary RPC when the runtime does not implement the streaming RPC.
+  - kubelet correctly aggregates all streamed items into a complete list.
+- Cover the [behavior matrix](#behavior-matrix) scenarios (old/new kubelet x old/new runtime).
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature gate: `CRIListPagination`
-- Pagination fields added to CRI proto (optional)
-- Kubelet implements pagination
+- Feature gate: `CRIListStreaming`
+- Streaming RPCs added to CRI proto
+- Kubelet implements streaming with fallback to unary RPCs
 - Reference implementation in containerd or CRI-O
-- Basic unit and integration tests
+- Basic unit tests
 
 #### Beta
 
 - Feature gate enabled by default
-- Both containerd and CRI-O implement pagination
+- Both containerd and CRI-O implement streaming RPCs
 - E2E tests passing
-- Metrics for pagination usage added
+- Metrics for streaming usage added
 - Documentation updated
 
 #### GA
 
-- All supported runtimes implement pagination
+- All supported runtimes implement streaming RPCs
 - Feature gate locked to enabled
+- Existing unary RPCs remain available (no removal, it can be a different KEP)
 
 ### Upgrade / Downgrade Strategy
 
@@ -434,17 +386,17 @@ kubelet does not have integration tests.
 **Downgrade path:**
 1. Downgrade runtime and kubelet (order-agnostic)
 
-Upgrade and downgrade operations are order-agnostic because if either component does not support pagination, the system safely falls back to full-list behavior.
+Upgrade and downgrade operations are order-agnostic because kubelet automatically falls back to unary RPCs when the runtime does not support streaming. The streaming RPCs are additive and do not modify existing RPCs.
 
 ### Version Skew Strategy
 
-The feature discovery mechanism handles all version skew scenarios:
+The fallback mechanism handles all version skew scenarios:
 
-- **New kubelet + Old runtime**: Runtime ignores `pagination_mode` and returns the full list. The empty `next_page_token` in the response indicates to kubelet that the full list was returned.
-- **Old kubelet + New runtime**: Runtime receives no pagination parameters and returns the full list.
-- **New kubelet + New runtime**: Full pagination is enabled.
+- **New kubelet + Old runtime**: Kubelet calls the streaming RPC. The runtime returns `UNIMPLEMENTED`. Kubelet falls back to the unary RPC and retrieves the full list.
+- **Old kubelet + New runtime**: Kubelet uses the existing unary RPC. The streaming RPCs exist on the runtime but are never called.
+- **New kubelet + New runtime**: Kubelet uses the streaming RPCs.
 
-Proto3 unknown field semantics provide a safe fallback: old runtimes ignore pagination fields and return full lists. Pagination only provides benefit when both kubelet and runtime support it.
+Because the streaming RPCs are entirely new RPCs (not modifications to existing ones), there is no risk of field-level incompatibility. The version skew is handled purely through gRPC status codes.
 
 ## Production Readiness Review Questionnaire
 
@@ -453,26 +405,26 @@ Proto3 unknown field semantics provide a safe fallback: old runtimes ignore pagi
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate
-  - Feature gate name: `CRIListPagination`
+  - Feature gate name: `CRIListStreaming`
   - Components depending on the feature gate: kubelet
 
 ###### Does enabling the feature change any default behavior?
 
-No. When enabled, kubelet will use pagination only if the runtime supports it. The end result (complete container/pod list) is identical.
+No. When enabled, kubelet will use streaming RPCs if the runtime supports them, falling back to unary RPCs otherwise. The end result (complete container/pod list) is identical.
 
 ###### Can the feature be disabled once it has been enabled?
 
-Yes. Disabling the feature gate causes kubelet to set `pagination_mode=DISABLED`, returning to unpaginated behavior.
+Yes. Disabling the feature gate causes kubelet to use only the existing unary RPCs.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Pagination resumes if the runtime supports it. No state is persisted.
+Streaming resumes if the runtime supports it. No state is persisted.
 
 ###### Are there any tests for feature enablement/disablement?
 
 No dedicated enablement/disablement tests are planned.
 The feature is stateless and toggling requires a kubelet restart, so the e2e tests that cover the [behavior matrix](#behavior-matrix)
-(including the "pagination disabled" rows) provide sufficient coverage.
+(including the fallback to unary RPCs) provide sufficient coverage.
 
 To be discussed further before beta graduation.
 
@@ -480,14 +432,17 @@ To be discussed further before beta graduation.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-Rollout/rollback cannot impact running workloads. Pagination only affects how container/pod lists are retrieved, not container lifecycle.
+Rollout/rollback cannot impact running workloads. Streaming only affects how container/pod lists are retrieved, not container lifecycle.
 
 ###### What specific metrics should inform a rollback?
 
-`kubelet_cri_pagination`, Type: `Counter`, Label: `operation`
+`kubelet_cri_list_streaming_failure_total`, Type: `Counter`, Label: `operation`
 
-This counter increments when the runtime returns a non-empty `next_page_token`.
-It serves as an indicator of whether there are too many containers/pods on a node.
+This counter increments when a streaming RPC encounters an error during `Recv()`, causing kubelet to discard any items received so far. A sustained increase may indicate runtime instability.
+
+`kubelet_cri_list_streaming_fallback_total`, Type: `Counter`, Label: `operation`
+
+This counter increments when kubelet falls back to the unary RPC because the runtime returned `UNIMPLEMENTED` for the streaming RPC.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -505,8 +460,8 @@ Not applicable. It's not a workload-level feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-End-to-end verification requires a CRI runtime with pagination support.
-With such a runtime and 10k+ containers, the `kubelet_cri_pagination` metric will increment.
+- `kubelet_cri_list_streaming_fallback_total` is **not** incrementing: the runtime supports streaming and kubelet is using the streaming RPCs.
+- `kubelet_cri_list_streaming_failure_total` is **not** incrementing: streams are completing successfully without errors.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -519,8 +474,11 @@ To be discussed further before beta graduation.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `kubelet_cri_pagination`
-  - A value greater than 0 indicates an unusually high number of resources on the node.
+  - Metric name: `kubelet_cri_list_streaming_failure_total`
+  - Tracks how often streaming RPCs fail mid-stream.
+- [x] Metrics
+  - Metric name: `kubelet_cri_list_streaming_fallback_total`
+  - Tracks how often kubelet falls back to unary RPCs.
 - [x] Runtime Metrics
   - Metric name: `crio_operations_latency_seconds_total` (CRI-O)
   - Tracks CRI RPC latency.
@@ -529,23 +487,23 @@ To be discussed further before beta graduation.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No. The `kubelet_cri_pagination` metric described above will be added as part of this enhancement.
+No. The metrics described above will be added as part of this enhancement.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No. This feature only requires a CRI-compatible runtime (containerd, CRI-O) with pagination support.
+No. This feature only requires a CRI-compatible runtime (containerd, CRI-O) with streaming RPC support.
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-No new API types. Additional CRI calls only when pagination is used (one per page vs. one total).
+No new Kubernetes API calls. The streaming RPCs replace the unary CRI calls with a single streaming call per list operation.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No new types; only new optional fields on existing messages.
+New streaming RPC methods and their request/response messages are added to the CRI proto. No new Kubernetes API types.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -557,7 +515,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Potentially slight increase in total list time due to multiple round trips when there are multiple pages, but each round trip is cheap (Unix socket IPC).
+Streaming has per-message framing overhead since each item is sent as a separate gRPC message, but this is negligible over Unix sockets.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -575,21 +533,18 @@ Not applicable. This feature is kubelet-to-runtime communication only.
 
 ###### What are other known failure modes?
 
-| Failure Mode                   | Detection                         | Mitigation                                          |
-|--------------------------------|-----------------------------------|-----------------------------------------------------|
-| Token corruption/tampering     | HMAC validation fails             | Return error, kubelet retries from beginning        |
-| Runtime crashes mid-pagination | RPC error                         | Kubelet retries complete list operation             |
-| Inconsistent results           | Duplicates/gaps in reconciliation | Kubelet reconciliation handles eventual consistency |
+| Failure Mode                       | Detection                                             | Mitigation                                                                 |
+|------------------------------------|-------------------------------------------------------|----------------------------------------------------------------------------|
+| Runtime does not support streaming | gRPC `UNIMPLEMENTED` status code                      | Kubelet caches the result and falls back to unary RPC for subsequent calls |
+| Runtime crashes mid-stream         | `kubelet_cri_list_streaming_failure_total` increments | Kubelet discards partial results and retries the entire streaming call     |
 
 ###### What steps should be taken if SLOs are not being met?
 
-If `kubelet_cri_pagination` is 0, there may be an issue with the runtime.
-Operators should investigate the runtime side.
+If `kubelet_cri_list_streaming_fallback_total` is incrementing, the runtime does not implement the streaming RPCs. Upgrade the runtime to a version that supports streaming.
 
-If `kubelet_cri_pagination` is greater than 0, it indicates an unusually high number of resources (pods, containers, etc.) on the node.
-Disabling the feature in this case would cause CRI RPCs to fail due to the gRPC message size limit.
-Operators should check the `kubelet_cri_pagination` metric to identify which operations require pagination,
-and reduce the number of resources on the node (e.g., by cleaning up completed containers or tuning garbage collection settings).
+If `kubelet_cri_list_streaming_failure_total` is incrementing, the runtime is failing mid-stream. Operators should investigate the runtime logs for errors and consider upgrading the runtime.
+
+Disabling the feature gate will cause kubelet to fall back to unary RPCs. Note that if the node has enough resources to exceed the 16 MB gRPC message limit, the unary RPCs will also fail.
 
 ## Implementation History
 
@@ -597,11 +552,11 @@ and reduce the number of resources on the node (e.g., by cleaning up completed c
 
 ## Drawbacks
 
-1. **Implementation burden**: All CRI implementations (containerd, CRI-O, etc.) must implement pagination consistently.
+1. **Implementation burden**: All CRI implementations (containerd, CRI-O, etc.) must implement the new streaming RPCs.
 
-2. **Additional requests**: It may require a few additional requests to retrieve the complete list when pagination is enabled.
+2. **Proto surface area**: New RPCs and message types are added to the CRI proto, increasing the API surface.
 
-3. **Ordering requirements**: Pagination requires stable ordering. Container IDs are random hashes; ordering by creation time may add overhead.
+3. **Stream lifecycle management**: Runtimes must manage stream lifecycle correctly, including proper stream termination and error handling.
 
 ## Alternatives
 
@@ -609,7 +564,7 @@ and reduce the number of resources on the node (e.g., by cleaning up completed c
 
 **Pros:**
 - Simple, no API changes required
-- Already done twice (4MB→8MB→16MB)
+- Already done twice (4MB->8MB->16MB)
 
 **Cons:**
 - Only delays the problem
@@ -624,15 +579,16 @@ and reduce the number of resources on the node (e.g., by cleaning up completed c
 - May conflict with forensics/debugging needs
 - Doesn't help legitimate high-container-count workloads
 
-### Server-side streaming
+### Token-based pagination
 
 **Pros:**
-- True incremental processing
+- Follows established patterns (AIP-158)
+- No new RPCs needed, only new fields on existing messages
 
 **Cons:**
-- Larger API change
-- More complex error handling
-- Less alignment with existing Kubernetes patterns
+- Requires token management (generation, validation)
+- Requires stable ordering semantics for consistency
+- Multiple independent round trips instead of a single stream
 
 ### Offset-based pagination
 
@@ -648,8 +604,7 @@ and reduce the number of resources on the node (e.g., by cleaning up completed c
 
 ### Standards and Documentation
 
-- [Google AIP-158 - Pagination](https://google.aip.dev/158)
-- [Google AIP-4233 - Client Library Pagination](https://google.aip.dev/client-libraries/4233)
+- [gRPC Server-side Streaming](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc)
 - [kubernetes/cri-api](https://github.com/kubernetes/cri-api)
 - [CRI in Kubernetes Blog](https://kubernetes.io/blog/2016/12/container-runtime-interface-cri-in-kubernetes/)
 - [CRI API Version Skew Policy](https://www.kubernetes.dev/docs/code/cri-api-version-skew-policy/)

@@ -1,4 +1,4 @@
-title: CRI Pagination
+title: CRI List Streaming
 kep-number: 5825
 authors:
   - "@bitoku"
@@ -29,7 +29,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: CRIListPagination
+  - name: CRIListStreaming
     components:
       - kubelet
 disable-supported: true
