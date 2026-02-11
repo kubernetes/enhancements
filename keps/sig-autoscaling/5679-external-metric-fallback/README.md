@@ -213,10 +213,10 @@ The community has previously expressed interest in addressing this limitation [#
 
 ## Proposal
 
-Add optional fallback configuration to the [ExternalMetricSource](https://github.com/kubernetes/kubernetes/blob/48c56e04e0bc2cdc33eb67ee36ca69eba96b5d0b/staging/src/k8s.io/api/autoscaling/v2/types.go#L343) type, allowing users to specify:
+Add optional fallback configuration to the existing [ExternalMetricSource](https://github.com/kubernetes/kubernetes/blob/48c56e04e0bc2cdc33eb67ee36ca69eba96b5d0b/staging/src/k8s.io/api/autoscaling/v2/types.go#L343) type by introducing a new `fallback` field, allowing users to specify:
 
 1. A failure duration (how long the metric must be continuously failing before activating fallback)
-2. A substitute metric value to use when the threshold is exceeded
+2. A desired replica count to use when the failure duration threshold is exceeded
 
 This approach:
 - **Works with the HPA algorithm**: Fallback provides a desired replica count for that metric, which is combined with other metrics using the standard HPA multi-metric approach (taking the maximum)
@@ -253,37 +253,37 @@ As an operator, I want to configure different fallback replica counts for each e
 
 ## Design Details
 
-Add a new `ExternalMetricFallback` type and include it in `ExternalMetricSource`:
+Introduce a new `ExternalMetricFallback` type and add a new `fallback` field to the existing `ExternalMetricSource` struct. Additionally, add new `fallbackStatus` and `firstFailureTime` fields to the existing `ExternalMetricStatus` struct.
 
 ```golang
 // ExternalMetricFallback defines fallback behavior when an external metric cannot be retrieved
 type ExternalMetricFallback struct {
-    // failureDurationSeconds is the duration in seconds for which the external metric must be
-    // continuously failing before the fallback value is used. The duration is measured from the
-    // first consecutive failure. Must be greater than 0.
-    // +optional
-    // default=180
-    // min=180
-    FailureDurationSeconds *int64 `json:"failureDurationSeconds,omitempty"`
+  // failureDurationSeconds is the duration in seconds for which the external metric must be
+  // continuously failing before the fallback value is used. The duration is measured from the
+  // first consecutive failure. Must be greater than 0.
+  // +optional
+  // default=180
+  // min=180
+  FailureDurationSeconds *int64 `json:"failureDurationSeconds,omitempty"`
 
-    // replicas is the desired replica count to use when the external metric cannot be retrieved.
-    // This value is treated as the desired replica count from this metric.
-    // When multiple metrics are configured, the HPA controller uses the maximum of all
-    // desired replica counts (standard HPA multi-metric behavior).
-    // Must be greater than 0.
-    // +required
-    Replicas int32 `json:"replicas"`
+  // replicas is the desired replica count to use when the external metric cannot be retrieved.
+  // This value is treated as the desired replica count from this metric.
+  // When multiple metrics are configured, the HPA controller uses the maximum of all
+  // desired replica counts (standard HPA multi-metric behavior).
+  // Must be greater than 0.
+  // +required
+  Replicas int32 `json:"replicas"`
 }
 
 // ExternalMetricSource indicates how to scale on a metric not associated with
 // any Kubernetes object (for example length of queue in cloud
 // messaging service, or QPS from loadbalancer running outside of cluster).
 type ExternalMetricSource struct {
-	// metric identifies the target metric by name and selector
-	Metric MetricIdentifier `json:"metric" protobuf:"bytes,1,name=metric"`
+  // metric identifies the target metric by name and selector
+  Metric MetricIdentifier `json:"metric" protobuf:"bytes,1,name=metric"`
 
-	// target specifies the target value for the given metric
-	Target MetricTarget `json:"target" protobuf:"bytes,2,name=target"`
+  // target specifies the target value for the given metric
+  Target MetricTarget `json:"target" protobuf:"bytes,2,name=target"`
 
   // fallback defines the behavior when this external metric cannot be retrieved.
   // If not set, the HPA will not scale based on this metric when it's unavailable.
@@ -322,13 +322,13 @@ Add a new `HorizontalPodAutoscalerConditionType`:
 
 ```golang
 const (
-    // ExternalMetricFallbackActive indicates that one or more external metrics
-    // are currently using fallback values due to retrieval failures.
-    // Status will be:
-    // - "True" if any external metric is in fallback state
-    // - "False" if no external metrics are in fallback state
-    // - "Unknown" if the controller cannot determine the state
-    ExternalMetricFallbackActive ConditionType = "ExternalMetricFallbackActive"
+  // ExternalMetricFallbackActive indicates that one or more external metrics
+  // are currently using fallback values due to retrieval failures.
+  // Status will be:
+  // - "True" if any external metric is in fallback state
+  // - "False" if no external metrics are in fallback state
+  // - "Unknown" if the controller cannot determine the state
+  ExternalMetricFallbackActive ConditionType = "ExternalMetricFallbackActive"
 )
 ```
 
