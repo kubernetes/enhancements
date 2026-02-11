@@ -335,12 +335,18 @@ The kube-scheduler waits for `PodGroup` when Pods have `schedulingGroup`, so sch
 
 The Job API Validation rejects updates that change `spec.parallelism` when the feature gate is enabled and the Job uses gang scheduling. Since changing this field would require changing `minCount` in the `Workload` object, which is immutable.
 
-Job API validation uses the same conditions the Job controller uses to create a Workload with gang scheduling. When the feature gate is enabled, validation rejects updates that change `spec.parallelism` if the Job, after the update, 
-satisfies `spec.parallelism > 1`, `spec.completionMode == Indexed`, and `spec.parallelism == spec.completions`. If the controller’s criteria for applying gang scheduling change in the future, this validation logic must be updated to match. This additional validation will be removed in beta since Elastic Indexed Jobs must be supported.
+Job API validation uses the same conditions the Job controller uses to create a Workload with gang scheduling. 
+When the feature gate is enabled, validation rejects updates that change `spec.parallelism` if the Job, after the update, 
+satisfies `spec.parallelism > 1`, `spec.completionMode == Indexed`, and `spec.parallelism == spec.completions`. If the controller’s 
+criteria for applying gang scheduling change in the future, this validation logic must be updated to match.
+
+This additional validation will be removed in beta since Elastic Indexed Jobs must be supported.
 
 ### Naming Conventions
 
-We will not use naming for discovery due to limitations related to naming. Naming is for human readability and logical linking between Job, `Workload`, and `PodGroup`. Because discovery does not depend on it, the naming pattern can be changed in later releases if needed. 
+We will not use naming for discovery due to limitations related to naming. Naming is for human readability 
+and logical linking between Job, `Workload`, and `PodGroup`. Because discovery does not depend on it, the 
+naming pattern can be changed in later releases if needed. 
 
 Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blob/f42571572d241a2cdeffa3962c0ccf1f59180113/pkg/controller/deployment/sync.go#L560-L568), the naming convention can be as follows:
 
@@ -357,12 +363,16 @@ Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blo
 
   ### Deletion and Garbage Collection
 
-  The Job controller does not explicitly delete `Workload` or `PodGroup`. However, in the case of the controller creating them, it sets `ownerReferences` so that garbage collection removes them when the Job is deleted. No additional controller logic is required for deletion in the current design.
+  The Job controller does not explicitly delete `Workload` or `PodGroup`. However, in the case of the controller 
+  creating them, it sets `ownerReferences` so that garbage collection removes them when the Job is deleted. 
+  No additional controller logic is required for deletion in the current design.
   
   The Job controller does not add or adopt ownerReferences on objects it did not create (user-created or higher-level controller-created objects). Users or other controllers may create Workloads/PodGroups with the same ownerReferences as the Job controller would use.
 
-  To distinguish controller-created objects from user-created ones that may have the same ownerReferences, the Job controller may set a `managed-by` annotation or equivalent metadata on `Workload` and `PodGroup` objects it creates. 
-  This allows the controller to know which objects it created and is responsible for its lifecycle, including GC. Similarly, for PodGroups, which is especially important as they may have multiple ownerReferences (Job and `Workload`).
+  To distinguish controller-created objects from user-created ones that may have the same ownerReferences, 
+  the Job controller may set a `managed-by` annotation or equivalent metadata on `Workload` and `PodGroup` objects it creates. 
+  This allows the controller to know which objects it created and is responsible for its lifecycle, 
+  including GC. Similarly, for PodGroups, which is especially important as they may have multiple ownerReferences (Job and `Workload`).
 
 ### Test Plan
 
