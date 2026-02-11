@@ -110,7 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Example 2: Network Device (SR-IOV / DPDK)](#example-2-network-device-sr-iov--dpdk)
   - [Feature Gate](#feature-gate)
   - [Feature Maturity and Rollout](#feature-maturity-and-rollout)
-    - [Alpha (v1.35)](#alpha-v135)
+    - [Alpha (v1.36)](#alpha-v136)
     - [Beta](#beta)
     - [GA](#ga)
   - [Test Plan](#test-plan)
@@ -119,8 +119,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (v1.35)](#alpha-v135-1)
-    - [Alpha (v1.35)](#alpha-v135-2)
+    - [Alpha (v1.36)](#alpha-v136-1)
     - [Beta](#beta-1)
     - [GA](#ga-1)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -223,10 +222,13 @@ pods (specifically containers requesting devices).
 ## Proposal
 
 This proposal introduces framework-assisted attribute exposure via CDI mounting in the DRA kubelet plugin
-framework (`k8s.io/dynamic-resource-allocation/kubeletplugin`). Drivers opt in to the metadata feature
-at framework `Start()` time by passing an option (e.g. `kubeletplugin.DeviceMetadata(path)`). If the
-option is not passed, the feature is fully disabled for that driver — no CDI specs or metadata files
-are generated.
+framework (`k8s.io/dynamic-resource-allocation/kubeletplugin`). The framework provides a command-line
+flag (e.g. `--enable-device-metadata`) that drivers integrate into their CLI.
+Once integrated, operators enable or disable the metadata feature via the flag when starting the plugin
+process (no driver image change required). When the flag is set, the framework enables the metadata code
+path; when unset, the feature is fully disabled — no CDI specs or metadata files are generated. Metadata
+files are always written under the kubelet device plugin directory for that driver
+(`{kubeletDir}/plugins/{driverName}/dra-device-metadata/...`).
 
 When enabled, the framework **always generates a CDI spec** (bind-mount) for every claim the driver
 prepares, ensuring the container mount point exists regardless of when the metadata content arrives.
@@ -238,9 +240,9 @@ populated. The framework writes the metadata file immediately alongside the CDI 
 **Deferred metadata** (e.g. network drivers like DRANet): `PrepareResourceClaims` returns without
 `Device.Metadata` (or with an empty result) because device details are not yet available — network
 configuration (IP addresses, interface names, MAC addresses) only becomes known after CNI runs during
-`RunPodSandbox`. The CDI spec is still created at prepare time, but no metadata file is written yet.
-The driver writes the file later via `MetadataUpdater.UpdateRequestMetadata()` from its NRI
-`RunPodSandbox` hook. See [Metadata Lifecycle](#metadata-lifecycle) for the full sequence.
+`RunPodSandbox`. The CDI mount is still done at prepare time with empty metadata. The driver writes
+the file via `MetadataUpdater.UpdateRequestMetadata()` from its NRI `RunPodSandbox` hook, before the
+pod starts. See [Metadata Lifecycle](#metadata-lifecycle) for the full sequence.
 
 In both cases the framework:
 1. Generates CDI specs that bind-mount the driver's metadata file into containers at a well-known container path
@@ -277,9 +279,9 @@ inside my container, so my DPDK application can discover and bind to the correct
 
 - **File-based, not env vars**: Attributes are exposed as JSON files mounted via CDI, not environment variables. This
   allows for complex structured data and dynamic attribute sets.
-- **Opt-in at Start() time**: Drivers enable the metadata feature by passing an option (e.g. `kubeletplugin.DeviceMetadata(path)`) when calling `Start()`. If the option is not passed, no CDI specs or metadata files are generated. Once enabled, the framework generates CDI specs for every prepared claim; metadata content is provided either immediately via `Device.Metadata` in `PrepareResult` or later via `MetadataUpdater`.
-- **No API changes**: Zero modifications to Kubernetes API types. This is purely a framework/driver-side implementation.
-- **File lifecycle**: Files are created under the driver's plugin directory during NodePrepareResources and deleted during NodeUnprepareResources. No new shared host directory is introduced.
+- **Enable/disable**: Drivers wire up the framework's flag config (e.g. `--enable-device-metadata`) in their CLI; operators then control enable/disable via the flag without driver image changes. See [Feature Gate](#feature-gate).
+- **No API changes**: Zero modifications to Kubernetes API types; framework/driver-side only.
+- **File lifecycle**: Created during NodePrepareResources, deleted during NodeUnprepareResources; no new shared host directory.
 
 ### Risks and Mitigations
 
@@ -403,7 +405,7 @@ container's request directory to discover all devices.
 
    ```json
    {
-     "apiVersion": "resource.k8s.io/v1alpha1",
+     "apiVersion": "metadata.resource.k8s.io/v1alpha1",
      "kind": "DeviceMetadata",
      "metadata": {
        "name": "my-claim",
@@ -527,23 +529,7 @@ The framework removes metadata files for the unprepared claims during cleanup
 
 #### API Changes
 
-**Start() option**: Drivers enable the metadata feature by passing an option at `Start()` time.
-When enabled, the framework generates CDI bind-mount specs for every prepared claim and handles
-file lifecycle automatically.
-
-```go
-// DeviceMetadata enables writing device metadata JSON files and generating
-// CDI specs that bind-mount them into containers.
-// When enabled, the framework automatically:
-//   - Generates CDI specs for every prepared claim (ensuring the container
-//     mount point exists)
-//   - Writes per-request metadata if Device.Metadata is populated in PrepareResult
-//   - Provides MetadataUpdater for drivers that write metadata later (e.g. from NRI hooks)
-//   - Cleans up files and CDI specs during NodeUnprepareResources
-//
-// If this option is not passed, the metadata feature is fully disabled.
-func DeviceMetadata(metadataBasePath string) Option
-```
+**Command-line flag**: A boolean flag (e.g. `--enable-device-metadata`) is the only way to enable the feature. When the flag is enabled, the CDI mounts are done; if the driver does not provide enough data at prepare time, the mounted file will be empty, and the driver can use `MetadataUpdater` to write it later before the pod starts. When unset, the feature is off. Host path is always the kubelet device plugin directory (see [Directory structure on host](#directory-structure-on-host-per-driver-plugin-directory)); no Start() option.
 
 **Device.Metadata field in PrepareResult**: Drivers that have metadata available at prepare time
 populate this field. The framework writes the metadata file immediately. Drivers that do not have
@@ -562,9 +548,8 @@ type Device struct {
     // Metadata contains device attributes to expose to workloads.
     // When set, the framework writes this to a JSON file mounted into containers
     // immediately after PrepareResourceClaims returns.
-    // When nil, the CDI spec is still generated (if DeviceMetadata option is enabled),
-    // but no metadata file is written — the driver is expected to write it later
-    // via MetadataUpdater.UpdateRequestMetadata().
+    // When nil, the CDI mount is still done (when feature is enabled) but the metadata field will be empty
+    // the driver writes it via MetadataUpdater.UpdateRequestMetadata() before the pod starts.
     Metadata *DeviceMetadata
 }
 
@@ -583,22 +568,17 @@ type DeviceMetadata struct {
 
 ### Driver Integration
 
-Drivers enable the metadata feature at `Start()` time. Once enabled, the framework generates CDI
-specs for every prepared claim. Metadata content is provided in one of two ways:
+When the flag is set, drivers provide metadata in one of two ways:
 
 - **At prepare time**: Driver populates `Device.Metadata` in `PrepareResult`. Framework writes the
   metadata file immediately. Suitable for drivers that have all device information available during
   `PrepareResourceClaims` (e.g. GPU drivers).
-- **After prepare time**: Driver returns without `Device.Metadata`. Framework creates the CDI spec
-  but no metadata file. Driver writes the file later via `MetadataUpdater.UpdateRequestMetadata()`,
-  typically from an NRI hook. Suitable for network drivers like DRANet where device details only
-  become available after CNI runs.
+- **After prepare time**: Driver returns without `Device.Metadata`. The CDI mount is done but the
+  metadata field is empty. Driver writes it via `MetadataUpdater.UpdateRequestMetadata()` before the pod
+  starts (e.g. from an NRI hook after CNI). Suitable for network drivers like DRANet where device
+  details only become available after CNI runs.
 
-**Key benefits of this approach**:
-- Single opt-in at `Start()` — no per-device decision needed
-- CDI spec is always generated, ensuring the container mount point exists
-- Driver has flexibility to provide metadata immediately or deferred
-- Framework handles file writing, CDI spec generation, and cleanup automatically
+**Key benefits**: CDI spec always generated when flag is set (mount point exists); driver can provide metadata immediately or via MetadataUpdater; framework handles file writing, CDI spec generation, and cleanup.
 
 For network DRA drivers that write metadata in two phases (initial attributes during
 `PrepareResourceClaims`, then network info via NRI after CNI), see the
@@ -606,9 +586,7 @@ For network DRA drivers that write metadata in two phases (initial attributes du
 
 ### Workload Discovery
 
-The presence of `{driverName}-metadata.json` indicates the driver supports this feature. If the
-application requires this information and it's not present, it should error. Applications can
-enumerate `*-metadata.json` files in the request directory to discover metadata from all drivers.
+The presence of `{driverName}-metadata.json` indicates metadata from that driver is available for this request. Absence may mean deferred metadata not yet written (e.g. network driver writing from NRI hook). Applications enumerate `*-metadata.json` in the request directory; if required metadata is missing, error or wait as appropriate.
 
 ### Schema version handling
 
@@ -893,20 +871,16 @@ spec:
 
 ### Feature Gate
 
-<TODO>
+No Kubernetes feature gate. The framework provides a boolean flag (e.g. `--enable-device-metadata`) that drivers integrate into their CLI. Once integrated, operators enable/disable via the flag in deployment configuration (e.g. DaemonSet args) without a new driver image.
 
 ### Feature Maturity and Rollout
 
-#### Alpha (v1.35)
+#### Alpha (v1.36)
 
-- Opt-in by populating `Device.Metadata` in `PrepareResult`
-- Framework implementation in `k8s.io/dynamic-resource-allocation/kubeletplugin`
-- `Metadata` field added to `Device` struct
-- Unit tests for JSON generation, CDI spec creation, file lifecycle
-- Integration tests with test driver
-- E2E test validating file mounting and content
-- Documentation for driver authors
-- **No feature gate**: This is a framework-level opt-in, not a Kubernetes API change
+- Framework implementation in `k8s.io/dynamic-resource-allocation/kubeletplugin`: `Metadata` field on `Device`; command line flags for driver integration
+- Drivers integrate framework's flag into their CLI flags; operators control enable/disable via flag
+- Unit tests (JSON generation, CDI spec, file lifecycle); integration tests with test driver; E2E for file mount and content
+- Documentation for driver authors on flag integration and metadata usage
 
 #### Beta
 
@@ -965,7 +939,7 @@ Integration tests will cover:
 - **Attribute types**: Test string, bool, int, version attributes are correctly written
 - **Generation number**: Verify generation increments on metadata updates
 - **Cleanup**: Verify files are removed after unprepare
-- **Opt-in behavior**: Verify files are NOT created when `Device.Metadata` is nil
+- **Enable/disable**: Verify feature off when flag unset; no files when `Device.Metadata` is nil
 
 Tests will be added to `test/integration/dra/`.
 
@@ -984,9 +958,7 @@ Tests will be added to `test/e2e/dra/dra.go`.
 
 ### Graduation Criteria
 
-#### Alpha (v1.35)
-
-#### Alpha (v1.35)
+#### Alpha (v1.36)
 
 - [ ] Framework implementation complete with `Device.Metadata` field in `PrepareResult`
 - [ ] Framework writes metadata file when `Device.Metadata` is populated
@@ -1007,37 +979,15 @@ TBD
 
 ### Upgrade / Downgrade Strategy
 
-**Upgrade:**
-- No Kubernetes API changes, so upgrade is transparent to control plane
-- Framework changes are backward compatible: existing drivers that don't populate `Device.Metadata` continue to work unchanged
-- Drivers can opt-in at their own pace by populating `Device.Metadata` in `PrepareResult`
-- Workloads without DRA claims are unaffected
-- Workloads with DRA claims but not reading attribute files are unaffected
+**Upgrade:** No API changes; control plane unchanged. Framework is backward compatible (drivers that don't populate `Device.Metadata` unchanged). When the flag is set, drivers that provide metadata expose it; workloads without DRA or not reading the files are unaffected.
 
-**Downgrade:**
-- Kubelet downgrade is NOT problematic: This feature is implemented entirely in the driver plugin framework, not in
-  kubelet
-- If downgrading the *driver* existing pods with mounted attribute files will continue to run but new pods will not have
-  attribute files mounted
+**Downgrade:** Implemented in the driver plugin framework, not kubelet. Disabling the flag or downgrading the driver: new pods won't get metadata files; existing pods keep theirs until termination.
 
-**Rolling upgrade:**
-- Drivers can be upgraded one at a time without cluster-wide coordination
-- Pods using upgraded drivers (that populate `Device.Metadata`) get attribute files; pods using old drivers don't
-- Node/kubelet upgrades do not affect this feature (it's driver-side only)
-- Workloads should handle missing files gracefully
+**Rolling upgrade:** Toggle the flag per node/deployment; no cluster-wide coordination. Workloads should handle missing metadata files gracefully.
 
 ### Version Skew Strategy
 
-**Control Plane and Node Coordination:**
-- This feature primarily involves changes in driver hence no coordination needed between control plane and node
-
-**Version Skew Scenarios:**
-
-1. **Newer Driver**: pods created after this update will have attributes file
-2. **Older Driver**: pods created by this driver will not have the attributes file
-
-**Recommendation:**
-- Test in a non-production environment first
+No control-plane/node coordination (driver-side only). Newer driver with flag set: pods get metadata files. Older driver or flag unset: no metadata files. Test in non-production first.
 
 ## Production Readiness Review Questionnaire
 
@@ -1071,37 +1021,26 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Rollout a driver that populates `Device.Metadata` in `PrepareResult`
+- [x] Set or unset the framework flag (e.g. `--enable-device-metadata`) in the DRA plugin process args (e.g. DaemonSet). No driver image change required.
 
 ###### Does enabling the feature change any default behavior?
 
-No. Enabling the feature adds new CDI mount points containing attributes of DRA devices in JSON format
+No. When enabled, new CDI mount points expose DRA device attributes as JSON files.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. The feature can be disabled by rolling back to a previous driver version or deploying a version that doesn't populate `Device.Metadata`
-
-**Consequences:**
-- New Pods will not have the attributes available inside the pod
-- Existing running Pods will continue to run
-
-**Recommendation:** Before disabling, make sure attributes consumers have an alternative mechanism to lookup the attributes
+Yes. Unset the flag (or omit it) in the plugin deployment. New pods won't get metadata files; existing pods keep theirs until they terminate. Ensure attribute consumers have a fallback if needed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Re-enabling the feature restores full functionality.
-
-- New Pods will work correctly
-- Existing Pods (created while feature was disabled) are unaffected.
-
-No data migration or special handling is required.
+Restores full functionality for new pods; no data migration or special handling.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes:
-- Unit tests verify files are NOT created when `Device.Metadata` is nil
-- Integration tests verify opt-in behavior with framework flag toggle
-- E2E tests validate files are present with feature on, absent with feature off
+Yes
+- unit tests (no files when feature off or `Device.Metadata` nil)
+- integration tests (flag toggle)
+- E2E (files present when on, absent when off)
 
 ### Rollout, Upgrade and Rollback Planning
 
