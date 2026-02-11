@@ -265,6 +265,10 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+*Please refer to
+[CSI Terminology](https://github.com/container-storage-interface/spec/blob/f5b02713844a2dc36d45cd33a5717fd40b3f262f/spec.md#terminology)
+for an explanation of the standard CSI related terminology used in this proposal.*
+
 The proposal extends the CSI specification with a new, optional,
 [CSI SnapshotMetadata gRPC service](#the-csi-snapshotmetadata-service-api),
 that is used by Kubernetes to retrieve metadata on the allocated blocks of a
@@ -498,6 +502,8 @@ The risks are mitigated as follows:
   [TokenReview](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/) and
   [SubjectAccessReview](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/subject-access-review-v1/)
   APIs are controlled by Kubernetes security policy.
+  A side effect of the use of these APIs is that it partially mitigates
+  the risk of uncontrolled access to the service.
 
 The proposal requires the existence of security policy to establish the access
 rights described below, and illustrated in the following figure:
@@ -546,6 +552,88 @@ The proposal requires that Kubernetes security policy authorize access to:
   gRPC service.
 
 The proposal does not specify how such a security policy is to be configured.
+
+Examples are provided in the [deploy/example](https://github.com/kubernetes-csi/external-snapshot-metadata/tree/main/deploy/example)
+directory of the `external-snapshot-metadata` repository:
+- ClusterRole example with [permissions needed by the sidecar](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/b20e5cf4a06163b491746b0629097b2a7536a808/deploy/snapshot-metadata-cluster-role.yaml)
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: external-snapshot-metadata-runner
+rules:
+# To access snapshotmetadataservice resource
+- apiGroups:
+  - cbt.storage.k8s.io
+  resources:
+  - snapshotmetadataservices
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+# To access tokenreviews and subjectaccessreviews APIs
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+  - get
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+  - get
+# To access volumesnapshot and volumesnapshotcontents
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshots
+  - volumesnapshotcontents
+  verbs:
+  - get
+  - list
+```
+
+- ClusterRole example with permissions needed by a [backup application](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/b20e5cf4a06163b491746b0629097b2a7536a808/deploy/snapshot-metadata-client-cluster-role.yaml)
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: external-snapshot-metadata-client-runner
+rules:
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshots
+  - volumesnapshotcontents
+  verbs:
+  - get
+  - list
+  - watch
+# Access to discover SnapshotMetadataService resources
+- apiGroups:
+  - cbt.storage.k8s.io
+  resources:
+  - snapshotmetadataservices
+  verbs:
+  - get
+  - list
+## Access to create sa tokens with tokenrequests API if client needs to generate SA token
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
+  - get
+```
 
 ## Design Details
 
@@ -883,9 +971,10 @@ its snapshot retention policy, and should save the CSI snapshot handle
 somewhere for future use if it deletes the `VolumeSnapshot` object 
 immediately after it has performed a backup.
 
-The full specification of the Kubernetes SnapshotMetadata API will be
+The full specification of the Kubernetes SnapshotMetadata API is
 published in the source code repository of the
-[external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar).
+[external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
+(see [proto/schema.proto](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/b20e5cf4a06163b491746b0629097b2a7536a808/proto/schema.proto)).
 
 #### Snapshot Metadata Service Custom Resource
 
@@ -1005,6 +1094,9 @@ that handles all aspects of Kubernetes client interaction for
 a [SP Snapshot Metadata Service](#the-sp-snapshot-metadata-service).
 The sidecar should be configured to run under the authority of the CSI driver ServiceAccount,
 which must be authorized as described in [Risks and Mitigations](#risks-and-mitigations).
+The code for the sidecar is in the
+[kubernetes-csi/external-snapshot-metadata](https://github.com/kubernetes-csi/external-snapshot-metadata)
+repository.
 
 A Service object must be created for the TCP based
 [Kubernetes SnapshotMetadata](#the-kubernetes-snapshotmetadata-service-api)
@@ -1114,6 +1206,10 @@ snapshot class, volume handle, and metadata service resources.
 review resources.
 * Unit tests to ensure no tokens/secrets are logged by k8s-csi logging methods.
 
+See the individual unit tests in the sub-packages of
+[pkg/internal](https://github.com/kubernetes-csi/external-snapshot-metadata/tree/b20e5cf4a06163b491746b0629097b2a7536a808/pkg/internal)
+of the `external-snapshot-metadata` repository for details.
+
 ##### Integration tests
 
 <!--
@@ -1131,7 +1227,18 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-No integration tests are required. This feature is better tested with e2e tests.
+[Integration tests](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/b20e5cf4a06163b491746b0629097b2a7536a808/.github/workflows/integration-test.yaml)
+are built into the build process.
+The test is based on the
+[CSI Hostpath driver](https://github.com/kubernetes-csi/csi-driver-host-path/blob/3fcc5ade32e168b279f188ae62fb2c8d61efd95b/README.md)
+and uses the
+[snapshot-metadata-lister](https://github.com/kubernetes-csi/external-snapshot-metadata/tree/b20e5cf4a06163b491746b0629097b2a7536a808/tools/snapshot-metadata-lister)
+and
+[snapshot-metadata-verifier](https://github.com/kubernetes-csi/external-snapshot-metadata/tree/b20e5cf4a06163b491746b0629097b2a7536a808/tools/snapshot-metadata-verifier)
+commands built by in the `external-snapshot-metadata` repository,
+[yq](https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64),
+`kubectl` and other standard Linux utilities.
+See the workflow script for test details.
 
 ##### e2e tests
 
@@ -1144,6 +1251,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
+
+Link: [SnapshotMetadata E2E test PR](https://github.com/kubernetes/kubernetes/pull/130918)
 
 The prototype project of this KEP contains a [sample gRPC client][2] that can be
 used to simulate gRPC requests to the `SnapshotMetadata` service.
@@ -1206,6 +1315,7 @@ the K8s API server.
 implementations of the `SnapshotMetadata` service to enable successful e2e
 backup workflow.
 * Increase e2e test coverage.
+* Test authentication and authorization logic.
 * Gather feedback from CSI driver maintainers and backup users, especially
 on performance metrics.
 
@@ -1351,7 +1461,15 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-The feature can be disabled by removing the sidecar from the CSI driver.
+There is no standard feature gate as this is maintained out-of-tree
+and its use by a CSI driver vendor is optional.
+
+Backup applications have to explicitly add logic to use this feature,
+and the logic starts by looking for the SnapshotMetadataService CR installed
+by the CSI driver.
+Hence, this feature can easibly be disabled at runtime by deleting
+the SnapshotMetadataService CR installed by the CSI driver.
+One could also reinstall the CSI driver without this feature enabled (vendor specific) though this could adversely impact active applications.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1392,12 +1510,30 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+The CSI driver installs the `SnapshotMetadataService` CRD.
+Since the `SnapshotMetadataService` CRD is shared between CSI drivers, a
+CSI driver should fail if it finds a pre-existing CRD with an incompatible
+version and surface the error to the cluster administrator to resolve.
+
+The CSI driver creates an instance
+of this CR, and deploys the `external-snapshot-metadata` sidecar.
+Each CSI driver vendor independently must explicitly handle failure to construct
+these objects during rollout or rollback if their driver fails.
+
+Any rollback will cause active operations by a backup application to fail.
+Such failure is similar to a network failure that the backup client application ought to be
+capable of handling gracefully.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Consistent `Failure` values in the **operation_status** label of
+the `snapshot_metadata_controller_operation_total_seconds` metric could
+indicate a serious problem.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1407,11 +1543,17 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+No such testing was done.
+This is CSI driver specific as the `external-snapshot-metadata`
+sidecar is an optional component of a CSI driver.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -1430,6 +1572,17 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+A SnapshotMetadataService CR named for the CSI driver is created by the
+CSI driver installation if this feature was enabled.
+
+If the feature is in actual use the the following metric will be created:
+
+  - `snapshot_metadata_controller_operation_total_seconds`
+    This metric has an **operation_status** label that has values of either `Success` or `Failure`.
+    The **operation_name** label will be one of the following:
+    - `MetadataAllocated` which tracks how long the controller takes to get the allocated blocks for a snapshot.
+    - `MetadataDelta` which tracks how long the controller takes to get the changed blocks between 2 snapshots.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1446,8 +1599,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] API .status
   - Condition name:
   - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Metric `snapshot_metadata_controller_operation_total_seconds` for the `csi-snapshot-metadata` sidecar.
+    Metrics data indicate use of the `MetadataAllocated` or `MetadataDelta` operations.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1466,18 +1620,22 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+This is both CSI driver and backup application specific, but
+block mode backups should become more efficient in both storage
+space and time utilization.
+The `GetMetadataAllocated` and `GetMetadataDelta` snapshot metadata operations
+should be as successful as an existing `CreateSnapshot` CSI operation on the
+same volume, assuming that sufficient cluster resources are available for the
+duration of the operation.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `snapshot_metadata_controller_operation_total_seconds`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1485,6 +1643,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+N/A
 
 ### Dependencies
 
@@ -1508,6 +1668,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+The feature augments a CSI driver's volume snapshot management
+functionality, and as such, cannot operate without the CSI
+driver functionality being present.
 
 ### Scalability
 
@@ -1559,7 +1723,7 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-- API type: SnapshotMetadataService
+- API type: SnapshotMetadataService CR
 - Supported number of objects per cluster: One object for every CSI driver that
 supports CBT
 - Supported number of objects per namespace (for namespace-scoped objects): N/A
@@ -1597,6 +1761,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+CSI driver specific.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -1609,6 +1775,9 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
+This feature involves I/O operations and will consume runtime resources proportionally.
+The I/O operations bypass the Kuberentes API server.
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -1620,6 +1789,12 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
+
+The feature involves the use of network resources for communication
+between a backup application and the external-snapshot-metadata sidecar
+runnining in the CSI driver.
+
+Other resources used are CSI driver specific.
 
 ### Troubleshooting
 
@@ -1634,7 +1809,13 @@ splitting it into a dedicated `Playbook` document (potentially with some monitor
 details). For now, we leave it here.
 -->
 
+Log records from the `external-snapshot-metadata` sidecar container should be visible
+in the container logs, assuming a typical deployment such as that described in
+[Deploying CSI Driver on Kubernetes](https://kubernetes-csi.github.io/docs/deploying.html).
+
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature will not work if the API server and/or etcd is unavailable.
 
 ###### What are other known failure modes?
 
@@ -1651,7 +1832,20 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- [Failure for reasons other than RBAC or invalid arguments]
+  - Detection: Either via the `snapshot_metadata_controller_operation_total_seconds`
+    metric (**operation_status** label value of `Failure`) or from a failure reported
+    by backup applications.
+  - Mitigations: This is an optional feature, and if it fails to function properly for a particular
+  CSI driver then the operator can disable the feature in that CSI driver by
+  deleting its `SnapshotMetadataService` CR or by rolling back the feature.
+  It is also possible that the operator may be able to disable the use of the
+  feature in the backup application concerned.
+  - Testing: Kubernetes [end-to-end tests](https://github.com/kubernetes/kubernetes/pull/130918)
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Contact the CSI driver vendor with metric traces and driver logs as evidence.
 
 ## Implementation History
 
