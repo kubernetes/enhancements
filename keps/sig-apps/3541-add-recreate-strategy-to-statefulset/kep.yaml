@@ -7,7 +7,7 @@ owning-sig: sig-apps
 status: implementable
 creation-date: 2022-09-26
 reviewers:
-  - "@janetkuo"
+  - "@atiratree"
 approvers:
   - "@soltysh"
 

@@ -25,6 +25,7 @@
     - [Proposed Recreate Strategy Algorithm](#proposed-recreate-strategy-algorithm)
   - [API Changes](#api-changes)
     - [Spec Changes](#spec-changes)
+    - [Status Changes](#status-changes)
   - [Implementation Changes](#implementation-changes)
   - [Comparison with Existing Solutions](#comparison-with-existing-solutions)
   - [Test Plan](#test-plan)
@@ -188,6 +189,7 @@ Adding `Recreate` update strategy to StatefulSets addresses these issues by:
 3. Enable automated recovery from stuck pod states without manual intervention
 4. Provide a simple, predictable update behavior for workloads that can tolerate downtime
 5. Support use cases like CI/CD environments, stateless applications, external storage applications, and LeaderWorkerSet patterns
+6. Add `Progressing` state condition to `StatefulSet` status for all strategies
 
 ### Non-Goals
 
@@ -409,7 +411,6 @@ const (
 )
 ```
 
-
 Example Usage:
 
 ```yaml
@@ -437,6 +438,19 @@ spec:
 - Downtime occurs between deletion and recreation phases
 - No stuck pod scenarios - all pods are forcibly deleted
 
+#### Status Changes
+
+```go
+// StatefulSetConditionType describes the condition types
+type StatefulSetConditionType string
+
+const (
+    // Progress for a StatefulSet is considered when a new pod is created, deleted, or becomes ready.
+    StatefulSetProgressing StatefulSetConditionType = "Progressing"
+
+    StatefulSetAvailable StatefulSetConditionType = "Available"
+)
+```
 ### Implementation Changes
 
 The implementation requires changes to the StatefulSet controller in `pkg/controller/statefulset/stateful_set_control.go`:
@@ -501,6 +515,7 @@ We should cover below scenarios:
 - PVC preservation: PersistentVolumeClaims are not deleted during Recreate (only pods are deleted)
 - Stuck pod handling: Pods stuck in any state are forcibly deleted (ImagePullBackOff, Pending, CrashLoopBackOff, etc.)
 - Validation: API validation accepts `type: Recreate` on StatefulSet
+- For alpha, Add test to verify that we cannot switch strategies from Recreate to RollingUpdate or OnDelete. Later on beta, we will need to add a test to verify that we can switch strategies
 
 ##### e2e tests
 
@@ -523,8 +538,9 @@ The following e2e tests will be added to `test/e2e/apps/statefulset.go`:
 
 #### Beta
 
-- Feature is enabled by default.
-- Address reviews and bug reports from Alpha users.
+- Feature is enabled by default
+- Address reviews and bug reports from Alpha users
+- Users are able to switch strategies from Recreate to RollingUpdate or OnDelete
 - e2e tests:
   - Add links to testgrid results
   - Verify zero flakes over 2+ weeks
