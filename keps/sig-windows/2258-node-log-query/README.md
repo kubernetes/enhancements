@@ -23,6 +23,7 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -37,6 +38,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -46,8 +48,12 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
@@ -176,14 +182,14 @@ Please note that filtering will not be available for logs in `/var/log/` or
 
 The complete list of options that can be used are:
 
-Option | Description
------- | -----------
-`boot` | boot show messages from a specific system boot
-`pattern` | pattern filters log entries by the provided PERL-compatible regular expression
-`query` | query specifies services(s) or files from which to return logs (required)
-`sinceTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp from which to show logs (inclusive)
-`untilTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp until which to show logs (inclusive)
-`tailLines` | specify how many lines from the end of the log to retrieve; the default is to fetch the whole log
+| Option | Description |
+| ------ | ----------- |
+| `boot` | boot show messages from a specific system boot |
+| `pattern` | pattern filters log entries by the provided PERL-compatible regular expression |
+| `query` | query specifies services(s) or files from which to return logs (required) |
+| `sinceTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp from which to show logs (inclusive) |
+| `untilTime` | an [RFC3339](https://www.rfc-editor.org/rfc/rfc3339) timestamp until which to show logs (inclusive) |
+| `tailLines` | specify how many lines from the end of the log to retrieve; the default is to fetch the whole log |
 
 The feature now enables the cluster administrator to interrogate all services.
 This could be prevented by having a whitelist of allowed services. But this
@@ -237,8 +243,11 @@ This job runs tests against both Windows and Linux nodes.
 
 ### Graduation Criteria
 
-The plan is to introduce the feature as alpha in the v1.27 time frame behind the
-`NodeLogQuery` kubelet feature gate and `enableSystemLogQuery` kubelet option.
+#### Alpha
+
+- Feature implemented behind a feature flag (NodeLogQuery)
+- Initial e2e tests completed and enabled
+- Feature introduced in v1.27 behind the `NodeLogQuery` kubelet feature gate and `enableSystemLogQuery` kubelet option
 
 #### Alpha -> Beta Graduation
 
@@ -252,37 +261,103 @@ for querying the logs more elegantly instead of using raw API calls.
 
 #### Beta -> GA Graduation
 
-The plan is to graduate the feature to GA in the v1.32 time frame at which point
+The plan is to graduate the feature to stable (GA) in the v1.36 time frame at which point
 any major issues should have been surfaced and addressed during the alpha and
 beta phases.
 
+**GA Requirements met:**
+- Feature has been stable in Beta for at least 2 releases (v1.30, v1.31)
+- No outstanding critical bugs or regressions reported
+- Comprehensive e2e test coverage for all supported platforms (Linux and Windows)
+- User feedback incorporated from Beta usage
+- Documentation complete and reviewed
+- Performance validated under production workloads
+- Upgrade/downgrade paths tested and documented
+- API stability confirmed (no breaking changes planned)
+- All GA e2e tests meet requirements for Conformance Tests
+- Minimum two week window for GA e2e tests to prove flake free
+
 ### Upgrade / Downgrade Strategy
+
+**Upgrade:**
+- When upgrading to a version with this feature enabled, no changes are required to maintain previous behavior if the feature gate is not explicitly enabled.
+- To make use of the enhancement after upgrade, enable the `NodeLogQuery` feature gate and `enableSystemLogQuery` kubelet configuration option.
+- The feature is backward compatible - nodes without the feature can coexist with nodes that have it enabled.
+
+**Downgrade:**
+- When downgrading from a version with this feature to an older version, the feature will simply become unavailable.
+- No data migration or cleanup is required as the feature does not persist any state.
+- Existing workloads are not affected by enabling or disabling this feature.
+
+Testing has been performed covering upgrade/downgrade scenarios as documented in the "Rollout, Upgrade and Rollback Planning" section.
 
 ### Version Skew Strategy
 
-If the API call is made against a kubelet that does not support the new feature,
-a 404 will be returned.
+This feature is kubelet-only and does not involve coordination between control plane components and nodes in terms of feature functionality.
+
+**Kubelet version skew:**
+- If the API call is made against a kubelet that does not support the new feature (older version), a 404 will be returned.
+- Newer kubelet with the feature enabled can coexist with older kubelet without the feature in the same cluster.
+- The feature does not affect pod scheduling, networking, or any other cluster operations.
+
+**Control plane version skew:**
+- This feature does not introduce any new APIs at the API server level.
+- The feature uses the existing kubelet proxy endpoint (`/api/v1/nodes/{node}/proxy/logs/`).
+- No changes are required to kube-apiserver, kube-controller-manager, or kube-scheduler.
+
+**kubectl version skew:**
+- The feature can be accessed using `kubectl get --raw` with any kubectl version.
+- A dedicated [kubectl plugin](https://github.com/kubernetes-sigs/krew-index/blob/master/plugins/node-logs.yaml) is available for improved user experience but is not required.
 
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [x] Feature gate
-    - Feature gate name: NodeLogQuery
-    - Components depending on the feature gate: kubelet
+###### How can this feature be enabled / disabled in a live cluster?
 
-* **Does enabling the feature change any default behavior?** No
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: NodeLogQuery
+  - Components depending on the feature gate: kubelet
+- [X] Other
+  - Describe the mechanism: In addition to the feature gate, the `enableSystemLogQuery` kubelet configuration option must be enabled.
+  - Will enabling / disabling the feature require downtime of the control plane? No
+  - Will enabling / disabling the feature require downtime or reprovisioning of a node? Yes, requires kubelet restart
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes. It can be disabled by disabling the `NodeLogQuery` feature
-  gate in the kubelet.
+###### Does enabling the feature change any default behavior?
 
-* **What happens if we reenable the feature if it was previously rolled back?**
-  There will be no adverse effects of enabling the feature gate after it was
-  disabled.
+No. The feature only adds a new capability to query node logs. It does not change any existing behavior.
 
-* **Are there any tests for feature enablement/disablement?** No
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+**For versions v1.35 and earlier (Beta):**
+Yes. The feature can be disabled by setting the `NodeLogQuery` feature gate to false in the kubelet configuration and
+restarting the kubelet. No other changes are necessary to disable the feature.
+
+**For versions v1.36 and later (GA):**
+No. The `NodeLogQuery` feature gate is locked to enabled and cannot be disabled. (LockToDefault: true). The feature 
+is considered stable and is always available. 
+
+The feature can be effectively disabled by setting the `enableSystemLogQuery` kubelet configuration option to `false`
+and restarting the kubelet. This will disable the log query functionality while keeping the feature gate enabled.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+There will be no adverse effects of enabling the feature gate after it was disabled. The feature will become available again after kubelet restart.
+
+###### Are there any tests for feature enablement/disablement?
+
+**Feature Gate Tests:**
+Yes. E2E tests verify the `NodeLogQuery` feature gate can be enabled and disabled. 
+These tests are part of the [sig-windows e2e tests](https://github.com/kubernetes/test-infra/blob/9c058c9bcdaa4d60ebc2649dd2cb955b3f732f57/config/jobs/kubernetes-sigs/sig-windows/release-master-windows.yaml#L460).
+
+**Configuration Option Tests:**
+Yes. Unit tests in [`pkg/kubelet/apis/config/validation/validation_test.go`](https://github.com/kubernetes/kubernetes/blob/7b0310aaddb6ccd921679db6b26345c836a6cd5e/pkg/kubelet/apis/config/validation/validation_test.go#L615) 
+verify the `enableSystemLogQuery` kubelet configuration option validation behavior.
+
+Additionally, the feature has been manually tested for both enablement mechanisms as documented in the "Rollout, Upgrade and Rollback Planning" section, including:
+- Both mechanisms disabled (feature should not work)
+- Feature gate enabled with config option disabled (feature should not work)
+- Feature gate enabled with config option enabled (feature should work)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -322,49 +397,153 @@ While this feature does not affect any workloads an operator can determine if th
 is enabled by checking the kubelet logs for "feature gates: {map[NodeLogQuery:true]}".
 
 ###### How can someone using this feature know that it is working for their instance?
-- [x] Other
-  - Details: The cluster administrator can confirm that this feature works by querying the kubelet log proxy
-    endpoint. Example: "kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=kubelet"
+
+- [x] Other (treat as last resort)
+  - Details: The cluster administrator can confirm that this feature works by querying the kubelet log proxy endpoint. Example: "kubectl get --raw "/api/v1/nodes/node-1.example/proxy/logs/?query=kubelet"
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+This feature provides on-demand log retrieval and does not have continuous operation requirements. Reasonable SLOs include:
+- 99% of log query requests should complete successfully when the kubelet is healthy
+- Log queries should return within 30 seconds (enforced by implementation timeout)
+- The feature should not impact kubelet's primary responsibilities for pod management
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [x] Metrics
+  - Metric name: kubelet_http_requests_total (existing kubelet metric, filtered by endpoint)
+  - Aggregation method: Rate of requests to the /logs/ endpoint, error rate
+  - Components exposing the metric: kubelet
+- [x] Other (treat as last resort)
+  - Details: Kubelet logs will contain error messages if log query operations fail. Operators can monitor for errors related to log query operations in kubelet logs.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+Currently, the feature relies on existing kubelet HTTP metrics. Additional metrics that could be useful include:
+- A dedicated metric for node log query request duration
+- A metric for the size of logs returned
+- A metric for rate-limited or rejected requests
+
+These metrics were not added to minimize the footprint of the feature.
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?**
-  - kubelet
-    - Usage description:
-      - Impact of its outage on the feature: If kubelet is not running on the
-        node this feature will not work.
-      - Impact of its degraded performance or high-error rates on the feature:
-        If the kubelet is degraded this feature will also be degraded i.e. the
-        node logs will not be returned.
+###### Does this feature depend on any specific services running in the cluster?
+
+- kubelet
+  - Usage description: The feature is implemented as part of the kubelet and requires kubelet to be running.
+    - Impact of its outage on the feature: If kubelet is not running on the node this feature will not work.
+    - Impact of its degraded performance or high-error rates on the feature: If the kubelet is degraded this feature will also be degraded i.e. the node logs will not be returned.
 
 ### Scalability
 
-* **Will enabling / using this feature result in any new API calls?**
-  No
+###### Will enabling / using this feature result in any new API calls?
 
-* **Will enabling / using this feature result in introducing new API types?**
-  The feature does not introduce a new API from an API server perspective but
-  the existing kubelet proxy/log endpoint will have new features built into it.
+No
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
-  No
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
-  No
+The feature does not introduce a new API from an API server perspective but
+the existing kubelet proxy/log endpoint will have new features built into it.
 
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  No
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  In the case of large logs, there is potential for an increase in RAM and CPU
-  usage on the node when an attempt is made to stream them. However, so far no
-  CPU or memory spikes have been reported from the field.
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+In the case of large logs, there is potential for an increase in RAM and CPU
+usage on the node when an attempt is made to stream them. However, so far no
+CPU or memory spikes have been reported from the field.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+The feature only responds to explicit API requests and does not consume resources in the background, has 
+a built-in timeout of 30 seconds which prevents long-running queries from exhausting resources. However, if a large
+number of concurrent requests are made to the log query endpoint, there is potential risk for resource exhaustion. 
+The kubelet and API server have existing safeguards to handle concurrent requests, but it is important to monitor 
+resource usage when this feature is enabled. 
+
+Concurrent requests could potentially exhaust the following resources:
+- **File descriptors**: Each query may open log files or pipes (for `journalctl`/`Get-WinEvent`)
+- **PIDs**: Each query spawns a subprocess (journalctl on Linux, PowerShell on Windows)
+- **Memory**: Large logs being streamed could consume memory
+- **CPU**: Log processing and regex pattern matching
+
+**Example attack scenario:**
+
+A malicious or misconfigured client making 10,000 concurrent requests to `/api/v1/nodes/{node}/proxy/logs/?query=kubelet` could:
+- Spawn 10,000 subprocesses (exhausting PIDs)
+- Open 10,000+ file descriptors (pipes/sockets)
+- Consume significant CPU for concurrent log processing
+
+**Mitigations:**
+
+1. **RBAC protection**: The feature requires cluster administrator privileges (`nodes/proxy` resource access). Only trusted users or roles can access this endpoint.
+
+2. **Authentication/authorization overhead**: Every request must pass through API server authentication and authorization before reaching the kubelet, providing natural rate limiting through API server request handling.
+
+3. **Built-in timeout**: Each query is limited to 30 seconds, preventing indefinite resource consumption per request.
+
+4. **Kubelet request limits**: The kubelet has existing safeguards for handling concurrent HTTP requests through its HTTP server configuration.
+
+**Recommendations for production deployments:**
+
+- Monitor kubelet resource usage (CPU, memory, file descriptors, PIDs) when this feature is enabled
+- Consider implementing additional rate limiting at the API server level for the `/proxy/logs/` endpoint if needed
+- Audit and restrict RBAC permissions to the `nodes/proxy` resource to only necessary service accounts and users
+- Set appropriate resource limits on the kubelet process itself
+
+**Considerations for future improvements:**
+- Implement explicit per-client rate limiting in the kubelet for log query requests
+- Add metrics for tracking concurrent log query operations
+- Consider a maximum concurrent requests limit specifically for the `/logs/` endpoint
 
 ### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature does not directly interact with the API server or etcd. However, the client (kubectl or other API client) needs to communicate with the API server to proxy the request to the kubelet. If the API server is unavailable, the client will not be able to reach the kubelet's /logs endpoint through the proxy. Direct access to the kubelet (if configured) would still work.
+
+###### What are other known failure modes?
+
+- [Log query timeout]
+  - Detection: Log queries that take longer than 30 seconds will timeout. The client will receive a timeout error. This can be detected through HTTP 504 Gateway Timeout responses or similar timeout errors in client logs.
+  - Mitigations: The 30-second timeout is built into the implementation to prevent resource exhaustion. Users should narrow their query scope (e.g., using time ranges or patterns) to retrieve logs within the timeout period.
+  - Diagnostics: Kubelet logs will show timeout errors. Error message: "context deadline exceeded" or similar timeout-related messages.
+  - Testing: Tested manually by attempting to query very large log files.
+
+- [Service/log file not found]
+  - Detection: If the requested service or log file does not exist, a 404 Not Found error will be returned. This can be observed in the API response.
+  - Mitigations: Users should verify the service name or log file path exists on the node. On Linux, use `systemctl list-units` to see available services. Check `/var/log/` for available log files.
+  - Diagnostics: The error response will indicate "No such file or directory" or "Unit not found" depending on the underlying system.
+  - Testing: E2E tests include negative test cases for non-existent services.
+
+- [Permission denied accessing logs]
+  - Detection: If the kubelet process does not have permissions to read the requested logs, a permission error will be returned (typically HTTP 500 or 403).
+  - Mitigations: Ensure the kubelet runs with appropriate permissions to access system logs. On Linux systems with journald, the kubelet should be able to run journalctl. On Windows, the kubelet should have access to event logs.
+  - Diagnostics: Kubelet logs will show permission denied errors. Check kubelet process permissions and SELinux/AppArmor policies if applicable.
+  - Testing: Not explicitly tested in e2e tests, but covered through operational deployment testing.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+If log queries are failing or timing out frequently:
+
+1. Check kubelet health and resource usage (CPU, memory) on the affected nodes
+2. Review kubelet logs for errors related to log query operations
+3. Verify that the requested services/log files exist on the nodes
+4. Check if log files are exceptionally large - consider using time filters or pattern matching to reduce query scope
+5. Monitor the `kubelet_http_requests_total` metric filtered by the /logs endpoint to identify error rates
+6. Verify that the `NodeLogQuery` feature gate and `enableSystemLogQuery` configuration option are properly enabled
+7. Test with a simple query (e.g., querying kubelet logs from a recent time period) to isolate whether the issue is query-specific or systemic
 
 ## Implementation History
 
@@ -373,6 +552,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - Updated on Dec 13th, 2022
 - Updated on May 2nd, 2023
 - Updated on Feb 5th, 2024
+- Updated on Feb 2th, 2026: KEP updated to GA
 
 ## Drawbacks
 
@@ -382,3 +562,8 @@ Alternatively we could use a client side reader on the nodes to redirect the
 logs. The Windows side would require privileged container support. However this
 would not help scenarios where containers are not launching successfully on the
 nodes.
+
+## Infrastructure Needed (Optional)
+
+No additional infrastructure is needed for this enhancement beyond the existing Kubernetes testing infrastructure.
+
