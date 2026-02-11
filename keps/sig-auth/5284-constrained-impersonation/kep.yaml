@@ -29,7 +29,7 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - apiserver_impersonation_attempts_total
-  - apiserver_impersonation_duration_seconds
-  - apiserver_impersonation_authorization_attempts_total
-  - apiserver_impersonation_authorization_duration_seconds
+  - apiserver_impersonation_attempts_total{status}
+  - apiserver_impersonation_duration_seconds{status}
+  - apiserver_impersonation_authorization_attempts_total{mode, decision}
+  - apiserver_impersonation_authorization_duration_seconds{mode, decision}

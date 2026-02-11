@@ -1178,14 +1178,52 @@ There are existing metrics to record authz latency and request number:
 These will be expanded to include metrics that cover the impersonation handler
 to give an overall sense for the cost of impersonation:
 
-- apiserver_impersonation_attempts_total (success per mode or failure)
-- apiserver_impersonation_duration_seconds (success per mode or failure)
+- `apiserver_impersonation_attempts_total{status}`
+
+This will be incremented whenever impersonation is attempted.  On success, the
+`status` label will capture which mode was successful.  On failure, the `status`
+label will be set to `failed`.
+
+Labels and possible values:
+
+`status`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`, `failed`
+
+- `apiserver_impersonation_duration_seconds{status}`
+
+This is a Histogram metric that will track the time impersonation took to resolve
+the impersonated user whenever impersonation is attempted.  On success, the
+`status` label will capture which mode was successful.  On failure, the `status`
+label will be set to `failed`.
+
+Note that because of the caching performed within the handler, we expect this metric
+to reflect the amortized cost (in latency) of impersonation requests.
+
+Labels and possible values:
+
+`status`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`, `failed`
 
 To give a sense for how many authorization checks are being performed, the
 following metrics will wrap all calls to the authorizer used by the handler:
 
-- apiserver_impersonation_authorization_attempts_total (allow or deny per mode)
-- apiserver_impersonation_authorization_duration_seconds (allow or deny per mode)
+- `apiserver_impersonation_authorization_attempts_total{mode, decision}`
+
+This will be incremented whenever an impersonation attempt causes the authorizer
+to be used.
+
+Labels and possible values:
+
+`mode`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`
+`decision`: `allowed`, `denied`
+
+- `apiserver_impersonation_authorization_duration_seconds{mode, decision}`
+
+This is a Histogram metric that will track the time the authorizer took
+whenever an impersonation attempt causes the authorizer to be used.
+
+Labels and possible values:
+
+`mode`: `associated-node`, `arbitrary-node`, `serviceaccount`, `user-info`, `legacy`
+`decision`: `allowed`, `denied`
 
 ###### How can an operator determine if the feature is in use by workloads?
 
