@@ -1,0 +1,35 @@
+title: Deprecate Service.spec.externalIPs
+kep-number: 5707
+authors:
+  - "@adrianmoisey"
+owning-sig: sig-network
+participating-sigs: []
+status: implementable
+creation-date: 2026-02-02
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+
+see-also:
+  - "/keps/sig-network/2200-externalips-admission"
+
+stage: deprecated
+
+latest-milestone: "v1.36"
+
+milestone:
+  deprecated: "v1.36"
+
+feature-gates:
+  - name: AllowServiceExternalIPs
+    components:
+      - kube-proxy
+disable-supported: true
+
+metrics:
+  - apiserver_requested_deprecated_apis
