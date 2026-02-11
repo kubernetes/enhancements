@@ -336,7 +336,7 @@ The kube-scheduler waits for `PodGroup` when Pods have `schedulingGroup`, so sch
 The Job API Validation rejects updates that change `spec.parallelism` when the feature gate is enabled and the Job uses gang scheduling. Since changing this field would require changing `minCount` in the `Workload` object, which is immutable.
 
 Job API validation uses the same conditions the Job controller uses to create a Workload with gang scheduling. When the feature gate is enabled, validation rejects updates that change `spec.parallelism` if the Job, after the update, 
-satisfies `spec.parallelism > 1`, `spec.completionMode == Indexed`, and `spec.parallelism == spec.completions`. If the controller’s criteria for applying gang scheduling change in the future, this validation logic must be updated to match.
+satisfies `spec.parallelism > 1`, `spec.completionMode == Indexed`, and `spec.parallelism == spec.completions`. If the controller’s criteria for applying gang scheduling change in the future, this validation logic must be updated to match. This additional validation will be removed in beta since Elastic Indexed Jobs must be supported.
 
 ### Naming Conventions
 
