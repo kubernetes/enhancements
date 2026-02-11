@@ -95,7 +95,7 @@ The Kubernetes Job Controller currently creates pods independently without workl
 > - [KEP-5832: Decouple PodGroup API from Workload API](https://github.com/kubernetes/enhancements/pull/5833)
 
 The Job controller will be extended to create `Workload` and `PodGroup` objects as part of its pod management lifecycle. 
-This integration ensures that pods belonging to a Job are scheduled according to the appropriate scheduling policy (gang or basic) before they are created. If `Job.spec.template.spec.workloadRef` is set, the Job controller does not create or update `Workload`/`PodGroup` (opt-out due to preexisting or parent-managed controller).
+This integration ensures that pods belonging to a Job are scheduled according to the appropriate scheduling policy (gang or basic) before they are created. If `Job.spec.template.spec.schedulingGroup` is set, the Job controller does not create or update `Workload`/`PodGroup` (opt-out due to preexisting or parent-managed controller).
 
 For the alpha release, this feature is optimized for static batch workloads with a flat API structure where 
 `minCount` is immutable. The key design principles are:
@@ -104,8 +104,8 @@ For the alpha release, this feature is optimized for static batch workloads with
   - Jobs with `parallelism > 1` use gang scheduling policy where `minCount` equals the Job's parallelism.
   - Jobs without indexed completion mode or `completions = 1` use basic scheduling policy (pod-by-pod scheduling).
 - Elastic Jobs (changing parallelism at runtime) are not supported when gang scheduling is active.
-- The Job controller does not create `Workload`/`PodGroup` when `Job.spec.template.spec.workloadRef` is set. Higher-level controllers that want to own the `Workload` and `PodGroup` (i.e., JobSet) set this field when they create the Job.
-- Jobs created by CronJob do not have `workloadRef` set, the Job controller creates one `Workload` and one `PodGroup` per Job for them.
+- The Job controller does not create `Workload`/`PodGroup` when `Job.spec.template.spec.schedulingGroup` is set. Higher-level controllers that want to own the `Workload` and `PodGroup` (i.e., JobSet) set this field when they create the Job.
+- Jobs created by CronJob do not have `schedulingGroup` set, the Job controller creates one `Workload` and one `PodGroup` per Job for them.
 
 An example of the Job and the corresponding `Workload`/`PodGroup` creation:
 
@@ -138,17 +138,16 @@ spec:
     apiVersion: batch/v1
     kind: Job
     name: <job-name>
-    uid: <job-uid>
   podGroupTemplate:
   - name: pg-w-distributed-training
-    policy:
+    schedulingPolicy:
       gang:
         minCount: 8  # Equal to Job.spec.parallelism
 ---
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: PodGroup
 metadata:
-  name: <workload-name>-podgroup-name-<hash>
+  name: <workload-name>-<podGroup-template-name>-<hash>
   namespace: training
   ownerReferences:
   - apiVersion: batch/v1
@@ -164,7 +163,7 @@ spec:
     gang:
       minCount: 8  # Equal to Job.spec.parallelism
 ```
-Then, the Job Controller will create the corresponding pods and set the `workloadRef` field:
+Then, the Job Controller will create the corresponding pods and set the `schedulingGroup` field:
 
 ```yaml
 apiVersion: v1
@@ -178,8 +177,8 @@ metadata:
     name: <job-name>
     uid: <job-uid>
 spec:
-  workloadRef:
-    podGroupName: <workload-name>-podgroup-name-<hash>
+  schedulingGroup:
+    podGroupName: <workload-name>-<podGroup-template-name>-<hash>
   containers:
   - name: ...
 ```
@@ -202,7 +201,7 @@ As a data engineer, I want to run a batch processing job that processes files se
 - The alpha release targets simple, static batch workloads where the workload requirements are known at creation time.
 - Each Job maps to one `PodGroup`. All pods in the Job are identical from a scheduling policy perspective.
 - The `minCount` field in the Workload's `GangSchedulingPolicy` mirrors the Job's parallelism.
-- The opt-out mechanism is supported by setting `Job.spec.template.spec.workloadRef` to reference an existing `Workload`. Or when the Job has `ownerReferences` which indicates it is managed by higher-level controller (i.e., JobSet). In both cases, the Job controller will not create `Workload`/`PodGroup` objects.
+- The opt-out mechanism is supported by setting `Job.spec.template.spec.schedulingGroup` to reference an existing `Workload`. Or when the Job has `ownerReferences` which indicates it is managed by higher-level controller (i.e., JobSet). In both cases, the Job controller will not create `Workload`/`PodGroup` objects.
 - When gang scheduling is active (`GangSchedulingPolicy`), changes to `spec.parallelism` (scaling up/down) are rejected via conditional validation (depends on feature enablement). This is because this would require changing `minCount` in the `Workload` object, which is immutable. This will disable [Elastic Indexed Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs).
 
 ### Risks and Mitigations
@@ -229,46 +228,58 @@ A `Workload` is considered the Workload for this Job object if:
 
 Similarly, a `PodGroup` is considered the `PodGroup` for this Job if:
 - The `PodGroup` is in the Job’s namespace
-- It has a controller `ownerReference` pointing to this Job
 - Its `spec.podGroupTemplateReference.workloadName` equals the name of the `Workload` for this Job. 
 
 #### Controller Workflow
 
+The Job controller attempts to create `Workload` and `PodGroup` only when the Job has no pods associated with it 
+(no active or terminal pods owned by the Job). If the Job already has one or more pods, the controller only 
+discovers and uses existing `Workload`/`PodGroup` if any and does not create new ones. This rule is important for 
+correctness when the controller restarts or is upgraded in the middle of the workflow (i.e., after creating 
+`Workload` but before creating `PodGroup` or pods). On the next sync, the controller will find the existing objects 
+via informers/listers and continue.
+
 The controller discovers or creates `Workload` and `PodGroup` as follows:
 
-1. Look up `Workload`(s) in Job’s namespace whose `spec.ControllerRef` points to this Job. If the `Workload` was created by the Job controller, it also has a controller `ownerReference` pointing to this Job (`controller: true`)
-  - If none found, create one with `ownerReference` and `spec.ControllerRef` pointing to this Job
+1.  If the Job already has pods (pods owned by this Job), skip creation.
+2. Look up existing `Workload`(s) in Job’s namespace whose `spec.ControllerRef` points to this Job. If the `Workload` was created by the Job controller, it also has a controller `ownerReference` pointing to this Job (`controller: true`)
+  - If none found, create a `Workload` with `ownerReference` and `spec.ControllerRef` pointing to this Job
   - If more than one, treat as ambiguous and fall back (update a condition or trigger an event)
   - If exactly one, that’s the `Workload` for this Job. No changes to its `ownerReference`
 
-2. When creating a new `Workload`, determine the appropriate scheduling policy and create the `Workload` object with the determined policy based on Job configuration:
+3. When creating a new `Workload`, determine the appropriate scheduling policy and create the `Workload` object with the determined policy based on Job configuration:
   - `GangSchedulingPolicy` with `minCount=parallelism`: when `parallelism > 1` and `completionMode: Indexed` and `parallelism = completions`
   - `BasicSchedulingPolicy`: in all other cases, including
     - `parallelism = 1`
     - `completions` no equal to `parallelism`
     - `completionMode` is not `Indexed` (non-indexed Jobs)
 
-3. Look up `PodGroup`(s) in Job’s namespace whose `podGroup.spec.podGroupTemplateRef` is associated with the `Workload` for this Job. If the `PodGroup` was created by the Job controller, it has two ownerReferences; the Job controller and the `Workload` object
-  - If none found, create one with `ownerReference` to Job, `spec.podGroupTemplateRef` to that `Workload`
+4. Look up `PodGroup`(s) in Job’s namespace whose `podGroup.spec.podGroupTemplateRef` is associated with the `Workload` for this Job. If the `PodGroup` was created by the Job controller, it has two ownerReferences; the Job controller and the `Workload` object
+  - If none found, create a `PodGroup` with ownerReference to `Job` with `controller: true` and another ownerReference to the `Workload`
   - If exactly one, that’s the `PodGroup` for this Job. No changes to its `ownerReference`
   - If multiple PodGroups, fall back as it's not supported in alpha
 
-4. Execute existing pod management logic to create pods, include `workloadRef.podGroupName` in the pod spec to associate pods with the `PodGroup`.
+5. Execute existing pod management logic to create pods, include `schedulingGroup.podGroupName` in the pod spec to associate pods with the `PodGroup`.
 
 Note that the controller will not update the `Workload` or `PodGroup` objects if they already exist.
 
-The controller will require additional informers and listers for `Workload` and `PodGroup` objects. Both `Workload` and `PodGroup` are automatically garbage collected when the `Job` is deleted.
+The controller will require additional informers and listers for `Workload` and `PodGroup` objects. Both `Workload` and `PodGroup` are automatically garbage if they were created by the job-controller and the corresponding Job is deleted.
 
-If the `Workload` was created by someone else and the scheduling policy was set to `GangSchedulingPolicy` while it shouldn't (and vice versa) or other cases that controller doesn't expect, the Job controller will treat that as an opt-out, the `Workload` and `PodGroup` objects will be ignored and the Job will continue to work with normal workflow. A condition or event should be triggered to inform the user. 
+If the `Workload` was created by another actor (i.e. JobSet, User creates a `Workload` with `BasicSchedulingPolicy` 
+to opt-out of gang scheduling), the Job controller respects and uses it and its associated PodGroups. It does 
+not treat that as an opt-out. The Job controller uses the discovered `Workload` and PodGroup when creating pods.
+The Job controller falls back (ignore the discovered `Workload` and `PodGroup`) when the discovered `Workload` 
+has an unsupported structure (for alpha, when the number of `PodGroupTemplates != 1`). In that case, a condition 
+or event should be triggered to inform the user.
 
 #### Object Creation Order
 
 The Job controller creates objects in the following order so that references point to existing objects and to satisfy any API validation that `Workload` exists before `PodGroup` is created. The order is as follows:
 1. `Workload` object
 2. `PodGroup` object that will references the `Workload`
-3. `Pod` objects which will reference `PodGroup` and `Workload`
+3. `Pod` objects which will reference `PodGroup`
 
-The kube-scheduler waits for `PodGroup` when Pods have `workloadRef`, so scheduling does not depend on this order, the order is for consistency and API validity.
+The kube-scheduler waits for `PodGroup` when Pods have `schedulingGroup`, so scheduling does not depend on this order, the order is for consistency and API validity.
 
 ### Validation for Parallelism Changes
 
@@ -278,7 +289,7 @@ The Job API Validation rejects updates that change `spec.parallelism` when the f
 
 We will not use naming for discovery due to limitations related to naming. Naming is for human readability and logical linking between Job, `Workload`, and `PodGroup`. Because discovery does not depend on it, the naming pattern can be changed in later releases if needed. 
 
-Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/deployment/sync.go#L560-L568), the naming convention can be as follows:
+Following prior-art in [Deployment](https://github.com/kubernetes/kubernetes/blob/f42571572d241a2cdeffa3962c0ccf1f59180113/pkg/controller/deployment/sync.go#L560-L568), the naming convention can be as follows:
 
 **1. Workload**
   - Pattern: `<(truncated-if-needed)job-name>-<hash>`
@@ -316,7 +327,7 @@ to implement this enhancement.
 - Add test that verifies 
   - SchedulingPolicy for various Job configurations
   - `Workload` and `PodGroup` creation
-  - pod creation includes correct `workloadRef`
+  - pod creation includes correct `schedulingGroup`
   - Parallelism change is blocked for gang-scheduled Jobs and allowed for basic-scheduled Jobs
   - Job deletion cascades to `Workload` and `PodGroup` deletion
   - Feature gate disabled: Jobs work without `Workload`/`PodGroup` creation
@@ -328,13 +339,13 @@ to implement this enhancement.
 ##### Integration tests
 
 We will add the following integration tests to the Job controller `https://github.com/kubernetes/kubernetes/blob/v1.35.0/test/integration/job/job_test.go`:
-- Gang and Basic Scheduling Lifecycle Test (create, update, delete Job, verify `Workload` and `PodGroup` creation, verify pods have `workloadRef`, verify Job deletion cascades to `Workload` and `PodGroup` deletion)
+- Gang and Basic Scheduling Lifecycle Test (create, update, delete Job, verify `Workload` and `PodGroup` creation, verify pods have `schedulingGroup`, verify Job deletion cascades to `Workload` and `PodGroup` deletion)
 - Failure Recovery Test (create Job with `Workload` API unavailable, verify Job controller retries, verify `Workload` is eventually created)
 - Feature gate disable/enable (Jobs work without `Workload`/`PodGroup` creation (Jobs with ownerReferences managed by higher-level controllers do not create `Workload`/`PodGroup`))
 - Jobs created by CronJob get one `Workload` and one `PodGroup` per Job:
-  - CronJob does not set `workloadRef` on the pod template
+  - CronJob does not set `schedulingGroup` on the pod template
   - Verify `Workload`/`PodGroup` creation and GC when the CronJob-created Job completes or is deleted
-- When a Job is suspended, pods are deleted but `Workload` and `PodGroup` remain. For alpha, check that on resume, the same `Workload`/`PodGroup` are used and pods are recreated with correct `workloadRef`
+- When a Job is suspended, pods are deleted but `Workload` and `PodGroup` remain. For alpha, check that on resume, the same `Workload`/`PodGroup` are used and pods are recreated with correct `schedulingGroup`
 - For a Job using gang scheduling, verify that parallelism change is rejected
 - Verify controller-created `Workload`/`PodGroup` has the correct owner references
 
@@ -350,7 +361,6 @@ We will add the following integration tests to the Job controller `https://githu
 
 - Feature is implemented behind feature gate `EnableWorkloadWithJob` (default: disabled)
 - Job controller creates `Workload` and `PodGroup` objects for Jobs when feature gate is enabled
-- Job controller sets `podGroupKind: `PodGroup`` in pod specs, opting into the explicit runtime `PodGroup` model
 - Gang scheduling policy applied to indexed parallel Jobs (`parallelism > 1`, `completions = parallelism`, `completionMode: Indexed`)
 - Basic scheduling policy applied to all other Job types
 - Jobs managed by higher-level controllers skip `Workload`/`PodGroup` creation
@@ -394,17 +404,25 @@ N/A for alpha release
   1. Disable feature gate and downgrade kube-controller-manager
   2. New Jobs no longer get `Workload`/`PodGroup` objects
   3. Existing `Workload` and `PodGroup` objects remain
-  4. Jobs with `workloadRef` on pods continue to run (field ignored)
+  4. Jobs with `schedulingGroup.podGroupName` on pods continue to run (field ignored)
+  5. New Pods for Jobs will not have `schedulingGroup.podGroupName` set
 
 - **Migration for Existing Jobs:**
   - Existing Jobs before upgrade do not automatically get `Workload` objects
   - To add gang scheduling to existing Jobs, delete and recreate them
+  - Jobs who do not have pods running yet get `Workload`/`PodGroup` objects created for them.
+
+- **Controller restarts and upgrades:** 
+  - The Job controller only creates `Workload`/`PodGroup` when the Job has no pods
+  - If the controller restarts or is upgraded after creating `Workload` but before creating `PodGroup` or pods, on 
+  the next sync it will discover the existing `Workload` (and `PodGroup` if present) via informers/listers and continue without creating duplicates. 
+  - No special handling is required for in-flight Jobs during controller upgrade or restart.
 
 ### Version Skew Strategy
 
 Gang scheduling only occurs when:
 - The API server can serve the `Workload` and `PodGroup` APIs
-- The Job controller is able to create `Workload`/`PodGroup` and sets `workloadRef` on pods
+- The Job controller is able to create `Workload`/`PodGroup` and sets `schedulingGroup` on pods
 - The scheduler supports `Workload`/`PodGroup`
 
 Therefore, for a safe rollout:
@@ -413,8 +431,8 @@ Therefore, for a safe rollout:
 - kube-scheduler should be upgraded before or together with kube-controller-manager. Gang semantics will not apply until the scheduler is upgraded.
 
 There are different Skew scenarios involving the kube-scheduler:
-- kube-controller-manager new, kube-scheduler old: The controller creates `Workload` and `PodGroup` and sets `workloadRef` on pods but the scheduler does not understand these objects and ignores `workloadRef`. In this case, pods are scheduled normally (pod-by-pod) with no gang scheduling benefit until the scheduler is upgraded.
-- kube-controller-manager old, kube-scheduler new: The controller does not create `Workload`/`PodGroup` and does not set `workloadRef` on pods. The scheduler has no workload information for those Jobs. Pods are scheduled normally with no gang scheduling benefit.
+- kube-controller-manager new, kube-scheduler old: The controller creates `Workload` and `PodGroup` and sets `schedulingGroup` on pods but the scheduler does not understand these objects and ignores `schedulingGroup`. In this case, pods are scheduled normally (pod-by-pod) with no gang scheduling benefit until the scheduler is upgraded.
+- kube-controller-manager old, kube-scheduler new: The controller does not create `Workload`/`PodGroup` and does not set `schedulingGroup` on pods. The scheduler has no workload information for those Jobs. Pods are scheduled normally with no gang scheduling benefit.
 
 ## Production Readiness Review Questionnaire
 
@@ -437,9 +455,9 @@ There are different Skew scenarios involving the kube-scheduler:
 Yes. When the feature gate is enabled:
 
 1. The Job controller creates `Workload` and `PodGroup` objects for all Indexed parallel Jobs (`parallelism > 1`, `completions = parallelism`, `completionMode: Indexed`) before creating pods.
-2. Jobs (`parallelism > 1` with `Indexed` completion mode) use gang scheduling, meaning all pods must be scheduled together or none are scheduled.
+2. Jobs that match the gang scheduling criteria (`parallelism > 1`, `completions = parallelism`, `completionMode: Indexed`) use gang scheduling, meaning all pods must be scheduled together or none are scheduled.
 3. Updates to `Job.spec.parallelism` are rejected for Jobs using gang scheduling.
-4. Pod creation is delayed until the `PodGroup` object is acknowledged by the scheduler.
+4. The binding of pods referencing a `PodGroup` is delayed until the `PodGroup` object exists.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -450,8 +468,8 @@ Yes. The feature can be disabled (`EnableWorkloadWithJob: false`).
 When the feature is re-enabled:
 - New Jobs will have `Workload` and `PodGroup` objects created
 - Existing Jobs will have `Workload` and `PodGroup` objects created on their next reconciliation cycle
-- Jobs that were running without gang scheduling will be evaluated again; if they match gang scheduling criteria, a `Workload` with gang policy will be created
-- Pods already running are not affected; gang scheduling only applies to newly created pods
+- Jobs that were running without gang scheduling will be evaluated again, if they match gang scheduling criteria, a `Workload` with gang policy will be created.
+- Jobs that have running pods are not affected since gang scheduling only applies to newly created Jobs/Pods
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -463,7 +481,7 @@ Yes. We will add unit tests and integration tests for feature enablement/disable
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 - If the API server doesn't support `Workload` and `PodGroup` APIs, the Job controller will fail to create Jobs (error creating `Workload`). Jobs will be requeued until the API server is upgraded.
-- If the scheduler doesn't have gang scheduling feature enabled, pods will remain pending indefinitely.
+- If the scheduler doesn't have gang scheduling feature enabled, pods are scheduled normally in pod-by-pod manner.
 - Already running Jobs are not affected by enabling the feature. Pods that are already scheduled and running continue to run. New Jobs or Jobs being reconciled will be affected.
 - For the rollback, disabling the feature gate allows Jobs to work without `Workload` and `PodGroup` creation. `Workload` and `PodGroup` objects don't cause issues; they're ignored when the feature is disabled
 
@@ -472,11 +490,11 @@ Yes. We will add unit tests and integration tests for feature enablement/disable
 The following metrics should be monitored:
 
 - `job_sync_duration_seconds`: If Job sync duration increases significantly, it may indicate issues with `Workload`/`PodGroup` creation
-- `job_pods_creation_total`: If pod creation rate drops, gang scheduling may be blocking pod creation
+- `job_pods_creation_total`: A drop in pod creation rate may indicate a problem in the Job controller’s `Workload`/`PodGroup` flow 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Yes. This will be tested as part of alpha release validation.
+This will be tested manually as part of alpha release.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -501,12 +519,13 @@ No.
   - Details:
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
-
- - 99.9% of `Workload`/`PodGroup` creations succeed within 10 seconds
+ To be discussed after alpha release.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [x] Metrics
+ To be discussed after alpha release.
+
+- [] Metrics
   - Metric name:
   - [Optional] Aggregation method:
   - Components exposing the metric:
@@ -528,14 +547,9 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes. For each Job, the following additional API calls are made:
-- `GET Workload` - 1 per Job sync
+Yes. The Job controller uses informers and listers for `Workload` and `PodGroup` for lookups and watches. The following additional API calls are made when this feature is enabled:
 - `CREATE Workload` - 1 per Job creation
-- `GET PodGroup` - 1 per Job sync
 - `CREATE PodGroup` - 1 per Job creation
-- `PATCH PodGroup.status` - 1 per scheduling decision
-- `WATCH Workload` - Continuous
-- `WATCH PodGroup` - Continuous
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -547,7 +561,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes. Each Job creates 1 `Workload`(~500 bytes) and 1 `PodGroup`(~500 bytes) object. In addition to Each Pod gains a `workloadRef` field (~100 bytes).
+Yes. Each Job creates 1 `Workload`(~500 bytes) and 1 `PodGroup`(~500 bytes) object. In addition to Each Pod gains a `schedulingGroup` field (~100 bytes).
 
 For a cluster with 10,000 Jobs, this adds approximately:
 - 10,000 `Workload` objects
@@ -556,7 +570,7 @@ For a cluster with 10,000 Jobs, this adds approximately:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Yes. Due to creating `Workload` and `PodGroup` objects for each Job. And For scheduler waiting time.
+There is an expected increase in job sync duration due to creating `Workload` and `PodGroup` objects for each Job and for scheduler waiting time. We will measure the impact once we have an implementation.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -591,6 +605,7 @@ No. This feature is purely control-plane and does not affect node resources.
 
 ## Implementation History
 - 2026-01-29: KEP created
+- 2026-02-10: KEP updated according to final API design for `Workload` and `PodGroup`
 
 ## Drawbacks
 
