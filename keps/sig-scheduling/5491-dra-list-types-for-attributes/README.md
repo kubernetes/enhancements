@@ -1034,7 +1034,7 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `DRAListTypeAttributes`
-  - Components depending on the feature gate: kube-apiserver, kube-**scheduler**
+  - Components depending on the feature gate: kube-apiserver, kube-scheduler
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
