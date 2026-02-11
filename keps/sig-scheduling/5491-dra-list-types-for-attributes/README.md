@@ -187,7 +187,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-The Device Resource Assignment (DRA) API currently allows scalar attribute values to describe device characteristics. However, many real-world device topologies require representing sets of relationships (e.g., multiple PCIe roots, NUMA nodes). This KEP introduces support for list-typed attributes in `ResourceSlice` and extends `ResourceClaim`'s `constraints` with a new declarative field, `matchSemantics`/`distinctSemantics`, that can configure _how_ attribute values should be evaluated.
+The Device Resource Assignment (DRA) API currently allows scalar attribute values to describe device characteristics. However, many real-world device topologies require representing sets of relationships (e.g., multiple PCIe roots, NUMA nodes). This KEP introduces support for list-typed attributes in `ResourceSlice` and extends(redefine) `ResourceClaim`'s `constraints[].{matchAttribute, distinctAttribute}` semantics to fit both list-type attributes and primitive attributes supported previously.
 
 ## Motivation
 
