@@ -396,7 +396,7 @@ spec:
   pool:
     name: "cpu"
     resourceSliceCount: 1
-  allNodes: node-1
+  nodeName: node-1
   devices:
   - name: "cpu-0"
     attributes:
@@ -422,7 +422,7 @@ spec:
   pool:
     name: "gpu"
     resourceSliceCount: 1
-  allNodes: node-1
+  nodeName: node-1
   devices:
   - name: "gpu-0"
     attributes:
@@ -439,7 +439,7 @@ spec:
   pool:
     name: "nic"
     resourceSliceCount: 1
-  allNodes: node-1
+  nodeName: node-1
   devices:
   - name: "nic-0"
     attributes:
