@@ -160,7 +160,7 @@ need for external dependencies.
 - To define the required changes to the Workload API (KEP-4671) to support
   ResourceClaims for DRA-aware workload scheduling. These changes will be
   proposed in a separate KEP:
-  [KEP-5729: DRA: ResourceClaim Support for Workloads](https://github.com/kubernetes/enhancements/pull/5736)
+  [KEP-5729: DRA: ResourceClaim Support for Workloads](https://kep.k8s.io/5729)
 - To replace the functionality of external workload queueing and admission
   control systems like Kueue. This proposal focuses on the in-scheduler
   placement decision for a single Workload at a time.
@@ -235,11 +235,11 @@ workload's pods to them.
 
 The Workload API (KEP-4671) will be extended to allow specifying group-level
 scheduling constraints. An optional `ScheduleConstraints` field is added to the
-`PodGroup` spec.
+`PodGroupTemplate` spec.
 
 ```go
 // PodGroup (definition from KEP-4671, with additions)
-type PodGroup struct {
+type PodGroupTemplate struct {
     Name *string
 
     // SchedulingConstraints defines group-level scheduling requirements,
@@ -267,7 +267,7 @@ type TopologyConstraint struct {
 The Workload API changes for DRA-aware scheduling, including the definition of
 DRA constraints, are out of scope for the alpha version of this KEP. These changes
 will be defined in a separate KEP: 
-[KEP-5729: DRA: ResourceClaim Support for Workloads](https://github.com/kubernetes/enhancements/pull/5736).
+[KEP-5729: DRA: ResourceClaim Support for Workloads](https://kep.k8s.io/5729).
 
 Note: For the initial alpha scope, only a single TopologyConstraint will be
 supported.
@@ -352,19 +352,11 @@ Placement represents a candidate domain (nodes and resources) for a PodGroup.
 #### 1. Data Structures
 
 ```go
-// PodGroupInfo holds information about a specific PodGroup within a Workload,
-// including a reference to the Workload, the PodGroup's name, and its replica index.
+// PodGroupInfo holds information about a specific PodGroup within a Workload.
 // This struct is designed to be extensible with more fields in the future.
 type PodGroupInfo struct {
-    // WorkloadRef is a reference to the parent Workload object.
-    WorkloadRef *workloadv1alpha1.Workload
-
-    // PodGroupName is the name of the PodGroup.
-    PodGroupName string
-
-    // PodGroupReplicaIndex is the index of the PodGroup replica, as defined in KEP-4671.
-    // This is relevant for PodGroups that have more than one replica.
-    PodGroupReplicaIndex int
+    // SchedulingGroup is a reference to the parent PodGroup object.
+    SchedulingGroup *workloadv1alpha2.PodSchedulingGroup
 
     // PodSets is a list of PodSet objects within this PodGroup.
     PodSets []*PodSetInfo
@@ -426,7 +418,7 @@ type DraClaimAllocation struct {
 
 ```go
 // PlacementGeneratorPlugin is an interface for plugins that generate candidate Placements.
-// Plugins implemeting PlacementGeneratorPlugin interface should also implement
+// Plugins implementing PlacementGeneratorPlugin interface should also implement
 // EnqueueExtensions interface.
 type PlacementGeneratorPlugin interface {
     Name() string
@@ -484,7 +476,7 @@ type PlacementScorerPlugin interface {
 
 ### Scheduling Algorithm Phases
 
-The algorithm proceeds in three main phases for a given Workload/PodGroup.
+The algorithm proceeds in three main phases for a given PodGroup.
 
 #### Phase 1: Candidate Placement Generation
 
@@ -558,7 +550,7 @@ scheduling. This enhancement will enable the scheduler to consider DRA claims
 defined by users when making placement decisions, ensuring that workloads are
 placed on nodes that can satisfy their resource requirements. This will be
 achieved by using the API to be defined in 
-[KEP-5729: DRA: ResourceClaim Support for Workloads](https://github.com/kubernetes/enhancements/pull/5736).
+[KEP-5729: DRA: ResourceClaim Support for Workloads](https://kep.k8s.io/5729).
 
 The implementation will build upon the extension points introduced in the
 alpha version of this feature and the `DRATestPlugin` implementation.
