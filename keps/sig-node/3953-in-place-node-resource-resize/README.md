@@ -1,4 +1,4 @@
-# KEP-3953: In-place Node Resource Scaling
+# KEP-3953: In-place Node Resource Resize
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -320,7 +320,7 @@ T=1: Resize Node to Hotplug Memory:
 #### Compatibility with Cluster Autoscaler
 
 The Cluster Autoscaler (CA) presently anticipates uniform allocatable values among nodes within the same NodeGroup, using existing Nodes as templates for 
-newly provisioned Nodes from the same NodeGroup. However, with the introduction of NodeResourceHotplug, this assumption may no longer hold true.
+newly provisioned Nodes from the same NodeGroup. However, with the introduction of In-Place Node Resource Resize, this assumption may no longer hold true.
 If not appropriately addressed, this could cause the Cluster Autoscaler to randomly select a Node from the group and assume identical allocatable values for all upcoming Nodes. 
 This could lead to suboptimal decisions, such as repeatedly attempting to provision Nodes for pending Pods that are incompatible, or overlooking potential Nodes that could accommodate such Pods.
 
@@ -341,7 +341,7 @@ The same will be targeted around the beta graduation of this KEP
 type NodeStatus struct {
     // ... existing fields
 	// InitialCapacity represents the total resources of a node at the time of creation.
-	// +featureGate=NodeResourceHotPlug
+	// +featureGate=InPlaceNodeResourceResize
 	// +optional
 	InitialCapacity ResourceList `json:"initialCapacity,omitempty"`
 }
@@ -481,7 +481,7 @@ Following scenarios need to be covered:
 
 #### Phase 1: Alpha (target 1.35)
 
-* Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `NodeResourceScaling`
+* Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `InPlaceNodeResourceResize`
   feature gate.
 * Unit test coverage.
 * E2E tests.
@@ -562,7 +562,7 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:NodeResourceHotPlug
+    - Feature gate name:InPlaceNodeResourceResize
     - Components depending on the feature gate: kubelet
 - [ ] Other
     - Describe the mechanism:
@@ -573,7 +573,7 @@ This section must be completed when targeting alpha to a release.
 
 ###### Does enabling the feature change any default behavior?
 
-No behavior change when there is no change in node allocatable resources, and this feature is guarded by `NodeResourceHotPlug` feature gate.
+No behavior change when there is no change in node allocatable resources, and this feature is guarded by `InPlaceNodeResourceResize` feature gate.
 
 With feature enabled:
     Hotplug of resource will lead to increase in Node allocatable resource and allowing Pending pods to be scheduled.
