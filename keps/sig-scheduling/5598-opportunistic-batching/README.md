@@ -91,9 +91,9 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Pod scheduling signature](#pod-scheduling-signature)
   - [Batching mechanism](#batching-mechanism)
-    - [Create](#create)
-    - [Update](#update)
-    - [Nominate](#nominate)
+    - [GetNodeHint](#getnodehint)
+    - [StoreScheduleResults](#storescheduleresults)
+    - [Integration with Scheduling Cycle](#integration-with-scheduling-cycle)
   - [Opportunistic batching](#opportunistic-batching)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -174,14 +174,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This KEP proposes an opportunistic batching mechanism in the scheduler to improve performance of scheduling many compatible pods at once, and to begin building the infrastructure required for gang scheduling. To implement this mechanism we propose the following additions:
 
  - **Pod scheduling signature:** A signature that captures the properties of a pod that impact scoring and feasibility.
- - **Batching mechanism:** A mechanism to reuse the scheduling output from one pod to set the nominated node name for multiple subsequent pods with matching scheduling signatures.
+ - **Batching mechanism:** A mechanism to reuse the scheduling output from one pod to provide node hints for multiple subsequent pods with matching scheduling signatures.
  - **Opportunistic batching:** Transparent inclusion of the batching mechanism in the scheduler to improve the performance of targeted workloads that could benefit from it.
 
 ## Motivation
 
-Today our scheduling algorithm is O(num pods x num nodes). As the size of clusters and jobs continue to increase, this leads to low performance when scheduling or rescheduling large jobs. This increases user cost and slows down user jobs, both unpleasant impacts. Optimizations like this one have the potential to dramaticly reduce the cost of scheduling in these scenarios.
+Today our scheduling algorithm is O(num pods x num nodes). As the size of clusters and jobs continue to increase, this leads to low performance when scheduling or rescheduling large jobs. This increases user cost and slows down user jobs, both unpleasant impacts. Optimizations like this one have the potential to dramatically reduce the cost of scheduling in these scenarios.
 
-We are also working on gang scheduilng (in addition to other forms of multi-pod scheduling), which will give us a way to consider multiple pods at the same time. "Opportunistic batching" provides a starting point for these mechanisms by providing signatures and batching, both necessary foundational mechanisms, and including them initially in a simple way.
+We are also working on gang scheduling (in addition to other forms of multi-pod scheduling), which will give us a way to consider multiple pods at the same time. "Opportunistic batching" provides a starting point for these mechanisms by providing signatures and batching, both necessary foundational mechanisms, and including them initially in a simple way.
 
 Another change is the shift towards 1-pod-per-node in batch and ML environments. Many of these environments (among others) only attempt to run a single user pod on each node, along with a complement of daemon set pods. This simplifies our scheduling needs significantly, as it allows to reuse not only filtering, but also scoring results.
 
@@ -205,60 +205,95 @@ We discuss each of the added items: pod scheduling signature, batching mechanism
 
 ### Pod scheduling signature
 
-The pod scheduling signature is used to determine if two pods are "the same" from a scheduling perspective. In specific, what this means is that any pod with the given signature will get the same scores / feasibility results from any arbitrary set of nodes. Also, assigning a pod to a node is not going to change neither the feasibility nor scoring of other nodes. This is necessary for the cache to work, since we need to be able to reuse the previous work.
+The pod scheduling signature is used to determine if two pods are "the same" from a scheduling perspective. In specific, what this means is that any pod with the given signature will get the same scores / feasibility results from any arbitrary set of nodes. Also, assigning a pod to a node will not change the feasibility or scoring of other nodes. This is necessary for the cache to work, since we need to be able to reuse the previous work.
 
-Note that some pods will not have a signature, because the scoring uses not just pod and node attributes, but other pods in the system, global data about pod placement, etc. These nodes get a nil signature, and we fallback to the existing path.
+Note that some pods will not have a signature, because the scoring uses not just pod and node attributes, but other pods in the system, global data about pod placement, etc. These pods get a nil signature, and we fall back to the existing path.
 
-To allow non in-tree plugins to construct a signature, we add a new framework function to implement. This function takes a pod and generates a signature for that plugin as a string. The signature is likely a set of attributes of the pod, or something derived from them. To construct a full signature we take the signatures of all the plugins and aggeregate them into a single string. If any plugin cannot generate a signature for a given pod (because it depends on information other than the pod and node), then we generate a "nil" signature and don't attempt to batch the pod.
+To allow non in-tree plugins to construct a signature, we add a new framework interface to implement. Each plugin returns a set of signature fragments that capture the pod attributes relevant to that plugin's scheduling decisions. To construct a full signature, the framework collects fragments from all plugins, and marshals them into a single `PodSignature` (a byte slice). If any plugin cannot generate a signature for a given pod (because it depends on information other than the pod and node), it returns an error status, and we generate a nil signature for that pod, skipping batching.
 
-Initially we won't require plugins to implement the new function, but we will turn off signatures for all pods if a plugin is enabled that does not implement it. In subsequent releases we might make implementation of the function a requirement, but of course plugins are also able to say pods are unsignable. 
+If an enabled plugin that does Scoring, Prescoring, Filtering or Prefiltering does not implement this interface, batching is turned off for all pods.
 
-An early proposal of the interface is included below:
+The signature interface and types are defined as follows:
 
-```
-type PodSignatureMaker interface {
-	Unsignable()
-	AddElement(elementName, sigString string)
-	AddElementFromObj(elementName string, obj any) error
-	HasElement(elementName string) bool
+```go
+// A portion of a pod signature. The sign fragments from all plugins are combined
+//  to create a unified signature.
+type SignFragment struct {
+	// Key identifies this fragment. Fragments with the same key should contain
+	// the same value for the same pod.
+	Key string
+
+	// Value must be JSON-marshallable.
+	Value any
 }
 
-const Unsignable = ""
+// The signature for a given pod after all fragments are consolidated.
+type PodSignature []byte
 
-// BatchablePlugin is an interface that should be implemented by plugins that either filter or score
-// pods to enable batching and gang scheduling optimizations. If an enabled plugin that does Scoring,
-// Prescoring, Filtering or Prefiltering does not implement this interface we will turn off batching 
-// for all pods. For now we leave this optional, but in the future we may make it mandatory for all 
-// filtering and scoring plugins to implement the interface (but of course plugins may choose to 
-// return "Unsignable".)
-type BatchablePlugin interface {
+// SignPlugin is an interface that should be implemented by plugins that either filter
+// or score pods to enable batching and gang scheduling optimizations.
+type SignPlugin interface {
 	Plugin
-	// This is called before PreFilter. The plugin is responsible for adding any signature components that are needed
-  // for this plugin. Alternatively, if this plugin cannot guarantee that filtering / score work can be shared 
-  // between pods of this type, it can call "Unsignable" on the signature maker.
-	SignPod(pod *v1.Pod, signature PodSignatureMaker) error
+	// SignPod returns SignFragments for this pod.
+	//
+	// Return values:
+	//   - Success: plugin can sign the pod, returns signature fragments
+	//   - Unschedulable: plugin cannot sign pod (pod not eligible for batching)
+	//   - Error: unexpected failure (pod not eligible for batching, error logged)
+	SignPod(ctx context.Context, pod *v1.Pod) ([]SignFragment, *Status)
 }
 ```
 ### Batching mechanism
 
-The second component of this KEP is a batching mechanism. Fundamentally the batching mechanism will have two operations that can be invoked wherever they are needed:
+The second component of this KEP is a batching mechanism. The batching mechanism provides two main operations that are invoked during the scheduling cycle:
 
- * **Create:** Create a new set of batch information from the scheduling results of a "canonical" pod that has a valid signature. This effectively tracks the scores of a set of nodes sorted in score order.
- * **Nominate:** Using batching information from create, set the nominated node name of a new pod whose signature matches the canonical pod's signature.
+ * **GetNodeHint:** Returns a node hint for a pod with a valid signature by validating that cached scheduling results can be reused.
+ * **StoreScheduleResults:** Stores the sorted scheduling results from a "canonical" pod for potential reuse with subsequent matching pods.
 
-Internally the mechanism will use an **update** operation which we will also describe.
+#### GetNodeHint
 
-#### Create 
+The `GetNodeHint` operation is called during the filtering phase, after PreFilter but before evaluating individual nodes, to determine if we can reuse cached scheduling results from a previous pod. It takes a pod with a signature and attempts to provide a node hint that will allow the scheduler to take a fast path.
 
-The create operation will use the sorted output from the scheduling of a "canonical" pod. After copying the feasible node list from the results, it will attempt to update the results using the update operation, which we describe next. If the results can't be updated, we will just drop the information without reusing it. If we can update the results, we will keep the batch information ready for use to nominate node names for subsequent pods.
+Before returning a hint, the operation validates that the cached batch state is compatible with the current pod by checking:
 
-#### Update
+1. **Cycle continuity:** The current scheduling cycle must be exactly one greater than the last cycle (no other pods were scheduled).
+2. **Signature match:** The pod's signature must exactly match the cached signature.
+3. **Cache freshness:** The cached data must be sufficiently recent to avoid relying on stale scheduling decisions.
+4. **Last node is full:** The node chosen in the previous scheduling cycle must now be infeasible for the new pod. This is verified by running filter plugins against that node. This validation ensures the 1-pod-per-node constraint that allows us to reuse scoring results without rescoring.
 
-The update operation will attempt to update the batch information after a scheduling or nomination has taken place. Today we already have a way to re-evaluate whether a node is feasible after a pod is added using the cluster snapshot and CycleState. We will use this filter functionality here; if we determine the node we just used is no longer feasible, then we will throw it away and continue using the remainder of the data. If the node remains feasible after adding the pod, for this KEP we will throw away the batch information and "start fresh" for the next pod. This is because otherwise we might keep putting a lot of pods from this workload onto the same node. But, as work beyond this KEP we can add similar rescoring functionality which would allow us to solve that problem and batch for use cases where we have more than 1 pod of a given batch that can fit on a node. If the list of nodes falls to zero we will throw away the batch information, and start fresh with the next pod; we won't assume that the next pod will not fit.
+If all validations pass, the operation pops the next best node from the cached sorted list and returns it as a hint (see "Integration with Scheduling Cycle" below for how the hint is used).
 
-#### Nominate
+If any validation fails, the batch state is invalidated (with the reason recorded in metrics), no hint is provided, and the scheduler proceeds with normal full evaluation of all nodes.
 
-The nominate operation will take a pod with a matching signature and assign its nominated node name, using the first node in the list.  Nomination will also call the update operation to update the results for use on more pods in the future. Note that nomination doesn't actually schedule the pod, but it ensures that when the pod is scheduled it will take the fast path and not re-evaluate the full set of nodes. By separating these decisions we can use the batching mechanism in multiple places, including gang scheduling. This reuses our existing node nomination path, which is done entirely in memory.
+#### StoreScheduleResults
+
+The `StoreScheduleResults` operation is called after a pod has been scheduled (after filtering, scoring, and node selection). It stores scheduling results for potential reuse with subsequent pods.
+
+The operation first records information about the last scheduling cycle (cycle number and chosen node) for use in the next cycle's validation.
+
+Then it determines whether to store new batch state:
+
+**If a hint was used** (hintedNode == chosenNode):
+- This means the batch worked! We successfully reused cached results.
+- No new batch state is stored; we continue using the existing batch.
+- Statistics are recorded (batchedPods counter incremented).
+
+**If no hint was provided or the hint was not used:**
+- If the pod has a valid signature and there are remaining nodes in the sorted list, new batch state is created containing:
+  - The pod's signature
+  - The sorted list of remaining feasible nodes
+  - Creation timestamp (for the expiration check)
+- If the pod has no signature or no remaining nodes, no batch state is stored.
+
+The batch state is kept in memory only and is constrained to a short-lived validity window to prevent stale data from affecting scheduling decisions.
+
+#### Integration with Scheduling Cycle
+
+The `GetNodeHint` operation returns a hint string (node name) that is plugged directly into the scheduling cycle.
+
+During the scheduling cycle, if a node was hinted by the batching mechanism, the scheduler evaluates that specific node first before iterating over all nodes. This "try one node first" is the fast path. If the hinted node passes all filters, it is immediately returned as the only feasible node, bypassing evaluation of all other nodes and scoring entirely.
+
+If the hinted node fails filtering, the scheduler falls back to the normal path of evaluating all nodes. This ensures correctness while providing significant performance benefits when the hint is valid. The batching mechanism can be used in multiple places, including future gang scheduling implementations, without requiring changes to the Pod API.
 
 ### Opportunistic batching
 
@@ -287,7 +322,9 @@ Because we haven't deployed batching in production before, we are still somewhat
 
 ### Pod signature
 
-The follow section outlines the attributes we are currently proposing to use as the signature for each of the 
+A pod scheduling signature is a hash of the pod's scheduling requirements. It is used to identify pods that can be scheduled together. To optimize the scheduling cycle, the signature is calculated and cached when a pod first enters the scheduling queue. By pre-calculating the signature during the queuing phase, the scheduler can avoid doing extra work during the time-sensitive scheduling process and helping the system handle larger batches of pods more smoothly.
+
+The following section outlines the attributes we are currently proposing to use as the signature for each of the 
 plugins in the scheduler. We need the plugin owners to validate that these signatures are correct, or help
 us find the correct signature.
 
@@ -948,7 +985,7 @@ For each of them, fill in the following information by copying the below templat
   - Detection: pod scheduling latencies rise.
   - Mitigations: turn off the opportunistic batching feature.
   - Diagnostics: look for batching failures (in metrics), look for batching related log messages.
-  - Testing: No, because it is inclear why specifically this would happen.
+  - Testing: No, because it is unclear why specifically this would happen.
 
 - [Pods scheduled on incorrect nodes]
   - Detection: pods on nodes where they should not exist (affinity rules, etc)
@@ -974,6 +1011,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 2024-05-22: Initial KEP proposal introduced as [Enhancements PR #5599](https://github.com/kubernetes/enhancements/pull/5599).
+- 2025-11-13: Initial version implemented [Kubernetes PR #135231](https://github.com/kubernetes/kubernetes/pull/135231).
+- 2026-02-04: Optimized the implementation by caching the pod signature, thereby removing the computation from the critical scheduling path ([Kubernetes PR #136579](https://github.com/kubernetes/kubernetes/pull/136579)).
 
 ## Drawbacks
 
