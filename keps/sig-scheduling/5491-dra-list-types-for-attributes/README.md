@@ -210,10 +210,10 @@ know that this has succeeded?
 -->
 
 - Support typed-list in device attribute values.
-- Define an extensible API in `ResourceClaim`'s `constraints` field which enables flexible matching semantics against single device attribute value.
-- Initial supported semantics are
-  - `NonEmptyIntersection` and `Identical` for `matchAttribute`
-  - `EmptyIntersection`, `PairwiseDisjoint`, and `AllDistinct` for `distinctAttribute`
+- Extends(redefine) the semantics of `ResourceClaim`'s `constraints[].{matchAttribute,distinctAttribute}` fields as below so that it can work with list-type attribute values
+  - `matchAttribute`: it is defined as non-empty intersection
+  - `distinctAttribute`: it is defined as empty intersection
+  - note: scalar values are treated as single-element lists
 - Maintain backward compatibility and inter-operability for scalar-only attributes.
 - Provide an extensible API pattern for future matching semantics.
 
