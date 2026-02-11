@@ -302,11 +302,11 @@ or event should be triggered to inform the user.
 The ownerReferences relationship between `Job`, `Workload`, `PodGroup`, and `Pod` is as follows:
 
 ```mermaid
-flowchart TD
-    Job[Job]
-    Workload[Workload]
-    PodGroup[PodGroup]
+flowchart BT
     Pod[Pod]
+    PodGroup[PodGroup]
+    Workload[Workload]
+    Job[Job]
 
     Workload -->|ownerRef| Job
     PodGroup -->|ownerRef| Job
