@@ -816,7 +816,7 @@ If there is at least one condition with `effect=Deny` that evaluates to an
 error, return an error. The FailureMode of the ConditionalAuthorizer controls
 whether to treat the error as decision `Deny` or `NoOpinion`.
 
-Otherwise, it is known that any `effect=Deny` condition evaluates to false.
+Otherwise, it is known that all `effect=Deny` conditions evaluate to false.
 Then, if there is at least one condition with `effect=NoOpinion` that evaluates
 to true, return `NoOpinion`.
 
@@ -824,7 +824,7 @@ If there is at least one condition with `effect=NoOpinion` that evaluates to an
 error, return `NoOpinion` to fail closed (as if the condition evaluated to true)
 along with the error for logging/diagnostics.
 
-Otherwise, it is known that any `effect=NoOpinion` condition evaluates to false.
+Otherwise, it is known that all `effect=NoOpinion` conditions evaluate to false.
 Then, if there is at least one condition with `effect=Allow` that evaluates to
 true, return `Allow`.
 
