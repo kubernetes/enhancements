@@ -321,8 +321,6 @@ type PodGroupStatus struct {
    // - "Scheduled": All required pods have been successfully scheduled.
    // - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
    //   affinity/anti-affinity rules, or insufficient capacity for the gang.
-   // - "SchedulingGated": One or more pods in the PodGroup have scheduling gates
-   //   that must be cleared before scheduling can proceed.
    // - "Preempted": The PodGroup was preempted to make room for higher-priority workloads.
    // - "Timeout": The PodGroup failed to schedule within the configured timeout.
    //
