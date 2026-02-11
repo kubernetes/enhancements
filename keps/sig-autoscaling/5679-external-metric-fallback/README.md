@@ -197,7 +197,7 @@ The community has previously expressed interest in addressing this limitation [#
 
 ### Goals
 
-- Allow users to optionally define fallback values for external metrics when retrieval fails
+- Allow users to optionally define a fallback, static pod replica count value when retrieval of external metrics fails
 - Provide per-metric failure tracking and fallback behavior
 - Maintain the HPA's scaling algorithm and respect min/max replica constraints
 - Ensure users can determine which specific metrics are using fallback values
