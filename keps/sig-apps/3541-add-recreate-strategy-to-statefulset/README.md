@@ -16,7 +16,7 @@
     - [Story 3: Development/Experiment Environment](#story-3-developmentexperiment-environment)
     - [Story 4: External Data Storage](#story-4-external-data-storage)
     - [Story 5: LeaderWorkerSet (LWS) Use Case](#story-5-leaderworkerset-lws-use-case)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Risk: Unintended Data Loss](#risk-unintended-data-loss)
 - [Design Details](#design-details)
@@ -25,7 +25,6 @@
     - [Proposed Recreate Strategy Algorithm](#proposed-recreate-strategy-algorithm)
   - [API Changes](#api-changes)
     - [Spec Changes](#spec-changes)
-    - [Status Changes](#status-changes)
   - [Implementation Changes](#implementation-changes)
   - [Comparison with Existing Solutions](#comparison-with-existing-solutions)
   - [Test Plan](#test-plan)
@@ -51,14 +50,13 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
   - [Downtime Requirement](#downtime-requirement)
-  - [Loss of Ordering Guarantees](#loss-of-ordering-guarantees)
   - [Limited Rollback Options](#limited-rollback-options)
 - [Alternatives](#alternatives)
   - [Alternative 1: PodProgressTimeoutSeconds Field in RollingUpdate Strategy](#alternative-1-podprogresstimeoutseconds-field-in-rollingupdate-strategy)
   - [Alternative 2: EnforcedRollingUpdate Strategy](#alternative-2-enforcedrollingupdate-strategy)
   - [Alternative 3: (Now Primary Solution): Recreate Strategy](#alternative-3-now-primary-solution-recreate-strategy)
   - [Alternative 4: Add Force Flag to RollingUpdate](#alternative-4-add-force-flag-to-rollingupdate)
-  - [Alternative 4: Enhance Parallel Policy](#alternative-4-enhance-parallel-policy)
+  - [Alternative 5: Enhance Parallel Policy](#alternative-5-enhance-parallel-policy)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -93,7 +91,11 @@ This behavior has generated significant user frustration across multiple GitHub 
 - Inability to automatically recover from configuration mistakes
 - Operational burden in managing stateful applications
 
-This KEP proposes adding a new `Recreate` update strategy to StatefulSets, mirroring the behavior of Deployments' Recreate strategy. This strategy deletes all pods, waits for full termination, then creates all new pods simultaneously. This provides a simple, predictable way to handle stuck pods and enables automated recovery for workloads that can tolerate downtime (CI/CD environments, stateless applications using StatefulSet for pod identity, applications with external data storage, and use cases like LeaderWorkerSet). The `Recreate` strategy offers a clean parallel with existing Kubernetes patterns, simplifies controller logic, and provides users with explicit control over update behavior.
+This KEP proposes adding a new `Recreate` update strategy to StatefulSets, mirroring the behavior of Deployments' 
+Recreate strategy. This strategy deletes all pods, waits for full termination, then creates new pods according 
+to `podManagementPolicy`. This provides a simple, predictable way to handle stuck pods and enables automated recovery for workloads that can tolerate downtime (CI/CD environments, stateless applications using StatefulSet 
+for pod identity, applications with external data storage, and use cases like LeaderWorkerSet). The `Recreate` 
+strategy offers a clean parallel with existing Kubernetes patterns, simplifies controller logic, and provides users with explicit control over update behavior.
 
 ## Motivation
 
@@ -191,7 +193,7 @@ Adding `Recreate` update strategy to StatefulSets addresses these issues by:
 
 1. Change default behavior of StatefulSet updates (opt-in via explicit `type: Recreate` configuration)
 2. Add timeout-based progressive failure detection (use Recreate for simplicity)
-3. Maintain sequential ordering during Recreate updates (all pods deleted/recreated simultaneously)
+3. Change Recreate deletion semantics (all pods are always deleted simultaneously but recreate ordering follows `podManagementPolicy`)
 4. Replace Deployment-style revision management (StatefulSets continue to directly manage Pods)
 
 ## Proposal
@@ -228,7 +230,7 @@ Adding `Recreate` update strategy to StatefulSets addresses these issues by:
 
 **Solution**: With `updateStrategy: type: Recreate` configured, all replicas are cleanly deleted and recreated during updates, eliminating stuck pod scenarios entirely. This aligns perfectly with the deployment-like nature of LWS workloads, providing simple and predictable updates for applications that use StatefulSet primarily for pod identity rather than traditional stateful semantics. The Recreate strategy's "all or nothing" approach matches the LWS pattern where all workers restart together.
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 - Strategy Type Change Does Not Trigger Rollout: changing only `.spec.updateStrategy.type` from `RollingUpdate` to `Recreate` (or vice versa) does not trigger a new rollout. This is consistent with Deployment behavior. The StatefulSet controller uses the `controller-revision-hash` label to identify pod revisions, which is computed from `.spec.template` content only.
 
@@ -306,13 +308,23 @@ IF current_phase == "WaitingTermination" THEN
 ENDIF
 
 IF current_phase == "ReadyForCreation" THEN
-    // Phase 3: Create pods with new revision up to desired replica count
-    // Create pods for missing ordinals 0 to replicas-1
-    FOR i = 0 TO replicas-1:
-        IF pod with ordinal i does not exist THEN
-            create_pod(i, updateRevision)
+    // Phase 3: Create pods with new revision according to podManagementPolicy
+    IF podManagementPolicy == OrderedReady THEN
+        // Create in ascending ordinal order; only create the next ordinal when predecessor is Running and Ready
+        i = lowest ordinal in [0, replicas-1] such that pod i does not exist
+        IF i is defined THEN
+            IF i == 0 OR (pod i-1 exists AND is Running and Ready) THEN
+                create_pod(i, updateRevision)
+            ENDIF
         ENDIF
-    ENDFOR
+    ELSE
+        // Parallel: create all missing pods at once
+        FOR i = 0 TO replicas-1:
+            IF pod with ordinal i does not exist THEN
+                create_pod(i, updateRevision)
+            ENDIF
+        ENDFOR
+    ENDIF
     return // Reconcile again to check creation progress
 ENDIF
 
@@ -377,6 +389,7 @@ Key Characteristics:
 5. Since all pods are forcibly deleted, updates cannot become permanently blocked
 6. Explicit downtime: Users opt-in knowing there will be unavailability between deletion and creation phases
 7. Safe to retry deletions and creations on controller restart
+8. Recreation phase respects `podManagementPolicy`
 
 ### API Changes
 
@@ -396,19 +409,6 @@ const (
 )
 ```
 
-#### Status Changes
-
-```go
-// StatefulSetConditionType describes the condition types
-type StatefulSetConditionType string
-
-const (
-    // Progress for a StatefulSet is considered when a new pod is created, deleted, or becomes ready.
-    StatefulSetProgressing StatefulSetConditionType = "Progressing"
-    
-    StatefulSetAvailable StatefulSetConditionType = "Available"
-)
-```
 
 Example Usage:
 
@@ -434,10 +434,8 @@ spec:
   1. All pods (web-0 through web-9) are deleted simultaneously
   2. Controller waits for all pods to fully terminate
   3. All new pods (web-0 through web-9) are created according to their `.spec.podManagementPolicy`
-  4. Pods start and become Ready independently
 - Downtime occurs between deletion and recreation phases
 - No stuck pod scenarios - all pods are forcibly deleted
-- Simple, predictable behavior with no ordering dependencies
 
 ### Implementation Changes
 
@@ -450,8 +448,7 @@ The implementation requires changes to the StatefulSet controller in `pkg/contro
 2. Recreate Update Logic:
    - Phase 1 - Deletion: Iterate through all pods and delete them (similar to scale-down operation)
    - Phase 2 - Wait for Termination: Check all pods for `deletionTimestamp`; reconcile periodically until all pods are fully terminated
-   - Phase 3 - Recreation: Create all new pods simultaneously (similar to scale-up operation)
-   - No Readiness Waiting: Unlike RollingUpdate, do not block on pod Ready state
+   - Phase 3 - Recreation: Create all new pods according to `spec.podManagementPolicy`
 
 3. Status Condition Management:
    - Add `Progressing` condition to StatefulSet status
@@ -487,7 +484,7 @@ to implement this enhancement.
 - `pkg/apis/apps/validation/validation.go`: `2025-10-13` - `92.8%`
 - `pkg/controller/statefulset/stateful_set_control.go`: `2025-10-13` - `91.5%`
 - `pkg/controller/statefulset/stateful_pod_control.go`: `2025-10-13` - `89.6%`
-- `pkg/registry/apps/statefulset/strategy.go`: `205-10-13` - `83.9%`
+- `pkg/registry/apps/statefulset/strategy.go`: `2025-10-13` - `83.9%`
 
 ##### Integration tests
 
@@ -497,10 +494,10 @@ We should cover below scenarios:
 - With `type: Recreate` configured:
   - All pods are deleted when update is triggered (template spec change)
   - Controller waits for all pods to fully terminate (no pods with deletionTimestamp remain)
-  - All new pods are created simultaneously after termination complete
+  - All new pods are created after termination complete
   - Status condition `Progressing=True`
   - Status condition `Progressing=True` with `reason=RecreateComplete` after pods created
-  - Ordering independence: Recreate strategy ignores `podManagementPolicy` setting (both OrderedReady and Parallel behave identically)
+  - Recreate strategy respects `podManagementPolicy`
 - PVC preservation: PersistentVolumeClaims are not deleted during Recreate (only pods are deleted)
 - Stuck pod handling: Pods stuck in any state are forcibly deleted (ImagePullBackOff, Pending, CrashLoopBackOff, etc.)
 - Validation: API validation accepts `type: Recreate` on StatefulSet
@@ -513,7 +510,7 @@ The following e2e tests will be added to `test/e2e/apps/statefulset.go`:
 - Recreate works with stuck pods (ImagePullBackOff scenario - pods are deleted and new ones created)
 - Recreate waits for full termination before creating new pods (no mixed old/new state)
 - Recreate preserves PersistentVolumeClaims (data persists across recreation)
-- Recreate ignores `podManagementPolicy` setting (behaves same for OrderedReady and Parallel)
+- Recreate respects `podManagementPolicy` during recreation
 - StatefulSets without `type: Recreate` maintain current RollingUpdate/OnDelete behavior (backward compatibility)
 - Controller restart during Recreate resumes correctly from last phase
 
@@ -840,25 +837,12 @@ Mitigation:
 - Explicit opt-in via `type: Recreate` (no accidental usage)
 - Recommendation to use for appropriate workloads (CI/CD, stateless apps, development environments)
 
-### Loss of Ordering Guarantees
-
-The Recreate strategy does not maintain pod ordering during updates:
-
-- No Sequential Updates: All pods updated simultaneously, unlike RollingUpdate's sequential approach
-- Different from Traditional StatefulSet Semantics: Users familiar with ordered updates may find this surprising
-- Not Suitable for Dependencies: Workloads with inter-pod dependencies during startup cannot use this
-
-Mitigation:
-
-- Documentation clearly explains ordering behavior
-- Strategy name "Recreate" signals different behavior (aligns with Deployment terminology)
-
 ### Limited Rollback Options
 
 During a Recreate update, there's no gradual rollback:
 
 - If new version has issues, all pods are affected (no gradual detection)
-- annot compare old vs new pods side-by-side during rollout
+- Cannot compare old vs new pods side-by-side during rollout
 - Must wait for full recreation cycle to attempt fixes
 
 Mitigation:
@@ -951,7 +935,7 @@ spec:
     type: Recreate
 ```
 
-Algorithm: Delete all pods, wait for termination, create all new pods simultaneously.
+Algorithm: Delete all pods, wait for termination, create all new pods according to `spec.podManagementPolicy`.
 
 Pros:
 
@@ -963,8 +947,7 @@ Pros:
 
 Cons:
 
-- Total downtime, since all pods deleted simultaneously
-- Loses ordering guarantees (no sequential update)
+- No ordering during deletion (all at once). Ordering during creation only when podManagementPolicy
 - Not suitable for traditional stateful workloads requiring zero-downtime updates
 
 Why Chosen as Primary Solution: Based on sig-apps meeting discussion, this approach is:
@@ -990,7 +973,7 @@ Cons:
 
 Why Not Chosen: Recreate strategy is clearer about behavior and simpler to implement.
 
-### Alternative 4: Enhance Parallel Policy
+### Alternative 5: Enhance Parallel Policy
 
 Extend `podManagementPolicy: Parallel` to automatically replace stuck pods during updates.
 
