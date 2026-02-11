@@ -321,8 +321,6 @@ type PodGroupStatus struct {
    // - "Scheduled": All required pods have been successfully scheduled.
    // - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
    //   affinity/anti-affinity rules, or insufficient capacity for the gang.
-   // - "SchedulingGated": One or more pods in the PodGroup have scheduling gates
-   //   that must be cleared before scheduling can proceed.
    // - "Preempted": The PodGroup was preempted to make room for higher-priority workloads.
    // - "Timeout": The PodGroup failed to schedule within the configured timeout.
    //
@@ -385,7 +383,7 @@ For alpha, we will introduce `Conditions` field with the `PodGroupScheduled` con
 
 `PodGroup` status mirrors `Pod` status semantics:
 - If pods are unschedulable(i.e., timeout, resources, affinity, etc.), the scheduler updates the `PodGroupScheduled` condition to `False` and sets the reason fields accordingly.
-- If pods are scheduled, the scheduler updates the `PodGroupScheduled` condition to `True` after the last pod in the gang completes binding.
+- If pods are scheduled, the scheduler updates the `PodGroupScheduled` condition to `True` after the group got accepted by the Permit phase.
 
 For basic scheduling policy, when the pod related to the `PodGroup` gets scheduled, the scheduler updates the `PodGroupScheduled` condition to `True`.
 
@@ -401,7 +399,7 @@ The kube-scheduler will add a new informer to watch `PodGroup` objects and stop 
 
 #### GangScheduling plugin
 
-The GangScheduling plugin will maintain a lister for `PodGroup` and check if the `PodGroup` object exists along with the `Workload` object. This is in addition to the following changes:
+The GangScheduling plugin will maintain a lister for `PodGroup` and check if the `PodGroup` object exists. This is in addition to the following changes:
 
 **1. PreEnqueue**: The extension will check if the `PodGroup` object exist. If not, it will return `UnschedulableAndUnresolvable` status. Then check if the Pod scheduling requirement is met for gang scheduling (based on minCount value in `PodGroup` object).
 
