@@ -34,6 +34,7 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
- - statefulset_replicas_available
- - statefulset_replicas_ready  
- - statefulset_replicas_current
+ - kube_statefulset_status_replicas_available
+ - kube_statefulset_status_replicas_ready
+ - kube_statefulset_status_replicas_current
+ - statefulset_unavailable_replicas

@@ -244,7 +244,7 @@ The Recreate behavior will only be triggered when users either:
 
 **Mitigation Strategies**:
 
-1. Documentation: Clear guidance on when to use `Recreate` strategy - suitable for workloads that can tolerate downtime and don't require sequential ordering
+1. Documentation: Clear guidance on when to use `Recreate` strategy - suitable for workloads that can tolerate downtime
 2. No Default Change: Opt-in behavior - existing workloads continue using safe `RollingUpdate` (current behavior unchanged)
 3. Explicit Strategy Selection: Users must explicitly set `type: Recreate`, preventing accidental usage
 4. Clear Events: Events emitted during the recreate process to show deletion and recreation phases
@@ -391,7 +391,7 @@ const (
     RollingUpdateStatefulSetStrategyType StatefulSetUpdateStrategyType = "RollingUpdate"
     // OnDeleteStatefulSetStrategyType indicates that pods in a StatefulSet will only be updated when manually deleted
     OnDeleteStatefulSetStrategyType StatefulSetUpdateStrategyType = "OnDelete"
-    // RecreateStatefulSetStrategyType indicates that all pods will be deleted before new ones are created
+    // RecreateStatefulSetStrategyType indicates that all pods will be fully terminated before new ones are created
     RecreateStatefulSetStrategyType StatefulSetUpdateStrategyType = "Recreate"
 )
 ```
@@ -399,7 +399,7 @@ const (
 #### Status Changes
 
 ```go
-// StatefulSetConditionType describes the condition types (from KEP-2804)
+// StatefulSetConditionType describes the condition types
 type StatefulSetConditionType string
 
 const (
@@ -564,14 +564,17 @@ This feature is protected by the feature-gate `StatefulSetRecreateStrategy`, whi
   - No errors, but Recreate behavior is not active
   
 - If apiserver does NOT have feature enabled but kube-controller-manager does:
-  - API server accepts and persists `type: Recreate` (field is stored but not validated)
-  - Kube-controller-manager can process Recreate strategy if it is the leader
+  - API server rejects create/update requests that set `type: Recreate` with a validation error
+  - Users cannot create or switch to Recreate until the apiserver has the feature enabled.
+  - Kube-controller-manager cannot process Recreate in this skew because no `StatefulSet` with `type: Recreate` can be stored.
 
 > Enable the feature gate on `kube-apiserver` first, then `kube-controller-manager` to ensure smooth transition.
 
 #### Downgrade
 
-When downgrading to a version without this feature, StatefulSets with `type: Recreate` will gracefully degrade. API Server continues to accept and persist `type: Recreate` in the spec but will ignores.
+- The older apiserver does not recognize `type: Recreate` and will reject create/update requests that set it. 
+- StatefulSets that already have `type: Recreate` stored in etcd remain stored, but any update that touches the spec may be rejected unless the strategy is changed back to RollingUpdate/OnDelete first
+- The controller in the older version ignores Recreate and behaves as RollingUpdate for those existing objects
 
 ### Version Skew Strategy
 
@@ -586,9 +589,9 @@ This feature has dependencies between control plane components.
 
 2. kube-apiserver v1.xx (no feature) and kube-controller-manager v1.xx+1 (feature enabled)
 
-   - API accepts and persists `type: Recreate` (graceful degradation)
-   - Controller can process Recreate strategy when present
-   - Users can create and update StatefulSets with Recreate strategy
+  - API server rejects create/update requests that set `type: Recreate` with a validation error
+  - Users cannot create or update StatefulSets to use Recreate until apiserver is upgraded and the feature is enabled
+  - Enable the feature on kube-apiserver first, then on kube-controller-manager
 
 3. Mixed control plane during rolling upgrade
 
@@ -689,10 +692,10 @@ kubectl get statefulsets -A -o json | \
 - [] Events
 - [x] API .status
   - Condition name: `Progressing`
-- [x] Metrics (existing metrics, no new ones needed)
-  - `statefulset_replicas_available` - drops to 0 during Recreate, then increases as new pods become ready
-  - `statefulset_replicas_ready` - tracks how many replicas are ready after recreation
-  - `statefulset_replicas_current` - tracks current replicas during the update process
+- [x] Metrics (existing metrics [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/release-2.18/docs/metrics/workload/statefulset-metrics.md?plain=1))
+  - `kube_statefulset_replicas`
+  - `kube_statefulset_status_replicas_ready`
+  - `kube_statefulset_status_replicas_current`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -702,12 +705,17 @@ kubectl get statefulsets -A -o json | \
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [x] Metrics (existing metrics)
-  - Metric name: `statefulset_replicas_available`
-  - Metric name: `statefulset_replicas_ready`
-  - Metric name: `statefulset_replicas_current`
-  - Components exposing the metric: kube-controller-manager
-  - During Recreate updates, these metrics show the transition from all pods deleted (0 available) to all new pods created and ready
+- [x] Metrics (existing metrics [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics/blob/release-2.18/docs/metrics/workload/statefulset-metrics.md?plain=1))
+  - Metric(s) name: 
+    - `kube_statefulset_status_replicas_available`
+    - `kube_statefulset_status_replicas_ready`
+    - `kube_statefulset_status_replicas_current`
+    - Components exposing the metric: kube-state-metrics
+  - Metric name: 
+    - `statefulset_unavailable_replicas`
+    - Components exposing the metric: kube-controller-manager
+  - These metrics reflect the StatefulSet `.status` (availableReplicas, readyReplicas, currentReplicas). They have labels `statefulset` and `namespace`, so operators can filter by StatefulSet to monitor a specific StatefulSet during Recreate
+  - During Recreate updates, the values show the transition from all pods deleted (0 available) to all new pods created and ready
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -800,9 +808,9 @@ N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Examine Metrics (`statefulset_replicas_available`, `statefulset_replicas_ready`)
-   - If `statefulset_replicas_available` is stuck at 0 for extended period → pods may be stuck in termination
-   - If `statefulset_replicas_current` is increasing but `statefulset_replicas_ready` is not → pods may be failing to start
+1. Examine Metrics (`kube_statefulset_status_replicas_available`, `kube_statefulset_status_replicas_ready`)
+   - If `kube_statefulset_status_replicas_available` is stuck at 0 for extended period → pods may be stuck in termination
+   - If `kube_statefulset_status_replicas_current` is increasing but `kube_statefulset_status_replicas_ready` is not → pods may be failing to start
 2. Check if pods are stuck in termination (long grace periods, finalizers blocking deletion)
 3. Verify pod startup time is reasonable (image pull, initialization containers, readiness probes)
 
