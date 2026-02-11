@@ -4,6 +4,7 @@
 - Contributor: Micah Hausler, AWS
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Abstract](#abstract)
   - [Example Use Cases](#example-use-cases)
   - [Goals](#goals)
@@ -23,6 +24,7 @@
   - [<code>AuthorizationConditionsEnforcer</code> admission controller](#authorizationconditionsenforcer-admission-controller)
   - [Changes to <code>(Self)SubjectAccessReview</code>](#changes-to-selfsubjectaccessreview)
   - [Supporting webhooks through the <code>AuthorizationConditionsReview</code> API](#supporting-webhooks-through-the-authorizationconditionsreview-api)
+  - [Composite / Union Authorizer Support](#composite--union-authorizer-support)
   - [Built-in CEL conditions evaluator](#built-in-cel-conditions-evaluator)
   - [Feature availability and version skew](#feature-availability-and-version-skew)
 - [Other Kubernetes authorization enforcement points, with and without conditions-awareness](#other-kubernetes-authorization-enforcement-points-with-and-without-conditions-awareness)
@@ -32,8 +34,19 @@
   - [Node authorizer](#node-authorizer)
   - [ValidatingAdmissionPolicies](#validatingadmissionpolicies)
   - [<code>deletecollection</code> support](#deletecollection-support)
+  - [Complete list of all <code>Authorize</code> calls in <code>kube-apiserver</code>](#complete-list-of-all-authorize-calls-in-kube-apiserver)
 - [Authorizer requirements](#authorizer-requirements)
-- [Open Questions](#open-questions)
+  - [Risks and Mitigations](#risks-and-mitigations)
+  - [Test Plan](#test-plan)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -49,9 +62,32 @@
   - [Require the client to annotate its write request with field or label selectors](#require-the-client-to-annotate-its-write-request-with-field-or-label-selectors)
   - [Extract label and field selectors from the request and current object in etcd, and supply that to the authorization process](#extract-label-and-field-selectors-from-the-request-and-current-object-in-etcd-and-supply-that-to-the-authorization-process)
   - [Do nothing, force implementers to implement all of this out of tree](#do-nothing-force-implementers-to-implement-all-of-this-out-of-tree)
+- [Drawbacks](#drawbacks)
 - [Appendix A: Further resources](#appendix-a-further-resources)
 - [Appendix B: Future addition sketch: Conditional Reads](#appendix-b-future-addition-sketch-conditional-reads)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+- [x] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] KEP approvers have approved the KEP status as `implementable`
+- [x] Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free. *Not yet applicable for this KEP*
+- [ ] (R) Graduation criteria is in place
+  - [ ] [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA. *Not yet applicable for this KEP*
+- [x] Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Abstract
 
@@ -664,17 +700,6 @@ type ConditionData interface {
     // Only populated for UPDATE and DELETE requests.
     GetOldObject() runtime.Object
 }
-```
-
-```
-<<[UNRESOLVED sig-auth]>>
-
-We _could_ give provide the authorizer with admission attributes at the Go
-interface level, so that builtin authorizers would have an easy time applying
-their logic, but force users of the CEL conditions to partial evaluation
-correctly by only exposing the previously-unknown data.
-
-<<[/UNRESOLVED]>>
 ```
 
 ### Condition and ConditionSet data model
@@ -1483,26 +1508,6 @@ in the authorizer call chain, this is supported. Consider the following example:
    `Allow`. Thus is the request allowed, and can proceed to other validating
    admission controllers.
 
-Rollouts of new `AuthorizationConfig` configurations in multi-API server
-scenarios such as shown in this picture might need some special care.
-
-![Possible failure scenario of AuthorizationConfig rollout](images/rollout-of-authz-config.png)
-
-For this reason, it is recommended that conditions-aware authorizers with a
-loadbalancer in between itself and the client either:
-
-- (preferred) configure the load balancer to perform a blue-green rollout of the
-  API server configuration, initially only sending requests to old API servers
-  (without the API server configured), and then, at once, sending requests to
-  new API servers.
-  - If the rollout is such that a conditional authorizer is removed in the new
-    configuration, the authorizer should send only `NoOpinion` decisions before
-    the blue-green rollout, to make sure there are no
-    `AuthorizationConfigReview` requests pending to be sent to it.
-- make the authorizer respond with `NoOpinion` until it is known that the
-  rollout of all intermediate kube-apiservers to the new configuration has
-  completed.
-
 ### Built-in CEL conditions evaluator
 
 The most logical alternative for Kubernetes to provide as a builtin primitive is
@@ -1868,7 +1873,37 @@ objects.
   Ensures that the requestor also has the `create` verb on certain connectible
   subresources for pods, as discussed above.
   - Would be conditions-aware, as discussed [above](#compound-authorization-for-connectible-resources).
-- `k8s.io/kubernetes/pkg/registry`
+- `k8s.io/kubernetes/pkg/registry/rbac`: Verifies that a user cannot
+  privilege-escalate their permissions when creating roles and bindings. If the
+  user indeed would try to privilege-escalate, allow them to do so if they have
+  the `escalate` or `bind` verbs. This check would not support conditions.
+- `k8s.io/kubernetes/plugin/pkg/admission/gc`: Verifies that ownerReferences are
+  correctly set. Someone that updates an object's ownerReferences, need to be
+  able to delete that object. In addition, if an owner reference of an create or
+  update is blocking, the requestor either needs permission to `update
+  */finalizers`, or on the owner resource. These checks would not support
+  conditions.
+- `k8s.io/kubernetes/plugin/pkg/admission/noderestriction`: Ensures that a node
+  can only issue ServiceAccount tokens for allowed audiences. If the requested
+  audiences are not found in the PodSpec, a secondary check to
+  `request-serviceaccounts-token-audience <audience>` of the ServiceAccount's
+  name/ns is issued. These checks would not support conditions.
+- `k8s.io/apiserver/plugin/pkg/admission/plugin/authorizer/caching_authorizer.go`:
+  This authorizer caches responses from SAR requests issued from e.g.
+  `ValidatingAdmissionPolicy` secondary checks. This could eventually support
+  caching conditional checks, but initially, it is not needed, as long as all
+  such secondary checks do *not* support conditions.
+- `k8s.io/apiserver/pkg/cel/library`: Implements the CEL functions for VAP
+  secondary checks. These do not support conditions initially at least, but this
+  could be expanded in the future as discussed above.
+- `k8s.io/apiserver/pkg/endpoints/filters`: This is the main `WithAuthorization`
+  entrypoint to make conditions-aware as part of this proposal. It also contains
+  the impersonation code that could be made conditional.
+- `k8s.io/apiserver/pkg/endpoints/handlers/delete.go`: Authorizes use of unsafe
+  deletion without reading the object, as a special case. This would not support
+  conditions.
+- `k8s.io/apiserver/pkg/endpoints/handlers/update.go`: Secondary check for
+  `update` requests turning into a `create` request.
 
 ## Authorizer requirements
 
@@ -1939,22 +1974,147 @@ considered functional:
   the API server always can call the authorizer to evaluate the condition
   (regardless of in-process evaluation capabilities). An authorizer only ever
   evaluates its own conditions.
+- The authorizer must make sure their conditions are safe and performant to
+  execute. In particular, any CEL condition that is returned to Kubernetes must
+  be within reasonable CEL cost limits. The authorizer should reject policies
+  that would be too costly to execute in the request path.
+  - Towards this end, it is highly recommended that the authorizer uses a
+    non-Turing complete language, to avoid e.g. the [Halting problem] and remote
+    code execution.
+  - As a worst-case example, if an authorizer accepted Python code as
+    conditions, then any Kubernetes user with `create authorizationconditionsreview`
+    would be able to send malicious conditions
+    that remotely executes arbitrary code through a "condition" of form
+    `import os; os.system("sudo nmap ...")`
 
-## Open Questions
+[Halting problem](https://en.wikipedia.org/wiki/Halting_problem)
 
-- What are quantitative performance requirements for this feature?  
-  - Faster than a second webhook? On par with builtin, prebuilt VAP policies?  
-- How expressive do we let the CEL environment be? Should it e.g. include
-  `namespaceObject`?
-- Do we need to configure conversion of native objects into some
-  specifically-requested version like VAP, or do we just use the raw object in
-  the admission controller?
-- What are the most important metrics that should be added?  
-- Are there specific GVRs we don't want to let be conditionally authorized?  
-- If there is increasing communication between k8s and e.g. webhook authorizers,
-  would it be more performant to keep a bidirectional gRPC open at all times,
-  and use that for comms, similar to ServiceAccount issuing and KMS
-  implementations?
+### Risks and Mitigations
+
+Showing the users what authorization conditions that they are subject to through
+`SelfSubjectAccessReview` means that badly-written access control policies which
+follow the pattern of [Security Through Obscurity] would be "broken". For
+example, if a user can only `create pods` conditioned on `metadata.labels.foo ==
+"42"`, the latter condition would be returned in the SelfSAR, whereas without
+this information the user would need to "blindly" guess the number. However,
+these kind of practices are highly discouraged, as they rarely are effective in
+practice. For example, if the user could `list pods` otherwise (which in that
+case would be a reasonable permission to have), they could most likely
+reverse-engineer the conditions they are subject to, by seeing data that "got
+through".
+
+This risk could be mitigated by the authorizer returning opaque conditions
+(which could not be efficiently evaluated in the API server), instead of
+transparent (e.g. CEL) ones. It is up to the authorizer's discretion to know
+whether conditions are "secret" or can be shown to the user. For clarity to the
+user, it is recommended that conditions are shown when possible and reasonable.
+
+[Security Through Obscurity](https://en.wikipedia.org/wiki/Security_through_obscurity)
+
+### Test Plan
+
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+#### Prerequisite testing updates
+
+The update of the authorizer interface will need to update any test which uses
+the authorizer, which could be quite many.
+
+#### Unit tests
+
+Existing code that will be affected by the change (along with existing unit test
+coverage):
+
+- `k8s.io/apiserver/pkg/authorization/union`: `2026-02-10` - `88`
+- `k8s.io/apiserver/plugin/pkg/authorizer/webhook`: `2026-02-10` - `86`
+- `k8s.io/apiserver/pkg/endpoints/filters/authorization.go`: `2026-02-10` - `91`
+
+Testing will in addition be added as appropriate to new packages.
+
+#### Integration tests
+
+An integration test will be added for this feature in
+`k8s.io/kubernetes/test/integration/apiserver/cel/conditionalauthz`, both when
+the feature is enabled and disabled.
+
+#### e2e tests
+
+When the feature is enabled, tests will be added for user-facing functionality
+such as the `SubjectAccessReview` API, and sending request objects which are
+allowed and denied. In addition, one end to end test should make sure that the
+feature also works as expected in a scenario with aggregated API servers.
+
+### Graduation Criteria
+
+#### Alpha
+
+- Refactoring of the authorizer interface is completed
+- Feature implemented behind a feature flag
+- Initial integration tests completed and enabled
+
+#### Beta
+
+- There is in-core use of this feature, e.g. the node authorizer and/or
+  constrained impersonation.
+- Gather feedback from developers and surveys
+- Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved
+
+**Note:** Beta criteria must include all functional, security, monitoring, and
+testing requirements along with resolving all issues and gaps identified
+
+#### GA
+
+- N (to be determined later) examples of real-world usage
+- N installs
+- Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
+**Note:** GA criteria must not include any functional, security, monitoring, or
+testing requirements. Those must be beta requirements.
+
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
+
+**For non-optional features moving to GA, the graduation criteria must include
+[conformance tests].**
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+
+### Version Skew Strategy
+
+In general, old clients can safely talk to new conditional authorizers, as the
+authorizer will notice that the old client did not explicitly opt into the new
+behavior, and thus will the authorizer fold to `NoOpinion` or `Deny` as
+appropriate.
+
+However, rollouts of new `AuthorizationConfig` configurations in multi-API server
+scenarios (or similar) such as shown in this picture might need some special care.
+
+![Possible failure scenario of AuthorizationConfig rollout](images/rollout-of-authz-config.png)
+
+For this reason, it is recommended that conditions-aware authorizers with a
+loadbalancer in between itself and the client either:
+
+- (preferred) configure the load balancer to perform a blue-green rollout of the
+  API server configuration, initially only sending requests to old API servers
+  (without the API server configured), and then, at once, sending requests to
+  new API servers.
+  - If the rollout is such that a conditional authorizer is removed in the new
+    configuration, the authorizer should send only `NoOpinion` decisions before
+    the blue-green rollout, to make sure there are no
+    `AuthorizationConfigReview` requests pending to be sent to it.
+- make the authorizer respond with `NoOpinion` until it is known that the
+  rollout of all intermediate kube-apiservers to the new configuration has
+  completed.
 
 ## Production Readiness Review Questionnaire
 
@@ -2467,6 +2627,11 @@ Drawbacks:
 - Without a clear framework on how to do this (with reference implementations),
   the risk of wrong or incompatible implementations is higher.
 - Kubernetes could not use this itself, even though it could be useful.
+
+## Drawbacks
+
+- Added complexity to core (complexity which today is either at the cost of
+  expressiveness, or for users to deal with)
 
 ## Appendix A: Further resources
 
