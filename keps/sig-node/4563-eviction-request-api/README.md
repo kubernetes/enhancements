@@ -205,9 +205,6 @@ The major issues are:
    discussed in the issue [kubernetes/kubernetes#124448](https://github.com/kubernetes/kubernetes/issues/124448)
    and in the issue [kubernetes/kubernetes#72129](https://github.com/kubernetes/kubernetes/issues/72129).
 
-This KEP is a prerequisite for the [Declarative Node Maintenance KEP](https://github.com/kubernetes/enhancements/pull/4213),
-which describes other issues and consequences that would be solved by the EvictionRequest API.
-
 Some applications solve the disruption problem by introducing validating admission webhooks.
 This has some drawbacks. The webhooks are not easily discoverable by cluster admins. And they can
 block evictions for other applications if they are misconfigured or misbehave. The eviction API is
@@ -262,8 +259,9 @@ For completeness here is a complete list of open PDB issues. Most are relevant t
 - Implement eviction request capabilities for autoscaling, de/scheduling.
 - Synchronizing of the eviction request status to the pod status.
 - Introduce the eviction request concept for types other than pods.
-- Synchronize all pod termination mechanisms (see #4 in the [Motivation](#motivation) section), so that they
-  do not terminate pods under NodeMaintenance/EvictionRequest.
+- Synchronize almost all pod termination mechanisms (see #4 in the [Motivation](#motivation)
+  section), so that they do not terminate pods under EvictionRequest driven node maintenance. There
+  may still be places (hard OOM) where this is not possible as described in [New EvictionRequest Types and Synchronization of Pod Termination Mechanisms](#new-evictionrequest-types-and-synchronization-of-pod-termination-mechanisms).
 
 ## Proposal
 
@@ -495,7 +493,7 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
   as the name is predictable. For more details, see
   [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects) alternatives
   section.
-- `.spec.target.podRef` should be set to fully identify the pod. The name and the UID should be
+- `.spec.target.pod` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
 - `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation.
@@ -575,7 +573,7 @@ EvictionRequest status periodically at intervals of less than 20 minutes. Theref
 status every 3 minutes may be sufficient to allow for potential disruption of the interceptor. The
 status updates should look as follows:
 - Verify that the `.spec.target` is the desired target (e.g., there is a correct pod in the
-  `.spec.target.podRef`)
+  `.spec.target.pod`)
 - Check that the previously set `name` in the pod's `.spec.evictionInterceptors` is still included
   in  `.status.activeInterceptors`. If not, it should abort the eviction process or output an error
   (e.g. via an event or a condition).
@@ -701,7 +699,7 @@ type PodSpec struct {
 	// a higher index. If there is no other interceptor, the last default imperative-eviction.k8s.io
 	// interceptor will evict the pod using the imperative Eviction API (/evict endpoint).
 	//
-	// The maximum length of the interceptors list is 100.
+	// The maximum length of the interceptors list is 15.
 	// Interceptors are not supported when the pod is part of a workload (.spec.workloadRef is set).
 	// This field is immutable.
 	// +optional
@@ -709,7 +707,7 @@ type PodSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	// +k8s:maxLength=100
+	// +k8s:maxLength=15
 	EvictionInterceptors []Interceptor `json:"evictionInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,42,rep,name=evictionInterceptors"`
 }
 
@@ -758,6 +756,7 @@ type EvictionRequest struct {
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
 	// Target contains a reference to an object (e.g. a pod) that should be evicted.
+	// Target UID must be the same as the EvictionRequest's .metadata.name.
 	// This field is immutable.
 	// +required
 	Target EvictionTarget `json:"target" protobuf:"bytes,1,opt,name=target"`
@@ -784,13 +783,13 @@ type EvictionRequestSpec struct {
 // EvictionTarget contains a reference to an object that should be evicted.
 // +union
 type EvictionTarget struct {	
-    // PodRef references a pod that is subject to eviction/termination.
+    // Pod references a pod that is subject to eviction/termination.
 	// Pods that are part of the workload (.spec.workloadRef is set) are not supported.
     // This field is immutable.
     // +optional
 	// +oneOf=TargetSelection
 	// +k8s:unionMember
-    PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,1,opt,name=podRef"`
+    Pod *LocalPodReference `json:"pod,omitempty" protobuf:"bytes,1,opt,name=pod"`
 }
 
 // LocalPodReference contains enough information to locate the referenced pod inside the same namespace.
@@ -831,7 +830,8 @@ type Interceptor struct {
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
 type EvictionRequestStatus struct {
-    // The generation observed by the eviction request controller.
+    // EvictionRequest's .metadata.generation observed by the eviction request controller.
+	// This field is managed by Kubernetes. 
     // +optional
     ObservedGeneration int64 `json:"observedGeneration,omitempty" protobuf:"varint,1,opt,name=observedGeneration"`
 	
@@ -850,7 +850,7 @@ type EvictionRequestStatus struct {
     Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
 		
 	// TargetInterceptors reference interceptors that should eventually respond to this eviction
-	// request to help with the graceful eviction of a target . These interceptors are selected
+	// request to help with the graceful eviction of a target. These interceptors are selected
 	// sequentially, in the order in which they appear in the list and are added to the
 	// .status.activeInterceptors in a rolling fashion.
 	//
@@ -863,7 +863,7 @@ type EvictionRequestStatus struct {
 	//   PodDisruptionBudgets, which may block the pod termination. It will update the interceptor
 	//   message and try again with a backoff.
 	//
-	// The maximum length of the interceptors list is 100.
+	// The maximum length of the interceptors list is 15.
 	// This field is immutable once set.
 	// This field is managed by Kubernetes. 
 	// +optional
@@ -871,7 +871,7 @@ type EvictionRequestStatus struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	// +k8s:maxLength=100
+	// +k8s:maxLength=15
 	TargetInterceptors []Interceptor `json:"targetInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=targetInterceptors"`
 
     // ActiveInterceptors store a list of interceptors that should currently interact with the
@@ -885,6 +885,7 @@ type EvictionRequestStatus struct {
 	// This field is managed by Kubernetes. 
 	// +optional
 	// +listType=set
+    // +k8s:maxLength=1
 	ActiveInterceptors []string `json:"activeInterceptors,omitempty" protobuf:"bytes,4,opt,name=activeInterceptors"`
 
     // ProcessedInterceptors store a list of interceptors that have previously been selected
@@ -895,6 +896,7 @@ type EvictionRequestStatus struct {
     // This field is managed by Kubernetes.
     // +optional
     // +listType=set
+    // +k8s:maxLength=15
     ProcessedInterceptors []string `json:"processedInterceptors,omitempty" protobuf:"bytes,5,opt,name=processedInterceptors"`
 
 	// Interceptors represents the eviction process status of each declared interceptor. Only
@@ -910,7 +912,7 @@ type EvictionRequestStatus struct {
     // +patchStrategy=merge
     // +listType=map
     // +listMapKey=name
-    // +k8s:maxLength=100
+    // +k8s:maxLength=15
 	Interceptors []InterceptorStatus `json:"interceptors,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,6,rep,name=interceptors"`
 }
 
@@ -978,7 +980,7 @@ type InterceptorStatus struct {
 
 - Other interceptors should insert themselves into the `.spec.evictionInterceptors` according to
   their own needs. Lower index interceptors are selected first by the eviction request controller. 
-- The number of the interceptors is limited to 100 for the Pod and for the EvictionRequest. If there
+- The number of the interceptors is limited to 15 for the Pod and for the EvictionRequest. If there
   is a need for a larger number of interceptors, the current use case should be re-evaluated.
   Limiting the number of interceptors ensures that the EvictionRequest cannot be blocked
   indefinitely by setting an abnormally large number of these interceptors on a pod.
@@ -995,12 +997,12 @@ not expect the interceptors to support interaction with multiple EvictionRequest
 
 `.metadata.generateName` is not supported. If it is set, the request will be rejected.
 
-`.metadata.name` must be identical to `.spec.podRef.uid` or the request will be rejected.
+`.metadata.name` must be identical to `.spec.pod.uid` or the request will be rejected.
 For more details, see [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
 section in the Alternatives.
 
 The API is designed to be extensible to include additional evictable targets (e.g., Workload, PVCs).
-Currently, the `.spec.target.podRef` field is required, but we might change this to include
+Currently, the `.spec.target.pod` field is required, but we might change this to include
 additional references in the future. 
 
 `.spec.requesters` must have at least one requester. The requester names must pass
@@ -1030,11 +1032,11 @@ transition according to the other fields. `.status.interceptors[].completionTime
 ##### CREATE, UPDATE, DELETE
 
 Principal making the request should be authorized for deleting pods that match the EvictionRequest's
-`.spec.target.podRef`.
+`.spec.target.pod`.
 
 #### Immutability of EvictionRequest Fields
 
-`.spec.target` and `.spec.target.podRef` does not make sense to make mutable, the EvictionRequest is
+`.spec.target` and `.spec.target.pod` does not make sense to make mutable, the EvictionRequest is
 always scoped to a specific instance of a target/pod. If the pod is immediately recreated with the
 same name, but a different UID, a new EvictionRequest object should be created
 
@@ -1204,7 +1206,7 @@ This example can also be applied to other direct or higher level controllers
 The `EvictionRequestSpec` and `EvictionRequestStatus` are extendable and `EvictionRequest` can
 support the eviction of objects other than pods in the future. This can be achieved by adding a
 `pvcRef` to the `.spec.target`, for example. In this case, we would expect either
-`.spec.target.podRef` or `.spec.target.pvcRef` to be present. This allows us to support any type
+`.spec.target.pod` or `.spec.target.pvcRef` to be present. This allows us to support any type
 in the future (e.g. Workload API, PodGroup API).
 
 #### New EvictionRequest Types and Synchronization of Pod Termination Mechanisms
@@ -1225,10 +1227,15 @@ introduce timeouts or deadlines for each interceptor or for the eviction request
 This would help us introduce a graceful eviction in the following cases, among others:
 - Taint Based Eviction
 - Scheduling Preemption
-- Node Pressure Eviction
+- Node Pressure Eviction (soft eviction thresholds, for hard see below)
 
-This would allow us to synchronize all pod termination mechanisms under one API and react to pod
-termination before it occurs.
+This would allow us to synchronize almost all pod termination mechanisms under one API and react to
+pod termination before it occurs.
+
+However, some disruptions might still be unresolvable. For example, the kubelet reacting to OOM or
+OOD will use hard eviction thresholds without a possibility for interceptors to pursue cooperative
+eviction. There simply isn't enough time and resources to prevent the pod from being disrupted by
+the kernel.
 
 #### Workload API Support
 
@@ -1330,18 +1337,19 @@ The main focus is improving node drain scenarios. In the Kubernetes core this is
 by a kubectl drain and graceful node shutdown. 
 
 We could quickly introduce this feature to kubectl drain. However, we are trying to introduce a new
- declarative drain API as part of the Node Maintenance KEP, which would use the EvictionRequest API
-and replace the kubectl drain. It might not make sense to implement it for kubectl drain, if it is
-soft-deprecated later. We will monitor the progress of the Node Maintenance KEP and decide on the
-implementation later.
+declarative maintenance API as part of the Specialized Lifecycle Management KEP, which could use the
+EvictionRequest API and replace the kubectl drain. It might not make sense to implement it for
+kubectl drain, if it is soft-deprecated later. We will monitor the progress of the Specialized
+Lifecycle Management KEP and decide on the implementation later.
 
 A similar situation applies to the Graceful Node Shutdown feature (GNS), but in this case,
-EvictionRequest alone is insufficient enough to resolve all GNS issues. The Node Maintenance feature
-could play a big significant in making the GNS feature complete. A new KEP should be opened to
-improve the GNS as there are many points that have to be solved. How graceful the shutdown should be?
-Do we need a new EvictionRequest type(s) or eviction timeout/deadline? should we outsource the drain
-logic from the kubelet to the Node Maintenance controller, or should we let kubelet work as is but
-communicate through the NodeMaintenance object? Is additional configuration needed for the GNS?
+EvictionRequest alone is insufficient enough to resolve all GNS issues. The Specialized Lifecycle
+Management (SLM) feature could play a significant role in making the GNS feature complete. A new KEP
+should be opened to improve the GNS as there are many points that have to be solved. How graceful
+the shutdown should be? Do we need a new EvictionRequest type(s) or eviction timeout/deadline?
+Should we outsource the drain logic from the kubelet to the mode maintenance controller, or should
+we let kubelet work as is but communicate through  SLM? Is additional configuration needed for the
+GNS?
 
 The ecosystem has many [node drain solutions](https://github.com/atiratree/kube-enhancements/blob/improve-node-maintenance/keps/sig-apps/4212-declarative-node-maintenance/README.md#motivation)
 that would benefit from the increased safety nad smoother, more capable eviction. Adoption depends
@@ -1354,7 +1362,7 @@ guarantees.
 - Core controllers can gradually adopt this feature. The deployment controller can particularly use
 this feature to upscale first before terminating the pods of the Deployment
 ([Pod Surge Example](#pod-surge-example)). As mentioned in the motivation
-section,users requested this feature to improve pod availability and safety. It should bring in
+section, users requested this feature to improve pod availability and safety. It should bring in
 immediate benefit to clusters using Deployments during node drain scenarios without requiring any
 action from users. 
 - We will explore ways to improve and unify Taint Based Eviction, Scheduling Preemption and Node
@@ -1369,9 +1377,9 @@ action from users.
   They created a PoC for the EvictionRequest API ([recording](https://youtu.be/uhJ16dCVYBk?list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D&t=2321))
   and would like to use it even if it isn't accepted by Kubernetes. The PoC implementation can be
   found at https://github.com/uMetalooper/k8s-eviction-controller.
-- NVIDIA is interested in using EvictionRequest API as part of the NodeMaintenance feature. They
-  have an in-house system and would like to use more advanced Kubernetes features to replace some of
-  their own. This was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=Yn7Dp57VQD4&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
+- NVIDIA is interested in using EvictionRequest API as part of the Specialized Lifecycle Management.
+  They have an in-house system and would like to use more advanced Kubernetes features to replace
+  some of their own. This was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=Yn7Dp57VQD4&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
 - Datadog has also expressed interest in using the EvictionRequest API. Their in-house solution
   supports pre-activities which allow users to run custom code before drain/eviction. This concept
   is analogous to the EvictionRequest's interceptors. This was presented to the Node Lifecycle WG
@@ -1484,7 +1492,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Consider introducing a mechanism that allows potential interceptors to register their intent
   about upcoming pods. This would likely require a new API where I can express my intent to be
   added as an interceptor for pods satisfying certain rules (e.g. by selector, CEL expression or
-  other criteria). Then an eviction request controller would propagate that.
+  other criteria). Then an eviction request controller would propagate that. With the increased
+  number of interested parties and add-ons that cannot discover each other, also consider increasing
+  the maximum length of the interceptors' lists.
 - Consider adding garbage collection for EvictionRequests to avoid the permanent leakage of
   EvictionRequest objects, eventually leading to hitting storage limits.
 - Consider allowing each requester to specify a different type of eviction in the
@@ -1494,6 +1504,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   Even if we do not introduce a new eviction type, it might be useful to explicitly set this type
   field, so that, in the future, clients can implement a fallback behavior if they encounter a new
   type they do not recognize.
+- Propose a new feature for the deployment controller that utilizes EvictionRequests to surge first
+  and delete pods later. More details can be found in the [Pod Surge Example](#pod-surge-example),
+  and the best way to track it is in a new standalone KEP.
 
 #### Beta
 
@@ -1502,8 +1515,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Re-evaluate the immutability of `.spec.evictionInterceptors`. It might be better to introduce
   interceptor registration mechanism suggested in `Alpha2`, to prevent performance issues (every
   pod creation may have N additional API calls if N interceptors want to register themselves).
-- Asses the state of the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212),
-  and [Specialized Lifecycle Management ](https://github.com/kubernetes/enhancements/issues/5683),
+- Asses the state of the [Specialized Lifecycle Management](https://github.com/kubernetes/enhancements/issues/5683)
+  (previously the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212)),
   and other components interested in using the EvictionRequest API.
 - Asses the state and maturity of [Workload API Support](#workload-api-support) and
   [Preemption Support](#preemption-support). Ensure that these APIs remain compatible with the
@@ -1741,9 +1754,9 @@ No.
 Yes.
 
 - API type(s): v1.Pod
-- Estimated increase in size: a new field;`.spec.evictionInterceptors` list of struts of length 100.
+- Estimated increase in size: a new field;`.spec.evictionInterceptors` list of structs of length 15.
   Each struct has a name that has at most 253 characters in length. At worst the new field should
-  increase the size of a Pod by 25 KiB.
+  increase the size of a Pod by 4 KiB.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1951,7 +1964,7 @@ safely deleted.
 It would be useful for the name of the EvictionRequest object to be unique and predictable for each
 pod instance to prevent the creation of multiple EvictionRequests for the same pod. Because we do
 not expect the interceptors to support interaction with multiple EvictionRequests for a pod. We can
-also verify `.spec.target.podRef` field on admission. However, it would be difficult/impossible to
+also verify `.spec.target.pod` field on admission. However, it would be difficult/impossible to
 change or support other naming strategies in the future.
 
 We could validate each EvictionRequest `.metadata.name` to have one of the following formats:
@@ -1977,11 +1990,11 @@ Pros:
 Cons:
 - `.metadata.generateName` is not supported (we are mostly okay with not supporting it).
 - Potential for conflict if an old EvictionRequest object exists and a pod with a new UID is created
-  with the same name. Although there is a `.spec.target.podRef.uid` field to distinguish between the
+  with the same name. Although there is a `.spec.target.pod.uid` field to distinguish between the
   new and old request, all the actors in the system could be blocked if the old EvictionRequest is
   present. For example, requesters cannot create a new EvictionRequest.
 - Actors in the system might start to rely on the name alone, rather than the full reference in
-  `.spec.target.podRef.uid`, and mis-target pods.
+  `.spec.target.pod.uid`, and mis-target pods.
 - Not extensible - hard to support new resources (e.g. PVCs).
 
 
@@ -1991,12 +2004,12 @@ Cons:
 The `POD_UID` is there for uniqueness and the `POD_NAME_PREFIX` is there for a user convenience.
 
 - The `POD_UID` (length [36 characters](https://pkg.go.dev/github.com/google/uuid#UUID.String))
-  must be identical to `.spec.target.podRef.uid` or the request will be rejected.
+  must be identical to `.spec.target.pod.uid` or the request will be rejected.
 - The maximum length of the `POD_NAME_PREFIX` is 150 characters. Even though, the maximum length of
   the name is 253 characters and the length of `POD_UID` is 36 characters, we leave 66 characters
   for a potential future extension. If the pod name is less than or equal to 150 characters, then
-  the `POD_NAME_PREFIX` must be identical to `.spec.target.podRef.name`. If the pod name length is
-  greater, then the `POD_NAME_PREFIX` must be a prefix of `.spec.target.podRef.name` and have a
+  the `POD_NAME_PREFIX` must be identical to `.spec.target.pod.name`. If the pod name length is
+  greater, then the `POD_NAME_PREFIX` must be a prefix of `.spec.target.pod.name` and have a
   length of 150 characters. If this is not met, the request will be rejected.
 
 Pros:
@@ -2011,13 +2024,13 @@ Cons
 
 #### Any Name
 
-We would allow users to specify any name, and just check the `.spec.target.podRef` field on
+We would allow users to specify any name, and just check the `.spec.target.pod` field on
 admission.
 
 Pros:
 - Versatility; users can use any name they see fit.
 - `.metadata.generateName` is supported.
-- Actors in the system have a greater incentive to use `.spec.target.podRef`.
+- Actors in the system have a greater incentive to use `.spec.target.pod`.
 - Extensible - easy to support new resources (e.g. PVCs) with `.metadata.generateName`.
 
 Cons:
