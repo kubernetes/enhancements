@@ -27,6 +27,7 @@
   - [Eviction Requester](#eviction-requester-1)
   - [Interceptor](#interceptor)
   - [Eviction Request Controller](#eviction-request-controller-1)
+    - [Label Synchronization](#label-synchronization)
     - [Interceptor Selection](#interceptor-selection)
     - [Eviction](#eviction)
   - [Pod and EvictionRequest API](#pod-and-evictionrequest-api)
@@ -616,6 +617,12 @@ be decided solely by the user deploying the application and resolved by creating
 
 [Eviction Request Controller](#eviction-request-controller) section provides a general overview.
 
+#### Label Synchronization
+
+The controller should synchronize target's `.metatada.labels` to the EvictionRequest's
+`metadata.labels`. This will overwrite any conflicting labels in the EvictionRequest. This is done
+to allow for custom label selectors that the interceptors can use when watching the eviction
+requests.
 
 #### Interceptor Selection
 
@@ -700,8 +707,8 @@ type EvictionRequest struct {
 	// Object's metadata.
 	// .metadata.name should match the .metadata.uid of the pod being evicted.
 	// .metadata.generateName is not supported.
-	// The labels of the eviction request object will be merged with eviction request target's
-	// .metadata.labels on admission. The labels of the target have a preference.
+	// The labels of the eviction request object are synchronized with .metadata.labels of the
+	// eviction request's target. The labels of the target have a preference.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
@@ -1003,9 +1010,6 @@ pods referencing Workloads will be ignored. Therefore, we will reject any Evicti
 same order. This field must not be set by the requester creating this EvictionRequest, otherwise the
 API validation will fail. A default `imperative-eviction.k8s.io` interceptor is appended to the end
 of the list for pod targets. The interceptor names must pass `IsFullyQualifiedDomainName` validation.
-
-The pod labels are merged with the EvictionRequest labels (pod labels have a preference) to allow
-for custom label selectors when observing the eviction requests.
 
 `.status.activeInterceptors` should be empty on creation as its selection should be left on the
 eviction request controller. To strengthen the validation, we should check that it is possible to
