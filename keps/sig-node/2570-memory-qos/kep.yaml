@@ -2,6 +2,8 @@ title: Memory QoS
 kep-number: 2570
 authors:
   - "@xiaoxubeii"
+  - "@QiWang19"
+  - "@sohankunkerkar"
 reviewers:
   - "@derekwaynecarr"
   - "@bobbypage"
@@ -11,12 +13,12 @@ reviewers:
 approvers:
   - "@derekwaynecarr"
 owning-sig: sig-node
-status: provisional
+status: implementable
 editor: "@ndixita"
 creation-date: 2021-03-14
-last-updated: 2023-06-14
+last-updated: 2026-02-04
 stage: alpha
-latest-milestone: "v1.27"
+latest-milestone: "v1.36"
 milestone:
   alpha: "v1.27"
 feature-gates:
