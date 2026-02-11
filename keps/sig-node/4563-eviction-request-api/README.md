@@ -492,7 +492,6 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
   as the name is predictable. For more details, see
   [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects) alternatives
   section.
-- `.spec.type` should be set to `Soft` since it is currently the only supported type.
 - `.spec.target.podRef` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
@@ -576,8 +575,6 @@ If the interceptor is interested in intercepting/evicting the pod it should ensu
 EvictionRequest status periodically at intervals of less than 20 minutes. Therefore, updating the
 status every 3 minutes may be sufficient to allow for potential disruption of the interceptor. The
 status updates should look as follows:
-- Verify that it supports the `.spec.type`. Please note that the only supported eviction request
-  type is `Soft` for now.
 - Verify that the `.spec.target` is the desired target (e.g., there is a correct pod in the
   `.spec.target.podRef`)
 - Check that the previously set `name` in the pod's `.spec.evictionInterceptors` is still included
@@ -724,22 +721,6 @@ type EvictionRequest struct {
 
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
-	// Type of the eviction request defines how much time and control each interceptor has,
-	// to gracefully evict the target. 
-	//
-	// Valid types are Soft.
-	// 
-	// Soft type attempts to evict the target gracefully.
-	// Each active interceptor is given unlimited time to resolve the eviction request, provided
-	// that it responds periodically within a timeframe of less than 20 minutes. This means there is
-	// no deadline for a single interceptor, or for the eviction request as a whole. A successful
-	// soft eviction request should ideally result in the graceful eviction of a target (e.g.
-	// termination of a pod)
-	//
-    // This field is immutable.
-    // +required
-	Type EvictionRequestType `json:"type" protobuf:"bytes,1,opt,name=type"`
-	
 	// Target contains a reference to an object (e.g. a pod) that should be evicted.
 	// This field is immutable.
 	// +required
@@ -793,20 +774,6 @@ type EvictionRequestSpec struct {
     // +k8s:maxLength=100
 	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=interceptors"`
 }
-
-
-// +enum
-type EvictionRequestType string
-
-const (
-    // Soft type attempts to evict the target gracefully.
-	// Each active interceptor is given unlimited time to resolve the eviction request, provided
-	// that it responds periodically within a timeframe of less than 20 minutes. This means there is
-	// no deadline for a single interceptor, or for the eviction request as a whole. A successful
-	// soft eviction request should ideally result in the graceful eviction of a target (e.g.
-	// termination of a pod)
-    Soft EvictionRequestType = "Soft"
-)
 
 // EvictionTarget contains a reference to an object that should be evicted.
 // +union
@@ -1054,9 +1021,6 @@ Principal making the request should be authorized for deleting pods that match t
 
 #### Immutability of EvictionRequest Spec Fields
 
-`.spec.type` It is unclear whether we want to allow the type to be changed. Since there is only one
-type, `Soft`, we can keep the field immutable for now.
-
 `.spec.target` and `.spec.target.podRef` does not make sense to make mutable, the EvictionRequest is
 always scoped to a specific instance of a target/pod. If the pod is immediately recreated with the
 same name, but a different UID, a new EvictionRequest object should be created
@@ -1227,12 +1191,19 @@ The `EvictionRequestSpec` and `EvictionRequestStatus` are extendable and `Evicti
 support the eviction of objects other than pods in the future. This can be achieved by adding a
 `pvcRef` to the `.spec.target`, for example. In this case, we would expect either
 `.spec.target.podRef` or `.spec.target.pvcRef` to be present. This allows us to support any type
-in the future.
+in the future (e.g. Workload API, PodGroup API).
 
 #### New EvictionRequest Types and Synchronization of Pod Termination Mechanisms
 
-We can introduce a more disruptive eviction request types (`.spec.type`). For example `Hard`,
-`SoftWithDeadline`, etc. The `Hard` type would allow us to use the interceptor infrastructure and
+We are considering adding a new `.spec.requesters[].type` field. This would help us distinguish
+between different eviction types. The default or explicitly defined `Soft` behavior gives each
+interceptor unlimited time, provided they responds periodically within a timeframe of less than 20
+minutes. This would give each requester a way to request the gracefulness of the eviction
+(e.g. normal vs spot VM disruption). We would have to combine this list of types into final type and
+report in the status.
+
+We can introduce a more disruptive eviction request types. For example `Hard`, `SoftWithDeadline`,
+etc. The `Hard` type would allow us to use the interceptor infrastructure and
 graceful termination in any pod deletion call. We have to examine each use case to determine the
 appropriate level of "softness" or "hardness" for each eviction request. For instance, we could
 introduce timeouts or deadlines for each interceptor or for the eviction request as a whole.
@@ -1502,6 +1473,13 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
   other criteria). Then an additional admission logic would propagate that.
 - Consider adding garbage collection for EvictionRequests to avoid the permanent leakage of
   EvictionRequest objects, eventually leading to hitting storage limits.
+- Consider allowing each requester to specify a different type of eviction in the
+  `.spec.requesters[].type` field. The default eviction type is `Soft` and gives unlimited time to
+  resolve the eviction request, provided the interceptors responds periodically within a timeframe
+  of less than 20 minutes. This might be limiting in more disruptive scenarios, such as spot VMs.
+  Even if we do not introduce a new eviction type, it might be useful to explicitly set this type
+  field, so that, in the future, clients can implement a fallback behavior if they encounter a new
+  type they do not recognize.
 
 #### Beta
 
