@@ -233,14 +233,23 @@ workload's pods to them.
 
 ### Workload API Changes
 
-The Workload API (KEP-4671) will be extended to allow specifying group-level
+The Workload API (KEP-4671) and PodGroup API (KEP-5832) will be extended to allow specifying group-level
 scheduling constraints. An optional `ScheduleConstraints` field is added to the
-`PodGroupTemplate` spec.
+`PodGroupTemplate` spec and `PodGroupSpec`.
 
 ```go
-// PodGroup (definition from KEP-4671, with additions)
+// PodGroupTemplate (definition from KEP-4671, with additions)
 type PodGroupTemplate struct {
-    Name *string
+    // Existing fields go here
+
+    // SchedulingConstraints defines group-level scheduling requirements,
+    // including topology.
+    SchedulingConstraints *PodGroupSchedulingConstraints
+}
+
+// PodGroup (definition from KEP-5832, with additions)
+type PodGroupSpec struct {
+    // Existing fields go here
 
     // SchedulingConstraints defines group-level scheduling requirements,
     // including topology.
@@ -356,7 +365,7 @@ Placement represents a candidate domain (nodes and resources) for a PodGroup.
 // This struct is designed to be extensible with more fields in the future.
 type PodGroupInfo struct {
     // SchedulingGroup is a reference to the parent PodGroup object.
-    SchedulingGroup *workloadv1alpha2.PodSchedulingGroup
+    SchedulingGroup *corev1.PodSchedulingGroup
 
     // PodSets is a list of PodSet objects within this PodGroup.
     PodSets []*PodSetInfo
