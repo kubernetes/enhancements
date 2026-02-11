@@ -214,8 +214,9 @@ know that this has succeeded?
   - `matchAttribute`: it is defined as non-empty intersection
   - `distinctAttribute`: it is defined as empty intersection
   - note: scalar values are treated as single-element lists
+- Keep _monotonicity_ in constraint.
+  - Currently `Allocator`'s algorithm assumes [_monotonic_ constraints](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L274-L276) only. Monotonic means that once a constraint returns false, adding more devices will never cause it to return true. This allows to bound the computational complexity for searching device combinations which satisfies the specified constraints. This KEP focuses to keep monotonicity of `matchAttribute/distinctAttribute` semantics.
 - Maintain backward compatibility and inter-operability for scalar-only attributes.
-- Provide an extensible API pattern for future matching semantics.
 
 ### Non-Goals
 
@@ -224,10 +225,8 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-- Redesigning the entire DRA matching model.
-  - Currently `Allocator`'s algorithm assumes [_monotonic_ constraints](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L274-L276) only. Monotonic means that once a constraint returns false, adding more devices will never cause it to return true. This allows to bound the computational complexity for searching device combinations which satisfies the specified constraints. This KEP does NOT intend to change this design. Thus, this KEP focuses to propose monotonic constraints only.
 - Introducing generic or complex boolean logic in constraints([KEP-5254: DRA: Constraints with CEL](https://github.com/kubernetes/enhancements/issues/5254)).
-- Forcing all drivers to use list attributes immediately. (See )
+- Forcing all drivers to use list attributes immediately.
 
 ## Proposal
 
