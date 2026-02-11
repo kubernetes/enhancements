@@ -91,9 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API Changes](#api-changes)
-    - [Introduce typed-<code>list</code> in  <code>DeviceAttribute</code>](#introduce-typed-list-in--deviceattribute)
-    - [Introduce <code>matchSemantics</code> in <code>DeviceConstraint</code>](#introduce-matchsemantics-in-deviceconstraint)
-    - [Introduce <code>distinctSemantics</code> in <code>DeviceConstraint</code>](#introduce-distinctsemantics-in-deviceconstraint)
+    - [Introduce typed-<code>list</code> in <code>DeviceAttribute</code>](#introduce-typed-list-in-deviceattribute)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Hardware Topological Aligned CPUs &amp; GPUs &amp; NICs](#story-1-hardware-topological-aligned-cpus--gpus--nics)
     - [Story 2](#story-2)
@@ -102,7 +100,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Go Type Definitions](#go-type-definitions)
     - [<code>DeviceAttribute</code>](#deviceattribute)
-    - [<code>DeviceConstraint</code>](#deviceconstraint)
   - [Implementation (for evaluating constraints)](#implementation-for-evaluating-constraints)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -126,7 +123,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Just support formatted string list instead of introducing <code>list</code> type](#just-support-formatted-string-list-instead-of-introducing-list-type)
-  - [Just change <code>matchAttribute</code> / <code>distinctSemantics</code> with compatibility](#just-change-matchattribute--distinctsemantics-with-compatibility)
+  - [Introduce <code>matchSemantics/distinctSemantics</code> field for flexible/declarative match](#introduce-matchsemanticsdistinctsemantics-field-for-flexibledeclarative-match)
+    - [<code>matchSemantics</code> field](#matchsemantics-field)
+    - [`distinctSemantics](#distinctsemantics)
+    - [Pros/Cons](#proscons)
   - [Unified <code>semantics</code> field instead of <code>matchSemantics</code>/<code>distinctSemantics</code>](#unified-semantics-field-instead-of-matchsemanticsdistinctsemantics)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -243,21 +243,17 @@ nitty-gritty.
 The proposal has mainly two parts:
 
 - Add list-types in `DeviceAttribute` so that DRA drivers can expose the attribute values in typed list(`int`, `string`, `boolean`, `version`)
-- Add `MatchSemantics`/`DistinctSemantics` field in `DeviceConstraint` so that users can configure flexible semantics over device attribute value specified in `DeviceConstraint.MatchAttribute`/`DistinctAttribute`:
-  - Initial supported semantics are:
-    - For `MatchSemantics`
-      - `Identical (∀i,j, v_i = v_j)`: the attribute values among candidate devices are identical, supporting both list-order-sensitive and set-equivalence comparisons via `listMode`.
-      - `NonEmptyIntersection (∩ v_k != ∅)`: the intersection (as a set) of all the list values among candidate devices is non-empty. The required intersection size could be configurable via `minSize`.
-    - For `DistinctSemantics`,
-      - `AllDistinct (∀i,j, s.t. i != j, v_i != v_j)`: all the attribute values among candidate devices are distinct, supporting both list-order-sensitive and set-equivalence comparisons via `listMode`.
-      - `EmptyIntersection (∩ v_k = ∅)`: the intersection (as a set) of all the list values among candidate devices is empty.
-      - `PairwiseDisjoint (∀i,j, s.t. i != j, v_i ∩ v_j = ∅)`: Every pair of the list values (as a set) of candidate devices is disjoint (i.e. completely no overlap).
-      - Note: for scalar attribute values, `AllDistinct` and `PairwiseDisjoint` with `coerceScalarToList=true` are equivalent.
-  - For backward compatibility(for old DRA drivers that expose scalar values for the attributes expected to be a list), `coerceScalarToList` can provide implicit type conversion from scalar to singleton.
+- Extends the semantics of `MatchAttribute`/`DistinctAttribute` field in `DeviceConstraint`
+  - For `MatchAttribute`:
+    - Previously: it matches when the attribute values among candidate devices are identical (i.e. `∀i,j, v_i = v_j`)
+    - This KEP: it matches when the intersection (as a set) of all the list values among candidate devices is non-empty(i.e. `(∩ v_k != ∅)`)
+  - For `DistinctAttribute`
+    - Previously: it matches when all the attribute values among candidate devices are distinct (i.e. `∀i,j, s.t. i != j, v_i != v_j`)
+    - This KEP: it matches when the intersection (as a set) of all the list values among candidate devices is empty (i.e. `∩ v_k = ∅`)
 
 ### API Changes
 
-#### Introduce typed-`list` in  `DeviceAttribute`
+#### Introduce typed-`list` in `DeviceAttribute`
 
 ```yaml
 kind: ResourceSlice
@@ -278,100 +274,6 @@ spec:
         list:
           version: ["1.0.0", "1.0.1"]
 ```
-
-#### Introduce `matchSemantics` in `DeviceConstraint`
-
-```yaml
-kind: ResourceClaim
-spec:
-  constraints:
-  - requests: [ "device1", "device2", "device3" ]
-    matchAttribute: "resource.kubernetes.io/pcieRoot"
-
-    # [NEW]
-    # An optional field that defines customized "match" semantics over attribute values.
-    # This field must not set when "distinctAttribute" is set
-    matchSemantics:
-      # mode specifies the "match" semantics
-      # Identical (∀i,j, v_i = v_j):
-      #   All the attribute values among candidate devices are identical,
-      #   supporting both list-order-sensitive and set-equivalence comparisons via `listMode`.
-      # NonEmptyIntersection (|∩ v_i| >= k (>=1)): 
-      #   The intersection (as a set) of list values among candidate devices is non-empty.
-      #   The required intersection size could be configurable via `minSize`.
-      # For future possible cases:
-      # - CommonPrefix/Suffix with customizable length
-      # - Identical for aggregated values of the list items (min/max/sum/length)
-      mode: Identical | NonEmptyIntersection
-
-      options:
-        nonEmptyIntersection:
-          # if true, implicit cast from scalar to list will be performed. The default is false.
-          coerceScalarToList: true | false
-          # minSize specifies the minimum size of the intersection to evaluate as true.
-          # Default is 1. The value must be positive integer.
-          minSize: 1
-       identical:
-          coerceScalarToList: true | false    # common option
-          # listMode specified the equality as a set(order/duplicates are ignored) or list (order significant). Default is List
-          listMode: List | Set
-```
-Examples of distinct semantics mode:
-
-| attribute values | `Identical` | `NonEmptyIntersection`<br/>(`coerceScalarToList=true`) |
-|:--:|:--:|:--:|
-| `d1="a"`, `d2="b"` | `false` | `false` |
-| `d1=["a", "b"]` , `d2=["b", "a"]` | `false`(`listMode: List`)<br/>`true`(`listMode: Set`) | `true`<br/>(`d1 ∩ d2 = {"a", "b"}`) |
-| `d1=["a", "b"]` , `d2=["a", "c"]`| `false` | `true`<br/>(`d1 ∩ d2 = {"a"}`) |
-| `d1=["a", "b"]` , `d1=["c", "d"]` | `false` | `false`<br/>(`d1 ∩ d2 = ∅`) |
-
-#### Introduce `distinctSemantics` in `DeviceConstraint`
-
-```yaml
-kind: ResourceClaim
-spec:
-  constraints:
-  - requests: [ "device1", "device2", "device3" ]
-    distinctAttribute: "resource.kubernetes.io/numaNode" # note: this is imaginary attribute.
-
-    # [NEW]
-    # an optional field that defines customized "distinct" semantics over attribute values
-    # this field must not set when "matchAttribute" is set
-    distinctSemantics:
-      # mode specifies the "distinct" semantics
-      # `AllDistinct`:
-      #   All the values are distinct, supporting both list-order-sensitive and set-equivalence comparisons via `listMode`.
-      #   (i.e. ∀i,j s.t. i ≠ j, v_i != v_j), 
-      # `EmptyIntersection`:
-      #   The intersection (as a set) of all the list values among candidate devices is empty. (i.e. ∩ v_k = ∅ )
-      # `PairwiseDisjoint`:
-      #   Every pair of the list values (as a set) of candidate devices is disjoint (i.e. completely no overlap).
-      #   (i.e. ∀i,j s.t. i ≠ j, v_i ∩ v_j = ∅),
-      # For future possible cases:
-      # - NoCommonPrefix/Suffix, PairwiseDisjointPrefix/Suffix with customizable length
-      # - AllDistinct for aggregated values of the list items (min/max/sum/length)
-      mode: AllDistinct | EmptyIntersection | PairwiseDisjoint
-
-      options:
-        allDistinct:
-          coerceScalarToList: true | false    # common option
-          # listMode specified the equality as a set(order/duplicates are ignored) or list (order significant). Default is List
-          listMode: List | Set
-        emptyIntersection:
-          coerceScalarToList: true | false    # common option
-        pairwiseDisjoint:
-          coerceScalarToList: true | false    # common option
-```
-
-Examples of match semantics mode:
-
-| attribute values | `AllDistinct` | `PairwiseDistinct`<br/>(`coerceScalarToList=true`) | `EmptyIntersection`<br/>(`coerceScalarToList=true`) |
-|:--:|:--:|:--:|:--:|
-| `d1="a"`, `d2="b"` | `false` | `false` | `false` |
-| `d1=["a", "b"]` , `d2=["b", "a"]` | `true`(`listMode: List`)<br/>`false`(`listMode: Set`) | `false`<br/>(`d1 ∩ d2={"a","b"}`) | `false`<br/>(`∩dk={"a","b"}`) |
-| `d1=["a", "b"]` , `d2=["a", "c"]`, `d3=["a", "d"]` | `true` | `false`<br/>(`di ∩ dj = {"a"} ≠ ∅`) | `false` <br/>(`∩ dk = {"a"} ≠ ∅`) |
-| `d1=["a", "b"]` , `d2=["b", "c"]`, `d3=["c", "a"]` | `true` | `false`<br/>(`di ∩ dj ≠ ∅`) | `true`<br/>(`∩ dk = ∅`) |
-| `d1=["a", "b"]` , `d2=["c", "d"]`, `d3=["e", "f"]` | `true` | `true`<br/>(`di ∩ dj = ∅`) | `true`<br/>(`∩ dk = ∅`) |
 
 ### User Stories (Optional)
 
@@ -410,8 +312,8 @@ spec:
       resource.kubernetes.io/pcieRoot:
         list:
           string:
-          - pci0000:01
-          - pci0000:02
+          - pci0000:03
+          - pci0000:04
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
@@ -445,14 +347,14 @@ spec:
     attributes:
       # Assume this driver is a bit old that keeps exposing string for the attribute
       resource.kubernetes.io/pcieRoot:
-        string: pci0000:02
+        string: pci0000:01
 ```
 
 Then, user can create `ResourceClaim` resource which requests PCIe topology aligned CPU & GPU & NIC triple like below:
 
 ```yaml
 apiVersion: resource.k8s.io/v1
-kind: ResourceClaim 
+kind: ResourceClaim
 spec:
   requests:
   - name: "gpu"
@@ -468,13 +370,12 @@ spec:
       deviceClassName: cpu.example.com
       count: 2
   constraints:
+    # "gpu-0", "nic-0" and "cpu-0" above can match
+    # because
+    # - "pci0000:01" is common.
+    # - string attribute can be treated as a single value list
   - requests: ["gpu", "nic", "cpu"]
     matchAttribute: k8s.io/pcieRoot
-    attributeEquality:
-      mode: NonEmptyIntersection
-      options:
-        nonEmptyIntersection:
-          coerceScalarToList: true
 ```
 
 #### Story 2
@@ -504,7 +405,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 - Risk 1: Driver adoption lag
-  - Mitigation: Keep scalar compatibility; allow opt-in `coerceScalarToList`
+  - Mitigation: scalar is treated as single value list
 - Risk 2: Scheduler performance overhead
   - bound lengths of the list-typed attribute values
 
@@ -576,201 +477,9 @@ type ListAttribute struct {
 }
 ```
 
-#### `DeviceConstraint`
-
-```go
-// DeviceConstraint must have exactly one field set besides Requests.
-type DeviceConstraint struct {
-    ...
-    // MatchAttribute specified the device attribute name that 
-    // requires the attribute values across those devices are "matched".
-    // 
-    // The semantics of "match" can be configured by MatchSemantics field.
-    // When MatchSemantics is not specified, it requires that all devices in 
-    // question have this attribute and that its type and value are the same
-    // across those devices.
-    //
-    // For example, if you specified "dra.example.com/numa" (a hypothetical example!),
-    // then only devices in the same NUMA node will be chosen. A device which
-    // does not have that attribute will not be chosen. All devices should
-    // use a value of the same type for this attribute because that is part of
-    // its specification, but if one device doesn't, then it also will not be
-    // chosen.
-    //
-    // Must include the domain qualifier.
-    //
-    // +optional
-    // +oneOf=ConstraintType
-    // +k8s:optional
-    // +k8s:format=k8s-resource-fully-qualified-name
-    MatchAttribute *FullyQualifiedName `json:"matchAttribute,omitempty"`
-
-    // DistinctAttribute specified the device attribute name that
-    // requires the attributes values across the devices are "distinct".
-    // 
-    // The semantics of "distinct" can be configured by MatchSemantics field.
-    //
-    // This constraint is used to avoid allocating multiple requests to the same device
-    // by ensuring attribute-level differentiation.
-    //
-    // This is useful for scenarios where resource requests must be fulfilled by separate physical devices.
-    // For example, a container requests two network interfaces that must be allocated from two different physical NICs.
-    //
-    // +optional
-    // +oneOf=ConstraintType
-    // +featureGate=DRAConsumableCapacity
-    DistinctAttribute *FullyQualifiedName `json:"distinctAttribute,omitempty"`
-
-    // MatchSemantics specified a semantics the device attribute values should be evaluated as "matched"
-    // This must not be set when "DistinctAttribute` was set.
-    //
-    // +optional
-    // +featureGate=DRAListTypeAttributes
-    MatchSemantics *MatchSemantics `json:"matchSemantics,omitempty"`
-
-    // distinctSemantics specified a semantics the device attribute values should be evaluated as "distinct"
-    // This must not be set when "MatchAttribute` was set.
-    //
-    // +optional
-    // +featureGate=DRAListTypeAttributes
-    DistinctSemantics *DistinctSemantics `json:"distinctSemantics,omitempty"`
-}
-
-//
-// MatchSemantics
-//
-
-// MatchMode is a semantic mode for evaluating "MatchAttribute"
-// +k8s:enum
-type MatchMode string
-const (
-    // MatchModeNonEmptyIntersection evaluates to true if there is a non-empty set intersection among devices.
-    MatchModeNonEmptyIntersection MatchMode = "NonEmptyIntersection"
-    // MatchModeIdentical evaluates to true if attribute values are exactly equal (set or list semantics).
-    MatchModeIdentical MatchMode = "Identical"
-)
-
-// MatchSemantics defines how it should evaluate attribute values
-// across devices as "matched".
-type MatchSemantics struct {
-    // Mode specified match semantic mode for matching device attributes
-    // +required
-    Mode    MatchMode    `json:"mode"`
-
-    // Options configured the behavior for the specified match semantic mode
-    // +optional
-    Options MatchOptions `json:"options"`
-}
-
-// MatchOptions holds the configuration for each mode type. Only one option struct
-// should be specified at a time, matching the selected MatchMode.
-type MatchOptions struct {
-    // NonEmptyIntersection specifies the options for NonEmptyIntersection mode
-    //
-    // +k8s:zeroOrOneOfMember
-    // +optional
-    NonEmptyIntersection *NonEmptyIntersectionOptions `json:"nonEmptyIntersection,omitempty"`
-
-    // Identical specifies the options for Exact mode
-    //
-    // +k8s:zeroOrOneOfMember
-    // +optional
-    Identical            *IdenticalOptions            `json:"identical,omitempty"`
-}
-
-// SemanticsModeCommonOptions defines shared behavior for attribute evaluation.
-type SemanticsModeCommonOptions struct {
-    // CoerceScalarToList, when true, treats scalar attributes as single-element lists during evaluation.
-    // This exists mainly for inter-operability for old DRA driver advertised scalar values for the same
-    // device attribute. Default is false.
-    CoerceScalarToList bool `json:"coerceScalarToList"`
-}
-
-// NonEmptyIntersectionOptions configures options for NonEmptyIntersection mode.
-type NonEmptyIntersectionOptions struct {
-    SemanticsModeCommonOptions `json:",inline"`
-
-    // MinSize defines the minimum required size of intersection among candidate devices.
-    // Default: 1.
-    //
-    // +k8s:minimum=1
-    MinSize int `json:"minSize"`
-}
-
-// AttributeCompareListMode defines a equality evaluation strategies for Exact mode when the attribute value type is list.
-// +k8s:enum
-type AttributeCompareListMode string
-const (
-    // AttributeCompareListModeSet compares attributes as sets, ignoring duplicates and order.
-    AttributeCompareListModeSet AttributeCompareListMode = "Set"
-    // AttributeCompareListModeList compares attributes as ordered lists, considering sequence and duplicates.
-    AttributeCompareListModeList AttributeCompareListMode = "List"
-)
-
-// IdenticalOptions defines configures options for Exact mode.
-type IdenticalOptions struct {
-    SemanticsModeCommonOptions `json:",inline"`
-
-    // ListMode specifies whether equality is evaluated as a set (duplicates/order ignored)
-    // or as an ordered list.
-    // Default: List.
-    ListMode AttributeCompareListMode `json:"listMode"`
-}
-
-//
-// DistinctSemantics
-//
-
-// DistinctMode is a semantic mode for evaluating "DistinctAttribute"
-// +k8s:enum
-type DistinctMode string
-const (
-    // DistinctAllDistinct evaluates to true if all the values are distinct (i.e. ∀i,j s.t. i ≠ j, v_i ≠ v_j)
-    DistinctAllDistinct DistinctMode = "AllDistinct"
-    // DistinctModeEmptyIntersection evaluates to true if the intersection of all the values among devices are empty. (i.e. ∩v_k = ∅)
-    DistinctModeEmptyIntersection DistinctMode = "EmptyIntersection"
-    // DistinctPairwiseDisjoint evaluates to true if every pair of attribute values of devices are disjoint. (i.e. ∀i,j s.t. i ≠ j, v_i∩v_j = ∅)
-    DistinctPairwiseDisjoint DistinctMode = "PairwiseDisjoint"
-)
-
-// DistinctSemantics defines how it should evaluate attribute values
-// across devices as "distinct".
-type DistinctSemantics struct {
-    // Mode specified semantic mode for evaluating attribute value as "distinct"
-    // +required
-    Mode    MatchMode    `json:"mode"`
-
-    // Options configured the behavior for the specified match semantic mode
-    // +optional
-    Options DistinctOptions `json:"options"`
-}
-
-// DistinctOptions holds the configuration for each mode type. Only one option struct
-// should be specified at a time, matching the selected DistinctMode.
-type DistinctOptions struct {
-    // AllDistinct specifies the options for Exact mode
-    //
-    // +k8s:zeroOrOneOfMember
-    // +optional
-    AllDistinct       *IdenticalOptions           `json:"allDistinct,omitempty"`
-
-    // EmptyIntersection specifies the options for EmptyIntersection mode
-    //
-    // +k8s:zeroOrOneOfMember
-    // +optional
-    EmptyIntersection *SemanticsModeCommonOptions `json:"emptyIntersection,omitempty"`
-
-    // PairwiseDisjoint specifies the options for PairwiseDisjoint mode
-    //
-    // +k8s:zeroOrOneOfMember
-    // +optional
-    PairwiseDisjoint *SemanticsModeCommonOptions `json:"pairwiseDisjoint,omitempty"`
-}
-```
-
 ### Implementation (for evaluating constraints)
 
-Because all the proposed constraint are _monotonic_, we would not need updating [`Allocator.Allocate()` algorithm](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L135) and can keep using [`constraint` interface](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L703-L712). We will just extend the current [`matchAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L721C6-L728) and [`distinctAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/constraint.go#L34-L41) instances. Or, we could introduce `constraint` instances for proposed modes (e.g., `nonEmptyIntersectionMatchAttributeConstraint`, etc.).
+Since _non-empty intersection_ constraint is _monotonic_, we would not need updating [`Allocator.Allocate()` algorithm](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L135) and can keep using [`constraint` interface](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L703-L712). We will just extend the current [`matchAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L721C6-L728) and [`distinctAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/constraint.go#L34-L41) instances. Or, we could introduce `constraint` instances for proposed modes (e.g., `nonEmptyIntersectionMatchAttributeConstraint`, etc.).
 
 ### Test Plan
 
@@ -1049,7 +758,9 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No. Just introducing new API fields in `ResourceClaim` and `ResourceSlice` which does NOT change the default behavior.
+Basically, no. Just introducing new API fields in `ResourceClaim` and `ResourceSlice` which does NOT change the default behavior when any device attribute type was NOT changed.
+
+However, please note that `ResourceClaim`'s `matchAttribute/distinctAttribute` semantics are CHANGED when some device attribute type are changed from scalar to list.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1064,7 +775,7 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. When disabled, you can not create `ResourceClaim` with `matchSemantics`/`distinctSemantics` nor `DeviceAttribute` with `list`-type values. And, existing `list`-type attribute values are just ignored, and `matchSemantics`/`distinctSemantics` are just ignored. But, if specified attribute in `matchAttribute`/`distinctAttribute` is `list` type, allocation will be failed.
+Yes. When disabled, you can not create `ResourceClaim` with `matchSemantics`/`distinctSemantics` nor `DeviceAttribute` with `list`-type values. And, existing `list`-type attribute values are just ignored. But, if specified attribute in `matchAttribute`/`distinctAttribute` is `list` type, allocation will be failed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1395,23 +1106,113 @@ We could add pseudo list type support only for string type attribute (e.g. comma
   - prone to mis-formatted string
   - extra parsing computation
 
-### Just change `matchAttribute` / `distinctSemantics` with compatibility
+### Introduce `matchSemantics/distinctSemantics` field for flexible/declarative match
 
-We could consider the featuregate `DRAListTypeAttributes` just changes the semantics in backward-compatible manner. That is:
+Introduce `matchSemantics/distinctSemantics` fields into `constraints` field like this:
 
-- Scalar values implicitly cast to sets, and
-- for `matchAttribute`, the constraint satisfies when a non-empty intersection exists
-- for `distinctAttribute`, the constraint satisfies when elements are pairwise-disjoint
- 
-This can introduce constraints for list type attributes while maintaining backward compatibility.
+#### `matchSemantics` field
 
-- Pros
-  - Minimal API Change
-  - Satisfy currently expected use-case (align GPU & NIC &CPU with `resource.kubernetes.io/pcieRoot`)
-- Cons
-  - Not extensible
-  - Not flexible
-  - Hard to evolve for new constraints requirements in the future
+```yaml
+kind: ResourceClaim
+spec:
+  constraints:
+  - requests: [ "device1", "device2", "device3" ]
+    matchAttribute: "resource.kubernetes.io/pcieRoot"
+
+    # [NEW]
+    # An optional field that defines customized "match" semantics over attribute values.
+    # This field must not set when "distinctAttribute" is set
+    matchSemantics:
+      # mode specifies the "match" semantics
+      # Identical (∀i,j, v_i = v_j):
+      #   All the attribute values among candidate devices are identical,
+      #   supporting both list-order-sensitive and set-equivalence comparisons via `listMode`.
+      # NonEmptyIntersection (|∩ v_i| >= k (>=1)): 
+      #   The intersection (as a set) of list values among candidate devices is non-empty.
+      #   The required intersection size could be configurable via `minSize`.
+      # For future possible cases:
+      # - CommonPrefix/Suffix with customizable length
+      # - Identical for aggregated values of the list items (min/max/sum/length)
+      mode: Identical | NonEmptyIntersection
+
+      options:
+        nonEmptyIntersection:
+          # if true, implicit cast from scalar to list will be performed. The default is false.
+          coerceScalarToList: true | false
+          # minSize specifies the minimum size of the intersection to evaluate as true.
+          # Default is 1. The value must be positive integer.
+          minSize: 1
+       identical:
+          coerceScalarToList: true | false    # common option
+          # listMode specified the equality as a set(order/duplicates are ignored) or list (order significant). Default is List
+          listMode: List | Set
+```
+Examples of match semantics mode:
+
+| attribute values | `Identical` | `NonEmptyIntersection`<br/>(`coerceScalarToList=true`) |
+|:--:|:--:|:--:|
+| `d1="a"`, `d2="b"` | `false` | `false` |
+| `d1=["a", "b"]` , `d2=["b", "a"]` | `false`(`listMode: List`)<br/>`true`(`listMode: Set`) | `true`<br/>(`d1 ∩ d2 = {"a", "b"}`) |
+| `d1=["a", "b"]` , `d2=["a", "c"]`| `false` | `true`<br/>(`d1 ∩ d2 = {"a"}`) |
+| `d1=["a", "b"]` , `d1=["c", "d"]` | `false` | `false`<br/>(`d1 ∩ d2 = ∅`) |
+
+#### `distinctSemantics
+
+```yaml
+kind: ResourceClaim
+spec:
+  constraints:
+  - requests: [ "device1", "device2", "device3" ]
+    distinctAttribute: "resource.kubernetes.io/numaNode" # note: this is imaginary attribute.
+
+    # [NEW]
+    # an optional field that defines customized "distinct" semantics over attribute values
+    # this field must not set when "matchAttribute" is set
+    distinctSemantics:
+      # mode specifies the "distinct" semantics
+      # `AllDistinct`:
+      #   All the values are distinct, supporting both list-order-sensitive and set-equivalence comparisons via `listMode`.
+      #   (i.e. ∀i,j s.t. i ≠ j, v_i != v_j), 
+      # `EmptyIntersection`:
+      #   The intersection (as a set) of all the list values among candidate devices is empty. (i.e. ∩ v_k = ∅ )
+      # `PairwiseDisjoint`:
+      #   Every pair of the list values (as a set) of candidate devices is disjoint (i.e. completely no overlap).
+      #   (i.e. ∀i,j s.t. i ≠ j, v_i ∩ v_j = ∅),
+      # For future possible cases:
+      # - NoCommonPrefix/Suffix, PairwiseDisjointPrefix/Suffix with customizable length
+      # - AllDistinct for aggregated values of the list items (min/max/sum/length)
+      mode: AllDistinct | EmptyIntersection | PairwiseDisjoint
+
+      options:
+        allDistinct:
+          coerceScalarToList: true | false    # common option
+          # listMode specified the equality as a set(order/duplicates are ignored) or list (order significant). Default is List
+          listMode: List | Set
+        emptyIntersection:
+          coerceScalarToList: true | false    # common option
+        pairwiseDisjoint:
+          coerceScalarToList: true | false    # common option
+```
+
+Examples of distinct semantics mode:
+
+| attribute values | `AllDistinct` | `PairwiseDistinct`<br/>(`coerceScalarToList=true`) | `EmptyIntersection`<br/>(`coerceScalarToList=true`) |
+|:--:|:--:|:--:|:--:|
+| `d1="a"`, `d2="b"` | `false` | `false` | `false` |
+| `d1=["a", "b"]` , `d2=["b", "a"]` | `true`(`listMode: List`)<br/>`false`(`listMode: Set`) | `false`<br/>(`d1 ∩ d2={"a","b"}`) | `false`<br/>(`∩dk={"a","b"}`) |
+| `d1=["a", "b"]` , `d2=["a", "c"]`, `d3=["a", "d"]` | `true` | `false`<br/>(`di ∩ dj = {"a"} ≠ ∅`) | `false` <br/>(`∩ dk = {"a"} ≠ ∅`) |
+| `d1=["a", "b"]` , `d2=["b", "c"]`, `d3=["c", "a"]` | `true` | `false`<br/>(`di ∩ dj ≠ ∅`) | `true`<br/>(`∩ dk = ∅`) |
+| `d1=["a", "b"]` , `d2=["c", "d"]`, `d3=["e", "f"]` | `true` | `true`<br/>(`di ∩ dj = ∅`) | `true`<br/>(`∩ dk = ∅`) |
+
+#### Pros/Cons
+
+- Pros:
+  - Flexible
+  - Declarative
+  - Extensible
+- Cons:
+  - Too much complex even we don't have use-cases to introduce the complexity
+
 
 ### Unified `semantics` field instead of `matchSemantics`/`distinctSemantics`
 
