@@ -1065,7 +1065,7 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. It can be disabled after enabled until Beta. When disabled, you can not create `ResourceClaim` with `matchSemantics`/`distinctSemantics` nor `DeviceAttribute` with `list`-type values. And, existing `list`-type attribute values are just ignored, and `matchSemantics`/`distinctSemantics` are just ignored. But, if specified attribute in `matchAttribute`/`distinctAttribute` is `list` type, allocation will be failed.
+Yes. When disabled, you can not create `ResourceClaim` with `matchSemantics`/`distinctSemantics` nor `DeviceAttribute` with `list`-type values. And, existing `list`-type attribute values are just ignored, and `matchSemantics`/`distinctSemantics` are just ignored. But, if specified attribute in `matchAttribute`/`distinctAttribute` is `list` type, allocation will be failed.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
