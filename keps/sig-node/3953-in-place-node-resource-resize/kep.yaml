@@ -1,4 +1,4 @@
-title: Node Resource Hot Plug
+title: In-place Node Resource Resize
 kep-number: 3953
 authors:
   - "@mkumatag"
@@ -41,7 +41,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: NodeResourceHotPlug
+  - name: InPlaceNodeResourceResize
     components:
       - kubelet
 disable-supported: true
