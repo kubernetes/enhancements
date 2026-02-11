@@ -35,7 +35,7 @@
     - [EvictionRequest Validation and Admission](#evictionrequest-validation-and-admission)
       - [CREATE](#create)
       - [CREATE, UPDATE, DELETE](#create-update-delete)
-    - [Immutability of EvictionRequest Spec Fields](#immutability-of-evictionrequest-spec-fields)
+    - [Immutability of EvictionRequest Fields](#immutability-of-evictionrequest-fields)
   - [EvictionRequest Process](#evictionrequest-process)
     - [EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion)
   - [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples)
@@ -497,10 +497,6 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
 - `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation.
-- `.spec.interceptors` value will be resolved on the EvictionRequest admission from the pod's
-  `.spec.evictionInterceptors` and must not be set by the requester. This is done to ensure the
-  predictability of the eviction request process. I.e. the validation of the EvictionRequest will
-  fail on admission if this field is set.
 
 If the eviction request already exists for this pod, the requester should still add itself to the
 `.spec.requesters`. This has the following advantages:
@@ -626,16 +622,20 @@ requests.
 
 #### Interceptor Selection
 
-Interceptors are populated from pod's `.spec.evictionInterceptors`
-into the `.spec.interceptors` on [EvictionRequest Validation and Admission](#evictionrequest-validation-and-admission).
+`.status.targetInterceptors` will be set from pod/target's `.spec.evictionInterceptors` in the same
+order. We will also append a set of default interceptors (`imperative-eviction.k8s.io`) to the end
+of the list. The `.status.targetInterceptors` will become immutable once set.
+
+The controller should set `.status.observedGeneration` each time it observes a new generation of the
+EvictionRequest object.
 
 The eviction request controller reconciles EvictionRequests and first picks the index 0 interceptor
-from `.spec.interceptors` and sets its `name` to the `.status.activeInterceptors[0]`.
+from `.status.targetInterceptors` and sets its `name` to the `.status.activeInterceptors[0]`.
 
 If active interceptor's `Complete` condition in `.status.interceptors[].conditions` is set to `True`
 or 20 minutes has elapsed since `.status.interceptors[].heartbeatTime`, then
 the eviction request controller sets `.status.activeInterceptors[0]` to the next interceptor at the
-higher list index from `.spec.interceptors`. During the switch to the new interceptor, the eviction
+higher list index from `.status.targetInterceptors`. During the switch to the new interceptor, the eviction
 request controller will also append `.status.processedInterceptors` with the last value of
 `.status.activeInterceptors`.
 
@@ -647,7 +647,7 @@ terminated by calling the eviction API endpoint.
 
 Pods that are unable to be terminated:
 - EvictionRequest's `.status.activeInterceptors` list contains `imperative-eviction.k8s.io`
-  interceptor. All the other interceptors from `.spec.interceptors` should be in
+  interceptor. All the other interceptors from `.status.targetInterceptors` should be in
  `.status.processedInterceptors`.
 - 20 minutes has elapsed since EvictionRequest's
   `.status.interceptors[].heartbeatTime` of the active interceptor or from
@@ -700,7 +700,23 @@ type PodSpec struct {
 	EvictionInterceptors []Interceptor `json:"evictionInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,42,rep,name=evictionInterceptors"`
 }
 
-// EvictionRequest defines an eviction request
+// EvictionRequest defines a request that should ideally result in a graceful eviction of a
+// .spec.target (e.g. termination of a pod).
+//
+// `.spec.requesters` field should be set and kept updated to preserve the eviction request.
+// 
+// If the target is a pod, the .status.targetInterceptors is populated from Pod's
+// .spec.evictionInterceptors. 
+// 
+// Interceptors should observe and communicate through the .status to help with the eviction
+// of the target when they see their name present in .status.activeInterceptors. InterceptorStatus
+// struct should then be periodically updated to indicate the progress or completion of the eviction
+// process by each interceptor in .status.intercerptors. If .status.interceptors[].heartbeatTime is
+// not updated within 20 minutes, the eviction request is passed over to the next interceptor.
+//
+// If there are no other interceptor and the target is a pod, the last default
+// imperative-eviction.k8s.io interceptor will evict the pod using the imperative Eviction API
+// (/evict endpoint).
 type EvictionRequest struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -731,7 +747,7 @@ type EvictionRequestSpec struct {
 	// Target contains a reference to an object (e.g. a pod) that should be evicted.
 	// This field is immutable.
 	// +required
-	Target EvictionTarget `json:"target" protobuf:"bytes,2,opt,name=target"`
+	Target EvictionTarget `json:"target" protobuf:"bytes,1,opt,name=target"`
 
 	// Requesters allow you to identify entities, that requested the eviction of the target.
 	// At least one requester is required when creating an eviction request. 
@@ -749,37 +765,7 @@ type EvictionRequestSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	// +k8s:maxLength=100
-	Requesters []Requester `json:"requesters,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=requesters"`
-
-	// Interceptors reference interceptors that respond to this eviction request.
-	// Interceptors should observe and communicate through the EvictionRequest API to help with
-	// the graceful eviction of a target (e.g. termination of a pod). The interceptors are selected
-	// sequentially, in the order in which they appear in the list.
-	//
-	// Interceptor should periodically report on an eviction progress by updating the
-	// .status.interceptors[].heartbeatTime field. If this field is not updated within 20 minutes,
-	// the eviction request is passed over to the next interceptor at a higher index. If there is no
-	// other interceptor and the target is a pod, the last default imperative-eviction.k8s.io
-	// interceptor will evict the pod using the imperative Eviction API (/evict endpoint).
-	//
-	// This field must not be set upon creation. Instead, it is resolved when the EvictionRequest
-	// object is created upon admission. If the target is a pod, the field is populated from Pod's
-	// .spec.evictionInterceptors. 
-	//
-	// A default interceptor called imperative-eviction.k8s.io is appended to the end of the list if
-	// the target is a pod. It will call the /evict API endpoint. This call may not succeed due to
-	// PodDisruptionBudgets, which may block the pod termination. It will set the FailedEvictions
-	// interceptor condition and try again with a backoff.
-	//
-	// The maximum length of the interceptors list is 100.
-	// This field is immutable.
-	// +optional
-	// +patchMergeKey=name
-	// +patchStrategy=merge
-	// +listType=map
-	// +listMapKey=name
-    // +k8s:maxLength=100
-	Interceptors []Interceptor `json:"interceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=interceptors"`
+	Requesters []Requester `json:"requesters,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=requesters"`
 }
 
 // EvictionTarget contains a reference to an object that should be evicted.
@@ -791,7 +777,7 @@ type EvictionTarget struct {
     // +optional
 	// +oneOf=TargetSelection
 	// +k8s:unionMember
-    PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,2,opt,name=podRef"`
+    PodRef *LocalPodReference `json:"podRef,omitempty" protobuf:"bytes,1,opt,name=podRef"`
 }
 
 // LocalPodReference contains enough information to locate the referenced pod inside the same namespace.
@@ -832,6 +818,10 @@ type Interceptor struct {
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
 type EvictionRequestStatus struct {
+    // The generation observed by the eviction request controller.
+    // +optional
+    ObservedGeneration int64 `json:"observedGeneration,omitempty" protobuf:"varint,1,opt,name=observedGeneration"`
+	
     // Conditions contain information about the eviction request.
 	//
 	// Eviction request specific conditions are: Evicted or Canceled.
@@ -839,25 +829,50 @@ type EvictionRequestStatus struct {
 	// - Canceled means that the eviction request is no longer being processed by any eviction
 	//   interceptor because the eviction request has been canceled.
 	// - Evicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
-	// This field is managed by Kubernetes.
     // +optional
     // +patchMergeKey=type
     // +patchStrategy=merge
     // +listType=map
     // +listMapKey=type
-    Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+    Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
+		
+	// TargetInterceptors reference interceptors that should eventually respond to this eviction
+	// request to help with the graceful eviction of a target . These interceptors are selected
+	// sequentially, in the order in which they appear in the list and are added to the
+	// .status.activeInterceptors in a rolling fashion.
+	//
+	// If the target is a pod, the field is populated from Pod's .spec.evictionInterceptors. Default
+	// interceptors may be added to the list according to the target.
+	//
+	// Default interceptors:
+	// - imperative-eviction.k8s.io interceptor is appended to the end of the list if the target is
+	//   a pod. It will call the /evict API endpoint. This call may not succeed due to
+	//   PodDisruptionBudgets, which may block the pod termination. It will set the FailedEvictions
+	//   interceptor condition and try again with a backoff.
+	//
+	// The maximum length of the interceptors list is 100.
+	// This field is immutable once set.
+	// This field is managed by Kubernetes. 
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=name
+	// +k8s:maxLength=100
+	TargetInterceptors []Interceptor `json:"targetInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=targetInterceptors"`
 
-	// ActiveInterceptors store a list of interceptors that should interact with the eviction
-	// process by updating .status.interceptors[], where .name is the active interceptor name.
-	// InterceptorStatus fields should be updated to indicate the progress or completion of the
-	// eviction process.
+    // ActiveInterceptors store a list of interceptors that should currently interact with the
+	// eviction process by updating .status.interceptors[], where .name is the active interceptor
+	// name. InterceptorStatus fields should be periodically updated to indicate the progress or
+	// completion of the eviction process. If .status.interceptors[].heartbeatTime field is not
+	// updated within 20 minutes, the eviction request is passed over to the next interceptor.
 	//
 	// The maximum allowed number of active interceptors is 1. An active interceptor is removed from
 	// this list when Complete condition in .status.interceptors[].conditions is set to True.
 	// This field is managed by Kubernetes. 
 	// +optional
 	// +listType=set
-	ActiveInterceptors []string `json:"activeInterceptors,omitempty" protobuf:"bytes,2,opt,name=activeInterceptors"`
+	ActiveInterceptors []string `json:"activeInterceptors,omitempty" protobuf:"bytes,4,opt,name=activeInterceptors"`
 
     // ProcessedInterceptors store a list of interceptors that have previously been selected
     // and added to ActiveInterceptors. These interceptors may have reached completion, been
@@ -867,13 +882,13 @@ type EvictionRequestStatus struct {
     // This field is managed by Kubernetes.
     // +optional
     // +listType=set
-    ProcessedInterceptors []string `json:"processedInterceptors,omitempty" protobuf:"bytes,3,opt,name=processedInterceptors"`
+    ProcessedInterceptors []string `json:"processedInterceptors,omitempty" protobuf:"bytes,5,opt,name=processedInterceptors"`
 
 	// Interceptors represents the eviction process status of each declared interceptor. Only
 	// ActiveInterceptors should update the interceptor statuses. 
 	//
 	// The interceptor list should be the same length and have the same .name fields as
-	// .spec.interceptors. Only interceptors with .name that are included in
+	// .status.targetInterceptors. Only interceptors with .name that are included in
 	// .status.activeInterceptors can be mutated. First initialization of the list is allowed.
 	// 
 	// Each InterceptorStatus is managed by the designated interceptor.
@@ -883,7 +898,7 @@ type EvictionRequestStatus struct {
     // +listType=map
     // +listMapKey=name
     // +k8s:maxLength=100
-	Interceptors []InterceptorStatus `json:"interceptors,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=interceptors"`
+	Interceptors []InterceptorStatus `json:"interceptors,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,6,rep,name=interceptors"`
 }
 
 type EvictionRequestConditionType string
@@ -940,7 +955,7 @@ type InterceptorStatus struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=type
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,4,rep,name=conditions"`
 
 }
 
@@ -1005,11 +1020,11 @@ pods referencing Workloads will be ignored. Therefore, we will reject any Evicti
 `.spec.requesters` must have at least one requester. The requester names must pass
 `IsFullyQualifiedDomainName` validation. 
 
-`.spec.interceptors` are populated from pod's `.spec.evictionInterceptors` (see
-[Interceptor](#interceptor) and [Pod and EvictionRequest API](#pod-and-evictionrequest-api)) in the
-same order. This field must not be set by the requester creating this EvictionRequest, otherwise the
-API validation will fail. A default `imperative-eviction.k8s.io` interceptor is appended to the end
-of the list for pod targets. The interceptor names must pass `IsFullyQualifiedDomainName` validation.
+`.status` is set to empty on creation.
+
+##### UPDATE
+
+`.status.targetInterceptors` The interceptor names must pass `IsFullyQualifiedDomainName` validation.
 
 `.status.activeInterceptors` should be empty on creation as its selection should be left on the
 eviction request controller. To strengthen the validation, we should check that it is possible to
@@ -1018,18 +1033,24 @@ possible to set only the next interceptor at a higher index and so on. We can al
 transition according to the other fields. `Complete` condition in `.status.interceptors[].conditions`
 should be `True` or `.status.interceptors[].heartbeatTime` has exceeded the 20-minute deadline.
 
+`.status.processedInterceptors` should include only interceptors that have previously been in
+`.status.activeInterceptors`.
+
+`.status.interceptors` should conform to the validation described in `.status.intercerptors` and in
+`InterceptorStatus` struct.
+
 ##### CREATE, UPDATE, DELETE
 
 Principal making the request should be authorized for deleting pods that match the EvictionRequest's
 `.spec.target.podRef`.
 
-#### Immutability of EvictionRequest Spec Fields
+#### Immutability of EvictionRequest Fields
 
 `.spec.target` and `.spec.target.podRef` does not make sense to make mutable, the EvictionRequest is
 always scoped to a specific instance of a target/pod. If the pod is immediately recreated with the
 same name, but a different UID, a new EvictionRequest object should be created
 
-`.spec.interceptors` is only set during the EvictionRequest object create admission. We do not allow
+`.status.targetInterceptors` is only set once by the eviction request controller. We do not allow
 subsequent changes to this field to ensure the predictability of the eviction request process. For
 example, this allows requesters to predict which pods have which interceptors, if any. Also, late
 registration of the interceptor could go unnoticed and be preempted by the eviction request
