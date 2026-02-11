@@ -15,8 +15,6 @@ reviewers:
   - "@pravk03"
 approvers: 
   - "@johnbelamaric" # WG-Device-Management
-  - "@klueska" # WG-Device-Management
-  - "@pohly" # WG-Device-Management
   - "@dom4ha" # SIG-Scheduling
   - "@liggitt" # API Review
 
