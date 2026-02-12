@@ -324,13 +324,13 @@ newly provisioned Nodes from the same NodeGroup. However, with the introduction 
 If not appropriately addressed, this could cause the Cluster Autoscaler to randomly select a Node from the group and assume identical allocatable values for all upcoming Nodes. 
 This could lead to suboptimal decisions, such as repeatedly attempting to provision Nodes for pending Pods that are incompatible, or overlooking potential Nodes that could accommodate such Pods.
 
-To ensure the Cluster Autoscaler acknowledges resource hotplug, the following approaches have been proposed by the Cluster Autoscaler team:
+To ensure the Cluster Autoscaler acknowledges resource resize, the following approaches have been proposed by the Cluster Autoscaler team:
 1. Capture Node's Initial Allocatable Values:
-   * Introduce a new field within the Node object to record initial node allocatable values, which remain unchanged during resource hotplug.
-   * The Cluster Autoscaler can leverage this field to anticipate potential hotplug of resources, using it as a template for configuring new Nodes.
+   * Introduce a new field within the Node object to record initial node allocatable values, which remain unchanged during resource resize.
+   * The Cluster Autoscaler can leverage this field to anticipate potential resize of resources, using it as a template for configuring new Nodes.
 
-2. Identify Nodes Affected by Hotplug:
-   * By flagging a Node as being impacted by hotplug, the Cluster Autoscaler could revert to a less reliable but more conservative "scale from 0 nodes" logic.
+2. Identify Nodes Affected by resource resize:
+   * By flagging a Node as being impacted by resize, the Cluster Autoscaler could revert to a less reliable but more conservative "scale from 0 nodes" logic.
 
 Given that this KEP and autoscaler are inter-related, the above approaches were discussed in the community with relevant stakeholders, and have decided approaching this problem through the approach 1. 
 The same will be targeted around the beta graduation of this KEP
@@ -349,17 +349,21 @@ type NodeStatus struct {
 
 
 ### Handling Resource Reconfiguration
-// TODO: To discuss with Karthik
 
 This KEP aims at enabling the kubelet to capture the current available capacity of the node (Regardless of whether it was a hotplug or hotunplug of resources.)
 
-As the hot-unplug events are not completely handled in this KEP, in such cases, it is imperative to move the node to the NotReady state when the current capacity of the node
-is lesser than the initial capacity of the node. This is only to point at the fact that the resources have shrunk on the node and may need attention/intervention.
+With the changes proposed in this KEP, post resource resize - if new resources are added, the Kubelet triggers a recalculation of container Swap limits, re-initializes the node's resource managers,
+and updates the node status to reflect the increased capacity.
 
-Once the node has transitioned to the NotReady state, it will be reverted to the ReadyState once when the node's capacity is reconfigured to match or exceed the last valid configuration.
-In this case, valid configuration refers to a state which can either be previous hot-plug capacity or the initial capacity in case there was no history of hotplug.
+In the case of resource unplug - the Kubelet performs a more critical update by adjusting OOMScoreAdj and Swap limits to prevent system instability, re-initializing managers, updating capacity,
+and re-running pod admission to ensure existing pods can still safely fit within the reduced hardware footprint.
 
-In case of already running workloads and if there are not enough resources available to accommodate them post hot-unplug, the workload may tend to under perform or transition to "Pending" state or get migrated to a suitable node which meets the workload`s resource requirement.
+If there are not enough resources available to accommodate them post hot-unplug, the workload may tend to under perform or transition to "Pending" state or get migrated to a suitable node which meets the workload`s resource requirement.
+
+If the remaining aggregate capacity (CPU, memory, or hugepages) falls below the total amount of resources currently requested by all scheduled or running pods, the following sequence is triggered:
+ - Condition Update: The node enters a "Resource Starvation" state.
+ - Standard Reconcile: The Kubelet initiates the normal eviction algorithm.
+ - Prioritization: Pods are ranked for eviction based on their Quality of Service (QoS) class and resource usage relative to their requests.
 
 #### Flow Control
 
@@ -370,20 +374,17 @@ T=0: Node initial Resources:
 T=1: Resize Node to Hotplug Memory
     - Current Memory: 10G
     - Update Memory: 15G
-    - Node state: Ready
 
 T=2: Resize Node to HotUnplug Memory
     - Current Memory: 15G
     - UpdatedMemory: 5G
-    - Node state: NotReady
 
 T=3: Resize Node to Hotplug Memory
     - Current Memory: 5G
     - Updated Memory Size: 15G
-    - Node state: Ready
 ```
 
-Few of the concerns surrounding hotunplug are listed below
+The operations surrounding hot unplug are listed below:
 * Pod re-admission:
     * Given that there is probability that the current Pod resource usage may exceed the available capacity of node, its necessary to check if the pod can continue Running
       or if it has to be terminated due to resource crunch.
@@ -391,11 +392,9 @@ Few of the concerns surrounding hotunplug are listed below
     * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
 * Handling unplug of reserved CPUs.
 
-we are proposing a separate KEP [Node Resource Hot-Unplug](https://github.com/kubernetes/enhancements/issues/5578) dedicated to hot-unplug of resources to address the same.
-
 **Proposed Code changes**
 
-**Pseudocode for Resource Hotplug**
+**Pseudocode for Resource Resize**
 
 ```go
 func (kl *Kubelet) syncLoopIteration(ctx context.Context, configCh <-chan kubetypes.PodUpdate, handler SyncHandler,
@@ -428,7 +427,7 @@ syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.Po
 }
 ```
 
-**Changes to resource managers to adapt to hotplug of resources**
+**Changes to resource managers to adapt to resize of resources**
 
 1. Adding ResyncComponents() method to ContainerManager interface
 ```go
@@ -444,12 +443,14 @@ syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.Po
     )
 ```
 
-2. Adding a method Sync to all the resource managers and will be invoked once there is resource hotplug.
+2. Adding a method Sync to all the resource managers and will be invoked once there is resource resize.
 
 ```go
         // SyncMachineInfo will sync the Manager with the latest machine info
         SyncMachineInfo(machineInfo *cadvisorapi.MachineInfo) error
 ```
+
+3. In case of resource unplug, the Pod Admission Controller handles the housekeeping operations related to pod eviction if the available compute resources falls below the required compute resources.
 
 ### Test Plan
 
@@ -577,7 +578,7 @@ No behavior change when there is no change in node allocatable resources, and th
 
 With feature enabled:
     Hotplug of resource will lead to increase in Node allocatable resource and allowing Pending pods to be scheduled.
-    HotUnplug of resource will lead to decrease in Node allocatable resource, transitions the Node into NotReady state and may cause the workload disruption.
+    HotUnplug of resource will lead to decrease in Node allocatable resource, where the Pod Admission controller reruns to identify if any workloads are required to be evicted.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -913,7 +914,9 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
-// TODO:
+If the removed resources (specifically CPUs or Memory zones) were the exclusive resources allocated to specific containers via the CPU or Memory Manager, those affected pods are immediately evicted or killed.
+This occurs because the hardware backing their specific isolation requirements no longer exists.
+
 
 ## Alternatives
 
