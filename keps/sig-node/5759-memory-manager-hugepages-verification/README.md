@@ -50,8 +50,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Alternative 1: Track all pod hugepage usage](#alternative-1-track-all-pod-hugepage-usage)
+  - [Alternative 1: Track all pod hugepage usage per NUMA node](#alternative-1-track-all-pod-hugepage-usage-per-numa-node)
   - [Alternative 2: Scheduler-level hugepage awareness](#alternative-2-scheduler-level-hugepage-awareness)
+  - [Alternative 3: Standalone NUMA-aware hugepages admission handler](#alternative-3-standalone-numa-aware-hugepages-admission-handler)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -232,10 +233,15 @@ Job B can be rescheduled to another node with sufficient hugepages.
   3. Pod enters `CrashLoopBackOff` or `Error` state
   4. Scheduler may reschedule to another node (if applicable)
 
-  **Why this is still valuable**: Without verification, the failure window spans
-  from pod scheduling to container startup (seconds to minutes). With verification,
-  the window is reduced to milliseconds between sysfs read and container start.
-  The vast majority of failures are prevented.
+  **Why this is still valuable**: Beyond startup failures and timing, the core
+  issue is that without verification the kubelet/workload contract is breached.
+  The implicit contract is that once a pod is admitted, the requested resources
+  are available. Without this fix, that contract is violated for hugepages when
+  the Memory Manager's internal state diverges from OS reality (as demonstrated
+  in [issue #134395](https://github.com/kubernetes/kubernetes/issues/134395)).
+  With verification, the failure window is reduced from seconds/minutes to
+  milliseconds between sysfs read and container start, and the vast majority
+  of contract violations are prevented.
 
 - **Linux-only**: This feature is Linux-specific. The sysfs interface for hugepages
   (`/sys/devices/system/node/node<N>/hugepages/`) is a Linux kernel feature.
@@ -465,12 +471,12 @@ to implement this enhancement.
 - E2e tests demonstrating:
   - Pod admission succeeds when sufficient free hugepages exist
   - Pod admission fails when insufficient free hugepages exist
+- Metrics for verification checks and failures
 - Documentation for feature gate and behavior
 
 #### Beta
 
 - E2e tests demonstrating correct behavior
-- Metrics for verification failures
 - Feedback incorporated from alpha users
 - No significant bugs reported
 
@@ -548,7 +554,7 @@ impact already running pods. Rollback simply stops verification on new admission
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD during alpha phase.
+Will be done during alpha phase.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -678,14 +684,25 @@ No impact. The feature operates entirely within kubelet using local sysfs.
 
 ## Alternatives
 
-### Alternative 1: Track all pod hugepage usage
+### Alternative 1: Track all pod hugepage usage per NUMA node
 
-Extend Memory Manager to track hugepage usage by Burstable and BestEffort pods.
+Extend the Memory Manager and admission logic to listen to every pod admission
+and track which NUMA node hugepages are allocated from, regardless of QoS class.
 
 **Rejected because**:
-- Significant refactoring required
+- **Fundamental NUMA tracking limitation**: Without `cpuset.mems` enforcement
+  (which only applies to Guaranteed pods with the Static policy), there is no way
+  to know which NUMA node hugepages will be allocated from until the container
+  processes are actually running -- which is past the admission stage. The kernel
+  allocates hugepages based on the process's memory policy and NUMA node proximity
+  at fault time, not at cgroup configuration time.
 - Would not catch external (non-Kubernetes) hugepage consumers
+- Significant refactoring of Memory Manager required
 - Changes the scope and purpose of Memory Manager
+
+The proposed approach of checking actual free resources from sysfs before each
+allocation attempt is the best compromise in the current architecture, as it
+reflects ground truth regardless of which process or pod consumed the hugepages.
 
 ### Alternative 2: Scheduler-level hugepage awareness
 
@@ -695,3 +712,28 @@ Add hugepage availability awareness to the Kubernetes scheduler.
 - Much larger scope change
 - Scheduler operates on reported capacity, not real-time availability
 - Does not solve the admission-time verification problem
+
+### Alternative 3: Standalone NUMA-aware hugepages admission handler
+
+Instead of extending the Memory Manager, add a separate kubelet admission handler
+that verifies OS-reported hugepage availability for all pods regardless of QoS class.
+
+**Pros:**
+- Covers all QoS classes (Guaranteed, Burstable, BestEffort), not just Guaranteed
+- Cleaner separation of concerns: verification is decoupled from allocation/tracking
+- Same failure model (kubelet admission error) without coupling to Memory Manager
+- Could obtain NUMA affinity from existing topology hints without strong coupling
+
+**Cons:**
+- Needs to independently resolve NUMA topology and candidate node selection, which
+  the Memory Manager already computes during `Allocate()`
+- Additional admission handler adds coordination overhead with existing handlers
+- For Guaranteed pods, the Memory Manager's allocation algorithm already selects
+  candidate NUMA nodes -- a standalone handler would duplicate or need to replicate
+  this selection logic to know which NUMA nodes to check
+- Larger implementation scope for alpha
+
+**Decision**: Extend the Memory Manager for alpha since it already has the NUMA
+topology context and candidate node selection computed at the point where
+verification is needed. A standalone admission handler could be explored in future
+iterations to extend coverage to non-Guaranteed pods.
