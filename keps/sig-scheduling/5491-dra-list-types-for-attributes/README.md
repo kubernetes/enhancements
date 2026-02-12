@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [API Changes](#api-changes)
     - [Introduce typed-<code>list</code> in <code>DeviceAttribute</code>](#introduce-typed-list-in-deviceattribute)
+    - [Introduce <code>.include</code> function in CEL](#introduce-include-function-in-cel)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Hardware Topological Aligned CPUs &amp; GPUs &amp; NICs](#story-1-hardware-topological-aligned-cpus--gpus--nics)
     - [Story 2](#story-2)
@@ -217,6 +218,8 @@ know that this has succeeded?
 - Keep _monotonicity_ in constraint.
   - Currently `Allocator`'s algorithm assumes [_monotonic_ constraints](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L274-L276) only. Monotonic means that once a constraint returns false, adding more devices will never cause it to return true. This allows to bound the computational complexity for searching device combinations which satisfies the specified constraints. This KEP focuses to keep monotonicity of `matchAttribute/distinctAttribute` semantics.
 - Maintain backward compatibility and inter-operability for scalar-only attributes.
+  - `matchAttribute/distinctAttribute`: existing constraint can work because scalar values are treated as single-value list
+  - CEL expressions in device selectors: when the attribute type is updated, existing CEL won't failed to compile. But, we will provide some type-agnostic helper function to achieve easier migration for users/DRA driver developers.
 
 ### Non-Goals
 
@@ -273,6 +276,26 @@ spec:
       list-of-version:
         list:
           version: ["1.0.0", "1.0.1"]
+```
+#### Introduce `.include` function in CEL
+
+When the attribute type was changed from scalar to list. Existing CEL won't compile due to type mismatch. 
+
+```
+// This CEL won't compile if attributes["foo"] type is changed from 1 (scalar) to [1](list)
+attributes["foo"] == 1
+```
+
+To maintain backward compatibility for existing CEL expressions, it _might_ be possible to override comparison operators (`==`, etc.) that allows for a list type where `attributes["foo"] == 1` is equivalent to `attributes["foo"] == [1]`. But we don't do this way because it wouldn't be idiomatic and would diverge from normal CEL type system expectations and feels confusing to anyone that already has an understanding of how the CEL type system is suppose to work.
+
+Instead, although user needs to rewrite the existing CEL expressions, it plans to provide a helper function, say `.include`, which can work in type-agnostic way to make the CEL migration easier:
+
+```
+// assume attribute["foo"] is 1
+attribute["foo"].include(1) --> true
+
+// assume attribute["foo"] is [1]
+attribute["foo"].include(1) --> true
 ```
 
 ### User Stories (Optional)
