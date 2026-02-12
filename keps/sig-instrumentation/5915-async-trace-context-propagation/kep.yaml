@@ -1,0 +1,46 @@
+title: Standardizing Async Trace Context Propagation
+kep-number: 5915
+authors:
+  - "@artem-tkachuk"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: "2026-02-11"
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - "/keps/sig-instrumentation/647-apiserver-tracing"
+  - "/keps/sig-instrumentation/2831-kubelet-tracing"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.36"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: AsyncTraceContextPropagation
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - trace_context_annotations_injected_total # Labels: component, controller, resource_kind, result
+  - trace_context_annotations_extracted_total # Labels: component, controller, node, resource_kind, result
