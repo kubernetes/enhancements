@@ -4,7 +4,7 @@ authors:
   - "@srikalyan"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: 2024-12-24
 reviewers:
   - "@ffromani"
