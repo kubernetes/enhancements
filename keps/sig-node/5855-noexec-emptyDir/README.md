@@ -85,13 +85,14 @@ It also does not aim to support the `stickyBit` on `emptyDir` volumes in this im
 
 [Add `stickyBit` support for `emptydir` kubernetes #130277](https://github.com/kubernetes/kubernetes/pull/130277)
 
+Extending the `noexec` mount option to volume types beyond `emptyDir` is beyond the scope of this KEP.
+Supporting this feature on platforms that don't support Unix-style mount flags for execution control is out of scope.
+
 ## Proposal
 
 A mechanism within the Pod specification to apply the `noexec` mount option to `emptyDir` volumes. This allows users to explicitly declare that a temporary volume should not allow the execution of binaries or scripts.
 
 ### User Stories (Optional)
-
-As a k8s app developer, I want to run my applications with a `readOnlyRootFilesystem`. However, my application requires a writable /tmp directory for scratch data. I use an `emptyDir` for this, but because it is executable by default, it becomes a staging ground for attackers to run malicious scripts. I want to be able to set `noexec` on this `emptyDir` so that the only writable area in my container cannot be used to execute code.
 
 #### Story 1 (Optional)
 
@@ -378,7 +379,7 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
+- [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name:
   - Components depending on the feature gate:
 - [ ] Other
