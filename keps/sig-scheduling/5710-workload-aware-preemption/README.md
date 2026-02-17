@@ -18,7 +18,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Preemption unit](#preemption-unit)
-  - [Workload priorities](#workload-priorities)
+  - [Pod Group priorities](#pod-group-priorities)
   - [Preemption algorithm](#preemption-algorithm)
   - [Delayed preemption](#delayed-preemption)
   - [Potential future extensions](#potential-future-extensions)
@@ -94,8 +94,8 @@ This KEP describes the changes to kube-scheduler to support workload-aware preem
 on the API, framework and building blocks, not the ideal algorithm - it can come as a follow up.
 We start with simple implementation, that is heavily based on the existing pod preemption algorithm.
 
-The `Workload` API introduced in [KEP-4671: Gang Scheduling using Workload Object] is extended to
-allow expressing the concept of workload priority and to define the preemption unit. With those
+The `Workload` and `PodGroup` API introduced in [KEP-4671: Gang Scheduling using Workload Object] is extended to
+allow expressing the concept of pod group priority and to define the preemption unit. With those
 extensions we make the next step towards our workload-aware scheduling north star.
 
 ## Motivation
@@ -128,7 +128,6 @@ would allow us tighter integration with other features (managing other types of 
 and many others) and bring the true value for every Kubernetes user.
 
 [KEP-4671: Gang Scheduling using Workload Object]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-gang-scheduling
-
 
 ### Goals
 
@@ -170,9 +169,9 @@ Disruption itself is never desired and this defines our core principles.
    will result in preempting another workload, the cost of that second preemption should be
    included in the cost of the original preemption.
 
-While cascading preemptions are inevitable in some cases (e.g. if high priority preemptor workload
+While cascading preemptions are inevitable in some cases (e.g. if high priority preemptor pod group
 has very strict placement requirements), in general if there are multiple options of scheduling
-a higher priority workload with preemptions, with some of them being expected to cause cascading
+a higher priority pod group with preemptions, with some of them being expected to cause cascading
 preemptions and others not, we will try to choose the later. However, due to computational
 cost of searching the potential space, this is not a hard rule, but rather a goal that we will
 try to optimize for.
@@ -185,11 +184,9 @@ pieces of the solution and discuss them in more detail in the following sections
 
 1. We piggy-back on existing `PriorityClass` API to avoid reinventing the concept of priority
    from scratch.
-1. We extend the `Workload` API to allow for defining the preemption unit. Here we also start
+1. We extend `Workload` and `PodGroup` API to allow for defining the preemption unit. Here we also start
    simple and allow for preemption unit to only correspond to a `PodGroup` in a gang mode.
-1. We extend the `Workload API` to allow for defining the priority of a workload. Again, we
-   start simple and assume that individual `PodGroups` within a `Workload` has to share the
-   same priority. We may decide to relax that assumption in the future follow-up enhancement.
+1. We extend `Workload` and `Pod Group` API to allow for defining the priority of a pod group.
 1. We start simple by just defining a single static priority used for scheduling and preemption
    While we envision both splitting them into two in the future or making it mutable, both of
    these can be achieved later in backward-compatible way.
@@ -258,7 +255,7 @@ This might be a good place to talk about core concepts and how they relate.
    or the logic will need to be reimplemented by other custom plugins. Eventually we may consider
    builtin validation, but we make it out of scope for this KEP.
 
-1. Scalability - finding the optimal set of workloads/pods to preempt is computationally expensive
+1. Scalability - finding the optimal set of pod groups/pods to preempt is computationally expensive
    problem, however we need to ensure it can be used even in the largest Kubernetes clusters.
 
    Mitigation: We propose a simplified algorithm that is computationally feasible at the cost of
@@ -300,7 +297,7 @@ const (
   DisruptionModePodGroup = "PodGroup"
 )
 
-type PodGroupPolicy struct {
+type PodGroupSchedulingPolicy struct {
     // Existing field(s).
 
     // DisruptionMode defines the mode in which a given PodGroup can be disrupted.
@@ -319,55 +316,77 @@ While the `PreemptionMode` might seem the more natural name here, we envision th
 concept can be later used in `Eviction` API and other usecases, so we already start with a more
 generic name to avoid future confusion.
 
-### Workload priorities
+### Pod Group priorities
 
-Prioritizing workload across each other requires answering the question: "What is workload priority?".
+Prioritizing pod groups across each other requires answering the question: "What is pod group priority?".
 Up until now, only individual pods have assigned priority. But nothing prevents individual pods
-forming a `Workload` or a `PodGroup` from being heterogeneous and having different priorities.
+forming a `PodGroup` from being heterogeneous and having different priorities.
 
-Intuitively, the priority of a `Workload` or `PodGroup` in such case would be the
-"minimum of priorities of pods that belong to it" - any pod with a priority higher than that can
-e.g. preempt our workload. But intuition is not enough here.
+Intuitively, the priority of a `PodGroup` in such case would be the "minimum of priorities of pods
+that belong to it" - any pod with a priority higher than that can e.g. preempt our pod group. But
+intuition is not enough here.
 
 As described in user stories above, a simple static priority doesn't seem to be enough. Arguably it is
 not even a single priority because a priority used for scheduling can be different than the priority
 that should be used for preemption. So in the ideal world a workload owner should be able to:
 
-- define priority used for scheduling (potentially also separately for every PodGroup)
-- define priority used for preemption (again potentially also for every PodGroup)
+- define priority used for scheduling a PodGroup
+- define priority used for preemption of a PodGroup
 - mutate preemption priority during the whole lifecycle of the workload to reflect the importance
   of that workload at a given moment
 
 However, while we believe that all of these are eventually needed, we start simpler by:
-- assuming all PodGroups within a Workload have the same scheduling and preemption priorities
 - starting with just a single priority for scheduling and preemption.
 - starting with static preemption priority (mutability brings additional complexity that is
   purely additive and thus should be added in a follow-up KEP)
 
-The propose `Workload` API extensions look as following.
+In [KEP-4671: Gang Scheduling using Workload Object] we already decided that PodGroup is the scheduling
+unit for workload-aware scheduling. Different PodGroups (even if part of the same Workload) are
+scheduled independently. As a result, we continue this path and define the priority also at the level
+of a scheduling unit.
+
+The proposed `PodGroup` API extensions look as following.
 
 ```golang
-type WorkloadSpec struct {
+type PodGroupTemplate struct {
     // Existing field(s).
 
-    // PriorityClassName, if specified, indicates the workload's priority that
-    // should be considered when scheduling this workload. "system-node-critical"
+    // PriorityClassName, if specified, indicates the priority that should be
+    // considered when scheduling this pod group. "system-node-critical"
     // and "system-cluster-critical" are two special keywords which indicate the
-	// highest priorities with the former being the highest priority. Any other
-	// name must be defined by creating a PriorityClass object with that name.
-	// If not specified, the priority will be default or zero if there is no
-	// default.
+    // highest priorities with the former being the highest priority. Any other
+    // name must be defined by creating a PriorityClass object with that name.
+    // If not specified, the priority will be default or zero if there is no
+    // default.
     //
-    // The authoritative priority for this workload is expressed via the
-    // 'status.priority' field.
+    // The authoritative priority for this pod group is expressed via the
+    // 'priority' field.
     //
     // This field is immutable.
     PriorityClassName *string
 }
+
+type PodGroupSpec struct {
+    // Existing field(s).
+
+    // PriorityClassName, if specified, indicates the priority that
+    // should be considered when scheduling this pod group. "system-node-critical"
+    // and "system-cluster-critical" are two special keywords which indicate the
+    // highest priorities with the former being the highest priority. Any other
+    // name must be defined by creating a PriorityClass object with that name.
+    // If not specified, the priority will be default or zero if there is no
+    // default.
+    //
+    // The authoritative priority for this pod group is expressed via the
+    // 'priority' field.
+    //
+    // This field is immutable.
+      PriorityClassName *string
+}
 ```
 
-With that change, when scheduling or preempting a pod that is part of a workload, the
-priority defined in the `Workload` object will be used (and priority defined in the `Pod`
+With that change, when scheduling or preempting a pod that is part of a Pod Group, the
+priority defined in the `PodGroup` object will be used (and priority defined in the `Pod`
 itself will be ignored, thus not reflecting the actual pod priority).
 
 We acknowledge that it might be misleading to users. For Alpha, we will simply just
@@ -375,13 +394,13 @@ describe the possible divergence in the documentation.
 
 For Beta, we will decide if we need additional actions, e.g.:
 - expose the information about divergence in the API by introducing a new `Conditions` field
-  in the `workload.Status` with dedicated condition like `PodsNotMatchingPriority` that will
+  in the `PodGroup.Status` with dedicated condition like `PodsNotMatchingPriority` that will
   be set by either kube-scheduler or a new workload-controller whenever it observes pods
-  referencing a given `Workload` object which priority doesn't match the priority of the
-  workload object.
-- introduce an admission to validate that if a `Pod` is referencing a `Workload` object, its
-  `pod.Spec.PriorityClassName` equals to `workload.Spec.PriorityClassName`. However, we allow
-  creating pods before the workload object, and there doesn't seem to be an easy way to avoid
+  referencing a given `PodGroup` object which priority doesn't match the priority of the
+  PodGroup object.
+- introduce an admission to validate that if a `Pod` is referencing a `PodGroup` object, its
+  `pod.Spec.PriorityClassName` equals to `podGroup.Spec.PriorityClassName`. However, we allow
+  creating pods before the PodGroup object, and there doesn't seem to be an easy way to avoid
   races.
 - making `pod.Spec.PriorityClassName` and `pod.Spec.Priority` mutable fields and having a new
   workload controller responsible for reconciling these. However, that could introduce another
@@ -390,51 +409,72 @@ For Beta, we will decide if we need additional actions, e.g.:
 However, decision if we need any of these will be made when graduating this feature to Beta.
 
 It's worth mentioning here, that we want to introduce the same defaulting rules for
-`workload.Spec.PriorityClassName` that we have for pods. Namely, if `PriorityClassName` is unset
+`PodGroup.Spec.PriorityClassName` that we have for pods. Namely, if `PriorityClassName` is unset
 and there exists PriorityClass marked as `globalDefault`, we default it to that value.
 This consistency will allow us to properly handle cases when users set neither pods
-nor workload priorities.
+nor PodGroup priorities.
 
 Note that, for workload-aware preemption we will support the `preemptionPolicy` being part
 of requestion `PriorityClass` - namely both currently existing modes: `PreemptLowerPriority`
 and `Never`.
 
 Given that components operate on integer priorities, we will introduce a corresponding fields
-that reflect priority of a workload (similarly to how it's done in Pod API).
+that reflect priority of a PodGroup (similarly to how it's done in Pod API).
 Since it is effectively a derivative of the field introduced above it would be tempting to
-put that into WorkloadStatus. However, to simplify the potential future extension of adding
-priority also at the PodGroup level (and avoid introducing a corresponding structure of status),
-as well as for consistency with the Pod API, we actually will put that next to the
-`PriorityClassName` in the spec:
+put that into `PodGroup.Status`. However, for the consistency with the Pod API we actually
+will put that next to the `PriorityClassName` in the spec:
 
 ```golang
-type WorkloadSpec struct {
+type PodGroupTemplate struct {
     // Existing field(s).
 
-    // PriorityClassName, if specified, indicates the workload's priority that
-    // should be considered when scheduling this workload. "system-node-critical"
+    // PriorityClassName, if specified, indicates the priority that should be
+    // considered when scheduling this pod group. "system-node-critical"
     // and "system-cluster-critical" are two special keywords which indicate the
-	// highest priorities with the former being the highest priority. Any other
-	// name must be defined by creating a PriorityClass object with that name.
-	// If not specified, the priority will be default or zero if there is no
-	// default.
+    // highest priorities with the former being the highest priority. Any other
+    // name must be defined by creating a PriorityClass object with that name.
+    // If not specified, the priority will be default or zero if there is no
+    // default.
     //
-    // The authoritative priority for this workload is expressed via the
-    // 'spec.priority' field.
+    // The authoritative priority for this pod group is expressed via the
+    // 'priority' field.
     //
     // This field is immutable.
     PriorityClassName *string
 
-    // Priority reflects the priority of the workload.
+    // Priority reflects the priority of the pod group.
+    // The higher value, the higher the priority.
+    // This field is populated from the PriorityClassName.
+    Priority *int32
+}
+
+type PodGroupSpec struct {
+    // Existing field(s).
+
+    // PriorityClassName, if specified, indicates the priority that should be
+    // considered when scheduling this pod group. "system-node-critical"
+    // and "system-cluster-critical" are two special keywords which indicate the
+    // highest priorities with the former being the highest priority. Any other
+    // name must be defined by creating a PriorityClass object with that name.
+    // If not specified, the priority will be default or zero if there is no
+    // default.
+    //
+    // The authoritative priority for this pod group is expressed via the
+    // 'priority' field.
+    //
+    // This field is immutable.
+    PriorityClassName *string
+
+    // Priority reflects the priority of the pod group.
     // The higher value, the higher the priority.
     // This field is populated from the PriorityClassName.
     Priority *int32
 }
 ```
 
-If that appears not being enough, we will similarly extend the `PodGroup` API in a follow up.
-In such case, the priority of a pod would be the priority of a smallest unit in the `Workload`
-object (Workload, PodGroup, PodSubGroup, ...) corresponding to this pod.
+If that appears not being enough, we will similarly extend the `PodSubGroup` API in a follow up.
+In such case, the priority of a pod would be the priority of a smallest unit in the `PodGroup`
+object (PodGroup, PodSubGroup, ...) corresponding to this pod.
 
 
 ### Preemption algorithm
@@ -463,7 +503,7 @@ effectively tries to minimize the cascading preemptions later.
 
 
 We want to generalize the same algorithm to the workload case. However, the difference is not only
-moving to the level of `Workload`, but also no longer operating at the level of individual nodes.
+moving to the level of `PodGroup`, but also no longer operating at the level of individual nodes.
 We need to look at the cluster as a whole. With that in mind, keeping the algorithm efficient
 becomes a challenge, thus we modify to the approach below.
 
@@ -487,8 +527,8 @@ with preemption:
 1. For every domain computed above run the following points:
 
    1. Identify the list of all potential victims in that domain:
-      - all running workloads with (preemption) priority lower then preemptor priority; note that
-        some pods from that workload may be running outside of currently considered domain D - they
+      - all running pod groups with (preemption) priority lower then preemptor priority; note that
+        some pods from that pod group may be running outside of currently considered domain D - they
         need to contribute to scoring, but they won't contribute to feasibility of domain D.
       - all individual pods with priority lower the preemptor priority
 
@@ -497,9 +537,9 @@ with preemption:
 
    1. Sort all the potential victims to reflect their "importance" (from the most important to the
       least ones). Tentatively, the function will sort first by their priority, and within a single
-      priority prioritizing workloads over individual pods.
+      priority prioritizing pod groups over individual pods.
 
-   1. Perform best-effort reprieval of workloads and pods violating PodDisruptionBudgets. We achieve
+   1. Perform best-effort reprieval of pod groups and pods violating PodDisruptionBudgets. We achieve
       it by scheduling and temporarily adding the preemptor to `nodeInfo` structure (assuming that
       all potential victims are removed), and then iterating over potential victims that would violate
       PodDisruptionBudget to check if these can be placed in the exact same place they are running now.
@@ -599,15 +639,13 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    supports topology-aware scheduling. As a result, we're leaving it as a future extension -
    the algorithm can always be improved and will result in pretty local code changes.
 
-1. Non-uniform priority across PodGroups.
+1. Non-uniform priority across PodSubGroups.
 
-   As already signaled above, we predict the need for different PodGroups to have different
-   priorities. As an extension, we can even envision introducing `PodSubGroup` concept and
-   a case where different `PodSubGroups` have different priorities.
-   To achieve that, we could introduce `PriorityClassName` field also at the `PodGroup` (and
-   potentially also at `PodSubGroup`) level, with the semantic that lower-level structure
-   overwrites the higher-level one (e.g. priority set for `PodGroup` overwrites the priority
-   for `Workload`). So the API and semantics proposed in this KEP would allow for achieving
+   We anticipate that in the future the `PodSubGroup` concept will be introduced. We can envision
+   a case where different `PodSubGroups` will require to have different priorities.
+   To achieve that, we could introduce `PriorityClassName` field also at the `PodSubGroup` level, with the semantic that lower-level structure
+   overwrites the higher-level one (e.g. priority set for `PodSubGroup` overwrites the priority
+   for `PodGroup`). So the API and semantics proposed in this KEP would allow for achieving
    it in backward compatible way.
 
 1. Non-uniform PodGroups
@@ -682,10 +720,10 @@ This can be done with:
 We will create integration test(s) to ensure basic functionalities of workload preemption:
 
 - Pods from a single PodGroup with `DisruptionMode=Pod` can be preempted individually by the
-  higher priority Workload (PodGroup)
+  higher priority PodGroup
 - Pods from a single PodGroup with `DisruptionMode=PodGroup` are preempted all together even
   when preempting a single pod would be enough to free up the space for the higher priority
-  Workload (PodGroup)
+  PodGroup
 - Pods from a single PodGroup with `DisruptionMode=Pod` can be preempted individuallby by the
   higher priority individual pod.
 - Pods from a single PodGroup with `DisruptionMode=PodGroup` are preempted all together even
@@ -763,10 +801,10 @@ in the feature-gate framework.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes - the preemption victims chosen when scheduling a workload will be chosen using a slightly
+Yes - the preemption victims chosen when scheduling a pod group will be chosen using a slightly
 modified version of the algorithm. Thus the exact set of victims may slightly differ.
 
-The bigger changes in preemption victims may appear when workloads start using `PodGroup`
+The bigger changes in preemption victims may appear when pod groups start using `PodGroup`
 disruption mode, however that requires an explicit opt-in from the user (or controller)
 creating the Workload object.
 
@@ -958,8 +996,8 @@ No
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 Yes - new fields are added to the Workload API.
-For `PriorityClassName` and `Priority`, expected increase is O(100B) per Workload object.
-For `DisruptionMode`, expected increase is O(30B) per PodGroup in Workload object.
+For `PriorityClassName`, `Priority`, `DisruptionMode` expected increase is O(130B) per PodGroupTemplate object in Workload object.
+For `PriorityClassName`, `Priority`, `DisruptionMode` expected increase is O(130B) per PodGroup object.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
