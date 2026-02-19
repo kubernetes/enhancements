@@ -1,0 +1,37 @@
+title: Migrate kubernetes-mixin from kubernetes-monitoring to kubernetes-sigs organization
+kep-number: 5905
+authors:
+  - "@rexagod"
+owning-sig: sig-instrumentation
+status: implementable # Jumping over "provisional" here, due to the KEP's straightforward nature
+creation-date: 2026-02-09
+reviewers:
+  - "@dgrisonnet"
+  - "@pohly"
+  - "@richabanker"
+  - "@skl"
+approvers:
+  - "@dgrisonnet"
+  - "@pohly"
+  - "@richabanker"
+see-also:
+  - "https://github.com/kubernetes-monitoring/kubernetes-mixin/discussions/1169"
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: null
+disable-supported: true
+# The following PRR answers are required at beta release
+metrics: null
