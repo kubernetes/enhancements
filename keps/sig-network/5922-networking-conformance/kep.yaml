@@ -1,0 +1,19 @@
+title: Conformance Tests for Out-of-Tree Networking Features
+kep-number: 5922
+authors:
+  - "@danwinship"
+owning-sig: sig-network
+participating-sigs:
+  - sig-architecture
+  - sig-testing
+  - sig-docs
+status: provisional
+creation-date: 2026-02-12
+reviewers:
+  - "@aojea"
+  - "@thockin"
+  - TBD
+approvers:
+  - "@aojea"
+  - "@thockin"
+  - TBD
