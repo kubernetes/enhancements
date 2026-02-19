@@ -101,7 +101,7 @@ as least disruptive to end users and other Kubernetes developers as possible.
 
 ## Motivation
 
-Motiviation behind this effort is to allow cloud providers to develop and make releases independent from the core
+The motivation behind this effort is to allow cloud providers to develop and make releases independent from the core
 Kubernetes release cycle. The de-coupling of cloud provider code allows for separation of concern between "Kubernetes core"
 and the cloud providers within the ecosystem. In addition, this ensures all cloud providers in the ecosystem are integrating with
 Kubernetes in a consistent and extendable way.
@@ -131,7 +131,7 @@ In order to remove cloud provider code from `k8s.io/kubernetes`. A 4 phase appro
 ### Risks and Mitigations
 
 * Kubernetes users will need to add CCM deployments to their clusters. Previously, users were able to enable the cloud controller loops of the kubernetes-controller-manager through command line flags. With the change to external CCMs users will be responsible for managing their own CCM deployments.
-* Security for the core Kubernetes cloud provider interface will continue to reviewed by the Kuberenetes SIG Security community.
+* Security for the core Kubernetes cloud provider interface will continue to reviewed by the Kubernetes SIG Security community.
 * Security for the external CCMs will be reviewed by the project communities which own the specific CCM implementation, with supplemental reviews done by the SIG Security community.
 * UX for the core Kubernetes cloud provider interface will continue to be reviewed by the Kubernetes SIG Cloud Provider, SIG Architecture, ans SIG API Machinery communities.
 * UX for the external CCMs will be reviewed by the project communities which own the specific CCM implementation.
@@ -144,7 +144,7 @@ In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/prov
 * The staged legacy provider repos can be imported from the out-of-tree provider if they choose to opt into the in-tree cloud provider implementation. This allows for a smoother transition between in-tree and out-of-tree providers in cases where there are version incompatibilites between the two.
 * Staging the cloud providers indicates to the community that they are slated for removal in the future.
 
-The biggest challenge of this phase is to remove dependences to `k8s.io/kubernetes` in all the providers. This is a requirement of staging a repository and a best practice for consuming external dependencies. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. The full list of internal dependencies that need to be removed can be found in issue [69585](https://github.com/kubernetes/kubernetes/issues/69585).
+The biggest challenge of this phase is to remove dependencies to `k8s.io/kubernetes` in all the providers. This is a requirement of staging a repository and a best practice for consuming external dependencies. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. The full list of internal dependencies that need to be removed can be found in issue [69585](https://github.com/kubernetes/kubernetes/issues/69585).
 
 ### Phase 2 - Building CCM from Provider Repos
 
@@ -597,7 +597,7 @@ the previous in-tree implementations.
 ###### What are other known failure modes?
 - CCM not communicating with provider infrastructure.
   - Detection: Nodes not having the `Uninitialized` taint removed
-    autoamtically. The `nodesync_error_total` metric shows an increasing
+    automatically. The `nodesync_error_total` metric shows an increasing
     rate.
   - Mitigation: Check configuration of cloud credentials and CCM to ensure
     that the proper values, RBAC, and quotas are granted with the provider.
