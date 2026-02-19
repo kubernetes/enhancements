@@ -1,0 +1,30 @@
+title: Graceful Deletion for Custom Resources
+kep-number: 5673
+authors:
+  - "@dasionov"
+owning-sig: sig-api-machinery
+participating-sigs:
+status: provisional
+creation-date: 2025-10-22
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+# This KEP proposes a beta implementation without feature gate as the change
+# is backward compatible and low-risk.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.35"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  stable: "v1.35"
+
+# No feature gate required - this is a backward-compatible enhancement to
+# existing deletion behavior that poses minimal risk.
+feature-gates: []
+
