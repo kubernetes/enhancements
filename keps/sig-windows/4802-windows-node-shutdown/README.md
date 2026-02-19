@@ -36,7 +36,6 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -47,16 +46,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -271,10 +270,20 @@ Until then, we will cover all the scenerios with e2e tests
 
 #### Beta -> GA Graduation
 
-* Addresses feedback from beta
+* Addressed feedback from beta
+  * Beta feedback has been collected and incorporated
+  * No major issues or API changes identified during beta period
 * Sufficient number of users using the feature
+  * Feature has been validated in production environments
+  * Positive feedback from Windows node operators
 * Confident that no further API / kubelet config configuration options changes are needed
+  * Kubelet configuration options (`ShutdownGracePeriod`, `ShutdownGracePeriodCriticalPods`) are stable
 * Close on any remaining open issues & bugs
+  * All known bugs addressed
+  * No blocking issues for GA graduation
+* E2E tests are stable and flake-free for 2+ weeks
+  * Tests enabled in CAPZ cluster via [PR #506](https://github.com/kubernetes-sigs/windows-testing/pull/506)
+* User-facing documentation created for kubernetes.io
 
 ### Upgrade / Downgrade Strategy
 
@@ -298,6 +307,7 @@ This section must be completed when targeting alpha to a release.
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `WindowsGracefulNodeShutdown`
   - Components depending on the feature gate: `kubelet`
+  - **GA**: Feature gate is enabled by default. In 2-3 releases after GA, the feature gate may be deprecated and eventually removed.
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -478,7 +488,8 @@ details). For now, we leave it here.
 ## Implementation History
 
 *   2024-08-31 - [Initial KEP approved](https://github.com/kubernetes/enhancements/pull/2001)
-*   
+*   2026-02 - GA graduation in v1.36
+
 ## Drawbacks
 
 
@@ -494,11 +505,5 @@ details). For now, we leave it here.
 * Use RegKey WaitToKillServiceTimeout to control the shutdown time out value
     * As discussed in the Background part, Windows does not prefer to use this RegKey to update the shutdown
       timeout value, which will have a global affect on the services running on the host.
-
-## Infrastructure Needed (Optional)
-
-
- 
- 
 
 
