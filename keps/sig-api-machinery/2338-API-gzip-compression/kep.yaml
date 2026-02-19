@@ -5,25 +5,31 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-cli
+status: implemented
+creation-date: 2019-03-22
 reviewers:
   - "@lavalamp"
   - "@liggitt"
 approvers:
   - "@liggitt"
   - "@lavalamp"
-editor: TBD
-creation-date: 2019-03-22
-status: implementable
+
 see-also:
   - "https://github.com/kubernetes/kubernetes/issues/44164"
-replaces:
-superseded-by:
+replaces: []
+stage: beta
 
-# The milestone at which this feature was, or is targeted to be, at each stage.
+latest-milestone: "v1.16"
+
 milestone:
-  alpha: "v1.7"
+  alpha: "v1.8"
   beta: "v1.16"
 
-latest-milestone: "1.16"
+feature-gates:
+  - name: APIResponseCompression
+    components:
+      - kube-apiserver
+disable-supported: true
 
-stage: "beta"
+# The following PRR answers are required at beta release
+metrics: []
