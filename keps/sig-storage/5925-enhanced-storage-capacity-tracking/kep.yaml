@@ -1,0 +1,28 @@
+title: Enhanced CSI Storage Capacity Tracking
+kep-number: NNNN
+authors:
+  - "@TBD"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-scheduling
+status: provisional
+creation-date: 2026-02-16
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - "/keps/sig-storage/1472-storage-capacity-tracking"
+  - "/keps/sig-storage/1845-prioritization-on-volume-capacity"
+  - "/keps/sig-storage/4049-storage-capacity-scoring-of-nodes-for-dynamic-provisioning"
+  - "/keps/sig-storage/5381-mutable-pv-affinity"
+stage: alpha
+latest-milestone: "v1.36"
+milestone:
+  alpha: "v1.36"
+feature-gates:
+  - name: CSIStorageCapacityV2
+    components:
+      - kube-apiserver
+      - kube-scheduler
+disable-supported: true
