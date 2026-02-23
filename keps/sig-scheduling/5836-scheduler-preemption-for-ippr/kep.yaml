@@ -1,0 +1,38 @@
+title: Scheduler Preemption for In-Place Pod Resize
+kep-number: 5836
+authors:
+  - "@natasha41575"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+  - sig-autoscaling
+status: implementable
+creation-date: 2026-02-23
+reviewers:
+  - "@tallclair"
+approvers:
+  - "@macsko"
+  - "@sanposhiho"
+  - "@dom4ha"
+
+see-also:
+  - "/keps/sig-scheduling/268-priority-preemption"
+  - "/keps/sig-node/1287-in-place-update-pod-resources"
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+
+feature-gates:
+  - name: SchedulerPreemptionForPodResize
+    components:
+      - kube-apiserver
+      - kube-scheduler
+disable-supported: true
+
+metrics:
