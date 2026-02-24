@@ -985,8 +985,8 @@ gRPC service provided by the
 [external-snapshot-metadata sidecar](#the-external-snapshot-metadata-sidecar)
 deployed by a CSI driver.
 
-The CR name should be that of the associated CSI driver to ensure that only one such
-CR is created for a given driver.
+Instances of the CR are created by a CSI driver installer and named for the
+associated CSI driver, to ensure that only one such CR is created for a given driver.
 
 The CR `spec` contains the following fields:
 
@@ -1002,7 +1002,10 @@ The CR `spec` contains the following fields:
   presented to the [sidecar](#the-external-snapshot-metadata-sidecar) by a Kubernetes client.
   The value should be unique to the service if possible; for example, it could be the DNS name of the service.
 
-The full Custom Resource Definition is shown below:
+The `SnapshotMetadataService` Custom Resource Definition should be installed by the cluster administrator.
+The specification of this CRD at the time of publication of this KEP is shown below;
+see [cbt.storage.k8s.io_snapshotmetadataservices.yaml](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/3a139dd44d4ffa01343a91bed40996b1db56fd38/client/config/crd/cbt.storage.k8s.io_snapshotmetadataservices.yaml)
+in the source code repository for the latest copy.
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -1022,7 +1025,7 @@ spec:
     singular: snapshotmetadataservice
   scope: Cluster
   versions:
-  - name: v1alpha1
+  - name: v1beta1
     schema:
       openAPIV3Schema:
         description: 'The presence of a SnapshotMetadataService CR advertises the existence of a CSI
@@ -1512,16 +1515,19 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-The CSI driver installs the `SnapshotMetadataService` CRD.
-Since the `SnapshotMetadataService` CRD is shared between CSI drivers, a
-CSI driver should fail if it finds a pre-existing CRD with an incompatible
-version and surface the error to the cluster administrator to resolve.
+The [SnapshotMetadataService CRD](https://github.com/kubernetes-csi/external-snapshot-metadata/blob/3a139dd44d4ffa01343a91bed40996b1db56fd38/client/config/crd/cbt.storage.k8s.io_snapshotmetadataservices.yaml)
+should be installed either by the Kubernetes distribution or the cluster administrator.
+This CRD applies to all the installed CSI drivers that support this feature.
 
-The CSI driver creates an instance
-of this CR, and deploys the `external-snapshot-metadata` sidecar.
+A CSI driver creates an instance of the `SnapshotMetadataService` CR
+and deploys the `external-snapshot-metadata` sidecar.
+The CSI driver may fail to install or may skip the configuration of this feature
+if it finds that the installed `SnapshotMetadataService` CRD has an incompatible
+version; it must surface the error for the cluster administrator to resolve
+in either circumstance.
+
 Each CSI driver vendor independently must explicitly handle failure to construct
 these objects during rollout or rollback if their driver fails.
-
 Any rollback will cause active operations by a backup application to fail.
 Such failure is similar to a network failure that the backup client application ought to be
 capable of handling gracefully.
