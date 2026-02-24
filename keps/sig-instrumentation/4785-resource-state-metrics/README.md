@@ -729,20 +729,26 @@ in back-to-back releases.
 
 - Add support for admission web-hooks to validate the configuration on
   creation/update of the managed resource.
-- Add support for `starlark` resolver to help define more complex logic,
-  in addition to mainstream DSLs seen across the ecosystem for similar
-  use-cases, such as `jq` and [`jsonpath`].
-- Explore areas that could benefit from (gzipped) compression, such as
-  the configuration field in the managed resource, or the payload
-  endpoint(s).
+- Add support for `starlark` resolver to help define more complex logic, in
+  addition to mainstream DSLs seen across the ecosystem for similar use-cases,
+  such as `jq` and `jsonpath` ([`prometheus-community/json_exporter`],
+  [`openmcp-project/metrics-operator`], etc.).
+- Explore areas that could benefit from (gzipped and zstd) compression, such as
+  the configuration field in the managed resource, or the payload endpoint(s).
 
-[`jsonpath`]: https://github.com/openmcp-project/metrics-operator#metric
+[`openmcp-project/metrics-operator`]: https://github.com/openmcp-project/metrics-operator#metric
+[`prometheus-community/json_exporter`]: https://github.com/prometheus-community/json_exporter 
 
 #### Stable
 
+- Consider supporting all relevant metric types that Prometheus' OpenMetrics
+  implementation allows. This would entail `Counter`s currently, and `Info` and
+  `Stateset` in the future. See [expfmt.MetricFamilyToOpenMetrics] for more.
 - Complete API surface test coverage for all applicable and relevant
   test types.
 - TBD
+
+[expfmt.MetricFamilyToOpenMetrics]: https://pkg.go.dev/github.com/prometheus/common@v0.67.5/expfmt#MetricFamilyToOpenMetrics
 
 ### Upgrade / Downgrade Strategy
 
