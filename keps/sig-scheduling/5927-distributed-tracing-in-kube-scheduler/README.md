@@ -179,11 +179,11 @@ The trace hierarchy mirrors the Scheduling Framework's phases:
 **Span Attributes:** Each span will include relevant attributes:
 
 * `SchedulePod`: `k8s.pod.name`, `k8s.pod.namespace`, `k8s.pod.uid`
-* Phase spans: `scheduler.phase`, `scheduler.profile`
-* Plugin spans: `scheduler.plugin.name`, `scheduler.plugin.extension_point`
-* Result spans: `scheduler.result` (e.g., `Success`, `Unschedulable`, `Error`), `scheduler.selected_node` (on bind)
+* Phase spans: `k8s.scheduler.phase`, `k8s.scheduler.profile`
+* Plugin spans: `k8s.scheduler.plugin.name`, `k8s.scheduler.plugin.extension_point`
+* Result spans: `k8s.scheduler.result` (e.g., `Success`, `Unschedulable`, `Error`), `k8s.scheduler.selected_node` (on bind)
 
-**Queue Wait Time:** The root `SchedulePod` span will start when the Pod is dequeued from the active queue, and will include an attribute `scheduler.queue_wait_ms` recording how long the Pod waited in the queue. This allows operators to distinguish queue wait time from actual scheduling compute time.
+**Queue Wait Time:** The root `SchedulePod` span will start when the Pod is dequeued from the active queue, and will include an attribute `k8s.scheduler.queue_wait_ms` recording how long the Pod waited in the queue. This allows operators to distinguish queue wait time from actual scheduling compute time.
 
 ### Configuration
 
@@ -287,7 +287,7 @@ The implementation hooks into the Scheduling Framework at two levels:
 ```go
 func (f *frameworkImpl) RunFilterPlugins(ctx context.Context, ...) *fwk.Status {
     ctx, span := tracing.Start(ctx, "filter",
-        attribute.String("scheduler.phase", "filter"))
+        attribute.String("k8s.scheduler.phase", "filter"))
     defer span.End(filterLogThreshold)
 
     // existing filter logic, with ctx propagated to plugins
@@ -303,14 +303,14 @@ func (f *frameworkImpl) RunFilterPlugins(ctx context.Context, ...) *fwk.Status {
 ```go
 func (f *frameworkImpl) runFilterPlugin(ctx context.Context, pl framework.FilterPlugin, ...) *framework.Status {
     ctx, span := tracing.Start(ctx, "plugin: "+pl.Name(),
-        attribute.String("scheduler.plugin.name", pl.Name()),
-        attribute.String("scheduler.plugin.extension_point", "filter"),
+        attribute.String("k8s.scheduler.plugin.name", pl.Name()),
+        attribute.String("k8s.scheduler.plugin.extension_point", "filter"),
     )
     defer span.End(pluginLogThreshold)
 
     status := pl.Filter(ctx, state, pod, nodeInfo)
     if !status.IsSuccess() {
-        span.AddEvent("plugin rejected", attribute.String("scheduler.result", status.Code().String()))
+        span.AddEvent("plugin rejected", attribute.String("k8s.scheduler.result", status.Code().String()))
     }
     return status
 }
