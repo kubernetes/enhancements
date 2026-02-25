@@ -125,6 +125,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+
 ## Design Details
 
 This is Work in Progress, we will be adding the details here.
@@ -149,6 +150,54 @@ This design will add: `mountOptions` as an array
 This is extendable to support more options and also in sync with the `stickyBit` work done here:
 
 [Add `stickyBit` support for `emptydir` kubernetes #130277](https://github.com/kubernetes/kubernetes/pull/130277)
+
+#### Implementation mechanism
+
+The mechanism to apply `noexec` differs by medium: mount options for memory, and a self-bind mount with `noexec` for default.
+
+**tmpfs (medium: Memory)**
+
+In the emptyDir volume plugin, the tmpfs mount options are built in `generateTmpfsMountOptions`. The `noexec` option is appended in this function before mounting.
+
+```go
+func (ed *emptyDir) generateTmpfsMountOptions(noswapSupported bool) (options []string) {
+   // Linux system default is 50% of capacity.
+   if ed.sizeLimit != nil && ed.sizeLimit.Value() > 0 {
+       options = append(options, fmt.Sprintf("size=%d", ed.sizeLimit.Value()))
+   }
+
+   if noswapSupported {
+       options = append(options, swap.TmpfsNoswapOption)
+   }
+
+   options = append(options, "noexec")
+   return options
+}
+```
+
+**Default (medium: {})**
+
+For default emptyDir there is no separate filesystem mount, only a directory on the node's existing filesystem is present, so mount options cannot be applied the same way as for tmpfs. To apply `noexec`, the directory is turned into a mount point by doing a self-bind mount with `noexec` (bind the directory to itself, then remount with `noexec`). The same kubelet mounter API used for other volume types is used here.
+
+In the emptyDir plugin's SetUpAt, for disk-backed emptyDir (`StorageMediumDefault`):
+
+```go
+case ed.medium == v1.StorageMediumDefault:
+       if err = ed.setupDir(dir); err != nil {
+           break
+       }
+       if ed.mounter != nil {
+           notMnt, mountErr := ed.mounter.IsLikelyNotMountPoint(dir)
+           if mountErr != nil {
+               err = mountErr
+               break
+           }
+           if notMnt {
+               klog.V(3).Infof("pod %v: bind-mounting default emptyDir at %v with noexec", ed.pod.UID, dir)
+               err = ed.mounter.MountSensitiveWithoutSystemd(dir, dir, "", []string{"bind", "noexec"}, nil)
+           }
+       }
+```
 
 ### Test Plan
 
@@ -380,14 +429,13 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
+  - Feature gate name: EmptyDirMountOptions
+  - Components depending on the feature gate: kubelet
 - [ ] Other
-  - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    of a node? No
 
 ###### Does enabling the feature change any default behavior?
 
@@ -395,6 +443,7 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+No. The `noexec` restriction is only applied if a user explicitly configures the `mountOptions` field within `emptyDir`. In the absence of this field, both the existing and new `emptyDir` volumes will retain the default behavior (executable).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -408,8 +457,11 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
+Yes. The feature is opt-in at the individual pod level via the `mountOptions` field. To stop using the feature for a pod, remove the `mountOptions` field from the pod spec. To roll back at the cluster level, set the feature gate to `false` on the kubelet and restart the kubelet, the gate is then disabled and no other changes are required.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Once reenabled, the feature gate becomes available for all newly created pods. Existing pods will continue to operate with the default behavior until they are deleted and recreated under the active feature gate.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -707,6 +759,20 @@ What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+#### ACL
+
+Using ACLs would allow per-user or per-group control (e.g. allow/deny execute on specific files or directories). ACLs are applied at the file or directory level, not to the whole filesystem. We did not choose this because:
+
+- Control is per file/directory and per user/group, not filesystem-wide.
+- The root user can still execute any binary because ACLs do not restrict root in the same way a mount option does.
+
+#### SELinux
+
+Using SELinux could restrict execution based on context. We did not choose this because:
+
+- Root can still execute binaries when SELinux policy allows it and we need execution disabled at the mount level for the whole volume.
+- Behavior depends on the host's SELinux configuration and policy, which is not uniform across environments.
 
 ## Infrastructure Needed (Optional)
 
