@@ -570,7 +570,9 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-The scoring function will be tested in test/integration/volumescheduling/storage_capacity_scoring_test.go.
+The scoring function is tested in test/integration/volumescheduling/storage_capacity_scoring_test.go.
+
+- [test/integration/volumescheduling/storage_capacity_scoring_test.go](https://github.com/kubernetes/kubernetes/blob/89900005eed1fdfe3060680bddb69ea2a17ede22/test/integration/volumescheduling/storage_capacity_scoring_test.go): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=volumescheduling)
 
 ##### e2e tests
 
@@ -593,7 +595,7 @@ The following e2e tests are planned:
 
 - When only static provisioning is available, or a mixture of static provisioning and dynamic provisioning is available:
   - Does it pass traditional tests?
-- When only dynamic provisioning is available:
+- When only dynamic provisioning is available (single CSI driver case):
   - Is the Pod placed on the node with the largest available space by default?
   - When `VolumeBindingArgs` is set to "Prefer a node with the maximum allocatable", is the Pod placed on the node with the largest available space?
   - When `VolumeBindingArgs` is set to "Prefer a node with the least allocatable", is the Pod placed on the node that meets the requested size but has the smallest available space?
@@ -909,7 +911,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-It may affect the time taken by scheduling. Clarify it during the beta phase.
+Metric `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}` <= 100ms on 90-percentile.
+
+(This follows the same SLO established in KEP-1845, as the additional overhead introduced by this KEP is limited to arithmetic calculations for scoring.)
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -928,18 +932,12 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-Clarify this during the beta phase.
-
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name: `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}`
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: `plugin_execution_duration_seconds`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1117,7 +1115,8 @@ Check the kube-scheduler logs.
 
 ## Implementation History
 
-- 2023-05-30 Initial KEP sent out for review
+- v1.33: Alpha release
+- v1.37: Beta release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
