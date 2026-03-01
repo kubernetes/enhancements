@@ -241,11 +241,9 @@ This provides a consistent operator experience across all Kubernetes components 
 
 ### Context Propagation
 
-To link Scheduler traces back to the original creation of the Pod, this proposal extracts the W3C Trace Context from Pod annotations using the helper functions proposed in [KEP-5915: Standardizing Async Trace Context Propagation](https://github.com/kubernetes/enhancements/issues/5915). KEP-5915 adds `InjectContext`, `ExtractContext`, and `StartReconcileSpan` primitives to `k8s.io/component-base/tracing` that standardize how controllers propagate trace context across asynchronous boundaries using object annotations and OpenTelemetry Span Links.
+To link Scheduler traces back to the original creation of the Pod, this proposal extracts the W3C Trace Context from Pod annotations using the helper functions proposed in [KEP-5915: Standardizing Async Trace Context Propagation](https://github.com/kubernetes/enhancements/issues/5915).
 
-**The Scheduler as the first adopter of KEP-5915:** The kube-scheduler is a natural first consumer of this pattern. It is the most prominent asynchronous component in the Pod lifecycle — it watches for unscheduled Pods and reconciles them independently of the original API request. Adopting KEP-5915's `ExtractContext` and Span Link pattern here serves as a concrete, high-value proof point for the async trace context propagation standard. Success in the Scheduler paves the way for adoption in other async consumers (Kubelet, kube-controller-manager, custom operators).
-
-The design of trace context injection in the API Server does not impact this proposal. The scheduler extracts trace context from Pod annotations to create Span Links, and re-injects its own context after binding using KEP-5915's helpers. KEP-5915 proposes that when the API Server handles a Pod creation request, it injects the current trace context (from the HTTP request's `traceparent` header) into the Pod's annotations (e.g., `tracing.k8s.io/traceparent`) using KEP-5915's `InjectContext`.
+The design of trace context injection in the API Server does not impact this proposal. The scheduler extracts trace context from Pod annotations to create Span Links, and re-injects its own context after binding using KEP-5915's helpers.
 
 When the Scheduler picks up the Pod:
 
@@ -254,11 +252,16 @@ When the Scheduler picks up the Pod:
 
 Span Links (not Child Spans) are used because the scheduling cycle is asynchronous and decoupled from the API request. Using Child Spans would incorrectly imply that the API request is "blocked" until scheduling finishes, which breaks waterfall visualizations. Span Links preserve the causal connection ("This scheduling happened because of that Pod creation") without implying synchronous dependency.
 
+If no trace context is present in the Pod's annotations (e.g., the API Server does not yet inject context), the scheduler still creates a useful root span — it just won't have a link to the creation trace.
+
+### Implementation
+
+The implementation hooks into the Scheduling Framework at multiple levels:
+
+**Root span with Span Link** — Creating the root `SchedulePod` span in `pkg/scheduler` when a Pod is dequeued, using KEP-5915's `StartReconcileSpan` to extract trace context from Pod annotations and create a Span Link:
+
 ```go
 func (sched *Scheduler) schedulePod(ctx context.Context, pod *v1.Pod) {
-    // Use KEP-5915's StartReconcileSpan to extract trace context from
-    // Pod annotations and create a new root span with a Span Link to
-    // the original creation trace.
     ctx, span := tracing.StartReconcileSpan(
         ctx, "SchedulePod", pod, sched.tracer, sched.propagator,
     )
@@ -270,19 +273,12 @@ func (sched *Scheduler) schedulePod(ctx context.Context, pod *v1.Pod) {
         attribute.String("k8s.pod.uid", string(pod.UID)),
     )
 
-    // Run scheduling cycle with trace context propagated through ctx
     result := sched.schedulingCycle(ctx, pod)
     // ...
 }
 ```
 
-This directly consumes the `StartReconcileSpan` helper from KEP-5915, which handles the `ExtractContext` -> Span Link creation flow internally. If no trace context is present in the Pod's annotations (e.g., the API Server does not yet inject context), the scheduler still creates a useful root span — it just won't have a link to the creation trace.
-
-### Implementation
-
-The implementation hooks into the Scheduling Framework at two levels:
-
-**Level 1: Phase-level spans** — Wrapping each phase method in `pkg/scheduler/framework/runtime` using `tracing.Start()` from `k8s.io/component-base/tracing`. This creates both an OpenTelemetry span and a `utiltrace` span simultaneously:
+**Phase-level spans** — Wrapping each phase method in `pkg/scheduler/framework/runtime` using `tracing.Start()` from `k8s.io/component-base/tracing`. This creates both an OpenTelemetry span and a `utiltrace` span simultaneously:
 
 ```go
 func (f *frameworkImpl) RunFilterPlugins(ctx context.Context, ...) *fwk.Status {
@@ -298,7 +294,7 @@ func (f *frameworkImpl) RunFilterPlugins(ctx context.Context, ...) *fwk.Status {
 }
 ```
 
-**Level 2: Per-plugin spans** — Wrapping individual plugin calls:
+**Per-plugin spans** — Wrapping individual plugin calls:
 
 ```go
 func (f *frameworkImpl) runFilterPlugin(ctx context.Context, pl framework.FilterPlugin, ...) *framework.Status {
