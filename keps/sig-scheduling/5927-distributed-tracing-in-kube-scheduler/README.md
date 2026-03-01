@@ -245,7 +245,7 @@ To link Scheduler traces back to the original creation of the Pod, this proposal
 
 **The Scheduler as the first adopter of KEP-5915:** The kube-scheduler is a natural first consumer of this pattern. It is the most prominent asynchronous component in the Pod lifecycle — it watches for unscheduled Pods and reconciles them independently of the original API request. Adopting KEP-5915's `ExtractContext` and Span Link pattern here serves as a concrete, high-value proof point for the async trace context propagation standard. Success in the Scheduler paves the way for adoption in other async consumers (Kubelet, kube-controller-manager, custom operators).
 
-When the API Server handles a Pod creation request, it injects the current trace context (from the HTTP request's `traceparent` header) into the Pod's annotations (e.g., `tracing.k8s.io/traceparent`) using KEP-5915's `InjectContext`.
+The design of trace context injection in the API Server does not impact this proposal. The scheduler extracts trace context from Pod annotations to create Span Links, and re-injects its own context after binding using KEP-5915's helpers. KEP-5915 proposes that when the API Server handles a Pod creation request, it injects the current trace context (from the HTTP request's `traceparent` header) into the Pod's annotations (e.g., `tracing.k8s.io/traceparent`) using KEP-5915's `InjectContext`.
 
 When the Scheduler picks up the Pod:
 
