@@ -478,6 +478,8 @@ During normal runtime, the SDK is non-blocking — export happens asynchronously
 * `scheduler_pending_pods`: If Pods start accumulating unexpectedly.
 * Process CPU and memory usage of the kube-scheduler process.
 
+Additionally, the OTel-Go SDK has [experimental internal metrics](https://github.com/open-telemetry/opentelemetry-go/issues/2547) for the trace SDK. Once those stabilize, they can be surfaced via the Prometheus exporter on the scheduler's metrics endpoint, providing answers to questions like: how many spans are being sampled, how many are in the export queue, how many were dropped due to queue overflow, and how long export is taking. This would significantly reduce the need for custom metrics like `scheduler_tracing_spans_exported_total`.
+
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
 Will be tested during alpha. The feature is stateless, so upgrade/downgrade/upgrade cycles should be straightforward.
@@ -492,7 +494,7 @@ No.
 
 - [X] Metrics
   - The scheduler already exposes `scheduler_scheduling_attempt_duration_seconds`. When tracing is enabled, operators can verify trace production by checking their tracing backend for `SchedulePod` spans.
-  - A new metric `scheduler_tracing_spans_exported_total` will track the number of trace spans successfully exported, with labels for `result` (success/error).
+  - A new metric `scheduler_tracing_spans_exported_total` will track the number of trace spans successfully exported, with labels for `result` (success/error). This metric may be replaced in the future by [OTel-Go SDK internal metrics](https://github.com/open-telemetry/opentelemetry-go/issues/2547) once those stabilize.
 
 ###### How can someone using this feature know that it is working for their instance?
 
