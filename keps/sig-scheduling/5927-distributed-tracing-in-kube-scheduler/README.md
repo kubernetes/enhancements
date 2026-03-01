@@ -93,7 +93,7 @@ These questions are fundamental to operating Kubernetes clusters at scale, and t
 * **Plugin Visibility:** Generate child spans for individual plugin execution (e.g., `RunFilterPlugins`, `RunScorePlugins`) to expose per-plugin latency. Ensure the trace context is available to custom plugins (out-of-tree), allowing platform engineers to trace their own proprietary scheduling logic.
 * **Scheduling Queue Observability:** Measure scheduling queue latency — the duration a Pod remains Pending in the active queue before the scheduling cycle begins.
 * **Consistency:** Reuse the existing `TracingConfiguration` API and `component-base` tracing libraries established by KEP-647 (API Server Tracing) and KEP-2831 (Kubelet Tracing).
-* **Context Propagation:** Link Scheduler traces back to the original Pod creation trace by extracting W3C Trace Context from Pod annotations (as detailed in [KEP-5915](/keps/sig-instrumentation/5915-async-trace-context-propagation/README.md)), enabling full end-to-end lifecycle tracing.
+* **Context Propagation:** Link Scheduler traces back to the original Pod creation trace by extracting W3C Trace Context from Pod annotations (as detailed in [KEP-5915](https://github.com/kubernetes/enhancements/issues/5915)), and re-inject the Scheduler's own trace context after binding so downstream consumers (e.g., Kubelet) can link back to the Scheduler's trace, enabling full end-to-end lifecycle tracing.
 
 ### Non-Goals
 
@@ -356,7 +356,8 @@ Target coverage for new tracing code: >80%
 - [ ] Add OpenTelemetry span instrumentation to `schedulingCycle` and `bindingCycle` in `pkg/scheduler`.
 - [ ] Generate per-plugin child spans for Filter, Score, and other extension points.
 - [ ] Reuse `TracingConfiguration` for scheduler component config.
-- [ ] Extract W3C Trace Context from Pod annotations (using [KEP-5915](/keps/sig-instrumentation/5915-async-trace-context-propagation/README.md)) and create Span Links on the root `SchedulePod` span.
+- [ ] Extract W3C Trace Context from Pod annotations (using [KEP-5915](https://github.com/kubernetes/enhancements/issues/5915)) and create Span Links on the root `SchedulePod` span.
+- [ ] Re-inject the Scheduler's own trace context into Pod annotations after binding, so downstream consumers (e.g., Kubelet) can link back to the Scheduler's trace.
 - [ ] Parity with existing `utiltrace` instrumentation in the scheduler (achieved automatically via `component-base/tracing`'s unified `tracing.Start()` API).
 - [ ] Ensure consistent span naming and attributes with API Server and Kubelet tracing.
 - [ ] Unit tests for all new tracing instrumentation.
