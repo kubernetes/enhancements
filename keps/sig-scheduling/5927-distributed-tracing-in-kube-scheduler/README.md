@@ -365,7 +365,6 @@ Target coverage for new tracing code: >80%
 
 #### Beta
 
-- [ ] OpenTelemetry-Go SDK has reached GA (already satisfied).
 - [ ] Gather feedback from early adopters on trace structure and usefulness.
 - [ ] Address any performance concerns identified during alpha.
 - [ ] Tracing 100% of scheduling attempts does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
