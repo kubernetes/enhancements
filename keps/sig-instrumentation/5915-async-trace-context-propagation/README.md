@@ -168,7 +168,6 @@ The guideline: **Inject when the update represents a new action or decision**, n
 **Who is responsible for injection:**
 - **API Server**: When handling user requests that create objects (e.g., `kubectl create pod`)
 - **Controllers**: When creating child objects or making control plane decisions (e.g., Deployment Controller creating ReplicaSets, ReplicaSet Controller creating Pods)
-- **Mutating Admission Webhooks**: Could inject context when modifying objects (though not recommended as primary approach - see Alternatives section)
 
 Each component that creates or updates an object's spec should call `tracing.InjectContext()` with its current context before persisting the object.
 
