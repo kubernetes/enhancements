@@ -214,10 +214,9 @@ Job B is admitted, but when its container starts, only 4GB are actually free.
 Job B fails at runtime.
 
 **Desired behavior**: Memory Manager reads sysfs during admission and sees only
-4GB free. Job B is rejected with error:
-`insufficient hugepages-2Mi on NUMA node(s) [0,1]: requested 6Gi, available 4Gi`
-
-Job B can be rescheduled to another node with sufficient hugepages.
+4GB free. Job B is rejected at admission with an error indicating insufficient
+free hugepages on the relevant NUMA node(s), allowing it to be rescheduled to
+another node with sufficient hugepages.
 
 ### Notes/Constraints/Caveats
 
@@ -268,7 +267,18 @@ Job B can be rescheduled to another node with sufficient hugepages.
 
 The core enhancement is adding a `verifyOSHugepagesAvailability()` function to
 the Memory Manager's Static policy, called during `Allocate()`. This function
-reads fresh hugepage availability and rejects pods when insufficient.
+combines two sources to determine actual availability:
+
+1. **Memory Manager internal state**: Tracks hugepage allocations for Guaranteed
+   pods per NUMA node, including pages allocated but not yet faulted by processes.
+2. **OS-reported free hugepages** (sysfs `free_hugepages`): Reflects actual kernel
+   state, catching consumption by Burstable pods and other untracked sources.
+
+The effective available hugepages is `min(internal_free, os_free)` per NUMA node:
+- `internal_free` prevents double-counting pages committed to existing Guaranteed
+  pods that haven't been faulted yet (which sysfs still reports as "free")
+- `os_free` catches hugepage consumption that the Memory Manager doesn't track
+  (e.g., Burstable pods)
 
 ### Implementation Approaches
 
@@ -335,11 +345,12 @@ func (p *staticPolicy) verifyOSHugepagesAvailability(
     pod *v1.Pod,
     container *v1.Container,
 ) error {
-    // 1. Read free hugepages directly from sysfs for each NUMA node
-    // 2. For each hugepage size requested by the container:
-    //    a. Sum free hugepages across candidateNUMANodes only
-    //    b. Compare against the requested amount
-    // 3. Return error if insufficient, with detailed message
+    // For each hugepage size requested by the container:
+    // 1. Get Memory Manager's internal free count per candidate NUMA node
+    // 2. Read OS free hugepages from sysfs per candidate NUMA node
+    // 3. Effective available = min(internal_free, os_free) per NUMA node
+    // 4. Sum effective available across candidate NUMA nodes
+    // 5. Return error if sum < requested amount
 }
 ```
 
@@ -348,8 +359,12 @@ The verification:
 - Only checks hugepage resources (not regular memory)
 - **Respects NUMA node selection**: Only checks the specific NUMA nodes that the
   Memory Manager's allocation algorithm has selected (see Topology Manager section)
-- Returns admission error if insufficient free hugepages, including the hugepage
-  size, NUMA node(s), requested amount, and available amount to aid debugging
+- Returns an admission error if insufficient free hugepages are detected
+
+**User-observable behavior**: Operators can identify verification failures through
+the `FailedHugepagesVerification` event reason and the verification metrics
+described in the [Observability](#observability) section. The specific error
+message format is an implementation detail and may change between releases.
 
 ### Integration with Topology Manager
 
