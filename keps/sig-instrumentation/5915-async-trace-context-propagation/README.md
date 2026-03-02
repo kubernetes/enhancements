@@ -125,7 +125,7 @@ Kubernetes is fundamentally an event-driven, asynchronous system. A user's reque
 
 ### Non-Goals
 
-* Modifying the Kubernetes API to add tracing context as a first-class field (this uses annotations instead).
+* Modifying object metadata to add tracing context as a first-class field (this uses annotations instead).
 * Automatically instrumenting all controllers (adoption is opt-in per component).
 * Replacing existing logging, metrics, or the events API.
 * Defining how observability backends should visualize Span Links.
