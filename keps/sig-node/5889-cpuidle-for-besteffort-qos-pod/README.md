@@ -7,10 +7,9 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1 (Optional)](#story-1-optional)
-    - [Story 2 (Optional)](#story-2-optional)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Two Necessary Conditions](#two-necessary-conditions)
+    - [If conditions not met](#if-conditions-not-met)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -69,7 +68,6 @@ For a comparison between the two implementation methods, cpu.idle and cpu.shares
 The feature require cgroupV2 & linux kernel 5.4 or later(cpu.idle enable)
 Users can configure the use of the CPU.idle function according to their needs or continue using cpu.shares/cpu.weight.
 
-The feature prototype code is ready. [code](https://github.com/kubernetes/kubernetes/pull/136458)
 
 ## Motivation
 
@@ -86,6 +84,8 @@ Safe Colocation: It allows safe colocation of BestEffort batch jobs with latency
 
 
 ### Non-Goals
+- change the cgroups weighting except the minimal changes required for this work 
+- review QoS class handling in general 
 
 ## Proposal
 Users can choose whether to enable cpu.idle features based on their cluster environment.When this feature is enabled, the kernel sets the cpu.shares ||cpu.weight value to the default.The original implementation of cpu.shares||cpu.weight will no work.
@@ -104,10 +104,11 @@ If the user does not meet the usage requirements but still activates this featur
 In the earlier implementation of Pod QoS, we utilized the CPU shares feature, adjusting the CPU shares value based on the CPU usage of each pod's requests.The best-effort QoS level sets the pod CPU shares to the minimum value. In this solution, the other two QoS levels remain unchanged, with the best-effort level's CPU idle value set to 1 to indicate the current Cgroup idle state, allowing fewer CPU resources to be allocated.
 
 the original design, All three levels utilize cpu.shares
+if the feature gate disabled, kubelet will use the original design cpu.shares,and ensure cpu.idle value is 0
 ![](./original-qos.png)
 
-the new design , besteffort levels pod cpu.idle values set to 1 
-
+the new design , besteffort levels pod cpu.idle values set to 1 ,by a new feature gate ("CPUIdleForBestEffortQoSPod")
+if the feature gate enabled , kubelet will use the new design set cpu.idle value to 1
 ![](./new-qos.png)
 
 ### Test Plan
@@ -153,9 +154,10 @@ This feature change is minimal,The unit test is in package under `pkg/kubelet/cm
 ###### How can this feature be enabled / disabled in a live cluster?
 
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: CPUIdleForBestEffortQoS 
   - Components depending on the feature gate:
+    - kubelet
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -165,21 +167,19 @@ This feature change is minimal,The unit test is in package under `pkg/kubelet/cm
 
 ###### Does enabling the feature change any default behavior?
 
-yes 
+yes , the feature gate will set besteffort pod cpu.idle value to 1, other qos level will not change
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-yes
+yes, 'CPUIdleForBestEffortQoS: false' the feature gate will be disabled
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 set besteffort qos level cpu.idle value to 0
 
 ###### Are there any tests for feature enablement/disablement?
-
-cat besteffort qos level cpu.idle value 
-0 mean the feature is disabled 
-1 mean the feature is enabled 
+1. kubelet check node env is supported (kernel & cgroup version)
+2. kubelet check it's config the feature gate is enabled (default is true)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -193,6 +193,7 @@ If the feature is not supported, the original QoS implementation remains unchang
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
+No
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -209,6 +210,8 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
+the feature just useful for the pod which qos level is besteffort 
+if the feature is enabled , operator can read /sys/fs/cgroup/kubepods.slice/kubepods-besteffort.slice/cpu.idle , 1 mean the feature is enabled ,0 mean it is disabeld
 <!--
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
@@ -216,7 +219,7 @@ logs or events for this purpose.
 -->
 
 ###### How can someone using this feature know that it is working for their instance?
-
+This feature is only visible at the kubelet API. An operator can query kubelet-exposed metrics to determine if it is being used.
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
 for each individual pod.
@@ -235,6 +238,8 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Details:
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+The feature depend on kernel version >=5.4 & cgroupv2 ,if it not supported ,kubelet will use old desgin (cpu.shares)
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
