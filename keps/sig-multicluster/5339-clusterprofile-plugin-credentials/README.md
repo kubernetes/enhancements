@@ -294,9 +294,10 @@ In this structure, not all fields would apply, such as:
 
 And there are fields that require special attention:
 
-* `Extensions`, which holds additional, usually cluster-specific information, that might help authenticate with the cluster.
-
-For more information about these fields and how they are handled, see the section below:
+* `Extensions`, which holds additional, usually cluster-specific information,
+  that might help authenticate with the cluster. (For more information about
+  this field and how it is handled, see the section on [Passing plugin
+  configuration via extensions](#passing-plugin-configuration-via-extensions)).
 
 #### Passing plugin configuration via extensions
 
