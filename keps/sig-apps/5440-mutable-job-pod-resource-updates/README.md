@@ -404,8 +404,10 @@ N/A. This feature doesn't impact nodes.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: MutableJobPodResourcesForSuspendedJobs
-  - Components depending on the feature gate: kube-apiserver
+  - Feature gate name: MutablePodResourcesForSuspendedJobs
+    - Components depending on the feature gate: kube-apiserver
+  - Feature gate name: MutableSchedulingDirectivesForSuspendedJobs
+    - Components depending on the faeture gate: kube-apiserver, kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
