@@ -1186,6 +1186,7 @@ In 1.36:
 - Implementing delayed preemption to avoid premature preemptions
 - Workload-aware preemption design to ensure we won't break backward compatibility with it.
 - Some real-workload controllers (e.g. Job) integrate with decoupled Workload API.
+- Performance tests are created and are being run in CI to protect against regressions.
 
 #### GA
 
