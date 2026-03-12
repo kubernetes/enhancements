@@ -1,8 +1,8 @@
-title: KEP Template
-kep-number: NNNN
+title: D§RA Device Compatibility Groups
+kep-number: 5963
 authors:
-  - "@jane.doe"
-owning-sig: sig-xyz
+  - "@omeryahud"
+owning-sig: sig-node
 participating-sigs:
   - sig-aaa
   - sig-bbb
@@ -10,10 +10,8 @@ status: provisional|implementable|implemented|deferred|rejected|withdrawn|replac
 creation-date: yyyy-mm-dd
 reviewers:
   - TBD
-  - "@alice.doe"
 approvers:
   - TBD
-  - "@oscar.doe"
 
 see-also:
   - "/keps/sig-aaa/1234-we-heard-you-like-keps"

@@ -57,7 +57,7 @@ new details emerge that belong in the KEP, edit the KEP. Once a feature has beco
 "implemented", major changes should get new KEPs.
 
 The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
+of this file) is [here](/keps/5963-kep-template/README.md).
 
 **Note:** Any PRs to move a KEP to `implementable`, or significant changes once
 it is marked `implementable`, must be approved by each of the KEP approvers.
@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-5963: Your short, descriptive title
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
