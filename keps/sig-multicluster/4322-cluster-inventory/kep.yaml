@@ -5,7 +5,7 @@ authors:
   - "@dixudx"
   - "@mikeshng"
 owning-sig: sig-multicluster
-status: provisional
+status: implemented
 creation-date: 2023-09-13
 reviewers:
   - "@deads2k"
