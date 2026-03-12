@@ -1,0 +1,32 @@
+title: Optional Key in ConfigMapKeyRef and SecretKeyRef Defaults to Env Var Name
+kep-number: "5883"
+authors:
+  - "@dap0am"
+owning-sig: sig-node
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: "2026-03-10"
+reviewers: []
+approvers:
+  - "@thockin"
+
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/132195"
+
+stage: alpha
+
+latest-milestone: ""
+
+milestone:
+  alpha: ""
+  beta: ""
+  stable: ""
+
+feature-gates:
+  - name: EnvVarKeyDefaultsToName
+    components:
+      - kubelet
+      - kube-apiserver
+
+disable-supported: true
