@@ -706,8 +706,13 @@ Minimal increase:
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-Unlikely with reasonable configurations. Uses fsnotify watchers (one per directory) with a polling
-fallback, and shares HTTP client pool with API-based webhooks.
+Unlikely with reasonable configurations. Uses [fsnotify](https://github.com/fsnotify/fsnotify)
+watchers (one per directory) with a polling fallback, and shares HTTP client pool with API-based
+webhooks. On Linux, fsnotify is backed by [inotify](https://man7.org/linux/man-pages/man7/inotify.7.html),
+so each watched directory consumes an inotify watch. Operators managing many directories should be
+aware of system inotify limits (`fs.inotify.max_user_watches`). See
+[fsnotify platform-specific notes](https://github.com/fsnotify/fsnotify#platform-specific-notes)
+for details on other platforms.
 
 ### Troubleshooting
 
