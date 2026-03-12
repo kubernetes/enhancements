@@ -97,10 +97,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Unit tests](#unit-tests)
+    - [Integration tests](#integration-tests)
+    - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -271,14 +271,14 @@ when drafting this test plan.
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-##### Prerequisite testing updates
+#### Prerequisite testing updates
 
 <!--
 Based on reviewers feedback describe what additional tests need to be added prior
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-##### Unit tests
+#### Unit tests
 
 <!--
 In principle every added code should have complete unit test coverage, so providing
@@ -301,7 +301,7 @@ extending the production code to implement this enhancement.
 
 - `<package>`: `<date>` - `<test coverage>`
 
-##### Integration tests
+#### Integration tests
 
 <!--
 Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
@@ -327,7 +327,7 @@ This can be done with:
 
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
-##### e2e tests
+#### e2e tests
 
 <!--
 This question should be filled when targeting a release.
