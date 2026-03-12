@@ -1,0 +1,40 @@
+title: Configurable cAdvisor Metrics Collection
+kep-number: 5000
+authors:
+  - "@NahumLitvin"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: 2026-01-09
+reviewers:
+  - "@kannon92"
+  - "@haircommander"
+approvers:
+  - TBD
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/123340"
+  - "https://github.com/kubernetes/kubernetes/issues/99183"
+replaces: []
+superseded-by: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been done.
+latest-milestone: "v1.33"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.33"
+  beta: "v1.34"
+  stable: "v1.35"
+
+# The following PRR answers are required at alpha release
+feature-gates:
+  - name: ConfigurableCAdvisorMetrics
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
