@@ -445,6 +445,14 @@ The algorithm proceeds in three main phases for a given PodGroup.
 - **Potential Optimization:** Pre-filtering can check aggregate resources
   requested by PodGroup Pods before running the full simulation.
 
+- **Basic Scheduling Policy Handling:** The current algorithm may exhibit
+  inconsistent behavior when used with the PodGroup Basic Scheduling Policy.
+  Because the scheduler may only observe a subset of pods when scheduling
+  a PodGroup, placement feasibility is only validated for those specific
+  pods rather than the entire group. This limitation may be addressed in
+  future releases; currently, scheduling gates may be used as a partial
+  mitigation.
+
 - **Heterogeneous PodGroup Handling**: Sequential processing will be used
   initially. Pods are processed sequentially; if any fail, the placement is
   rejected.
