@@ -1,0 +1,41 @@
+title: Allow noexec mountOption to be specified on emptyDir volumes
+kep-number: 5855
+authors:
+  - "@nispriha"
+  - "@amritansh1502"
+  - "@ngopalak-redhat"
+owning-sig: sig-node
+participating-sigs:
+  - sig-storage
+  - sig-security
+status: provisional
+creation-date: 2026-01-30
+reviewers:
+  - TBD
+  - 
+approvers:
+  - TBD
+  - 
+
+see-also:
+  - 
+  - 
+replaces:
+  - 
+
+stage: alpha
+latest-milestone: "v1.19"
+
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.22"
+
+feature-gates:
+  - name: EmptyDirMountOptions
+    components:
+      - kubelet
+disable-supported: true
+
+metrics:
+  - 
