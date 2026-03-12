@@ -36,5 +36,6 @@ disable-supported: true
 
 metrics:
   # Config loading metrics
-  - apiserver_admission_manifest_config_automatic_reloads_total
-  - apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds
+  - apiserver_manifest_admission_config_controller_automatic_reloads_total
+  - apiserver_manifest_admission_config_controller_automatic_reload_last_timestamp_seconds
+  - apiserver_manifest_admission_config_controller_last_config_info

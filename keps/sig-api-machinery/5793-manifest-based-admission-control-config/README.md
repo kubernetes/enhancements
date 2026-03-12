@@ -402,8 +402,12 @@ The API server watches the configured manifest files/directories for changes:
    cause startup failure.
 
 2. Runtime reloading: Changes to manifest files trigger a reload:
-   - File modifications are detected using filesystem watching (similar to other config file
-     reloading in kube-apiserver such as authentication, authorization, encryption configs)
+   - File modifications are detected using fsnotify with a polling fallback (default 1 minute
+     interval), similar to other config file reloading in kube-apiserver such as authentication,
+     authorization, and encryption configs. The polling fallback ensures changes are detected
+     even on filesystems where fsnotify is unreliable (e.g., mounted ConfigMaps).
+   - A content hash of all manifest files is computed on each check; if the hash is unchanged,
+     no reload occurs (short-circuit optimization)
    - New configurations are validated before being applied
    - If validation fails, the error is logged, metrics are updated, and the previous valid
      configuration is retained
@@ -436,7 +440,7 @@ the REST API applies. This includes:
 
 In addition to standard validation, manifest-based configurations undergo additional restrictions:
 
-- Webhooks: `clientConfig.url` and `caBundle` required; `clientConfig.service` not allowed
+- Webhooks: `clientConfig.url` required; `clientConfig.service` not allowed
 - Policies: `spec.paramKind` not allowed
 - Bindings: `spec.paramRef` not allowed; referenced policy must exist in manifest file set
 
@@ -449,8 +453,9 @@ admission metrics can be reused. The `name` label in existing metrics is suffici
 whether a policy was loaded from disk.
 
 New metrics for manifest loading health:
-- `apiserver_admission_manifest_config_automatic_reloads_total{plugin, status}` - reload counter
-- `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds{plugin, status}` - last reload timestamp
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{plugin, status, apiserver_id_hash}` - reload counter
+- `apiserver_manifest_admission_config_controller_automatic_reload_last_timestamp_seconds{plugin, status, apiserver_id_hash}` - last reload timestamp
+- `apiserver_manifest_admission_config_controller_last_config_info{plugin, apiserver_id_hash, hash}` - current configuration hash for drift detection
 
 Audit annotations:
 
@@ -611,7 +616,7 @@ Mitigation:
 
 ###### What specific metrics should inform a rollback?
 
-- `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` increasing
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` increasing
 - `apiserver_admission_webhook_rejection_count{name=~".*\\.static\\.k8s\\.io"}` unexpectedly high
 - API server crash loops (check container restart count)
 - Increased API request latency (webhook timeouts)
@@ -628,15 +633,15 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- Metric: `apiserver_admission_manifest_config_automatic_reloads_total > 0`
+- Metric: `apiserver_manifest_admission_config_controller_automatic_reloads_total > 0`
 - Check `AdmissionConfiguration` for `staticManifestsDir` entries
 - Check API server logs for manifest loading messages at startup
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] Metrics
-  - `apiserver_admission_manifest_config_automatic_reloads_total{status="success"}` shows successful reloads
-  - `apiserver_admission_manifest_config_automatic_reload_last_timestamp_seconds` shows recent timestamp
+  - `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="success"}` shows successful reloads
+  - `apiserver_manifest_admission_config_controller_automatic_reload_last_timestamp_seconds` shows recent timestamp
   - Existing admission metrics show activity for names ending in `.static.k8s.io`
 - [x] API server logs
   - Log message at startup: "Loaded N manifest-based webhook configurations"
@@ -652,14 +657,13 @@ No.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- `apiserver_admission_manifest_config_automatic_reloads_total{status="success"}` - rate of successful reloads
-- `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` - rate of failed reloads (should be 0)
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="success"}` - rate of successful reloads
+- `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` - rate of failed reloads (should be 0)
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
 Potentially useful future additions (deferred to avoid cardinality issues):
 - Per-file load status
-- Configuration hash for drift detection
 
 ### Dependencies
 
@@ -702,8 +706,13 @@ Minimal increase:
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-Unlikely with reasonable configurations. Uses inotify watchers (one per directory) and shares
-HTTP client pool with API-based webhooks.
+Unlikely with reasonable configurations. Uses [fsnotify](https://github.com/fsnotify/fsnotify)
+watchers (one per directory) with a polling fallback, and shares HTTP client pool with API-based
+webhooks. On Linux, fsnotify is backed by [inotify](https://man7.org/linux/man-pages/man7/inotify.7.html),
+so each watched directory consumes an inotify watch. Operators managing many directories should be
+aware of system inotify limits (`fs.inotify.max_user_watches`). See
+[fsnotify platform-specific notes](https://github.com/fsnotify/fsnotify#platform-specific-notes)
+for details on other platforms.
 
 ### Troubleshooting
 
@@ -720,13 +729,13 @@ HTTP client pool with API-based webhooks.
 | Invalid manifest at startup | API server fails to start | Fix manifest file; Restart | API server logs show validation errors |
 | Invalid manifest on reload  | Metrics and logs | Fix manifest file; Wait for reload or restart | API server logs show validation errors |
 | Webhook endpoint unreachable | `apiserver_admission_webhook_fail_open_count` increases | Fix webhook endpoint; or change `failurePolicy` | Check webhook URL connectivity |
-| File permission errors on startup | `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` | Fix file permissions; Restart | API server logs show permission errors |
-| File permission errors on reload | `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` | Fix file permissions; Wait for reload or restart | API server logs show permission errors |
+| File permission errors on startup | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Restart | API server logs show permission errors |
+| File permission errors on reload | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Wait for reload or restart | API server logs show permission errors |
 | Configuration drift across HA | Inconsistent admission decisions | Use configuration management | Compare manifest files across API servers |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check `apiserver_admission_manifest_config_automatic_reloads_total{status="failure"}` for reload failures
+1. Check `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` for reload failures
 2. Check API server logs for manifest-related errors
 3. Verify webhook endpoints are reachable and responding quickly
 4. Compare manifest configurations across API server instances
@@ -737,6 +746,7 @@ HTTP client pool with API-based webhooks.
 
 - 2020-04-21: Original KEP-1872 introduced for manifest-based admission webhooks
 - 2026-01-15: KEP-5793 created, expanding scope to include CEL-based policies (VAP/MAP)
+- 2026-03-12: Alpha implementation merged ([kubernetes/kubernetes#137346](https://github.com/kubernetes/kubernetes/pull/137346))
 
 ## Drawbacks
 
