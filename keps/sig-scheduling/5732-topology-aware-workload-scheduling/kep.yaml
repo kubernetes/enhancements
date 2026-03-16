@@ -40,10 +40,6 @@ feature-gates:
   - name: TopologyAwareWorkloadScheduling
     components:
       - kube-apiserver
-      - kube-scheduler  
-  - name: PodGroupDesiredCount
-    components:
-      - kube-apiserver
       - kube-scheduler
 disable-supported: true
 
