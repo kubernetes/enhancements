@@ -20,6 +20,7 @@
   - [Builder Registry](#builder-registry)
   - [Adding New Examples](#adding-new-examples)
   - [Default Values](#default-values)
+  - [Traffic Control Paradigm Comparison](#traffic-control-paradigm-comparison)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -222,7 +223,7 @@ High-level flow:
 
 This approach provides:
 
-- **Type safety**: Builders use `corev1`, `appsv1`, `batchv1`, `networkingv1`, and `metav1` API types, so invalid field names or structures are caught at compile time
+- **Type safety**: Builders use `corev1`, `appsv1`, `batchv1`, `networkingv1`, and `metav1` API types, so invalid field names or structures are caught at compile time. For API types not vendored in kubectl (CRDs, Gateway API), builders use `map[string]interface{}` with the same marshal path — no new dependencies required
 - **Determinism**: Same inputs always produce identical YAML output — no template rendering, string interpolation, or conditional logic
 - **Parameterization**: `--name`, `--image`, and `--replicas` flags modify the struct fields before marshaling, providing real customization
 - **API consistency**: Output automatically follows Kubernetes API field ordering conventions since it is marshaled from the canonical Go types
@@ -250,8 +251,10 @@ Supported resources and aliases:
 | cronjob | cronjobs | `buildCronJob` | `batchv1.CronJob` |
 | ingress | ingresses, ing | `buildIngress` | `networkingv1.Ingress` |
 | networkpolicy | networkpolicies, netpol | `buildNetworkPolicy` | `networkingv1.NetworkPolicy` |
+| gateway | gateways, gtw | `buildGateway` | `map[string]interface{}` (unstructured) |
+| httproute | httproutes | `buildHTTPRoute` | `map[string]interface{}` (unstructured) |
 
-Note: CRD uses an unstructured map because `k8s.io/apiextensions-apiserver` is not in kubectl's `go.mod`. All other resources use their canonical typed API objects.
+Note: CRD, Gateway, and HTTPRoute use unstructured maps because their respective type packages (`k8s.io/apiextensions-apiserver`, `sigs.k8s.io/gateway-api`) are not in kubectl's `go.mod`. This is intentional — it avoids adding new dependencies while still producing valid, educational YAML. All other resources use their canonical typed API objects.
 
 ### Adding New Examples
 
@@ -280,8 +283,52 @@ Each builder applies sensible, production-oriented defaults:
 | **CronJob** | `busybox:1.36` | `*/5 * * * *` schedule, date command |
 | **Ingress** | — | nginx rewrite annotation, `example.com` host, PathTypePrefix, port 80 |
 | **NetworkPolicy** | — | Frontend→App→Database flow, Ingress+Egress policy types |
+| **Gateway** | — | `gatewayClassName: example`, HTTP (port 80) + HTTPS (port 443) listeners, TLS termination with certificateRefs, allowedRoutes from Same namespace |
+| **HTTPRoute** | — | parentRef to Gateway, `example.com` hostname, path-based routing (`/api` → api-service, `/` → frontend-service) |
 
 All resources include `app.kubernetes.io/name` labels following Kubernetes recommended labels convention.
+
+### Traffic Control Paradigm Comparison
+
+One of the strongest demonstrations of `kubectl example`'s educational value is its coverage of **three distinct traffic control paradigms**. New Kubernetes adopters frequently struggle to understand when to use Ingress vs. NetworkPolicy vs. Gateway API, and how these resources relate to each other. By providing working examples of all three, `kubectl example` enables side-by-side comparison that no single documentation page currently offers.
+
+#### Paradigm Overview
+
+| Paradigm | Command | What It Controls | Direction | OSI Layer | Scope |
+|----------|---------|-----------------|-----------|-----------|-------|
+| Legacy Ingress | `kubectl example ingress` | External HTTP(S) → Services | Inbound only | L7 (host/path routing) | Cluster-wide, single persona |
+| NetworkPolicy | `kubectl example networkpolicy` | Pod-to-Pod traffic | Both ingress + egress | L3/L4 (IP/port/label selectors) | Namespace-scoped, security-focused |
+| Gateway API | `kubectl example gateway` | External traffic → Services | Inbound (role-separated) | L4–L7 (protocol-aware) | Cross-namespace, multi-persona |
+| | `kubectl example httproute` | HTTP routing rules | Inbound | L7 (host/path/header routing) | Namespace-scoped, developer-owned |
+
+#### Learning Flow
+
+A user can explore all three paradigms in sequence to understand Kubernetes networking holistically:
+
+```shell
+# 1. Start with the simplest ingress pattern
+kubectl example ingress
+# → Single-persona L7 routing: host rules, path rules, TLS, one nginx annotation
+
+# 2. Understand pod-level traffic control
+kubectl example networkpolicy
+# → L3/L4 security: label-based ingress/egress rules, port restrictions, deny-by-default
+
+# 3. See the modern replacement for Ingress
+kubectl example gateway
+kubectl example httproute
+# → Role-separated L7 routing: infrastructure team owns Gateway, developers own HTTPRoutes
+```
+
+#### Why This Matters for Adoption
+
+The Gateway API is the [recommended successor to Ingress](https://gateway-api.sigs.k8s.io/) and reached GA in October 2023, but adoption remains slow partly because new users cannot easily see how it differs from Ingress. `kubectl example` makes this comparison concrete:
+
+- **Ingress** bundles routing, TLS, and infrastructure into one resource controlled by one persona
+- **Gateway API** separates infrastructure concerns (Gateway, owned by cluster operators) from routing logic (HTTPRoute, owned by application developers)
+- **NetworkPolicy** operates at a completely different layer — pod-to-pod L3/L4 security rather than external L7 routing
+
+By covering all three paradigms, `kubectl example` serves as a **networking curriculum** built into kubectl itself. Users can generate, diff, and apply these resources to understand the tradeoffs firsthand rather than reading abstract documentation.
 
 ### Test Plan
 
@@ -295,13 +342,13 @@ None required. The command is purely additive with no changes to existing kubect
 
 ##### Unit tests
 
-- Verify correct YAML output for all 11 supported resources
+- Verify correct YAML output for all 13 supported resources
 - Verify `--name`, `--image`, and `--replicas` flag overrides work correctly
-- Verify alias resolution for all registered aliases (po, deploy, svc, pvc, crd, cm, ing, netpol)
+- Verify alias resolution for all registered aliases (po, deploy, svc, pvc, crd, cm, ing, netpol, gtw, httproute)
 - Verify error handling for unsupported resource kinds
 - Verify `--list` output includes all registered resources
 - Tests unmarshal YAML back into typed Go objects and assert specific field values (not string matching)
-- **Current coverage**: 15 test functions, all passing
+- **Current coverage**: 17 test functions, all passing
 
 ##### Integration tests
 
@@ -319,8 +366,8 @@ E2E tests will validate that the output YAML can be applied to a cluster success
 
 #### Alpha
 
-- `kubectl example` command implemented with 11 resource builders (pod, deployment, service, pvc, secret, crd, configmap, job, cronjob, ingress, networkpolicy)
-- Unit tests in place with structured assertions (15 test functions)
+- `kubectl example` command implemented with 13 resource builders (pod, deployment, service, pvc, secret, crd, configmap, job, cronjob, ingress, networkpolicy, gateway, httproute)
+- Unit tests in place with structured assertions (17 test functions)
 - `--name`, `--image`, `--replicas` customization flags working
 - `--list` flag for discoverability
 - Offline-first: works without API server via `fallbackResolve()`
@@ -347,7 +394,7 @@ Not applicable. This is a new, purely additive kubectl subcommand. Upgrading kub
 
 ### Version Skew Strategy
 
-The command generates YAML from in-binary Go struct builders with no API server dependency. The output uses stable API versions (`v1`, `apps/v1`, `batch/v1`, `networking.k8s.io/v1`) that are available across all supported Kubernetes versions. When a kubeconfig is available, the command may optionally attempt discovery-based kind resolution, but falls back to a local alias map if the API server is unreachable. No version skew issues arise because the output is self-contained YAML.
+The command generates YAML from in-binary Go struct builders with no API server dependency. The output uses stable API versions (`v1`, `apps/v1`, `batch/v1`, `networking.k8s.io/v1`, `gateway.networking.k8s.io/v1`) that are available across all supported Kubernetes versions. Gateway API resources use the `v1` channel which reached GA in Gateway API v1.0.0 (October 2023) and is widely available in clusters running Gateway API CRDs. When a kubeconfig is available, the command may optionally attempt discovery-based kind resolution, but falls back to a local alias map if the API server is unreachable. No version skew issues arise because the output is self-contained YAML.
 
 ## Production Readiness Review Questionnaire
 
@@ -419,7 +466,7 @@ Not applicable.
 
 ### Dependencies
 
-None. The command uses only packages already in kubectl's dependency tree: `corev1`, `appsv1`, `batchv1`, `networkingv1`, `metav1`, and `sigs.k8s.io/yaml`.
+None. The command uses only packages already in kubectl's dependency tree: `corev1`, `appsv1`, `batchv1`, `networkingv1`, `metav1`, and `sigs.k8s.io/yaml`. Gateway API resources (Gateway, HTTPRoute) use unstructured `map[string]interface{}` builders to avoid adding `sigs.k8s.io/gateway-api` as a new dependency.
 
 ### Scalability
 
@@ -463,6 +510,7 @@ The command works fully offline. Examples are generated from in-binary struct bu
 - **2024-12**: Initial implementation PR opened with embedded YAML templates ([kubernetes/kubernetes#134529](https://github.com/kubernetes/kubernetes/pull/134529))
 - **2026-03**: Rearchitected from YAML templates to struct-based generation using typed Kubernetes API objects (`corev1`, `appsv1`, `metav1`) with `sigs.k8s.io/yaml` marshaling. Added working `--name`, `--image`, `--replicas` flags. Rewrote tests with structured assertions (15 test functions).
 - **2026-03**: Expanded resource coverage from 6 to 11 builders: added ConfigMap (`corev1`), Job (`batchv1`), CronJob (`batchv1`), Ingress (`networkingv1`), NetworkPolicy (`networkingv1`). Updated KEP with precedent analysis, release timing strategy, and plugin rationale.
+- **2026-03**: Added Gateway API resources (Gateway, HTTPRoute) using unstructured builders — no new dependencies. Expanded to 13 builders, 17 test functions. Added traffic control paradigm comparison section demonstrating educational value across Ingress, NetworkPolicy, and Gateway API approaches. Removed Gateway API and NetworkPolicy from future work.
 
 ## Release Timing Strategy
 
@@ -517,3 +565,4 @@ The v1.36 Enhancements Freeze has already passed, so the earliest realistic targ
 - Community-contributed examples via a plugin mechanism for custom resource types
 - Integration with `kubectl explain` to show examples inline with field documentation
 - Version-aware examples that adapt to the target cluster's API capabilities
+- Multi-resource composition: `kubectl example stack web` to generate a coordinated set of resources (Deployment + Service + Ingress/Gateway + NetworkPolicy) as a single manifest
