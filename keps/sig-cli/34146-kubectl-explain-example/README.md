@@ -272,41 +272,70 @@ Examples will be maintained as part of kubectl releases, with community contribu
 
 ## Design Details
 
-The new `kubectl example` command will be implemented as a new subcommand in kubectl, similar to `kubectl explain`.
+The new `kubectl example` command is implemented as a new subcommand in kubectl, similar to `kubectl explain`.
 
-High-level Approach:
+### Architecture: Struct-Based Generation
 
-1. User types `kubectl example <resource>`
-2. kubectl resolves the resource type using discovery (similar to `kubectl explain`)
-3. kubectl looks up a predefined YAML template for that resource
-4. kubectl outputs the YAML to stdout
+Examples are generated using **typed Go structs** from the Kubernetes API, not embedded YAML templates. Each resource kind has a dedicated builder function that constructs a fully-typed API object and marshals it to YAML via `sigs.k8s.io/yaml`.
 
-Templates will be hardcoded in the kubectl binary for common resources like pods, deployments, services, etc. Examples should use sensible defaults, such as alpine images for containers.
+High-level flow:
 
-For extensibility, future versions could allow loading examples from files or online repositories, but initially, examples will be built-in.
+1. User types `kubectl example <resource>` (with optional `--name`, `--image`, `--replicas` flags)
+2. kubectl resolves the resource kind, including aliases (e.g., `po` → `pod`, `deploy` → `deployment`)
+3. kubectl looks up the builder function in a `buildersByKind` registry
+4. The builder constructs a typed Go struct (e.g., `corev1.Pod`, `appsv1.Deployment`) with the user's flag values applied
+5. `sigs.k8s.io/yaml` marshals the struct to YAML
+6. kubectl outputs the YAML to stdout
 
-### Example Storage and Management
+This approach provides:
 
-Examples will be stored as Go string literals or embedded files in the kubectl codebase. Each example will include:
+- **Type safety**: Builders use `corev1`, `appsv1`, and `metav1` API types, so invalid field names or structures are caught at compile time
+- **Determinism**: Same inputs always produce identical YAML output — there is no template rendering, string interpolation, or conditional logic
+- **Parameterization**: `--name`, `--image`, and `--replicas` flags modify the struct fields before marshaling, providing real customization rather than no-op flags
+- **API consistency**: Output automatically follows Kubernetes API field ordering conventions since it is marshaled from the canonical Go types
 
-- Valid YAML structure
-- Sensible default values
-- Comments explaining key sections
-- Resource limits and requests where applicable
-- Common labels and annotations
+### Builder Registry
+
+The `buildersByKind` map routes resource kind strings (and their aliases) to builder functions:
+
+```go
+buildersByKind map[string]func(name, image string, replicas int) ([]byte, error)
+```
+
+Supported resources and aliases:
+
+| Kind | Aliases | Builder | API Types Used |
+|------|---------|---------|----------------|
+| pod | pods, po | `buildPod` | `corev1.Pod` |
+| deployment | deployments, deploy | `buildDeployment` | `appsv1.Deployment` |
+| service | services, svc | `buildService` | `corev1.Service` |
+| persistentvolumeclaim | persistentvolumeclaims, pvc | `buildPVC` | `corev1.PersistentVolumeClaim` |
+| secret | secrets | `buildSecret` | `corev1.Secret` |
+| customresourcedefinition | customresourcedefinitions, crd | `buildCRD` | `map[string]interface{}` (unstructured) |
+
+Note: CRD uses an unstructured map because `k8s.io/apiextensions-apiserver` is not in kubectl's `go.mod`. All other resources use their canonical typed API objects.
 
 ### Adding New Examples
 
-To add a new example:
+To add a new resource example:
 
-1. Create the YAML template
-2. Add it to the examples map in the code
-3. Update tests
-4. Update documentation
+1. Create a builder function in `resources.go` that returns the typed API object
+2. Register the kind and its aliases in the `buildersByKind` map in `example.go`
+3. Add unit tests that unmarshal the output back into the typed object and assert field values
+4. Update `--list` output (automatic from `buildersByKind` keys)
 
-### Parameterization
+### Default Values
 
-Future enhancements could support basic parameterization, such as custom names, replica counts, or image versions, using Go templates or simple string replacement.
+Each builder applies sensible defaults:
+
+- **Pod**: `alpine:latest` image, `sleep 3600` command, resource requests (250m CPU, 64Mi memory) and limits (500m CPU, 128Mi memory)
+- **Deployment**: `nginx:stable` image, 1 replica, port 80
+- **Service**: ClusterIP type, port 80→80
+- **PVC**: ReadWriteOnce, 1Gi storage
+- **Secret**: Opaque type with placeholder `stringData`
+- **CRD**: Complete apiextensions/v1 structure with OpenAPI validation schema
+
+All resources include `app.kubernetes.io/name` labels following Kubernetes recommended labels convention.
 
 ### Test Plan
 
@@ -592,10 +621,7 @@ None
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Potentially, also happy to make it a subcommand of explain if that's logically neater:
-```
-kubectl explain example pod
-```
+No. Examples are generated entirely from in-binary Go struct builders. No API server contact is needed. If a kubeconfig is available, the command may optionally attempt discovery-based kind resolution, but falls back to a local alias map if the API server is unreachable.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -625,4 +651,34 @@ No.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The command doesn't require API server access, as examples are static.
+The command doesn't require API server access, as examples are generated from in-binary struct builders.
+
+## Implementation History
+
+- **2024-12**: Initial KEP draft and PR opened (kubernetes/enhancements#5576)
+- **2024-12**: Initial implementation PR opened with embedded YAML templates (kubernetes/kubernetes#134529)
+- **2026-03**: Rearchitected from YAML templates to struct-based generation using typed K8s API objects (`corev1`, `appsv1`, `metav1`) with `sigs.k8s.io/yaml` marshaling. Added working `--name`, `--image`, `--replicas` flags. Rewrote tests with structured assertions.
+
+## Drawbacks
+
+- Adds a new top-level kubectl subcommand, increasing the command surface area.
+- Examples are static and may not cover every user's specific use case.
+- Struct-based builders require Go code changes to add new resources (vs. dropping in a YAML file), though this is offset by compile-time type safety.
+
+## Alternatives
+
+1. **Embedded YAML templates**: The original approach used `//go:embed` with `.yaml` files. This was simpler but produced static output with no real parameterization, no type safety, and risked template drift from the actual API types.
+
+2. **Dynamic generation from OpenAPI schema**: Generate examples by walking the cluster's OpenAPI spec. More flexible but requires API server access, produces verbose output, and cannot provide sensible default values without heuristics.
+
+3. **External example repository**: Host examples in a separate repo and fetch them at runtime. Avoids binary size growth but introduces a network dependency and versioning complexity.
+
+4. **Subcommand of explain**: `kubectl explain --example pod` instead of `kubectl example pod`. Considered but rejected to keep the UX simple and the commands orthogonal.
+
+## Future Work
+
+- Expand resource coverage: ConfigMap, Job, CronJob, Ingress, NetworkPolicy, StatefulSet, DaemonSet
+- Support `--output=json` flag for JSON output (trivial with struct-based approach)
+- Community-contributed examples via a plugin mechanism
+- Integration with `kubectl explain` to show examples inline with field documentation
+- Version-aware examples that adapt to the target cluster's API capabilities
