@@ -1,80 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
-# KEP-34146: kubectl example - kubectl explain example: practical output that can be applied | trialed by new user to advanced
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
+# KEP-34146: kubectl example
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -82,10 +6,20 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
+- [Precedent Analysis](#precedent-analysis)
+  - [Successful kubectl UX Additions](#successful-kubectl-ux-additions)
+  - [Failed Precedent: KEP-2380 Data-Driven Commands](#failed-precedent-kep-2380-data-driven-commands)
+  - [Key Takeaway](#key-takeaway)
+- [Why Not a Plugin?](#why-not-a-plugin)
 - [Proposal](#proposal)
   - [Basic Usage](#basic-usage)
+  - [Advanced Usage](#advanced-usage)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Architecture: Struct-Based Generation](#architecture-struct-based-generation)
+  - [Builder Registry](#builder-registry)
+  - [Adding New Examples](#adding-new-examples)
+  - [Default Values](#default-values)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -105,26 +39,13 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Release Timing Strategy](#release-timing-strategy)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Future Work](#future-work)
 <!-- /toc -->
 
 ## Release Signoff Checklist
-
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
@@ -133,19 +54,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -154,62 +71,106 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes adding a new kubectl subcommand `kubectl example` that provides generic seed YAML for different resources, complementing the existing `kubectl explain` command. Think of it as `curl cht.sh/kubectl` but distributed at the CLI level.
+This KEP proposes adding a new kubectl subcommand `kubectl example` that generates production-ready seed YAML for Kubernetes resources using typed Go structs. It complements `kubectl explain` by providing practical, immediately applicable manifests rather than schema documentation.
 
-The idea is to provide a `kubectl explain` then `kubectl example` flow, where users can get detailed explanations and then practical YAML examples.
+The workflow is: `kubectl explain pod` (understand the schema) → `kubectl example pod` (get a working manifest) → `kubectl apply -f -` (try it).
 
 ## Motivation
 
 Users often need practical, applicable YAML examples for Kubernetes resources. While `kubectl explain` provides detailed schema information, it doesn't give users ready-to-use YAML snippets. This creates a gap where users must manually construct YAML from documentation, which can be error-prone and time-consuming, especially for beginners.
 
-This KEP addresses that gap by introducing `kubectl example`, which outputs generic seed YAML for resources. The examples are designed to be:
+This KEP addresses that gap by introducing `kubectl example`, which outputs seed YAML for resources. The examples are designed to be:
 
-- **Immediately applicable**: Can be piped directly to `kubectl apply` for testing.
-- **Best-practice oriented**: Include common configurations like resource limits, labels, and annotations.
-- **Educational**: Serve as templates that users can modify for their needs.
-- **Comprehensive**: Cover a wide range of Kubernetes resources.
+- **Immediately applicable**: Can be piped directly to `kubectl apply` for testing
+- **Best-practice oriented**: Include resource limits, recommended labels, and common configurations
+- **Educational**: Serve as starting points that users can modify for their needs
+- **Offline-capable**: Generated entirely from in-binary Go structs with no API server dependency
 
 For instance:
 
-- `kubectl explain pod` -- detailed explanation of resource
+```shell
+# Understand the schema
+kubectl explain pod
 
-- `kubectl example pod` -- generic YAML output for a standard pod with linux - alpine image
+# Get a working manifest
+kubectl example pod
 
-This enhances the user experience, especially for new users learning Kubernetes, by providing immediate practical output that can be applied or trialed.
-
-Additionally, this could socialize further the use of `kubectl get --raw` on APIs and potentially automate ingestion of that to explain what the API controls in flight within a cluster at a version.
+# Try it immediately
+kubectl example pod | kubectl apply -f -
+```
 
 ### Goals
 
-1. Provide a new `kubectl example` subcommand that outputs generic seed YAML for Kubernetes resources.
-2. Complement `kubectl explain` by offering practical, applicable examples.
-3. Support common resources with sensible defaults.
-4. Potentially integrate with `kubectl get --raw` to enhance API understanding.
+1. Provide a new `kubectl example` subcommand that outputs seed YAML for Kubernetes resources
+2. Complement `kubectl explain` by offering practical, applicable examples
+3. Support common resources with sensible defaults and customization flags (`--name`, `--image`, `--replicas`)
+4. Work fully offline using struct-based generation (no API server required)
 
 ### Non-Goals
 
-1. Replace or modify `kubectl explain`.
-2. Provide exhaustive examples for all possible configurations.
-3. Generate examples dynamically from cluster state.
+1. Replace or modify `kubectl explain`
+2. Provide exhaustive examples for all possible configurations
+3. Generate examples dynamically from cluster state
+4. Cover every Kubernetes resource kind — focus on the most commonly used resources
 
+## Precedent Analysis
+
+Several kubectl UX commands have successfully navigated the KEP process. Their history provides a roadmap for `kubectl example`.
+
+### Successful kubectl UX Additions
+
+| Command | KEP | Time to Alpha | Key Factor |
+|---------|-----|---------------|------------|
+| `kubectl debug` | [KEP-1441](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/1441-kubectl-debug) | ~8 months | Clear user pain point (debugging pods), sig-cli sponsor early |
+| `kubectl diff` | [KEP-491](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/491-kubectl-diff) | ~2 months | Small, focused scope — one command, one purpose |
+| `kubectl events` | [KEP-1440](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/1440-kubectl-events) | ~2 years | Broader scope, required more iteration on API surface |
+| `kubectl wait` | N/A (pre-KEP) | Graduated alpha→beta→GA | Utility command, no feature gate needed |
+
+**Common success factors**: (1) clear user pain point, (2) small surface area, (3) client-only with no server changes, (4) early sig-cli sponsor engagement.
+
+`kubectl example` shares all four factors — it is a single read-only command that generates YAML locally.
+
+### Failed Precedent: KEP-2380 Data-Driven Commands
+
+[KEP-2380](https://github.com/kubernetes/enhancements/tree/master/keps/sig-cli/2380-scalable-kubectl-commands) attempted to solve a related problem — making kubectl commands data-driven so they could adapt to new resource types. It was ultimately abandoned because it **required server-side metadata changes** (adding command hints to CRD schemas), which created cross-SIG coordination challenges and coupling between client and server.
+
+### Key Takeaway
+
+`kubectl example` succeeds where KEP-2380 failed by being **entirely client-side**. No new API types, no server-side metadata, no CRD schema changes. Builders are compiled into the kubectl binary and work offline. This eliminates the cross-SIG coordination burden that stalled KEP-2380.
+
+## Why Not a Plugin?
+
+A natural question is whether `kubectl example` should be a [kubectl plugin](https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/) (e.g., `kubectl-example` distributed via [krew](https://krew.sigs.k8s.io/)) rather than a built-in command. We considered this and believe built-in is the right choice:
+
+| Concern | Built-in command | Plugin |
+|---------|-----------------|--------|
+| **Discovery** | Appears in `kubectl --help` and shell completion | Invisible unless user knows to search krew |
+| **Distribution** | Available to every kubectl user immediately | Requires separate install step |
+| **CI testing** | Tested in Kubernetes CI on every release | Maintained separately, may drift from API types |
+| **Educational flow** | `kubectl explain` → `kubectl example` is a natural, discoverable pair | Users must learn about krew, find the plugin, install it |
+| **Type safety** | Uses in-tree API types (`corev1`, `appsv1`), compile-time guarantees | Must vendor or copy types, no compile-time guarantees against kubectl's tree |
+
+Additionally, **`kubectl example` is not a niche tool** — it targets the same audience as `kubectl explain`, which is every kubectl user. The `explain` → `example` flow is most valuable when both commands are first-class and discoverable together.
+
+**Comparison with `kubectl create`**: `kubectl create` generates minimal imperative manifests for quick resource creation. `kubectl example` generates educational, best-practice manifests designed as starting points for real workloads — including resource limits, recommended labels, and production-oriented defaults.
 
 ## Proposal
 
 ### Basic Usage
 
-The following user experience should be possible with `kubectl example`:
-
 ```shell
 kubectl example pod
 ```
 
-This would output a generic YAML for a Pod resource, e.g.:
+Outputs a complete, valid Pod manifest:
 
 ```yaml
 apiVersion: v1
 kind: Pod
 metadata:
   name: example-pod
+  labels:
+    app.kubernetes.io/name: example-pod
 spec:
   containers:
   - name: example-container
@@ -224,55 +185,27 @@ spec:
         cpu: "500m"
 ```
 
-For a PersistentVolumeClaim:
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: example-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-```
-
-Similarly for other resources like deployments, services, etc.
-
 ### Advanced Usage
 
-- `kubectl example deployment --replicas=3` - Generate example with custom parameters
-- `kubectl example --list` - List all available example resources
-- `kubectl example pod | kubectl apply -f -` - Apply the example directly
+- `kubectl example deployment --replicas=3 --image=myapp:v1` — Generate with custom parameters
+- `kubectl example --list` — List all available example resources
+- `kubectl example pod --name=my-pod | kubectl apply -f -` — Customize and apply directly
 
 ### Risks and Mitigations
 
 #### No Examples Available for a Resource
 
-##### Risk
+**Risk**: The requested resource does not have a predefined example.
 
-The requested resource does not have a predefined example.
-
-##### Mitigation
-
-Return an error message suggesting to use `kubectl explain` for schema information or check available examples with `kubectl example --list`.
+**Mitigation**: Return a clear error message suggesting `kubectl explain` for schema information and `kubectl example --list` for available examples. The `--list` flag makes coverage explicit.
 
 #### Outdated Examples
 
-##### Risk
+**Risk**: Examples may not reflect the latest best practices or API changes.
 
-Examples may not reflect the latest best practices or API changes.
-
-##### Mitigation
-
-Examples will be maintained as part of kubectl releases, with community contributions encouraged. Version-specific examples can be added if needed.
-
+**Mitigation**: Examples are generated from canonical Go API types (`corev1.Pod`, `appsv1.Deployment`, etc.), so they are always structurally correct for the kubectl version. Best-practice defaults (resource limits, labels) are maintained as part of kubectl releases. Struct-based generation ensures output stays in sync with API types at compile time.
 
 ## Design Details
-
-The new `kubectl example` command is implemented as a new subcommand in kubectl, similar to `kubectl explain`.
 
 ### Architecture: Struct-Based Generation
 
@@ -289,9 +222,9 @@ High-level flow:
 
 This approach provides:
 
-- **Type safety**: Builders use `corev1`, `appsv1`, and `metav1` API types, so invalid field names or structures are caught at compile time
-- **Determinism**: Same inputs always produce identical YAML output — there is no template rendering, string interpolation, or conditional logic
-- **Parameterization**: `--name`, `--image`, and `--replicas` flags modify the struct fields before marshaling, providing real customization rather than no-op flags
+- **Type safety**: Builders use `corev1`, `appsv1`, `batchv1`, `networkingv1`, and `metav1` API types, so invalid field names or structures are caught at compile time
+- **Determinism**: Same inputs always produce identical YAML output — no template rendering, string interpolation, or conditional logic
+- **Parameterization**: `--name`, `--image`, and `--replicas` flags modify the struct fields before marshaling, providing real customization
 - **API consistency**: Output automatically follows Kubernetes API field ordering conventions since it is marshaled from the canonical Go types
 
 ### Builder Registry
@@ -312,6 +245,11 @@ Supported resources and aliases:
 | persistentvolumeclaim | persistentvolumeclaims, pvc | `buildPVC` | `corev1.PersistentVolumeClaim` |
 | secret | secrets | `buildSecret` | `corev1.Secret` |
 | customresourcedefinition | customresourcedefinitions, crd | `buildCRD` | `map[string]interface{}` (unstructured) |
+| configmap | configmaps, cm | `buildConfigMap` | `corev1.ConfigMap` |
+| job | jobs | `buildJob` | `batchv1.Job` |
+| cronjob | cronjobs | `buildCronJob` | `batchv1.CronJob` |
+| ingress | ingresses, ing | `buildIngress` | `networkingv1.Ingress` |
+| networkpolicy | networkpolicies, netpol | `buildNetworkPolicy` | `networkingv1.NetworkPolicy` |
 
 Note: CRD uses an unstructured map because `k8s.io/apiextensions-apiserver` is not in kubectl's `go.mod`. All other resources use their canonical typed API objects.
 
@@ -321,79 +259,31 @@ To add a new resource example:
 
 1. Create a builder function in `resources.go` that returns the typed API object
 2. Register the kind and its aliases in the `buildersByKind` map in `example.go`
-3. Add unit tests that unmarshal the output back into the typed object and assert field values
-4. Update `--list` output (automatic from `buildersByKind` keys)
+3. Add a fallback alias entry in `fallbackResolve()` for offline resolution
+4. Add unit tests that unmarshal the output back into the typed object and assert field values
+5. Update `--list` output (automatic from `buildersByKind` keys)
 
 ### Default Values
 
-Each builder applies sensible defaults:
+Each builder applies sensible, production-oriented defaults:
 
-- **Pod**: `alpine:latest` image, `sleep 3600` command, resource requests (250m CPU, 64Mi memory) and limits (500m CPU, 128Mi memory)
-- **Deployment**: `nginx:stable` image, 1 replica, port 80
-- **Service**: ClusterIP type, port 80→80
-- **PVC**: ReadWriteOnce, 1Gi storage
-- **Secret**: Opaque type with placeholder `stringData`
-- **CRD**: Complete apiextensions/v1 structure with OpenAPI validation schema
+| Resource | Image | Key Defaults |
+|----------|-------|-------------|
+| **Pod** | `alpine:latest` | `sleep 3600` command, resource requests (250m CPU, 64Mi memory) and limits (500m CPU, 128Mi memory) |
+| **Deployment** | `nginx:stable` | 1 replica, port 80, resource limits |
+| **Service** | — | ClusterIP type, port 80→80 |
+| **PVC** | — | ReadWriteOnce, 1Gi storage |
+| **Secret** | — | Opaque type with placeholder `stringData` |
+| **CRD** | — | Complete apiextensions/v1 structure with OpenAPI validation schema |
+| **ConfigMap** | — | `config.yaml` file key + `LOG_LEVEL` environment variable key |
+| **Job** | `perl:5.40` | Pi calculation example, BackoffLimit=4, RestartPolicy=Never |
+| **CronJob** | `busybox:1.36` | `*/5 * * * *` schedule, date command |
+| **Ingress** | — | nginx rewrite annotation, `example.com` host, PathTypePrefix, port 80 |
+| **NetworkPolicy** | — | Frontend→App→Database flow, Ingress+Egress policy types |
 
 All resources include `app.kubernetes.io/name` labels following Kubernetes recommended labels convention.
 
 ### Test Plan
-
-##### Prerequisite testing updates
-
-None required.
-
-##### Unit tests
-
-Unit tests will verify that the correct YAML is output for supported resources and appropriate errors for unsupported ones.
-
-##### Integration tests
-
-Integration tests will ensure the command integrates well with kubectl's existing infrastructure, such as resource discovery.
-
-##### e2e tests
-
-E2E tests will validate that the output YAML can be applied to a cluster (e.g., `kubectl example pod | kubectl apply -f -` creates a running pod).
-
-### Graduation Criteria
-
-#### Alpha
-
-- Basic `kubectl example` command implemented with examples for core resources (pod, deployment, service).
-- Unit and integration tests in place.
-
-#### Beta
-
-- Expanded set of examples for more resources.
-- User feedback incorporated.
-- E2E tests passing.
-
-#### GA
-
-- Comprehensive examples for commonly used resources.
-- Documentation updated.
-- No breaking changes.
-
-### Upgrade / Downgrade Strategy
-
-N/A - This is a new command, no upgrades needed.
-
-### Version Skew Strategy
-
-The command relies on kubectl's resource discovery, which should work across versions. Examples are static, so no skew issues.
-
-### Test Plan
-
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
 
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
@@ -401,190 +291,104 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+None required. The command is purely additive with no changes to existing kubectl behavior.
 
 ##### Unit tests
 
-Unit tests will verify that the correct YAML is output for supported resources, appropriate errors for unsupported ones, and that the YAML is valid.
+- Verify correct YAML output for all 11 supported resources
+- Verify `--name`, `--image`, and `--replicas` flag overrides work correctly
+- Verify alias resolution for all registered aliases (po, deploy, svc, pvc, crd, cm, ing, netpol)
+- Verify error handling for unsupported resource kinds
+- Verify `--list` output includes all registered resources
+- Tests unmarshal YAML back into typed Go objects and assert specific field values (not string matching)
+- **Current coverage**: 15 test functions, all passing
 
 ##### Integration tests
 
-Integration tests will ensure the command integrates well with kubectl's existing infrastructure, such as resource discovery, and that examples are consistent with cluster capabilities.
+Integration tests will ensure the command integrates well with kubectl's existing infrastructure, including resource discovery when a kubeconfig is available, and that the command falls back gracefully to offline alias resolution when no API server is reachable.
 
 ##### e2e tests
 
-E2E tests will validate that the output YAML can be applied to a cluster successfully (e.g., `kubectl example pod | kubectl apply -f -` creates a running pod), and that examples work across different cluster configurations.
+E2E tests will validate that the output YAML can be applied to a cluster successfully:
+
+- `kubectl example pod | kubectl apply -f -` creates a running pod
+- `kubectl example deployment | kubectl apply -f -` creates a deployment with correct replica count
+- Output works across different cluster configurations and Kubernetes versions
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Basic `kubectl example` command implemented with examples for core resources (pod, deployment, service, persistentvolumeclaim).
-- Unit and integration tests in place.
-- Command available in kubectl builds.
+- `kubectl example` command implemented with 11 resource builders (pod, deployment, service, pvc, secret, crd, configmap, job, cronjob, ingress, networkpolicy)
+- Unit tests in place with structured assertions (15 test functions)
+- `--name`, `--image`, `--replicas` customization flags working
+- `--list` flag for discoverability
+- Offline-first: works without API server via `fallbackResolve()`
+- Command available in kubectl builds
 
 #### Beta
 
-- Expanded set of examples for more resources (configmap, secret, job, etc.).
-- User feedback incorporated from alpha usage.
-- E2E tests passing in CI.
-- Documentation updated with examples.
+- User feedback incorporated from alpha usage
+- E2E tests passing in CI
+- Documentation updated on kubernetes.io with examples
+- Additional resource builders based on community feedback (e.g., StatefulSet, DaemonSet)
 
 #### GA
 
-- Comprehensive examples for commonly used resources.
-- Examples validated against multiple Kubernetes versions.
-- No breaking changes in output format.
-- Feature promoted as stable in kubectl documentation.
-
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- Comprehensive examples for all commonly used resources
+- Examples validated against multiple Kubernetes versions
+- No breaking changes in output format
+- Feature promoted as stable in kubectl documentation
+- At least two releases between beta and GA for feedback collection
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-
-N/A
+Not applicable. This is a new, purely additive kubectl subcommand. Upgrading kubectl adds the command; downgrading removes it. No cluster state, configuration, or existing behavior is affected.
 
 ### Version Skew Strategy
 
-The command relies on kubectl's resource discovery, which should work across versions. Examples are static YAML templates, so no version skew issues with the output itself. However, the applicability of examples may vary based on cluster capabilities (e.g., newer API versions). The command will use the latest available API versions for resource discovery.
+The command generates YAML from in-binary Go struct builders with no API server dependency. The output uses stable API versions (`v1`, `apps/v1`, `batch/v1`, `networking.k8s.io/v1`) that are available across all supported Kubernetes versions. When a kubeconfig is available, the command may optionally attempt discovery-based kind resolution, but falls back to a local alias map if the API server is unreachable. No version skew issues arise because the output is self-contained YAML.
 
 ## Production Readiness Review Questionnaire
-
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
 
 ### Feature Enablement and Rollback
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Other
-  - Describe the mechanism: This is a new kubectl subcommand. It is enabled by building kubectl with the new code. No feature gate.
+  - Describe the mechanism: This is a new kubectl subcommand. It is enabled by building kubectl with the new code. No feature gate is required — kubectl CLI commands (like `kubectl debug`, `kubectl diff`, `kubectl events`) graduate through alpha→beta→GA without feature gates.
   - Will enabling / disabling the feature require downtime of the control plane? No
   - Will enabling / disabling the feature require downtime or reprovisioning of a node? No
 
 ###### Does enabling the feature change any default behavior?
 
-No, it's a new command.
+No. It adds a new command; no existing commands or behaviors are modified.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, by using an older version of kubectl without the command.
+Yes, by using an older version of kubectl that does not include the command.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Normal operation.
+Normal operation. The command is stateless.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests for the command presence.
-
+Unit tests verify the command is registered and functional. Since there is no feature gate, enablement/disablement is controlled by kubectl binary version.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-No, this is a new CLI command. No impact on workloads.
+It cannot. This is a purely additive CLI command that generates YAML to stdout. It does not modify cluster state, running workloads, or any existing kubectl behavior.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+Not applicable. The command is a local CLI tool with no server-side component.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+Not applicable. The command is stateless and has no persistent state to migrate.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -594,28 +398,28 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-N/A
+Not applicable. This is a local CLI command.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Run `kubectl example pod` and verify YAML output.
+Run `kubectl example pod` and verify valid YAML output is printed to stdout.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+Not applicable. This is a local CLI command with no service component.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Other (treat as last resort)
-  - Details: N/A
+  - Details: Not applicable — local CLI command.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-N/A
+Not applicable.
 
 ### Dependencies
 
-None
+None. The command uses only packages already in kubectl's dependency tree: `corev1`, `appsv1`, `batchv1`, `networkingv1`, `metav1`, and `sigs.k8s.io/yaml`.
 
 ### Scalability
 
@@ -641,7 +445,7 @@ No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No.
+No. The struct builders add negligible binary size to kubectl (a few KB of compiled Go code).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -651,34 +455,65 @@ No.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The command doesn't require API server access, as examples are generated from in-binary struct builders.
+The command works fully offline. Examples are generated from in-binary struct builders. Discovery-based kind resolution gracefully falls back to a hardcoded alias map when the API server is unreachable.
 
 ## Implementation History
 
-- **2024-12**: Initial KEP draft and PR opened (kubernetes/enhancements#5576)
-- **2024-12**: Initial implementation PR opened with embedded YAML templates (kubernetes/kubernetes#134529)
-- **2026-03**: Rearchitected from YAML templates to struct-based generation using typed K8s API objects (`corev1`, `appsv1`, `metav1`) with `sigs.k8s.io/yaml` marshaling. Added working `--name`, `--image`, `--replicas` flags. Rewrote tests with structured assertions.
+- **2024-12**: Initial KEP draft and PR opened ([kubernetes/enhancements#5576](https://github.com/kubernetes/enhancements/pull/5576))
+- **2024-12**: Initial implementation PR opened with embedded YAML templates ([kubernetes/kubernetes#134529](https://github.com/kubernetes/kubernetes/pull/134529))
+- **2026-03**: Rearchitected from YAML templates to struct-based generation using typed Kubernetes API objects (`corev1`, `appsv1`, `metav1`) with `sigs.k8s.io/yaml` marshaling. Added working `--name`, `--image`, `--replicas` flags. Rewrote tests with structured assertions (15 test functions).
+- **2026-03**: Expanded resource coverage from 6 to 11 builders: added ConfigMap (`corev1`), Job (`batchv1`), CronJob (`batchv1`), Ingress (`networkingv1`), NetworkPolicy (`networkingv1`). Updated KEP with precedent analysis, release timing strategy, and plugin rationale.
+
+## Release Timing Strategy
+
+### Target: v1.37 Alpha
+
+The v1.36 Enhancements Freeze has already passed, so the earliest realistic target is **v1.37** (estimated July–October 2026).
+
+### Action Items
+
+1. **Attend sig-cli biweekly meeting** (Wednesdays 09:00 PT) to present the KEP and request a sponsor
+2. **Request KEP review** from sig-cli tech leads and chairs:
+   - Chairs: @ardaguclu, @mpuckett159
+   - Tech Leads: @eddiezane, @soltysh
+   - Primary sponsor target: @soltysh (extensive kubectl experience, tech lead)
+3. **Post to sig-cli mailing list** with KEP summary before meeting presentation
+4. **Target v1.37 Enhancements Freeze** — submit enhancement issue linking to this KEP directory before the freeze date
+5. **Iterate on KEP feedback** — address reviewer comments promptly to maintain momentum
+
+### Timeline
+
+| Milestone | Target Date | Action |
+|-----------|------------|--------|
+| KEP review requested | March 2026 | Post to sig-cli mailing list, attend meeting |
+| KEP sponsor assigned | April–May 2026 | Work with sponsor to refine KEP |
+| KEP marked `implementable` | Before v1.37 Enhancements Freeze | Get KEP approver sign-off |
+| Alpha implementation merged | v1.37 code freeze | PR already open, iterate on review feedback |
+| Beta (expanded resources, e2e) | v1.38 | Incorporate alpha feedback |
+| GA | v1.39 | Stable after two release cycles of feedback |
 
 ## Drawbacks
 
-- Adds a new top-level kubectl subcommand, increasing the command surface area.
-- Examples are static and may not cover every user's specific use case.
-- Struct-based builders require Go code changes to add new resources (vs. dropping in a YAML file), though this is offset by compile-time type safety.
+- Adds a new top-level kubectl subcommand, increasing the command surface area
+- Examples are opinionated and may not cover every user's specific use case
+- Struct-based builders require Go code changes to add new resources (vs. dropping in a YAML file), though this is offset by compile-time type safety and API consistency
 
 ## Alternatives
 
-1. **Embedded YAML templates**: The original approach used `//go:embed` with `.yaml` files. This was simpler but produced static output with no real parameterization, no type safety, and risked template drift from the actual API types.
+1. **Embedded YAML templates**: The original implementation used `//go:embed` with `.yaml` files. This was simpler but produced static output with no real parameterization, no type safety, and risked template drift from the actual API types. Abandoned in favor of struct-based generation.
 
-2. **Dynamic generation from OpenAPI schema**: Generate examples by walking the cluster's OpenAPI spec. More flexible but requires API server access, produces verbose output, and cannot provide sensible default values without heuristics.
+2. **Dynamic generation from OpenAPI schema**: Generate examples by walking the cluster's OpenAPI spec. More flexible but requires API server access, produces verbose output, and cannot provide sensible default values without heuristics. This is essentially what KEP-2380 attempted and it failed due to server-side complexity.
 
 3. **External example repository**: Host examples in a separate repo and fetch them at runtime. Avoids binary size growth but introduces a network dependency and versioning complexity.
 
-4. **Subcommand of explain**: `kubectl explain --example pod` instead of `kubectl example pod`. Considered but rejected to keep the UX simple and the commands orthogonal.
+4. **kubectl plugin via krew**: Distribute as `kubectl-example` plugin. Rejected because plugins don't appear in `kubectl --help`, require separate installation, aren't tested in Kubernetes CI, and break the natural `explain` → `example` discoverability flow. See [Why Not a Plugin?](#why-not-a-plugin) for full analysis.
+
+5. **Subcommand of explain**: `kubectl explain --example pod` instead of `kubectl example pod`. Considered but rejected to keep the UX simple and the commands orthogonal — `explain` is for schema documentation, `example` is for working manifests.
 
 ## Future Work
 
-- Expand resource coverage: ConfigMap, Job, CronJob, Ingress, NetworkPolicy, StatefulSet, DaemonSet
-- Support `--output=json` flag for JSON output (trivial with struct-based approach)
-- Community-contributed examples via a plugin mechanism
+- Expand resource coverage: StatefulSet, DaemonSet, HorizontalPodAutoscaler, ServiceAccount
+- Support `--output=json` flag for JSON output (trivial with struct-based approach since `sigs.k8s.io/yaml` supports both)
+- Community-contributed examples via a plugin mechanism for custom resource types
 - Integration with `kubectl explain` to show examples inline with field documentation
 - Version-aware examples that adapt to the target cluster's API capabilities

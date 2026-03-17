@@ -8,14 +8,14 @@ participating-sigs: [sig-cli]
 reviewers: []
 approvers: []
 creation-date: "2025-09-27"
-last-updated: "2025-09-27"
+last-updated: "2026-03-17"
 status: provisional
 stage: alpha
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 milestone:
-    alpha: "v1.36"
-    beta: "v1.37"
-    stable: "v1.38"
+    alpha: "v1.37"
+    beta: "v1.38"
+    stable: "v1.39"
 feature-gates: []
 disable-supported: false
 metrics: []
