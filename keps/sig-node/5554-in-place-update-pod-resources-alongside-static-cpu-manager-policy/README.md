@@ -348,7 +348,7 @@ As it was decided in [SIG Node meeting discussing static CPU policy support](htt
 * Must ensure reserved CPUs from [Kubelet CPU reservation](#kubelet-cpu-reservation) are kept during resize
 * Must work for all [Supported CPU Static Policy Options Combination matrix](#supported-cpu-static-combination-matrix)
 
-Introduction of the inner map items `Original` and `Resized` to checkpoint the corresponding CPUs for a running container ( `ContainerCPUs Checkpoint` for sort ), is meant to make internal upgrade and adaptation easier as we need to track the original CPU set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP.
+[CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) `CPUManagerCheckpoint` struct to store exclusive cpu/pod assignments, will be used by `InPlacePodVerticalScalingExclusiveCPUs`, to checkpoint per-container data embedded in `CPUManagerCheckpoint`. More specifically introduction of the inner map item `Originals` to checkpoint the corresponding _historical data_ of original CPUs exclusively allocated to a _running container_ ( `ContainerCPUs Checkpoint` for sort ), is meant to make internal upgrade and adaptation easier as we need to track the original CPU set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP. The corresponding _current_ set of CPUs exclusively allocated to a _running container_ will be checkpointed to `Entries` field embedded in `CheckpointData` section in `CPUManageCheckpoint` structure keeping the same structure used as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
 
 When the CPU Manager, under a static policy, generates a NUMA Topology hint for a Guaranteed pod undergoing an in place CPU pod-resize, it follows these rules to determine the new affinity:
 
@@ -434,41 +434,38 @@ First a one container QoS Guaranteed PoD ( gu-pod-1 ), managed by CPU Static pol
 For educational purposes, in the example we use gu-pod-1-uid, in a real scenario it would be the podUID of gu-pod-1
 
 ```
-{                                                                                                                                                                                             
-  "policyName": "static",                                                                                                                                                                     
-  "defaultCpuSet": "0,3-15",                                                                                                                                                                  
-  "entries": {                                                                           
-    "gu-pod-1-uid": {                                                                                                                                                 
-      "gu-container-1": {                                                                                                                                                                     
-        "original": "1-2",                                                                                                                                                                    
-        "resized": ""                                                                                                                                                                         
-      }                                                                                                                                                                                       
-    }                                                                                                                                                                                         
-  },                                                                                                                                                                                          
-  "checksum": 1759739034                                                                                                                                                                      
-}                                                                                                                                                                                             
+{
+  "policyName": "static",
+  "defaultCpuSet": "0,3-15",
+  "entries": {
+    "gu-pod-1-uid": {
+      "gu-container-1": "1-2"
+    }
+  },
+  "checksum": <computed checksum>,
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,3-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}}}}",
+  "dataChecksum": <computed data checksum>
+}
 ```
 
-After the Pods CPUs are increased by 2 CPUs, original is kept 1-2, resized updates with the new CPUset 1-4, and default CPU set with 0,5-15.
+After the Pods CPUs are increased by 2 CPUs, original is kept 1-2, entries updates with the new CPUset 1-4, and default CPU set with 0,5-15.
 
 ```
-{                                                                                                                                                                                             
-  "policyName": "static",                                                                                                                                                                     
-  "defaultCpuSet": "0,5-15",                                                                                                                                                                  
-  "entries": {                                                                                                                                                                                
-    "gu-pod-1-uid": {                                                                                                                                                 
-      "gu-container-1": {                                                                                                                                                                     
-        "original": "1-2",                                                                                                                                                                    
-        "resized": "1-4"                                                                                                                                                                      
-      }                                                                                                                                                                                       
-    }                                                                                                                                                                                         
-  },                                                                                                                                                                                          
-  "checksum": 1822250518                                                                                                                                                                      
-}                                                                                                                                                                                             
+{
+  "policyName": "static",
+  "defaultCpuSet": "0,5-15",
+  "entries": {
+    "gu-pod-1-uid": {
+      "gu-container-1": "1-4"
+    }
+  },
+  "checksum": <computed checksum>,
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,5-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-4\"}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}}}}",
+  "dataChecksum": <computed data checksum>
+}
 ```
 
-
-Next the Pods CPUs are decreased by 2 CPUs, original is kept 1-2, resized updates with the new CPUset 1-2, default CPU Set updates with 0,3-15.
+Next the Pods CPUs are decreased by 2 CPUs, original is kept 1-2, entries updates with the new CPUset 1-2, default CPU Set updates with 0,3-15.
 
 ```
 {
@@ -476,15 +473,15 @@ Next the Pods CPUs are decreased by 2 CPUs, original is kept 1-2, resized update
   "defaultCpuSet": "0,3-15",
   "entries": {
     "gu-pod-1-uid": {
-      "gu-container-1": {
-        "original": "1-2",
-        "resized": "1-2"
-      }
+      "gu-container-1": "1-2"
     }
   },
-  "checksum": 4009312802
+  "checksum": <computed checksum>,
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,3-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}}}}",
+  "dataChecksum": <computed data checksum>
 }
 ```
+
 Now, a QoS Guaranteed PoD ( gu-pod-2 ), managed by CPU Static policy with two containers with 4 CPUs is created. 
 
 For educational purposes, in the example we use gu-pod-2-uid, in a real scenario it would be the podUID of gu-pod-2
@@ -495,27 +492,20 @@ For educational purposes, in the example we use gu-pod-2-uid, in a real scenario
   "defaultCpuSet": "0,7-15",
   "entries": {
     "gu-pod-1-uid": {
-      "gu-container-1": {
-        "original": "1-2",
-        "resized": "1-2"
-      }
+      "gu-container-1": "1-2"
     },
     "gu-pod-2-uid": {
-      "gu-container-1": {
-        "original": "3-4",
-        "resized": ""
-      },
-      "gu-container-2": {
-        "original": "5-6",
-        "resized": ""
-      }
-    }
+      "gu-container-1": "3-4",
+      "gu-container-2": "5-6",
+    },
   },
-  "checksum": 3881359401
+  "checksum": <computed checksum>,
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,7-15\",\"entries\":{\"gu-pod-1-uid\":{\"gu-container-1\":\"1-2\"},\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4\",\"gu-container-2\":\"5-6\",}},\"originals"\":{\"gu-pod-1-uid\":{\"gu-container-1\":{\"original\":\"1-2\"}},\"gu-pod-2-uid\":{\"gu-container-1\":{\"original\":\"3-4\"},\"gu-container-2\":{\"original\":\"5-6\"},}}}",
+  "dataChecksum": <computed data checksum>
 }
 ```
 
-Next we delete the first created Pod and then we up size the first container of the second Pod, by two CPUs.
+Next we delete gu-pod-1-uid and then we up size gu-container-2 of gu-pod-2-uid, by two CPUs.
 
 ```
 {
@@ -523,39 +513,31 @@ Next we delete the first created Pod and then we up size the first container of 
   "defaultCpuSet": "0,2,8-15",
   "entries": {
     "gu-pod-2-uid": {
-      "gu-container-1": {
-        "original": "3-4",
-        "resized": "1,3-4,7"
-      },
-      "gu-container-2": {
-        "original": "5-6",
-        "resized": "5-6"
-      }
-    }
+      "gu-container-1": "3-4",
+      "gu-container-2": "1,5-7",
+    },
   },
-  "checksum": 287770558
+  "checksum": <computed checksum>,
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0,2,8-15\",\"entries\":{\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4\",\"gu-container-2\":\"1,5-7\",}},\"originals"\":{\"gu-pod-2-uid\":{\"gu-container-1\":{\"original\":\"3-4\"},\"gu-container-2\":{\"original\":\"5-6\"},}}}",
+  "dataChecksum": <computed data checksum>
 }
 ```
 
-Last we increase the number of CPUs for the second container by 2 CPUs and reduce the number of CPUs for the first container by 2 CPUs.
+Last we up size gu-container-1 of gu-pod-2-uid by 2, and down size gu-container-2 of gu-pod-2-uid by 2 CPUs.
 
 ```
 {
   "policyName": "static",
-  "defaultCpuSet": "0,2,8-15",
+  "defaultCpuSet": "0-2,7,10-15",
   "entries": {
     "gu-pod-2-uid": {
-      "gu-container-1": {
-        "original": "3-4",
-        "resized": "3-4"
-      },
-      "gu-container-2": {
-        "original": "5-6",
-        "resized": "1,5-7"
-      }
-    }
+      "gu-container-1": "3-4,8-9",
+      "gu-container-2": "5-6",
+    },
   },
-  "checksum": 3738859028
+  "checksum": <computed checksum>,
+  "data": "{\"policyName\":\"static\",\"defaultCpuSet\":\"0-2,7,10-15\",\"entries\":{\"gu-pod-2-uid\":{\"gu-container-1\":\"3-4,8-9\",\"gu-container-2\":\"5-6\",}},\"originals"\":{\"gu-pod-2-uid\":{\"gu-container-1\":{\"original\":\"3-4\"},\"gu-container-2\":{\"original\":\"5-6\"},}}}",
+  "dataChecksum": <computed data checksum>
 }
 ```
 
@@ -651,27 +633,56 @@ As it was decided in [SIG Node meeting discussing static CPU policy support](htt
 * CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed locally in the worker node ( please refer to Static CPU Management Policy Support for more details ) we use the term “original” ( or "promised" ) CPUs in the rest of this document to refer to those CPUs.
 * Use of existing CPU Manager checkpoint should be used for storing the “resized” CPUs after a successful resize.
 
-To satisfy this requirement, CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed, for this to happen CPU Manager State checkpoint file version 3 format need to be introduced in CPUManagerCheckpoint struct used to store cpu/pod assignments in a checkpoint v3 format.
+To satisfy this requirement, CPUs allocated upon creation of Guaranteed Pods need to be explicitly checkpointed, for this to happen [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) need to introduce CPUManagerCheckpoint struct to store cpu/pod assignments.
+For `InPlacePodVerticalScalingExclusiveCPUs`, per-container data embedded in `CPUManagerCheckpoint` are needed, to track the exclusive
+CPUs resizing support, more explicitly. 
 
+* the _current_ set of CPUs exclusively allocated to a _container_
+* extra information required by this feature such us any _historical data_ of original CPUs exclusively allocated to a _container_ (e.g original CPUset, previous CPUset or previous N CPUsets)
+
+To ensure there are no stale/lost resize data if the node state mutates during an upgrade downgrade and at the same time disabling
+`InPlacePodVerticalScalingExclusiveCPUs`, the needed per-container data will be embedded in `CheckpointData` section in `CPUManagerCheckpoint`
+structure, more specifically: 
+
+* `Entries` field will store the _current_ set of CPUs allocated to a _container_ keeping the same structure used
+   as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
+* `Originals` field will store the _historical data_ of original CPUs exclusively allocated to a _container_
+   ( for alpha it will be the original CPUset only stored ) with the necessary format.
+
+Final naming in the implementation can change slightly without changing concepts as expressed in this KEP.
+
+For `InPlacePodVerticalScalingExclusiveCPUs` embedded `CPUManagerCheckpointV2` format will be kept as is today with no modifications,
 ```
-// ContainerCPUs struct is used in a checkpoint in v3 format,
+// ContainerCPUs struct is used in a checkpoint in v4 format,
 // to support In place update pod resouces alongside Static CPU Manager policy
 type ContainerCPUs struct {
         Original  string `json:"original"`
-        Resized   string `json:"resized"`
 }
 
-// CPUManagerCheckpoint struct is used to store cpu/pod assignments in a checkpoint in v3 format
+// CPUManagerCheckpoint struct is used to store cpu/pod assignments in a checkpoint in v4 format
 type CPUManagerCheckpoint struct {
+       // Backward compatibility
+       CPUManagerCheckpointV2 `json:",inline"`
+       // Data is a serialized CPUManagerCheckpointData
+       Data string `json:"data"`
+       // DataChecksum is a checksum of Data string
+       DataChecksum checksum.Checksum `json:"dataChecksum"`
+       // CheckpointData holds actual data, not serialized directly
+       CheckpointData CPUManagerCheckpointData `json:"-"`
+}
+
+type CPUManagerCheckpointData struct {
        PolicyName    string                              `json:"policyName"`
        DefaultCPUSet string                              `json:"defaultCpuSet"`
-       Entries       map[string]map[string]ContainerCPUs `json:"entries,omitempty"`
-       Checksum      checksum.Checksum                   `json:"checksum"`
+       // the _current_ set of CPUs exclusively allocated to a _container_
+       Entries       map[string]map[string]string        `json:"entries,omitempty"`
+       // extra information required by this feature such us any _historical data_ of original CPUs exclusively allocated to a _container_
+       Originals     map[string]map[string]ContainerCPUs `json:"entries,omitempty"`
 } 
 ```
 
 In addition to above the following list of functions must be added : 
-* migrateV2CheckpointToV3 to ensure backwards compatibility and upgrade support
+* Upgrade support function(s) as needed. An example case is if upgrading from an older version with unsupported/disabled feature, cater when the checkpointed structures will be empty.
 * GetOriginalCPUSet
 
 Last
@@ -733,7 +744,7 @@ This feature will touch multiple components. For alpha, unit tests coverage for 
   + cpu_manager_test.go
   + policy_static_test.go
 
-* pkg/kubelet/cm/cpumanager/state/ will be updated to handle v3 CPU Manager checkpoint file format, introduced with this KEP 
+* pkg/kubelet/cm/cpumanager/state/ will be updated to handle requires CPU Manager checkpoint file format modification, introduced with this KEP 
   + state_checkpoint_test.go
   + state_test.go
 
@@ -885,9 +896,14 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-Addition of CPUManager checkpoint version 3 doesn't impact an upgrade or downgrade, since CPU Manager current behavior is to create a new checkpoint upon kubelet start, otherwise it will require the Node to be drained, i.e. to delete /var/lib/kubelet/cpu_manager_state file. 
+`InPlacePodVerticalScalingExclusiveCPUs` feature will not impact an upgrade or downgrade and will not require the Node to be drained,
+keeping the same user experience introduced with [CPUManager V4 format](https://github.com/kubernetes/kubernetes/pull/139102)
 
-For the migration of CPU Manager checkpoint file from v2 to v3, functions have been added following the same design pattern used from existing migration from v1 to v2.
+The `Entries` field in embedded `CPUManagerCheckpointV2` section must be filled with currently allocated CPU sets
+( Original if there was no resize, Resized if there was a resize ) when `InPlacePodVerticalScalingExclusiveCPUs` feature is enabled.
+
+This will allow the assignnment to be read properly if the checkpoint file is saved in a newer kubelet and loaded
+by the old kubelet, thus file reading will succeed without needed to drain the node or remove the file anymore.
 
 ### Version Skew Strategy
 
@@ -1067,7 +1083,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 No to both.
 
-The introduction of original and resized in version 3 checkpoint for CPU Manager, will be tested during alpha.
+The introduction of `Originals` embedded in `CPUManagerCheckpointData` entry in `CPUManagerCheckpointData` struct in [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102), will be tested during alpha.
 
 Running pods will be unaffected by any change.
 
@@ -1118,8 +1134,8 @@ When usage metrics and/or podresources API (or any other suitable APIs) and/or s
 Until those metrics/API/statuses are implemented ( planned for Beta ), it is possible to determine the feature if functioning properly as follows:
 
 - User should create a guaranteed QoS Pod with integer CPU requests.
-- Inspect the `/var/lib/kubelet/cpu_manager_state` and check original and resized CPU set, for the created Pod.
-- Upon creation original should be equal to the assigned CPU and resized should be nil. If it exists it means the feature is enabled and working.
+- Inspect the `/var/lib/kubelet/cpu_manager_state` and check `Original` and `Entries` CPU set, for the created Pods running container.
+- Upon creation `Original` should be equal to `Entries`, the currently set of CPUs exclusively allocated checkpointed. If `Original` exist and is not nil, it means the feature is enabled and working.
 - The user can also check the CPU affinitity of the created Pod, from within the running container to confirm.
 - Afterwards the user should attempt to increase the number of CPUs, within the limits of the node, patching the created guaranteed QoS Pod.
 - Upon success, the user can check the CPU affinity of the resized Pod, from within the running container to confirm assigned CPU set is increased keeping original CPU set.
@@ -1364,9 +1380,9 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-For the problems solved by the proposed `original` and `resized` introduction in checkpoint, the following options have been cosidered and presented in sig-node meetings. 
+For the problems solved by the proposed `Original` introduction in checkpoint, the following options have been cosidered and presented in sig-node meetings. 
 
-More info can be read at [129719 comment](https://github.com/kubernetes/kubernetes/pull/129719#issuecomment-2715258098) , [March 11th 2025, sig node meeting minutes](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.0#heading=h.g56cg3xshw40) and [SIG Node meeting recording discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg)
+More info can be read at [129719 comment](https://github.com/kubernetes/kubernetes/pull/129719#issuecomment-2715258098) , [March 11th 2025, sig node meeting minutes](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.0#heading=h.g56cg3xshw40), [SIG Node meeting recording discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg) and [6170 comment](https://github.com/kubernetes/enhancements/pull/6170#discussion_r3403684470)
 
 ### Option 1: New field mustKeepCPUs in API
 
