@@ -6,7 +6,7 @@ authors:
   - "@saschagrunert"
 owning-sig: sig-node
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: 2021-11-02
 reviewers:
   - "@SergeyKanzhelev" # sig-node-assigned-reviewer
@@ -28,7 +28,7 @@ feature-gates:
     components:
       - kubelet
       - kube-apiserver
-disable-supported: true
+disable-supported: false
 
 metrics:
   - started_user_namespaced_pods_total (exposed by kubelet)
