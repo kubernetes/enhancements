@@ -1183,7 +1183,7 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-Kube-proxy and must be updated to a supported version before MCS services may be
+Kube-proxy and DNS must be updated to a supported version before MCS services may be
 used. To take advantage of MCS DNS, the DNS provider must be upgraded to a
 version that implements the MCS spec. Kube-proxy MCS support will be guarded by
 a `MultiClusterServices` feature gate. When enabled, kube-proxy will watch the
