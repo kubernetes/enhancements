@@ -1,0 +1,33 @@
+title: DRA Driver Conformance Test Suite
+kep-number: 5970
+authors:
+  - "@asahay19"
+owning-sig: sig-node
+participating-sigs:
+  - sig-testing
+  - sig-scheduling
+status: provisional
+creation-date: 2026-03-23
+reviewers:
+  - "@haircommander"
+  - "@sairameshv"
+approvers:
+  - "@haircommander"
+  - "@sairameshv"
+
+see-also:
+  - "/keps/sig-node/4381-dra-structured-parameters"
+
+stage: alpha
+
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+
+feature-gates: []
+disable-supported: true
+
+metrics: []
