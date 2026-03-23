@@ -3,6 +3,8 @@ kep-number: 5975
 authors:
   - "@jpbetz"
 owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-architecture
 status: provisional
 creation-date: 2026-03-23
 reviewers:
@@ -15,12 +17,11 @@ approvers:
 see-also:
   - "/keps/sig-api-machinery/4153-declarative-validation"
   - "/keps/sig-api-machinery/5073-declarative-validation-with-validation-gen"
-  - "/keps/sig-api-machinery/1929-built-in-default"
 
-stage: alpha
-latest-milestone: "v1.34"
+stage: stable
+latest-milestone: "v1.37"
 milestone:
-  alpha: "v1.34"
+  stable: "v1.37"
 
 feature-gates: []
-disable-supported: true
+disable-supported: false

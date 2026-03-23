@@ -5,22 +5,28 @@
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
+  - [Background](#background)
 - [Proposal](#proposal)
-  - [Strategy DSL](#strategy-dsl)
-  - [Spec/Status Accessors](#specstatus-accessors)
-  - [Feature-Gate Field Dropping Generator](#feature-gate-field-dropping-generator)
-  - [Warning Generator](#warning-generator)
+  - [Enforcement of Best Practices](#enforcement-of-best-practices)
+  - [API Declarations](#api-declarations)
+  - [Validation](#validation)
+  - [Warnings](#warnings)
+  - [Field Wiping and Fields Resetting](#field-wiping-and-fields-resetting)
+  - [Generation Management](#generation-management)
+  - [Feature-Gate Field Dropping](#feature-gate-field-dropping)
 - [Examples](#examples)
   - [Adding a New API Resource](#adding-a-new-api-resource)
   - [Adding a New Field to an Existing API](#adding-a-new-field-to-an-existing-api)
 - [Design Details](#design-details)
+  - [registry.RESTConfig](#registryrestconfig)
+  - [strategy.Config](#strategyconfig)
+    - [Spec/Status Accessor Interfaces](#specstatus-accessor-interfaces)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -31,6 +37,7 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Alternatives](#alternatives)
+- [Future Work](#future-work)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -45,63 +52,34 @@ Each API's directory should only contain code that makes it different from
 the standard pattern. Today, each contains hundreds of lines of boilerplate
 that obscure those differences.
 
-For example, instead of 100+ lines of strategy code, an API following best
-practices might have only:
+It should be impossible for an API author to accidentally violate standard patterns.
+Deliberate violations should require an exception from an API reviewer.
+
+It should be easy to adhere to the standard patterns. A simple resource
+should need nothing more than:
 
 ```go
-var Strategy = strategy.New(strategy.Config{
-	// Identify the Kind
-    Object:      &widgets.Widget{},
-    Scheme:      legacyscheme.Scheme,
-	
-	// Define the resource
-    Namespaced:  true,
-})
+func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
+    return registry.NewREST(registry.RESTConfig{
+        Resource: widgets.Resource("widgets"),
+        Kind:     "Widget",
+    }, optsGetter)
+}
 ```
 
-Which elides all the code for:
-
-- Validation and defaulting - Handled declaratively when declarative validation/defaulting are used.
-- Subresource field wiping / resetting - Highly standardized and can be implemented generically.
-- Generation management - Highly standardized and can be implemented generically.
-- Field dropping for new API fields guarded by a feature gate - Highly standardized and can be generated.
-- Warnings - Expected to become declarative once validation-gen generates
-  warning-producing code.
-
-Much of the remaining API behavior is driven by tags on the type definition
-itself rather than hand-written strategy code. For example, feature-gated fields use
-`+k8s:featureGate=<GateName>` to drive both validation behavior and automatic
-field-dropping code generation. The strategy consumes these generated
-artifacts without any per-resource wiring.
-
-It still remains possible to customize the strategy. For example, a resource
-with custom warnings simply provides a function:
-
-```go
-var Strategy = strategy.New(strategy.Config{
-    Object:     &widgets.Widget{},
-    Scheme:     legacyscheme.Scheme,
-    Namespaced: true,
-    WarningsOnCreate: func(ctx context.Context, obj runtime.Object) []string {
-        return networkPolicyWarnings(obj.(*networking.NetworkPolicy))
-    },
-    WarningsOnUpdate: func(ctx context.Context, obj, old runtime.Object) []string {
-        return networkPolicyWarnings(obj.(*networking.NetworkPolicy))
-    },
-})
-```
+Validation, warnings, field wiping/resetting, generation management, field dropping 
+of feature gated fields, and so on, should happen correctly by default. These behaviors should be
+driven by information already available in the API definition (types.go files) such as declarative
+validation and feature gate tags.
 
 ## Motivation
 
 Today, the standard pattern is reimplemented from scratch in every API's
 strategy file. A resource that follows all conventions still requires ~100
-lines of method implementations identical to every other resource. The
-resource-specific decisions — a handful of flags and function references —
-are buried in the noise. This makes it harder to spot the non-standard hooks
-that reviewers should pay attention to.
-
-Eliminating this boilerplate reduces toil for API authors and reviewers,
-and prevents copy-paste errors which are
+lines of method implementations identical to every other resource. The most
+important resource-specific decisions are buried in the noise. This makes it
+harder to spot the non-standard hooks that reviewers should pay attention to
+and has resulted in mistakes which are
 [challenging and risky to fix](https://github.com/kubernetes/kubernetes/pull/137715).
 
 This is a natural follow-up to declarative validation
@@ -114,103 +92,178 @@ which have done much of the heavy lifting and can be further leveraged here.
 Every strategy file in `pkg/registry/` implements the same ~12 methods:
 status clearing, generation bumping, validation delegation, and feature-gate
 field dropping. These follow rigid patterns across 67 files totaling ~12,000
-lines. A detailed audit is in [ANALYSIS.md](ANALYSIS.md).
+lines.
 
 ### Goals
 
-- Eliminate the need to hand-write strategy boilerplate for resources that follow
-  standard conventions while preserving the customization that is available
-  today.
+- Make it impossible to author APIs that violate best practices without
+  being granted an exception by an API reviewer.
+- Eliminate the need to hand-write strategy boilerplate for resources that
+  follow standard conventions while preserving the customization that is
+  available today.
 
 ### Non-Goals
 
 - A large-scale migration. This is intended to provide convenience to the
-  existing API definition framework in a backward compatible way and will
-  be adopted as-needed.
+  existing API definition framework in a backward-compatible way and will
+  be adopted as needed.
+
+### Background
+
+This is not the first time we've done this. Back in 2016-2017 @enj did a major sweep:
+
+- https://github.com/kubernetes/kubernetes/pull/37770
+- https://github.com/kubernetes/kubernetes/pull/44779
+- https://github.com/kubernetes/kubernetes/pull/46390
+
+(thanks @liggitt for the PR links!)
 
 ## Proposal
 
-### Strategy DSL
+### Enforcement of Best Practices
 
-Introduce a strategy config struct following the same pattern as `registry.Store`. This will
-be introduced in a fully backward-compatible way.
+https://github.com/kubernetes/kubernetes/pull/137689 demonstrates using a
+cross-cutting blackbox test to ensure that all APIs adhere to field wiping
+conventions. We will expand approach with testing, linting, and exception
+lists to cover:
 
-Core capabilities:
+- ResetObjectMetaForStatus was used to reset metadata
+  - https://github.com/kubernetes/kubernetes/pull/137689 tests metadata wiping but does not ensure that ResetObjectMetaForStatus was used
+- Generation management (set to 1 on create and monotomically increased when spec is changed by an update)
+- Field dropping of feature gated fields
+  - It should be impossible to add a new field to an existing API without a feature gate 
+  - Iff a field is feature gated, field dropping must be implemented
+  - Field dropping must be tested (can we offer any test conveniences/automation?)
+- Default behaviors:
+  - `AllowCreateOnUpdate` is `false`
+  - `AllowUnconditionalUpdate` is `true`
+  - `DefaultGarbageCollectionPolicy` is `DeleteDependents`
 
-- **Automatic status/spec handling.** Types with `Status` and `Spec` fields
-  get automatic status clearing on create and update, generation bumping when
-  spec changes, and a status substrategy.
-- **Automatic validation.** Declarative validation is registered in the scheme.
-  The strategy always invokes it automatically — no configuration needed.
-  Hand-written validation can be provided additionally via a `Validate`
-  function value; results are merged with DV results transparently.
-- **Feature-gate field dropping.** A `DropDisabledFields` hook called at the
-  correct lifecycle point for both create and update.
-- **Behavioral overrides.** Function-valued fields for custom normalization,
-  warnings, generation tracking, and status-specific behavior.
+It should be possible to make exceptions, but exceptions should be tracked in a file
+owned exclusively by API approvers.
 
-### Spec/Status Accessors
+We don't want to have to remember to add the safety nets when adding new groups and new versions.
+So we will structure them such that they're automatically added and automatically enforced.
 
-The strategy needs to copy, clear, and compare `Spec` and `Status` fields
-without knowing their concrete types. Rather than relying on reflection, we would like to
-introduce two interfaces:
+### API Declarations
+
+Build on existing `registry.Store` and strategy interfaces in a
+backward-compatible way by introducing a "configuration" layer
+that declares a desired resource definition at a high level while still
+providing a level of customization and extensibility.
+
+Custom behavior can be added as needed:
 
 ```go
-type SpecAccessor interface {
-    GetSpec() any
-    SetSpec(any)
-}
-
-type StatusAccessor interface {
-    SpecAccessor
-    GetStatus() any
-    SetStatus(any)
+func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
+    return registry.NewREST(registry.RESTConfig{
+        Resource: widgets.Resource("widgets"),
+        Kind:     "Widget",
+        StrategyConfig: strategy.Config[*widgets.Widget]{
+            WarningsOnCreate: func(ctx context.Context, obj *widgets.Widget) []string {
+                return widgetWarnings(obj)
+            },
+        },
+    }, optsGetter)
 }
 ```
 
-These could be generated by either a new generator or by deepcopy-gen, which 
-already walks the internal type graph and knows which types have `Spec` and `Status`
-fields.
+Entirely handwritten strategies can also be used:
 
-### Feature-Gate Field Dropping Generator
+```go
+type podStrategy struct {}
 
-A `+featureGate` tag is already used in the Kubernetes APIs for documentation
-purposes today. A `+k8s:featureGate=<GateName>` tag is being added as part of
-declarative validation. This tag could also serve as the source of truth for
-field dropping.
+func (s podStrategy) CheckGracefulDelete(
+    ctx context.Context, obj runtime.Object, opts *metav1.DeleteOptions) bool {
+    // Pod-specific logic
+}
 
-The field dropping code can be generated automatically as a small addition to
-validation-gen. Generated field dropping code would be called from the
-strategy in the same way declarative validation code is.
+func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
+    return registry.NewREST(registry.RESTConfig{
+        Resource: core.Resource("pods"),
+        Kind:     "Pod",
+        DeleteStrategy: &podStrategy{},
+    }, optsGetter)
+}
+```
 
-### Warning Generator
+The rest of this proposal focuses on what we can offer to minimize the
+amount of custom configuration needed.
+
+### Validation
+
+Declarative validation will be called automatically if available. If
+handwritten validation is provided, all handwritten *and* declarative
+validation code will be called and mismatch checking will be run.
+
+For example,
+
+```go
+func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
+    return registry.NewREST(registry.RESTConfig{
+        Resource: widgets.Resource("widgets"),
+        Kind:     "Widget",
+        StrategyConfig: strategy.Config[*widgets.Widget]{
+            Validate: func(ctx context.Context, obj *widgets.Widget) field.ErrorList {
+                // Call handwritten validation here (Declarative Validation is called and mismatch-checked automatically)
+            },
+        },
+    }, optsGetter)
+}
+```
+
+### Warnings
 
 A small extension to validation-gen to generate warning-producing code.
-
 In the future, validation errors and warnings may be output in a single
 validation pass, but that is not a goal for this KEP.
+
+### Field Wiping and Fields Resetting
+
+Default behavior will follow best practices:
+
+- **Main strategy**: clears status on create (`obj.Status = TypeStatus{}`),
+  and clears status changes on update (`new.Status = old.Status`).
+- **Status substrategy**: clears spec, labels, and annotations changes
+  (`new.Spec = old.Spec`, `metav1.ResetObjectMetaForStatus`, etc.).
+
+Managed fields are reset to match the fields that are wiped.
+
+This requires [Spec/Status accessor interfaces](#specstatus-accessor-interfaces).
+
+### Generation Management
+
+Default behavior will follow best practice: Generation is set to 1 on create
+and bumped on update when Spec changes.
+
+This requires [Spec/Status accessor interfaces](#specstatus-accessor-interfaces).
+
+### Feature-Gate Field Dropping
+
+The `+k8s:featureGate=<GateName>` tag being added as part of declarative
+validation can also serve as the source of truth for field dropping. The
+field-dropping code will be generated by validation-gen. Generated
+functions are consumed via the config's `DropDisabledFields` hook or
+by the default strategies automatically.
 
 ## Examples
 
 ### Adding a New API Resource
 
-Consider a namespaced `Widget` with Spec and Status. Full before/after
-comparisons are in [BEFORE.md](BEFORE.md) and [AFTER.md](AFTER.md).
-
-With DV and the strategy DSL, the strategy file is:
+For a resource following *all* best practices:
 
 ```go
-var Strategy = strategy.New(strategy.Config{
-    Object:      &widgets.Widget{},
-    Scheme:      legacyscheme.Scheme,
-    Namespaced:  true,
-})
+func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
+    return registry.NewREST(registry.RESTConfig{
+        Resource: widgets.Resource("widgets"),
+        Kind:     "Widget",
+    }, optsGetter)
+}
 ```
 
 ### Adding a New Field to an Existing API
 
-Adding a new field to an API requires only adding the field to the type with
-the requisite validation and feature gate:
+Adding a new field to an API requires a feature gate:
 
 ```go
 type WidgetSpec struct {
@@ -222,23 +275,89 @@ type WidgetSpec struct {
 }
 ```
 
-The appropriate field dropping is generated automatically.
+The appropriate field dropping is generated automatically when the feature gate is provided.
 
-Declarative validation automatically handles proper validation of the field
+Declarative validation also automatically handles proper validation of the field
 when the feature gate is off (i.e. in-use detection and ratcheting).
 
 ## Design Details
 
-Detailed analysis including the full `Config` struct field table,
-feature-gate dropping pattern catalog, and alternatives comparison is in
-[ANALYSIS.md](ANALYSIS.md). Before/after code comparisons for adding a new
-API resource are in [BEFORE.md](BEFORE.md) and [AFTER.md](AFTER.md).
+### registry.RESTConfig
+
+Provides resource identity, naming, and optional customization of name generation, handwritten validation,
+handwritten warnings, selectable fields, and printer columns.
+
+**Required:**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `Resource` | `schema.GroupResource` | Resource identity (group + plural name), matching the existing `DefaultQualifiedResource` pattern |
+| `Kind` | `string` | Kind name; the internal GVK is derived as `Resource.Group/__internal/Kind` |
+
+**Optional properties:**
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `NameGenerator` | `SimpleNameGenerator` | Name generation for `generateName` |
+| `TableConvertor` | default | Custom printer columns |
+| `SelectableFields` | metadata only | Custom field selectors beyond metadata |
+
+**Strategy overrides:**
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `StrategyConfig` | nil | Typed hooks for custom strategy behavior (see [strategy.Config](#strategyconfig)) |
+
+When `StrategyConfig` is set, the provided configuration customizes strategy.
+
+### strategy.Config
+
+`strategy.Config` provides fields and hooks for custom strategy behavior.
+
+**Hooks:**
+
+| Hook | Purpose |
+|------|---------|
+| `Validate` / `ValidateUpdate` | Additional hand-written validation (merged with DV) |
+| `WarningsOnCreate` / `WarningsOnUpdate` | Custom warning messages |
+
+**Status substrategy:**
+
+When the type has a `Status` field, a status substrategy is created
+automatically. If it needs customization, a nested `Status *StatusConfig[T]`
+provides hooks.
+
+#### Spec/Status Accessor Interfaces
+
+Our implementation needs to copy, clear, and compare `Spec` and
+`Status` fields. To support this, we propose generating accessor interfaces
+that provide type-safe access without reflection:
+
+```go
+type SpecAccessor[S any] interface {
+    GetSpec() S
+    SetSpec(S)
+}
+
+type StatusAccessor[T any] interface {
+    GetStatus() T
+    SetStatus(T)
+}
+
+type GenerationAccessor interface {
+	GetGeneration() int64
+	SetGeneratioin(value int64)
+}
+```
+
+Implementations are trivial one-liners, and can be generated by a deepcopy-gen style generator (which
+already walks the type graph).
 
 ### Test Plan
 
-[x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes
-necessary to implement this enhancement.
+[x] I/we understand the owners of the involved components may require updates
+to existing tests to make this code solid enough prior to committing the
+changes necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
@@ -246,30 +365,22 @@ None. Existing per-resource tests serve as the compatibility gate.
 
 ##### Unit tests
 
-- `k8s.io/apiserver/pkg/registry/rest/strategy/`: unit tests covering all
-  Config fields, Status/Spec detection, generation bumping, field dropping
-  ordering, and validation wrapping.
+- Unit tests for all new framework types and workflows that are introduced.
 
 ##### Integration tests
 
-- [x] Subresource field wiping: https://github.com/kubernetes/kubernetes/pull/137689
-- [ ] TODO: Feature gated field dropping
-- [ ] TODO: Generation management
+- All above "Enforcement of Best Practices" tests are implemented
 
 ##### e2e tests
 
-Existing e2e coverage for migrated resources validates correctness.
+Not applicable.
 
 ### Graduation Criteria
 
 This is an internal refactoring with no user-visible behavior change.
-There are no feature gates and no alpha/beta/stable transitions. Milestones
-are tracked as implementation progress:
-
-- Strategy DSL package implemented in `k8s.io/apiserver`
-- At least 5 resources migrated
-- All existing tests pass
-- Feature-gate field dropping generator prototype for at least one resource
+There are no feature gates and no alpha/beta/stable transitions.
+Once the new way of defining strategies is implemented and is in
+use by at least five APIs, we will mark this KEP as implemented.
 
 ### Upgrade / Downgrade Strategy
 
@@ -401,12 +512,29 @@ Not applicable.
 
 ## Alternatives
 
-**Declarative tags** for all strategy behavior breaks down for
-complex validation options, cross-field generation tracking, custom warnings,
-and injected dependencies. Tags are appropriate for feature-gate field
-dropping, validation, warnings, and defaulting, but for strategy
-and storage definitions, there are few benefits and keeping the definitions in
-Go provides type safety.
+**Declarative tags for all strategy behavior.** Tags break down for complex
+validation options, cross-field generation tracking, custom warnings, and
+injected dependencies. Tags are appropriate for field dropping, validation,
+warnings, and defaulting, but for strategy and storage definitions, keeping
+the definitions in Go provides type safety.
+
+## Future Work
+
+- **REST install registration.** The `StorageProvider` wiring (~4,200 lines)
+  that maps resources to their REST storage follows a repeating pattern per
+  API group. With `registry.NewREST`, much of this could be simplified.
+- **etcd storage test data.** `test/integration/etcd/data.go` (~1,000 lines)
+  contains a per-resource entry with a JSON stub, expected etcd path, and
+  introduced version. This data could potentially be derived from the resource
+  identity and scheme.
+- Selectable fields will be tagged with `+k8s:selectableField` on the type
+  definition. Generated functions would bewired into the Store automatically.
+  This begs the question: *Should* selectable fields be codified into types.go?
+- For 1:1 field-to-column mapping, fields could be tagged with
+  `+k8s:printerColumn`. A generated `TableConvertor` is used by default.
+  Computed columns (derived from multiple fields) override `TableConvertor`
+  via `RESTConfig`.
+  This also begs the question: *Should* printer columns be codified into types.go?
 
 ## Implementation History
 
