@@ -286,21 +286,17 @@ proposal will be implemented, this is the place to discuss them.
 ### API Extensibility: Sharding Parameters
 
 Clients will request shards via query parameters in their `LIST` and `WATCH` requests. 
-The request must contain the field used to shard, as well as the start and end of the hash range.
 
-Given that some Kubernetes features (like pagination) use individual, explicit query parameters,
-while others (like label selectors) provide a lightweight grammar for filter expressions, the exact
-syntax is currently under discussion. We will work with API Review to decide between two primary approaches:
+A dedicated `shardSelector` query parameter mapped to the `ShardSelector` field in
+`meta/v1.ListOptions`. This parameter accepts a lightweight CEL-based functional
+grammar, specifically utilizing a `shardRange()` function.
 
-1. **Explicit Query Parameters**: Adding individual fields directly to `meta/v1.ListOptions`.
-   - Example: `?shardKey=object.metadata.namespace&shardRange=0,100`
+**Syntax Details:**
+- `shardRange(fieldPath, hexStart, hexEnd)`
+- Bounds are defined as 64-bit strings with a `'0x'` prefix (e.g. `'0x0000000000000000'`, `'0x8000000000000000'`).
+- Supported field paths currently include `object.metadata.uid` and `object.metadata.namespace`.
 
-2. **Lightweight Grammar**: Introducing a new `selector` expression parameter.
-   - Example: `?selector=range(object.metadata.namespace, 0, 100)`
-   - If this path is chosen, it could be implemented as a strict subset of CEL or a simple
-     functional grammar.
-
-Regardless of the syntax chosen, the parameters will be strongly typed internally on both the client side
+The parameters are strongly typed internally on both the client side
 (for syntactic correctness in `client-go`) and the server side (for validation and execution).
 
 ### Shard Key
@@ -331,14 +327,21 @@ reshard occurs.
 
 ### Client Request
 
-Clients will append new parameters to their LIST and WATCH requests to subscribe to a specific
-slice of the stream.
+Clients will append the new parameter to their LIST and WATCH requests to subscribe
+to a specific slice of the stream.
 
 **Example Request:**
-`GET /api/v1/pods?watch=true&selector=shardRange(object.metadata.uid, 0, 8)`
+`GET /api/v1/pods?watch=true&shardSelector=shardRange(object.metadata.uid, '0x0000000000000000', '0x8000000000000000')`
 
-- `selector`: Introduces a new query parameter to encapsulate expression-based selection logic.
-- `shardRange(...)`: A function within the selector grammar that specifies the field to hash (e.g., `object.metadata.uid`) and the start and end range (`start <= x < end`) of hash values this client desires. This provides a future-proof foundation without bloating `ListOptions` with multiple individual parameter fields.
+Clients can also specify multiple hash ranges simultaneously using the logical OR
+operator (`||`) implemented by the CEL evaluator.
+
+**Multiple Range Example:**
+`GET /api/v1/pods?watch=true&shardSelector=shardRange(object.metadata.uid, '0x0000000000000000', '0x8000000000000000') || shardRange(object.metadata.uid, '0x8000000000000000', '0x10000000000000000')`
+
+- `shardSelector`: Introduces a new query parameter specifically for shard selection logic.
+- `shardRange(...)`: A CEL function that specifies the field to hash and the start
+  (inclusive) / end (exclusive) hex bounds (`hexStart <= x < hexEnd`) of hash values.
 
 ### Server Design
 
@@ -487,7 +490,7 @@ functionality is accessed.
 
 #### Alpha
 
-- Feature implemented behind `ShardableWatch` feature gate.
+- Feature implemented behind `ShardedListAndWatch` feature gate.
 - Basic unit and integration tests passing.
 
 #### Beta
@@ -552,9 +555,16 @@ enhancement:
 -->
 - Clients must be updated to send the new parameters.
 - If a client sends sharding parameters to an old API server, the old server will ignore the unknown query parameters and send the full, un-sharded stream.
-- To allow clients to safely distinguish between a filtered stream and a full stream, the API Server will inject a new `Sharded: true` flag into the `ListMeta` of the initial `LIST` response (and the initial sync of a `WATCH`). 
-  - If a client requests a shard and observes `Sharded: true`, it can safely process all incoming events.
-  - If the flag is missing or false, the client knows the server ignored the parameter and must perform client-side filtering (or fail) to drop objects outside its shard range.
+- To allow clients to safely distinguish between a filtered stream and a full stream,
+  the API Server will return a new `ShardInfo` struct within the `ListMeta` of the
+  initial `LIST` response (and initial sync of a `WATCH`).
+  - The `ShardInfo` struct mirrors the applied selector back to the client via a `selector` string field.
+  - If a client requests a shard and observes a matching `ShardInfo.selector`, it can
+    safely construct partial lists, process incoming events, or merge responses
+    across multiple shards.
+  - If `ShardInfo` is absent, the client knows the server ignored the parameter
+    and can take appropriate action to avoid breaking mutual exclusion like falling back to
+    client-side sharding.
 - Clients can also deterministically check for server-side sharding support by querying the OpenAPI v3 discovery document for the presence of the sharding query parameters. 
 - To enable safe client-side fallback, the hash algorithm and range evaluation logic will be placed in a common library (`k8s.io/apimachinery`).
 
@@ -591,7 +601,7 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `ShardableWatch`
+  - Feature gate name: `ShardedListAndWatch`
   - Components depending on the feature gate: `kube-apiserver`
 
 ###### Does enabling the feature change any default behavior?
@@ -729,6 +739,8 @@ Latency for sharded watches should be comparable to standard watches.
 
 - [x] Metrics
   - Metric name: `apiserver_watch_shards_total`
+  - Components exposing the metric: `kube-apiserver`
+  - Metric name: `apiserver_watch_filtered_events_total`
   - Components exposing the metric: `kube-apiserver`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
