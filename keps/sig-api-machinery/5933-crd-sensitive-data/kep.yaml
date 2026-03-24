@@ -6,6 +6,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-auth
+  - sig-security
 status: provisional
 creation-date: 2026-02-25
 reviewers:

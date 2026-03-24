@@ -185,6 +185,8 @@ Callers **without** this permission receive the resource with sensitive fields r
 
 Write access to sensitive fields is controlled by standard `create`/`update`/`patch` verbs on the main resource — no additional write-side subresource is required.
 
+For resources with sensitive fields, full-object updates require authorization to read `<resource>/sensitive`. If a caller can update the main resource but cannot read its sensitive content, the API server rejects the request. This prevents accidental removal of sensitive fields during read-modify-write flows based on redacted responses.
+
 ### Field Stripping on get/list/watch
 
 In the CRD handler (`customresource_handler.go`), after deserializing the response object:
@@ -231,6 +233,10 @@ Every get/list/watch for a CRD with sensitive fields triggers an additional auth
 **Risk: Complexity in CRD handler and interaction with audit.**
 
 The CRD handler gains new responsibilities. Thorough unit and integration tests, as well as a clear separation into utility packages (`sensitive/sensitive.go`), will mitigate correctness risks.
+
+**Risk: Data loss from full-object updates by callers without sensitive read access.**  
+
+A caller that has permission to update the resource, but is not authorized to read `<resource>/sensitive`, receives a redacted form of the object. If that caller performs a full-object update (`PUT`) using the returned representation, sensitive fields omitted from the response may be unintentionally removed from the persisted object. To mitigate this risk, for resources with sensitive fields, the API server rejects full-object updates from callers that are not authorized to read the sensitive content.
 
 ## Design Details
 
@@ -461,3 +467,6 @@ This is a valid complementary approach but does not address the need for in-clus
 
 **Create a separate resource type for each "secret" object.**
 This leads to schema duplication and API proliferation. The per-field marker approach is more flexible and does not require additional resources.
+
+**Store sensitive values in a native Kubernetes Secret and reference it from the CRD.**  
+This is the primary alternative used today and remains broadly viable. However, it requires splitting the API across multiple objects and adds controller and lifecycle management complexity. This KEP aims to provide Secret-like protection for selected CRD fields without requiring an additional resource.
