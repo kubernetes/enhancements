@@ -27,3 +27,8 @@ Session.vim
 
 # hack/test-go.sh writes files here if ARTIFACTS is unset
 tmp/
+
+# Gas Town runtime
+.beads/
+.kiro/
+.runtime/
