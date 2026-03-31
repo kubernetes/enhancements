@@ -1,0 +1,22 @@
+title: ReplicaSet Consolidation-Aware Scale-In Strategy
+kep-number: NNNN
+authors:
+  - "@TBD"
+owning-sig: sig-apps
+participating-sigs: []
+status: provisional
+creation-date: 2026-03-27
+reviewers:
+  - TBD
+approvers:
+  - TBD
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+feature-gates:
+  - name: ConsolidatingScaleDown
+    components:
+      - kube-controller-manager
+disable-supported: true
+metrics: []
