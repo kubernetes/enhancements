@@ -65,11 +65,10 @@ Currently, when an endpoint is terminating, its UDP flows might be prematurely c
 
 ## Proposal
 
-We propose adding a `Processing` boolean field to the `EndpointConditions` struct in the `discovery.k8s.io` API (both `v1` and `v1beta1`).
+I propose adding a `Processing` boolean field to the `EndpointConditions` struct in the `discovery.k8s.io` API (both `v1` and `v1beta1`).
 
 ```go
 type EndpointConditions struct {
-    // ... existing fields
     // Processing indicates that an endpoint is terminating but still
     // processing existing connections.
     // +optional
