@@ -1,0 +1,29 @@
+title: TopologyManager CPU-attached NUMA filter option
+kep-number: 5726
+authors:
+  - "@fanzhangio"
+owning-sig: sig/node
+participating-sigs:
+  - sig/node
+status: provisional
+creation-date: 2026-04-02
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/135541"
+  - "https://github.com/kubernetes/enhancements/issues/5726"
+  - "https://github.com/kubernetes/kubernetes/pull/135581"
+stage: alpha
+latest-milestone: "v1.36.1"
+milestone:
+  alpha: "v1.36"
+  beta: "TBD"
+  stable: "TBD"
+feature-gates:
+  - name: TopologyManagerPolicyAlphaOptions
+    components:
+      - kubelet
+disable-supported: true
+metrics: []
