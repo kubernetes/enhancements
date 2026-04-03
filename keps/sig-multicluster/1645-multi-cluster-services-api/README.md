@@ -1183,12 +1183,8 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-Kube-proxy and DNS must be updated to a supported version before MCS services may be
-used. To take advantage of MCS DNS, the DNS provider must be upgraded to a
-version that implements the MCS spec. Kube-proxy MCS support will be guarded by
-a `MultiClusterServices` feature gate. When enabled, kube-proxy will watch the
-`serviceimports.multicluster.k8s.io` CRD. MCS support will be dynamically
-enabled and disabled as the CRD is created and deleted.
+- DNS Provider: To take advantage of MCS DNS (`<svc>.<ns>.svc.clusterset.local`), the DNS provider (e.g. CoreDNS with the multicluster plugin) must be upgraded to a version that implements the MCS DNS specification.
+- mcs-controller: That implementor of MCS API must be deployed and configured to watch `ServiceExport` resources and create/manage derived `ServiceImport` objects and their associated `EndpointSlice` objects in each importing cluster.
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
 this is in the test plan.
@@ -1203,9 +1199,8 @@ enhancement:
 
 ### Version Skew Strategy
 
-Kube-proxy and DNS must be upgraded before new MCS API versions may be used.
-Backwards compatibility will be maintained in accordance with the [deprecation
-policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+- mcs-controller <-> MCS CRD versions: The mcs-controller must support the installed version of the `ServiceExport` and `ServiceImport` CRDs. Backwards compatibility will be maintained in accordance with the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+- DNS provider <-> MCS DNS spec: The DNS provider must support the version of the MCS DNS specification corresponding to the deployed MCS CRDs.
 <!--
 If applicable, how will the component handle version skew with other
 components? What are the guarantees? Make sure this is in the test plan.
