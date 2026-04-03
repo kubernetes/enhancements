@@ -598,7 +598,6 @@ The following e2e tests are planned:
 - When only dynamic provisioning is available (single CSI driver case):
   - Is the Pod placed on the node with the largest available space by default?
   - When `VolumeBindingArgs` is set to "Prefer a node with the maximum allocatable", is the Pod placed on the node with the largest available space?
-  - When `VolumeBindingArgs` is set to "Prefer a node with the least allocatable", is the Pod placed on the node that meets the requested size but has the smallest available space?
   - Does the Pod placement fail if no node meets the requested size?
   - Even when the Pod is recreated, is the placement in the node performed as expected above?
 
