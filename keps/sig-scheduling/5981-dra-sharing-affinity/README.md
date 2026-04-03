@@ -168,7 +168,10 @@ spec:
 
 When the scheduler allocates a multi-allocatable device with `sharingAffinity`:
 
-1. **First claim**: The scheduler reads the claim's affinity values for the specified attribute key(s) and records them in `AllocatedState` alongside consumed capacity
+1. **First claim**: The scheduler decodes the claim's well-known structured
+   parameters from opaque config, reads the affinity values for the specified
+   attribute key(s), and records them in `AllocatedState` alongside consumed
+   capacity
 2. **Subsequent claims**: The scheduler checks if the new claim's affinity values match those recorded in `AllocatedState`
 3. **Mismatch**: If values don't match, the device is skipped (try another device)
 4. **Match**: If values match and capacity is available, allocation proceeds
@@ -194,110 +197,58 @@ scheduler which attribute keys constrain sharing. But the scheduler also needs
 to know what affinity values a given claim *requests*.
 
 The claim's opaque config (`DeviceConfiguration.Opaque.Parameters`) is a
-`runtime.RawExtension`—raw bytes the scheduler cannot parse by design. The
-scheduler intentionally does not understand opaque driver parameters. Therefore,
-affinity values cannot be extracted from opaque config.
+`runtime.RawExtension`—raw bytes the scheduler cannot parse by design.
+However, based on feedback from @pohly, the approach is to define a
+**well-known JSON schema** that lives *inside* the opaque config. This avoids
+any API changes to `DeviceConfiguration` while giving the scheduler a
+decodable format for affinity-relevant parameters.
 
-Options under consideration:
+**Approach: Well-known JSON schema inside `OpaqueDeviceConfiguration`**
 
-**Option A: New structured field in `DeviceClaimConfiguration`**
+Drivers that want sharing affinity encode their config using a community-governed
+JSON schema, similar to the pattern in
+[`k8s.io/dynamic-resource-allocation/api/metadata`](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/dynamic-resource-allocation/api/metadata).
+The scheduler recognizes this schema and can decode the affinity-relevant
+parameters from the opaque blob.
 
-Add a `affinityValues` map alongside opaque config:
+The schema uses the same `DeviceAttribute` types already used in ResourceSlice,
+providing a flat key-value map of qualified attribute names:
 
-```go
-type DeviceClaimConfiguration struct {
-    Requests []string
-    DeviceConfiguration `json:",inline"`
-
-    // AffinityValues provides structured affinity values for sharing
-    // constraints. Keys must correspond to attributeKeys declared in
-    // the device's SharingAffinity.
-    // The maximum number of entries is 8.
-    // +optional
-    // +featureGate=DRASharingAffinity
-    AffinityValues map[QualifiedName]DeviceAttribute
+```json
+{
+  "apiVersion": "resource.k8s.io/v1alpha1",
+  "kind": "StructuredParameters",
+  "attributes": {
+    "networking.example.com/subnet": {"string": "subnet-X"},
+    "networking.example.com/pkey": {"string": "0x8001"}
+  }
 }
 ```
 
-Pros: Clean separation; scheduler can read values directly; follows existing
-config pattern where claim-level configuration lives.
-Cons: Duplicates information already in opaque config; users must specify
-affinity-relevant values in two places (opaque for the driver, structured for
-the scheduler).
+The scheduler decodes this JSON from the opaque blob and extracts values for the
+keys listed in the device's `sharingAffinity.attributeKeys`. The decoding
+overhead is small compared to the overall scheduling effort.
 
-> **UX mitigation — Staged Automation**:
->
-> The duplication is addressed through a staged approach that establishes the
-> API contract early and hardens it for production over time:
->
-> **Alpha — API field + external webhook polyfill**: The `SharingAffinityMapping`
-> field is defined in the `DeviceClass` spec during Alpha. This establishes the
-> declarative mapping contract between opaque config keys and `affinityValues`
-> attribute keys. For example:
->    ```yaml
->    apiVersion: resource.k8s.io/v1
->    kind: DeviceClass
->    metadata:
->      name: shared-nic
->    spec:
->      sharingAffinityMapping:
->        - opaqueKey: "subnet"
->          attributeKey: "networking.example.com/subnet"
->    ```
-> During Alpha, driver vendors ship a **mutating admission webhook** that reads
-> the `SharingAffinityMapping` from the referenced DeviceClass, extracts the
-> corresponding values from the claim's opaque config, and auto-populates
-> `affinityValues`. This keeps the initial PR footprint small and avoids complex
-> changes to kube-apiserver before the core scheduling logic is proven.
->
-> **Beta — Built-in admission controller**: The mapping logic moves into a
-> **built-in admission controller** in the API server. This eliminates the
-> dependency on an external webhook, which can fail or become a bottleneck during
-> high-volume pod creation. The controller reads the DeviceClass mapping,
-> extracts values from the opaque config's raw JSON (the driver opted into this
-> by defining the mapping), and auto-populates `affinityValues` at the API
-> boundary. By Beta, the mapping is transparent to the user — they provide
-> opaque config and the API server ensures `affinityValues` is consistent.
+If drivers also need additional, differently structured configuration parameters
+(e.g., MTU, QoS settings), users provide **two** config entries in the claim:
+one using the standard schema (scheduler reads) and one using the vendor format
+(driver reads). The scheduler only considers configurations matching the
+well-known schema.
 
-**Option B: New structured field on `ExactDeviceRequest`**
-
-Add `affinityValues` per-request instead of per-config:
-
-```go
-type ExactDeviceRequest struct {
-    // ... existing fields ...
-
-    // AffinityValues specifies the affinity attribute values this request
-    // requires for sharing-constrained devices.
-    // The maximum number of entries is 8.
-    // +optional
-    // +featureGate=DRASharingAffinity
-    AffinityValues map[QualifiedName]DeviceAttribute
-}
-```
-
-Pros: Values are per-request (more precise); no duplication with config section.
-Cons: Mixes resource selection with configuration; config is traditionally
-separate from request in DRA's layered model.
-
-**Option C: Driver pre-populates device attributes dynamically**
-
-The driver publishes devices with attribute values already set based on current
-state (e.g., `networking.example.com/subnet: "subnet-X"` after first
-allocation). Claims use CEL selectors to match.
-
-Pros: No new API fields needed; uses existing CEL selector mechanism.
-Cons: Race condition between driver updating ResourceSlice and scheduler reading
-it—this is essentially the placeholder pattern this KEP aims to eliminate.
-
-We are leaning toward **Option A** because it cleanly separates structured
-affinity values from opaque driver config while keeping the scheduler's read
-path simple. The examples in this KEP use Option A. Feedback from reviewers is
-requested.
+**Key advantages:**
+- **No API changes** to `DeviceConfiguration` — the feature uses existing opaque
+  config with a well-known schema
+- **No duplication** for simple cases — the driver can read the same structured
+  parameters it programs (e.g., subnet, PKey)
+- **No `SharingAffinityMapping`** — no webhook polyfill or admission controller
+  needed
+- **Extensible** — the well-known schema can support future scheduler-readable
+  hints beyond sharing affinity
 
 **3. SharingStrategy: Should claims control lock-setting behavior?**
 
-When a claim provides `affinityValues`, should it also declare whether it is
+When a claim provides affinity values (via the well-known structured parameters
+schema), should it also declare whether it is
 allowed to *set* a lock on a clean device, or whether it can only *join* an
 existing lock? Two initial strategies are proposed:
 
@@ -307,8 +258,8 @@ existing lock? Two initial strategies are proposed:
   a matching lock established by another claim. Useful for background or batch
   jobs that should never "poison" a clean device.
 
-If included, this field would live alongside `affinityValues` on the claim side
-(Option A: in `DeviceClaimConfiguration`, Option B: in `ExactDeviceRequest`).
+If included, this field would live on the claim side — either in the well-known
+structured parameters schema or as an additional field in the opaque config.
 
 **Filter ordering**: The scheduler checks `NeverSetLock` **before** evaluating
 capacity or key matching. If the device is unlocked and the strategy is
@@ -319,7 +270,7 @@ without noise from capacity evaluation. The full Filter order becomes:
 
 1. If `Strategy == NeverSetLock` AND device is unlocked → reject
 2. Sufficient consumable capacity (KEP-5075)
-3. All required `attributeKeys` present in claim's `affinityValues`
+3. All required `attributeKeys` present in claim's structured parameters
 4. Values match existing lock
 
 This could be deferred to beta if the alpha scope is too large.
@@ -364,9 +315,9 @@ but only if pods belong to the same subnet. The driver sets
 ### Notes/Constraints/Caveats
 
 - **Affinity is set by the first claim**: Once a device is allocated with an affinity value, that value is locked until all claims release the device
-- **Attribute keys must be declared**: The device's `sharingAffinity.attributeKeys` lists which attribute keys constrain sharing; claims must provide values for all of these keys in `affinityValues` or the device is filtered out
+- **Attribute keys must be declared**: The device's `sharingAffinity.attributeKeys` lists which attribute keys constrain sharing; claims must provide values for all of these keys in the well-known structured parameters or the device is filtered out
 - **Multiple keys**: If multiple attribute keys are specified, ALL must match (both presence and value)
-- **Extra keys in claim**: If a claim's `affinityValues` contains keys beyond
+- **Extra keys in claim**: If a claim's structured parameters contain keys beyond
   what the device declares in `attributeKeys`, the extra keys are **ignored**
   for that device. Only the device's declared keys are evaluated. This allows
   "generic" claims to work across devices with different sharing requirements
@@ -378,11 +329,11 @@ but only if pods belong to the same subnet. The driver sets
 - **Multi-request claims (per-request scoping)**: If a claim requests multiple
   devices (e.g., `mgmt-nic` and `data-nic`), each `DeviceClaimConfiguration`
   block targets specific requests via its `requests` slice. Different config
-  blocks can specify different `affinityValues` for different requests. This
+  blocks can specify different structured parameters for different requests. This
   means `mgmt-nic` can be locked to Subnet-A while `data-nic` is locked to
   Subnet-B within the same claim — there is no cross-talk between requests.
 - **Empty affinity**: Devices without `sharingAffinity` behave as before (any claim can share)
-- **Grandfathered claims**: Pre-existing claims without `affinityValues` (created
+- **Grandfathered claims**: Pre-existing claims without structured parameters (created
   before the feature was enabled) do not participate in affinity matching but do
   not block new claims from establishing a lock. See lock precedence table below.
 
@@ -393,13 +344,13 @@ but only if pods belong to the same subnet. The driver sets
 | 5 grandfathered claims, no lock set | Claim with `subnet: A` | Lock set to `subnet: A`; device now locked |
 | 5 grandfathered + locked to `subnet: A` | Claim with `subnet: A` | Allowed (values match) |
 | 5 grandfathered + locked to `subnet: A` | Claim with `subnet: B` | **Rejected** (mismatch with lock) |
-| 5 grandfathered + locked to `subnet: A` | Claim without `affinityValues` | **Rejected** (missing required key) |
+| 5 grandfathered + locked to `subnet: A` | Claim without structured parameters | **Rejected** (missing required key) |
 | Only grandfathered claims remain, new claims released | — | Lock cleared; device returns to unlocked |
 | All claims released (grandfathered + new) | — | Device fully clean |
 
 Grandfathered claims are "transparent" to the lock — they neither set it nor
-conflict with it. The lock is defined entirely by claims that provide
-`AffinityValues`.
+conflict with it. The lock is defined entirely by claims that provide structured
+parameters matching the well-known schema.
 
 ### Risks and Mitigations
 
@@ -523,12 +474,13 @@ const SharingAffinityAttributeKeysMaxSize = 8
 
 ##### Source of Truth for Affinity Locks
 
-The scheduler derives affinity locks **solely from active claims'
-`affinityValues`** — not from device attributes on the ResourceSlice. The driver
-is NOT required to write locked affinity values back to the ResourceSlice.
+The scheduler derives affinity locks **solely from active claims' structured
+parameters** (decoded from the well-known JSON schema in opaque config) — not
+from device attributes on the ResourceSlice. The driver is NOT required to write
+locked affinity values back to the ResourceSlice.
 
 - The ResourceSlice declares *which* keys constrain sharing (`attributeKeys`)
-- The claims declare *what* values they need (`affinityValues`)
+- The claims declare *what* values they need (via well-known structured parameters)
 - The scheduler combines these to maintain the lock in `AllocatedState`
 
 This avoids two sources of truth that could diverge, eliminates ResourceSlice
@@ -554,7 +506,7 @@ A device's effective state is a derived value:
 
 ```
 Effective State = ResourceSlice (device definition + attributeKeys)
-               + Active Claims (affinityValues from bound claims)
+               + Active Claims (structured parameters decoded from opaque config)
                + AssumedClaims (tentative locks from current scheduling cycle)
 ```
 
@@ -583,11 +535,12 @@ device with `sharingAffinity` is a candidate ONLY if:
 
 1. It has sufficient consumable capacity (KEP-5075)
 2. The claim provides values for ALL keys in `sharingAffinity.attributeKeys`
-   (missing key → device is **not** a candidate)
+   (missing key → device is **not** a candidate). The scheduler extracts these
+   values by decoding the well-known JSON schema from the claim's opaque config.
 3. The device's `AffinityValues` is either empty (unlocked) OR matches the
    claim's affinity values for ALL keys
 
-If a claim does not provide an `affinityValues` entry for a required attribute
+If a claim does not provide a structured parameter entry for a required attribute
 key, the device is filtered out. This is the safe default: the driver declared
 that sharing requires a specific parameter, and a claim that omits it cannot be
 properly configured. Claims that do not need sharing-constrained devices should
@@ -605,7 +558,8 @@ lock" in the scheduler cache before the Binding phase:
 
 1. Scheduler evaluates a multi-allocatable device with `sharingAffinity`
 2. If device has no existing allocations (unlocked):
-   - Extract affinity values for `sharingAffinity.attributeKeys` from the claim
+   - Extract affinity values for `sharingAffinity.attributeKeys` from the claim's
+     structured parameters (decoded from opaque config)
    - Record values in `AllocatedState.AffinityValues[deviceID]`
    - Proceed with allocation (device is now tentatively locked)
 3. If device has existing allocations (locked):
@@ -674,11 +628,14 @@ cycle begins.
    existing `GatherAllocatedState()` for capacity reconstruction)
 2. For each bound claim, check if the allocated device has `SharingAffinity`
    defined in the corresponding ResourceSlice
-3. If yes and the claim has `affinityValues`, read the values and populate
-   `AffinityValues[deviceID]` with the key-value pairs
-4. If yes but the claim has **no** `affinityValues` (grandfathered claim from
-   before the feature was enabled), skip it — do not populate affinity for this
-   claim. The lock will be established by the next new claim that provides values.
+3. If yes, decode the claim's opaque config using the well-known JSON schema
+   and extract the structured parameters; populate
+   `AffinityValues[deviceID]` with the key-value pairs for the declared
+   attribute keys
+4. If yes but the claim has **no** well-known structured parameters
+   (grandfathered claim from before the feature was enabled), skip it — do not
+   populate affinity for this claim. The lock will be established by the next
+   new claim that provides structured parameters.
 5. If multiple claims share the same device, verify their values are consistent
    (they must be, by construction—but log a warning if not)
 
@@ -736,25 +693,31 @@ spec:
         exactly:
           deviceClassName: shared-nic
     config:
+      # Well-known structured parameters (scheduler decodes for affinity matching)
       - requests: ["nic"]
-        # Structured affinity values the scheduler can read (see UNRESOLVED #2)
-        affinityValues:
-          networking.example.com/subnet:
-            string: "subnet-X"
-        # Opaque driver config (scheduler cannot read this)
+        opaque:
+          driver: resource.k8s.io
+          parameters:
+            apiVersion: resource.k8s.io/v1alpha1
+            kind: StructuredParameters
+            attributes:
+              networking.example.com/subnet:
+                string: "subnet-X"
+      # Driver-specific opaque config (scheduler ignores this)
+      - requests: ["nic"]
         opaque:
           driver: networking.example.com
           parameters:
             apiVersion: networking.example.com/v1
             kind: NICConfig
-            subnet: "subnet-X"
             vlanId: 100
 ```
 
-> **Note**: The `affinityValues` field is a proposed new structured field
-> (see [UNRESOLVED #2](#open-design-questions)). It provides the scheduler with
-> readable affinity values while the full driver configuration remains in the
-> opaque `parameters` blob.
+> **Note**: The first config block uses the well-known `StructuredParameters`
+> schema with `driver: resource.k8s.io`, which the scheduler recognizes and
+> decodes for affinity matching. The second config block is standard opaque
+> driver config that only the driver reads. For simple cases where the driver
+> can read both, a single well-known config block may be sufficient.
 
 ### Test Plan
 
@@ -780,13 +743,13 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   - Reserve: first claim sets lock; second claim with same values succeeds
   - Reserve: second claim with conflicting values fails
   - Unreserve: tentative lock is rolled back
-  - Grandfathered claims: pre-existing claims without `affinityValues` neither set
+  - Grandfathered claims: pre-existing claims without structured parameters neither set
     nor conflict with locks
   - Lock precedence: all 6 scenarios from the Lock Precedence table
 - `staging/src/k8s.io/api/resource/v1`: Coverage for new API types, including:
   - Validation: `attributeKeys` exceeding max 8 limit is rejected
-  - Validation: `affinityValues` exceeding max 8 limit is rejected
-  - Round-trip serialization of `SharingAffinity` and `affinityValues`
+  - Validation: structured parameters exceeding max 8 attributes is rejected
+  - Round-trip serialization of `SharingAffinity` and well-known schema
 
 ##### Integration tests
 
@@ -795,7 +758,8 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 - Affinity lock clearing when all claims release a device
 - Interaction with consumable capacity constraints (KEP-5075)
 - Scheduler restart: `AffinityValues` correctly reconstructed from existing
-  bound ResourceClaims (including skipping grandfathered claims)
+  bound ResourceClaims (including skipping grandfathered claims without
+  structured parameters)
 - Parallel scheduling: two Pods with conflicting affinity values targeting the
   same device — one wins Reserve, the other is requeued
 - Feature gate disabled: `sharingAffinity` fields are ignored; devices are
@@ -807,7 +771,7 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   device with a different affinity value
 - **Grandfather Migration**: 5 Pods running on a NIC with no lock; driver
   updates ResourceSlice to add `sharingAffinity`; 6th Pod scheduled with
-  `affinityValues` — verify the 6th Pod succeeds, sets the lock, and the
+  structured parameters — verify the 6th Pod succeeds, sets the lock, and the
   original 5 Pods are not disrupted
 - **Partial Key**: Device requires `subnet` and `pkey` in `attributeKeys`;
   claim provides only `subnet` — verify the device is filtered out
@@ -827,13 +791,11 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 
 - Feature implemented behind `DRASharingAffinity` feature gate
 - API fields added to ResourceSlice (`SharingAffinity` on `Device`)
-- API field added to DeviceClass (`SharingAffinityMapping`) to establish the
-  mapping contract between opaque config keys and `affinityValues` attribute keys
+- Well-known `StructuredParameters` JSON schema defined for opaque config
+- Scheduler decodes well-known schema from opaque config for affinity matching
 - Scheduler Filter plugin enforces affinity matching
 - Scheduler Score plugin prefers locked-compatible devices over clean devices
 - Scheduler tracks affinity in AllocatedState
-- External mutating admission webhook polyfill: driver vendors can ship a webhook
-  that reads the DeviceClass mapping and auto-populates `affinityValues`
 - Unit and integration tests
 - Documentation for driver authors
 
@@ -841,9 +803,6 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 
 - Gather feedback from DRA driver developers
 - Address any issues found in alpha
-- **Built-in admission controller**: The `SharingAffinityMapping` logic moves
-  from an external webhook into a built-in admission controller in the API
-  server, ensuring operational reliability and zero-touch UX for production
 - **Lock-aware preemption**: PostFilter detects affinity mismatch as a
   preemption-solvable problem; identifies lock-holder Pods as victims when a
   higher-priority Pod needs a device locked to an incompatible value
@@ -865,11 +824,11 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 This can happen during driver upgrades or when enabling the feature on existing
 hardware. The scheduler handles this as follows:
 
-- **Pre-existing claims without `affinityValues`** are grandfathered: they do not
+- **Pre-existing claims without structured parameters** are grandfathered: they do not
   participate in affinity matching. The scheduler skips them when reconstructing
   the `AffinityValues` map.
-- **The lock is established by the first *new* claim** that provides
-  `affinityValues` for the required attribute keys after the `sharingAffinity`
+- **The lock is established by the first *new* claim** that provides structured
+  parameters for the required attribute keys after the `sharingAffinity`
   field is added.
 - **Pre-existing claims continue to run** and are not evicted. The driver is
   responsible for ensuring that already-configured VFs/resources remain
