@@ -19,8 +19,8 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -329,13 +329,13 @@ If e2e tests are not necessary or useful, explain why.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Beta
 - Addition of new bookmark function for informers
 - Feature implemented behind a feature flag for 1 or more controllers
 - Unit tests for controllers/bookmark function
 - Addition of e2e tests for the controllers with feature gate enabled
 
-#### Beta
+#### GA
 - Analysis of onboarded controllers and addition of others that may have the same staleness issues
 - Addition of additional E2E tests and stress tests to ensure edge cases are fully tested
 
