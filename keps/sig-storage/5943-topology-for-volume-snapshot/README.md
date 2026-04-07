@@ -94,7 +94,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
-    - [Story 4](#story-4)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -216,7 +215,7 @@ While CSI volumes have comprehensive topology support, snapshots operate without
 - Implementing cross region/AZ snapshot cloning functionality.
 - Add ability to modify any existing volume snapshot fields.
 - Modifying the in-tree kube-scheduler or adding snapshot CRD dependencies to core Kubernetes components.
-- Topology enforcement for `Immediate` volume binding mode.
+- Topology enforcement when restoring a snapshot to a PVC whose StorageClass uses `Immediate` volume binding mode (topology enforcement only applies to `WaitForFirstConsumer`).
 - Update existing snapshot objects with Topology information once feature is enabled.
 
 ## Proposal
@@ -225,17 +224,13 @@ While CSI volumes have comprehensive topology support, snapshots operate without
 
 #### Story 1
 
-As a contributor to the Kubernetes project, I want to propose/implement snapshot features that would require topology information to be available. 
+As a cluster operator, I want to see topology information for each volume snapshot, so that I can audit snapshot distribution, understand disaster recovery exposure, and identify zone-specific risks in my backup strategy.
 
 #### Story 2
 
-As a cluster operator, I want to see topology information for each volume snapshot, so that I can audit snapshot distribution, understand disaster recovery exposure, and identify zone-specific risks in my backup strategy.
-
-#### Story 3
-
 As a cluster administrator, I want to specify a target location (regions, zones, racks, etc.) when creating a snapshot via the `VolumeSnapshotClass`, so that the snapshot is stored in a location that aligns with my disaster recovery or data locality requirements.
 
-#### Story 4
+#### Story 3
 
 As a developer, I want to restore a volume from a snapshot and have my pod automatically scheduled to a node that is topology-compatible with the snapshot, so that provisioning succeeds without manual intervention.
 
