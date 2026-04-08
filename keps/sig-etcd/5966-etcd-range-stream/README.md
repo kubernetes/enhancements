@@ -211,21 +211,40 @@ without assembling the full list response in memory.
 The watch cache also falls back to direct etcd reads when the cache is
 stale or snapshots are unavailable after restart. These fallbacks are
 rare (<1% of requests) but costly. For the fallback path, a new
-`ListStream` method is added to the etcd `kubernetes.Interface`:
+`Stream` field is added to the existing `ListOptions` on the etcd
+`kubernetes.Interface`:
 
 ```go
-ListStream(ctx context.Context, prefix string, opts ListStreamOptions, cb func(ListStreamResponse) error) error
+type ListOptions struct {
+    Revision  int64
+    Limit     int64
+    Continue  string
+    Stream    bool   // Use RangeStream instead of unary Range
+}
 ```
 
-The etcd3 store's `GetList` calls `ListStream` instead of paginated
-`List`, decoding and filtering each chunk inline. When the feature gate
-is disabled or the server returns `Unimplemented`, the store falls back
-to paginated `List`. `ListStream` is a separate method from `List`
-because the calling pattern is fundamentally different: with paginated
-`List`, clients must set a conservative limit (e.g., 10k) and manage
-pagination to avoid etcd memory spikes. With `ListStream`, clients
-request the full range and the server handles chunking internally.
-The `storage.Interface` is unchanged.
+When `Stream` is set, `List` uses `GetStream()` internally and
+reassembles the streamed chunks into a `ListResponse`. The `Revision`,
+`Limit`, and `Continue` fields remain functional when streaming is
+enabled. `Revision` pins the snapshot, `Limit` caps the total keys
+returned, and `Continue` resumes from a key. In practice, callers using
+`Stream` will typically omit `Limit` and `Continue` since the server
+handles chunking internally.
+
+If the server does not support `RangeStream` (returns `Unimplemented`),
+`List` returns the error to the caller rather than silently falling back
+to a unary Range. A transparent fallback is unsafe because streamed
+`List` calls are typically issued without a `Limit`. Falling back to a
+unary Range without a limit would attempt to return the entire key space
+in a single response, which can exceed the gRPC response size limit and
+fail the request entirely. Instead, callers are responsible for detecting
+the error and falling back to client-side pagination with an appropriate
+`Limit` and `Continue` token.
+
+The etcd3 store's `GetList` calls `List` with `Stream: true` instead of
+managing pagination externally. When the server returns `Unimplemented`
+or the feature gate is disabled, the store falls back to paginated
+`List` with a conservative limit. The `storage.Interface` is unchanged.
 
 ### Upgrade / Downgrade Strategy
 
