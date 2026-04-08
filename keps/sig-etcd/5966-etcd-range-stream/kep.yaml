@@ -1,0 +1,17 @@
+title: etcd RangeStream
+kep-number: 5966
+authors:
+  - "@Jefftree"
+owning-sig: sig-etcd
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: 2026-03-18
+reviewers:
+  - "@ahrtr"
+  - "@fuweid"
+  - "@serathius"
+approvers:
+  - "@ahrtr"
+  - "@fuweid"
+  - "@serathius"
