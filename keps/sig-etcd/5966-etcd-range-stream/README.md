@@ -200,51 +200,24 @@ The following components are modified:
 RangeStream is gated behind a `RangeStream` feature gate in kube-apiserver
 (Alpha in 1.37, default disabled).
 
-The primary integration point is the watch cache initialization path. When
-the feature gate is enabled, the watch cache `sync()` uses
-`KV.GetStream()` on the lower-level `clientv3.KV` interface directly.
-This eliminates the client-side pagination loop that advances the range
-key, pins revisions, and checks for more results. Each chunk's key-value
+A new `ListStream` method is added to the etcd `kubernetes.Interface`
+as a thin wrapper around the etcd client's `KV.GetStream()`. This
+returns a channel of chunks so callers receive key-value pairs as they
+arrive from the server, keeping the `kubernetes.Interface` abstraction
+consistent rather than reaching into `client.KV` directly.
+
+The primary integration point is the watch cache initialization path.
+When the feature gate is enabled, the watch cache `sync()` uses
+`ListStream` to receive chunks incrementally. Each chunk's key-value
 pairs are converted to synthetic "created" events and queued inline
 without assembling the full list response in memory.
 
-The watch cache also falls back to direct etcd reads when the cache is
-stale or snapshots are unavailable after restart. These fallbacks are
-rare (<1% of requests) but costly. For the fallback path, a new
-`Stream` field is added to the existing `ListOptions` on the etcd
-`kubernetes.Interface`:
-
-```go
-type ListOptions struct {
-    Revision  int64
-    Limit     int64
-    Continue  string
-    Stream    bool   // Use RangeStream instead of unary Range
-}
-```
-
-When `Stream` is set, `List` uses `GetStream()` internally and
-reassembles the streamed chunks into a `ListResponse`. The `Revision`,
-`Limit`, and `Continue` fields remain functional when streaming is
-enabled. `Revision` pins the snapshot, `Limit` caps the total keys
-returned, and `Continue` resumes from a key. In practice, callers using
-`Stream` will typically omit `Limit` and `Continue` since the server
-handles chunking internally.
-
-If the server does not support `RangeStream` (returns `Unimplemented`),
-`List` returns the error to the caller rather than silently falling back
-to a unary Range. A transparent fallback is unsafe because streamed
-`List` calls are typically issued without a `Limit`. Falling back to a
-unary Range without a limit would attempt to return the entire key space
-in a single response, which can exceed the gRPC response size limit and
-fail the request entirely. Instead, callers are responsible for detecting
-the error and falling back to client-side pagination with an appropriate
-`Limit` and `Continue` token.
-
-The etcd3 store's `GetList` calls `List` with `Stream: true` instead of
-managing pagination externally. When the server returns `Unimplemented`
-or the feature gate is disabled, the store falls back to paginated
-`List` with a conservative limit. The `storage.Interface` is unchanged.
+For direct `GetList` calls (e.g., from controllers or when WatchList is
+disabled), the store consumes `ListStream` and decodes each chunk's
+key-value pairs inline as they arrive, overlapping network I/O with
+decode. When the server returns `Unimplemented` or the feature gate is
+disabled, the store falls back to paginated `List` with a conservative
+limit. The `storage.Interface` is unchanged.
 
 ### Upgrade / Downgrade Strategy
 
