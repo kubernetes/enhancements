@@ -254,8 +254,9 @@ metadata:
   name: training-worker-0
 spec:
   podGroupTemplateRef:
-    workloadName: training-policy
-    podGroupTemplateName: worker
+    workload:
+      workloadName: training-policy
+      podGroupTemplateName: worker
   schedulingPolicy:
     gang:
       minCount: 100
@@ -387,8 +388,9 @@ metadata:
   name: job-instance-worker-0
 spec:
   podGroupTemplateRef:
-    workloadName: job-policy
-    podGroupTemplateName: worker-template
+    workload:
+      workloadName: jobset
+      podGroupTemplateName: job-1
   # schedulingPolicy is copied from template on PodGroup creation.
   schedulingPolicy:
     gang:
