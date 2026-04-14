@@ -1,4 +1,4 @@
-title: Controller-side Node Info Retrieval for CSI Drivers
+title: CSI ControllerGetNodeInfo
 kep-number: 6011
 authors:
   - "@huww98"
@@ -9,12 +9,17 @@ participating-sigs:
 status: provisional
 creation-date: 2026-04-14
 reviewers:
-  - TBD
+  - "@gnufied"
+  - "@jsafrane"
+  - "@msau42"
+
 approvers:
-  - TBD
+  - "@msau42"
+  - "@xing-yang"
 
 see-also:
-  - https://github.com/container-storage-interface/spec/pull/603
+  - "https://github.com/container-storage-interface/spec/pull/603"
+  - "/keps/sig-storage/4876-mutable-csinode-allocatable"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
