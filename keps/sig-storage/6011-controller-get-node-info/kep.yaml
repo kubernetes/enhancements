@@ -1,0 +1,45 @@
+title: Controller-side Node Info Retrieval for CSI Drivers
+kep-number: 6011
+authors:
+  - "@huww98"
+  - "@torredil"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2026-04-14
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - https://github.com/container-storage-interface/spec/pull/603
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
+
+# The following PRR answers are required at alpha release
+feature-gates:
+  - name: CSINodeGetID
+    components:
+      - kubelet
+  - name: CSIControllerGetNodeInfo
+    components:
+      - external-attacher
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - csi_operations_seconds
+  - csi_sidecar_operations_seconds
