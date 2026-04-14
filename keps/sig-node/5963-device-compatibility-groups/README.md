@@ -123,9 +123,10 @@ underlying physical device.
 
 Add a `device.consumesCounters[].compatibilityGroups` field. Devices declare which  
 named groups they belong to. For two devices consuming counters from the same  
-counter set to be co-allocated, they must share at least one compatibility group.  
-Devices without this field are considered compatible with all groups. This  
-approach is simpler and has minimal API surface.
+counter set to be co-allocated, they must share at least one compatibility group.
+
+Devices without this field are considered compatible with other devices that dont
+specify this field, for backwards compatibility. 
 
 ### User Stories
 
