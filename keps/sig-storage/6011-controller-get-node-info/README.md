@@ -143,10 +143,6 @@ A 5000-node cluster startup triggers 5000 concurrent cloud API calls from `NodeG
 
 - **Backward Compatibility**: Drivers that do not implement the new RPCs continue to use `NodeGetInfo` unchanged. No breaking changes.
 
-- **Annotation Lifecycle**: kubelet owns the `CSINode` annotation. On driver unregistration (`UninstallCSIDriver`), kubelet removes the driver's entry from the JSON map (and removes the annotation entirely if the map is empty), removes the `CSINode.Spec.Drivers` entry, and removes the Node annotation entry. On re-registration, kubelet calls `NodeGetID` again, setting the annotation and triggering external-attacher to call `ControllerGetNodeInfo`.
-
-- **Concurrent Annotation Updates**: Multiple drivers registering on the same node update the same JSON map annotation. kubelet uses read-modify-write with `resourceVersion` conflict detection, retrying on conflict. This is consistent with existing Node annotation handling.
-
 ## Design Details
 
 ### CSI Spec Changes
@@ -163,10 +159,8 @@ rpc NodeGetID(NodeGetIDRequest) returns (NodeGetIDResponse) {
 
 Returns only the node identifier, obtainable locally without cloud API credentials (e.g., from instance metadata).
 
-| | |
-|-|-|
-| **Input** | None |
-| **Output** | `node_id` (string), e.g. EC2 instance ID, ECS instance ID |
+**Input**: None
+**Output**: `node_id` (string), e.g. EC2 instance ID, ECS instance ID
 
 **Example implementations**:
 - **AWS EBS**: `http://169.254.169.254/latest/meta-data/instance-id`, no IAM credentials needed
@@ -182,10 +176,8 @@ rpc ControllerGetNodeInfo(ControllerGetNodeInfoRequest) returns (ControllerGetNo
 
 Retrieves topology and capacity from the controller side, where cloud API credentials are already available.
 
-| | |
-|-|-|
-| **Input** | `node_id` (from `NodeGetID`), `published_volume_ids` (volumes the CO believes are published to this node) |
-| **Output** | `accessible_topology` (zone, region, etc.), `max_volumes_per_node` |
+**Input**: `node_id` (from `NodeGetID`), `published_volume_ids` (volumes the CO believes are published to this node)
+**Output**: `accessible_topology` (zone, region, etc.), `max_volumes_per_node`
 
 **Why `published_volume_ids`?** To understand this field, consider how the scheduler uses `max_volumes_per_node`: it treats it as the number of CSI-managed volumes the node can support, then subtracts the CSI volumes it already knows about to determine available slots. The scheduler has no awareness of non-CSI attachments (boot volumes, network interfaces consuming shared device slots, manually attached disks). So the SP must account for them; it cannot simply report the raw instance-type limit, or the scheduler will over-schedule.
 
@@ -245,15 +237,16 @@ if hasGetIDCapability(driver) {
 }
 ```
 
+When driver unregisters, also remove the driver from the annotation.
+
 #### external-attacher Changes
 
-When the `CSIControllerGetNodeInfo` feature gate is enabled and the CSI controller plugin advertises `GET_NODE_INFO`:
+When the `CSIControllerGetNodeInfo` feature gate is enabled, driver is present in CSINode object `csi.volume.kubernetes.io/nodeid` annotation, and the CSI controller plugin advertises `GET_NODE_INFO`:
 
-1. Watch CSINode objects for the `csi.volume.kubernetes.io/nodeid` annotation
-2. Call `ControllerGetNodeInfo` when a driver appears in the annotation but has no corresponding `CSINode.Spec.Drivers` entry (initial registration)
-3. Call `ControllerGetNodeInfo` after `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED` (capacity correction, building on KEP-4876)
-4. Call `ControllerGetNodeInfo` periodically if `CSIDriver.Spec.NodeAllocatableUpdatePeriodSeconds` is set (periodic refresh, building on KEP-4876)
-5. Update `CSINode.Spec.Drivers` with topology and `Allocatable.Count` from the response
+1. Call `ControllerGetNodeInfo` when a driver appears in the annotation but has no corresponding `CSINode.Spec.Drivers` entry (initial registration)
+2. Call `ControllerGetNodeInfo` after `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED` (capacity correction, building on KEP-4876)
+3. Call `ControllerGetNodeInfo` periodically if `CSIDriver.Spec.NodeAllocatableUpdatePeriodSeconds` is set (periodic refresh, building on KEP-4876)
+4. Update `CSINode.Spec.Drivers` with topology and capacity from the response
 
 ```go
 func processCSINode(csiNode) {
@@ -279,8 +272,6 @@ func processCSINode(csiNode) {
 The key advantage: external-attacher has accurate `published_volume_ids` from `VolumeAttachment` objects, enabling precise non-CSI volume accounting that the node side cannot achieve.
 
 **Periodic update scalability**: External-attacher uses a rate-limited work queue with jitter (±20% of the configured period) rather than per-node timers. This prevents thundering herd on restart and provides natural rate limiting for cloud API calls.
-
-**Partial responses**: If `max_volumes_per_node` is 0, the CSI spec convention is "no limit imposed." External-attacher follows this convention and does not set `Allocatable.Count` (the scheduler treats unset `Allocatable.Count` as unlimited, which is consistent). If `accessible_topology` is empty, only `Allocatable.Count` is updated. This allows drivers to implement only the subset they need.
 
 **Idempotency**: All CSI RPCs are idempotent. Repeated `ControllerGetNodeInfo` calls with the same parameters return the same result, making retries and duplicate processing safe.
 
@@ -373,6 +364,10 @@ This reuses the same key as the existing Node annotation intentionally. The form
 External-attacher watches CSINode objects, not Node objects, so there is no ambiguity.
 
 **Why a JSON map?** CSI driver names can be up to 63 characters. A per-driver annotation key like `csi.volume.kubernetes.io/nodeid.{driver}` could reach 95 characters, exceeding the 63-character annotation key name segment limit. The JSON map keeps the key fixed at 31 characters.
+
+**Annotation Lifecycle**: kubelet owns the `CSINode` annotation. On driver unregistration (`UninstallCSIDriver`), kubelet removes the driver's entry from the JSON map (and removes the annotation entirely if the map is empty), removes the `CSINode.Spec.Drivers` entry, and removes the Node annotation entry. On re-registration, kubelet calls `NodeGetID` again, setting the annotation and triggering external-attacher to call `ControllerGetNodeInfo`.
+
+**Concurrent Annotation Updates**: Multiple drivers registering on the same node update the same JSON map annotation. kubelet uses read-modify-write with `resourceVersion` conflict detection, retrying on conflict. This is consistent with existing Node annotation handling.
 
 ### Test Plan
 
@@ -480,7 +475,7 @@ Running workloads are not affected. Failure scenarios affect only new node regis
 
 - `csi_operations_seconds{method_name="NodeGetID",grpc_status_code!="OK"}`: high error rate indicates `NodeGetID` failures
 - `csi_sidecar_operations_seconds{method_name="ControllerGetNodeInfo",grpc_status_code!="OK"}`: high error rate indicates controller-side failures
-- Increase in pods stuck in `ContainerCreating` due to missing topology
+- Increase in pods stuck in `ContainerCreating` or `Pending` due to missing topology or incorrectly scheduled.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -562,6 +557,24 @@ No. `NodeGetID` is a single gRPC call on the existing CSI socket. No new process
 
 kubelet and external-attacher retry until available. Existing workloads are unaffected. New scheduling may be delayed.
 
+###### How does this feature work if the external-attacher / CSI controller is down?
+
+Nodes will register with only `node_id` annotation. Topology and allocatable will not be populated in `CSINode.Spec.Drivers`.
+
+**Topology impact**: Pods with PV nodeAffinity requiring topology labels (e.g., `topology.kubernetes.io/zone`) may fail to schedule if the node lacks those labels. This is expected behavior -— the scheduler cannot place pods without proper topology matching.
+
+**Allocatable impact**: If `Allocatable.Count` is not set, the scheduler's CSI volume limits plugin currently treats this as "no limit" and may schedule pods that exceed the node's actual volume capacity.
+
+When external-attacher recovers:
+1. It processes pending CSINode annotations, calls `ControllerGetNodeInfo` to populate `Allocatable.Count`
+2. It processes pending VolumeAttachments, calls `ControllerPublishVolume`
+3. If the node's actual capacity is exhausted (due to pods scheduled during the degraded period), `ControllerPublishVolume` returns `RESOURCE_EXHAUSTED`
+4. The pod is rejected and rescheduled to other nodes with available capacity
+
+This self-correcting mechanism ensures the cluster eventually reaches a consistent state.
+
+**KEP-5030**: This KEP proposes to close the gap in the scheduler's `NodeVolumeLimits` plugin, so that scheduler will not place pods on nodes which aren't reporting CSI driver information. When implemented, the degraded state will be more graceful -— pods will simply not schedule until topology/allocatable is populated.
+
 ###### What are other known failure modes?
 
 - **`NodeGetID` RPC fails**
@@ -571,7 +584,7 @@ kubelet and external-attacher retry until available. Existing workloads are unaf
 
 - **external-attacher cannot reach CSI controller**
   - Detection: `csi_sidecar_operations_seconds{method_name="ControllerGetNodeInfo",grpc_status_code!="OK"}`
-  - Mitigation: Restart external-attacher. Pending annotations are re-processed on recovery.
+  - Mitigation: Fix the underlying issue, then restart external-attacher. Pending annotations are re-processed on recovery.
   - Diagnostics: external-attacher error logs with RPC failure details.
 
 - **Cloud API throttling during large cluster startup**
