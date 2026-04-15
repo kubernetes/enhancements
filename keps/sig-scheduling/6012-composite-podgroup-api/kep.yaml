@@ -1,0 +1,41 @@
+title: CompositePodGroup API
+kep-number: 6012
+authors:
+  - "@tosi3k"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-apps
+status: implementable
+creation-date: 2026-04-15
+reviewers:
+  - "@TBD"
+approvers:
+  - "@TBD"
+
+see-also:
+  - "/keps/sig-apps/5547-integrate-workload-with-job"
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/5729-resourceclaim-support-for-workloads"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+  - "/keps/sig-scheduling/5832-decouple-podgroup-from-workload-api"
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+
+feature-gates:
+  - name: CompositePodGroup
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
