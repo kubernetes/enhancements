@@ -72,7 +72,13 @@ one scheme, it cannot be reconfigured to use a different scheme until all existi
 allocations are released.
 
 The current DRA Partitionable Devices API has no mechanism for drivers to express
-these mutual exclusivity constraints. Without it, incompatible allocations are only
+these mutual exclusivity constraints. A shared counter with a capacity of one
+can ensure mutual exclusion, but this cannot be used here: such a counter
+would have to be decremented once when allocating the *first* device from a set
+of compatible devices, not once for *each* device. This cannot be expressed
+at the moment.
+
+Without a mechanism for this, incompatible allocations are only
 detected during resource preparation, after the scheduler has already made its
 decisions, leading to pod startup failures and resource thrashing. This KEP
 introduces API and scheduler changes so that compatibility constraints can be
