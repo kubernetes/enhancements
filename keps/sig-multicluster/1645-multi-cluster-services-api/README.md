@@ -1183,8 +1183,9 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-- DNS Provider: To take advantage of MCS DNS (`<svc>.<ns>.svc.clusterset.local`), the DNS provider (e.g. CoreDNS with the multicluster plugin) must be upgraded to a version that implements the MCS DNS specification.
-- mcs-controller: That implementor of MCS API must be deployed and configured to watch `ServiceExport` resources and create/manage derived `ServiceImport` objects and their associated `EndpointSlice` objects in each importing cluster.
+The MCS API is defined as a set of CRDs (`ServiceExport` and `ServiceImport`) that are installed and managed independently of core Kubernetes components. As such, the upgrade and downgrade strategy is the responsibility of each MCS implementation. The two key components of the implementations are:
+- mcs-controller component: responsible for watching `ServiceExport` resources and managing the lifecycle of `ServiceImport` objects and their associated `EndpointSlice` resources.
+- MCS DNS component: responsible for serving the `<svc>.<ns>.svc.clusterset.local` domain, conforming to the multicluster DNS specification as defined in this KEP's [specification.md](specification.md).
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
 this is in the test plan.
@@ -1199,8 +1200,8 @@ enhancement:
 
 ### Version Skew Strategy
 
-- mcs-controller <-> MCS CRD versions: The mcs-controller must support the installed version of the `ServiceExport` and `ServiceImport` CRDs. Backwards compatibility will be maintained in accordance with the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
-- DNS provider <-> MCS DNS spec: The DNS provider must support the version of the MCS DNS specification corresponding to the deployed MCS CRDs.
+- mcs-controller component <-> MCS CRD versions: The mcs-controller component must support the installed version of the `ServiceExport` and `ServiceImport` CRDs. Backwards compatibility will be maintained in accordance with the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+- MCS DNS component <-> MCS DNS spec: The MCS DNS component must conform to the multicluster DNS specification as defined in this KEP's [specification.md](specification.md).
 <!--
 If applicable, how will the component handle version skew with other
 components? What are the guarantees? Make sure this is in the test plan.
