@@ -82,7 +82,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement allows Kubernetes clients to opt-out of receiving `metadata.managedFields` in API responses (GET, LIST, and WATCH) via an HTTP `Accept` parameter. This reduces network bandwidth, API Server CPU serialization costs, and client-side memory allocations and Garbage Collection overhead.
+This enhancement allows Kubernetes clients to opt-out of receiving `metadata.managedFields` in API responses (GET, LIST, WATCH, PUT, and POST) via an HTTP `Accept` parameter. This reduces network bandwidth, API Server CPU serialization costs, and client-side memory allocations and Garbage Collection overhead.
 
 ## Motivation
 
@@ -90,23 +90,20 @@ This enhancement allows Kubernetes clients to opt-out of receiving `metadata.man
 
 Relying on client-side transforms still incurs significant system-wide costs:
 - **API Server CPU:** The API server still performs expensive serialization of `managedFields`.
-- **API Server Memory Savings:** Faster LIST responses and reduced payload sizes over the network allow clients to catch up faster. Since the cost of a full LIST operation is significantly reduced without `managedFields`, the penalty for a watch cache miss (forcing a relist) is lower. This allows the API Server to safely reduce the target time duration for the watch cache window (saving RAM), rather than using the space savings to keep history for longer.
-- **Network Bandwidth:** Large `managedFields` arrays are transmitted over the wire.
-- **Client-side GC:** Clients must allocate structural objects for `managedFields` before discarding them.
+- **Network Overhead:** Large `managedFields` payloads consume significant network bandwidth and increase transfer time during LIST and WATCH operations. This can lead to request timeouts and prevents the API server from efficiently handling large resources.
+- **Client-side GC:** Clients must allocate structural objects (string headers, maps, and slice backing arrays) for `managedFields` before discarding them.
 
 ### Goals
 
-- Provide a mechanism for clients to opt-out of receiving `metadata.managedFields` in GET, LIST, and WATCH responses.
+- Provide a mechanism for clients to opt-out of receiving `metadata.managedFields` in API responses (GET, LIST, WATCH, PUT, POST, and PATCH).
 - Reduce API Server CPU usage for serialization.
 - Reduce network traffic between API Server and clients.
 - Reduce client-side memory allocations and GC overhead.
-- Potentially allow for a shorter watch cache window due to faster LIST responses.
 
 ### Non-Goals
 
-- General-purpose field selection.
-- Opting out of fields other than `metadata.managedFields` (though the mechanism may be extensible in the future).
-- Opting out of fields in write operations (POST, PUT, PATCH).
+- **General-purpose field selection or opting out of other fields** (though the API design is intended to be extensible to support this in the future without a redesign).
+- **Opting out of fields in the request body of write operations** (this KEP only applies to dropping fields in API responses).
 
 ## Proposal
 
@@ -136,7 +133,7 @@ Example:
 
 This follows Kubernetes API conventions where `Accept` parameters are used for structural transformations (e.g., `as=PartialObjectMetadata`, `as=Table`).
 
-While the `drop` parameter syntax is designed such that it wouldn't look out of place if a general field selection feature were added in the future, this KEP is strictly scoped to `metadata.managedFields`. We are not proposing or pre-approving a general-purpose field filtering mechanism at this time, as that would require a much broader discussion.
+While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parameter syntax is designed to be extendable (e.g., by allowing multiple values or comma-separated lists) to avoid redesigning the API if other fields need to be supported in the future.
 
 ### Implementation Details
 
@@ -177,7 +174,7 @@ None.
 - Feature implemented. Two feature gates are introduced:
   - `APIServerDropManagedFields` (Server-side): Introduced at **Beta** and enabled by default, as the functionality is purely optional and depends entirely on the client requesting it via the `Accept` header.
   - `ClientDropManagedFields` (Client-side): Introduced at **Alpha** and disabled by default. This gate controls whether internal Kubernetes clients (e.g., `kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`.
-- Support for GET, LIST, and WATCH operations in the API server.
+- Support for GET, LIST, WATCH, PUT, POST, and PATCH operations in the API server.
 - `Accept` parameter `drop=metadata.managedFields` recognized by the API server.
 - `managedfields.ExtractInto` updated with error handling.
 
