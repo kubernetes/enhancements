@@ -1,4 +1,4 @@
-# KEP-5517: DRA: Native Resource Requests
+# KEP-5517: DRA: Node Allocatable Resources
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -15,7 +15,6 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
-    - [DeviceClass API Extensions](#deviceclass-api-extensions)
     - [Device API Extensions](#device-api-extensions)
       - [Resource Representation Examples](#resource-representation-examples)
     - [Pod API Changes](#pod-api-changes)
@@ -62,7 +61,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [DeviceClass API Extension for NativeResourceMappings](#deviceclass-api-extension-for-nativeresourcemappings)
+  - [DeviceClass API Extension for NodeAllocatableResourceMappings](#deviceclass-api-extension-for-nodeallocatableresourcemappings)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -96,23 +95,23 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes a solution for managing native resources like CPU, Memory and Hugepages with Dynamic Resource Allocation (DRA). Currently, when native resources are managed via DRA, there is a fundamental disconnect across the control plane and the Node. In the scheduler, having two independent accounting systems (one for standard resources, one for DRA) which are managing the same underlying resource, which leads to resource overcommitment. On the node, the kubelet is completely unaware of DRA allocations which may result in incorrect QoS class assignment which has many downstream implications. This forces users into fragile workarounds that are incompatible with all the use cases.
+This KEP proposes a solution for managing node allocatable resources via Dynamic Resource Allocation (DRA). Node allocatable resources are resources currently reported in `v1.Node` `status.allocatable` that are not extended resources (examples include CPU, Memory, Ephemeral-storage, and Hugepages). Currently, when these node allocatable resources are managed via DRA, there is a fundamental disconnect across the control plane and the Node. In the scheduler, having two independent accounting systems (one for standard resources, one for DRA) managing the same underlying resource leads to resource overcommitment. On the node, the kubelet is completely unaware of DRA allocations, which may result in incorrect QoS class assignment and has many downstream implications. This forces users into fragile workarounds that are incompatible with all use cases.
 
-The proposed solution in this KEP addresses the native resource accounting in the kube-scheduler. The standard resource (`NodeResourcesFit` plugin) and DRA (`DynamicResources` plugin) will be enhanced to synchronize their accounting, creating a single, authoritative ledger. The kubelet will also be enhanced to consider the native resource request made through both the pod spec, and the DRA `ResourceClaim` to correctly calculate QoS, configure cgroups, and protect high-priority pods. This provides a robust, backward-compatible solution for advanced resource management in Kubernetes.
+The proposed solution in this KEP addresses node allocatable resource accounting in the kube-scheduler. The standard resource (`NodeResourcesFit` plugin) and DRA (`DynamicResources` plugin) will be enhanced to synchronize their accounting, creating a single, authoritative ledger. The kubelet will also be enhanced to consider the node allocatable resource requests made through both the pod spec and the DRA `ResourceClaim` to correctly calculate QoS, configure cgroups, and protect high-priority pods. This provides a robust, backward-compatible solution for advanced resource management in Kubernetes.
 
 ## Motivation
 
 Dynamic Resource Allocation (DRA) provides a powerful framework for managing specialized hardware
 resources such as GPUs, FPGAs, and high-performance network interfaces. It also enables fine-grained
-management of native resources like CPU and Memory, for example, through the
-[dra-driver-cpu](https://github.com/kubernetes-sigs/dra-driver-cpu). However, when a native resource
+management of node allocatable resources like CPU and Memory, for example, through the
+[dra-driver-cpu](https://github.com/kubernetes-sigs/dra-driver-cpu). However, when a node allocatable resource
 is managed via DRA, while it provides added advantages of being able to specify more detailed
 requirements, a fundamental disconnect emerges between the scheduler, the kubelet, and the DRA
 framework, which breaks the resource guarantees.
 
-Additionally, specialized resources like accelerators have implicit dependency on native resources
+Additionally, specialized resources like accelerators often have implicit dependencies on node allocatable resources
 like CPU or Hugepages for the application to interact with it. Currently, users must manually
-research and declare these auxiliary native resource requirements, typically as additional requests
+research and declare these auxiliary node allocatable resource requirements, typically as additional requests
 in the PodSpec. This process is error-prone and adds complexity to workload configuration.
 Furthermore, there is no existing mechanism to express critical co-location requirements. For
 example, there is no way to ensure an accelerator allocated via DRA is NUMA-aligned with the specific
@@ -157,7 +156,7 @@ resources allocated via DRA, it will:
     node pressure.  
   * Incorrect OOM Score calculation.
 
-Current workarounds for DRA-managed native resources (like
+Current workarounds for DRA-managed node allocatable resources (like
 [CPU DRA driver](https://github.com/kubernetes-sigs/dra-driver-cpu)) force users to duplicate
 resource requests in both the `ResourceClaim` and the standard `pod.spec.containers.resources`.
 However, this approach is fragile, error-prone, and difficult to manage, especially for complex pods
@@ -174,11 +173,11 @@ resources that are backed by DRA.
 * To create a unified accounting model within the kube-scheduler that prevents overcommitment of core
   resources (like CPU) when they are allocated via both standard `pod.spec` requests and DRA
   `ResourceClaims`.
-* To ensure the solution is compatible with different ways native resources can be represented and
+* To ensure the solution is compatible with different ways node allocatable resources can be represented and
   allocated within DRA, including as individual devices, consumable capacities
   ([KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)), and partitionable devices
   ([KEP-4815](https://github.com/kubernetes/enhancements/issues/4815))
-* To enable specialized devices, such as accelerators, to declare any auxiliary native resource
+* To enable specialized devices, such as accelerators, to declare any auxiliary node allocatable resource
   requirements (e.g., CPU, Memory) they depend on for their operation.
 * To maintain backward compatibility with existing workloads and ecosystem tools that rely on
   `node.status.allocatable` and the scheduler's view of node resource utilization.
@@ -188,17 +187,17 @@ resources that are backed by DRA.
 * To move all resource management logic into the DRA driver. The Kubelet will remain the primary agent
   for cgroup management and QoS enforcement, ensuring that the benefits of its existing stability and
   lifecycle management features are preserved.  
-* To replace the standard `pod.spec.containers.resources` API for requesting native resources. This KEP
-  aims to enhance the system by adding a clear path for native resource requests via DRA while ensuring
+* To replace the standard `pod.spec.containers.resources` API for requesting node allocatable resources. This KEP
+  aims to enhance the system by adding a clear path for node allocatable resource requests via DRA while ensuring
   it works coherently with the existing PodSpec-based requests.
 * Changes to the Kubelet for QoS classification, cgroup management, and eviction logic based on DRA
-  native resource allocations are not in scope for the Alpha release of this KEP.
+  node allocatable resource allocations are not in scope for the Alpha release of this KEP.
 * Interaction with In-Place Pod Resizing and Pod Level Resources will be a non goal for alpha. More
   details in [Future Enhancements](#future-enhancements) section.
 
 ## Proposal
 
-This KEP introduces a unified accounting model within the kube-scheduler to integrate native resources managed 
+This KEP introduces a unified accounting model within the kube-scheduler to integrate node allocatable resources managed 
 by Dynamic Resource Allocation (DRA) with the scheduler's standard resource tracking. By bridging the gap 
 between `pod.spec.resources` and DRA `ResourceClaim` allocations, we can achieve consistent resource accounting 
 and prevent node overcommitment.
@@ -247,7 +246,7 @@ system is entirely separate from the standard resources.
 
 These standard resources and the dynamic resources accounting systems are completely independent. The
 `NodeInfo` cache is not aware of allocations recorded in `ResourceClaim` objects, which is the root
-cause of the accounting gap for native resources when they are managed through DRA.
+cause of the accounting gap for node allocatable resources when they are managed through DRA.
 
 ### User Stories
 
@@ -264,7 +263,7 @@ the node's general shared CPU pool. They use DRA to request exclusive cores and 
 requests for the shared CPU portion. The scheduler should correctly account for both dedicated and shared
 requests made through these different mechanisms. 
 
-**Story 3 (Accelerator with Native Resource Dependency):** An AI inference job requests a GPU through
+**Story 3 (Accelerator with Node Allocatable Resource Dependency):** An AI inference job requests a GPU through
 a `ResourceClaim`. The specific GPU model also requires certain number of CPUs and Hugepages that are
 required for the application to interact with the accelerator. Instead of requiring the user to know
 about these auxiliary CPU and HugePages requests and add it to their PodSpec, the GPU Device can be
@@ -281,90 +280,91 @@ cache, and schedules the pod. The user did not need to guess which resource to p
 
 ### Risks and Mitigations
 
-* Increased API and user complexity by having two ways to request native resources (PodSpec and
+* Increased API and user complexity by having two ways to request node allocatable resources (PodSpec and
   ResourceClaim). To mitigate, the documentation would be enhanced with clear guidelines and use cases
-  for DRA for Native Resources.
+  for DRA for Node Allocatable Resources.
 * Bugs in the kube-scheduler's new accounting logic would lead to incorrect node resource calculations
   and node oversubscription. Extensive unit and integration tests covering various resource claim and
   standard request combinations should help mitigate this. The feature will also be rolled out
   gradually, beginning with an alpha release to gather feedback and address potential concerns.
-* Until Kubelet is made DRA-aware for native resources (a non-goal for Alpha), QoS and node-level
+* Until Kubelet is made DRA-aware for node allocatable resources (a non-goal for Alpha), QoS and node-level
   enforcement will not fully reflect DRA allocations. This is an accepted limitation for the initial
   Alpha scope.
 
 ## Design Details
 
-The proposal here is to enhance the kube-scheduler to implement a **"Unified Accounting"** model for native resources requested through the standard pod Spec or through Dynamic Resource Allocation (DRA) claims. This involves modifications in `NodeResourcesFit` and `DynamicResources` plugins in how they track resource usage on the node. This also includes updates to the DRA API for drivers to declare native resource implications, and Pod Status to record DRA-based native resource allocations. The core principle is that, when a Pod has native resource requested through a DRA claim, the responsibility for checking the node resource fit is delegated to `DynamicResources` plugin, and standard checks in `NodeResourcesFit` are bypassed. The delegation should ensure correct resource accounting irrespective of the execution order of these plugins.
+The proposal here is to enhance the kube-scheduler to implement a **"Unified Accounting"** model for node allocatable resources requested through the standard pod Spec or through Dynamic Resource Allocation (DRA) claims. This involves modifications in `NodeResourcesFit` and `DynamicResources` plugins in how they track resource usage on the node. This also includes updates to the DRA API for drivers to declare node allocatable resource implications in `Device` objects, and Pod Status to record DRA-based node allocatable resource allocations. The core principle is that, when a Pod has a node allocatable resource requested through a DRA claim, the responsibility for checking the node resource fit is delegated to the `DynamicResources` plugin, and standard checks in `NodeResourcesFit` are bypassed. The delegation should ensure correct resource accounting irrespective of the execution order of these plugins.
 
 ### API Changes
 
-To support unified accounting for native resources, this KEP proposes API extensions to `DeviceClass` and `Device`. 
-
-#### DeviceClass API Extensions
-
-A new field `NativeResourceAccountingPolicies` is added to `DeviceClassSpec`.
-
-```go
-// In k8s.io/api/resource/v1/types.go
-type DeviceClassSpec struct {
-  // ManagesNativeResources indicates if devices of this class manages native resources like cpu, memory and/or hugepages.
-  // +optional
-  // +featureGate=DRANativeResources
-  ManagesNativeResources bool
-}
-```
+To support unified accounting for node allocatable resources, this KEP proposes API extensions to the `Device` object and `PodStatus`.
 #### Device API Extensions
 
-The new field `NativeResourceMappings` within the `ResourceSlice.Device` spec is used to define the native resource quantities and any device-specific policy overrides.
+The new field `NodeAllocatableResourceMappings` within the `ResourceSlice.Device` spec is used to define the node allocatable resource quantities.
 
 ```go
 // In k8s.io/api/resource/v1/types.go
 type Device struct {
     // ... existing fields
-    // NativeResourceMappings defines the native resource (CPU, Memory, Hugepages) 
-    // footprint of this device. This includes resources provided by the device 
-    // acting as a source (e.g., a CPU DRA driver exposing CPUs on a NUMA node 
-    // as a device) or native resources required as a dependency (e.g., a GPU 
-    // requiring host memory or CPU to function). The map's key is the native 
-    // resource name (e.g., "cpu", "memory", "hugepages-1Gi").
+    // NodeAllocatableResourceMappings defines the mapping of node resources
+    // that are managed by the DRA driver exposing this device. This includes resources currently
+    // reported in v1.Node `status.allocatable` that are not extended resources
+    // (see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#extended-resources).
+    // Examples include "cpu", "memory", "ephemeral-storage", and hugepages.
+    // In addition to standard requests made through the Pod `spec`, these resources
+    // can also be requested through claims and allocated by the DRA driver.
+    // For example, a CPU DRA driver might allocate exclusive CPUs or auxiliary node memory
+    // dependencies of an accelerator device.
+    // The keys of this map are the node-allocatable resource names (e.g., "cpu", "memory").
+    // Extended resource names are not permitted as keys.
     // +optional
-    // +featureGate=DRANativeResources
-    NativeResourceMappings map[ResourceName]NativeResourceMapping
+    // +featureGate=DRANodeAllocatableResources
+    NodeAllocatableResourceMappings map[v1.ResourceName]NodeAllocatableResourceMapping `json:"nodeAllocatableResourceMappings,omitempty" protobuf:"bytes,13,opt,name=nodeAllocatableResourceMappings"`
 }
 
-type NativeResourceMapping struct {
-    // QuantityFrom defines how the quantity of the native resource is 
-    // determined.
-    QuantityFrom NativeResourceQuantity
-    // Other fields, such as AccountingPolicy, may be added in the future.
-}
-
-// NativeResourceQuantity defines the method to identify how we obtain native resource quantity from the Claim.
-// Only one of PerInstanceQuantity or Capacity must be specified.
-type NativeResourceQuantity struct {
-    // PerInstanceQuantity specifies a fixed amount of the native resource 
-    // for each allocated instance of this device. This is used when the 
-    // quantity is constant per device, such as a CPU core providing 1 CPU 
-    // or a GPU requiring 2Gi of host memory.
+// NodeAllocatableResourceMapping defines the translation between the DRA device/capacity
+// units requested to the corresponding quantity of the node allocatable resource.
+type NodeAllocatableResourceMapping struct {
+    // CapacityKey references a capacity name defined as a key in the
+    // `spec.devices[*].capacity` map. When this field is set, the value associated with
+    // this key in the `status.allocation.devices.results[*].consumedCapacity` map
+    // (for a specific claim allocation) determines the base quantity for
+    // the node allocatable resource. If `allocationMultiplier` is also set, it is
+    // multiplied with the base quantity.
+    // For example, if `spec.devices[*].capacity` has an entry "dra.example.com/memory": "128Gi",
+    // and this field is set to "dra.example.com/memory", then for a claim allocation
+    // that consumes { "dra.example.com/memory": "4Gi" } the base quantity for the
+    // node allocatable resource mapping will be "4Gi", and `allocationMultiplier` should
+    // be omitted or set to "1".
     // +optional
-    PerInstanceQuantity resource.Quantity
+    CapacityKey *QualifiedName `json:"capacityKey,omitempty" protobuf:"bytes,1,opt,name=capacityKey"`
 
-
-    // Capacity indicates that the native resource quantity is tied to a 
-    // capacity defined in the device's capacity map. The native resource quantity is 
-    // derived from the ResourceClaim based on the key defined here. 
-    // For example: if "dra.example.com/memory"  is represented as a capacity in the ResourceSlice, 
-    // this field is set to "dra.example.com/memory" and the scheduler will look up the specific 
-    // quantity allocated to the ResourceClaim for that key to determine the claim's memory footprint.
+    // AllocationMultiplier is used as a multiplier for the allocated device count or the allocated capacity in the claim.
+    // It defaults to 1 if not specified. How the field is used also depends on whether `capacityKey` is set.
+    // 1.  If `capacityKey` is NOT set: `allocationMultiplier` multiplies the device count allocated to the claim.
+    // 	   a. A DRA driver representing each CPU core as a device would have
+    //        {ResourceName: "cpu", allocationMultiplier: "2"} in its
+    //        `nodeAllocatableResourceMappings`. If 4 devices are allocated to the claim,
+    // 		  4 * 2 CPUs would be considered as allocated and subtracted from the node's capacity.
+    //     b. A GPU device that needs additional node memory per GPU allocation would
+    //        have {ResourceName: "memory", allocationMultiplier: "2Gi"}.  Each allocated
+    // 		  GPU device instance of this type will account for 2Gi of memory.
+    //
+    // 2.  If `capacityKey` IS set: `allocationMultiplier` is multiplied by the amount of that capacity consumed.
+    // 	   The final node allocatable resource amount is `consumedCapacity[capacityKey]` * `allocationMultiplier`.
+    //     For example, if a Device's capacity "dra.example.com/cores" is consumed,
+    //     and each "core" provides 2 "cpu"s, the mapping would be:
+    //     {ResourceName: "cpu", capacityKey: "dra.example.com/cores", allocationMultiplier: "2"}.
+    //     If a claim consumes 8 "dra.example.com/cores", the CPU footprint is 8 * 2 = 16.
     // +optional
-    Capacity QualifiedName
+    AllocationMultiplier *resource.Quantity `json:"allocationMultiplier,omitempty" protobuf:"bytes,2,opt,name=allocationMultiplier"`
 }
 ```
 ##### Resource Representation Examples
 
-The Device API Extension model is flexible enough to support various ways of representing native resources.
+The Device API Extension model is flexible enough to support various ways of representing node allocatable resources.
 
-1.  **Native resource represented as individual devices**
+1.  **Node allocatable resource represented as individual devices**
 
   ```yaml
     # DeviceClass
@@ -375,7 +375,6 @@ The Device API Extension model is flexible enough to support various ways of rep
     spec:
       selectors:
       - cel: 'device.driver == "dra.example.com"'
-      managesNativeResources: true
     ---
     # ResourceSlice
     apiVersion: resource.k8s.io/v1
@@ -390,30 +389,30 @@ The Device API Extension model is flexible enough to support various ways of rep
       - name: cpu0
         attributes:
           numaNode: 0
-        nativeResourceMappings:
+        nodeAllocatableResourceMappings:
           cpu: 
-            quantityFrom: { perInstanceQuantity: "1" }
+            allocationMultiplier: "1"
       - name: cpu1
         attributes:
           numaNode: 0
-        nativeResourceMappings:
+        nodeAllocatableResourceMappings:
           cpu: 
-            quantityFrom: { perInstanceQuantity: "1" }
+            allocationMultiplier: "1"
     # ... other cpu devices
   ```
   
   *   Each device instance (like `cpu0`) in the `ResourceSlice` represents a single unit of CPU.
-  *   Each Device uses `nativeResourceMappings` to specify its impact on native resources. The `quantityFrom.PerInstanceQuantity` field indicates
-      the amount of a native resource per device instance. For example, if `cpu0` represents a single CPU thread, this would be "1".
-      If a device represents a physical CPU core (e.g., with 2 threads), `PerInstanceQuantity` would be "2".
+  *   Each Device uses `nodeAllocatableResourceMappings` to specify its impact on node allocatable resources. The `allocationMultiplier` field (when `capacityKey` is not set) indicates
+      the amount of a node allocatable resource per device instance. For example, if `cpu0` represents a single CPU thread, this would be "1".
+      If a device represents a physical CPU core (e.g., with 2 threads), `allocationMultiplier` would be "2".
 
-2.  **Native resource represented as Consumable Pool**
+2.  **Node allocatable resource represented as Consumable Pool**
 
-  *   In this model, a `Device` in the `ResourceSlice` acts as a host for a pool of native resources (e.g., a CPU socket providing 128 cores).
+  *   In this model, a `Device` in the `ResourceSlice` acts as a host for a pool of node allocatable resources (e.g., a CPU socket providing 128 cores).
   *   By setting allowMultipleAllocations: true on the device, the DRA framework allows multiple ResourceClaims to be allocated against that same device instance simultaneously
-  *   This example uses the `Capacity` field within `QuantityFrom` to link to `device.capacity` for the native resource represented as consumable capacity.
+  *   This example uses the `capacityKey` field to link to `device.capacity` for the resource represented as consumable capacity.
   *   When a `ResourceClaim` is allocated against this device, it might only request a small slice e.g., 8 CPUs from the 128 CPUs available in `dra.example.com/cpu`.
-      The `nativeResourceMappings["cpu"]` entry tells the scheduler to look for the `'dra.example.com/cpu'` key within that specific claim's allocation to determine the claim's CPU footprint.
+      The `nodeAllocatableResourceMappings["cpu"]` entry tells the scheduler to look for the `'dra.example.com/cpu'` key within that specific claim's allocation to determine the claim's CPU footprint.
       This ensures only the allocated slice, rather than the entire device capacity, is accounted for on the node.
 
   ```yaml
@@ -425,7 +424,6 @@ The Device API Extension model is flexible enough to support various ways of rep
     spec:
       selectors:
       - cel: 'device.driver == "dra.example.com"'
-      managesNativeResources: true
     ---
     # ResourceSlice
     apiVersion: resource.k8s.io/v1
@@ -444,13 +442,11 @@ The Device API Extension model is flexible enough to support various ways of rep
         capacity:
           "dra.example.com/cpu":  "128"
           "dra.example.com/memory":  "256Gi"
-        nativeResourceMappings: 
+        nodeAllocatableResourceMappings: 
           cpu:
-            quantityFrom:
-              capacity: "dra.example.com/cpu"
+            capacityKey: "dra.example.com/cpu"
           memory:
-            quantityFrom:
-              capacity: "dra.example.com/memory"
+            capacityKey: "dra.example.com/memory"
   ```
 
 3.  **Partitionable Devices**
@@ -459,7 +455,7 @@ The Device API Extension model is flexible enough to support various ways of rep
   *   The `node-cpu-counters` CounterSet holds the total 128 CPUs.
   *   Allocating `socket-0-numa-0` would notionally reserve 32 CPUs from `node-cpu-counters` counter set.
   *   Allocating `socket-0-numa-0-l3-0` consumes 8 CPUs from the same `node-cpu-counters`.
-  *   `nativeResourceMappings.QuantityFrom.Capacity` links the native resource accounting to this device-specific capacity.
+  *   `nodeAllocatableResourceMappings.capacityKey` links the node allocatable resource accounting to this device-specific capacity.
 
   ```yaml
     # DeviceClass
@@ -470,7 +466,6 @@ The Device API Extension model is flexible enough to support various ways of rep
     spec:
       selectors:
       - cel: 'device.driver == "dra.example.com"'
-      managesNativeResources: true
     ---
     apiVersion: resource.k8s.io/v1
     kind: ResourceSlice
@@ -499,10 +494,9 @@ The Device API Extension model is flexible enough to support various ways of rep
         - counterSet: node-cpu-counters
           counters:
             "dra.example.com/cpu": "8"
-        nativeResourceMappings:
+        nodeAllocatableResourceMappings:
           cpu:
-            quantityFrom:
-              capacity: "dra.example.com/cpu"
+            capacityKey: "dra.example.com/cpu"
       . . .
       - name: socket-0-numa-0
         attributes:
@@ -514,16 +508,15 @@ The Device API Extension model is flexible enough to support various ways of rep
         - counterSet: node-cpu-counters
           counters:
             "dra.example.com/cpu": "32"
-        nativeResourceMappings:
+        nodeAllocatableResourceMappings:
           cpu:
-            quantityFrom:
-              capacity: "dra.example.com/cpu"
+            capacityKey: "dra.example.com/cpu"
   ```
 
-4.  **Auxiliary native resource requests for Accelerators**
+4.  **Auxiliary node allocatable resource requests for Accelerators**
 
-  *   The accelerator device uses `NativeResourceMapping` to indicate it needs additional CPU and Memory. These amounts will be *added* to the pod's total requests.
-  *   **Importantly, the native resources specified in `NativeResourceMapping` are not necessarily managed by the DRA driver in the same way as the accelerator itself.** 
+  *   The accelerator device uses `NodeAllocatableResourceMappings` to indicate it needs additional CPU and Memory. These amounts will be *added* to the pod's total requests.
+  *   **Importantly, the node allocatable resources specified in `NodeAllocatableResourceMappings` are not necessarily managed by the DRA driver in the same way as the accelerator itself.** 
       Instead, this mechanism primarily serves as an accounting system for the kube-scheduler to not overcommit the node.
 
   ```yaml
@@ -535,7 +528,6 @@ The Device API Extension model is flexible enough to support various ways of rep
     spec:
       selectors:
       - cel: 'device.driver == "xpu.example.com"'
-      managesNativeResources: true
     ---
     # ResourceSlice
     apiVersion: resource.k8s.io/v1
@@ -550,16 +542,16 @@ The Device API Extension model is flexible enough to support various ways of rep
       - name: xpu-model-x-001
         attributes:
           example.com/model: "model-x"
-        nativeResourceMappings:
+        nodeAllocatableResourceMappings:
           cpu:
-            quantityFrom: { perInstanceQuantity: "2" }
+            allocationMultiplier: "2"
           memory:
-            quantityFrom: { perInstanceQuantity: "8Gi" }
+            allocationMultiplier: "8Gi"
   ```
 
 #### Pod API Changes
 
-We add a new field `NativeResourceClaimStatus` to `PodStatus` as a way to pass the allocation details from `DynamicResources` plugin to the kube-scheduler accounting logic.
+We add a new field `NodeAllocatableResourceClaimStatuses` to `PodStatus` as a way to pass the allocation details from the `DynamicResources` plugin to the kube-scheduler accounting logic.
 
 ```go
 // In k8s.io/api/core/v1/types.go
@@ -568,71 +560,68 @@ We add a new field `NativeResourceClaimStatus` to `PodStatus` as a way to pass t
 type PodStatus struct {
     // ... existing fields
 
-  // NativeResourceClaimStatus contains the status of native resources (like cpu, memory)
-  // that were allocated for this pod through DRA claims.
-  // +featureGate=DRANativeResources
+  // NodeAllocatableResourceClaimStatuses contains the status of node-allocatable resources
+  // that were allocated for this pod through DRA claims. This includes resources currently
+  // reported in v1.Node `status.allocatable` that are not extended resources
+  // (see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#extended-resources).
+  // Examples include "cpu", "memory", "ephemeral-storage", and hugepages.
+  // +featureGate=DRANodeAllocatableResources
   // +optional
-  NativeResourceClaimStatus []PodNativeResourceClaimStatus
+  // +listType=atomic
+  NodeAllocatableResourceClaimStatuses []NodeAllocatableResourceClaimStatus
 }
 
-// PodNativeResourceClaimStatus describes the status of native resources allocated via DRA.
-type PodNativeResourceClaimStatus struct {
-  // ClaimInfo holds a reference to the ResourceClaim that resulted in this allocation.
-  ClaimInfo ObjectReference
+// NodeAllocatableResourceClaimStatus describes the status of node allocatable resources allocated via DRA.
+type NodeAllocatableResourceClaimStatus struct {
+  // ResourceClaimName is the resource claim referenced by the pod that resulted in this node allocatable resource allocation.
+  // +required
+  ResourceClaimName string `json:"resourceClaimName" protobuf:"bytes,1,opt,name=resourceClaimName"`
   // Containers lists the names of all containers in this pod that reference the claim.
-  Containers []string
-  // Resources lists the native resources and quantities allocated by this claim.
-  Resources []NativeResourceAllocation
-}
-
-// NativeResourceAllocation describes the allocation of a native resource.
-type NativeResourceAllocation struct {
-    // ResourceName is the native resource name (e.g., "cpu", "memory").
-    ResourceName ResourceName
-    // Quantity is the amount of native resource allocated through this claim for this resource.
-    Quantity resource.Quantity
+  // +optional
+  // +listType=set
+  Containers []string `json:"containers,omitempty" protobuf:"bytes,2,rep,name=containers"`
+  // Resources is a map of the node-allocatable resource name to the aggregate quantity allocated to the claim.
+  // +required
+  Resources map[ResourceName]resource.Quantity `json:"resources" protobuf:"bytes,3,rep,name=resources"`
 }
 ```
 
 #### Kube-Scheduler Workflow
 
 The scheduling process for a Pod involves several stages. The following describes how the `NodeResourcesFit` and
-`DynamicResources` plugins interact within the kube-scheduler framework to achieve unified accounting for native resources
+`DynamicResources` plugins interact within the kube-scheduler framework to achieve unified accounting for node allocatable resources
 managed by DRA. The key goal is to ensure that the delegation mechanism works regardless of the execution order of these
 plugins.
 
-1.  **PreFilter Stage:**
-    *   **DynamicResources Plugin:**  Validates the `ResourceClaim` and its associated `DeviceClass`. If any `DeviceClass`
-        involved in the pod's claims is configured to manage native resources (`deviceClass.Spec.ManagesNativeResources: true`),
-        this dependency is recorded in the scheduling cycle state (`framework.CycleState`).
-    *   **NodeResourcesFit Plugin:**  We need to check if a `ResourceClaim` in the pod spec is associated with a `DeviceClass`
-        that has `Spec.ManagesNativeResources: true`. This is necessary to delegate the resource fit check to the
-        `DynamicResources` plugin. For Alpha, as native resource claims can only add to standard requests, the delegation mechanism 
-        between the plugins is optional. Without delegation there is a dual resource fit check in both the `NodeResourcesFit`and the
-        `DynamicResources` plugins, but the `DynamicResources` plugin's check is the authoritative check. The delegation may become 
-        a strict requirement if we introduce non-additive [accounting policies][#accounting-policies].
+ 1.  **PreFilter Stage:**
+     *   **DynamicResources Plugin:** Validates the `ResourceClaim` and its associated `DeviceClass`. It ensures that the referenced classes exist.
+     *   **NodeResourcesFit Plugin:** Calculates and caches the pod's total standard resource requests (summing up containers). It does **not** perform checks fit or filter nodes at this stage.  For Alpha, as node allocatable resource claims can only add to standard requests, the delegation 
+     mechanism between the plugins is optional. Without delegation there is a dual resource fit check in both the `NodeResourcesFit` and the 
+     `DynamicResources` plugins, but the `DynamicResources` plugin's check is the authoritative check. The delegation may become a 
+     strict requirement if we introduce non-additive [accounting policies][#accounting-policies].
+
 
 2.  **Filter Stage:** This stage performs the node-level checks to determine if a pod fits on a specific node.
-    *   **NodeResourcesFit Plugin:** In the Alpha stage, this plugin would continue to do the resource fit based on standard requests.
-    *   **DynamicResources Plugin:** This plugin takes on the authoritative role for checking native resource fit if any of
-        the pods `ResourceClaim`s request for native resources.
+    *   **NodeResourcesFit Plugin:** In the Alpha stage, this plugin would continue to do the resource fit based on standard requests
+    *   **DynamicResources Plugin:** This plugin takes on the authoritative role for checking node allocatable resource fit if any of
+        the pods `ResourceClaim`s request for node allocatable resources.
         *   The plugin tries to allocate devices to all the resource claims of the pod.
-        *   **Claim Resource Calculation:** For each allocated device, we check the `Device.NativeResourceMappings` and
-            determines the amount of each native resource (CPU, Memory, etc.) associated with the allocated device instance
-            using the `QuantityFrom` field.
-            *   If only `NativeResourceMappings[].PerInstanceQuantity` is set, that fixed amount is obtained from this field
-            *   If `NativeResourceMappings[].Capacity` is set, the native resource quantity is derived by looking at the
-                `ResourceClaim` for which the device is allocated.
-        *   The plugin calculates the total effective demand for each native resource by
+        *   **Claim Resource Calculation:** For each allocated device, we check the `Device.NodeAllocatableResourceMappings` and
+            determine the amount of each node allocatable resource (CPU, Memory, etc.) associated with the allocated device instance
+            using the `CapacityKey` or `AllocationMultiplier` fields.
+            *   If `CapacityKey` is not set and `AllocationMultiplier` is specified, that multiplier is applied to the allocated device count.
+            *   If `CapacityKey` is set, the node allocatable resource quantity is derived by looking at the
+                consumed capacity in the claim allocation.
+        *   The plugin calculates the total effective demand for each node allocatable resource by
             *  Summing up container requests from the pod spec requests and the amounts determined from DRA claims.
             *  If a claim is referenced by multiple containers, its accounted for only once.
-            *  If pod level resources are also specific, that takes precedence and determines the resource footprint of the pod.
+            *  If pod level resources are also specified, that takes precedence and determines the resource footprint of the pod.
         *   **Validation**: the plugin validation for the below scenarios
             *   If Pod Level Resources are defined, the plugin will validate that the sum of effective 
                 requests (standard + DRA claims) does not exceed the budget set at the pod level in `pod.spec.resources`([details](#integration-with-pod-level-resources)).
-            *   For Alpha, the plugin would reject a pod with a native resource claim if the claim is referenced by an existing pod ([details](#handling-shared-claims)).
+            *   For Alpha, the plugin would reject a pod with a node allocatable resource claim if the claim is referenced by an existing pod ([details](#handling-shared-claims)).
         *   This total effective demand is checked against the node's allocatable resources and node is filtered out if it does not have enough capacity.
-        *   The calculated native resource allocations for the pod on this specific node (`PodNativeResourceClaimStatus`) are
+        *   The calculated node allocatable resource allocations for the pod on this specific node (`NodeAllocatableResourceClaimStatus`) are
             stored in the `CycleState`. This is needed for passing the node-specific allocation details to the later
             `Assume` and `PreBind` stages.
 
@@ -642,17 +631,17 @@ plugins.
     API server) to succeed. Without an "assume" step, the scheduler might try to place other pods on the same node using
     stale resource information, potentially leading to oversubscription. The Assume phase reserves the resources in the
     scheduler's in-memory cache immediately.
-    *   The scheduler framework retrieves the node-specific `PodNativeResourceClaimStatus` from `CycleState` which was populated 
+    *   The scheduler framework retrieves the node-specific `NodeAllocatableResourceClaimStatus` from `CycleState` which was populated 
         during the `DynamicResources` Filter stage.
-    *   This is then applied to the in-memory copy of the Pod object's status (`pod.status.nativeResourceClaimStatus`) that the 
+    *   This is then applied to the in-memory copy of the Pod object's status (`pod.status.nodeAllocatableResourceClaimStatuses`) that the 
         scheduler is about to "assume". This is passed to `NodeInfo` cache update ([update()](https://github.com/kubernetes/kubernetes/blob/8c9c67c000104450cfc5a5f48053a9a84b73cf93/pkg/scheduler/framework/types.go#L425)).
-    *   The pod's effective native resource demand is calculated based on standard pod request and native resource claims
+    *   The pod's effective node allocatable resource demand is calculated based on standard pod requests and node allocatable resource claims
         as detailed in the [Resource Calculation](#resource-calculation) section. This is added to `nodeInfo.Requested`.
 
 4.  **PreBind Stage:** This stage performs actions right before the pod is immutably bound to the node.
     *   **DynamicResources Plugin:** The plugin updates the `ResourceClaim.Status` to reflect the allocated devices. It also
-        patches the `Pod.Status` to add the `NativeResourceClaimStatus` field , persisting the information calculated during
-        the Filter stage (`PodNativeResourceClaimStatus`) and making this information available for components (like
+        patches the `Pod.Status` to add the `NodeAllocatableResourceClaimStatuses` field, persisting the information calculated during
+        the Filter stage (`NodeAllocatableResourceClaimStatus`) and making this information available for components (like
         kubelet).
 
 5.  **Bind Stage:** This stage executes asynchronously after the main scheduling cycle has decided on a node. The scheduler
@@ -664,16 +653,16 @@ plugins.
 #####  Resource Calculation
 
 To ensure consistent resource accounting across multiple consumers, the core logic for calculating a pod's total
-resource footprint, including DRA-managed native resources, will be centralized in the `PodRequests` function within the
+resource footprint, including DRA-managed node allocatable resources, will be centralized in the `PodRequests` function within the
 `k8s.io/component-helpers/resource` package. This helper function is currently used by various components, including scheduler
 plugins like `NodeResourcesFit`, `NodeInfo` cache update, and Kubelet's admission handler.
 
-The total native resource requirements for a pod are determined by aggregating the following:
+The total node allocatable resource requirements for a pod are determined by aggregating the following:
 *   If pod level resources are specified for a resource, that determines the overall footprint for the pod. 
     The individual container level requests are not considered and including requests made through claims.
 *   It iterates through all containers (init and regular) in the pod and determines the aggregate resource request based on existing logic.
-*   If `DRANativeResources` is enabled and the pod's `status.nativeResourceClaimStatus` is populated:
-    *   Iterate though each claim and obtain the native resource quantities allocated from `nativeResourceClaimStatus[].resources`
+*   If `DRANodeAllocatableResources` is enabled and the pod's `status.nodeAllocatableResourceClaimStatuses` is populated:
+    *   Iterate though each claim and obtain the node allocatable resource quantities allocated from `nodeAllocatableResourceClaimStatuses[].resources`
     *   For each resource, the `resources.quantity` is added to the pod's total request.
 *   If pod overheads are specified in `pod.spec.overhead`, they are added to the final sum.
 
@@ -681,19 +670,19 @@ The total native resource requirements for a pod are determined by aggregating t
 #### Integration with Pod Level Resources
 
 When Pod Level Resources are specified (`pod.spec.resources`), it continues to set the overall budget for the pod.
-Native resources added to individual containers via DRA claims must be accounted for within this pod-level budget.
+Node allocatable resources added to individual containers via DRA claims must be accounted for within this pod-level budget.
 The effective resource request for a container is the sum of its base request specified in `spec.containers[].resources.requests` 
 and any additional resources allocated through DRA claims.
 
 Currently, with pod level resources, an admission time validation ensures that the sum of container requests does not 
-exceed pod level requests. However, this is insufficient for pods with native resource claims, as their exact quantities 
+exceed pod level requests. However, this is insufficient for pods with node allocatable resource claims, as their exact quantities 
 are only determined after the `DynamicResources` scheduler plugin allocates devices. This allocation can be dynamic, 
 especially with claims with [prioritized lists](https://github.com/kubernetes/enhancements/blob/master/keps/sig-scheduling/4816-dra-prioritized-list/README.md) (fungobility usecases).
 Therefore, the `DynamicResources` plugin must perform an additional validation step during its `Filter` stage. After allocating 
-devices to claims and calculating the native resources added, the plugin will verify that the total effective pod demand 
-(standard container requests + DRA native resources) does not surpass the limits set in `pod.spec.Resources`.
+devices to claims and calculating the node allocatable resources added, the plugin will verify that the total effective pod demand 
+(standard container requests + DRA node allocatable resources) does not surpass the limits set in `pod.spec.Resources`.
 
-If a pod requests a specific set of devices via DRA claims, and the resulting native resource footprint 
+If a pod requests a specific set of devices via DRA claims, and the resulting node allocatable resource footprint 
 (base container + DRA additions) exceeds the `pod.spec`.Resources budget, this failure is global to the pod. 
 The `DynamicResources` plugin would return `UnschedulableAndUnresolvable`. 
 
@@ -701,36 +690,36 @@ The `DynamicResources` plugin would return `UnschedulableAndUnresolvable`.
 #### Handling Shared Claims
 
 **Intra-Pod Sharing:**
-Containers within the same pod can reference the same `ResourceClaim`. The native resources associated with the claim are accounted for 
+Containers within the same pod can reference the same `ResourceClaim`. The node allocatable resources associated with the claim are accounted for 
 only once for the entire pod, as described in the Resource Calculation section. The resource calculation shared library function 
 `PodRequests()` can effectively handle de-duplication for claims shared within a single pod, as all necessary information is self-contained 
-within the Pod scope (standard requests in Spec and DRA requests in `status.NativeResourceClaimStatus`)
+within the Pod scope (standard requests in Spec and DRA requests in `status.nodeAllocatableResourceClaimStatuses`)
 
 **Inter-Pod Sharing:**
 
-In the current Alpha scope, sharing `ResourceClaim`s that manage native resources between different pods and the `DynamicResources` plugin 
+In the current Alpha scope, sharing `ResourceClaim`s that manage node allocatable resources between different pods and the `DynamicResources` plugin 
 would reject (`UnschedulableAndUnresolvable`) the pod referencing a claim referenced by an existing pod. This is becase of the following reasons:
 
-1.  When multiple pods, each potentially having its own Pod Level Resources budget (`pod.spec.resources`), reference the same native DRA claim, 
-    it's ambiguous how to attribute the cost of these shared native resources against each pod's individual resource footprint.
-2.  Node-level cgroups enforcement would be challenging if native resources can be shared between pods. Dynamically adjusting cgroup settings 
+1.  When multiple pods, each potentially having its own Pod Level Resources budget (`pod.spec.resources`), reference the same node allocatable DRA claim, 
+    it's ambiguous how to attribute the cost of these shared node allocatable resources against each pod's individual resource footprint.
+2.  Node-level cgroups enforcement would be challenging if node allocatable resources can be shared between pods. Dynamically adjusting cgroup settings 
     for all consumer pods as pods referencing the same shared claim start/stop would be extremely complex and hard to support.
 
-A new field `NativeDRAClaimStates` is added in `NodeInfo` to track the state of native resource DRA claims on this node. The `DynamicResources` 
-plugin will use `NodeInfo.NativeDRAClaimStates` during the `Filter` stage (validation step) to check if the `ResourceClaim` is assigned to an existing pod.
+A new field `NodeAllocatableDRAClaimStates` is added in `NodeInfo` to track the state of node allocatable resource DRA claims on this node. The `DynamicResources` 
+plugin will use `NodeInfo.NodeAllocatableDRAClaimStates` during the `Filter` stage (validation step) to check if the `ResourceClaim` is assigned to an existing pod.
 
 ```go
     // In pkg/scheduler/framework/types.go
     type NodeInfo struct {
         // ... existing fields
 
-        // NativeDRAClaimStates tracks the state of native resource DRA claims on this node.
-        // The key is the UID of the ResourceClaim.
-        NativeDRAClaimStates map[types.UID]*NativeDRAClaimAllocationState
+        // NodeAllocatableDRAClaimStates tracks the state of claims requesting node allocatable resources.
+        // The key is the NamespacedName of the ResourceClaim.
+        NodeAllocatableDRAClaimStates map[types.NamespacedName]*NodeAllocatableDRAClaimState
     }
 
-    // NativeDRAClaimAllocationState holds information about a native resource DRA claim's allocation on a node.
-    type NativeDRAClaimAllocationState struct {
+    // NodeAllocatableDRAClaimState holds information about a node allocatable resource DRA claim's allocation on a node.
+    type NodeAllocatableDRAClaimState struct {
       // Pods using this claim on this node.
       ConsumerPods sets.Set[types.UID]
     }
@@ -738,7 +727,7 @@ plugin will use `NodeInfo.NativeDRAClaimStates` during the `Filter` stage (valid
 
 #### Multiple Claims per Container
 
-A single container can reference multiple DRA claims. The native resources from each distinct claim is summed up to contribute to the pod's total resource requirements.
+A single container can reference multiple DRA claims. The node allocatable resources from each distinct claim are summed up to contribute to the pod's total resource requirements.
 
 **Example:**
 * Combining additive policies.
@@ -769,14 +758,14 @@ The Kubelet has its own admission check
 to ensure a pod can run on the node, even after the scheduler has placed it. It utilizes the `PodRequests()` function from
 the `k8s.io/component-helpers/resource`. This shared helper has been enhanced to support unified accounting. When
 calculating a pod's requirements, it aggregates the standard requests from pod Spec with the DRA allocations recorded in
-`pod.status.nativeResourceClaimStatus`. Because the scheduler populates this status field during the PreBind stage, the
+`pod.status.nodeAllocatableResourceClaimStatuses`. Because the scheduler populates this status field during the PreBind stage, the
 Kubelet validates the pod's comprehensive resource footprint.
 
 ### Node Resource Enforcement and Isolation
 
-In the Alpha phase, the Kubelet does not account for native resources requested through DRA for QOS class determination, cgroup management,
+In the Alpha phase, the Kubelet does not account for node allocatable resources requested through DRA for QOS class determination, cgroup management,
 and eviction decisions. These mechanisms solely rely on the `requests` and `limits` specified in the `pod.spec.containers[*].resources`
-or `pod.spec.initcontainers[*].resources`. This creates a discrepancy where a user may specify native resource requests through `ResourceClaim`s, 
+or `pod.spec.initcontainers[*].resources`. This creates a discrepancy where a user may specify node allocatable resource requests through `ResourceClaim`s, 
 but the Kubelet enforces runtime limits based solely on the `pod.spec`.
 1.  A pod requesting CPU/Memory via DRA claims may be classified as `BestEffort`  (no CPU/Memory requests or limits in its pod spec), 
     or as `Burstable` (limits greater than request), as the DRA-provided resources are not considered in the QoS calculation. 
@@ -786,7 +775,7 @@ but the Kubelet enforces runtime limits based solely on the `pod.spec`.
     For CPU, the container could get low CPU shares or could be incorrectly throttled. For memory, if the memory allocation exceeds 
     the limit in the spec, it could be OOM killed.
 3.  To prevent a critical system daemon from failing to start, the Kubelet will preempt pods on its node to free up the required requests. 
-    This decision is based primarily on QoS Class. Pods with DRA native resource request but a low QoS class (BestEffort or Burstable) 
+    This decision is based primarily on QoS Class. Pods with DRA node allocatable resource requests but a low QoS class (BestEffort or Burstable) 
     would have a higher risk of being evicted under node resource pressure.
 
 **Mitigation:**
@@ -873,7 +862,7 @@ spec:
 
 *   `NodeResourcesFit`: Checks node capacity against standard container requests {cpu: 100m, memory: 100Mi}.
 *   `DynamicResources`: Allocates from the `socket0` device in `node1-slice`.
-    *   **DRA Native Resources:** {cpu: 4, memory: 8Gi} from claim `my-cpu-mem-claim`.
+    *   **DRA Node Allocatable Resources:** {cpu: 4, memory: 8Gi} from claim `my-cpu-mem-claim`.
     *   **Standard Container Requests:** {cpu: 100m, memory: 100Mi} from `my-app1`.
     *   **Effective Pod Demand:** {cpu: 4100m, memory: 8.1Gi}
     *   Checks node capacity against Effective Pod Demand. 
@@ -966,13 +955,13 @@ spec:
 *   `NodeResourcesFit`: Checks node capacity against standard container requests {cpu: 1, memory: 1Gi}.
 *   `DynamicResources`:
     *   **Scenario A: GPU Selected**
-        *   DRA Native Resources: None
+        *   DRA Node Allocatable Resources: None
         *   Standard Container Requests: {cpu: 1, memory: 1Gi}
         *   Effective Pod Demand: {cpu: 1, memory: 1Gi}
         *   Checks node capacity against Effective Pod Demand.
         *   Scheduler Cache Update: Node requested increases by 1 CPU, 1Gi Memory.
     *   **Scenario B: CPU Selected**
-        *   DRA Native Resources: {cpu: 30} from claim `gpu-or-cpu`.
+        *   DRA Node Allocatable Resources: {cpu: 30} from claim `gpu-or-cpu`.
         *   Standard Container Requests: {cpu: 1, memory: 1Gi}
         *   Effective Pod Demand: {cpu: 31, memory: 1Gi}
         *   Checks node capacity against Effective Pod Demand.
@@ -1017,7 +1006,7 @@ spec:
 
 *   `NodeResourcesFit`: Checks node capacity against standard container requests {cpu: 300m, memory: 3Gi}.
 *   `DynamicResources`:
-    *   **DRA Native Resources:**
+    *   **DRA Node Allocatable Resources:**
         *   `my-cpu-claim`: {cpu: 10}
         *   `my-gpu-claim`: {cpu: 2, memory: 4Gi} (Auxiliary)
     *   **Standard Container Requests:**
@@ -1072,7 +1061,7 @@ spec:
 
 *   `NodeResourcesFit`: Checks node capacity against PLR {cpu: 11, memory: 10Gi}.
 *   `DynamicResources`:
-    *   DRA Native Resources: {cpu: 10} from `cpu-req-10-cpus`.
+    *   DRA Node Allocatable Resources: {cpu: 10} from `cpu-req-10-cpus`.
     *   Standard Container Requests: {cpu: 11, memory: 10Gi} (pod level requests take precedence).
     *   Total effective demand for PLR check: {cpu: 11, memory: 10Gi} (pod level requests take precedence).
     *   Checks node capacity against PLR {cpu: 11, memory: 10Gi} (This check is redundant as NodeResourcesFit already does it).
@@ -1082,28 +1071,28 @@ spec:
 
 #### Kubelet QoS and Cgroup Management
 
-As noted in the Non-Goals, full Kubelet awareness of DRA native resources for QoS classification and cgroup management is not in scope for first Alpha.
+As noted in the Non-Goals, full Kubelet awareness of DRA node allocatable resources for QoS classification and cgroup management is not in scope for first Alpha.
 This work will involve:
 
-*   Updating Kubelet's QoS class calculation to include native resources from `pod.status.nativeResourceClaimStatus`.
+*   Updating Kubelet's QoS class calculation to include node allocatable resources from `pod.status.nodeAllocatableResourceClaimStatuses`.
 *   Ensuring Kubelet's cgroup manager correctly configures CPU and Memory limits/shares based on the sum of PodSpec 
-    requests and DRA-provided native resources.
+    requests and DRA-provided node allocatable resources.
 *   Aligning eviction thresholds with the true resource footprint, including DRA.
 
 #### Kube-Scheduler Scoring and Resource Quota
 
-**Scoring:** In the current Alpha, the `NodeResourcesFit` plugin's scoring only considers native resources requested directly in the pod Spec.
-It does not yet account for native resources allocated through DRA claims. The `DynamicResources` plugin's scoring is based on the
-DRA allocation decisions themselves and is independent of the native resource quantities involved. It may be desirable to unify the 
-scoring for native resources instead of independently scoring in two different plugins. 
+**Scoring:** In the current Alpha, the `NodeResourcesFit` plugin's scoring only considers node allocatable resources requested directly in the pod Spec.
+It does not yet account for node allocatable resources allocated through DRA claims. The `DynamicResources` plugin's scoring is based on the
+DRA allocation decisions themselves and is independent of the node allocatable resource quantities involved. It may be desirable to unify the 
+scoring for node allocatable resources instead of independently scoring in two different plugins. 
 
-**Quota:** Currently, `ResourceQuota` only accounts for resources defined in the `pod.spec` and including native resources allocated via DRA
+**Quota:** Currently, `ResourceQuota` only accounts for resources defined in the `pod.spec` and including node allocatable resources allocated via DRA
 in `ResourceQuota` enforcement is not included in the Alpha scope. 
 
-Enhancing `Scoring` and `ResourceQuota` to be aware of DRA native resources should be considered for a future milestone. 
+Enhancing `Scoring` and `ResourceQuota` to be aware of DRA node allocatable resources should be considered for a future milestone. 
 These components rely on the same `PodRequests()` helper function (from `k8s.io/component-helpers/resource`) used by the scheduler 
-framework and plugins to calculate resource footprints. Integrating DRA native resources would involve ensuring this helper is called 
-with the appropriate options to include `pod.status.nativeResourceClaimStatus`. The implications of this change need to be discussed.
+framework and plugins to calculate resource footprints. Integrating DRA node allocatable resources would involve ensuring this helper is called 
+with the appropriate options to include `pod.status.nodeAllocatableResourceClaimStatuses`. The implications of this change need to be discussed.
 
 #### Integration with In-Place Pod Vertical Scaling
 
@@ -1111,23 +1100,23 @@ In-Place Pod Vertical Scaling allows updating a container's resource requests an
 restarting the pod restart. The Kubelet actuates these changes by updating the container's cgroup settings 
 to match the new values in the PodSpec.
 
-Kubelet, in this Alpha, does not account for native resources allocated via DRA (i.e., from `pod.status.nativeResourceClaimStatus`) 
+Kubelet, in this Alpha, does not account for node allocatable resources allocated via DRA (i.e., from `pod.status.nodeAllocatableResourceClaimStatuses`) 
 when setting container-level cgroups. For alpha, any attempt to use the In-Place Pod Resizing `/resize` subresource on a Pod that 
-has entries in `pod.status.nativeResourceClaimStatus` will be rejected by the API server. Validation will be added to the `/resize` 
-subresource handler to enforce this.  Integration of In-Place Pod Resizing with DRA Native Resources will addressed during future KEP 
-iterations along with the Kubelet enhancements to consider `pod.status.nativeResourceClaimStatus` when calculating and enforcing 
-container and pod level cgroup settings
+has entries in `pod.status.nodeAllocatableResourceClaimStatuses` will be rejected by the API server. Validation will be added to the `/resize` 
+subresource handler to enforce this.  Integration of In-Place Pod Resizing with DRA Node Allocatable Resources will be addressed during future KEP 
+iterations along with the Kubelet enhancements to consider `pod.status.nodeAllocatableResourceClaimStatuses` when calculating and enforcing 
+container and pod level cgroup settings.
     
 
 ####  Accounting Policies
 
-The Alpha release of this KEP implements an implicit native resource accounting policy: any native resource 
-quantities specified in the `NativeResourceMappings` of allocated devices are added to the pod's total resource 
+The Alpha release of this KEP implements an implicit node allocatable resource accounting policy: any node allocatable resource 
+quantities specified in the `NodeAllocatableResourceMappings` of allocated devices are added to the pod's total resource 
 requirements, accounted for once per `ResourceClaim`.
 
-Future enhancements could introduce explicit **Native Resource Accounting Policies** to provide more control over
-how DRA-based native resources are aggregated with standard PodSpec requests. This would likely involve adding new 
-fields, such as `AccountingPolicy`, to the `NativeResourceMapping` struct to specify the desired policy. The impact on 
+Future enhancements could introduce explicit **Node Allocatable Resource Accounting Policies** to provide more control over
+how DRA-based node allocatable resources are aggregated with standard PodSpec requests. This would likely involve adding new 
+fields, such as `AccountingPolicy`, to the `NodeAllocatableResourceMapping` struct to specify the desired policy. The impact of 
 these accounting policies on existing features like Pod Level Resources and In-Place Pod Vertical Scaling also
 needs more consideration.
 
@@ -1137,52 +1126,51 @@ needs more consideration.
 
 ```go
 
-// NativeResourceAccountingPolicy defines how native resource quantities like CPU, Memory
-//  allocated via DRA are aggregated with standard resource requests in the PodSpec.
-type NativeResourceAccountingPolicy string
+// NodeAllocatableResourceAccountingPolicy defines how node allocatable resource quantities like CPU, Memory
+// allocated via DRA are aggregated with standard resource requests in the PodSpec.
+type NodeAllocatableResourceAccountingPolicy string
 
 const (
-  // PolicyAddPerClaim indicates that the native resource quantity in the DRA claim 
+  // PolicyAddPerClaim indicates that the node allocatable resource quantity in the DRA claim 
   // is treated as additional to the pod spec requests. This quantity is accounted 
   // for exactly once per claim instance, regardless of the number of containers referencing it. 
   // This applies whether those referencing containers belong to a single pod or are across different pods.
-	PolicyAddPerClaim NativeResourceAccountingPolicy = "AddPerClaim"
+	PolicyAddPerClaim NodeAllocatableResourceAccountingPolicy = "AddPerClaim"
 
-  // PolicyAddPerReference indicates that the native resource quantity in the DRA 
+  // PolicyAddPerReference indicates that the node allocatable resource quantity in the DRA 
   // claim is treated as additional to the pod spec requests. This quantity is 
   // accounted for cumulatively for every reference to the claim. 
   // Each container that references the claim adds the claim's quantity to its 
-  // native resource request in the pod spec.
-	PolicyAddPerReference NativeResourceAccountingPolicy = "AddPerReference"
+  // node allocatable resource request in the pod spec.
+	PolicyAddPerReference NodeAllocatableResourceAccountingPolicy = "AddPerReference"
 
   // PolicyMax indicates that effective request is the greater value between the standard container 
   // request and the DRA claim for the same resource.
-  PolicyMax NativeResourceAccountingPolicy = "Max"
+  PolicyMax NodeAllocatableResourceAccountingPolicy = "Max"
 
-  // PolicyConsumeFrom indicates that a DRA claim is defined to represent the native 
-  // resource pool capacity. A DRA claim is defined to represent the native resource pool capacity. All the
-  // containers or pods referencing the claim are satisfied from the capacity pool defined by the DRA
+  // PolicyConsumeFrom indicates that a DRA claim is defined to represent the node 
+  // resource pool capacity. All containers or pods referencing the claim are satisfied from the capacity pool defined by the DRA
   // claim. Pods access this pool by referencing the corresponding `ResourceClaim` in their
   // `spec.containers[].resources.claims`. The scheduler ensures that the sum of requests from all
   // containers sharing this claim on a node does not exceed the pool's capacity. The entire pool
   // capacity reserved on the node, making it unavailable for other pods outside this pool.
-  PolicyConsumeFrom NativeResourceAccountingPolicy = "ConsumeFrom"
+  PolicyConsumeFrom NodeAllocatableResourceAccountingPolicy = "ConsumeFrom"
 )
 
 // In k8s.io/api/resource/v1/types.go
 type DeviceClassSpec struct {
-  // ManagesNativeResources indicates if devices of this class manages native resources like cpu, memory and/or hugepages.
+  // ManagesNativeResources indicates if devices of this class manage node allocatable resources like cpu, memory and/or hugepages.
   // +optional
-  // +featureGate=DRANativeResources
+  // +featureGate=DRANodeAllocatableResources
   ManagesNativeResources bool
-  // NativeResourceAccountingPolicies defines how the native resource represented by the devices 
+  // NodeAllocatableResourceAccountingPolicies defines how the node allocatable resource represented by the devices 
   // in this class should be accounted for and aggregated with any standard request for the same resource
   // in the pod spec (pod.spec.containers[].resources.requests or `pod.spec`.initContainers[].resources.requests)
   // If an accounting policy is also defined in a Device mapping, that device-specific policy takes 
-  // precedence. The map's key is the native resource name (e.g., "cpu", "memory", "hugepages-1Gi").
+  // precedence. The map's key is the node allocatable resource name (e.g., "cpu", "memory", "hugepages-1Gi").
   // +optional
-  // +featureGate=DRANativeResources
-  NativeResourceAccountingPolicies map[ResourceName]NativeResourceAccountingPolicy
+  // +featureGate=DRANodeAllocatableResources
+  NodeAllocatableResourceAccountingPolicies map[ResourceName]NodeAllocatableResourceAccountingPolicy
 }
 ```
 **Device**
@@ -1191,25 +1179,25 @@ type DeviceClassSpec struct {
 // In k8s.io/api/resource/v1/types.go
 type Device struct {
     // ... existing fields
-    // NativeResourceMappings defines the native resource (CPU, Memory, Hugepages) 
-    // footprint of this device. This includes resources provided by the device 
-    // acting as a source (e.g., a CPU DRA driver exposing CPUs on a NUMA node 
-    // as a device) or native resources required as a dependency (e.g., a GPU 
-    // requiring host memory or CPU to function). The map's key is the native 
-    // resource name (e.g., "cpu", "memory", "hugepages-1Gi").
+    // NodeAllocatableResourceMappings defines the mapping of node resources
+    // that are managed by the DRA driver exposing this device. This includes resources currently
+    // reported in v1.Node `status.allocatable` that are not extended resources
+    // (see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#extended-resources).
+    // Examples include "cpu", "memory", "ephemeral-storage", and hugepages.
+    // In addition to standard requests made through the Pod `spec`, these resources
+    // can also be requested through claims and allocated by the DRA driver.
+    // For example, a CPU DRA driver might allocate exclusive CPUs or auxiliary node memory
+    // dependencies of an accelerator device.
+    // The keys of this map are the node-allocatable resource names (e.g., "cpu", "memory").
+    // Extended resource names are not permitted as keys.
     // +optional
-    // +featureGate=DRANativeResources
-    NativeResourceMappings map[ResourceName]NativeResourceMapping
+    // +featureGate=DRANodeAllocatableResources
+    NodeAllocatableResourceMappings map[v1.ResourceName]NodeAllocatableResourceMapping `json:"nodeAllocatableResourceMappings,omitempty" protobuf:"bytes,13,opt,name=nodeAllocatableResourceMappings"`
 }
 
-type NativeResourceMapping struct {
-    // AccountingPolicy defines how the native resource quantity from this mapping
-    // should be accounted for and aggregated with any standard request for the same resource
-    // in the pod spec (pod.spec.containers[].resources.requests or  `pod.spec`.initContainers[].resources.requests).
-    // If not set, the policy defined in the DeviceClass is used.
-    // +optional
-    AccountingPolicy NativeResourceAccountingPolicy
-    . . .
+type NodeAllocatableResourceMapping struct {
+    CapacityKey *QualifiedName `json:"capacityKey,omitempty" protobuf:"bytes,1,opt,name=capacityKey"`
+    AllocationMultiplier *resource.Quantity `json:"allocationMultiplier,omitempty" protobuf:"bytes,2,opt,name=allocationMultiplier"`
 }
 ```
 
@@ -1221,48 +1209,46 @@ type NativeResourceMapping struct {
 // PodStatus represents information about the status of a pod.
 type PodStatus struct {
   // ... existing fields
-  // NativeResourceClaimStatus contains the status of native resources (like cpu, memory)
-  // that were allocated for this pod through DRA claims.
-  // +featureGate=DRANativeResources
+  // NodeAllocatableResourceClaimStatuses contains the status of node-allocatable resources
+  // that were allocated for this pod through DRA claims. This includes resources currently
+  // reported in v1.Node `status.allocatable` that are not extended resources
+  // (see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#extended-resources).
+  // Examples include "cpu", "memory", "ephemeral-storage", and hugepages.
+  // +featureGate=DRANodeAllocatableResources
   // +optional
-  NativeResourceClaimStatus []PodNativeResourceClaimStatus
+  // +listType=atomic
+  NodeAllocatableResourceClaimStatuses []NodeAllocatableResourceClaimStatus `json:"nodeAllocatableResourceClaimStatuses,omitempty" protobuf:"bytes,21,rep,name=nodeAllocatableResourceClaimStatuses"`
 }
 
-// PodNativeResourceClaimStatus describes the status of native resources allocated via DRA.
-type PodNativeResourceClaimStatus struct {
-  ...
-  // Resources lists the native resources and quantities allocated by this claim.
-  Resources []NativeResourceAllocation
-}
-
-// NativeResourceAllocation describes the allocation of a native resource.
-type NativeResourceAllocation struct {
-  ...
-  AccountingPolicy NativeResourceAccountingPolicy
+// NodeAllocatableResourceClaimStatus describes the status of node allocatable resources allocated via DRA.
+type NodeAllocatableResourceClaimStatus struct {
+  ResourceClaimName string `json:"resourceClaimName" protobuf:"bytes,1,opt,name=resourceClaimName"`
+  Containers []string `json:"containers,omitempty" protobuf:"bytes,2,rep,name=containers"`
+  Resources map[ResourceName]resource.Quantity `json:"resources" protobuf:"bytes,3,rep,name=resources"`
 }
 ```
 
 ##### Accounting Policy Precedence
 
-When determining the `AccountingPolicy` for a native resource from a DRA claim:
+When determining the `AccountingPolicy` for a node allocatable resource from a DRA claim:
 
-1.  The `AccountingPolicy` specified within the `Device.NativeResourceMappings` for the specific `ResourceName` takes highest precedence.
-2.  If the `AccountingPolicy` is not set in the `Device` mapping, the policy is taken from the `DeviceClass.Spec.NativeResourceAccountingPolicies` map for the matching `ResourceName`.
+1.  The `AccountingPolicy` specified within the `Device.NodeAllocatableResourceMappings` for the specific `ResourceName` takes highest precedence.
+2.  If the `AccountingPolicy` is not set in the `Device` mapping, the policy is taken from the `DeviceClass.Spec.NodeAllocatableResourceAccountingPolicies` map for the matching `ResourceName`.
 3.  If no policy is found in either location for a `ResourceName` that has a quantity defined in the `Device` mapping, it is considered an error, and the device will not be allocatable for the claim.
 
 This model supports both **Admin-Defined Policy** and **Driver-Defined Policy**:
 
-*   **Admin-Defined Policy (e.g., CPU/Memory):** A CPU/Memory DRA driver can publish `Device` objects with `NativeResourceMappings` containing only the `QuantityFrom`, leaving the `AccountingPolicy` field unset. The cluster administrator then defines the desired accounting behavior (e.g., `AddPerReference`, `AddPerClaim`) by creating `DeviceClass` objects with appropriate entries in `NativeResourceAccountingPolicies`.  This allows different consumption models for the same underlying CPU resources, controlled by the admin.
+*   **Admin-Defined Policy (e.g., CPU/Memory):** A CPU/Memory DRA driver can publish `Device` objects with `NodeAllocatableResourceMappings` containing only the `QuantityFrom`, leaving the `AccountingPolicy` field unset. The cluster administrator then defines the desired accounting behavior (e.g., `AddPerReference`, `AddPerClaim`) by creating `DeviceClass` objects with appropriate entries in `NodeAllocatableResourceAccountingPolicies`.  This allows different consumption models for the same underlying CPU resources, controlled by the admin.
 
-*   **Driver-Defined Policy (e.g., Accelerators):** An accelerator driver (e.g., for GPUs) often knows the exact auxiliary resources (like CPU or Memory) required and the most appropriate accounting method. The driver can specify both the `QuantityFrom` and the `AccountingPolicy` (e.g., `AddPerReference`) directly in the `Device.NativeResourceMappings`.
+*   **Driver-Defined Policy (e.g., Accelerators):** An accelerator driver (e.g., for GPUs) often knows the exact auxiliary resources (like CPU or Memory) required and the most appropriate accounting method. The driver can specify both the `QuantityFrom` and the `AccountingPolicy` (e.g., `AddPerReference`) directly in the `Device.NodeAllocatableResourceMappings`.
 
 This combined approach provides flexibility, allowing the policy to be defined at the most appropriate level.
 
-If a `NativeResourceMapping` entry exists for a resource but `AccountingPolicy` missing from both the `Device` mapping and the `DeviceClass`, this is an invalid configuration. The scheduler will fail to schedule the pod referencing the claim.
+If a `NodeAllocatableResourceMapping` entry exists for a resource but `AccountingPolicy` is missing from both the `Device` mapping and the `DeviceClass`, this is an invalid configuration. The scheduler will fail to schedule the pod referencing the claim.
 
 ##### Resource Representation
 
-1.  **Native Resource as a Consumable Pool in ResourceClaim**
+1.  **Node Allocatable Resource as a Consumable Pool in ResourceClaim**
 
 *   The device in `ResourceSlice` represents a consumable pool with `AccountingPolicy` set to `ConsumeFrom`.
 *   When the device is assigned to a `ResourceClaim`, the request from the pod's
@@ -1277,8 +1263,8 @@ If a `NativeResourceMapping` entry exists for a resource but `AccountingPolicy` 
       spec:
         selectors:
         - cel: 'device.driver == "dra.example.com"'
-        managesNativeResources: true
-        nativeResourceAccountingPolicies: 
+        managesNodeAllocatableResources: true
+        nodeAllocatableResourceAccountingPolicies: 
           cpu: "ConsumeFrom"
       ---
       # ResourceSlice
@@ -1292,7 +1278,7 @@ If a `NativeResourceMapping` entry exists for a resource but `AccountingPolicy` 
           allowMultipleAllocations: true
           capacity:
             "dra.example.com/cpu": "128"
-          nativeResourceMappings:
+          nodeAllocatableResourceMappings:
             cpu: # Accounting policy specified in the device class
               quantityFrom:
                 capacity: "dra.example.com/cpu"
@@ -1307,20 +1293,20 @@ predictable behavior and prevent conflicting resource requests.
 The following rules would need to be enforced by the scheduler, within the `DynamicResources` plugin's
 `Filter stage` to handle these interactions.
 
-1.  If multiple claims affect the same native resource in the same container using `Max`, they must all
+1.  If multiple claims affect the same node allocatable resource in the same container using `Max`, they must all
     be from the same DRA driver. The sum of all the claim requests would be considered while comparing
     with the container spec.
-2.  If multiple claims affect the same native resource in the same container using `ConsumeFrom`, they
+2.  If multiple claims affect the same node allocatable resource in the same container using `ConsumeFrom`, they
     must all be from the same DRA driver.
-3.  A container cannot have claims requesting devices with `PolicyConsumeFrom` for a native resource if
-    it also has claims using `PolicyMax`
-4.  A container can use a claim with `PolicyMax` for a native resource (e.g., from a CPU DRA driver) to
-    set its base request, while simultaneously using other claims for the same native resource with
+3.  A container cannot have claims requesting devices with `PolicyConsumeFrom` for a node allocatable resource if
+    it also has claims using `PolicyMax`.
+4.  A container can use a claim with `PolicyMax` for a node allocatable resource (e.g., from a CPU DRA driver) to
+    set its base request, while simultaneously using other claims for the same node allocatable resource with
     `PolicyAddPerClaim` or `PolicyAddPerReference` (e.g., from a GPU driver for auxiliary CPU). The
     scheduler will sum the overridden value with rest of the additive policies while accounting for
     node resources.
-5.  A container can use a claim with `PolicyConsumeFrom` for a native resource to set its base request,
-    while  using other claims for the same native resource with `PolicyAddPerClaim` or
+5.  A container can use a claim with `PolicyConsumeFrom` for a node allocatable resource to set its base request,
+    while using other claims for the same node allocatable resource with `PolicyAddPerClaim` or
     `PolicyAddPerReference` (e.g., from a GPU driver for auxiliary CPU). The container's
     `resources.requests` are still drawn from the `ConsumeFrom` pool and the
     `PolicyAddPerClaim`/`PolicyAddPerReference` are accounted for against the node's general
@@ -1357,7 +1343,7 @@ The following rules would need to be enforced by the scheduler, within the `Dyna
     - name: shared-pool-instance-1
       capacity:
         "dra.example.com/cpu": "128"
-      nativeResourceMappings:
+      nodeAllocatableResourceMappings:
         cpu:
           accountingPolicy: "ConsumeFrom"
           quantityFrom:
@@ -1416,28 +1402,28 @@ The following rules would need to be enforced by the scheduler, within the `Dyna
 **Expected Behavior & Accounting:**
 
 1.  **Scheduling Pod1:**
-    *   `NodeResourcesFit`: Skips native resource node fit check as the DeviceClass has
-        `managesNativeResources: true`.
+    *   `NodeResourcesFit`: Skips node allocatable resource node fit check as the DeviceClass has
+        `managesNodeAllocatableResources: true`.
     *   `DynamicResources`: Sees `ConsumeFrom` policy. The claim requested 100 CPUs from the pool.
         Checks if `container-a`'s request of 10 CPU fits within the 100 CPUs. It does.
-    *   `NodeInfo` Update: `NativeDRAClaimStates` for `shared-cpu-claim` UID is created. `Allocated`
+    *   `NodeInfo` Update: `NodeAllocatableDRAClaimStates` for `shared-cpu-claim` is created. `Allocated`
         is set to {cpu: 100}. `Consumed` is set to {cpu: 10}. `NodeInfo.Requested` increases by 100 CPUs.
 
 2.  **Scheduling Pod2:**
-    *   `NodeResourcesFit`:  Skips native resource node fit check as the DeviceClass has
-        `managesNativeResources: true`.
-    *   `DynamicResources`: Sees `ConsumeFrom`. Retrieves `NativeDRAClaimStates`. `Allocated` (Pool
+    *   `NodeResourcesFit`:  Skips node allocatable resource node fit check as the DeviceClass has
+        `managesNodeAllocatableResources: true`.
+    *   `DynamicResources`: Sees `ConsumeFrom`. Retrieves `NodeAllocatableDRAClaimStates`. `Allocated` (Pool
         Capacity) is 100, `Consumed` is 10. Remaining pool capacity: 100 - 10 = 90. Checks if
         `container-b`'s request of 20 CPU fits: 20 <= 90. It fits.
-    *   `NodeInfo` Update: `NativeDRAClaimStates` for `shared-cpu-claim` has `Consumed` updated to {cpu: 30}.
+    *   `NodeInfo` Update: `NodeAllocatableDRAClaimStates` for `shared-cpu-claim` has `Consumed` updated to {cpu: 30}.
         `Allocated` and `NodeInfo.Requested.MilliCPU` remain unchanged.
 
 3.  **Pod Deletion:**
-    *   If Pod1 is deleted: `NodeInfo.update` subtracts 10 from `NativeDRAClaimStates[].Consumed`.
+    *   If Pod1 is deleted: `NodeInfo.update` subtracts 10 from `NodeAllocatableDRAClaimStates[].Consumed`.
         `NodeInfo.Requested` is unchanged.
-    *   If Pod2 is then deleted: `NodeInfo.update` subtracts 20 from `NativeDRAClaimStates[].Consumed`.
+    *   If Pod2 is then deleted: `NodeInfo.update` subtracts 20 from `NodeAllocatableDRAClaimStates[].Consumed`.
         `Consumers` becomes empty. The *entire* 100 CPU pool capacity is subtracted from
-        `NodeInfo.Requested`. The `NativeDRAClaimStates` entry for `shared-cpu-claim` is removed.
+        `NodeInfo.Requested`. The `NodeAllocatableDRAClaimStates` entry for `shared-cpu-claim` is removed.
 
 ### Test Plan
 
@@ -1477,26 +1463,26 @@ Unit tests will be added for all new and modified logic within the `kube-schedul
 
 -   Ensuring the new fields in `DeviceClass` and `Device` are validated correctly.
 -   Scheduler Plugin Logic (`NodeResourcesFit`, `DynamicResources`):
-    -   Verifying the correct deferral of native resource checks in `NodeResourcesFit`.
-    -   Verify the accurate calculation of a pod's total native resource demand, ensuring it correctly considers standard `pod.spec` requests
-        with DRA-based allocations. These tests must cover all supported ways to model native resource including scenarios involving 
+    -   Verifying the correct deferral of node allocatable resource checks in `NodeResourcesFit`.
+    -   Verify the accurate calculation of a pod's total node allocatable resource demand, ensuring it correctly considers standard `pod.spec` requests
+        with DRA-based allocations. These tests must cover all supported ways to model node allocatable resources including scenarios involving 
         consumable capacity, partitionable devices, and auxiliary resource requests for other devices.
-    -   Validating that `pod.status.nativeResourceClaimStatus` is updated correctly.
+    -   Validating that `pod.status.nodeAllocatableResourceClaimStatuses` is updated correctly.
 -   Scheduler Framework:
-    -   Verify `NodeInfo` cache updates correctly in the `Assume` stage and reflects resources allocated to native resource claims.
-    -   Verify that when a pod using DRA native resources is deleted, the resources are correctly released 
+    -   Verify `NodeInfo` cache updates correctly in the `Assume` stage and reflects resources allocated to node allocatable resource claims.
+    -   Verify that when a pod using DRA node allocatable resources is deleted, the resources are correctly released 
         and become available for other pods in the scheduler's cache.
 -   Component helper (`k8s.io/component-helpers/resource`)
-    -   Testing the `PodRequests` helper function's updated logic to include DRA native resources.
+    -   Testing the `PodRequests` helper function's updated logic to include DRA node allocatable resources.
         -   Ensure existing calculations for pods without DRA claims or PLR remain correct, properly aggregating init 
             and regular container requests.
         -   Verify pod level resources when specified for a resource, continues to take precedence over per-container requests,
-            include native claim requests.
-        -   Verify that the native resources from `pod.status.nativeResourceClaimStatus` are correctly added to the pod's effective standard resource requests.
+            include node allocatable claim requests.
+        -   Verify that the node allocatable resources from `pod.status.nodeAllocatableResourceClaimStatuses` are correctly added to the pod's effective standard resource requests.
         -   Test that existing logic for different `PodResourcesOptions` (e.g., `ExcludeOverhead`, `SkipPodLevelResources`) continues to 
-            work as expected when DRA native resources are present, including correct handling of `pod.spec.overhead`.
+            work as expected when DRA node allocatable resources are present, including correct handling of `pod.spec.overhead`.
 -   Kubelet Admission Check
-    -   Verifying that the admission check correctly uses the DRA native resource from the pod's `status.nativeResourceClaimStatus` field.
+    -   Verifying that the admission check correctly uses the DRA node allocatable resource from the pod's `status.nodeAllocatableResourceClaimStatuses` field.
 
 ** Current Test Coverage:**
 - `pkg/scheduler/framework/plugins/dynamicresources`: `20260203` - `79.2`
@@ -1514,59 +1500,59 @@ Integration tests will be added in `test/integration/dynamicresource` to cover t
 **Kube-Scheduler:**
 -   Tests to ensure correct interaction between `NodeResourcesFit` and `DynamicResources` plugins.
 -   Test that the scheduler's internal cache (`NodeInfo.Requested`) is accurately updated to reflect 
-    the resources consumed by pods with DRA native resource claims.
--   Ensure that resources are correctly released in the scheduler cache when a pod with DRA native resources is deleted.
--   Validate that fungible claims resulting in different native resource footprints are accounted for correctly on a per-node basis.
--   Tests to validate the `pod.status.nativeResourceClaimStatus` is populated correctly and the kubelet
+    the resources consumed by pods with DRA node allocatable resource claims.
+-   Ensure that resources are correctly released in the scheduler cache when a pod with DRA node allocatable resources is deleted.
+-   Validate that fungible claims resulting in different node allocatable resource footprints are accounted for correctly on a per-node basis.
+-   Tests to validate the `pod.status.nodeAllocatableResourceClaimStatuses` is populated correctly and the kubelet
     admission check correctly computes the effective pod resource request.
 
 **Kubelet:**
--   Test that the Kubelet's admission handler correctly factors in the native resources specified in `pod.status.nativeResourceClaimStatus` 
+-   Test that the Kubelet's admission handler correctly factors in the node allocatable resources specified in `pod.status.nodeAllocatableResourceClaimStatuses` 
     when deciding whether to admit a pod.
 
 ##### e2e tests
 
 E2E tests will be added to `test/e2e/dra`:
 
--   Verify these pods are scheduled onto nodes with sufficient capacity, considering both the pod's standard requests and the DRA-added native resources.
+-   Verify these pods are scheduled onto nodes with sufficient capacity, considering both the pod's standard requests and the DRA-added node allocatable resources.
     These tests should cover various DRA modeling scenarios:
-    -   Native resources as individual devices. 
-    -   Native resources as consumable capacity from a pool.
-    -   Native resources from partitionable devices.
-    -   Auxiliary native resources required by other devices (e.g., additional memory for an accelerator).
-    -   Fungible claims involving native resources
+    -   Node allocatable resources as individual devices. 
+    -   Node allocatable resources as consumable capacity from a pool.
+    -   Node allocatable resources from partitionable devices.
+    -   Auxiliary node allocatable resources required by other devices (e.g., additional memory for an accelerator).
+    -   Fungible claims involving node allocatable resources
 
 ### Graduation Criteria
 
 #### Alpha
 
--   Feature implemented behind the `DRANativeResources` feature gate and disabled by default.
+-   Feature implemented behind the `DRANodeAllocatableResources` feature gate and disabled by default.
 -   Core API changes for `DeviceClass`, `Device`, and `PodStatus` introduced.
 -   Kube-Scheduler:
-    *   The `DynamicResources` plugin is updated to calculate and enforce node resource fit based on standard requests and native resource claims.
-    *   The scheduler's internal cache update logic is enhanced to incorporate DRA native resource allocations.
+    *   The `DynamicResources` plugin is updated to calculate and enforce node resource fit based on standard requests and node allocatable resource claims.
+    *   The scheduler's internal cache update logic is enhanced to incorporate DRA node allocatable resource allocations.
 -    `k8s.io/component-helpers/resource` shared library is enhanced to compute effective pod resource footprint.
--   The Kubelet's admission handler is updated to consider native resource claims in `Pod.Status`.
+-   The Kubelet's admission handler is updated to consider node allocatable resource claims in `Pod.Status`.
 -   All unit and integration tests outlined in the Test Plan are implemented and verified.
 
 #### Alpha2 / Beta
 
 -   Gather feedback from alpha.
--   Enhance Kubelet to utilize `pod.status.nativeResourceClaimStatus` for accurate QoS classification and cgroup management.
--   Design and implement support for different accounting policies with native resouce claims and standard requests.
--   Define the interactions between DRA native resources and In-Place Pod Vertical Scaling.
+-   Enhance Kubelet to utilize `pod.status.nodeAllocatableResourceClaimStatuses` for accurate QoS classification and cgroup management.
+-   Design and implement support for different accounting policies with node allocatable resource claims and standard requests.
+-   Define the interactions between DRA node allocatable resources and In-Place Pod Vertical Scaling.
 -   Add E2E tests for kube-scheduler and Kubelet changes, including correct QOS and cgroup enforcement.
 
 ### Upgrade / Downgrade Strategy
 
 -   **Upgrade:** Enabling the feature gate on an existing cluster is safe. The new accounting logic will apply
-    to any newly scheduled pods or pods that are re-scheduled. Existing pods with native resource claims would 
+    to any newly scheduled pods or pods that are re-scheduled. Existing pods with node allocatable resource claims would 
     continue to run, but their claim request will not be reflected in the scheduler's `NodeInfo` cache as these 
-    pods lack `pod.status.nativeResourceClaimStatus` field. To fully resynchronize the accounting, the pods with 
-    native resources claims must be restarted.
+    pods lack `pod.status.nodeAllocatableResourceClaimStatuses` field. To fully resynchronize the accounting, the pods with 
+    node allocatable resource claims must be restarted.
 
 -   **Downgrade:** Disabling the feature gate requires a kube-scheduler restart. Upon startup, the scheduler rebuilds
-    the NodeInfo cache without considering DRA native resources. The scheduler's view of resource usage for existing pods 
+    the NodeInfo cache without considering DRA node allocatable resources. The scheduler's view of resource usage for existing pods 
     will be incomplete (underestimated) as it does not consider claim based requests. This could potentially lead to 
     oversubscription of the node if new pods are scheduled.
 
@@ -1583,28 +1569,28 @@ An older scheduler will not understand the new API fields or perform unified acc
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `DRANativeResources`
+  - Feature gate name: `DRANodeAllocatableResources`
   - Components depending on the feature gate: `kube-scheduler`, `kubelet`, `kube-apiserver`.
 
 ###### Does enabling the feature change any default behavior?
 
-No. This feature only takes effect if users create Pods that request native resources via
-`pod.spec.resourceClaims` and DRA drivers are installed and configured to expose native resources via
-`nativeResourceMappings` in `ResourceSlice` objects. Existing pods are unaffected.
+No. This feature only takes effect if users create Pods that request node allocatable resources via
+`pod.spec.resourceClaims` and DRA drivers are installed and configured to expose node allocatable resources via
+`nodeAllocatableResourceMappings` in `ResourceSlice` objects. Existing pods are unaffected.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling the feature gate `DRANativeResources` will prevent the scheduler from performing the unified accounting. 
-Pods already scheduled using DRA native resource accounting will continue to run. However, when new pods are scheduled 
-while the gate is disabled, any native resources specified in their DRA claims will not be considered by the scheduler.
+Yes. Disabling the feature gate `DRANodeAllocatableResources` will prevent the scheduler from performing the unified accounting. 
+Pods already scheduled using DRA node allocatable resource accounting will continue to run. However, when new pods are scheduled 
+while the gate is disabled, any node allocatable resources specified in their DRA claims will not be considered by the scheduler.
 This can lead to node oversubscription as the scheduler's view of available resources on the node will be incomplete.  
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The scheduler will resume its unified accounting logic for pods with DRA native resource claims. API
+The scheduler will resume its unified accounting logic for pods with DRA node allocatable resource claims. API
 validation for the new fields will be re-enabled. The `NodeInfo` cache may be incorrect as it's not
-retroactively updated to consider native resource claims for previously scheduled pods. This inconsistent 
-state would persist until kube-scheduler restarts or all pods with native resources claims are restarted.
+retroactively updated to consider node allocatable resource claims for previously scheduled pods. This inconsistent 
+state would persist until kube-scheduler restarts or all pods with node allocatable resource claims are restarted.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1679,8 +1665,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] Events
   - Event Reason: 
 - [x] API .status
-    - Other field: pod.status.nativeResourceClaimStatus
-    - Details: Pod's referencing native resource claims should have the pod status updated with `nativeResourceClaimStatus`.
+    - Other field: pod.status.nodeAllocatableResourceClaimStatuses
+    - Details: Pods referencing node allocatable resource claims should have the pod status updated with `nodeAllocatableResourceClaimStatuses`.
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -1805,7 +1791,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Yes. The time to schedule a pod would increase if it reference claims with native resources. The `DynamicResources` 
+Yes. The time to schedule a pod would increase if it references claims with node allocatable resources. The `DynamicResources` 
 scheduler plugin would need to allocate the device to the pod and would also need to perform additional 
 validations and node resource fit check.
 
@@ -1897,30 +1883,30 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-### DeviceClass API Extension for NativeResourceMappings
+### DeviceClass API Extension for NodeAllocatableResourceMappings
 
-In this option, the primary information about how a DeviceClass relates to native resources is contained within the `DeviceClassSpec`.
+In this option, the primary information about how a DeviceClass relates to node allocatable resources is contained within the `DeviceClassSpec`.
 
 ```go
 // In k8s.io/api/resource/v1/types.go
 type DeviceClassSpec struct {
     // ... existing fields
-    // NativeResourceMappings lists the native resources that this DeviceClass can provide or depend on.
+    // NodeAllocatableResourceMappings lists the node allocatable resources that this DeviceClass can provide or depend on.
     // +optional
-    // +featureGate=DRANativeResources
-    NativeResourceMappings []NativeResourceMapping `json:"nativeResourceMappings,omitempty"`
+    // +featureGate=DRANodeAllocatableResources
+    NodeAllocatableResourceMappings []NodeAllocatableResourceMapping `json:"nodeAllocatableResourceMappings,omitempty"`
 }
 
-// NativeResourceAccountingPolicy, NativeResourceAccountingPolicy, NativeResourceQuantity
+// NodeAllocatableResourceAccountingPolicy, NodeAllocatableResourceQuantity
 // are defined the same as in the main proposal.
 ```
 
 **Reason for Not Choosing:**
 
-While defining `NativeResourceMappings` in the `DeviceClass` is simpler, it lacks the granularity needed for many real-world scenarios. The Device API Extension approach allows these mappings to be specified per-Device instance within the `ResourceSlice`. This is advantageous because:
+While defining `NodeAllocatableResourceMappings` in the `DeviceClass` is simpler, it lacks the granularity needed for many real-world scenarios. The Device API Extension approach allows these mappings to be specified per-Device instance within the `ResourceSlice`. This is advantageous because:
 
-1.  **Heterogeneous Devices:** Even within the same `DeviceClass`, individual device instances can have different native resource implications. For example, different GPU models or even the same model on different parts of the system topology might have varying CPU/memory overheads. Option 1 cannot express this.
-2.  **Complex Resources:** Resources where we use Partitionable Devices to model hierarchies (e.g., sockets, NUMA nodes, caches, cores). The native resource capacity (e.g., number of CPUs) is associated with specific instances in the hierarchy changes and this is best represented in individual `Device` entries.
+1.  **Heterogeneous Devices:** Even within the same `DeviceClass`, individual device instances can have different node allocatable resource implications. For example, different GPU models or even the same model on different parts of the system topology might have varying CPU/memory overheads. Option 1 cannot express this.
+2.  **Complex Resources:** Resources where we use Partitionable Devices to model hierarchies (e.g., sockets, NUMA nodes, caches, cores). The node allocatable resource capacity (e.g., number of CPUs) is associated with specific instances in the hierarchy changes and this is best represented in individual `Device` entries.
 
 ## Infrastructure Needed (Optional)
 
