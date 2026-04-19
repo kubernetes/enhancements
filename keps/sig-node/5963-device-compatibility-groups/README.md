@@ -20,6 +20,7 @@
     - [Example 3: How the proposed API solves the problem](#example-3-how-the-proposed-api-solves-the-problem)
     - [Example 4: Multiple compatible groups with an incompatible group](#example-4-multiple-compatible-groups-with-an-incompatible-group)
   - [Scheduler Changes](#scheduler-changes)
+  - [Interaction with Multi-Request Claims and Device Constraints](#interaction-with-multi-request-claims-and-device-constraints)
   - [Driver Responsibilities](#driver-responsibilities)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -39,6 +40,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Current Workaround: Driver-level Preparation Failure](#current-workaround-driver-level-preparation-failure)
+  - [Inverted naming: `mutualExclusionGroups`](#inverted-naming-mutualexclusiongroups)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 
 ## Release Signoff Checklist
@@ -119,9 +122,22 @@ constraints, not just GPUs.
 
 ### Non-Goals
 
-- Allow DRA drivers to specify compatibility between physical or virtual devices
-across different physical devices. The scope of compatibility constraints is limited to virtual devices sharing the same
-underlying physical device.
+- Allowing DRA drivers to specify compatibility between devices that do not
+  share a counter set. The scope of compatibility constraints is limited to
+  virtual devices consuming from the same counter set (which, by convention,
+  represents a single underlying physical device).
+- Providing a centralized or cluster-wide registry of compatibility group
+  names. Group names are opaque strings scoped to a single ResourceSlice pool
+  and are meaningful only to the driver that publishes them.
+- Enabling the scheduler to *reconfigure* a physical device between
+  partitioning schemes (e.g., MIG ↔ MPS) as part of scheduling. This KEP only
+  addresses rejecting incompatible allocations; transitions between schemes
+  remain a driver concern and typically require draining existing allocations.
+- Expressing compatibility constraints on `ResourceClaim` objects. The field
+  is driver-authored and lives only on `ResourceSlice`.
+- Replacing existing counter-capacity checks. `compatibilityGroups` is an
+  additional predicate; capacity math on `sharedCounters` continues to apply
+  unchanged.
 
 ## Proposal
 
@@ -131,8 +147,10 @@ Add a `device.consumesCounters[].compatibilityGroups` field. Devices declare whi
 named groups they belong to. For two devices consuming counters from the same  
 counter set to be co-allocated, they must share at least one compatibility group.
 
-Devices without this field are considered compatible with other devices that dont
-specify this field, for backwards compatibility. 
+Devices that omit this field are compatible only with other devices in the same
+counter set that also omit it. Existing ResourceSlices (where no device sets the
+field) continue to behave as today; drivers adopting this feature should annotate
+every device sharing a counter set.
 
 ### User Stories
 
@@ -156,10 +174,14 @@ with cryptic error messages.
 
 ### Notes/Constraints/Caveats
 
-The compatibility constraint is bidirectional and transitive: if device A
-specifies a constraint that excludes device B, then allocating A must prevent
-B from being allocated, and vice versa. This proposal implements this
-bidirectional check in the scheduler.
+The compatibility relation is **symmetric**: if A can be co-allocated with B,
+then B can be co-allocated with A. It is **not transitive**: A and B sharing a
+group, and B and C sharing a group, does not imply A and C share one.
+Concretely, the scheduler evaluates the pairwise predicate
+`groups(A) ∩ groups(B) ≠ ∅` against every already-allocated device on the same
+counter set; it does not compute transitive closures. Drivers that want three
+device types to be mutually co-allocatable must ensure every pair shares at
+least one group (see Example 4).
 
 ### Risks and Mitigations
 
@@ -187,8 +209,20 @@ for correctness and documentation of their compatibility matrix.
 A new field `compatibilityGroups` is added inside each entry of
 `device.consumesCounters[]`. It contains a list of string group names.
 For two devices consuming counters from the same counter set to be allocated
-together, they must share at least one group name. Devices that omit this
-field are considered compatible with all groups.
+together, either both must omit the field (or set it to an empty list), or both
+must declare the field and share at least one group name. A nil
+`compatibilityGroups` and an empty `compatibilityGroups: []` are treated
+identically. This means a device that declares the field is never co-allocatable
+with a sibling that omits it.
+
+The field is placed on each `consumesCounters[]` entry rather than on the
+device itself because compatibility is a physical-hardware property scoped to
+the shared resource represented by the counter set. A single virtual device
+that consumes from multiple counter sets may therefore declare different
+groups per counter set, reflecting different exclusivity constraints on
+different pieces of underlying hardware. Two devices that do not share any
+counter set are never compared via this field, even if they live on the same
+node or in the same `ResourceSlice`.
 
 Example showing MIG and FOO partitions on the same physical GPU:
 
@@ -618,6 +652,9 @@ is incompatible with both. To express this, `foo` devices include `bar` in
 their compatibility groups and vice versa, while `baz` devices only list
 their own group.
 
+This example is written generically — the counter name `units` stands in for
+any hardware-specific resource (SMs, bandwidth, slots).
+
 ResourceSlices — a device advertising foo, bar, and baz partitions:
 
 ```yaml
@@ -712,6 +749,40 @@ The DRA scheduler plugin is enhanced to:
   constraints.
 4. Emit clear scheduling events when a device is rejected due to compatibility.
 
+**Complexity.** Let *M* be the number of devices already allocated on a
+counter set, *N* the number of candidates under consideration for that
+counter set, and *G* the maximum number of groups declared per counter-set
+consumption entry. The additional filter cost per scheduling cycle is
+O(*N* · *M* · *G*) for pairwise group-intersection checks, with typical *G*
+≤ 4 (hardware partition modes per device are small in practice). The
+existing DRA allocation loop already iterates over candidates per counter
+set, so the new work is a constant-factor-per-candidate addition rather than
+a new outer loop.
+
+### Interaction with Multi-Request Claims and Device Constraints
+
+**Multiple requests within one claim.** The compatibility predicate is
+evaluated pairwise between every device already allocated *on the same counter
+set* and each candidate, regardless of whether the allocated device belongs to
+the same claim, a different claim on the same pod, or a different pod entirely.
+Two devices within a single `ResourceClaim` that land on the same counter set
+are therefore subject to the same pairwise check: the second request sees the
+first as already-allocated state.
+
+**Allocation order.** The scheduler does not reorder requests within a claim
+to improve feasibility. If requests are ordered such that an early compatible
+pick later blocks a mandatory pick, the claim becomes Unschedulable and
+standard retry behavior applies. This matches how existing DRA constraints
+behave.
+
+**Composition with `DeviceConstraints`.** `compatibilityGroups` is a
+driver-authored, ResourceSlice-side constraint. `DeviceConstraints` (e.g.,
+`matchAttribute`) is a user-authored, ResourceClaim-side constraint. The two
+are evaluated independently and both must pass for a candidate to be
+allocated. A claim can never *relax* a driver-declared compatibility group,
+and a driver can never *force* a claim-side `matchAttribute`. They compose by
+conjunction.
+
 ### Driver Responsibilities
 
 Resource drivers are responsible for:
@@ -730,24 +801,50 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
+None. The DRA scheduler plugin and `ResourceSlice` validation already have
+unit and integration coverage; new tests are additive.
+
 ##### Unit tests
 
-- TBD
+- `k8s.io/dynamic-resource-allocation/structured`: pairwise group-intersection
+  predicate (empty, nil, single, multiple groups; nil-vs-nil, nil-vs-set,
+  set-vs-set; `[]` treated as nil).
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: filter
+  behavior with mixed compatible and incompatible candidates on the same
+  counter set; no-op behavior when the feature gate is disabled; no-op
+  behavior when no device in the slice declares the field.
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: field validation —
+  accepted shapes, max group-name length, max groups per counter consumption.
 
 ##### Integration tests
 
-- TBD
+- Feature gate enablement/disablement round-trip: field is persisted when
+  enabled, dropped on write when disabled.
+- Scheduler rejects a claim when the only remaining candidate on a node
+  belongs to an incompatible group; admits it when a compatible candidate
+  exists on another node.
+- Upgrade → downgrade → upgrade: allocations made during the "upgrade" phase
+  remain valid after downgrade; re-enabling enforcement does not re-evaluate
+  existing allocations.
 
 ##### e2e tests
 
-- TBD
+- Fake DRA driver advertising two mutually exclusive groups (`mig`, `mps`) on
+  a single counter set. Scheduling a `mig` pod followed by an `mps` pod on
+  the same node leaves the second pod Unschedulable with the documented
+  event; reversing the order reproduces the behavior symmetrically.
+- Same driver with compatible groups (`foo`, `bar`) — both pods schedule.
+- Feature-gate-off baseline: the second pod reaches preparation and the
+  driver rejects it (pre-KEP behavior preserved).
 
 ### Graduation Criteria
 #### Alpha
 - API defined and implemented
 - All relevant code is merged and placed behind a feature flag
 - Unit and integration tests
-- Documentation
+- Driver-author documentation published under `kubernetes/website` (DRA
+  drivers section), including the strict nil-matching rule and a worked
+  MIG/MPS example.
 
 #### Beta
 - E2E tests passing in CI 
@@ -767,7 +864,37 @@ Allocated devices that leveraged this new field will remain allocated, and futur
 
 
 ### Version Skew Strategy
-No version skew concerns
+
+The feature introduces a new optional field on `ResourceSlice` and new
+enforcement logic in the scheduler. Skew behaviors to consider:
+
+**New kube-apiserver + old kube-scheduler.** The apiserver accepts and persists
+`compatibilityGroups`. An old scheduler ignores the field and may allocate
+incompatible devices. This degrades to the pre-KEP behavior: the DRA driver
+rejects the allocation at resource preparation time. Drivers MUST continue to
+validate at preparation time for this reason (see Driver Responsibilities).
+
+**Old kube-apiserver + new kube-scheduler.** The old apiserver drops the unknown
+field on writes. ResourceSlices in etcd therefore do not carry
+`compatibilityGroups`, and the new scheduler sees only nil values, producing the
+pre-KEP behavior. No incorrect allocations result.
+
+**Mixed-version HA kube-scheduler.** If one replica enforces the field and
+another does not, the enforcing replica may reject allocations the
+non-enforcing replica would accept. Both outcomes are safe (either the
+scheduler correctly rejects, or the driver rejects at preparation time).
+Resolution is to complete the scheduler rollout.
+
+**Downgrade with in-flight allocations.** Devices already allocated under the
+new rules remain allocated across a downgrade; the post-downgrade scheduler
+will not consider `compatibilityGroups` for future allocations, reverting to
+pre-KEP behavior. No existing allocations are invalidated.
+
+**Feature gate off on one component.** If `DRADeviceCompatibilityGroups` is
+enabled on kube-apiserver but disabled on kube-scheduler (or vice versa),
+behavior matches the corresponding skew row above — apiserver stores the field
+but scheduler ignores it, or scheduler enforces on field values that the
+apiserver may drop on writes.
 
 ## Production Readiness Review Questionnaire
 
@@ -778,12 +905,14 @@ No version skew concerns
 - Feature gate
   - Feature gate name: DRADeviceCompatibilityGroups
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
-- Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-  plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-  of a node?
+- Gate behavior per component:
+  - **kube-apiserver**: when disabled, strips `compatibilityGroups` on writes
+    and hides it on reads of `ResourceSlice`. Prevents drivers from persisting
+    values that cannot be enforced.
+  - **kube-scheduler**: when disabled, ignores the field on read and does not
+    perform the pairwise intersection check during filtering.
+- No control-plane downtime is required to toggle the gate.
+- No node downtime or reprovisioning is required.
 
 ###### Does enabling the feature change any default behavior?
 No, this KEP proposes an additional optional field to the `ResourceSlice` API
@@ -800,14 +929,26 @@ Yes, there will be integration tests to verify feature enablement/disablement
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
-I expect code changes in `kube-apiserver` and `kube-scheduler`, so something can go wrong with those.
-No impact on already running workloads.
+Rollout risk is limited to the two components touched by the feature gate
+(kube-apiserver field handling and kube-scheduler filter logic).
+Already-running workloads are not affected: compatibility filtering only runs
+during scheduling of *new* allocations, so disabling the gate or rolling back
+binaries does not disturb existing pod/device bindings.
 
 ###### What specific metrics should inform a rollback?
-TBD
+A new scheduler metric
+`scheduler_dra_compatibility_rejections_total{driver,counter_set,reason}`
+counts claim filter rejections caused by compatibility constraints. A rollback
+is warranted if this metric spikes unexpectedly after a driver update (likely
+an incorrect compatibility matrix — see Risks → Incorrect driver declarations).
+Operators should also watch `scheduler_unschedulable_pods` correlated with
+events matching `Insufficient compatible DRA devices`.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
-TBD
+Upgrade → downgrade → upgrade will be covered by the integration test
+described in Test Plan → Integration tests. At alpha, manual verification on a
+kind cluster with the feature gate flipped is acceptable; CI coverage is a
+Beta graduation criterion.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 No
@@ -821,7 +962,15 @@ This feature is not intended for use by workload usage, it is intended for DRA D
 
 - Events
   - Scheduling events:
-    - When all allocated devices in all Nodes are not compatible with any device that is considered for allocation the following event will be emitted by the scheduler for each Node: "No available nodes found: claim violates device compatibility constraints"
+    - When a candidate device is filtered out because its compatibility groups
+      do not intersect those of an already-allocated device on the same
+      counter set, the scheduler logs a per-node filter reason of the form:
+      ```
+      device gpu-0-mps-0 (groups [mps]) incompatible with allocated device gpu-0-mig-1g-0 (groups [mig]) on counterSet gpu-0-counters
+      ```
+    - If no node has any allocatable candidate, the standard scheduler
+      "0/N nodes are available" event aggregates this reason across nodes
+      (e.g., `4 Insufficient compatible DRA devices`).
 - Pod.status
   - Condition name: Unschedulable
 
@@ -829,10 +978,16 @@ This feature is not intended for use by workload usage, it is intended for DRA D
 N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-N/A
+Operators can use `scheduler_dra_compatibility_rejections_total` together with
+`scheduler_unschedulable_pods` and the standard DRA scheduler plugin latency
+metrics to determine whether compatibility filtering is contributing to
+scheduling failures or latency regressions.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-No
+No — `scheduler_dra_compatibility_rejections_total{driver,counter_set,reason}`
+(introduced by this KEP; see Rollout → What specific metrics should inform a
+rollback) covers the primary observability need. Additional breakdowns can be
+added post-alpha if field feedback justifies them.
 
 ### Dependencies
 DRA Partitionable Devices enabled
@@ -855,7 +1010,14 @@ No
 Yes, additional field to the `ResourceSlice` API
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
-Scheduling cycles will take longer to complete due to the additional responsibility the scheduler will recieve, I expect it to be negligible
+Scheduling cycles that involve DRA devices incur an additional
+O(*N* · *M* · *G*) group-intersection check per counter set (see Design
+Details → Scheduler Changes), where *M* is devices already allocated on that
+counter set, *N* is candidates considered, and *G* is groups per device. For
+realistic values (*M* ≤ 16, *N* ≤ 64, *G* ≤ 4) the added work is in the low
+thousands of string comparisons per counter set per cycle and is not expected
+to be measurable against existing DRA scheduling cost. Benchmarks will be run
+during alpha and reported in the Implementation History.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 No
@@ -875,6 +1037,9 @@ N/A
 TBD
 
 ## Implementation History
+
+- 2026-03-17: KEP opened, status `provisional`.
+- 2026-04-18: KEP under review; API shape and default semantics settled.
 
 ## Drawbacks
 
@@ -896,6 +1061,29 @@ allocation, leading to pod startup failures.
 or device combinations.
 - It results in resource thrashing as the scheduler retries the same failing
 combination.
+
+### Inverted naming: `mutualExclusionGroups`
+
+An alternative API would invert the semantics: instead of declaring which
+groups a device *belongs to* (co-allocation predicate), declare which groups
+a device is *incompatible with* (exclusion predicate). Two devices would then
+be co-allocatable if and only if the intersection of their exclusion sets and
+their own group memberships is empty.
+
+The inverted model is arguably more intuitive for the motivating case — a MIG
+device "excludes MPS," full stop — and does not require drivers to list each
+peer group in their own entry (as Example 4 does, where `foo` devices must
+include `bar` in their group list). It was rejected because:
+
+- The co-allocation framing composes naturally with the existing DRA model,
+  where counter-set membership already expresses "can share resources." A
+  group is a finer-grained membership within the same model.
+- Exclusion semantics require two fields to express the same information (the
+  groups you *are* in, and the groups you *exclude*), or a global registry of
+  group names. Membership-only is simpler.
+- Symmetry is easier to validate: a driver that forgets to include `foo` in a
+  `bar` device's groups produces a diagnosable allocation failure, rather
+  than silent incorrect behavior under exclusion semantics.
 
 ## Infrastructure Needed (Optional)
 
