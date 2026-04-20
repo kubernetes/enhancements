@@ -25,6 +25,7 @@
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [Client Support and Version Skew](#client-support-and-version-skew)
 - [Production Readiness Questionnaire](#production-readiness-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -188,6 +189,7 @@ None.
 
 - Both feature gates removed.
 - Full documentation on usage and benefits.
+- The feature has been available in Beta for at least 2 releases to ensure sufficient soak time.
 
 ### Upgrade / Downgrade Strategy
 
@@ -197,6 +199,14 @@ None.
 ### Version Skew Strategy
 
 Supported. API servers that do not recognize the `drop` parameter will simply ignore it and return the full object, which is a safe default.
+
+#### Client Support and Version Skew
+
+To ensure consistent behavior and support clients running against older API servers:
+
+- **client-go Modification:** `client-go` will be modified to support field dropping by adding a configuration option (e.g., in `rest.Config`) to request dropping specific fields. When enabled, it will automatically add the `drop=metadata.managedFields` parameter to the `Accept` header.
+- **Informer Configuration:** Informers will inherit this configuration from the client they use. If a client is configured to drop `managedFields`, the informer will receive objects without `managedFields`.
+- **Client-side Stripping (Defensive):** If a client requests `drop=metadata.managedFields` but talks to an older API server that does not support the feature, the server will return the full object with `managedFields`. To provide a consistent experience and avoid memory overhead in the client, `client-go` will be updated to strip `managedFields` from the response client-side if the client requested it but the server failed to drop it. This ensures that clients requesting the drop never see `managedFields` in the returned objects, regardless of server version.
 
 ## Production Readiness Questionnaire
 
