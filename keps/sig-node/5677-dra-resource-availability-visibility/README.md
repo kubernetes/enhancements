@@ -30,7 +30,10 @@
   - [Controller Implementation](#controller-implementation)
     - [Controller in KCM](#controller-in-kcm)
     - [One-time Processing](#one-time-processing)
+    - [Incomplete-Pool Handling and Requeue](#incomplete-pool-handling-and-requeue)
     - [Reusing Existing Informers](#reusing-existing-informers)
+    - [TTL-Based Cleanup](#ttl-based-cleanup)
+    - [Controller RBAC](#controller-rbac)
   - [kubectl Integration](#kubectl-integration)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -38,7 +41,7 @@
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
+    - [Alpha (1.36)](#alpha-136)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -171,7 +174,9 @@ for imperative operations through declarative APIs.
 │                                                                             │
 │   Step 1: CREATE               Step 2: WAIT              Step 3: READ       │
 │   $ kubectl create             $ kubectl wait            $ kubectl get      │
-│     resourcepoolstatusrequest    --for=condition=Complete  rpsr/my-check    │
+│     -f request.yaml              --for=condition=Complete  ...-o yaml       │
+│                                  <object-name>                              │
+│   (kind: ResourcePoolStatusRequest, resource.k8s.io/v1alpha3)               │
 └───────────┬─────────────────────────┬─────────────────────────┬─────────────┘
             │                         │                         │
             ▼                         ▼                         ▼
@@ -185,13 +190,16 @@ for imperative operations through declarative APIs.
 │  │    name: my-check                                                     │  │
 │  │                                                                       │  │
 │  │  spec:                              status:                           │  │
-│  │    driver: example.com/gpu    ───►    observationTime: <timestamp>    │  │
+│  │    driver: example.com/gpu    ───►    poolCount: 1                    │  │
 │  │    poolName: node-1                   pools:                          │  │
 │  │                                       - driver: example.com/gpu       │  │
 │  │                                         poolName: node-1              │  │
+│  │                                         generation: 5                 │  │
+│  │                                         resourceSliceCount: 1         │  │
 │  │                                         totalDevices: 4               │  │
 │  │                                         allocatedDevices: 3           │  │
 │  │                                         availableDevices: 1           │  │
+│  │                                         unavailableDevices: 0         │  │
 │  │                                       conditions:                     │  │
 │  │                                       - type: Complete                │  │
 │  │                                         status: "True"                │  │
@@ -207,12 +215,16 @@ for imperative operations through declarative APIs.
 │  │                ResourcePoolStatusRequest Controller                    │ │
 │  │                                                                        │ │
 │  │  1. Watch for new ResourcePoolStatusRequest objects                    │ │
-│  │  2. Skip if status.observationTime already set (one-time processing)   │ │
+│  │  2. Skip if status is already set (one-time processing)                │ │
 │  │  3. Read ResourceSlices matching spec filters (driver, poolName)       │ │
 │  │  4. Read ResourceClaims to determine allocations                       │ │
-│  │  5. Compute availability summary per pool                              │ │
-│  │  6. Write result to status with timestamp                              │ │
-│  │  7. Set condition Complete=True                                        │ │
+│  │  5. Compute availability summary per pool (per-pool validationError    │ │
+│  │     when observed slice count < expected; controller requeues to       │ │
+│  │     give drivers time to publish remaining slices)                     │ │
+│  │  6. Write result to status                                             │ │
+│  │  7. Set condition Complete=True (or Failed=True on error)              │ │
+│  │  8. TTL cleanup: completed requests deleted after 1h, pending          │ │
+│  │     requests after 24h                                                 │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                                                             │
 │  Reuses existing informers:                                                 │
@@ -245,7 +257,7 @@ and plan for capacity expansion.
 ```bash
 # Create a status request for all GPU pools
 $ kubectl create -f - <<EOF
-apiVersion: resource.k8s.io/v1alpha1
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: check-gpus-$(date +%s)
@@ -255,40 +267,47 @@ EOF
 resourcepoolstatusrequest.resource.k8s.io/check-gpus-1707300000 created
 
 # Wait for processing
-$ kubectl wait --for=condition=Complete rpsr/check-gpus-1707300000 --timeout=30s
+$ kubectl wait --for=condition=Complete resourcepoolstatusrequest/check-gpus-1707300000 --timeout=30s
 resourcepoolstatusrequest.resource.k8s.io/check-gpus-1707300000 condition met
 
 # View results
-$ kubectl get rpsr/check-gpus-1707300000 -o yaml
-apiVersion: resource.k8s.io/v1alpha1
+$ kubectl get resourcepoolstatusrequest/check-gpus-1707300000 -o yaml
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: check-gpus-1707300000
 spec:
   driver: example.com/gpu
 status:
-  observationTime: "2026-02-07T10:30:00Z"
+  poolCount: 2
   pools:
   - driver: example.com/gpu
     poolName: node-1
     nodeName: node-1
+    generation: 1
+    resourceSliceCount: 1
     totalDevices: 4
     allocatedDevices: 3
     availableDevices: 1
+    unavailableDevices: 0
   - driver: example.com/gpu
     poolName: node-2
     nodeName: node-2
+    generation: 1
+    resourceSliceCount: 1
     totalDevices: 4
     allocatedDevices: 1
     availableDevices: 3
+    unavailableDevices: 0
   conditions:
   - type: Complete
     status: "True"
     reason: CalculationComplete
+    message: "Calculated status for 2 pools"
     lastTransitionTime: "2026-02-07T10:30:00Z"
 
-# Cleanup
-$ kubectl delete rpsr/check-gpus-1707300000
+# Cleanup (or wait for TTL - 1h after completion)
+$ kubectl delete resourcepoolstatusrequest/check-gpus-1707300000
 ```
 
 #### Story 2: Developer Debugging Resource Allocation
@@ -300,8 +319,8 @@ resources", I want to understand what resources are available.
 ```bash
 # Quick one-liner to check GPU availability
 $ kubectl create -f - <<EOF && sleep 2 && \
-  kubectl get rpsr/debug-check -o jsonpath='{.status.pools[*]}'
-apiVersion: resource.k8s.io/v1alpha1
+  kubectl get resourcepoolstatusrequest/debug-check -o jsonpath='{.status.pools[*]}'
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: debug-check
@@ -330,7 +349,7 @@ DRIVER="example.com/gpu"
 
 # Create request
 kubectl create -f - <<EOF
-apiVersion: resource.k8s.io/v1alpha1
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: $REQUEST_NAME
@@ -339,16 +358,16 @@ spec:
 EOF
 
 # Wait and get result
-kubectl wait --for=condition=Complete rpsr/$REQUEST_NAME --timeout=60s
-AVAILABLE=$(kubectl get rpsr/$REQUEST_NAME -o jsonpath='{.status.pools[*].availableDevices}' | tr ' ' '+' | bc)
+kubectl wait --for=condition=Complete resourcepoolstatusrequest/$REQUEST_NAME --timeout=60s
+AVAILABLE=$(kubectl get resourcepoolstatusrequest/$REQUEST_NAME -o jsonpath='{.status.pools[*].availableDevices}' | tr ' ' '+' | bc)
 
 # Alert if low
 if [ "$AVAILABLE" -lt 5 ]; then
   echo "ALERT: Only $AVAILABLE devices available cluster-wide"
 fi
 
-# Cleanup
-kubectl delete rpsr/$REQUEST_NAME
+# Cleanup (or let TTL delete it after 1h)
+kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
 ```
 
 ### Notes/Constraints/Caveats
@@ -356,11 +375,15 @@ kubectl delete rpsr/$REQUEST_NAME
 1. **Asynchronous operation**: Unlike SubjectAccessReview (synchronous), this
    uses the CSR pattern where user must wait for controller processing.
 
-2. **One-time calculation**: Each request is processed once. To get updated
-   data, delete and recreate the request.
+2. **One-time calculation**: Each request is processed once. Once `status`
+   is set the entire object (metadata included) becomes immutable. To get
+   updated data, delete and recreate the request.
 
-3. **Object persists in etcd**: Requests are stored until deleted. Users should
-   clean up old requests or use unique names with timestamps.
+3. **Automatic TTL cleanup**: Completed or failed requests are deleted by the
+   controller 1 hour after their `Complete`/`Failed` condition is set.
+   Pending requests (no status) are deleted 24 hours after creation to
+   handle stuck requests. Users can still delete requests manually at any
+   time.
 
 4. **Controller processing delay**: Status is not immediate - controller must
    process the request. Typically completes within seconds.
@@ -374,10 +397,19 @@ kubectl delete rpsr/$REQUEST_NAME
    without understanding partition relationships. Future versions may add
    driver-provided metadata to indicate partitioning.
 
-7. **Generation handling**: ResourceSlices with older pool generations are
+7. **Incomplete pools**: When a pool's observed ResourceSlice count is less
+   than `ResourceSliceCount` declared by the driver, the pool is reported
+   with `validationError` set and device-count fields left unset. The
+   controller requeues the request (up to 5 attempts) to give drivers time
+   to publish remaining slices.
+
+8. **Generation handling**: ResourceSlices with older pool generations are
    ignored during computation (not counted as errors). Drivers are expected
    to delete old-generation slices eventually. The `generation` field in
-   status reflects the highest generation observed.
+   each PoolStatus reflects the highest generation observed.
+
+9. **`unavailableDevices` in Alpha**: Currently always `0`. Inspection of
+   device taints/conditions to populate this field is planned for Beta.
 
 ### Risks and Mitigations
 
@@ -385,30 +417,30 @@ kubectl delete rpsr/$REQUEST_NAME
 
 | Risk | Mitigation |
 |------|------------|
-| Request accumulation in etcd | Document cleanup; consider TTL for Beta |
-| Large status objects (many pools) | Required `driver` field bounds response; `limit` field caps further |
-| Controller processing spike | Work queue with rate limiting |
-| Simultaneous request flood | Rate limiting per user (Beta) |
+| Request accumulation in etcd | Controller-side TTL cleanup (Alpha): 1h after completion, 24h for pending |
+| Large status objects (many pools) | Required `driver` field bounds response; `limit` field capped at 1000 (default 100); status `pools` list capped at `maxItems=1000` |
+| Controller processing spike | Work queue with default rate limiting; max 5 retries per request |
+| Simultaneous request flood | Per-user rate limiting (planned for Beta) |
 
-**Alpha approach:** For Alpha, the required `driver` field naturally bounds
-response size to one driver's pools, with `limit` as an additional cap. We rely
-on documentation and controller-side rate limiting. Cluster administrators
-can enforce object count limits using admission webhooks (e.g., Gatekeeper,
-Kyverno) if needed for their environment. This is sufficient for initial
-adoption while we gather feedback on usage patterns.
+**Alpha approach:** The required `driver` field naturally bounds response
+size to one driver's pools, with `limit` (default 100, max 1000) as an
+additional cap. Built-in TTL cleanup runs every 10 minutes and deletes
+completed requests after 1 hour and pending requests after 24 hours, so etcd
+growth is bounded without user action. Cluster administrators can still
+enforce additional object-count limits via admission webhooks (e.g.
+Gatekeeper, Kyverno).
 
-**Beta improvements:** TTL-based auto-cleanup (`ttlSecondsAfterComplete`) and
-per-user rate limiting will be added. If Alpha feedback indicates a need, we
-may also add a built-in cluster-wide object limit (similar to how some APIs
-cap total objects).
+**Beta improvements:** Per-user rate limiting for request creation, and
+consideration of configurable TTLs and a built-in cluster-wide object limit
+if Alpha feedback indicates a need.
 
 #### Operational Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Stale data if not recalculated | Timestamp shows age; recreate for fresh |
-| Controller not running | Condition stays pending; user can detect |
-| Feature gate mismatch | Document both apiserver and KCM required |
+| Stale data if not recalculated | `Complete` condition's `lastTransitionTime` shows age; delete and recreate for fresh data |
+| Controller not running | `status` stays nil (no `Complete` or `Failed` condition); user can detect; request will be auto-deleted after 24h pending TTL |
+| Feature gate mismatch | Feature gate `DRAResourcePoolStatus` must be enabled on both kube-apiserver and kube-controller-manager |
 
 ### Security Considerations
 
@@ -485,148 +517,217 @@ in their namespace.
 
 #### ResourcePoolStatusRequest Object
 
+The API is introduced in `resource.k8s.io/v1alpha3` (Kubernetes 1.36).
+
 ```yaml
-apiVersion: resource.k8s.io/v1alpha1
+apiVersion: resource.k8s.io/v1alpha3
 kind: ResourcePoolStatusRequest
 metadata:
   name: my-request
   # Cluster-scoped (no namespace)
 spec:
-  # Driver is REQUIRED - bounds response to one driver's pools
+  # Driver is REQUIRED - bounds response to one driver's pools.
+  # Must be a DNS subdomain.
   driver: example.com/gpu
 
-  # Filter by pool name (optional)
+  # Filter by pool name (optional).
+  # When set, must be a valid resource pool name (DNS subdomains separated by "/").
   poolName: node-1
 
-  # Limit number of pools returned (optional)
-  # Default and max values will be determined at implementation time
-  # based on max-size calculations to ensure the object fits in etcd
+  # Max pools to return (optional). Default: 100. Min: 1. Max: 1000.
   limit: 100
 
 status:
-  # Timestamp when calculation was performed
-  observationTime: "2026-02-07T10:30:00Z"
+  # Total number of pools that matched the filter (even if the response is
+  # truncated by `limit`). If 0, no pools matched.
+  poolCount: 2
 
-  # List of pools matching the filter
+  # First `spec.limit` matching pools, sorted by driver then pool name.
+  # If len(pools) < poolCount, the response was truncated.
   pools:
   - driver: example.com/gpu
     poolName: node-1
-    nodeName: node-1              # Empty for non-node-local pools
+    generation: 5                 # Pool generation observed (int64)
+    nodeName: node-1              # Omitted for multi-node / mixed-node pools
+    resourceSliceCount: 1         # Observed ResourceSlices at the latest generation
     totalDevices: 4
     allocatedDevices: 3
     availableDevices: 1
-    unavailableDevices: 0         # Devices with constraints
-    sliceCount: 1                 # ResourceSlices in this pool
-    generation: 5                 # Pool generation observed
+    unavailableDevices: 0         # Always 0 in Alpha
+  - driver: example.com/gpu
+    poolName: node-2
+    generation: 5
+    # validationError is set when a pool is incomplete (observed < expected
+    # slice count). When set, count fields are unset. Max 256 bytes.
+    validationError: "pool example.com/gpu/node-2 is incomplete: observed 1/2 slices at generation 5"
 
-  # Conditions indicating processing status
+  # Conditions indicating processing status.
+  # Known types: "Complete" (True when processed successfully) and
+  # "Failed" (True when the request could not be processed). Max 10 entries.
   conditions:
   - type: Complete
     status: "True"
     reason: CalculationComplete
-    message: "Processed 2 pools"
+    message: "Calculated status for 2 pools (1 incomplete)"
     lastTransitionTime: "2026-02-07T10:30:00Z"
-
-  # Validation errors found (max 10 entries, max 256 chars each)
-  validationErrors:
-  - "pool node-1: device gpu-0 appears in multiple slices"
-
-  # True if more pools exist but were not included due to limit
-  truncated: false
-
-  # Total number of pools matching filter (even if truncated)
-  totalMatchingPools: 2
 ```
+
+Once `status` is populated the entire object (including `metadata` and `spec`)
+is immutable; update requests are rejected by the API server. Users must
+delete and recreate to re-run a query.
 
 #### Spec Fields
 
-The spec is **immutable after creation**, following the CSR pattern. Updates
-to the spec fields will be rejected by API validation. To query with different
-filters or get fresh data, delete and create a new request.
+The spec is **immutable after creation** (enforced via `+k8s:immutable`), and
+the entire object becomes immutable once `status` is set. Updates to the spec
+are rejected by API validation.
 
-| Field | Description |
-|-------|-------------|
-| `driver` | Driver name (**required**) - bounds response to one driver's pools |
-| `poolName` | Filter by pool name (optional) |
-| `limit` | Max pools to return (optional, values determined at implementation based on size calculations) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `driver` | string (required) | DRA driver name — bounds response to one driver's pools. Must be a DNS subdomain. |
+| `poolName` | `*string` (optional) | Filter by pool name. Must be a valid resource pool name (DNS subdomains separated by `/`). |
+| `limit` | `*int32` (optional) | Max pools to return. Default **100**, min **1**, max **1000**. |
 
 #### Status Fields
 
-| Field | Description |
-|-------|-------------|
-| `observationTime` | Timestamp when calculation was performed |
-| `pools[]` | List of pools matching filter (up to limit) |
-| `pools[].driver` | DRA driver name |
-| `pools[].poolName` | Pool name from ResourceSlice |
-| `pools[].nodeName` | Node name (for node-local pools) |
-| `pools[].totalDevices` | Total devices across all slices |
-| `pools[].allocatedDevices` | Devices allocated to claims |
-| `pools[].availableDevices` | Devices available for allocation |
-| `pools[].unavailableDevices` | Devices unavailable (constraints) |
-| `pools[].sliceCount` | Number of ResourceSlices in pool |
-| `pools[].generation` | Pool generation observed |
-| `conditions[Complete]` | Processing completed successfully |
-| `validationErrors` | Pool consistency issues (max 10, 256 chars each) |
-| `truncated` | True if more pools exist beyond limit |
-| `totalMatchingPools` | Total pools matching filter |
+Status is a pointer (`*ResourcePoolStatusRequestStatus`). Presence of a
+non-nil status indicates the request has been processed.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `poolCount` | `*int32` (required) | Total pools matching filter (regardless of truncation). |
+| `pools[]` | atomic list, max 1000 | First `spec.limit` matching pools, sorted by driver then pool name. Truncation is inferred from `len(pools) < poolCount`. |
+| `pools[].driver` | string (required) | DRA driver name. |
+| `pools[].poolName` | string (required) | Pool name from ResourceSlice. |
+| `pools[].generation` | int64 (required) | Latest pool generation observed. |
+| `pools[].nodeName` | `*string` (optional) | Node name for node-local pools. Omitted when the pool spans multiple nodes or has mixed/no node assignment. |
+| `pools[].resourceSliceCount` | `*int32` (optional) | Number of slices observed at the latest generation. Unset when `validationError` is set. |
+| `pools[].totalDevices` | `*int32` (optional) | Total devices across all slices. Unset when `validationError` is set. |
+| `pools[].allocatedDevices` | `*int32` (optional) | Devices allocated to claims. Unset when `validationError` is set. |
+| `pools[].availableDevices` | `*int32` (optional) | `totalDevices - allocatedDevices - unavailableDevices`. Unset when `validationError` is set. |
+| `pools[].unavailableDevices` | `*int32` (optional) | Devices not available due to taints/conditions. **Always 0 in Alpha** (not yet computed). |
+| `pools[].validationError` | `*string` (optional, max 256 bytes) | Set when the pool's data could not be fully validated (e.g., incomplete slice publication). When set, count fields above may be unset. |
+| `conditions[]` | map list by `type`, max 10 | `Complete` (True when processed) or `Failed` (True on error). |
 
 ### Controller Implementation
 
 #### Controller in KCM
 
 The controller is added to kube-controller-manager as a separate controller
-with its own client and QPS limits (not part of the resourceclaim controller).
-This ensures client-side throttling does not impact scheduling.
+named `resourcepoolstatusrequest-controller` with its own client (so
+client-side throttling does not impact scheduling). It is registered in
+`cmd/kube-controller-manager/app/resource.go`.
 
 The controller:
-1. Watches ResourcePoolStatusRequest objects via informer
-2. Maintains a rate-limited work queue for processing
-3. Reuses existing ResourceSlice and ResourceClaim informers from KCM
-4. Uses `UpdateStatus` to write results to the status subresource
+1. Watches ResourcePoolStatusRequest (`resource.k8s.io/v1alpha3`) objects
+   via informer.
+2. Maintains a rate-limited work queue for processing, with up to 5 retries
+   per request before dropping.
+3. Reuses existing ResourceSlice and ResourceClaim informers (from the
+   stable `resource.k8s.io/v1` group) already running in KCM.
+4. Uses `UpdateStatus` to write results to the status subresource.
 
 #### One-time Processing
 
 Following the CSR pattern, the controller processes each request exactly once:
 
-1. When a new ResourcePoolStatusRequest is created, it is added to work queue
-2. Controller checks if `status.observationTime` is already set
-3. If set, the request was already processed - controller skips it
-4. If not set, controller computes pool status and writes to status
-5. Once status is written, the request is never processed again
+1. When a new ResourcePoolStatusRequest is created, it is added to the work queue.
+2. Controller checks if `status` is already non-nil.
+3. If non-nil, the request was already processed — controller skips it.
+4. If nil, controller computes pool status and writes to `status`.
+5. Once `status` is written, the entire object is immutable (spec, metadata,
+   and status all rejected for update by the registry strategy / validation).
 
-To get fresh data, users delete and recreate the request.
+To get fresh data, users delete and recreate the request. (See the TTL
+cleanup section below for automatic deletion of old requests.)
+
+#### Incomplete-Pool Handling and Requeue
+
+When the number of ResourceSlices observed for a pool (at the latest
+generation) is less than the pool's declared `ResourceSliceCount`, the pool
+is considered incomplete:
+
+- The controller sets `pools[i].validationError` with a message (truncated
+  to 256 bytes) and leaves `resourceSliceCount`, `totalDevices`,
+  `allocatedDevices`, `availableDevices`, and `unavailableDevices` unset.
+- The request is requeued (up to `maxRetries = 5`) so drivers have time to
+  publish remaining slices before the status is finalized.
+- If retries are exhausted, the latest calculated status (with the
+  `validationError` markers) is still written so users see the issue.
 
 #### Reusing Existing Informers
 
-The controller reuses ResourceSlice and ResourceClaim informers that are
-already running in KCM for the device-taint-eviction controller. This adds
-minimal overhead since the informers are already cached in memory.
+The controller reuses ResourceSlice and ResourceClaim informers from the
+`resource.k8s.io/v1` informer factory already running in KCM for other DRA
+controllers (e.g. device-taint-eviction). This adds minimal overhead since
+the informers are already cached in memory. The controller constructor
+accepts these shared informers rather than creating its own, following the
+established KCM pattern.
 
-The controller constructor accepts these shared informers rather than
-creating its own, following the established KCM pattern.
+#### TTL-Based Cleanup
+
+The controller runs a cleanup loop every 10 minutes that deletes stale
+ResourcePoolStatusRequest objects:
+
+| State | TTL | Measured from |
+|-------|-----|---------------|
+| Completed / Failed (status set) | 1 hour | `LastTransitionTime` of `Complete`/`Failed` condition |
+| Pending (status nil) | 24 hours | `CreationTimestamp` |
+
+Deletion uses a UID precondition to avoid racing with user recreates. This
+bounds etcd growth without requiring user cleanup and is implemented in
+Alpha (earlier than originally planned for Beta).
+
+#### Controller RBAC
+
+The controller's ClusterRole `system:controller:resourcepoolstatusrequest-controller`
+grants:
+
+- `get`, `list`, `watch`, **`delete`** on `resourcepoolstatusrequests`
+  (delete needed for TTL cleanup)
+- `update`, `patch` on `resourcepoolstatusrequests/status`
+- `get`, `list`, `watch` on `resourceslices` and `resourceclaims`
+- standard events permissions
 
 ### kubectl Integration
 
-Standard kubectl commands work:
+Standard kubectl commands work against the singular resource name
+`resourcepoolstatusrequest` (plural `resourcepoolstatusrequests`). The
+implementation also registers custom table columns so `kubectl get` returns
+a useful summary view:
+
+| Column | Source |
+|--------|--------|
+| Name | `metadata.name` |
+| Driver | `spec.driver` |
+| Total | `sum(status.pools[].totalDevices)` |
+| Available | `sum(status.pools[].availableDevices)` |
+| Allocated | `sum(status.pools[].allocatedDevices)` |
+| Unavailable | `sum(status.pools[].unavailableDevices)` |
+| Errors | count of pools with `validationError` |
+| Pools | `status.poolCount` |
+| Status | `Pending` / `Complete` / `Complete (m/n pools)` if truncated / `Failed` |
+| Completed | Age derived from `Complete`/`Failed` condition `lastTransitionTime` |
 
 ```bash
 # Create request
 $ kubectl create -f request.yaml
 
 # Wait for completion
-$ kubectl wait --for=condition=Complete rpsr/my-request
+$ kubectl wait --for=condition=Complete resourcepoolstatusrequest/my-request
 
 # Get status
-$ kubectl get rpsr/my-request -o yaml
+$ kubectl get resourcepoolstatusrequest/my-request -o yaml
 
 # List all requests
-$ kubectl get rpsr
+$ kubectl get resourcepoolstatusrequests
 
-# Delete request
-$ kubectl delete rpsr/my-request
+# Delete request (or let the TTL sweeper delete it 1h after completion)
+$ kubectl delete resourcepoolstatusrequest/my-request
 ```
 
-Short name `rpsr` is registered for convenience.
+No short name (e.g. `rpsr`) is registered in Alpha; adding one is a possible
+follow-up for Beta.
 
 ### Test Plan
 
@@ -637,9 +738,11 @@ None required.
 #### Unit tests
 
 Coverage targets:
-- Pool status computation: 80%+
-- Cross-slice validation: 80%+
-- Controller logic: 75%+
+- Pool status computation (`pkg/controller/resourcepoolstatusrequest/controller_test.go`)
+- Validation (`pkg/apis/resource/validation/validation_resourcepoolstatusrequest_test.go`)
+- Registry strategy / declarative validation (`pkg/registry/resource/resourcepoolstatusrequest/declarative_validation_test.go`)
+- Metrics (`pkg/controller/resourcepoolstatusrequest/metrics/metrics_test.go`)
+- Printer columns (`pkg/printers/internalversion/printers_test.go`)
 
 Test cases:
 - Driver only (all pools for that driver)
@@ -647,53 +750,68 @@ Test cases:
 - No matching pools for driver
 - Missing driver field (validation error)
 - Various allocation states
-- Cross-slice validation errors
-- Generation handling
-- One-time processing (skip if processed)
+- Incomplete pools (observed slice count < expected) produce per-pool
+  `validationError`, count fields unset, and requeue
+- Older-generation slices ignored (generation handling)
+- Mixed / multi-node pools leave `nodeName` unset
+- One-time processing (skip if `status != nil`)
+- Spec / metadata immutability after status is set
+- TTL cleanup: completed (1h) and pending (24h) requests deleted
+- `limit` respected; `poolCount` reflects total matches
 
 #### Integration tests
 
-Integration tests verify controller logic using **fake clients and informers**
-without requiring a real cluster or DRA driver. These tests focus on the
-controller's internal behavior.
+Located at `test/integration/dra/resourcepoolstatusrequest_test.go`. These
+verify controller behavior end-to-end against a real apiserver with fake /
+in-memory driver data.
 
 Test cases:
-1. Controller starts and watches requests
-2. New request triggers processing
-3. Status updated with correct pool data
-4. Processed requests are skipped (one-time processing)
-5. Validation errors detected and reported
-6. RBAC enforced correctly
-7. Limit field respected, truncated flag set correctly
+1. Controller starts, watches requests, and processes new ones
+2. Status populated with correct pool data
+3. Processed requests are skipped (one-time processing)
+4. Per-pool `validationError` set for incomplete pools; device counts unset
+5. `limit` respected and truncation reflected via `poolCount` vs `len(pools)`
+6. Immutability after status is set (updates rejected)
+7. RBAC: controller can update status; users cannot bypass
 
 #### e2e tests
 
-E2E tests will be added to the existing DRA e2e test suite at `test/e2e/dra/`,
-using the **existing test-driver** (`test/e2e/dra/test-driver/`) that is
-already available in CI. This test-driver publishes ResourceSlices and
-supports creating ResourceClaims, which is sufficient for testing
-ResourcePoolStatusRequest functionality.
+E2E tests are added to the existing DRA e2e test suite at `test/e2e/dra/dra.go`,
+using the existing test-driver (`test/e2e/dra/test-driver/`) behind
+`--feature-gate=DRAResourcePoolStatus`.
 
-Test cases:
-1. Create ResourcePoolStatusRequest via kubectl
-2. Wait for condition Complete using `kubectl wait`
-3. Verify status contains expected pools via `kubectl get`
-4. Create ResourceClaim, create new request, verify updated counts
-5. Delete and recreate request, verify fresh data
-6. Test with multiple pools from the test-driver
-7. Delete request via `kubectl delete`, verify cleanup
+Test cases (already implemented):
+1. Conformance-style resource lifecycle (create / get / update labels /
+   delete) for `resource.k8s.io/v1alpha3 ResourcePoolStatusRequest`,
+   asserting spec immutability via label-only updates.
+2. "should report pool status with correct device counts": create a
+   request, wait for the `Complete` condition, and assert that the single
+   `network` pool reports `totalDevices=10`, `allocatedDevices=0`,
+   `availableDevices=10`, `unavailableDevices=0`, `resourceSliceCount=1`,
+   `generation=1`, `nodeName=nil`.
+3. "should reflect allocated devices after pod is scheduled": schedule a
+   pod that consumes devices, then create a new request and assert the
+   updated `allocatedDevices` / `availableDevices`.
 
 Note: Testing with production DRA drivers (e.g., GPU drivers) is outside
-the scope of CI and would be validated separately by driver vendors.
+the scope of CI and is validated separately by driver vendors.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Alpha (1.36)
 
-- API defined and implemented
-- Controller in KCM behind feature gate
-- Basic kubectl workflow works
-- Unit and integration tests
+- API defined and implemented in `resource.k8s.io/v1alpha3`
+- Controller added to kube-controller-manager behind feature gate
+  `DRAResourcePoolStatus` (default off), gated on
+  `DynamicResourceAllocation`
+- Basic kubectl workflow works, including custom table columns
+- Unit, integration, and e2e tests (including conformance-style resource
+  lifecycle) passing in CI
+- Automatic TTL cleanup of completed (1h) and pending (24h) requests —
+  moved to Alpha to bound etcd growth without requiring user cleanup
+- Per-pool `validationError` reporting for incomplete pools with
+  controller-side requeue
+- Full object immutability once `status` is set
 - Documentation
 
 #### Beta
@@ -702,8 +820,11 @@ the scope of CI and would be validated separately by driver vendors.
 - Validated with at least one production DRA driver (out-of-tree testing)
 - Performance validated at scale (100+ pools)
 - User feedback incorporated
-- Add TTL field for automatic cleanup (`ttlSecondsAfterComplete`)
-- Add per-user rate limiting for request creation
+- Compute `unavailableDevices` from real device taints/conditions
+  (currently always 0 in Alpha)
+- Consider adding a `rpsr` short name
+- Consider per-user rate limiting for request creation
+- Consider configurable TTLs
 - Consider namespace-scoped variant if requested
 
 #### GA
@@ -791,15 +912,21 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 - Check if ResourcePoolStatusRequest objects exist: `kubectl get resourcepoolstatusrequests`
-- Check controller metrics: `resourcepoolstatus_requests_processed_total > 0`
+- Check controller metrics: `resourcepoolstatusrequest_controller_requests_processed_total > 0`
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [ ] Events
   - Event Reason: N/A (no events emitted)
 - [x] API .status
-  - Condition name: `Complete` (status: "True" when processing finished)
-  - Other field: `status.observationTime` is set when calculation is performed
+  - The presence of a non-nil `status` indicates the controller has
+    processed the request.
+  - Condition type `Complete` with status `"True"` signals a successful
+    calculation; `Failed` with `"True"` signals a processing error (the
+    condition `message` carries details).
+  - The `Complete`/`Failed` condition's `lastTransitionTime` indicates
+    when the calculation occurred (this replaces the originally proposed
+    `status.observationTime` field, which was dropped during API review).
 - [ ] Other (Alarm, К8s resources status)
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -809,15 +936,21 @@ No.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+All metrics use the subsystem `resourcepoolstatusrequest_controller` and are
+labeled by `driver_name`. Stability level: ALPHA.
+
 - [x] Metrics
-  - Metric name: `resourcepoolstatus_request_processing_duration_seconds`
-    - Aggregation method: histogram
+  - Metric name: `resourcepoolstatusrequest_controller_request_processing_duration_seconds`
+    - Aggregation method: histogram (exponential buckets starting at 1ms, 15 buckets × base 2)
+    - Labels: `driver_name`
     - Components exposing the metric: kube-controller-manager
-  - Metric name: `resourcepoolstatus_request_processing_errors_total`
+  - Metric name: `resourcepoolstatusrequest_controller_request_processing_errors_total`
     - Aggregation method: counter
+    - Labels: `driver_name`
     - Components exposing the metric: kube-controller-manager
-  - Metric name: `resourcepoolstatus_requests_processed_total`
+  - Metric name: `resourcepoolstatusrequest_controller_requests_processed_total`
     - Aggregation method: counter
+    - Labels: `driver_name`
     - Components exposing the metric: kube-controller-manager
 - [ ] Other (describe)
 
@@ -857,8 +990,9 @@ Yes:
 |----------|---------------------|----------------------|
 | ResourcePoolStatusRequest | CREATE, GET, LIST, DELETE, WATCH | Hundreds per cluster (user-managed, ephemeral) |
 
-Note: Objects are intended to be short-lived. Users should delete requests after reading
-the status. TTL-based auto-cleanup will be added in Beta.
+Note: Objects are intended to be short-lived. Built-in TTL cleanup (Alpha)
+deletes completed requests 1 hour after completion and pending requests
+24 hours after creation.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -875,10 +1009,10 @@ No impact on scheduling or pod startup.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage?
 
 Minimal:
-- etcd: Small objects, users should clean up (TTL in Beta)
-- KCM: Reuses existing informers, adds small controller
+- etcd: Small objects, bounded by built-in TTL cleanup (Alpha: 1h completed / 24h pending)
+- KCM: Reuses existing `resource.k8s.io/v1` informers for ResourceSlice and ResourceClaim, adds a small controller with its own work queue
 - API server: Standard API operations
-- Response size: Bounded by required `driver` field (one driver's pools) and optional `limit` field (values determined at implementation based on size calculations)
+- Response size: Bounded by required `driver` field (one driver's pools), the `limit` field (default 100, max 1000), and the `+k8s:maxItems=1000` constraint on `status.pools`
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -898,9 +1032,10 @@ Requests cannot be created or read. No workload impact.
 
 | Failure Mode | Description | Detection | Mitigations | Diagnostics | Testing |
 |--------------|-------------|-----------|-------------|-------------|---------|
-| Controller not running | ResourcePoolStatusRequest controller in KCM is not running or crashed | Requests stay in pending state (no `status.observationTime`), `resourcepoolstatus_requests_processed_total` metric stays at 0 | Restart KCM, check KCM logs | Check KCM logs for controller startup errors, verify feature gate enabled | Covered by integration tests |
+| Controller not running | ResourcePoolStatusRequest controller in KCM is not running or crashed | Requests stay with `status` unset (no `Complete`/`Failed` condition); `resourcepoolstatusrequest_controller_requests_processed_total` stays at 0 | Restart KCM, check KCM logs | Check KCM logs for controller startup errors, verify feature gate enabled | Covered by integration tests |
 | Informers not synced | ResourceSlice or ResourceClaim informers have not completed initial sync | Controller logs warning, requests delayed | Wait for informer sync, check API server connectivity | Check KCM logs for informer sync status | Covered by integration tests |
-| Request accumulation | Users create many requests without cleanup | etcd storage grows, `kubectl get rpsr` shows many objects | Delete old requests, implement cleanup automation | List requests with `kubectl get rpsr`, check etcd metrics | Documented, TTL planned for Beta |
+| Incomplete pool data | Fewer slices published than `ResourceSliceCount` declared by the driver | `pools[].validationError` set; count fields unset; controller requeues up to 5 times | Ensure driver fully publishes slices; retry by recreating request | Inspect `status.pools[].validationError`; check driver logs | Covered by unit and integration tests |
+| Request accumulation | Users create many requests | etcd storage grows, `kubectl get resourcepoolstatusrequests` shows many objects | Built-in TTL cleanup deletes completed requests after 1h, pending after 24h | List requests, check etcd metrics; check KCM cleanup logs | Covered by integration tests |
 
 ###### What steps should be taken if SLOs are not being met?
 
@@ -914,17 +1049,30 @@ Requests cannot be created or read. No workload impact.
 - 2025-12-20: KEP created in provisional state
 - 2026-01-15: Design revision - ResourceSlice status to ResourcePool
 - 2026-02-07: Design revision - in-tree CSR-like pattern per API review
+- 2026-02-10: KEP merged as implementable (#5749)
+- 2026-02/03: Alpha implementation in kubernetes/kubernetes — API shipped
+  in `resource.k8s.io/v1alpha3` (not `v1alpha1`) with several API-review
+  driven changes: `status` is now a pointer and the whole object is
+  immutable once populated; `observationTime` removed (use the
+  `Complete`/`Failed` condition's `lastTransitionTime`); top-level
+  `validationErrors` and `truncated` removed (per-pool `validationError`
+  and `len(pools) < poolCount` used instead); `sliceCount` renamed to
+  `resourceSliceCount`; count fields made pointers so they can be left
+  unset for incomplete pools; added `Failed` condition type; explicit
+  `limit` bounds (default 100, max 1000); and TTL-based cleanup moved
+  into Alpha.
+- 1.36 (Alpha): feature gate `DRAResourcePoolStatus` (default off)
 
 ## Drawbacks
 
 1. **Asynchronous operation**: User must wait for controller, unlike sync APIs
-   - Mitigation: Processing is fast (seconds); kubectl wait helps
+   - Mitigation: Processing is fast (seconds); `kubectl wait --for=condition=Complete` helps
 
-2. **Objects persist in etcd**: Users must clean up old requests
-   - Mitigation: Document cleanup; consider TTL in future
+2. **Objects persist briefly in etcd**: Each request is a cluster-scoped object
+   - Mitigation: Controller-side TTL cleanup (Alpha) — 1h after completion, 24h for pending
 
 3. **Not real-time**: Shows point-in-time snapshot, not live data
-   - Mitigation: Timestamp shows age; recreate for fresh data
+   - Mitigation: `Complete` condition `lastTransitionTime` shows age; delete and recreate for fresh data
 
 ## Alternatives
 
