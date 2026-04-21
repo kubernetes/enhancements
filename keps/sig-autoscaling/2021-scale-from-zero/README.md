@@ -130,18 +130,18 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -382,7 +382,10 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-- N/A in this case.
+HPA integration tests are being introduced via <https://github.com/kubernetes/kubernetes/pull/138464>, which includes
+a scale-to-zero and back scenario for the `HPAScaleToZero` feature gate. As a follow-up for beta we plan to add
+a negative test case asserting that scale-to-zero does not happen when an HPA is configured with a CPU (resource)
+metric, since scaling to zero is intentionally limited to object/external metrics.
 
 ##### e2e tests
 
@@ -396,10 +399,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-E2E tests will be added under <https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling> to test scale down to `0` and scale up
-with this feature enabled and scale down `1` without this feature.
+E2E tests under <https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling> cover scaling down to `0`
+and back up from `0` based on an external metric with the `HPAScaleToZero` feature gate enabled.
 
-- <test>: <link to test coverage>
+- `[sig-autoscaling] [Feature:HPA] [Feature:HPAScaleToZero] Horizontal pod autoscaling (scale to zero) should scale down to zero and back up based on external metric value`:
+  <https://github.com/kubernetes/kubernetes/blob/master/test/e2e/autoscaling/horizontal_pod_autosclaing_external_metrics.go>
 
 ### Graduation Criteria
 
@@ -472,12 +476,24 @@ in back-to-back releases.
 
 #### Beta
 
-- Allowing time for feedback
-- E2E tests for scale to/from zero have been added
+- Condition-based scale from/to zero implementation merged
+  (<https://github.com/kubernetes/kubernetes/pull/135118>)
+- Unit tests cover behavior with the `HPAScaleToZero` feature gate both enabled
+  and disabled
+- E2E test for scale-to-zero and scale-from-zero based on an external metric
+  under `test/e2e/autoscaling` gated on `HPAScaleToZero`
+- Integration tests cover scale-to-zero and back
+  (<https://github.com/kubernetes/kubernetes/pull/138464>) and a negative case
+  ensuring HPAs configured with resource (CPU) metrics are not scaled to zero
+- Production readiness review approved for beta
+- User-facing documentation updated in `kubernetes/website`
 
 #### GA
 
-- Allowing time for feedback
+- `HPAScaleToZero` feature gate has been enabled by default in beta for at
+  least two releases without blocking bugs
+- Feedback from beta users has been gathered and addressed
+- E2E test(s) have been running consistently without flakes
 
 ### Upgrade / Downgrade Strategy
 
@@ -493,9 +509,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-As this KEP changes the allowed values for `minReplicas`, special care is required for the downgrade case to not prevent any kind of updates for HPA objects using `minReplicas: 0`. The alpha code already accepts `minReplicas: 0` with the flag enabled or disabled since Kubernetes version 1.16 downgrades to any version >= 1.16 aren't an issue.
+As this KEP changes the allowed values for `minReplicas`, special care is required for the downgrade case to not prevent any kind of updates for HPA objects using `minReplicas: 0`. API validation has accepted `minReplicas: 0` with the `HPAScaleToZero` feature gate enabled since Kubernetes 1.16, so downgrades to any version >= 1.16 will not reject existing HPA objects.
 
-Before downgrading all HPAs need to be set to `minReplicas: 1` to avoid any deployments being stuck at `replicas: 1`.
+Before downgrading to a version without the condition-based implementation, all HPAs using `minReplicas: 0` should be set to `minReplicas: 1` and their workloads scaled to at least one replica, otherwise workloads currently scaled to `replicas: 0` may remain stuck at `replicas: 0` (the old controller cannot distinguish "manually paused" from "HPA scaled to zero" without the `ScaledToZero` condition).
 
 ### Version Skew Strategy
 
@@ -511,6 +527,31 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+This feature only affects control-plane components (`kube-apiserver` and
+`kube-controller-manager`); there is no interaction with the kubelet, CRI, CNI,
+or CSI, so node version skew is not relevant.
+
+The relevant skew is between `kube-apiserver` and `kube-controller-manager`:
+
+- **`kube-apiserver` upgraded first, `kube-controller-manager` still on the
+  previous version**: users may create or update HPAs with `minReplicas: 0`,
+  but the older controller does not understand the `ScaledToZero` condition.
+  It will treat `replicas: 0` as "manually paused" and will not scale the
+  workload back up from zero. Operators should either avoid `minReplicas: 0`
+  until both components are on the new version, or manually scale affected
+  workloads back to `replicas >= 1` after the controller is upgraded.
+
+- **`kube-controller-manager` upgraded first, `kube-apiserver` still on the
+  previous version**: this is not a supported skew direction in Kubernetes, but
+  has no adverse effect in practice, since the older API server will continue
+  to reject `minReplicas: 0` and the controller simply never observes HPAs
+  that require the new behavior.
+
+The `HPAScaleToZero` feature gate lives in `kube-apiserver` (for validation)
+and `kube-controller-manager` (for the condition-based scaling behavior).
+Enabling the gate only in one of the two components is effectively a subset of
+the skew cases above.
 
 ## Production Readiness Review Questionnaire
 
@@ -616,7 +657,22 @@ with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
 
-There currently unit tests for the alpha cases and tests planned to be added for the new functionality.
+Yes. Unit tests in `pkg/controller/podautoscaler/horizontal_test.go` exercise
+the HPA controller with the `HPAScaleToZero` feature gate both enabled and
+disabled, covering:
+
+- HPA creation with `minReplicas: 0` being rejected by API validation when the
+  gate is off and accepted when the gate is on.
+- Scaling from zero only occurring when the `ScaledToZero=True` condition is
+  present (i.e. recorded by the HPA itself) and the gate is enabled.
+- The controller conservatively leaving a workload at `replicas: 0` when the
+  gate is off, so manually paused workloads are not disturbed.
+
+An e2e test exists at
+[`test/e2e/autoscaling/horizontal_pod_autosclaing_external_metrics.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/autoscaling/horizontal_pod_autosclaing_external_metrics.go)
+gated on the `HPAScaleToZero` feature gate via `framework.WithFeatureGate`.
+Integration tests covering feature-gate on/off paths are being added in
+<https://github.com/kubernetes/kubernetes/pull/138464>.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -943,6 +999,8 @@ Major milestones might include:
 
 - (2019/02/25) Original design doc: <https://github.com/kubernetes/kubernetes/issues/69687#issuecomment-467082733>
 - (2019/07/16) Alpha implementation (<https://github.com/kubernetes/kubernetes/pull/74526>) merged for Kubernetes 1.16
+- (2026/03/18) Alpha re-implementation (<https://github.com/kubernetes/kubernetes/pull/135118>) merged for Kubernetes 1.36
+- (2026/04/21) Targeted for Beta graduation in Kubernetes 1.37
 
 ## Drawbacks
 
