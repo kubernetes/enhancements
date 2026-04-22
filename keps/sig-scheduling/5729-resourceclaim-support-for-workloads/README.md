@@ -1207,6 +1207,19 @@ PodGroup. It will do this even if there is already a PodGroup reference in the
 `status.reservedFor` list. This leads to the challenge described in the previous
 section.
 
+If the API server is on a version that supports the feature, but
+kube-controller-manager is not, then the ResourceClaim controller may observe
+PodGroups that define `spec.resourceClaims`. When Pods contain matching claims,
+the intent is that those claims are generated for the PodGroup instead of each
+Pod. Even when this feature is disabled, the ResourceClaim controller will check
+a Pod's claims against its PodGroup. If the controller _would have_ created a
+ResourceClaim for the PodGroup _if_ the feature _was_ enabled, then it will
+return an error. Users are expected to restart kube-controller-manager with the
+feature enabled to generate a ResourceClaim for the PodGroup. If the user
+intended to generate a ResourceClaim for that Pod, then the user has to recreate
+the PodGroup without the resource claim and all of its member Pods with the
+resource claim.
+
 ## Production Readiness Review Questionnaire
 
 <!--
