@@ -755,6 +755,8 @@ in back-to-back releases.
 - Gather feedback from alpha
 - Metrics are defined and implemented
 - Additional integration tests are implemented and linked in KEP
+- Interaction with workload aware scheduling is clarified
+- Address scenarios where a preemption victim's grace period exceeds the time window allocated for executing the resize operation (such as VPA's fallback time limit).
 
 #### GA
 
