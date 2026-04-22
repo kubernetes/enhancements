@@ -322,47 +322,123 @@ proposal will be implemented, this is the place to discuss them.
 
 ### How Deferred Resizes will integrate into the Scheduling Queue
 
-In the [UpdatePod event handler](https://github.com/kubernetes/kubernetes/blob/60433d43cf0bb83a2ac7d5e767137b3d510026ec/pkg/scheduler/eventhandlers.go#L147) that the Scheduler
-already has, the Scheduler will check to see if a pod has recently been marked
-as having a `Deferred` resize. If so, the pod will be added to the scheduling queue.
+In the [UpdatePod event handler](https://github.com/kubernetes/kubernetes/blob/60433d43cf0bb83a2ac7d5e767137b3d510026ec/pkg/scheduler/eventhandlers.go#L147) that the Scheduler already has, the Scheduler will check to see if a pod has recently been marked as having a `Deferred` resize. If so, the pod will be added to the scheduling queue.
 
-The scheduling queue will now be shared between new pods and `Deferred` pods, using existing queuing 
-logic to sort them by their current scheduling priority.
+The scheduling queue will now be shared between new pods and `Deferred` pods, using existing queuing logic to sort them by their current scheduling priority.
+
+*See alternative considerations for separate scheduling queues [here](#separate-scheduling-queue) and prioritized resize logic [here](#implementing-prioritized-resizes-logic).*
+
+
+#### Avoid Conflicting Sources of Truth for the Pod
+
+Adding a snapshot of a deferred pod directly to the scheduling queue introduces complications. The pod would exist in two places simultaneously: the cache and the 
+scheduling queue. Any further pod update would require updating both locations, necessitating special handling. There may be places where the scheduler makes assumptions
+that the pod lies in a single place, so we must handle this with care.
+
+To avoid the need to update the deferred pod in two different places, we can instead add to the scheduling queue a reference to the pod in the cache. This can be 
+implemented by changing the Pod stored in PodInfo to instead be an interface with a method GetPod to return the pod:
+
+```go
+type PodGetter interface {
+    GetPod() *v1.Pod
+}
+```
+
+* **For existing scenarios** (i.e. scheduling new pods): The implementation of `GetPod()` can simply return the pod that is stored. The goal is to have identical logic 
+and behavior as today.
+* **For deferred resize scenarios**: The implementation of `GetPod()` can return the pod from the pod cache directly. This would mean we no longer have to store the pod 
+separately, and updates to the pod in the cache will automatically propagate to the scheduling queue. We may need to 'snapshot' the deferred pod right before the 
+binding / preemption cycle, to ensure it's not changing throughout.
+
+This doesn't solve all the "double counting" issues though; we would still need to temporarily remove the pod from the node snapshot when making preemption calculations
+as described in the section below.
+
+*See alternative considerations [here](#avoid-conflicting-sources-of-truth-for-the-pod-1).*
 
 ### Processing Deferred Resizes in the Scheduling Queue
 
-When processing `Deferred` resizes, the Scheduler will skip most of the standard scheduling cycle, 
-as the primary goal is simply to trigger preemption. Instead of searching for a suitable node, the Scheduler 
-will treat these resizes as a `FitError`, automatically moving them to the preemption phase. 
+When processing `Deferred` resizes, the Scheduler will still perform a standard scheduling cycle. It will perform the normal scheduling and 
+binding evaluation, but will restrict its node evaluation search exclusively to the node the deferred pod is already running on. 
 
-Within the preemption plugin, the search for victims must be restricted to the same node as the `Deferred` pod. 
-Due to workload-aware preemption, though the space needs to be freed up on the same node as the `Deferred` pod,
-this can result in preemption of pods on other nodes. 
+In most cases, this restricted search will result in a `FitError`, which allows the Scheduler to naturally cascade into the preemption phase. However, if a `FitError` 
+is not received (e.g., if cluster topology shifts free up space on the target node) and the resize now appears to fit, we will still move the deferred resize pod to the 
+`Unschedulable` queue. This ensures that we maintain full tracking of the deferred pod resize request until the `Deferred` condition is completely removed by the 
+Kubelet. The precise necessity for keeping the pod parked in the `Unschedulable` queue in these scenarios is described in more detail below in [Reconsideration Race Conditions](#reconsideration-race-conditions).
 
-Furthermore, the Scheduler needs to temporarily remove the `Deferred` pod from the node snapshot during calculations 
-to ensure its current resource usage doesn't interfere with the preemption logic.
+Within the preemption plugin, the search for victims must be restricted to the same node as the `Deferred` pod. Due to workload-aware preemption, though the space needs 
+to be freed up on the same node as the `Deferred` pod, this can result in preemption of pods on other nodes. 
+
+Furthermore, the Scheduler needs to temporarily remove the `Deferred` pod from the node snapshot during calculations to ensure its current resource usage doesn't 
+interfere with the preemption logic.
 
 Taking all this into account, the logic for processing a `Deferred` resize is as follows:
 
 1. **Identify Deferred Status**: Confirm the pod has a `Deferred` resize and is already bound to a node.
-2. **Trigger Preemption**: Treat the request as a `FitError` to initiate existing Scheduler preemption logic.
-3. **Isolate Node**: Within the Preemption plugin, narrow the victim search exclusively to the pod's node, noting that 
-this may still result in pods on other nodes being preempted due to workload-aware preemption.
-4. **Snapshot Adjustment**: Temporarily remove the `Deferred` pod from the node snapshot to calculate required space 
-accurately.
-5. **Calculate Victims**: Identify suitable preemption victims and then restore the pod to the snapshot.
-6. **Update Status**: Report the success or failure of the preemption attempt in the pod status. If preemption is insufficient 
-to make room for a `Deferred` resize, the pod should be added back to the scheduling queue to try again in the future.
+2. **Evaluate Fit and Trigger Preemption**: Perform normal node evaluation restricted to the current node. If the resize fits on the node, move the pod into the Unschedulable queue and skip victim selection (see [Reconsideration Race Conditions](#reconsideration-race-conditions) for more details).
+3. **Trigger Preemption**  If a `FitError` occurs, initiate the Scheduler preemption logic.
+4. **Isolate Node**: Within the Preemption plugin, narrow the victim search exclusively to the pod's node, noting that this may still result in pods on other nodes being preempted due to workload-aware preemption.
+5. **Snapshot Adjustment**: Temporarily remove the `Deferred` pod from the node snapshot to calculate required space accurately.
+6. **Calculate Victims**: Identify suitable preemption victims and then restore the pod to the snapshot.
+7. **Update Status**: Report the success or failure of the preemption attempt in the pod status. If preemption is insufficient to make room for a `Deferred` resize, the pod should be added to the Unschedulable queue to try again later. 
+8. **Reevaluation**: When the victim pod is removed, the scheduler will be triggered to move all Unschedulable pods (including the Deferred resize pod) into the scheduling queue, resulting in reevaluation.
 
-### Kubelet Interaction and Resource Reservation
-
-No changes are required to the Kubelet. Currently, the Kubelet monitors pod removals, including evictions, and will 
-automatically retry a resize as soon as it detects that a victim pod has been cleared.
+### Scheduler Resource Reservation
 
 Because the Scheduler uses max(spec, allocated, actual) when determining resource fit, Kubelet allocation of existing 
 resize requests will take precedence over re-scheduling of the evicted pod. This means that the Scheduler does not
-need to take any special action to ensure that the resources requested by the resize will be reserved for
-the resized pod. 
+need to take any specia
+
+### Kubelet-Scheduler Preemption Interaction
+
+*See alternative considerations [here](#kubelet-scheduler-preemption-interaction-1).*
+
+No changes are required to the Kubelet. Currently, the Kubelet monitors pod removals, including evictions, and will 
+
+automatically retry a resize as soon as it detects that a victim pod has been cleared.
+
+#### Reconsideration Race Conditions
+
+It is possible that the kubelet will choose to resize a different pod than the one that triggered the eviction. Consider
+the case where Pod A has a deferred resize and triggers the eviction of Pod B. In the meantime, a higher-priority resize of 
+Pod C may be requested. In this case, the kubelet will correctly prioritize the resize of Pod C over the resize of Pod A.
+In this case, we will need to ensure that Pod A stays in the scheduling queue until its resize can complete successfully, 
+including any additional evictions it may trigger.
+
+We can model deferred resize retries analogous to the way standard scheduling already works today. 
+For standard pods, if a pod cannot be scheduled:
+1. It triggers preemption.
+2. It sets the standard `Unschedulable` condition.
+3. It gets moved to the `Unschedulable` queue.
+4. When the preemption victim is finally removed, all unschedulable pods get moved back to the active (or backoff) queue.
+
+With deferred resize, we can follow a parallel path:
+1. The resize request triggers preemption.
+2. It sets a custom `Unresizable` condition (or temporarily maps to `Unschedulable`).
+3. It gets moved to the `Unschedulable` queue.
+4. When the preemption victim is removed, all unschedulable pods get moved back to the active (or backoff) queue.
+
+The following diagram illustrates the flow:
+
+```mermaid
+graph TD
+    A[Pod A Enters Queue] --> B{Does Resize Fit?}
+    B -- No --> C[Calculate Preemption Victims]
+    C --> D[Evict Pod B]
+    D --> E[Victim Pod B Removed]
+    
+    E --> F{Did Kubelet actuate Pod A?}
+    F -- Yes --> G[Remove Pod A from Tracking]
+    F -- No: Space consumed by competing Pod C --> H[Return Pod A to Unschedulable Queue]
+    
+    B -- Yes: Space cleared but Kubelet hasn't actuated --> I[Park Pod A in Unschedulable Queue]
+```
+
+However, a notable race condition arises: the Kubelet may not finish resizing either Pod A or Pod C before the scheduler evaluates Pod A again. During this reevaluation, the scheduler will observe that the resize now 'fits' on the node during its node fit checks. 
+
+To protect against this race, we park the resize back into the `Unschedulable` queue. The lifecycle then resolves via one of three eventualities:
+- **Pod A is correctly resized**: It loses its deferred condition. The scheduler observes this through watches and discards it from tracking.
+- **Pod C is resized**: (Even though the scheduler preempted for Pod A). There is now no longer enough room for Pod A's resize, which safely remains in the `Unschedulable` queue.
+- **Both Pod A and Pod C get resized**: Both lose deferred conditions and are removed from scheduling queue tracking entirely.
 
 ### Preemption Policies
 
@@ -383,6 +459,9 @@ unnecessary complexity for both users and maintainers:
 If a pod is marked with `preemptionPolicy: PreemptLowerPriority`, the user has already communicated that this workload
 is more important than lower-priority tasks. Whether that importance is manifested during initial placement or vertical 
 scale-up, the intent of the priority remains the same.
+
+*See alternative considerations [here](#preemption-policies-1).*
+
 
 ### Pod Priority, Graceful Termination, and Pod Disruption Budget
 
@@ -1134,3 +1213,17 @@ unnecessary complexity for both users and maintainers:
 If a pod is marked with `preemptionPolicy: PreemptLowerPriority`, the user has already communicated that this workload
 is more important than lower-priority tasks. Whether that importance is manifested during initial placement or vertical 
 scale-up, the intent of the priority remains the same.
+
+### Avoid Conflicting Sources of Truth for the Pod
+
+We considered a few different ways to handle the fact that the pod would now exist in two places: the cache and the 
+scheduling queue.
+
+1. **Late Cache Lookups**: Store the deferred pod itself in the queue, but inspect the cache as a fallback gating layer right before usage.
+2. **Manual Updates**: Directly perform parallel updates to both structures in tandem, manually avoiding double-counting constraints in downstream logic.
+
+### Kubelet-Scheduler Preemption Interaction
+
+We considered introducing a mechanism to communicate to the Kubelet exactly which resize event initiated a preemption cascade. This would eliminate opportunistic race conditions between the Kubelet and the scheduler. However, this adds a lot of complexity for arguably worse behavior.
+
+For example, if a higher-priority resize is requested while room is being made by evicting a lower-priority pod, we want to honor the priority. We want the higher-priority pod to get resized, and the other deferred pod to be put back into the scheduling queue. By avoiding explicit signaling, we let Kubernetes naturally honor pod priority; the Kubelet can allocate capacity to the highest-priority workload, and the displaced pod safely returns to the scheduling queue.
