@@ -423,7 +423,7 @@ We will add the following integration tests to the Job controller `https://githu
 
 #### Alpha (v1.36)
 
-- Feature is implemented behind feature gate `EnableWorkloadWithJob` (default: disabled)
+- Feature is implemented behind feature gate `WorkloadWithJob` (default: disabled)
 - Job controller creates `Workload` and `PodGroup` objects for Jobs when feature gate is enabled
 - Gang scheduling policy applied to indexed parallel Jobs (`parallelism > 1`, `completions = parallelism`, `completionMode: Indexed`)
 - non-gang scheduling Jobs will not have `Workload` and `PodGroup` objects created
@@ -443,7 +443,7 @@ We will add the following integration tests to the Job controller `https://githu
 - Elastic Indexed Jobs must be supported (beta blocker)
 - The controller needs a mechanism to delete `PodGroup`/`Workload` in the case of suspended Jobs and recreate on resume.
 - Create `Workload` and `PodGroup` objects for all non-gang scheduling Jobs with `BasicSchedulingPolicy`
-- Feature gate `EnableWorkloadWithJob` is enabled by default
+- Feature gate `WorkloadWithJob` is enabled by default
 - Address feedback from alpha
 - E2e tests covering gang scheduling scenarios
 - Metrics for monitoring `Workload`/`PodGroup` creation and scheduling outcomes
@@ -506,7 +506,7 @@ There are different Skew scenarios involving the kube-scheduler:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `EnableWorkloadWithJob`
+  - Feature gate name: `WorkloadWithJob`
   - Components depending on the feature gate:
     - kube-controller-manager
     - kube-apiserver
@@ -527,7 +527,7 @@ Yes. When the feature gate is enabled:
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. The feature can be disabled (`EnableWorkloadWithJob: false`).
+Yes. The feature can be disabled (`WorkloadWithJob: false`).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -664,7 +664,7 @@ No. This feature is purely control-plane and does not affect node resources.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-- Verify `EnableWorkloadWithJob` is enabled on all control plane components
+- Verify `WorkloadWithJob` is enabled on all control plane components
 - Check controller-manager logs for errors related to `Workload`/`PodGroup` creation
 - Review existing metrics `job_sync_duration_seconds`, `workload_creation_duration_seconds`
 - Check resource constraints since gang scheduling may fail if cluster doesn't have sufficient resources
