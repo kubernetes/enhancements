@@ -9,11 +9,15 @@ participating-sigs:
 status: implementable
 creation-date: 2026-02-23
 reviewers:
+  - "@macsko"
+  - "@sanposhiho"
+  - "@dom4ha"
   - "@tallclair"
 approvers:
   - "@macsko"
   - "@sanposhiho"
   - "@dom4ha"
+  - "@tallclair"
 
 see-also:
   - "/keps/sig-scheduling/268-priority-preemption"
@@ -33,6 +37,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-scheduler
+      - kubelet
 disable-supported: true
 
 metrics:
