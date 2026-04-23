@@ -309,23 +309,27 @@ type PodGroupTemplateReference struct {
    PodGroupTemplateName string
 }
 
+// PodGroupStatus represents information about the status of a pod group.
 type PodGroupStatus struct {
-   // Conditions represent the latest observations of the PodGroup's state.
-   //
-   // Known condition types:
-   // - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
-   //   - Status=True: All required pods have been assigned to nodes.
-   //   - Status=False: Scheduling failed (i.e., timeout, unschedulable, etc.).
-   //
-   // Known reasons for PodGroupScheduled condition:
-   // - "Scheduled": All required pods have been successfully scheduled.
-   // - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
-   //   affinity/anti-affinity rules, or insufficient capacity for the gang.
-   // - "Preempted": The PodGroup was preempted to make room for higher-priority workloads.
-   // - "Timeout": The PodGroup failed to schedule within the configured timeout.
-   //
-   // +optional
-   Conditions []metav1.Condition
+  // Conditions represent the latest observations of the PodGroup's state.
+  //
+  // Known condition types:
+  // - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
+  // - "DisruptionTarget": Indicates whether the PodGroup is about to be terminated
+	//   due to disruption such as preemption.
+	//
+	// - "Scheduled": The PodGroup has been successfully scheduled.
+  // - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
+  //   affinity/anti-affinity rules, or insufficient capacity for the gang.
+	// - "SchedulerError": The PodGroup cannot be scheduled due to some internal error
+  //   that happened during scheduling, for example due to nodeAffinity parsing errors.
+	//
+	// Known reasons for the DisruptionTarget condition:
+	// - "PreemptionByScheduler": The PodGroup was preempted by the scheduler to make room for
+	//   higher-priority PodGroups or Pods.
+  //
+  // +optional
+  Conditions []metav1.Condition
 }
 ```
 
