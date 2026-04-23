@@ -14,6 +14,8 @@
 - [Design Details](#design-details)
   - [Accept Parameter](#accept-parameter)
   - [Implementation Details](#implementation-details)
+    - [In-tree Controller Migration](#in-tree-controller-migration)
+    - [Per-Client vs. Per-Request Configuration](#per-client-vs-per-request-configuration)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit Tests](#unit-tests)
@@ -87,26 +89,30 @@ This enhancement allows Kubernetes clients to opt-out of receiving `metadata.man
 
 ## Motivation
 
-`metadata.managedFields` is used by the API server for Server-Side Apply (SSA) conflict resolution. However, the vast majority of Kubernetes clients do not actively process this data. Many core components, such as `kube-controller-manager` and `kube-scheduler`, currently use client-side transforms to drop managed fields to save memory. 
+`metadata.managedFields` is used by the API server for Server-Side Apply (SSA) conflict resolution. However, the vast majority of Kubernetes clients do not actively process this data. Many core components, such as `kube-controller-manager` and `kube-scheduler`, currently use client-side transforms to drop managed fields to save memory.
+
+As documented in the [Server-Side Apply KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/555-server-side-apply#scalability), `managedFields` can represent up to **60% of the total size** of an object. The actual overhead varies with the number of field managers and the fields they touch — objects managed by multiple controllers, webhooks, and users in production clusters carry proportionally larger `managedFields`. Reducing this overhead is important for [supporting larger resource sizes as a scalability dimension](https://github.com/kubernetes/kubernetes/issues/134375).
 
 Relying on client-side transforms still incurs significant system-wide costs:
-- **API Server CPU:** The API server still performs expensive serialization of `managedFields`.
-- **Network Overhead:** Large `managedFields` payloads consume significant network bandwidth and increase transfer time during LIST and WATCH operations. This can lead to request timeouts and prevents the API server from efficiently handling large resources.
-- **Client-side GC:** Clients must allocate structural objects (string headers, maps, and slice backing arrays) for `managedFields` before discarding them.
+- **API Server CPU:** The API server still performs expensive serialization of `managedFields`, even when the client will immediately discard it.
+- **Network Overhead:** `managedFields` payloads significantly increase transfer time during LIST and WATCH operations. This contributes to request timeouts and limits the API server's ability to handle large resources (see [#134375](https://github.com/kubernetes/kubernetes/issues/134375)).
+- **Client-side GC:** Clients must allocate structural objects (string headers, maps, and slice backing arrays) for `managedFields` before discarding them, adding unnecessary memory pressure and GC overhead.
 
 ### Goals
 
-- Provide a mechanism for clients to opt-out of receiving `metadata.managedFields` in API responses (GET, LIST, WATCH, PUT, POST, and PATCH).
-- Reduce API Server CPU usage for serialization.
-- Reduce network traffic between API Server and clients.
-- Reduce client-side memory allocations and GC overhead.
+- Reduce API server serialization CPU by eliminating the work of encoding `managedFields` for clients that do not need it. The savings are proportional to the `managedFields` share of each object, which varies by the number of field managers.
+- Reduce network transfer sizes between the API server and clients proportionally to the `managedFields` overhead (up to 60% per the [SSA KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/555-server-side-apply#scalability)), unblocking support for larger resource sizes and reducing LIST/WATCH timeout risk.
+- Reduce client-side memory allocations and GC overhead by eliminating the need to allocate and immediately discard `managedFields` data structures.
+- Migrate in-tree clients (`kube-controller-manager`, `kube-scheduler`) from client-side informer transforms to server-side opt-out, moving the cost savings from the client to the entire request path.
 
 ### Non-Goals
 
 - **General-purpose field selection or opting out of other fields** (though the API design is intended to be extensible to support this in the future without a redesign).
-- **Opting out of fields in the request body of write operations** (this KEP only applies to dropping fields in API responses).
+- **Opting out of fields in the request body of write operations** (this KEP only applies to dropping fields in API responses). `kube-controller-manager` and `kube-scheduler` already send objects without `managedFields` on PUT (due to informer transforms). This is safe because the field manager falls back to the stored object's `managedFields` when the request has none.
 
 ## Proposal
+
+This KEP proposes using an `Accept` header parameter (`drop=metadata.managedFields`) to allow clients to opt-out of receiving `metadata.managedFields` in API responses. When the API server receives a request with this parameter, it uses an alternate serializer that skips `managedFields` during encoding. This is implemented as a new serializer mode with a distinct `runtime.Identifier`, which allows the watch cache's `cachingObject` to naturally cache both the full and stripped serialized forms as separate entries without any changes to the watch cache itself.
 
 ### User Stories
 
@@ -134,14 +140,29 @@ Example:
 
 This follows Kubernetes API conventions where `Accept` parameters are used for structural transformations (e.g., `as=PartialObjectMetadata`, `as=Table`).
 
-While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parameter syntax is designed to be extendable (e.g., by allowing multiple values or comma-separated lists) to avoid redesigning the API if other fields need to be supported in the future.
+While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parameter is designed to be extendable to other fields in the future using `+` as a separator (e.g., `drop=metadata.managedFields+metadata.annotations`). Unknown drop targets are silently ignored for forward compatibility.
 
 ### Implementation Details
 
-1.  **API Server Encoder:** Extend the API server's encoders to support a flag for excluding `managedFields`. When this flag is set, the encoder will skip the `managedFields` field during serialization.
-2.  **Watch Cache (Cacher):** The `cachingObject` in the watch cache will be updated to include the exclusion flag in its serialization cache key. This ensures that mixed opt-in and opt-out watchers correctly receive their respective serialized forms.
-3.  **Discovery:** The capability should be discoverable, likely via the supported media types in the API discovery.
+1.  **API Server Serializer:** Add an `ExcludeManagedFields` option to the JSON and CBOR serializers. When this option is set, the serializer skips `metadata.managedFields` during encoding and exposes this variant as a distinct codec on `runtime.SerializerInfo` with its own `Identifier()`. The content type negotiation layer selects the appropriate serializer based on the `drop` parameter in the `Accept` header.
+2.  **Watch Cache:** No changes are needed to the watch cache or `cachingObject`. The `cachingObject`'s `serializationsCache` is keyed by `runtime.Identifier`. Since the stripped serializer has a different `Identifier` than the full serializer, the cache naturally maintains both forms as separate entries. This means that until all watchers migrate to dropping `managedFields`, each watch event will be serialized twice (once with and once without `managedFields`). Benchmarking shows this dual-serialization adds roughly 62% more time and 83% more memory per event, but this overhead is constant regardless of watcher count and is offset by the smaller payload sizes.
+3.  **Discovery:** The capability should be discoverable via the supported media types in the API discovery.
 4.  **Client-side Mitigation:** Update `managedfields.ExtractInto` to return an explicit error if `managedFields` is missing or nil. This prevents clients that have opted out from accidentally performing operations that require `managedFields` (like certain "extract-modify-patch" workflows).
+
+#### In-tree Controller Migration
+
+As part of this KEP, we will migrate `kube-controller-manager` and `kube-scheduler` to use server-side opt-out instead of their current client-side informer transforms:
+
+- Both components currently use `TransformFunc` on their informers to nil out `managedFields` after deserialization. This saves client memory but does not reduce serialization CPU or network transfer costs.
+- With this KEP, both components will be updated to set the `drop=metadata.managedFields` parameter via their `rest.Config`, moving the field stripping to the API server's serializer. This eliminates the serialization and network costs in addition to the existing client memory savings.
+- The migration will be gated behind the `ManagedFieldsOptOutClient` feature gate. When enabled, the informer transforms for `managedFields` stripping become redundant and will be removed.
+
+#### Per-Client vs. Per-Request Configuration
+
+This KEP introduces per-client configuration via `rest.Config`. The rationale:
+
+- **Per-client is sufficient for `managedFields`:** The primary use case is controllers and informers that never need `managedFields`. These are configured once at client creation time and all requests through that client share the same preference.
+- **Per-request is compatible as future work:** The `Accept` header is inherently per-request at the wire level, so adding per-request configuration in `client-go` (e.g., per-request options that override the client default) would not require any server-side or protocol changes. This KEP does not implement per-request configuration in `client-go`, but the design is forward-compatible with it if future use cases (e.g., dropping different fields for different list calls) require it.
 
 ### Test Plan
 
@@ -173,21 +194,21 @@ None.
 #### Alpha
 
 - Feature implemented. Two feature gates are introduced:
-  - `APIServerDropManagedFields` (Server-side): Introduced at **Beta** and enabled by default, as the functionality is purely optional and depends entirely on the client requesting it via the `Accept` header.
-  - `ClientDropManagedFields` (Client-side): Introduced at **Alpha** and disabled by default. This gate controls whether internal Kubernetes clients (e.g., `kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`.
+  - `ManagedFieldsOptOut` (Server-side, in `kube-apiserver`): Introduced at **Alpha** and disabled by default, gating whether the API server recognizes the `drop=metadata.managedFields` parameter in the `Accept` header.
+  - `ManagedFieldsOptOutClient` (Client-side, in `client-go`): Introduced at **Alpha** and disabled by default. This gate controls whether internal Kubernetes clients (e.g., `kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`. Independent of the server-side gate so client and server rollouts can be staged separately.
 - Support for GET, LIST, WATCH, PUT, POST, and PATCH operations in the API server.
 - `Accept` parameter `drop=metadata.managedFields` recognized by the API server.
 - `managedfields.ExtractInto` updated with error handling.
 
 #### Beta
 
-- `ClientDropManagedFields` is promoted to Beta and enabled by default.
+- `ManagedFieldsOptOutClient` is promoted to Beta and enabled by default.
 - Integration with major clients/controllers (e.g., kube-scheduler, kube-controller-manager) to use the opt-out is enabled by default.
 - Performance benchmarks confirming savings in API server and clients.
 
 #### GA
 
-- Both feature gates removed.
+- Both feature gates (`ManagedFieldsOptOut` and `ManagedFieldsOptOutClient`) removed.
 - Full documentation on usage and benefits.
 - The feature has been available in Beta for at least 2 releases to ensure sufficient soak time.
 
@@ -215,8 +236,8 @@ To ensure consistent behavior and support clients running against older API serv
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] **Feature gate (also fill in values in `kep.yaml`)**
-  - Feature gate name: `APIServerDropManagedFields` and `ClientDropManagedFields`
-  - Components depending on the feature gate: `kube-apiserver` (for `APIServerDropManagedFields`), `kube-scheduler`, `kube-controller-manager` (for `ClientDropManagedFields`)
+  - Feature gate name: `ManagedFieldsOptOut` and `ManagedFieldsOptOutClient`
+  - Components depending on the feature gate: `kube-apiserver` (for `ManagedFieldsOptOut`), `kube-scheduler`, `kube-controller-manager` (for `ManagedFieldsOptOutClient`)
 
 ###### Does enabling the feature change any default behavior?
 
@@ -224,7 +245,7 @@ No. The API server behavior only changes when clients explicitly opt-out using t
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling `APIServerDropManagedFields` will cause the API server to ignore the `drop` parameter and always return `managedFields`. Disabling `ClientDropManagedFields` will cause clients to stop sending the `Accept` header. Feature gates are typically disabled by setting the flag to `false` and restarting the component.
+Yes. Disabling `ManagedFieldsOptOut` will cause the API server to ignore the `drop` parameter and always return `managedFields`. Disabling `ManagedFieldsOptOutClient` will cause clients to stop sending the `Accept` header. Feature gates are typically disabled by setting the flag to `false` and restarting the component.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -316,8 +337,9 @@ If clients that have opted out suddenly start receiving `managedFields` despite 
 ## Implementation History
 
 - 2026-03-10: Enhancement issue created.
-- 2026-03-30: PoC PR opened.
+- 2026-03-30: PoC implemented, validating the serializer-based approach with separate `Identifier` and benchmarking dual-serialization overhead.
 - 2026-04-14: KEP drafted.
+- 2026-04-23: KEP updated to address reviewer feedback: added concrete numbers, restructured goals, clarified implementation approach based on PoC validation, added in-tree controller migration plan, per-client vs per-request rationale.
 
 ## Drawbacks
 
