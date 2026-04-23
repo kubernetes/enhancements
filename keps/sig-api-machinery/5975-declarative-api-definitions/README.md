@@ -138,6 +138,7 @@ lists to cover:
   - `AllowCreateOnUpdate` is `false`
   - `AllowUnconditionalUpdate` is `true`
   - `DefaultGarbageCollectionPolicy` is `DeleteDependents`
+- Enablement of generated support code (DeepCopy, Declarative Validation, etc.)
 
 It should be possible to make exceptions, but exceptions should be tracked in a file
 owned exclusively by API approvers.
