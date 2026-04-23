@@ -755,10 +755,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### GA
 
-- Feature enabled by default.
-- No major bugs reported in two consecutive releases.
-- Verified scalability in clusters with 5000+ nodes.
-- PRR approved and observability metrics in place.
+- 1 example of real-world usage
+- Allowing time for feedback
 
 #### Deprecation
 <!--
@@ -1286,7 +1284,9 @@ Major milestones might include:
 - 2025-03: KEP revised to introduce BindingConditions as a general mechanism.
 - 2025-05: Updated KEP submitted for review.
 - 2025-06: Improve some API descriptions, and clarify that "fail and reschedule" is an anti-pattern.
-- 2025-08: Updated KEP for promotion to beta
+- 2025-08: Updated KEP for alpha in v1.35.
+- 2026-02: Updated KEP for promotion to beta.
+- 2026-04: Updated KEP for graduates to stable.
 
 ## Drawbacks
 
