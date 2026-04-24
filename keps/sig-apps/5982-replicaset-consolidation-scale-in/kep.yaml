@@ -5,6 +5,8 @@ authors:
 owning-sig: sig-apps
 participating-sigs:
   - sig-autoscaling
+  - sig-node
+  - sig-scheduling
 status: provisional
 creation-date: 2026-03-27
 reviewers:
