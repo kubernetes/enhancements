@@ -224,6 +224,13 @@ different pieces of underlying hardware. Two devices that do not share any
 counter set are never compared via this field, even if they live on the same
 node or in the same `ResourceSlice`.
 
+**Naming convention used in examples.** A device of type `T` lists `T` in its
+groups. When types `T1…Tn` are mutually co-allocatable, every device of those
+types additionally lists a shared composite group (e.g., `t1t2`). A type that
+is compatible with no other type lists only `[T]`. The scheduler does not
+parse group names — this convention is purely for readability; any opaque
+strings that satisfy the symmetry requirement work.
+
 Example showing MIG and FOO partitions on the same physical GPU:
 
 ```yaml
@@ -264,7 +271,7 @@ spec:
         - counterSet: gpu-1-cs
           compatibilityGroups:
             - foo
-            - bar
+            - foobar
           counters:
             multiprocessors:
               value: "17"
@@ -272,17 +279,19 @@ spec:
       consumesCounters:
         - counterSet: gpu-1-cs
           compatibilityGroups:
-            - foo
             - bar
+            - foobar
           counters:
             multiprocessors:
               value: "17"
 ```
 
-- `gpu-1-mig1` and `gpu-1-foo-part` share no compatibility group (`mig` vs
-`foo`/`bar`), so they cannot be co-allocated on the same counter set.
-- `gpu-1-foo-part` and `gpu-1-bar-part` share compatibility groups (`foo`, `bar`),  
-so they can be co-allocated on the same counter set.
+- `gpu-1-mig1` (groups: `mig`) and `gpu-1-foo-part` (groups: `foo`, `foobar`)
+share no compatibility group, so they cannot be co-allocated on the same
+counter set.
+- `gpu-1-foo-part` (groups: `foo`, `foobar`) and `gpu-1-bar-part` (groups:
+`bar`, `foobar`) share the `foobar` group, so they can be co-allocated on the
+same counter set.
 
 ### Examples
 
@@ -641,16 +650,22 @@ pod-b becomes Unschedulable with event: "claim violates device compatibility
 constraints". No cryptic preparation failure, no resource thrashing.
 
 Two MIG devices (both group: `mig`) or two MPS devices (both group: `mps`) can
-still be co-allocated, since they share a group.
+still be co-allocated, since they share a group. Each device lists only its
+own type because MIG and MPS are not compatible with each other; if they
+were, they would also share a composite group like `migmps`.
 
 #### Example 4: Multiple compatible groups with an incompatible group
 
 A device may support more than two partitioning schemes, some of which can
 coexist. In this example, a device advertises three partition types: `foo`,
 `bar`, and `baz`. `foo` and `bar` can coexist on the same device, but `baz`
-is incompatible with both. To express this, `foo` devices include `bar` in
-their compatibility groups and vice versa, while `baz` devices only list
-their own group.
+is incompatible with both.
+
+By convention, each device's `compatibilityGroups` is a composite of the
+types it can be co-allocated with: each device lists its own type, plus a
+shared composite group for every set of types it is compatible with. So
+`foo` devices list `[foo, foobar]`, `bar` devices list `[bar, foobar]`, and
+`baz` — compatible with no other type — lists `[baz]`.
 
 This example is written generically — the counter name `units` stands in for
 any hardware-specific resource (SMs, bandwidth, slots).
@@ -695,7 +710,7 @@ spec:
         - counterSet: device-0-counters
           compatibilityGroups:
             - foo
-            - bar
+            - foobar
           counters:
             units:
               value: "25"
@@ -708,7 +723,7 @@ spec:
         - counterSet: device-0-counters
           compatibilityGroups:
             - bar
-            - foo
+            - foobar
           counters:
             units:
               value: "25"
@@ -726,14 +741,14 @@ spec:
               value: "50"
 ```
 
-`device-0-foo-0` (groups: `foo`, `bar`) and `device-0-bar-0` (groups: `bar`,
-`foo`) share compatibility groups, so they can be co-allocated. `device-0-baz-0`
-belongs only to `baz`, which shares no group with either foo or bar devices, so
-it cannot be co-allocated with them.
+`device-0-foo-0` (groups: `foo`, `foobar`) and `device-0-bar-0` (groups:
+`bar`, `foobar`) share the `foobar` group, so they can be co-allocated.
+`device-0-baz-0` (groups: `baz`) shares no group with either, so it cannot be
+co-allocated with them.
 
 For instance, if pod-a is allocated `device-0-foo-0`, a subsequent pod
-requesting `device-0-bar-0` succeeds (both share `foo` and `bar`), but a pod
-requesting `device-0-baz-0` is rejected (`foo`/`bar` vs `baz` — no shared
+requesting `device-0-bar-0` succeeds (both share `foobar`), but a pod
+requesting `device-0-baz-0` is rejected (`foo`/`foobar` vs `baz` — no shared
 group).
 
 ### Scheduler Changes
