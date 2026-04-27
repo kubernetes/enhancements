@@ -1,0 +1,42 @@
+title: Graduate metrics.k8s.io API to stable
+kep-number: 5207
+authors:
+  - "@tico88612"
+owning-sig: sig-instrumentation
+participating-sigs: []
+status: implementable
+creation-date: "2026-02-24"
+reviewers:
+  - "@rexagod"
+  - "@dgrisonnet"
+approvers:
+  - "@rexagod"
+  - "@dgrisonnet"
+
+see-also:
+  - https://github.com/kubernetes/design-proposals-archive/blob/main/instrumentation/resource-metrics-api.md
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.6" # PR 41824
+  beta: "v1.8" # PR 51653
+  stable: "v1.37"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: []
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics: []
