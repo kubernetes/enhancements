@@ -168,8 +168,9 @@ metadata:
     uid: <workload-uid>
 spec:
   podGroupTemplateRef:
-    workloadName: <workload-name>
-    podGroupTemplateName: <podGroup-template-name>
+    workload:
+      workloadName: <workload-name>
+      podGroupTemplateName: <podGroup-template-name>
   schedulingPolicy:
     gang:
       minCount: 8  # Equal to Job.spec.parallelism
@@ -253,7 +254,7 @@ A `Workload` is considered the Workload for this Job object if:
 
 Similarly, a `PodGroup` is considered the `PodGroup` for this Job if:
 - The `PodGroup` is in the Job’s namespace
-- Its `spec.podGroupTemplateReference.workloadName` equals the name of the `Workload` for this Job. 
+- Its `spec.podGroupTemplateReference.workload.workloadName` equals the name of the `Workload` for this Job. 
 
 #### Controller Workflow
 
