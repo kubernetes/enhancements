@@ -312,26 +312,20 @@ There will be changes required in the Volume Snapshot CRDs and the CSI snapshott
 Add topology field to `VolumeSnapshotContentSpec` object:
 
 ```go
-// TopologySegment represents a single topology segment as a set of key-value
-// pairs, e.g. {"topology.kubernetes.io/region": "us-west-2", "topology.kubernetes.io/zone": "us-west-2a"}.
-type TopologySegment struct {
-	// segments is a map of topology key-value pairs.
-	// +optional
-	Segments map[string]string `json:"segments,omitempty" protobuf:"bytes,1,rep,name=segments"`
-}
-
 type VolumeSnapshotContentSpec struct {
 	// ... existing fields ...
 
-	// AccessibleTopology represents where (regions, zones, racks, etc.) the snapshot
-	// is accessible from. Each entry represents a topology segment from which a
-	// volume can be provisioned using this snapshot as a source.
-	// This information is returned by the CSI driver in the CreateSnapshotResponse
-	// and stored here.
+	// accessibleTopology represents the node topologies from which a volume can
+	// be provisioned using this snapshot as a source. This is derived from the
+	// CSI driver's CreateSnapshotResponse. The scheduler compares these terms
+	// against node labels to filter candidate nodes for PVCs that reference
+	// this snapshot as a data source with WaitForFirstConsumer volume binding.
+	// The shape mirrors StorageClass.allowedTopologies so the scheduler can
+	// use the same label-expression matching against node topology.
 	// This field is immutable.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="accessibleTopology is immutable"
-	AccessibleTopology []TopologySegment `json:"accessibleTopology,omitempty" protobuf:"bytes,7,rep,name=accessibleTopology"`
+	AccessibleTopology []v1.TopologySelectorTerm `json:"accessibleTopology,omitempty" protobuf:"bytes,7,rep,name=accessibleTopology"`
 }
 ```
 
@@ -366,12 +360,14 @@ Spec:
     UID:               123-456-789
   # Topology field - snapshot accessible from two zones
   Accessible Topology:
-    - segments:
-        topology.kubernetes.io/region: us-west-2
-        topology.kubernetes.io/zone: us-west-2a
-    - segments:
-        topology.kubernetes.io/region: us-west-2
-        topology.kubernetes.io/zone: us-west-2b
+    - matchLabelExpressions:
+        - key: topology.kubernetes.io/region
+          values:
+            - us-west-2
+        - key: topology.kubernetes.io/zone
+          values:
+            - us-west-2a
+            - us-west-2b
 Status:
   Creation Time:    1234567890000000
   Ready To Use:     true
@@ -382,23 +378,23 @@ Events:             <none>
 
 #### VolumeSnapshotClass CRD
 
-Add an optional topology requirements field to `VolumeSnapshotClass` to allow admins to specify their desired snapshot topology requirements. This maps to the `AccessibilityRequirements` field in the CSI `CreateSnapshotRequest`.
+Add an optional `AllowedTopologies` field to `VolumeSnapshotClass` to allow admins to restrict the node topologies where snapshots created from this class are accessible from. This mirrors the `AllowedTopologies` field on `StorageClass` and maps to the `AccessibilityRequirements` field in the CSI `CreateSnapshotRequest`.
 
 ```go
 type VolumeSnapshotClass struct {
 	// ... existing fields ...
 
-	// topologyRequirements specifies where (regions, zones, racks, etc.) snapshots
-	// created using this class should be accessible from. This is passed to the CSI
-	// driver as AccessibilityRequirements in the CreateSnapshotRequest.
-	// If not specified, the CSI driver may determine another method to declare
-	// topology requirements.
+	// allowedTopologies restricts the node topologies where snapshots created
+	// using this class are accessible from. Each volume plugin defines its own
+	// supported topology specifications. An empty list means there is no
+	// topology restriction. This is passed to the CSI driver as
+	// AccessibilityRequirements in the CreateSnapshotRequest.
 	// +optional
-	TopologyRequirements []TopologySegment `json:"topologyRequirements,omitempty" protobuf:"bytes,5,rep,name=topologyRequirements"`
+	AllowedTopologies []v1.TopologySelectorTerm `json:"allowedTopologies,omitempty" protobuf:"bytes,5,rep,name=allowedTopologies"`
 }
 ```
 
-Example VolumeSnapshotClass with topology requirements:
+Example VolumeSnapshotClass with allowed topologies:
 
 ```yaml
 apiVersion: snapshot.storage.k8s.io/v1
@@ -407,12 +403,14 @@ metadata:
   name: csi-aws-vsc
 driver: ebs.csi.aws.com
 deletionPolicy: Delete
-topologyRequirements:
-  - segments:
-      topology.kubernetes.io/region: us-west-2
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/region
+        values:
+          - us-west-2
 ```
 
-When present, the sidecar controller reads `TopologyRequirements` from the class and passe it to CSI `CreateSnapshotRequest.AccessibilityRequirements`. If not specified, the request is sent without topology requirements.
+When present, the sidecar controller reads `AllowedTopologies` from the class and converts it into CSI `CreateSnapshotRequest.AccessibilityRequirements`. If not specified, the request is sent without topology requirements.
 
 #### Snapshotter (pkg/snapshotter)
 
@@ -478,11 +476,9 @@ func (ctrl *csiSnapshotSideCarController) createSnapshotWrapper(content *crdv1.V
 
 	// Try to build requirements from VolumeSnapshotClass if feature gate is enabled
 	var accessibilityRequirements *csi.TopologyRequirement
-	if feature.DefaultFeatureGate.Enabled(features.VolumeSnapshotTopology) && class != nil && len(class.TopologyRequirements) > 0 {
+	if feature.DefaultFeatureGate.Enabled(features.VolumeSnapshotTopology) && class != nil && len(class.AllowedTopologies) > 0 {
 		accessibilityRequirements = &csi.TopologyRequirement{
-			Preferred: []*csi.Topology{
-				{Segments: class.TopologyRequirements},
-			},
+			Preferred: allowedTopologiesToCSI(class.AllowedTopologies),
 		}
 	}
 
@@ -495,13 +491,13 @@ func (ctrl *csiSnapshotSideCarController) createSnapshotWrapper(content *crdv1.V
 
 	// Patch VolumeSnapshotContent Spec with topology from CSI driver response
 	if feature.DefaultFeatureGate.Enabled(features.VolumeSnapshotTopology) && len(accessibleTopology) > 0 {
-		topologySegments := convertCSITopologyToSegments(accessibleTopology)
-		if len(topologySegments) > 0 {
+		terms := convertCSITopologyToTerms(accessibleTopology)
+		if len(terms) > 0 {
 			patches := []utils.PatchOp{
 				{
 					Op:    "add",
 					Path:  "/spec/accessibleTopology",
-					Value: topologySegments,
+					Value: terms,
 				},
 			}
 			content, err = utils.PatchVolumeSnapshotContent(content, patches, ctrl.clientset, "")
@@ -514,12 +510,12 @@ func (ctrl *csiSnapshotSideCarController) createSnapshotWrapper(content *crdv1.V
 	return content, nil
 }
 
-// convertCSITopologyToSegments converts CSI Topology to the []TopologySegment format
-// used by VolumeSnapshotContentSpec.AccessibleTopology.
-func convertCSITopologyToSegments(csiTopology []*csi.Topology) []crdv1.TopologySegment {
-	var segments []crdv1.TopologySegment
+// convertCSITopologyToTerms converts CSI Topology segments into the
+// []v1.TopologySelectorTerm shape used by VolumeSnapshotContentSpec.AccessibleTopology.
+func convertCSITopologyToTerms(csiTopology []*csi.Topology) []v1.TopologySelectorTerm {
+	var terms []v1.TopologySelectorTerm
   // ... any conversion necessary
-	return segments
+	return terms
 }
 ```
 
@@ -541,7 +537,7 @@ The plugin implements two extension points: `PreFilter` and `Filter`.
 
 `PreFilter` runs once per scheduling cycle. It inspects the pod's PVC volumes, resolves any snapshot data sources to their `VolumeSnapshotContent`, and caches the `AccessibleTopology` in the `CycleState`. This avoids repeating the lookup for every candidate node.
 
-`Filter` runs once per candidate node. It retrieves the cached snapshot topology from `CycleState` and checks whether the node's topology labels intersect with any of the snapshot's `AccessibleTopology` segments. If there is no intersection, the node is marked `Unschedulable`.
+`Filter` runs once per candidate node. It retrieves the cached snapshot topology from `CycleState` and checks whether the node's labels satisfy any of the snapshot's `AccessibleTopology` terms (the same label-expression matching used for `StorageClass.AllowedTopologies`). If no term matches, the node is marked `Unschedulable`.
 
 If a `VolumeSnapshotContent` has no `AccessibleTopology` set (e.g., the CSI driver does not support topology, or the feature gate was disabled when the snapshot was created), the plugin does not filter any nodes and the core scheduler behaves as usual.
 
@@ -556,9 +552,9 @@ type SnapshotTopology struct { ... }
 // result in CycleState.
 func (pl *SnapshotTopology) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) { ... }
 
-// Filter checks whether the candidate node's topology labels intersect with
-// any cached snapshot AccessibleTopology segment. Returns Unschedulable if
-// there is no match.
+// Filter checks whether the candidate node's labels satisfy any of the
+// cached snapshot AccessibleTopology terms (via TopologySelectorTerm
+// match expressions). Returns Unschedulable if no term matches.
 func (pl *SnapshotTopology) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status { ... }
 ```
 ### What happens with statically provisioned snapshots? 
@@ -577,7 +573,7 @@ The SP may return a transient gRPC error. The sidecar controller's existing retr
 If the driver does not populate `AccessibleTopology` in the `CreateSnapshotResponse`, the sidecar controller simply skips the topology patch. The `VolumeSnapshotContent` is created successfully without topology information. This ensures backward compatibility with drivers that do not support topology.
 
 **No nodes match the snapshot's `AccessibleTopology` (scheduler plugin):**
-All candidate nodes are filtered out by the plugin because none have topology labels that intersect with the snapshot's `AccessibleTopology`. The pod remains unschedulable with an event indicating the topology mismatch. This is a permanent failure unless new nodes are added in a compatible topology.
+All candidate nodes are filtered out by the plugin because no node's labels satisfy any of the snapshot's `AccessibleTopology` terms. The pod remains unschedulable with an event indicating the topology mismatch. This is a permanent failure unless new nodes are added in a compatible topology.
 
 **VolumeSnapshotContent has topology field empty:**
 In this case, default scheduler behavior will run, so no snapshot topology will be taken into account when filtering out nodes.
@@ -634,8 +630,8 @@ Since the e2e framework does not currently support enabling or disabling feature
 Additionally, unit tests for the scheduler plugin will cover:
 - PreFilter correctly resolves PVC → VolumeSnapshot → VolumeSnapshotContent and caches `AccessibleTopology`.
 - PreFilter is a no-op when the pod has no snapshot-sourced PVCs.
-- Filter rejects nodes whose topology labels do not intersect with the snapshot's `AccessibleTopology`.
-- Filter passes nodes whose topology labels match at least one `AccessibleTopology` segment.
+- Filter rejects nodes whose labels do not satisfy any term in the snapshot's `AccessibleTopology`.
+- Filter passes nodes whose labels satisfy at least one `AccessibleTopology` term.
 - Filter is a no-op when `AccessibleTopology` is empty (backward compatibility).
 
 ##### Integration tests
