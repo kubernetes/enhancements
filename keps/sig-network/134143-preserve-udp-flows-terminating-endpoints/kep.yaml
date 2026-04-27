@@ -1,0 +1,27 @@
+title: Preserve UDP flows for terminating endpoints
+kep-number: 134143
+authors:
+  - "@kairosci"
+owning-sig: sig-network
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: 2026-03-31
+reviewers:
+  - "@danwinship"
+approvers:
+  - "@danwinship"
+
+stage: alpha
+
+latest-milestone: ""
+
+milestone:
+  alpha: ""
+
+feature-gates:
+  - name: PreserveUDPFlowsTerminatingEndpoints
+    components:
+      - kube-proxy
+      - kube-apiserver
+disable-supported: true
