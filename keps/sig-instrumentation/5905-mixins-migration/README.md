@@ -448,8 +448,18 @@ in back-to-back releases.
 
 #### ALPHA
 
+- Fulfill all pre-requisites based on the feedback received on this [Slack
+  thread] regarding the migration effort discussed in this KEP, which
+  essentially points to the [rules for donated repositories].
+  - Do note that even though this repository is housed under an organization
+    that is owned by the Kubernetes Enterprise account, we'll still treat the
+    repository in question as a donated repository, as indicated in the thread
+    above. Hence, the aforementioned rules apply.
 - KEP merged to indicate SIG acceptance of the proposal.
 - `kubernetes-mixin` repository created under `kubernetes-sigs` organization.
+
+[Slack thread]: https://kubernetes.slack.com/archives/C01672LSZL0/p1771318285155979
+[rules for donated repositories]: https://github.com/kubernetes/community/blob/main/github-management/kubernetes-repositories.md#rules-for-donated-repositories
 
 #### BETA
 
