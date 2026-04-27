@@ -8,6 +8,7 @@
   - [Background](#background)
 - [Proposal](#proposal)
   - [Enforcement of Best Practices](#enforcement-of-best-practices)
+  - [Code generation](#code-generation)
   - [API Declarations](#api-declarations)
   - [Validation](#validation)
   - [Warnings](#warnings)
@@ -55,8 +56,21 @@ that obscure those differences.
 It should be impossible for an API author to accidentally violate standard patterns.
 Deliberate violations should require an exception from an API reviewer.
 
-It should be easy to adhere to the standard patterns. A simple resource
-should need nothing more than:
+Rather than registering a multitude of code generators in the `doc.go` for each API
+definition package, a developer should simply provide required information in a single
+declaration, e.g.:
+
+```yaml
+apiVersion: apidefinitions.k8s.io/v1alpha1
+kind: APIVersion
+metdata:
+  name: admission.k8s.io/v1
+spec:
+  modelPackage: io.k8s.admission
+```
+
+Additionally, it should be easy to adhere to the standard patterns when in code. A
+simple resource should need nothing more than a trivial storage registration:
 
 ```go
 func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
@@ -67,7 +81,9 @@ func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
 }
 ```
 
-Validation, warnings, field wiping/resetting, generation management, field dropping 
+Which could also be generated in the future.
+
+All code generation, validation/warning wiring, field wiping/resetting, generation management, field dropping 
 of feature gated fields, and so on, should happen correctly by default. These behaviors should be
 driven by information already available in the API definition (types.go files) such as declarative
 validation and feature gate tags.
@@ -145,6 +161,43 @@ owned exclusively by API approvers.
 
 We don't want to have to remember to add the safety nets when adding new groups and new versions.
 So we will structure them such that they're automatically added and automatically enforced.
+
+### Code generation
+
+Rather than independently enable individual code generators with tags, code generation will
+be on-by-default for all API definitions in code where declaration files exist.
+
+`GroupVersion` will be placed in external API definition directories, for example:
+
+`staging/src/k8s.io/api/admission/v1/apiversion.yaml`:
+
+```yaml
+apiVersion: apidefinitions.k8s.io/v1alpha1
+kind: APIVersion
+metdata:
+  name: admission.k8s.io/v1
+spec:
+  modelPackage: io.k8s.admission
+```
+
+This file defines all common properties of a group and it's presence indicates that
+all external code generation, such as typed clients and openapi, should be run for this
+group of resources.
+
+A similar file will be used to define internal versions, for example:
+
+```yaml
+apiVersion: apidefinitions.k8s.io/v1alpha1
+kind: InternalVersion
+metdata:
+  name: admission.k8s.io
+spec:
+  # ...
+```
+
+Our long term goal is for all declarative information about an API lives either in `types.go` files
+or these files and that the below "API Declaration" improvements lead to generation of all intermediate
+artifacts based on these data sources.
 
 ### API Declarations
 
