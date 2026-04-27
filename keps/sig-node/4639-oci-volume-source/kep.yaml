@@ -7,7 +7,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-storage
-status: implementable
+status: implemented
 creation-date: 2024-05-17
 reviewers:
   - "@BigVan"
@@ -60,7 +60,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kubelet
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
