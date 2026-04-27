@@ -1,0 +1,17 @@
+title: Client Opt-out for managedFields in API Response
+kep-number: 5958
+authors:
+  - "@yongruilin"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-scalability
+reviewers:
+  - "@serathius"
+approvers:
+  - "@jpbetz"
+editor: TBD
+creation-date: 2026-04-02
+last-updated: 2026-04-23
+status: implementable
+latest-milestone: "v1.37"
+stage: "alpha"
