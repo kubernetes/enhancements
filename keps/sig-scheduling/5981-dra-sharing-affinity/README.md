@@ -465,7 +465,7 @@ workloads.
 device, preventing other more common workloads from using the remaining 90%
 capacity.
 
-**Mitigation**: A scoring plugin will prioritize packing compatible workloads
+**Mitigation**: The allocator's device-selection preference will prioritize packing compatible workloads
 onto already-locked devices before consuming "clean" (unlocked) devices. This
 minimizes the number of devices locked to a single affinity group.
 
@@ -483,7 +483,7 @@ asks "which Pods free up slots?" — not "which Pods clear the lock?" The
 scheduler might preempt an unrelated Pod, freeing a slot on a device still
 locked to the wrong value.
 
-**Mitigation (Alpha)**: The scoring plugin reduces the probability by packing
+**Mitigation (Alpha)**: The allocator's device-selection preference reduces the probability by packing
 compatible workloads and preserving clean devices. However, this is a soft
 mitigation — it does not guarantee that a clean device will always be available,
 and alpha does not provide lock-breaking preemption.
@@ -520,7 +520,7 @@ rare values.
 
 **Mitigation**: In many cases, affinity values are externally defined (subnet
 names, partition keys) and cannot be validated by the driver. The primary
-mitigation is the scoring plugin: by packing compatible workloads onto
+mitigation is the allocator's device-selection preference: by packing compatible workloads onto
 already-locked devices before consuming clean ones, the scheduler naturally
 limits fragmentation even when affinity values are unpredictable. Additionally,
 cluster administrators can use `DeviceClass` CEL selectors to restrict which
@@ -536,6 +536,93 @@ Per-device overhead is bounded at 8 key-value pairs in
 `AllocatedState.AffinityStates`, and entries are cleared when all claims release
 the device. The total overhead is proportional to active shared allocations,
 not total devices.
+
+## Open Questions
+
+The following design choices are open for WG Device Management and sig-scheduling
+discussion. Reviewer input is welcomed.
+
+### Structured Parameters: inside opaque config vs. dedicated typed field
+
+The current design embeds a well-known JSON schema inside `OpaqueDeviceConfiguration`,
+which the scheduler recognizes via `opaque.driver: resource.k8s.io` plus an
+`apiVersion` / `kind` discriminator in the payload. This approach was suggested
+to avoid adding a new API field on `ResourceClaim`. An alternative is to
+introduce a dedicated structured field outside opaque config — either on
+`DeviceRequest` or as a peer to `OpaqueDeviceConfiguration` — that the scheduler
+reads natively.
+
+Both approaches have been raised in WG feedback. The tradeoffs:
+
+| Dimension | Well-known schema inside opaque (current) | Dedicated structured field outside opaque |
+|:---|:---|:---|
+| API change to `ResourceClaim` | None | New typed field required |
+| Validation | Runtime scheduler-side recognition; malformed payload handling specified in this KEP | Native API admission validation; schema enforced by API server |
+| Versioning | Embedded `apiVersion`/`kind` in payload | Native Kubernetes API versioning |
+| Tooling visibility | `kubectl` sees opaque bytes; users must know the convention | `kubectl` and other tooling see typed fields directly |
+| Contract surface | Recognition rules, duplicate handling, and conflict semantics described in this KEP | Typed Go struct in `staging/src/k8s.io/api/resource` |
+| Strictness | Convention-based; driver-private and scheduler-recognized payloads coexist in the same slice | Explicit separation of driver-private from scheduler-readable configuration |
+| Migration cost to typed field later | Requires migration path to a typed field if we change approach | Already typed |
+| Barrier to adoption | Low — reuses existing opaque config path | Requires API review and approval |
+
+The current design lands on the opaque-with-schema approach to minimize API
+surface and enable alpha without a new typed field. WG feedback has noted that a
+dedicated structured path may be more appropriate long-term given that the data
+is first-class scheduler input, not driver-private configuration. We welcome
+guidance on whether to ship alpha with the opaque-schema approach and migrate
+later, or invest in the dedicated field up front.
+
+### Per-device scoring vs. node-level scoring
+
+DRA's Score extension point scores nodes, not individual devices. This KEP's
+Filter phase is sufficient for correctness — an incompatible locked device is
+filtered out, and any remaining candidate (locked-compatible or unlocked)
+produces a valid allocation. The open question is how far to take scoring for
+packing efficiency.
+
+The current design describes an allocator-internal device-selection preference
+(prefer locked-compatible over clean within a node) as an optimization, not a
+correctness requirement. An explicit node-level Score contribution has also been
+proposed: rank a node higher when it has at least one device compatibly locked
+to the claim's affinity values, lower when only clean devices are available.
+
+What we lose without any scoring (Filter-only):
+
+- **Cross-node fragmentation**: Without node-level scoring, the scheduler may
+  place compatible claims on different nodes even when one node has a
+  compatibly-locked device and another has only clean devices. This spreads
+  locks across more physical devices than necessary, defeating the packing
+  goal of the feature.
+- **Mixed-rollout steering**: During driver upgrades where some devices have
+  `sharingAffinity` and some do not, Filter alone cannot steer claims toward
+  upgraded devices.
+
+What we lose without per-device (within-node) scoring:
+
+- **Within-node fragmentation**: When a node has multiple `sharingAffinity`
+  devices, some locked-compatible and some clean, the allocator may consume a
+  clean device when a compatible locked one exists on the same node. This
+  locks an additional device unnecessarily.
+- **Bin-packing granularity**: Among multiple locked-compatible devices on the
+  same node, there is no way to prefer the most-full one (minimizing the
+  number of partially-filled devices).
+- **Score dilution**: A node with 1 compatibly-locked device ranks the same as
+  a node with many, making tie-breaking across nodes coarse.
+
+Patrick Ohly's feedback in the WG discussion was that per-device scoring risks
+a combinatorial explosion in large clusters and recommended node-level scoring
+as the primary mechanism. Node-level scoring provides most of the packing
+benefit with bounded computational cost. Per-device preference can be retained
+as an allocator-internal optimization where feasible.
+
+The open questions:
+
+1. Is node-level Score sufficient for alpha, with allocator-internal device
+   preference as a best-effort optimization?
+2. Is the within-node fragmentation listed above an acceptable alpha
+   limitation, or does it warrant a more formal per-device scoring mechanism?
+3. If per-device scoring is pursued later, where should it live — extension of
+   the DRA allocator, a new Score sub-interface, or elsewhere?
 
 ## Design Details
 
@@ -659,7 +746,7 @@ type AllocatedState struct {
 ```
 
 
-##### Filter and Score Phases
+##### Filter Phase and Device Selection
 
 **Filter phase**: For a given node, the scheduler evaluates each device. A
 device with `sharingAffinity` is a candidate ONLY if:
@@ -691,23 +778,31 @@ reconstruct the current or requested affinity state cannot evaluate placement
 safely. Claims that do not need sharing-constrained devices should target
 devices without `sharingAffinity`.
 
-**Score phase**: The normative ordering in alpha is:
+**Device selection preference**: DRA's Score extension point scores *nodes*,
+not individual devices. Within a node, device selection is handled by the
+allocator's internal logic. For correctness, the Filter phase alone is
+sufficient — incompatible locked devices are excluded, and any remaining
+candidate (locked-compatible or unlocked) produces a valid allocation.
 
-1. A device already locked to a compatible affinity value scores highest.
-2. A clean (unlocked) device with `sharingAffinity` scores next — it can
-   establish a new lock and enable packing for future claims.
-3. A device without `sharingAffinity` scores lowest among otherwise equivalent
-   candidates — the scheduler has no affinity enforcement for this device, so
-   packing benefits are lost.
-4. An incompatible locked device, or a device with `AffinityStates[deviceID].Unknown` set, is
-   not scored because it was already filtered out.
+For packing efficiency, the allocator MAY internally prefer devices in this
+order when multiple candidates are feasible:
 
-This preserves unlocked devices for future workloads with different affinity
-values, minimizing fragmentation. During mixed rollouts (some devices with
-`sharingAffinity`, some without), this naturally steers affinity-aware claims
-toward upgraded devices. The exact score weights are implementation-defined
-in alpha; the required behavior is that a compatible locked device is preferred
-over an otherwise equivalent clean device.
+1. A device already locked to a compatible affinity value — reuses an existing
+   lock and avoids consuming a clean device.
+2. A clean (unlocked) device with `sharingAffinity` — can establish a new lock
+   and enable packing for future claims.
+3. A device without `sharingAffinity` — the scheduler has no affinity
+   enforcement for this device, so packing benefits are lost.
+4. An incompatible locked device, or a device with
+   `AffinityStates[deviceID].Unknown` set, is not considered because it was
+   already filtered out.
+
+This preference reduces fragmentation by preserving unlocked devices for future
+workloads with different affinity values. During mixed rollouts (some devices
+with `sharingAffinity`, some without), it naturally steers affinity-aware claims
+toward upgraded devices. This preference is an optimization; it is not required
+for correctness in alpha. The exact implementation strategy (e.g., ordering
+candidates before constraint solving) is implementation-defined.
 
 
 ##### Reserve Phase: Tentative Locking
@@ -947,7 +1042,7 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   - Filter: non-string value for a required affinity key → device filtered out
   - Filter: device with `AffinityStates[deviceID].Unknown` set is excluded for new
     `sharingAffinity` scheduling
-  - Score: locked-compatible device scores higher than clean device
+  - Device preference: allocator prefers locked-compatible device over clean device
   - Reserve: first claim sets lock; second claim with same values succeeds
   - Reserve: second claim with conflicting values fails
   - Unreserve: tentative lock is rolled back
@@ -999,9 +1094,9 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   and the 6th Pod is filtered from that device until all legacy claims drain
 - Partial Key: Device requires `subnet` and `pkey` in `parameterKeys`;
   claim provides only `subnet` — verify the device is filtered out
-- Score Packing: Two devices available, one already locked to subnet-X;
+- Device Preference Packing: Two devices available, one already locked to subnet-X;
   new claim for subnet-X → verify the claim is placed on the locked device,
-  not the clean one (full Filter→Score→Reserve pipeline)
+  not the clean one (full Filter→Reserve pipeline with allocator preference)
 - Permissive Sharing (no SA): Device without `sharingAffinity`, claim with
   `StructuredParameters` — verify scheduler allows the allocation and SP are
   not evaluated for affinity
@@ -1033,7 +1128,7 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 - Well-known `StructuredParameters` JSON schema defined for opaque config
 - Scheduler decodes well-known schema from opaque config for affinity matching
 - Scheduler Filter plugin enforces affinity matching
-- Scheduler Score plugin prefers locked-compatible devices over clean devices
+- Allocator prefers locked-compatible devices over clean devices when selecting within a node
 - Scheduler tracks affinity in AllocatedState
 - Unit and integration tests
 - Documentation for driver authors
@@ -1073,8 +1168,8 @@ ideally:
 3. Allow the scheduler to establish the first known lock with a new claim.
 
 During mixed rollouts (some devices with `sharingAffinity`, some without), the
-scoring preference for `sharingAffinity` devices (see
-[Score](#filter-and-score-phases)) naturally steers affinity-aware claims toward
+device-selection preference for `sharingAffinity` devices (see
+[Device Selection Preference](#filter-phase-and-device-selection)) naturally steers affinity-aware claims toward
 upgraded devices.
 
 **Adding `sharingAffinity` to an in-use device**: A driver may add or update
@@ -1596,7 +1691,7 @@ phase:
    releasing their claims and clearing the affinity lock. The device returns
    to a clean state for the high-priority Pod.
 
-This is scoped for Beta because the core Filter/Reserve/Score mechanism must
+This is scoped for Beta because the core Filter/Reserve mechanism must
 be proven in Alpha first, and lock-aware preemption requires careful
 integration with the existing DRA preemption path. Key design considerations
 include:
@@ -1656,9 +1751,9 @@ A future enhancement could add a `required` vs `preferred` flag on individual
 entries in `parameterKeys`:
 
 - **`required`** (default): Mismatch → device filtered out (current behavior)
-- **`preferred`**: Mismatch → device passes Filter but receives a lower score
+- **`preferred`**: Mismatch → device passes Filter but is deprioritized in device selection
 
-This would allow the Score phase to optimize for Traffic-Class alignment while
+This would allow device selection to optimize for Traffic-Class alignment while
 only enforcing hard locks on Subnet. The lock itself would only be set for
 `required` keys — `preferred` keys would remain advisory and never block
 scheduling. This avoids complicating the atomic lock model while still
