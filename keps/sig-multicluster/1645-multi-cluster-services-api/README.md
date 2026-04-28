@@ -629,6 +629,11 @@ type ServicePort struct {
 
 // ServiceImportStatus describes derived state of an imported service.
 type ServiceImportStatus struct {
+  // EndpointSliceObjectsPresence indicates whether imported EndpointSlice objects
+  // are present for this ServiceImport.
+  // +kubebuilder:validation:Enum=Present;Absent
+  // +optional
+  EndpointSliceObjectsPresence EndpointSliceObjectsPresenceStatus `json:"endpointSliceObjectsPresence,omitempty"`
   // +optional
   // +patchStrategy=merge
   // +patchMergeKey=cluster
@@ -647,6 +652,20 @@ type ServiceImportStatus struct {
 type ClusterStatus struct {
  Cluster string `json:"cluster"`
 }
+
+// EndpointSliceObjectsPresenceStatus indicates whether imported EndpointSlice
+// objects are present for a ServiceImport.
+type EndpointSliceObjectsPresenceStatus string
+
+const (
+  // EndpointSliceObjectsPresent indicates that imported EndpointSlice objects
+  // are present for a ServiceImport.
+  EndpointSliceObjectsPresent EndpointSliceObjectsPresenceStatus = "Present"
+
+  // EndpointSliceObjectsAbsent indicates that imported EndpointSlice objects are
+  // absent for a ServiceImport.
+  EndpointSliceObjectsAbsent EndpointSliceObjectsPresenceStatus = "Absent"
+)
 ```
 
 ```yaml
@@ -667,6 +686,7 @@ spec:
     port: 80
   sessionAffinity: None
 status:
+  endpointSliceObjectsPresence: Present
   conditions:
   - type: Ready
     reason: Ready
@@ -901,6 +921,13 @@ conform to the specification in the following section.
 
 _Optional to create, but specification defined if present._
 
+Implementations must publish whether imported `EndpointSlice` objects are
+present through `ServiceImport.Status.EndpointSliceObjectsPresence`. API consumers
+that would normally always use `EndpointSlice` objects (such as Gateway API
+implementations) can use this to decide whether to consume `EndpointSlice`
+objects directly, degrade to `ServiceImport` IPs if they support doing so,
+or fail if `EndpointSlice` objects are required.
+
 If an implementation does create `discovery.k8s.io/v1 EndpointSlice`s, they must
 conform to the following structure. This structure was originally required as
 part of this specification in alpha, and are the structure on which other
@@ -951,6 +978,7 @@ spec:
     port: 80
   sessionAffinity: None
 status:
+  endpointSliceObjectsPresence: Present
   clusters:
   - cluster: us-west2-a-my-cluster
 ---
