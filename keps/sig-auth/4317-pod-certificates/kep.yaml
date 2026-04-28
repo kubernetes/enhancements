@@ -32,7 +32,7 @@ milestone:
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: PodCertificateRequest
-    components: ['kube-apiserver']
+    components: ['kube-apiserver', 'kubelet']
   - name: KubeServingCertificatesSigner
     components: ['kube-controller-manager']
 disable-supported: true
