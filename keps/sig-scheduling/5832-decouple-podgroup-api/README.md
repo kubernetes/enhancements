@@ -131,8 +131,9 @@ metadata:
   namespace: ns-1
 spec:
   podGroupTemplateRef:
-    workloadName: training-workload
-    podGroupTemplateName: pd-1-template
+    workload:
+      workloadName: training-workload
+      podGroupTemplateName: pd-1-template
   schedulingPolicy:
     gang:
       minCount: 2
@@ -294,35 +295,44 @@ type PodGroupSpec struct {
     SchedulingPolicy *PodGroupSchedulingPolicy
 }
 
-// PodGroupTemplateReference references the PodGroupTemplate name within 
-// the Workload object.
+// PodGroupTemplateReference references a PodGroup template defined in some object (e.g. Workload).
+// Exactly one reference must be set.
 type PodGroupTemplateReference struct {
-   // WorkloadName defines the name of the Workload object this PodGroup is part of.
-   //
-   // +optional
-   WorkloadName string
-
-  // PodGroupTemplateName references the PodGroupTemplate name that was used to
-  // create this PodGroup.
-  //
-  // +optional
-   PodGroupTemplateName string
+    // Workload references the PodGroupTemplate within the Workload object that was used to create
+    // the PodGroup.
+    // +optional
+    Workload *WorkloadPodGroupTemplateReference
 }
 
+// WorkloadPodGroupTemplateReference references the PodGroupTemplate within the Workload object.
+type WorkloadPodGroupTemplateReference struct {
+    // WorkloadName defines the name of the Workload object.
+    // +required
+    WorkloadName string
+
+    // PodGroupTemplateName defines the PodGroupTemplate name within the Workload object.
+    // +required
+    PodGroupTemplateName string
+}
+
+// PodGroupStatus represents information about the status of a pod group.
 type PodGroupStatus struct {
    // Conditions represent the latest observations of the PodGroup's state.
    //
    // Known condition types:
    // - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
-   //   - Status=True: All required pods have been assigned to nodes.
-   //   - Status=False: Scheduling failed (i.e., timeout, unschedulable, etc.).
+   // - "DisruptionTarget": Indicates whether the PodGroup is about to be terminated
+   //   due to disruption such as preemption.
    //
-   // Known reasons for PodGroupScheduled condition:
-   // - "Scheduled": All required pods have been successfully scheduled.
+   // Known reasons for the PodGroupScheduled condition:
    // - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
    //   affinity/anti-affinity rules, or insufficient capacity for the gang.
-   // - "Preempted": The PodGroup was preempted to make room for higher-priority workloads.
-   // - "Timeout": The PodGroup failed to schedule within the configured timeout.
+   // - "SchedulerError": The PodGroup cannot be scheduled due to some internal error
+   //   that happened during scheduling, for example due to nodeAffinity parsing errors.
+   //
+   // Known reasons for the DisruptionTarget condition:
+   // - "PreemptionByScheduler": The PodGroup was preempted by the scheduler to make room for
+   //   higher-priority PodGroups or Pods.
    //
    // +optional
    Conditions []metav1.Condition

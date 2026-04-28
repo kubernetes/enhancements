@@ -254,8 +254,9 @@ metadata:
   name: training-worker-0
 spec:
   podGroupTemplateRef:
-    workloadName: training-policy
-    podGroupTemplateName: worker
+    workload:
+      workloadName: training-policy
+      podGroupTemplateName: worker
   schedulingPolicy:
     gang:
       minCount: 100
@@ -387,8 +388,9 @@ metadata:
   name: job-instance-worker-0
 spec:
   podGroupTemplateRef:
-    workloadName: job-policy
-    podGroupTemplateName: worker-template
+    workload:
+      workloadName: jobset
+      podGroupTemplateName: job-1
   # schedulingPolicy is copied from template on PodGroup creation.
   schedulingPolicy:
     gang:
@@ -585,20 +587,46 @@ type PodGroupSpec struct {
     SchedulingPolicy *PodGroupSchedulingPolicy
 }
 
+// PodGroupStatus represents information about the status of a pod group.
 type PodGroupStatus struct {
     // Conditions represent the latest observations of the PodGroup's state.
+    //
+    // Known condition types:
+    // - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
+    // - "DisruptionTarget": Indicates whether the PodGroup is about to be terminated
+    //   due to disruption such as preemption.
+    //
+    // Known reasons for the PodGroupScheduled condition:
+    // - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
+    //   affinity/anti-affinity rules, or insufficient capacity for the gang.
+    // - "SchedulerError": The PodGroup cannot be scheduled due to some internal error
+    //   that happened during scheduling, for example due to nodeAffinity parsing errors.
+    //
+    // Known reasons for the DisruptionTarget condition:
+    // - "PreemptionByScheduler": The PodGroup was preempted by the scheduler to make room for
+    //   higher-priority PodGroups or Pods.
+    //
     // +optional
     Conditions []metav1.Condition
 }
 
-// PodGroupTemplateReferenve references the PodGroupTemplate within the Workload object.
+// PodGroupTemplateReference references a PodGroup template defined in some object (e.g. Workload).
+// Exactly one reference must be set.
 type PodGroupTemplateReference struct {
+    // Workload references the PodGroupTemplate within the Workload object that was used to create
+    // the PodGroup.
+    // +optional
+    Workload *WorkloadPodGroupTemplateReference
+}
+
+// WorkloadPodGroupTemplateReference references the PodGroupTemplate within the Workload object.
+type WorkloadPodGroupTemplateReference struct {
     // WorkloadName defines the name of the Workload object.
-	// +optional
-	WorkloadName string
-		
+    // +required
+    WorkloadName string
+
     // PodGroupTemplateName defines the PodGroupTemplate name within the Workload object.
-	// +optional
+    // +required
     PodGroupTemplateName string
 }
 ```

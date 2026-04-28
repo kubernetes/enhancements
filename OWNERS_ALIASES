@@ -78,8 +78,8 @@ aliases:
     - aojea
     - bowei
     - danwinship
+    - guicassolato
     - mikezappa87
-    - shaneutt
     - thockin
   sig-node-leads:
     - SergeyKanzhelev
@@ -193,11 +193,13 @@ aliases:
     - johnbelamaric
     - justaugustus
     - palnabarun
+    - soltysh
   kep-tools-reviewers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
     - palnabarun
+    - soltysh
   prod-readiness-approvers:
     - deads2k
     - johnbelamaric

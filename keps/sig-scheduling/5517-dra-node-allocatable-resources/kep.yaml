@@ -1,4 +1,4 @@
-title: DRA Native Resource Requests
+title: DRA Node Allocatable Resources
 kep-number: 5517
 authors:
   - "@pravk03"
@@ -32,7 +32,7 @@ milestone:
   alpha: "v1.36"
 
 feature-gates:
-  - name: DRANativeResources
+  - name: DRANodeAllocatableResources
     components:
       - kube-scheduler
       - kube-apiserver

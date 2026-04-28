@@ -728,7 +728,8 @@ in back-to-back releases.
   - https://github.com/GoogleCloudPlatform/anthos-samples/blob/8aff62c3f0bd835bda7479a01a591e1849c48fe9/anthos-attached-clusters/kind/main.tf#L37
   - https://github.com/GoogleCloudPlatform/cloud-solutions/blob/pino-logging-gcp-config-v1.1.0/projects/k8s-hybrid-neg-controller/hack/kind-cluster-config.yaml#L24
   - https://github.com/GoogleCloudPlatform/solutions-workshops/blob/grpc-xds/v0.5.0/grpc-xds/hack/kind-cluster-config-2.yaml#L24
-  In beta, [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will be updated to include `RunningInUserNS *bool`.
+  In beta, nodes will have `kubernetes.io/running-in-user-namespace: <BOOL>` labels.
+  [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will be updated too to have `RunningInUserNamespace *bool`.
 
 - GA: Assuming no negative user feedback based on production experience, promote after >= 2 releases in beta.
   Requirements:
@@ -943,8 +944,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-[`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will have `RunningInUserNS *bool`
-to indicate whether the node is running in UserNS.
+Nodes will have `kubernetes.io/running-in-user-namespace: <BOOL>` labels.
+[`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will be updated too to have `RunningInUserNamespace *bool`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -960,7 +961,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] Events
   - Event Reason:
 - [X] API .status
-  - Condition name: [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will have `RunningInUserNS *bool`
+  - Condition name: Nodes will have `kubernetes.io/running-in-user-namespace: <BOOL>` labels. [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo)` will be updated to have `RunningInUserNamespace *bool`.
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
@@ -1219,7 +1220,7 @@ Major milestones might include:
 - 2019-11-19: present KEP to SIG-node (cgroup v2 version)
 - 2020-07-07: the cgroup v2 support is in `implementable` status
 - 2021-08-04: Kubernetes v1.22 (Alpha)
-- 2025-12-XX: Kubernetes v1.35 (Beta)
+- 2026-08-XX: Kubernetes v1.37 (Beta)
 
 ## Drawbacks
 
