@@ -16,7 +16,8 @@ participating-sigs:
 status: implementable
 creation-date: 2025-09-17
 reviewers:
-  - TBD
+  - "@macsko"
+  - "@wojtek-t"
 approvers:
   - "@sanposhiho"
   - "@dom4ha"
