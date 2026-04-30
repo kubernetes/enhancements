@@ -4,6 +4,7 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Status Quo: Driver-Side Placeholder Pattern](#status-quo-driver-side-placeholder-pattern)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -44,7 +45,6 @@
 - [Alternatives](#alternatives)
   - [Claim-side SharingAffinity (on DeviceRequest)](#claim-side-sharingaffinity-on-devicerequest)
   - [Object Reference-based Affinity Matching](#object-reference-based-affinity-matching)
-  - [Placeholder Pattern Workaround](#placeholder-pattern-workaround)
   - [CEL-based Affinity Matching](#cel-based-affinity-matching)
 - [Future Enhancements](#future-enhancements)
 - [Infrastructure Needed](#infrastructure-needed)
@@ -85,9 +85,10 @@ and share devices across multiple claims via `allowMultipleAllocations`.
 However, it assumes all claims are fungible—any claim can share the device with
 any other claim.
 
-Real-world hardware is often **modal**: once partially allocated, the device
-requires all subsequent consumers to share a specific configuration. For
-example:
+Real-world hardware is often **modal** (i.e., once partially allocated, it
+must operate in a single configuration mode for all of its current
+consumers): the device requires all subsequent consumers to share a specific
+configuration. For example:
 
 - **Multi-pod NIC sharing**: A network DRA driver shares a NIC across 16 pods,
   but all pods must belong to the same subnet. Once the first pod configures the
@@ -98,10 +99,15 @@ example:
 
 This KEP introduces a `SharingAffinity` field in the ResourceSlice `Device`
 spec that allows drivers to declare which parameter keys constrain
-sharing compatibility. The scheduler's `AllocatedState` is enhanced to track
-both consumed capacity and the affinity values that lock a device to a
-particular sharing group, enabling it to gate remaining capacity and
-pack compatible workloads onto already-locked devices.
+sharing compatibility. On the claim side, it adds
+`StructuredDeviceConfiguration` so workloads can express affinity values
+(e.g. `subnet: subnet-A`) in a strongly-typed, scheduler-readable form.
+The scheduler's `AllocatedState` is enhanced to track both consumed
+capacity and the affinity values that lock a device to a particular
+sharing group, enabling it to gate remaining capacity on locked devices
+and safely reuse them for compatible claims when selected by the existing
+allocator. Alpha provides correctness only — affinity-aware preference
+(packing) is delivered in beta; see [Goals](#goals).
 
 Alpha intentionally does not provide lock-breaking
 preemption. In addition, if a device already has active allocations whose
@@ -118,9 +124,8 @@ anti-affinity, or topology-aware placement.
 
 As AI and HPC workloads move toward higher density, hardware partitioning
 (SR-IOV, GPU slicing, FPGA multi-tenancy) is becoming standard. These
-physical devices often have a "modal" constraint: once partially allocated,
-the device requires all subsequent consumers to share a specific configuration
-(see [Summary](#summary) for concrete examples).
+physical devices often have a "modal" constraint (see [Summary](#summary)
+for the definition and concrete examples).
 
 Currently, the scheduler is unaware of this "lock." It may schedule a Pod
 requiring a different configuration to the same device because it sees
@@ -135,10 +140,24 @@ without Qualitative Gating (what mode are those slots in?).** This leads to:
 3. **Resource starvation**: Without affinity awareness, same-subnet pods
    spread across multiple devices instead of consolidating—wasting capacity
 4. **Complex driver workarounds**: Drivers resort to placeholder patterns
-   with race conditions and ResourceSlice churn
+   with race conditions and ResourceSlice churn (see [Status Quo](#status-quo-driver-side-placeholder-pattern) below)
 
 The scheduler's `AllocatedState` currently tracks consumed capacity but not the
 affinity values that determine sharing compatibility. This KEP closes that gap.
+
+### Status Quo: Driver-Side Placeholder Pattern
+
+Without this KEP, drivers must use a "placeholder pattern" today:
+
+1. Publish devices with `capacity: 1` initially
+2. Wait for first claim to determine affinity value
+3. Update ResourceSlice with actual capacity and affinity as attribute
+4. Use CEL selector to match affinity attribute
+
+**Problems**:
+- Race condition: Second pod may go to different device before expansion
+- ResourceSlice churn: Constant updates as pods come and go
+- Driver complexity: State machine for expand/contract lifecycle
 
 ### Goals
 
@@ -146,8 +165,12 @@ affinity values that determine sharing compatibility. This KEP closes that gap.
   required sharing attribute
 - Provide a mechanism for drivers to signal compatibility requirements for
   shared hardware via `SharingAffinity` in ResourceSlice
-- Minimize fragmentation of cluster resources by enabling the scheduler to
-  pack workloads with identical sharing requirements onto already-locked devices
+- Reduce fragmentation of cluster resources by enabling the scheduler to
+  pack workloads with compatible sharing requirements onto already-locked
+  devices (delivered in beta as a sharing-affinity term added to
+  `DynamicResources.computeScore` — see [Affinity-aware scoring (planned
+  for Beta)](#affinity-aware-scoring-planned-for-beta); alpha provides
+  correctness only)
 - Track affinity values in `AllocatedState` so subsequent scheduling decisions
   respect the first claim's lock-in
 - Maintain backward compatibility with devices that have no sharing affinity
@@ -164,8 +187,8 @@ affinity values that determine sharing compatibility. This KEP closes that gap.
   claims do not expose reconstructable affinity values. In alpha, such devices
   are treated conservatively until they drain clean.
 - Guaranteeing **lock-breaking preemption** in alpha.
-  Alpha enforces compatibility and improves packing, but does not yet guarantee
-  that a higher-priority Pod can displace an incompatible lock-holder.
+  Alpha enforces compatibility, but does not guarantee packing or
+  lock-breaking preemption — both are planned for beta.
 
 ## Proposal
 
@@ -187,11 +210,15 @@ spec:
 
 When the scheduler allocates a multi-allocatable device with `sharingAffinity`:
 
-1. **First claim**: The scheduler reads the claim's typed
-   `Structured.Parameters` map for the specified attribute key(s) and records
-   them in `AllocatedState` alongside consumed capacity
+1. **First claim**: The scheduler reads the values for the keys declared
+   by the device in `sharingAffinity.parameterKeys` from the claim's typed
+   `Structured.Parameters` map and records them in `AllocatedState`
+   alongside consumed capacity. Any additional keys present in the claim's
+   `Structured.Parameters` but not declared by the device are ignored for
+   this device.
 2. **Subsequent claims**: The scheduler checks if the new claim's affinity values match those recorded in `AllocatedState`
-3. **Mismatch**: If values don't match, the device is skipped (try another device)
+3. **Mismatch**: If values don't match, the device is filtered out for
+   that request (the scheduler tries another candidate device)
 4. **Match**: If values match and capacity is available, allocation proceeds
 
 **Alpha Design Decisions**
@@ -218,10 +245,17 @@ requested values for those keys from a new typed sibling of
 
 Today its only member is `Opaque`, which by design the scheduler does
 not interpret. This KEP adds a sibling member `Structured` that carries
-scheduler-readable, typed values:
+scheduler-readable, typed values. This also relaxes the existing
+`DeviceConfiguration` invariant from "exactly one field set" to "at
+least one," so that `Opaque` and `Structured` can coexist on the same
+entry when a claim needs both driver-private and scheduler-readable
+configuration for the same request:
 
 ```go
-// DeviceConfiguration must have exactly one field set.
+// DeviceConfiguration must have at least one field set. Both Opaque
+// (driver-private) and Structured (scheduler-readable) may be set on
+// the same entry; they are orthogonal and can describe the same
+// request without semantic conflict.
 type DeviceConfiguration struct {
     // Opaque is driver-private; the scheduler does not interpret it.
     Opaque *OpaqueDeviceConfiguration `json:"opaque,omitempty"`
@@ -243,11 +277,29 @@ type StructuredDeviceConfiguration struct {
     // string value. In alpha, only string values are supported, matching
     // the device-side parameterKeys constraint on string-only matching.
     //
+    // The cap of 8 mirrors the device-side
+    // SharingAffinityParameterKeysMaxSize and is sized for known
+    // typed-config use cases (1-3 keys per request is typical). It can be
+    // relaxed in a backwards-compatible way if future typed-config
+    // consumers (e.g. KEP-5993) need more.
+    //
     // +required
-    // +k8s:maxItems=8
+    // +k8s:maxProperties=8
     Parameters map[FullyQualifiedName]string `json:"parameters"`
 }
 ```
+
+A plain `map[FullyQualifiedName]string` is chosen for alpha to keep API
+validation, scheduler consumption, and restart reconstruction
+straightforward; all motivating affinity values (subnets, partition keys,
+bitstream identifiers) are naturally string-valued and matched by equality.
+Richer typed alternatives (a discriminated union, or a shape mirroring
+attribute value schemas) were considered but rejected for alpha because
+they add validation, parsing, and restart-reconstruction complexity
+without solving any known alpha use case. Richer typed siblings (e.g.
+`IntParameters`, `BoolParameters`) can be added in a
+backwards-compatible way without changing this map's shape if a future
+consumer needs them.
 
 The claim selects which requests these parameters apply to via the existing
 `DeviceClaimConfiguration.Requests []string` selector — the same per-request
@@ -266,14 +318,25 @@ For alpha, the scheduler-readable parameter format is the typed
    `Requests` selector includes that request. Multiple matching entries
    for the same request are rejected by API validation.
 2. **Coexistence with driver config**: A claim may include both `Structured`
-   and `Opaque` config blocks (as separate `DeviceClaimConfiguration`
-   entries) for the same request. The scheduler reads only the `Structured`
-   entry. The `Opaque` entry remains driver-private.
-3. **Conflict handling**: If the same logical setting is encoded both in
-   `Structured.Parameters` and in driver-specific `Opaque` config, the
-   scheduler uses only the `Structured` value for placement. The driver
-   should reject divergent values during `NodePrepareResources` rather than
-   silently accepting them.
+   and `Opaque` config blocks for the same request — either set on the
+   same `DeviceClaimConfiguration` entry (most ergonomic) or split across
+   separate entries. The two fields are orthogonal: `Opaque` is
+   driver-private and `Structured` is scheduler-readable, so there is no
+   semantic conflict in carrying both. API validation does require *at
+   least one* of the two to be set on a `DeviceConfiguration` entry: an
+   entry with neither field has no purpose and would only add ambiguity
+   to per-request config selection.
+3. **Source of truth for placement**: The scheduler is authoritative for
+   placement based only on `Structured.Parameters` (filtering,
+   lock-matching). The driver is authoritative for hardware programming
+   based on `Opaque` (and may, optionally, cross-validate `Structured`
+   against `Opaque` if it understands both — but is not required to).
+   Drivers are not required to parse `Structured` at all. If a workload
+   author encodes the same logical setting in both places with divergent
+   values, that is a workload-side authoring bug — the scheduler will
+   lock the device based on `Structured`, the driver will configure based
+   on `Opaque`, and the resulting mismatch surfaces at runtime the same
+   way any other misconfigured Opaque payload would.
 4. **String-only affinity values in alpha**: For any key referenced by
    `sharingAffinity.parameterKeys`, the matching `Structured.Parameters`
    entry provides a string value. Other value types are not supported in
@@ -283,9 +346,14 @@ For alpha, the scheduler-readable parameter format is the typed
    request, the device is filtered out. This does not make the claim
    universally unschedulable; it only makes the claim ineligible for
    devices that declare `sharingAffinity`.
-6. **Validation**: API validation rejects malformed values (more than 8
-   keys per entry, etc.). The scheduler still handles invalid persisted
-   objects defensively for the upgrade-skew case.
+6. **Validation**: API validation rejects structurally invalid entries
+   (e.g., duplicate `Structured` coverage for one request, more than 8
+   keys per entry); semantic validation of specific value domains
+   remains driver- or policy-specific. The scheduler additionally treats
+   persisted claims that violate these structural invariants as if
+   `Structured` were absent for that claim — covering version-skew or
+   feature-gate-flap scenarios where an object reached etcd before the
+   current validation applied.
 
 The typed `Structured` field is a generic API extension intended to be
 reusable by multiple consumers, so it is gated by its own feature gate
@@ -293,6 +361,27 @@ reusable by multiple consumers, so it is gated by its own feature gate
 `DRASharingAffinity` gate that adds the `Device.SharingAffinity` field and
 the scheduler logic that reads `Structured.Parameters`. See
 [Feature Gates](#feature-gates) below for the dependency relationship.
+
+**Alpha API invariants (cheat sheet)**
+
+For quick reference during review, the contracts above reduce to:
+
+- *At most one* `DeviceClaimConfiguration` with `Structured` set may target
+  any given request name (per-request uniqueness).
+- *All* keys declared in a device's `sharingAffinity.parameterKeys` must be
+  present in the matching `Structured.Parameters`; otherwise the device is
+  filtered out for that request.
+- *Extra* keys in `Structured.Parameters` beyond what the device declares
+  are ignored for that device (forward-compatibility for cross-device
+  claims).
+- *Affinity values are strings* in alpha; non-string siblings are reserved
+  for beta extension.
+- *Both `Opaque` and `Structured`* are permitted on the same
+  `DeviceConfiguration` entry; they are orthogonal (driver-private vs
+  scheduler-readable).
+- *Inconsistent, missing, or non-reconstructable* lock state always yields
+  conservative filtering (`AffinityStates[deviceID].Unknown = true`), never
+  best-effort matching.
 
 **Alpha scope**
 
@@ -304,13 +393,16 @@ lock on a clean device. Claim-side lock-setting policy (for example,
 Enhancements](#future-enhancements).
 
 In other words, alpha standardizes driver-declared compatibility keys, a
-typed `Structured` configuration field on `DeviceConfiguration`, and correct
-lock enforcement / packing behavior — but intentionally stops short of
-lock-breaking preemption semantics.
+typed `Structured` configuration field on `DeviceConfiguration`, and
+correct lock enforcement on already-locked devices — but intentionally
+stops short of affinity-aware scoring (planned as a beta-scope contribution
+to `DynamicResources.computeScore`, see [Affinity-aware scoring (planned for
+Beta)](#affinity-aware-scoring-planned-for-beta)) and of lock-breaking
+preemption semantics.
 
 **Alpha limitations**
 
-Alpha provides correct lock enforcement and better packing, but it does
+Alpha provides correct lock enforcement, but it does
 not provide lock-breaking preemption. A lower-priority
 Pod may continue holding a device lock even when the device still has nominal
 capacity and a higher-priority Pod needs the same device with a different
@@ -325,25 +417,28 @@ expected alpha limitation, not a correctness bug, and is addressed later under
 
 A user runs a distributed training job where every Pod must share the same
 RDMA Partition Key (PKey) to communicate. The NIC supports 16 VFs. The driver
-sets `sharingAffinity.parameterKeys: ["networking.example.com/pkey"]`. The scheduler finds a node where
-a NIC has enough capacity and is either "unlocked" or already locked to that
-specific PKey.
+sets `sharingAffinity.parameterKeys: ["networking.example.com/pkey"]`. The scheduler
+only co-allocates Pods whose claimed PKey matches the NIC's current lock
+(or selects an unlocked NIC and establishes the lock from the first claim).
 
-- Pod A (pkey-0x8001) gets allocated to mlx5_0 → mlx5_0 is now locked to pkey-0x8001
-- Pod B (pkey-0x8001) arrives → matches affinity, shares mlx5_0
-- Pod C (pkey-0x8002) arrives → affinity mismatch, gets mlx5_1 instead
+- Pod A (pkey-0x8001) is allocated to mlx5_0 → mlx5_0 is now locked to pkey-0x8001
+- Pod B (pkey-0x8001) arrives → matches affinity, is eligible to share mlx5_0
+- Pod C (pkey-0x8002) arrives → affinity mismatch on mlx5_0; mlx5_0 is
+  filtered out; Pod C is allocated to mlx5_1 instead
 
 #### Story 2: FPGA Bitstream Sharing
 
 An inference service uses FPGAs to accelerate a specific model. Loading a
 bitstream takes several seconds. The driver sets
-`sharingAffinity.parameterKeys: ["fpga.example.com/bitstream"]`. The scheduler ensures new Pods
-for this model are scheduled onto FPGAs that already have the bitstream loaded,
-even if other "fresh" FPGAs are available.
+`sharingAffinity.parameterKeys: ["fpga.example.com/bitstream"]`. The scheduler
+only co-allocates Pods that request a compatible bitstream onto an
+already-locked FPGA; affinity-aware *preference* for FPGAs that already
+have the bitstream loaded (over fresh ones) is delivered in beta.
 
-- Pod A (bitstream-ml-v2) gets the FPGA → locks to bitstream-ml-v2
-- Pod B (bitstream-ml-v2) shares the same FPGA
-- Pod C (bitstream-crypto-v1) must wait or use a different FPGA
+- Pod A (bitstream-ml-v2) is allocated an FPGA → FPGA locks to bitstream-ml-v2
+- Pod B (bitstream-ml-v2) arrives → eligible to share the same FPGA
+- Pod C (bitstream-crypto-v1) arrives → filtered out from the locked FPGA;
+  uses a different FPGA or waits
 
 #### Story 3: Single-subnet NIC Sharing
 
@@ -351,9 +446,10 @@ A network DRA driver advertises NICs that can be shared across up to 16 pods,
 but only if pods belong to the same subnet. The driver sets
 `sharingAffinity.parameterKeys: ["networking.example.com/subnet"]`.
 
-- Pod A (subnet-X) gets allocated to eth1 → eth1 is now locked to subnet-X
-- Pod B (subnet-X) arrives → matches affinity, shares eth1
-- Pod C (subnet-Y) arrives → affinity mismatch, gets eth2 instead
+- Pod A (subnet-X) is allocated to eth1 → eth1 is now locked to subnet-X
+- Pod B (subnet-X) arrives → matches affinity, is eligible to share eth1
+- Pod C (subnet-Y) arrives → affinity mismatch on eth1; eth1 is filtered
+  out; Pod C is allocated to eth2 instead
 
 ### Notes/Constraints/Caveats
 
@@ -375,7 +471,14 @@ but only if pods belong to the same subnet. The driver sets
 - **String-only matching in alpha**: For keys referenced by
   `sharingAffinity.parameterKeys`, `Structured.Parameters` values are
   string-typed (the alpha map type is `map[FullyQualifiedName]string`).
-  Future expansion to additional value types is deferred to beta.
+  This is sufficient for all motivating use cases — subnet IDs, PKeys/GUIDs,
+  partition names, model identifiers, NUMA tags, and FQDN-shaped
+  identifiers are naturally string-valued, and sharing affinity matches by
+  equality only (no numeric ranges or ordering), so richer types add
+  complexity without unlocking use cases. Typed values can be added later
+  in a backwards-compatible way by introducing sibling fields on
+  `StructuredDeviceConfiguration` (e.g., `IntParameters`, `BoolParameters`)
+  alongside the existing string map.
 - **Missing keys in claim**: If the claim does not provide a value for a key
   the device declares in `parameterKeys`, the device is filtered out (see
   Filter phase).
@@ -390,7 +493,11 @@ but only if pods belong to the same subnet. The driver sets
   blocks can specify different `Structured.Parameters` for different requests.
   This means `mgmt-nic` can be locked to Subnet-A while `data-nic` is locked
   to Subnet-B within the same claim — there is no cross-talk between requests
-  because the scoping is structural.
+  because the scoping is structural. Lock state is enforced per physical
+  device instance, not per request name: per-request scoping determines
+  which `Structured` parameters apply to which allocation decision, but
+  compatibility is always checked against the chosen device's
+  `AffinityStates[deviceID]` entry.
 - **Empty affinity**: Devices without `sharingAffinity` behave as before — any
   claim can share them regardless of whether it provides `Structured` parameters.
 - **Legacy allocations with unknown affinity are conservative in alpha**:
@@ -408,7 +515,7 @@ but only if pods belong to the same subnet. The driver sets
 | 5 legacy claims, affinity unknown | Claim without `Structured` parameters | **Filtered out**. Missing required scheduler-readable affinity information. |
 | Legacy claims drained; device now clean | Claim with `subnet: A` | Lock set to `subnet: A`; device now locked. |
 | Device locked to `subnet: A` | Claim with `subnet: A` | Allowed (values match). |
-| Device locked to `subnet: A` | Claim with `subnet: B` | **Rejected** (mismatch with lock). |
+| Device locked to `subnet: A` | Claim with `subnet: B` | **Filtered out** (mismatch with lock). |
 | All claims released | — | Device fully clean and eligible to establish a new lock. |
 
 Legacy claims continue to run and are not evicted. However, until all unknown
@@ -432,6 +539,14 @@ the deliberate alpha trade-off: the scheduler refuses to silently downgrade
 its safety guarantee in the face of an asymmetric API change. Drivers that
 need to evolve `parameterKeys` for an in-use device should drain the device
 before publishing the change.
+
+**Driver responsibility**: drivers should avoid hot-swapping
+`parameterKeys` on devices with active allocations. When key changes are
+unavoidable (e.g. a hardware capability evolves), drivers should expect
+the affected device to be ineligible for new affinity-aware scheduling
+until it drains clean, and should plan rollouts accordingly (for example,
+by cordoning the device or rolling out the key change as part of a node
+reimage).
 
 #### Compatibility Matrix
 
@@ -460,19 +575,23 @@ workloads.
 #### Fragmentation (Poisoning)
 
 **Risk**: One Pod with a unique affinity value could "lock" a high-capacity
-device, preventing other more common workloads from using the remaining 90%
+device, preventing other more common workloads from using the rest of its
 capacity.
 
 **Mitigation (Alpha)**: None beyond Filter correctness. The DRA allocator
 currently uses a first-fit algorithm with no affinity-aware preference, so
 the scheduler does not actively pack compatible claims onto already-locked
-devices. Affinity-aware allocator preference (within-node) and Score
-contribution (cross-node) both depend on the general-purpose DRA scoring work
-tracked in
-[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970)
-and are out of scope for this KEP. Until that lands, fragmentation
-mitigation is best-effort and depends on the existing first-fit ordering of
-devices in ResourceSlices.
+devices. Affinity-aware preference (within-node) and a Score contribution
+(cross-node) are planned as a beta-scope addition to
+`DynamicResources.computeScore`, following the same per-feature additive
+pattern that Prioritized List (KEP-4816, shipped in 1.35) and Extended
+Resources (KEP-5004) already use; see [Affinity-aware scoring (planned for
+Beta)](#affinity-aware-scoring-planned-for-beta). Until that lands,
+fragmentation mitigation is best-effort and depends on the existing
+first-fit ordering of devices in ResourceSlices. General-purpose DRA
+scoring discussion continues in
+[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970),
+but KEP-5981's contribution does not block on a unified framework.
 
 #### Priority Inversion (Preemption Blindness)
 
@@ -518,6 +637,18 @@ state. The result is a temporary loss of placement optimality rather than a corr
 immediately. For externally driven transitions, informer reconciliation eventually converges the
 state. This matches the existing consistency model used elsewhere in scheduler and DRA cache-based decisions.
 
+**Scope of "release"**: The scheduler derives lock state purely from
+ResourceClaim allocation/deallocation events; it does not observe kubelet's
+`NodePrepareResources` / `NodeUnprepareResources` progress, which remains the
+driver's responsibility. The scheduler's notion of "clean" is purely
+allocation-clean, not hardware-ready — a device is considered clean once no
+allocated claim references it, regardless of whether the driver has finished
+in-flight hardware reconfiguration on the node. Driver-level prepare/unprepare
+sequencing remains the authoritative guard against reuse before
+reconfiguration completes; drivers that need stronger guarantees should
+hold their own per-device readiness state and reject prepare calls until
+reconfiguration is complete.
+
 #### Unexpected Affinity Values
 
 **Risk**: A claim specifies an unexpected or unique affinity value (e.g., an
@@ -529,9 +660,10 @@ names, partition keys) and cannot be validated by the driver. Cluster
 administrators can use `DeviceClass` CEL selectors to restrict which
 attribute values are accepted where domain-specific validation is feasible.
 Allocator-level packing of compatible workloads onto already-locked devices
-(which would naturally limit fragmentation) depends on
-[#4970](https://github.com/kubernetes/enhancements/issues/4970) and is out
-of scope for this KEP.
+(which would naturally limit fragmentation) is delivered in beta as a
+sharing-affinity term added to `DynamicResources.computeScore`; see
+[Affinity-aware scoring (planned for
+Beta)](#affinity-aware-scoring-planned-for-beta).
 
 #### Packing Depends on DRA-Aware Scoring (Alpha Limitation)
 
@@ -552,16 +684,19 @@ across nodes nor within a node:
 **Mitigation (Alpha)**: None within this KEP's scope. Alpha provides
 correctness only; packing of any kind is best-effort first-fit.
 
-**Long-term fix**: Both gaps depend on the general-purpose DRA scoring work
-tracked in
-[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970)
-("Scoring support for improved Node and device selection during Pod
-scheduling"). That issue explicitly covers both within-node device
-selection (replacing first-fit) and cross-node node selection. This KEP
-intentionally does not propose its own DRA Score plugin or
-allocator-preference logic, to avoid fragmenting that effort. When #4970
-lands, the lock state surfaced by this KEP becomes a natural input for
-affinity-aware packing at both scopes.
+**Long-term fix**: A sharing-affinity-aware Score contribution is planned
+for beta as an additive term in `DynamicResources.computeScore`, following
+the same per-feature pattern that Prioritized List (KEP-4816, shipped in
+1.35) and Extended Resources (KEP-5004) already use. Within-node device
+preference among feasible devices is similarly addressed by extending the
+allocator's selection logic. The `AllocatedState.AffinityStates` structure
+introduced in alpha is the substrate the beta score function reads, so
+the alpha design is not a dead end — it is the necessary infrastructure
+for the eventual packing optimization. See [Affinity-aware scoring (planned for
+Beta)](#affinity-aware-scoring-planned-for-beta). General-purpose DRA
+scoring discussion is tracked in
+[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970),
+but this KEP's contribution does not block on a unified scoring framework.
 
 #### Memory Overhead
 
@@ -573,52 +708,6 @@ Per-device overhead is bounded at 8 key-value pairs in
 `AllocatedState.AffinityStates`, and entries are cleared when all claims release
 the device. The total overhead is proportional to active shared allocations,
 not total devices.
-
-## Open Questions
-
-The following design choices are open for WG Device Management and sig-scheduling
-discussion. Reviewer input is welcomed.
-
-### Packing (within-node and cross-node) depends on DRA-aware scoring (issue #4970)
-
-This KEP's Filter phase is sufficient for **correctness** — an incompatible
-locked device is filtered out, and any remaining candidate produces a valid
-allocation. It is not, however, sufficient for **packing**, at either
-scope:
-
-- **Cross-node**: stock Kubernetes scorers (`NodeResourcesFit` /
-  MostAllocated / RequestedToCapacityRatio) read `node.Status.Allocatable`
-  and pod container resources; they do not see DRA shared-device
-  consumption tracked in the `DynamicResources` plugin's in-memory
-  `AllocatedState`, and DeviceClass CEL is filter-only. A `subnet=X` claim
-  is just as likely to land on a node with a clean device as on a node that
-  already has a compatibly-locked device.
-- **Within-node**: once a node is selected, the DRA structured-parameters
-  allocator picks the first feasible device (first-fit). Among multiple
-  feasible devices on the chosen node — say, one already locked to a
-  compatible affinity value and one clean — there is no preference logic;
-  the allocator may pick whichever appears first in the ResourceSlice.
-
-Both gaps are part of the same general-purpose DRA scoring effort tracked in
-[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970)
-("Scoring support for improved Node and device selection during Pod
-scheduling"). The issue explicitly calls out both within-node device
-selection (replacing first-fit) and cross-node node selection. The same
-gap affects KEP-4815 (partitionable devices, fragmentation), KEP-4816
-(prioritized list, cross-node consistency), and KEP-5055 (device taints,
-`PreferNoSchedule`).
-
-This KEP therefore does **not** propose its own DRA Score plugin or its own
-allocator-internal preference. KEP-5981's contribution to packing is to
-expose the **lock state** in `AllocatedState.AffinityStates`, which #4970
-can then consume as a signal for affinity-aware packing at both scopes
-when it lands. Doing the preference logic here would create a one-off
-allocator behavior that #4970 would need to subsume, and would step into
-the design space owned by that issue.
-
-Alpha contract: correctness only. Packing of any kind (within-node or
-cross-node) is best-effort first-fit and is documented as a known
-limitation in [Risks and Mitigations](#packing-depends-on-dra-aware-scoring-alpha-limitation).
 
 ## Design Details
 
@@ -773,7 +862,7 @@ sharing-constrained devices should target devices without `sharingAffinity`.
 is sufficient — incompatible locked devices are excluded, and any remaining
 candidate (locked-compatible or unlocked) produces a valid allocation.
 
-Among the remaining feasible devices on a chosen node, this KEP does not
+Among the remaining feasible devices on a chosen node, alpha does not
 introduce affinity-aware preference. Device selection continues to use the
 existing structured-parameters allocator (first-fit). This means that on a
 node with both a compatibly-locked device with capacity and a clean device,
@@ -781,11 +870,17 @@ the allocator may pick whichever appears first in the ResourceSlice rather
 than preferring the locked one.
 
 Affinity-aware preference (within a node) and node-level scoring (across
-nodes) are part of the general-purpose DRA scoring work tracked in
-[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970)
-and are out of scope for this KEP. KEP-5981's contribution to that work is
-to expose the lock state in `AllocatedState.AffinityStates` as a signal
-that #4970 can consume.
+nodes) are planned as a beta-scope contribution to
+`DynamicResources.computeScore`, following the same per-feature additive
+pattern that Prioritized List (KEP-4816) and Extended Resources (KEP-5004)
+already use. See [Affinity-aware scoring (planned for
+Beta)](#affinity-aware-scoring-planned-for-beta) for the design sketch.
+General-purpose DRA scoring discussion is tracked in
+[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970),
+but this KEP's contribution does not block on it. KEP-5981's data-plane
+contribution to that future work is to expose the lock state in
+`AllocatedState.AffinityStates` so the score function (and any
+generalized successor) can consume it.
 
 
 ##### Reserve Phase: Tentative Locking
@@ -801,7 +896,7 @@ lock" in the scheduler cache before the Binding phase:
    - Proceed with allocation (device is now tentatively locked)
 3. If device has existing allocations (locked):
    - Compare claim's affinity values against `AllocatedState.AffinityStates[deviceID].LockedAffinity`
-   - If all keys match: proceed with allocation (pack onto locked device)
+   - If all keys match: proceed with allocation (co-allocate onto locked device)
    - If any key mismatches: skip this device, try next candidate
 
 This tentative lock is immediately visible to subsequent scheduling cycles. If
@@ -863,7 +958,14 @@ cycle begins.
    device to become unknown, the device remains with `AffinityStates[deviceID].Unknown` set
    until all claims on that device are released.
 7. If multiple reconstructable claims share the same device, verify their values
-   are consistent (they must be, by construction—but log a warning if not).
+   are consistent. By construction they should be — the Reserve plugin only
+   admits compatible claims onto a locked device — but if reconstruction
+   nevertheless yields inconsistent values (e.g. due to historical bugs,
+   manual etcd edits, or unsupported version skew), set
+   `AffinityStates[deviceID].Unknown = true` and log a warning. The device
+   is then filtered out for new sharing-affinity placements until it becomes
+   clean, consistent with the conservative-fallback model used elsewhere
+   for ambiguous lock state.
 
 This follows the same pattern used to reconstruct `AggregatedCapacity` from
 bound claims on startup. No new API calls are needed; the data is already
@@ -887,8 +989,16 @@ This KEP introduces two feature gates with a dependency relationship:
 - **`DRASharingAffinity`** (alpha): adds the behavioral surface specific to
   this KEP — `Device.SharingAffinity`, `AllocatedState.AffinityStates`, and
   the Filter / Reserve logic that *reads* `Structured.Parameters` for
-  affinity matching. Requires `DRAStructuredDeviceConfiguration` to be enabled;
-  otherwise the field the scheduler would read does not exist on the API.
+  affinity matching. `DRASharingAffinity` must not be enabled unless
+  `DRAStructuredDeviceConfiguration` is also enabled on `kube-apiserver`
+  and `kube-scheduler`: if the API gate is off, claims cannot reliably
+  carry scheduler-readable parameters, so behavioral enforcement would be
+  invalid. The scheduler treats this combination as a misconfiguration
+  and no-ops affinity enforcement. This degraded behavior is intentional:
+  the driver remains the safety backstop at `NodePrepareResources`, so
+  permissive scheduling is operationally safer than hard-failing scheduler
+  startup, which would destabilize control plane availability for the
+  whole cluster.
 
 Both gates target the same alpha release and must be enabled on
 `kube-apiserver` and `kube-scheduler`. KEP-5993 will reuse
@@ -945,14 +1055,13 @@ spec:
         exactly:
           deviceClassName: shared-nic
     config:
-      # Typed, scheduler-readable parameters. The scheduler reads these for
-      # affinity matching.
+      # Both scheduler-readable (structured) and driver-private (opaque)
+      # config can live on the same entry — they target different audiences
+      # and are orthogonal.
       - requests: ["nic"]
         structured:
           parameters:
             networking.example.com/subnet: "subnet-X"
-      # Driver-private opaque config (scheduler ignores this entirely).
-      - requests: ["nic"]
         opaque:
           driver: networking.example.com
           parameters:
@@ -961,12 +1070,13 @@ spec:
             vlanId: 100
 ```
 
-> **Note**: The first config block uses the typed `structured` field; the
-> scheduler reads `parameters` directly without any decoding. The second
-> config block is standard `opaque` driver config that only the driver
-> reads. The two are independent `DeviceClaimConfiguration` entries; either
-> may be present alone, or both together. For simple drivers that only need
-> scheduler-readable parameters, a single `structured` entry is sufficient.
+> **Note**: The `structured` field is read by the scheduler for affinity
+> matching (no decoding). The `opaque` field is standard driver-private
+> config that only the driver reads. Both fields can be set on the same
+> `DeviceClaimConfiguration` entry (recommended for ergonomics) or split
+> across separate entries targeting the same request — both forms are
+> valid. For simple drivers that only need scheduler-readable parameters,
+> a single `structured` entry is sufficient.
 
 #### Multi-key SharingAffinity Example
 
@@ -1011,10 +1121,10 @@ Alpha matching behavior:
   - `pkey = 0x8001`
 - A later claim with the same `subnet` and same `pkey` may share the
   device.
-- A claim with `subnet = subnet-a` but `pkey = 0x8002` is rejected for that
-  device because all declared keys must match.
-- A claim that provides only `subnet` but omits `pkey` is rejected for that
-  device because missing declared keys are invalid.
+- A claim with `subnet = subnet-a` but `pkey = 0x8002` is filtered out for
+  that device because all declared keys must match.
+- A claim that provides only `subnet` but omits `pkey` is filtered out for
+  that device because missing declared keys are invalid.
 - The extra `vlan` key is ignored for this device because the driver did not
   declare `networking.example.com/vlan` in `parameterKeys`.
 
@@ -1044,7 +1154,8 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
     `sharingAffinity` scheduling
   - First-fit verification: with two feasible devices on a node (one locked-compatible,
     one clean), allocator picks the first in ResourceSlice order (no affinity-aware
-    preference; preference is out of scope per #4970)
+    preference; preference lands in beta — see [Affinity-aware scoring
+    (planned for Beta)](#affinity-aware-scoring-planned-for-beta))
   - Reserve: first claim sets lock; second claim with same values succeeds
   - Reserve: second claim with conflicting values fails
   - Unreserve: tentative lock is rolled back
@@ -1068,14 +1179,22 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   - Validation: `Structured.Parameters` exceeding max 8 entries is rejected
   - Validation: more than one `DeviceClaimConfiguration` with `Structured`
     set covering the same request is rejected
-  - Validation: exactly one of `Opaque` or `Structured` is set per
-    `DeviceConfiguration` (the existing one-field-set invariant)
+  - Validation: at least one of `Opaque` or `Structured` is set per
+    `DeviceConfiguration` (an entry with neither has no purpose); both
+    being set on the same entry is permitted because they are orthogonal
+    (driver-private vs. scheduler-readable)
   - Round-trip serialization of `SharingAffinity` and
     `StructuredDeviceConfiguration`
 
 ##### Integration tests
 
-- Affinity matching with multiple claims to same device
+- Affinity matching with multiple claims to same device: in a single-device
+  topology (or with selectors that constrain feasibility to one device),
+  verify that a second compatible claim shares the locked device and
+  extends the affinity lock. Tests Filter correctness and Reserve-phase
+  lock extension; preference for the locked device when alternatives
+  exist is a beta concern (see [Affinity-aware scoring (planned for
+  Beta)](#affinity-aware-scoring-planned-for-beta)).
 - Affinity mismatch causing allocation to different device
 - Affinity lock clearing when all claims release a device
 - Interaction with consumable capacity constraints (KEP-5075)
@@ -1084,10 +1203,11 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   `AffinityStates[deviceID].Unknown` set
 - Parallel scheduling: two Pods with conflicting affinity values targeting the
   same device — one wins Reserve, the other is requeued
-- Feature gate disabled: `sharingAffinity` fields are ignored; devices are
-  treated as unconditionally shareable
-- Feature gate toggled: enabling after claims exist does not disrupt already-bound
-  workloads, and legacy in-use devices are conservatively filtered until clean
+- `DRASharingAffinity` disabled: `sharingAffinity` fields are ignored;
+  devices are treated as unconditionally shareable
+- `DRASharingAffinity` toggled: enabling after claims exist does not
+  disrupt already-bound workloads, and legacy in-use devices are
+  conservatively filtered until clean
 - Invalid `Structured` parameters at scheduling time: regression test that
   malformed claims rejected at API admission cannot reach the scheduler, and
   that any historical claim slipping through deterministically excludes
@@ -1110,29 +1230,36 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   successfully (Filter excludes nothing; either device is feasible) and that
   the chosen device matches the allocator's existing first-fit ordering. Alpha
   does not require the locked device to be preferred; affinity-aware
-  preference is out of scope per
-  [#4970](https://github.com/kubernetes/enhancements/issues/4970).
-- Permissive Sharing (no SA): Device without `sharingAffinity`, claim with
-  `Structured` parameters — verify scheduler allows the allocation and the
-  parameters are not evaluated for affinity
+  preference is delivered in beta — see [Affinity-aware scoring (planned for
+  Beta)](#affinity-aware-scoring-planned-for-beta).
 - Driver Backstop: Device without `sharingAffinity`, two claims with
   incompatible config land on the same device — verify scheduler allows both
   (permissive), and `NodePrepareResources` rejects the incompatible claim
+- Gate-dependency misconfiguration: `DRASharingAffinity` enabled while
+  `DRAStructuredDeviceConfiguration` is disabled on apiserver/scheduler —
+  verify the scheduler no-ops affinity enforcement (no panic, no false
+  filtering) and that a clear log/event is emitted indicating the
+  unsupported configuration
 - NodePrepareResources failure does not clear lock: Claim is bound and
-  lock is persisted, but `NodePrepareResources` fails on the node — verify
-  the affinity lock remains in the scheduler cache
+  lock is set in the scheduler cache, but `NodePrepareResources` fails on
+  the node — verify the affinity lock remains in the scheduler cache
 - Multi-request, multi-device, no cross-talk: Single claim with two requests
   (`mgmt-nic`, `data-nic`), each with distinct `Structured` parameters
   (`subnet=A` and `subnet=B`) targeting two different `sharingAffinity`
   devices on the same node — verify both requests succeed in the same
   scheduling cycle and each device locks to its own request's values without
   influence from the sibling request
+- Restart with inconsistent reconstructable locks: two active reconstructable
+  claims on the same device disagree on a required key value during restart
+  reconstruction — verify the device is marked
+  `AffinityStates[deviceID].Unknown = true`, a warning is logged, and new
+  sharing-affinity scheduling is blocked on that device until all claims drain
 - parameterKeys mutation with active claims: device locked with claims
   carrying `parameterKeys=[subnet]`; driver updates ResourceSlice to
   `parameterKeys=[subnet, vlan]` — verify the device is marked
   `AffinityStates[deviceID].Unknown` after the next reconciliation/restart
   (because pre-existing claims do not provide the new key in `Structured`)
-  and is filtered for new `sharingAffinity` scheduling until existing claims
+  and is filtered out for new `sharingAffinity` scheduling until existing claims
   drain
 
 ##### e2e tests
@@ -1159,17 +1286,11 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
     `Structured.Parameters` for affinity matching; depends on
     `DRAStructuredDeviceConfiguration`
 - API fields added to ResourceSlice (`SharingAffinity` on `Device`)
-- Typed `Structured *StructuredDeviceConfiguration` sibling field added on
-  `DeviceConfiguration`; API validation enforces that exactly one of
-  `Opaque` or `Structured` is set
+- Typed `Structured *StructuredDeviceConfiguration` sibling field added on `DeviceConfiguration`
 - Scheduler reads `Structured.Parameters` for affinity matching; no opaque
   decoding involved
 - Scheduler Filter plugin enforces affinity matching
-- Affinity-aware packing (both within-node and cross-node) is out of scope
-  for alpha and depends on the general-purpose DRA scoring work tracked in
-  [issue #4970](https://github.com/kubernetes/enhancements/issues/4970).
-  Alpha provides correctness only; the existing structured-parameters
-  allocator's first-fit behavior is unchanged.
+- Affinity-aware packing (both within-node and cross-node) is out of scope for alpha
 - Scheduler tracks affinity in AllocatedState
 - Unit and integration tests
 - Documentation for driver authors
@@ -1177,6 +1298,12 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   semantics for incompatible locks
 - Alpha documentation explicitly calls out string-only affinity matching
   (alpha `Structured.Parameters` value type is `string`)
+- Distinct alpha diagnostics emitted via scheduler logs and (best-effort)
+  events for: (a) compatibility mismatch with the current lock, (b) missing
+  required `Structured` parameters for a `sharingAffinity` device, and
+  (c) unknown lock state due to legacy / non-reconstructable / inconsistent
+  active claims — sufficient to attribute a filtered scheduling decision
+  without relying on metric labels alone
 
 #### Beta
 
@@ -1185,6 +1312,24 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 - **Lock-aware preemption**: PostFilter detects affinity mismatch as a
   preemption-solvable problem; identifies lock-holder Pods as victims when a
   higher-priority Pod needs a device locked to an incompatible value
+- **Affinity-aware scoring contribution**: Extend
+  `DynamicResources.computeScore` with a sharing-affinity term — prefer
+  nodes where the target device is already locked to a compatible value
+  (consolidation), then clean devices, with unknown-affinity devices
+  deprioritized. Extend the structured-parameters allocator's per-node
+  device selection with the same preference. Follows the per-feature
+  additive scoring pattern that Prioritized List (KEP-4816, shipped in
+  1.35) and Extended Resources (KEP-5004) already use; not blocked on the
+  general-purpose scoring discussion in
+  [#4970](https://github.com/kubernetes/enhancements/issues/4970). See
+  [Affinity-aware scoring (planned for
+  Beta)](#affinity-aware-scoring-planned-for-beta).
+- **Observability of lock state**: Surface effective per-device lock state
+  for operators — exact mechanism TBD in beta. Candidates include
+  scheduler-side metrics/gauges keyed by device and parameter hash,
+  scheduler Events on Pending pods naming the locking claim, aggregation
+  tooling over existing `ResourceClaim.status.allocation`, or a dedicated
+  scheduler-owned API resource.
 - E2e tests stable
 - Performance validation with high pod churn
 
@@ -1201,7 +1346,55 @@ New field is additive. See the [Compatibility Matrix](#compatibility-matrix) for
 how the scheduler and driver behave across all combinations of device
 `sharingAffinity` and claim `Structured` parameters presence.
 
-**Recommended rollout sequence**: To minimize capacity stranding, drivers should
+#### Recommended Rollout (responsibility split)
+
+The two-feature-gate split is intentional: `DRAStructuredDeviceConfiguration`
+gates the API surface (claim-side `Structured.Parameters`) and is meant to
+land first so workload teams can adopt the new field while it remains a
+no-op for placement; `DRASharingAffinity` gates enforcement (device-side
+`sharingAffinity` + scheduler matching) and should be turned on only after
+workloads have adopted `Structured.Parameters` for the relevant claims.
+
+The recommended sequence, mapped to who typically owns each step:
+
+1. **Platform team — enable the API gate (`DRAStructuredDeviceConfiguration`)**
+   on apiserver and scheduler. This is behaviorally a no-op: it only allows
+   the typed `Structured` field to be persisted in `ResourceClaim`s. No
+   scheduling decisions change. Safe to enable cluster-wide.
+
+2. **Workload teams — adopt `Structured.Parameters`**: update
+   `ResourceClaim` (or `ResourceClaimTemplate`) authoring to include
+   `Structured.Parameters` for the keys the workload cares about
+   (e.g., `subnet`, `pkey`, `partition`). Until any device declares
+   `sharingAffinity`, these values are persisted but ignored by the
+   scheduler — see the "device without SA + claim with SP" row of the
+   Compatibility Matrix. This phase can run for as long as workload
+   teams need to roll out at their own pace; there is no deadline
+   imposed by the platform side.
+
+3. **Platform team — enable the behavioral gate (`DRASharingAffinity`)**
+   on the scheduler. Still a no-op until any device declares
+   `sharingAffinity.parameterKeys`.
+
+4. **Platform / driver team — publish `sharingAffinity` on devices**:
+   upgrade the driver to populate `sharingAffinity.parameterKeys` on
+   `ResourceSlice.Device`. Strongly recommended on clean (idle) devices
+   first (see "Adding `sharingAffinity` to an in-use device" below).
+   From this point on, on `sharingAffinity`-declaring devices, claims
+   that provide matching `Structured.Parameters` lock the device, and
+   claims that do not provide them are filtered out of those devices.
+
+**Why this order matters**: enabling SA on devices before workloads
+have adopted SP causes legacy claims (no SP) to be filtered out of
+those devices on their next scheduling attempt, either landing them on
+non-SA devices (capacity strand) or driving them to `Pending` if no
+non-SA devices exist. Doing SP adoption first is silent-and-safe; doing
+SA last is the visible, enforced change. Concretely: clusters should not
+flip all relevant devices to `sharingAffinity` until claim authorship
+has broadly adopted `Structured.Parameters`, or workloads targeting only
+those devices may become unschedulable.
+
+**Recommended rollout sequence (driver-only view)**: To minimize capacity stranding, drivers should
 ideally:
 
 1. Wait for a device to be idle (clean).
@@ -1210,23 +1403,23 @@ ideally:
 
 During mixed rollouts (some devices with `sharingAffinity`, some without),
 alpha provides no scheduler-side steering toward upgraded devices —
-affinity-aware preference depends on
-[#4970](https://github.com/kubernetes/enhancements/issues/4970). Drivers
-that want predictable rollout behavior should drain devices before adding
-`sharingAffinity`, as recommended above.
+affinity-aware preference is delivered in beta (see [Affinity-aware
+scoring (planned for Beta)](#affinity-aware-scoring-planned-for-beta)).
+Drivers that want predictable rollout behavior should drain devices
+before adding `sharingAffinity`, as recommended above.
 
 **Adding `sharingAffinity` to an in-use device**: A driver may add or update
 `sharingAffinity` on a device that already has active (bound) ResourceClaims.
 This can happen during driver upgrades or when enabling the feature on existing
 hardware. The scheduler handles this as follows:
 
-- **Pre-existing claims continue to run** and are not evicted.
+- Pre-existing claims continue to run and are not evicted.
 - If any active claim on that device does not provide reconstructable
   affinity values for the required keys, the scheduler marks the device as
   `AffinityStates[deviceID].Unknown = true`.
 - A device with `AffinityStates[deviceID].Unknown` set is not eligible for new
   `sharingAffinity` placements, even if it still has nominal shared capacity.
-- **Once all active claims on that device are released**, the device becomes
+- Once all active claims on that device are released, the device becomes
   clean and subsequent allocations can establish and enforce affinity normally.
 - Drivers enabling this feature on existing hardware should prefer doing so on
   clean devices, because alpha intentionally chooses conservative correctness
@@ -1251,9 +1444,11 @@ is excluded.
 
 - Disabling `DRASharingAffinity` causes the API server to strip the
   `sharingAffinity` field from new or updated ResourceSlices, and the
-  scheduler ignores the field — devices return to unconditional sharing
-  (pre-KEP-5981 behavior). The `Structured` API field remains available
-  if `DRAStructuredDeviceConfiguration` is still enabled (other consumers
+  scheduler ignores the field on any persisted ResourceSlices that still
+  carry it (e.g., objects created while the gate was on) — devices
+  return to unconditional sharing (pre-KEP-5981 behavior). The
+  `Structured` API field remains available if
+  `DRAStructuredDeviceConfiguration` is still enabled (other consumers
   unaffected).
 - Disabling `DRAStructuredDeviceConfiguration` additionally strips the typed
   `Structured` field from new writes on `DeviceConfiguration`. This
@@ -1387,7 +1582,8 @@ Operators can determine usage by inspecting `ResourceSlice` objects that set
 
 A user should be able to observe that:
 
-- compatible claims preferentially pack onto already-locked devices,
+- compatible claims are eligible to reuse already-locked devices (alpha
+  does not actively prefer them; affinity-aware preference lands in beta),
 - incompatible claims are filtered before bind/prepare when the scheduler has
   reconstructable affinity state,
 - devices with unknown legacy affinity state are conservatively excluded until
@@ -1410,7 +1606,7 @@ Useful SLIs include:
 
 - rate of scheduling attempts filtered due to `sharingAffinity` mismatch,
 - rate of devices with `AffinityStates[deviceID].Unknown` set,
-- share of successful placements that pack onto already-locked compatible
+- share of successful placements that reuse already-locked compatible
   devices,
 - prepare-time rejections by the DRA driver caused by incompatible hardware
   configuration.
@@ -1422,7 +1618,7 @@ This feature would benefit from scheduler-observable counters and/or events for:
 - `sharing_affinity_filter_mismatch_total`
 - `sharing_affinity_filter_missing_parameters_total`
 - `sharing_affinity_unknown_device_total`
-- `sharing_affinity_packed_allocation_total`
+- `sharing_affinity_compatible_reuse_total`
 
 Exact metric names are illustrative and implementation-specific, but
 equivalent observability is strongly recommended.
@@ -1566,8 +1762,12 @@ unschedulable errors whenever possible.
   to the `resource.k8s.io` API group — a one-time API surface cost (justified
   by the per-request scoping and reuse by KEP-5993, but still a new field).
 - Affinity locks are purely in-memory with no API or status field to inspect
-  which devices are locked to which values. Debugging lock state requires
-  scheduler logs.
+  which devices are locked to which values. Debugging lock state in alpha
+  requires scheduler logs; a future enhancement (tracked under Beta
+  graduation) is to surface effective lock state via scheduler-side
+  metrics, scheduler Events on Pending pods, aggregation over existing
+  `ResourceClaim.status.allocation`, or a dedicated scheduler-owned API
+  resource — exact mechanism TBD.
 
 ## Alternatives
 
@@ -1692,21 +1892,6 @@ commonConfigKind:       # new field
   (who owns the CRD instance? what happens when it is deleted while claims
   reference it?).
 
-### Placeholder Pattern Workaround
-
-Without this KEP, drivers must use a "placeholder pattern" today:
-
-1. Publish devices with `capacity: 1` initially
-2. Wait for first claim to determine affinity value
-3. Update ResourceSlice with actual capacity and affinity as attribute
-4. Use CEL selector to match affinity attribute
-
-
-**Problems**:
-- Race condition: Second pod may go to different device before expansion
-- ResourceSlice churn: Constant updates as pods come and go
-- Driver complexity: State machine for expand/contract lifecycle
-
 ### CEL-based Affinity Matching
 
 An alternative approach uses CEL expressions to evaluate affinity compatibility,
@@ -1770,6 +1955,54 @@ devices:
 The following ideas are out of scope for alpha but are worth exploring in
 beta/GA based on real-world feedback:
 
+### Affinity-aware scoring (planned for Beta)
+
+This KEP's Filter phase is sufficient for **correctness** — an incompatible
+locked device is filtered out, and any remaining candidate produces a valid
+allocation. It is not, however, sufficient for **packing**, at either
+scope:
+
+- **Cross-node**: stock Kubernetes scorers do not factor in
+  `sharingAffinity` when scoring nodes yet. A `subnet=X` claim
+  is just as likely to land on a node with a clean device as on a node
+  that already has a compatibly-locked device.
+- **Within-node**: once a node is selected, the DRA structured-parameters
+  allocator picks the first feasible device (first-fit). Among multiple
+  feasible devices on the chosen node — say, one already locked to a
+  compatible affinity value and one clean — there is no preference logic;
+  the allocator may pick whichever appears first in the ResourceSlice.
+
+The `DynamicResources` plugin already implements scoring for DRA
+(shipped in K8s 1.35). Prioritized List (KEP-4816) and Extended
+Resources (KEP-5004) already contribute their own additive terms to
+`computeScore`. This is the canonical extension point for new DRA
+features that need scoring.
+
+KEP-5981 plans to add a sharing-affinity term to `computeScore` as a
+beta deliverable, following the same per-feature additive pattern. The
+broader "general-purpose DRA scoring" discussion continues in
+[kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970),
+but this KEP's contribution does **not** block on a unified framework
+or on #4970 producing a generic API. Doing per-feature scoring here is
+consistent with how Prioritized List and Extended Resources already
+shipped scoring, and avoids stranding sharing affinity behind a
+multi-feature design effort.
+
+The detailed score terms, weights, and tie-breakers will be designed
+and proposed as part of the beta graduation. Alpha intentionally does
+not commit to specific scoring shape so that beta has freedom to
+incorporate operational feedback from alpha.
+
+**Within-node device selection** is addressed similarly by extending the
+allocator's per-node selection logic so that, among feasible devices for
+a chosen sub-request, the allocator prefers a locked-compatible device
+over a clean one. This is a localized change to the structured-parameters
+allocator and is also a beta deliverable.
+
+**Alpha contract: correctness only**. Packing of any kind (within-node or
+cross-node) is best-effort first-fit and is documented as a known
+limitation in [Risks and Mitigations](#packing-depends-on-dra-aware-scoring-alpha-limitation).
+
 ### Priority-based Lock Preemption
 
 This section addresses a deliberate alpha limitation: alpha enforces lock
@@ -1827,7 +2060,7 @@ include:
 
 Alpha intentionally does not let claims control whether they may establish
 a new lock on a clean device. Any compatible claim can set the initial lock,
-and the scheduler then packs subsequent compatible claims onto that device.
+and subsequent compatible claims can then reuse that locked device.
 
 A future enhancement could add an explicit **SharingStrategy** on the claim
 side to control lock-setting behavior. Two candidate strategies are:
