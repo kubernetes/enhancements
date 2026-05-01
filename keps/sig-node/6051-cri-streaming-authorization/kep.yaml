@@ -1,0 +1,38 @@
+title: CRI Streaming Authorization Hook
+kep-number: 6051
+authors:
+  - "@mattsu2020"
+owning-sig: sig-node
+participating-sigs:
+  - sig-auth
+status: provisional
+creation-date: 2026-05-01
+reviewers:
+  - "@mikebrow"
+  - "@dims"
+  - "@liggitt"
+approvers:
+  - "@mikebrow"
+  - "@liggitt"
+
+see-also:
+replaces:
+
+stage: alpha
+
+latest-milestone: "v1.34"
+
+milestone:
+  alpha: "v1.34"
+  beta: "v1.36"
+  stable: "v1.38"
+
+feature-gates:
+  - name: CRIStreamingAuthorization
+    components:
+      - kubelet
+disable-supported: true
+
+metrics:
+  - cri_streaming_authorization_requests_total
+  - cri_streaming_authorization_duration_seconds
