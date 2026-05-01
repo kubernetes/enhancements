@@ -90,10 +90,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1 (Optional)](#story-1-optional)
-    - [Story 2 (Optional)](#story-2-optional)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [User Stories](#user-stories)
+    - [Story 1](#story-1)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -102,6 +100,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -114,7 +115,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+  - [HostPort DaemonSet Proxy](#hostport-daemonset-proxy)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -182,7 +183,7 @@ In-cluster registries in disconnected environments are a popular production use 
 
 Add a userspace TCP-only proxy to "kube-proxy" that listens on the loopback address (`127.0.0.1` / `::1`) for each NodePort and forwards connections to a service's endpoints. Each backend proxy (`iptables`, `nftables`, `ipvs`) instantiates this proxy when `--nodeport-addresses` contains a loopback CIDR, and reconciles its set of listeners on every sync.
 
-`iptables` and `ipvs` default to `0.0.0.0/0` or `::/0`, allowing all IPs, including localhost, when `--nodeport-addresses` is unset. `nftables` currently defaults to `primary`, accepting connections only to the node IP. `nftables` will shift to accepting `primary,127.0.0.1/32` to include localhost.
+`iptables` and `ipvs` default to `0.0.0.0/0` or `::/0`, allowing all IPs, including localhost, when `--nodeport-addresses` is unset. `nftables` currently defaults to `primary`, accepting connections only to the node IP. `nftables` will begin defaulting to `primary,<loopback-address>` to include localhost. The `--nodeport-addresses` flag will change to allow using the `primary` keyword alongside IP addresses. 
 
 This unblocks localhost NodePorts for `nftables` (IPv4 and IPv6), `ipvs` (IPv4 and IPv6), and `iptables` IPv6. `iptables` IPv4 will continue to use `route_localnet` until this feature graduates to GA, then transition to the userspace proxy. The field `--iptables-localhost-nodeports` will be deprecated in favor of explicitly setting `--nodeport-addresses`.
 
