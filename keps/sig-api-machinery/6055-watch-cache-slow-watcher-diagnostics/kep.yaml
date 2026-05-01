@@ -1,0 +1,28 @@
+title: Watch Cache Slow Watcher Diagnostics
+kep-number: 6055
+authors:
+  - TBD
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-instrumentation
+status: provisional
+creation-date: 2026-05-01
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+stage: alpha
+latest-milestone: "v1.36"
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+
+feature-gates: []
+disable-supported: false
+
+metrics:
+  - apiserver_watch_cache_watcher_terminated_total
+  - apiserver_watch_cache_init_events_duration_seconds
+  - apiserver_init_events_total
