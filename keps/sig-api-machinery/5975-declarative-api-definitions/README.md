@@ -61,12 +61,16 @@ definition package, a developer should simply provide required information in a 
 declaration, e.g.:
 
 ```yaml
-apiVersion: apidefinitions.k8s.io/v1alpha1
-kind: APIVersion
-metdata:
-  name: admission.k8s.io/v1
+apiVersion: apidefinitions.config.k8s.io/v1alpha1
+kind: APIGroup
+metadata:
+  name: apps
 spec:
-  modelPackage: io.k8s.admission
+  type: REST                # default REST; "Config" for component config
+  modelPackage: io.k8s.api.apps
+  versions:
+  - name: v1
+  - name: v1beta1
 ```
 
 Additionally, it should be easy to adhere to the standard patterns when in code. A
@@ -167,34 +171,41 @@ So we will structure them such that they're automatically added and automaticall
 Rather than independently enable individual code generators with tags, code generation will
 be on-by-default for all API definitions in code where declaration files exist.
 
-`GroupVersion` will be placed in external API definition directories, for example:
+For example,
 
-`staging/src/k8s.io/api/admission/v1/apiversion.yaml`:
+`staging/src/k8s.io/api/apps/v1/apigroup.yaml`:
 
 ```yaml
-apiVersion: apidefinitions.k8s.io/v1alpha1
-kind: APIVersion
-metdata:
-  name: admission.k8s.io/v1
+apiVersion: apidefinitions.config.k8s.io/v1alpha1
+kind: APIGroup
+metadata:
+  name: apps
 spec:
-  modelPackage: io.k8s.admission
+  type: REST                # default REST; "Config" for component config
+  modelPackage: io.k8s.api.apps
+  versions:
+  - name: v1
+  - name: v1beta1
 ```
 
 This file defines all common properties of a group and it's presence indicates that
 all external code generation, such as typed clients and openapi, should be run for this
 group of resources.
 
-A similar file will be used to define the API group in the unexported API definition directory:
+The file will be used to define the API group in the internal package directories as well.
 
-`pkg/apis/admission/apigroup.yaml`:
+For example,
+
+`pkg/apis/apps/apigroup.yaml`:
 
 ```yaml
-apiVersion: apidefinitions.k8s.io/v1alpha1
+apiVersion: apidefinitions.config.k8s.io/v1alpha1
 kind: APIGroup
-metdata:
-  name: admission.k8s.io
+metadata:
+  name: apps
 spec:
-  # ...
+  peerPackages:
+  - k8s.io/kubernetes/pkg/apis/apps
 ```
 
 Our long term goal is for all declarative information about an API lives either in `types.go` files
@@ -280,8 +291,9 @@ Default behavior will follow best practices:
 
 - **Main strategy**: clears status on create (`obj.Status = TypeStatus{}`),
   and clears status changes on update (`new.Status = old.Status`).
-- **Status substrategy**: clears spec, labels, and annotations changes
-  (`new.Spec = old.Spec`, `metav1.ResetObjectMetaForStatus`, etc.).
+- **Status substrategy**: clears spec, labels, and annotations changes and all new fields
+  (`new.Spec = old.Spec`, `metav1.ResetObjectMetaForStatus`, etc.). New fields, such as
+  new metadata fields, are cleared unless we take active effort to allow status writes to them.
 
 Managed fields are reset to match the fields that are wiped.
 
@@ -376,6 +388,7 @@ When `StrategyConfig` is set, the provided configuration customizes strategy.
 |------|---------|
 | `Validate` / `ValidateUpdate` | Additional hand-written validation (merged with DV) |
 | `WarningsOnCreate` / `WarningsOnUpdate` | Custom warning messages |
+| `PrepareForCreate` / `PrepareForUpdate` | Optional hooks for hand-written preparation |
 
 **Status substrategy:**
 
