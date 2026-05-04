@@ -1,0 +1,35 @@
+title: HTTP/2 cleartext (h2c) container probes
+kep-number: 5999
+authors:
+  - "@amritansh1502"
+  - "@ngopalak-redhat"
+owning-sig: sig-node
+participating-sigs:
+  - sig-network
+status: provisional
+creation-date: 2026-04-07
+reviewers:
+  - "@SergeyKanzhelev"
+approvers:
+  - "@mrunalp"
+see-also:
+  - https://github.com/kubernetes/kubernetes/issues/125599
+replaces: 
+
+stage: alpha
+
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+
+feature-gates:
+  - name: H2CContainerProbe
+    components:
+      - kube-apiserver
+      - kubelet
+
+disable-supported: true
+
+metrics:
