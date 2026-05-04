@@ -1,0 +1,14 @@
+# "prod-readiness-approvers" group:
+# - deads2k
+# - johnbelamaric
+# - jpbetz
+# - soltysh
+# - wojtek-t
+# - kannon92
+kep-number: 6011
+alpha:
+  approver: TBD
+beta:
+  approver: TBD
+stable:
+  approver: TBD
