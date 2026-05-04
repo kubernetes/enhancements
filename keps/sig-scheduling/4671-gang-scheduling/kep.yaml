@@ -16,15 +16,17 @@ participating-sigs:
 status: implementable
 creation-date: 2025-09-17
 reviewers:
-  - TBD
+  - "@macsko"
+  - "@wojtek-t"
 approvers:
   - "@sanposhiho"
   - "@dom4ha"
 
 see-also:
-  - "/keps/sig-scheduling/583-coscheduling"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
 replaces:
   - "/keps/sig-scheduling/583-coscheduling"
+  - "/keps/sig-scheduling/5832-decouple-podgroup-api"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
