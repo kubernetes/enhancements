@@ -94,12 +94,16 @@ tags, and then generate with `hack/update-toc.sh`.
     - [GetNodeHint](#getnodehint)
     - [StoreScheduleResults](#storescheduleresults)
     - [Integration with Scheduling Cycle](#integration-with-scheduling-cycle)
+  - [Rescoring](#rescoring)
+    - [Rescoring the Last Chosen Node](#rescoring-the-last-chosen-node)
+    - [NormalizeScore on a Subset](#normalizescore-on-a-subset)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Plugins need to keep signatures up to date](#plugins-need-to-keep-signatures-up-to-date)
     - [Limited workload coverage](#limited-workload-coverage)
     - [No prior production history](#no-prior-production-history)
     - [Cached nodes are not re-filtered each cycle](#cached-nodes-are-not-re-filtered-each-cycle)
+    - [Memory overhead from raw score caching](#memory-overhead-from-raw-score-caching)
 - [Design Details](#design-details)
   - [Pod signature](#pod-signature)
   - [Test Plan](#test-plan)
@@ -123,6 +127,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Comparison with Equivalence Cache (circa 2018)](#comparison-with-equivalence-cache-circa-2018)
+  - [New Rescore Extension Point](#new-rescore-extension-point)
 - [Future work](#future-work)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -181,6 +186,9 @@ scheduling. To implement this mechanism we propose the following additions:
    hints for multiple subsequent pods with matching scheduling signatures.
  - **Opportunistic batching:** Transparent inclusion of the batching mechanism in the scheduler to
    improve the performance of targeted workloads that could benefit from it.
+ - **Rescoring:** An extension to the batching mechanism that removes the one-pod-per-node
+   limitation: when the last chosen node is still feasible, it is rescored in-place rather than
+   flushing the batch.
 
 ## Motivation
 
@@ -198,6 +206,27 @@ complement of daemonset pods. For these workloads, once a pod is placed on a nod
 and can be skipped for subsequent pods. This allows the scheduler to reuse not only filtering but
 also scoring results, reducing per-cycle cost.
 
+However, not all workloads follow the one-pod-per-node pattern. For multi-pod-per-node pods (e.g., a
+web server requesting 100m CPU / 128Mi memory) the previously chosen node remains feasible after
+each placement, so naively checking for infeasibility would invalidate the cache on every cycle.
+[kubernetes/kubernetes#137707] identifies three consequences if this case is unhandled:
+
+1. **Redundant synchronous overhead.** The `RunFilterPlugins` call in `batchStateCompatible`
+   executes on the critical scheduling path for every pod in a multi-pod-per-node batch without ever
+   producing a useful result.
+2. **Duplicate filtering.** The same node is filtered in `GetNodeHint` and then again in the
+   filtering pass that immediately follows after batch state is invalidated.
+3. **Cache invalidation every cycle.** The sorted node list is discarded on every cycle despite the
+   pod signatures being identical, so the O(N) `Filter` and `Score` pipeline runs in full for every
+   pod in the batch.
+
+Rescoring solves this: when the last chosen node is still feasible, the scheduler rescores it
+against the current pod and updates its rank in the cached list rather than discarding the batch
+state. Both workload patterns, one-pod-per-node and multi-pod-per-node, are handled efficiently
+within the same mechanism.
+
+[kubernetes/kubernetes#137707]: https://github.com/kubernetes/kubernetes/issues/137707
+
 ### Goals
 
  * Improve the performance of scheduling large jobs on large clusters where the constraints are
@@ -205,7 +234,7 @@ also scoring results, reducing per-cycle cost.
  * Begin building infrastructure to support gang scheduling and other "multi-pod" scheduling
    mechanisms.
  * Ensure that the infrastructure we build is maintainable as we update, add and remove plugins.
- * Reduce per-cycle scheduling cost for a targeted set of workloads in this release.
+ * Reduce per-cycle scheduling cost for both one-pod-per-node and multi-pod-per-node workloads.
  * Provide a path where we can expand batching to apply to most or all workloads over the next few
    releases.
  * Allow users to continue to use out-of-tree plugins. For this KEP we need to ensure that out-of-
@@ -219,14 +248,18 @@ also scoring results, reducing per-cycle cost.
  * Adding gang scheduling. This is purely a performance improvement without dependency on the
    Workload API [KEP-4671](https://github.com/kubernetes/enhancements/pull/5558), although this work
    is intended to build toward it.
+ * Supporting group-aware scoring plugins (`PodTopologySpread`, `InterPodAffinity`) for rescoring.
+   These cause pods to be unsignable and are excluded from batching entirely.
+ * Introducing a new `Rescore` plugin interface. That extension point is deferred to future work and
+   described under [Alternatives](#alternatives).
 
 ## Proposal
 
 The batching mechanism is applied transparently to simple cases in the scheduling cycle, reusing the
 cached sorted node list from a previous cycle to provide node hints for subsequent identical pods.
-More complex integrations are left to future work. 
+More complex integrations are left to future work.
 
-The proposal covers two components: pod scheduling signature and batching mechanism.
+The proposal covers three components: pod scheduling signature, batching mechanism and rescoring.
 
 ### Pod scheduling signature
 
@@ -303,10 +336,12 @@ current pod by checking:
 2. **Signature match:** The pod's signature must exactly match the cached signature.
 3. **Cache freshness:** The cached data must be sufficiently recent to avoid relying on stale
    scheduling decisions.
-4. **Last chosen node feasibility check:** The node chosen in the previous scheduling cycle must now 
-   be infeasible for the new pod. This is verified by running filter plugins against that node. This 
-   validation ensures the one-pod-per-node constraint that allows us to reuse scoring results without 
-   rescoring.
+4. **Last chosen node feasibility check:** Filter plugins are run against the node chosen in the
+   previous cycle. Two outcomes are possible:
+   - **Infeasible:** The node is full (one-pod-per-node case). The node is discarded and batch
+     proceeds without it.
+   - **Still feasible:** The node can host another pod (multi-pod-per-node case). This node is
+     rescored (see [Rescoring the Last Chosen Node](#rescoring-the-last-chosen-node)).
 
 If all checks pass, the operation pops the next best node from the cached sorted list and returns it
 as a hint (see [Integration with Scheduling Cycle](#integration-with-scheduling-cycle) below for how
@@ -356,6 +391,54 @@ nodes. This ensures correctness while providing significant performance benefits
 valid. The batching mechanism can be used in multiple places, including future gang scheduling
 implementations, without requiring changes to the Pod API.
 
+### Rescoring
+
+#### Rescoring the Last Chosen Node
+
+When `RunFilterPlugins` finds the last chosen node (node A) still feasible, rescoring runs instead
+of flushing the batch:
+
+1. Node A is re-inserted into the cached sorted list. Since it is still feasible, it can host
+   additional pods.
+2. `Score` is called for each scoring plugin against node A using the current `CycleState`. The
+   resulting score accurately reflects pod N's placement.
+3. `NormalizeScore` is called for each plugin over all nodes in the cached list (the re-inserted
+   node A plus the remaining nodes).
+4. The cached list is re-sorted by aggregate normalized score.
+5. The top-ranked node is popped and returned as the hint for the current pod.
+
+This is correct under the assumption that scoring is node-local: placing pod N on node A does not
+affect the scores of other nodes. This holds for all signable pods. Group-aware scoring plugins
+(which would violate it) already make pods unsignable and are excluded from batching entirely.
+
+**Cost comparison:**
+
+| Scenario | Batching disabled | Batching enabled |
+|---|---|---|
+| One-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter, 0 scoring |
+| Multi-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter + O(1) Score + O(M) NormalizeScore |
+
+Where M is the number of nodes in the cached list (M ≤ N). For multi-pod-per-node workloads M stays
+close to N since nodes are re-inserted each cycle. However, both the O(N) Filter pass and the O(N)
+Score pass are eliminated: only a single `RunFilterPlugins` call and a single `Score` call run per
+cycle. `NormalizeScore` over M cached nodes is the only remaining cost, and it is lightweight
+relative to `Score`: it is arithmetic normalization rather than plugin logic.
+
+#### NormalizeScore on a Subset
+
+To support rescoring, `batchState` also caches the raw score for each node in the cached list. When
+rescoring, only the rescored node's raw score is updated; the rest remain valid under the node-local
+scoring assumption.
+
+`NormalizeScore` is applied to the cached node subset rather than all feasible nodes. When the cache
+is fresh, meaning the cached list contains exactly the nodes a fresh full pipeline would filter to,
+rescoring node A and normalizing all cached nodes produces identical results to a full pipeline run.
+The raw scores of all other nodes are unchanged (node-local scoring), node A's raw score is updated
+by the explicit `Score` call, and `NormalizeScore` sees the same set with the same scores.
+
+The only source of divergence is cache staleness: if cluster state has changed since the initial
+full pipeline run, the cached raw scores for non-rescored nodes may be slightly out of date. This is
+bounded by the 500ms `maxBatchAge` expiry (see [Risks and Mitigations](#risks-and-mitigations)).
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -396,6 +479,19 @@ than 500ms is flushed and a full pipeline reruns. In a typical scheduling burst,
 processed every few milliseconds, the window for meaningful node state drift is very small.
 Operators can disable `OpportunisticBatching` to restore full-pipeline behavior if degradation is
 observed.
+
+#### Memory overhead from raw score caching
+
+`batchState` stores raw per-plugin scores for every node in the cached list to support rescoring.
+The overhead is:
+
+  `O(|cached list| × |scoring plugins|) × sizeof(int64)`
+
+For a cluster with 5000 nodes and 10 scoring plugins, this is on the order of a few hundred
+kilobytes per active batch. The cached list also shrinks over the lifetime of a batch as nodes are
+popped and not re-inserted (one-pod-per-node case). Each scheduler profile maintains its own
+`batchState`, so the total overhead scales with the number of active profiles - typically one or two
+in practice.
 
 ## Design Details
 
@@ -516,6 +612,14 @@ Will add an extra function and test for plugins we touch.
 - `batching_test.go` - Test cases for the batching mechanism, separate from the actual integration
   into the scheduling pipeline.
 
+Rescoring-specific unit tests (will be added to `batching_test.go` and `schedule_one_test.go`):
+- Raw score updated only for the rescored node; other nodes' cached scores unchanged.
+- `NormalizeScore` called once per plugin with the full cached node list (including re-inserted
+  `lastChosenNode`).
+- Returned hint is the node with the highest aggregate normalized score.
+- Sorted list after the hint pop contains the correct remaining nodes.
+- Raw scores are correctly populated by `StoreScheduleResults` after a full pipeline run.
+
 ##### Integration tests
 
 <!--
@@ -533,6 +637,11 @@ Integration tests:
   representative scenarios.
 - End-to-end consistency: Tests running pods through the scheduler end-to-end with batching enabled
   and disabled, verifying that scheduling decisions are the same.
+- Add a correctness test: schedule identical pods in a multi-pod-per-node workload with batching
+  enabled and disabled. Verify that all placements are feasible (all filter plugins pass for the
+  chosen node) and no scheduling constraints are violated.
+- Add a multi-pod-per-node scenario to scheduler_perf and measure throughput with batching enabled
+  and disabled; batching enabled should show measurably higher throughput.
 
 <!--
 This question should be filled when targeting a release.
@@ -569,6 +678,7 @@ If e2e tests are not necessary or useful, explain why.
 - Run the existing scheduling e2e tests with batching enabled and disabled, to ensure they pass in
   both cases.
 - Add e2e tests ensuring that pod configurations we expect to be batched are in fact batched.
+- Add an e2e test with a multi-pod-per-node workload that asserts that rescoring is triggered.
 
 <!--
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
@@ -659,9 +769,12 @@ in back-to-back releases.
 - Initial e2e tests completed and enabled
 - Handle common one-pod-per-node batches: host ports and resources
 - Parameter tuning (batch sizes, etc.)
-- Pod scheduling signature is cached and reused across scheduling attempts, 
-  eliminating per-cycle recomputation.
-- Excluded: batching for non "one-pod-per-node" workloads
+- Pod scheduling signature is cached and reused across scheduling attempts, eliminating per-cycle
+  recomputation.
+- Unit tests for rescoring: score caching and update, cached nodes order after rescore.
+- Integration perf tests demonstrating improvement for the multi-pod-per-node scenario.
+- `scheduler_batch_rescore_attempts_total` and `scheduler_batch_rescore_duration_seconds` metrics
+  exported.
 
 #### GA
 
@@ -833,6 +946,9 @@ that might indicate a serious problem?
   longer signable.
 - `scheduler_batch_cache_flushed_total` - unexpected spikes indicate the cache is being invalidated
   more than expected.
+- `scheduler_batch_rescore_attempts_total` - zero value for a multi-pod-per-node workload 
+  means those pods are not being rescored and the full pipeline runs for every cycle.
+- `scheduler_batch_rescore_duration_seconds` - unexpected latency in the rescore path.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -871,7 +987,8 @@ logs or events for this purpose.
 -->
 
 Query `scheduler_batch_attempts_total` - a non-zero value confirms that batching is active for at
-least some pods.
+least some pods. Query `scheduler_batch_rescore_attempts_total` - a non-zero value confirms that
+rescoring is triggering for multi-pod-per-node workloads.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -884,9 +1001,10 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-Operators can observe `scheduler_batch_attempts_total` increasing as batches are processed, and 
-`scheduler_pod_scheduling_sli_duration_seconds` improving for batch workloads. End users cannot 
-directly observe the feature; its effect is transparent, their pods are scheduled faster.
+Operators can observe `scheduler_batch_attempts_total` and `scheduler_batch_rescore_attempts_total`
+increasing as batches are processed, and `scheduler_pod_scheduling_sli_duration_seconds` improving
+for batch workloads. End users cannot directly observe the feature; its effect is transparent, their
+pods are scheduled faster.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -920,6 +1038,8 @@ Pick one more of these and delete the rest.
   - `scheduler_batch_cache_flushed_total` - cache invalidation rate and reasons
   - `scheduler_get_node_hint_duration_seconds` - hint path latency
   - `scheduler_store_schedule_results_duration_seconds` - result storage latency
+  - `scheduler_batch_rescore_attempts_total` - counts of rescoring attempt results
+  - `scheduler_batch_rescore_duration_seconds` - per-cycle cost of the rescore path
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1094,7 +1214,8 @@ For each of them, fill in the following information by copying the below templat
 - [Increased pod scheduling latencies]
   - Detection: `scheduler_pod_scheduling_sli_duration_seconds` rises after enabling the feature.
   - Mitigations: disable `OpportunisticBatching` to restore full-pipeline behavior.
-  - Diagnostics: check `scheduler_batch_cache_flushed_total` for unexpected invalidation spikes.
+  - Diagnostics: check `scheduler_batch_rescore_duration_seconds` for rescore path overhead; check
+    `scheduler_batch_cache_flushed_total` for unexpected invalidation spikes.
   - Testing: integration perf tests establish expected latency bounds.
 
 - [Pods scheduled on incorrect nodes]
@@ -1110,6 +1231,10 @@ For each of them, fill in the following information by copying the below templat
    batched. Verify signatures are being generated and the gate is enabled.
 2. Check `scheduler_batch_cache_flushed_total` - high flush rates indicate the cache is being
    invalidated frequently. Examine the flush reason labels.
+3. Check `scheduler_batch_rescore_attempts_total` - unexpectedly low for a multi-pod-per-node
+   workload indicates rescoring is not triggering.
+4. Check `scheduler_batch_rescore_duration_seconds` - identify if the rescore path is slow for
+   specific plugins.
 
 ## Implementation History
 
@@ -1127,6 +1252,7 @@ Major milestones might include:
 - 2024-05-22: Initial KEP proposal introduced as [Enhancements PR #5599](https://github.com/kubernetes/enhancements/pull/5599).
 - 2025-11-13: Initial version implemented [Kubernetes PR #135231](https://github.com/kubernetes/kubernetes/pull/135231).
 - 2026-02-04: Optimized the implementation by caching the pod signature, thereby removing the computation from the critical scheduling path ([Kubernetes PR #136579](https://github.com/kubernetes/kubernetes/pull/136579)).
+- 2026-04-26: Rescoring extension incorporated into this KEP to support multi-pod-per-node workloads.
 
 ## Drawbacks
 
@@ -1210,6 +1336,54 @@ The issues experienced by eCache were:
 
 See https://github.com/kubernetes/kubernetes/pull/65714#issuecomment-410016382 as starting point on
 eCache.
+ 
+### New Rescore Extension Point
+
+A new `Rescore` plugin interface could be introduced, allowing plugins to declare which nodes are
+affected by the most recent placement and provide fresh raw scores for them. The framework then
+combines those with the cached raw scores for unaffected nodes and calls `NormalizeScore` on the
+full cached set — the same normalization flow as in the main pipeline.
+
+```go
+// RescorePlugin is an optional interface plugins may implement to support
+// incremental rescoring during opportunistic batching.
+type RescorePlugin interface {
+    Plugin
+    // Rescore is called after pod N is placed on placedNode. It returns raw
+    // (pre-NormalizeScore) scores for every node whose score is affected by
+    // the placement. The framework combines these with cached raw scores for
+    // unaffected nodes and runs NormalizeScore over the full cached set.
+    // Plugins with node-local scoring return scores for placedNode only.
+    // Group-aware plugins may return scores for multiple nodes.
+    //
+    // Return values:
+    //   - Success: map of affected node raw scores (may be empty if no scores changed)
+    //   - Error: unexpected failure; batch state is invalidated
+    Rescore(ctx context.Context, state *CycleState, pod *v1.Pod, placedNode NodeInfo, cachedNodes []NodeInfo) (map[string]int64, *Status)
+}
+```
+
+This KEP's rescoring approach is the implicit special case of this design: it always assumes only
+`placedNode` is affected (node-local scoring), calls `Score` to get its raw score, and normalizes
+the full cached set. The `Rescore` extension point generalizes that by letting group-aware plugins
+declare additional affected nodes and provide their raw scores.
+
+Pros:
+- Semantically correct: plugins can provide correct raw scores for any affected nodes, including
+  related-node effects from group-aware plugins.
+- Opens the path to eventually supporting batching for pods with `PodTopologySpread` or
+  `InterPodAffinity` constraints.
+
+Cons:
+- Requires every in-tree scoring plugin to be updated to implement `Rescore`.
+- The related-node capability it enables is not usable until the signature mechanism is also
+  extended, which is a separate, larger change.
+- Adds permanent plugin API surface that must be maintained even when its primary benefit (group-
+  aware rescoring) is not yet available.
+- All currently signable pods use node-local scoring plugins, for which this KEP's rescoring
+  approach is already correct.
+
+This KEP's approach can be cleanly replaced by a dedicated `Rescore` extension point in a future.
 
 ## Future work
 
@@ -1217,6 +1391,11 @@ eCache.
   other group-aware scoring plugins are currently unsignable and receive no batching benefit.
   Extending the signature mechanism to handle these plugins, possibly by incorporating their
   constraints into the signature itself, would unlock batching for additional workloads.
+- **New Rescore extension point**: Once group-aware plugins become signable, a dedicated `Rescore`
+  plugin interface can be introduced to handle related-node score updates correctly. Plugins would
+  return raw scores for all affected nodes; the framework combines them with cached raw scores for
+  unaffected nodes and runs `NormalizeScore` on the full set. See [Alternatives](#alternatives) for
+  the full design.
 
 ## Infrastructure Needed (Optional)
 
