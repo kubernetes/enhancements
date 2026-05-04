@@ -1,0 +1,46 @@
+title: "DRA Sharing Affinity for Conditional Fungibility"
+kep-number: 5981
+authors:
+  - "@ashvindeodhar"
+owning-sig: "sig-scheduling"
+participating-sigs:
+  - "sig-node"
+status: "provisional"
+creation-date: "2026-03-30"
+reviewers:
+  - "@pohly"
+  - "@johnbelamaric"
+  - "@sunya-ch"
+  - "@ritazh"
+  - "@LionelJouin"
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-scheduling/5075-dra-consumable-capacity"
+  - "/keps/sig-node/4381-dra-structured-parameters"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been done.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
+
+# The following PRR answers are required at alpha release
+feature-gates:
+  - name: DRASharingAffinity
+    components:
+      - kube-apiserver
+      - kube-scheduler
+      - kubelet
+disable-supported: true
+
+# Metrics required for beta release; can be placeholders for now.
+metrics:
+  - dra_scheduling_attempts_affinity_mismatch_total
