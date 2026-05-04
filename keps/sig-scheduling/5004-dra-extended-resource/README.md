@@ -888,6 +888,7 @@ older clusters.
   - Feature gate name: DRAExtendedResource
   - Components depending on the feature gate:
     - kube-apiserver
+    - kube-controller-manager
     - kube-scheduler
     - kubelet
 
@@ -1337,6 +1338,7 @@ For each of them, fill in the following information by copying the below templat
 - Kubernetes 1.34: KEP accepted.
 - Kubernetes 1.35: Feature in alpha.
 - Kubernetes 1.36: Promotion to beta.
+- Kubernetes 1.37: Promotion to ga.
 
 ## Drawbacks
 
