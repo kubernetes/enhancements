@@ -1,6 +1,13 @@
 <!--
 **Note:** When your KEP is complete, all of these comment blocks should be removed.
 
+Follow the guidelines of the [documentation style guide].
+In particular, wrap lines to a reasonable length, to make it
+easier for reviewers to cite specific portions, and to minimize diff churn on
+updates.
+
+[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
+
 To get started with this template:
 
 - [ ] **Pick a hosting SIG.**
@@ -84,8 +91,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Story 1 (Optional)](#story-1-optional)
+    - [Story 2 (Optional)](#story-2-optional)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -142,10 +149,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [X] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
@@ -176,13 +183,6 @@ should help to ensure that the tone and content of the `Summary` section is
 useful for a wide audience.
 
 A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
 ## Motivation
@@ -248,11 +248,11 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Story 1 (Optional)
 
 We want to leave room for volume expansion after node allocation. In this case, we want to allocate the node that has the maximum amount of free space. 
 
-#### Story 2
+#### Story 2 (Optional)
 
 We want to reduce the number of nodes as much as possible to reduce costs when using a cloud environment. In this case, we want to allocate the node that has the smallest amount of sufficiently free space left.
 
@@ -549,14 +549,30 @@ The following unit tests are planned:
 ##### Integration tests
 
 <!--
+Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
+Integration tests allow control of the configuration parameters used to start the binaries under test.
+This is different from e2e tests which do not allow configuration of parameters.
+Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
+For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
+
+If integration tests are not necessary or useful, explain why.
+-->
+
+<!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+For Beta and GA, document that tests have been written,
+have been executed regularly, and have been stable.
+This can be done with:
+- permalinks to the GitHub source code
+- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
+- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-The scoring function will be tested in test/integration/volumescheduling/storage_capacity_scoring_test.go.
+The scoring function is tested in test/integration/volumescheduling/storage_capacity_scoring_test.go.
+
+- [test/integration/volumescheduling/storage_capacity_scoring_test.go](https://github.com/kubernetes/kubernetes/blob/89900005eed1fdfe3060680bddb69ea2a17ede22/test/integration/volumescheduling/storage_capacity_scoring_test.go): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=volumescheduling)
 
 ##### e2e tests
 
@@ -564,20 +580,24 @@ The scoring function will be tested in test/integration/volumescheduling/storage
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+For Beta and GA, document that tests have been written,
+have been executed regularly, and have been stable.
+This can be done with:
+- permalinks to the GitHub source code
+- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
+- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
+If e2e tests are not necessary or useful, explain why.
 -->
 
 The following e2e tests are planned:
 
 - When only static provisioning is available, or a mixture of static provisioning and dynamic provisioning is available:
   - Does it pass traditional tests?
-- When only dynamic provisioning is available:
+- When only dynamic provisioning is available (single CSI driver case):
   - Is the Pod placed on the node with the largest available space by default?
   - When `VolumeBindingArgs` is set to "Prefer a node with the maximum allocatable", is the Pod placed on the node with the largest available space?
-  - When `VolumeBindingArgs` is set to "Prefer a node with the least allocatable", is the Pod placed on the node that meets the requested size but has the smallest available space?
   - Does the Pod placement fail if no node meets the requested size?
   - Even when the Pod is recreated, is the placement in the node performed as expected above?
 
@@ -620,13 +640,23 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Gather feedback from developers and surveys
 - Complete features A, B, C
 - Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved
+
+**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
 
 #### GA
 
 - N examples of real-world usage
 - N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
+**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
 
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
@@ -639,6 +669,7 @@ in back-to-back releases.
 
 #### Deprecation
 
+<!--
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
@@ -689,9 +720,9 @@ components? What are the guarantees? Make sure this is in the test plan.
 
 Consider the following in developing a version skew strategy for this
 enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
@@ -879,7 +910,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-It may affect the time taken by scheduling. Clarify it during the beta phase.
+Metric `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}` <= 100ms on 90-percentile.
+
+(This follows the same SLO established in KEP-1845, as the additional overhead introduced by this KEP is limited to arithmetic calculations for scoring.)
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -898,18 +931,12 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-Clarify this during the beta phase.
-
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name: `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}`
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: `plugin_execution_duration_seconds`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1087,7 +1114,8 @@ Check the kube-scheduler logs.
 
 ## Implementation History
 
-- 2023-05-30 Initial KEP sent out for review
+- v1.33: Alpha release
+- v1.37: Beta release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
