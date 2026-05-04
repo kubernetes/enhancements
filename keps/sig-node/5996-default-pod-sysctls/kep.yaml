@@ -1,0 +1,35 @@
+title: Support Default Pod Sysctls in Kubelet Configuration
+kep-number: 5996
+authors:
+  - "@VeraQin"
+owning-sig: sig-node
+status: implementable
+creation-date: 2026-04-06
+reviewers:
+  - "@SergeyKanzhelev"
+approvers:
+  - TBD
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  beta: "TBD"
+  stable: "TBD"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: DefaultPodSysctls
+    components:
+      - kubelet
+disable-supported: true
