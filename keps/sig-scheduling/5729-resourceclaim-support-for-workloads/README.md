@@ -137,7 +137,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Increase the size limit on the <code>status.reservedFor</code> field](#increase-the-size-limit-on-the-statusreservedfor-field)
   - [Allow ResourceClaims to be reserved for any object](#allow-resourceclaims-to-be-reserved-for-any-object)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -419,8 +418,8 @@ The following API changes will be made:
 
 - The Workload and PodGroup APIs will be updated to include references to
   ResourceClaims and ResourceClaimTemplates, like Pods.
-- The Pod API will be updated to include references to claims listed in its
-  PodGroup.
+- The Pod API will include new semantics for the existing API fields to refer to
+  claims made by its PodGroup.
 
 #### Workload
 
@@ -432,21 +431,28 @@ type PodGroupTemplate struct {
 	...
 
 	// ResourceClaims defines which ResourceClaims may be shared among Pods in
-	// the group. Pods must reference these claims in order to consume the
-	// allocated devices.
+	// the group. Pods consume the devices allocated to a PodGroup's claim by
+	// defining a claim in its own Spec.ResourceClaims that matches the
+	// PodGroup's claim exactly. The claim must have the same name and refer to
+	// the same ResourceClaim or ResourceClaimTemplate.
 	//
 	// This is an alpha-level field and requires that the
-	// WorkloadPodGroupResourceClaimTemplate feature gate is enabled.
+	// DRAWorkloadResourceClaims feature gate is enabled.
 	//
 	// This field is immutable.
 	//
+	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge,retainKeys
 	// +listType=map
 	// +listMapKey=name
-	// +featureGate=WorkloadPodGroupResourceClaimTemplate
-	// +optional
-	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty"`
+	// +k8s:optional
+	// +k8s:listType=map
+	// +k8s:listMapKey=name
+	// +k8s:maxItems=4
+	// +k8s:alpha(since:"1.36")=+k8s:immutable
+	// +featureGate=DRAWorkloadResourceClaims
+	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name"`
 }
 
 // PodGroupResourceClaim references exactly one ResourceClaim, either directly
@@ -454,11 +460,17 @@ type PodGroupTemplate struct {
 // for the PodGroup.
 //
 // It adds a name to it that uniquely identifies the ResourceClaim inside the PodGroup.
-// Pods that need access to the ResourceClaim reference it with this name.
+// Pods that need access to the ResourceClaim define a matching reference in its
+// own Spec.ResourceClaims. The Pod's claim must match all fields of the
+// PodGroup's claim exactly.
 type PodGroupResourceClaim struct {
 	// Name uniquely identifies this resource claim inside the PodGroup.
 	// This must be a DNS_LABEL.
-	Name string `json:"name"`
+	//
+	// +required
+	// +k8s:required
+	// +k8s:format=k8s-short-name
+	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
 
 	// ResourceClaimName is the name of a ResourceClaim object in the same
 	// namespace as this PodGroup. The ResourceClaim will be reserved for the
@@ -466,6 +478,11 @@ type PodGroupResourceClaim struct {
 	//
 	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
 	// be set.
+	//
+	// +optional
+	// +k8s:optional
+	// +k8s:unionMember
+	// +k8s:format=k8s-long-name
 	ResourceClaimName *string `json:"resourceClaimName,omitempty"`
 
 	// ResourceClaimTemplateName is the name of a ResourceClaimTemplate
@@ -475,7 +492,7 @@ type PodGroupResourceClaim struct {
 	// be bound to this PodGroup. When this PodGroup is deleted, the ResourceClaim
 	// will also be deleted. The PodGroup name and resource name, along with a
 	// generated component, will be used to form a unique name for the
-	// ResourceClaim, which will be recorded in pod.status.resourceClaimStatuses.
+	// ResourceClaim, which will be recorded in podgroup.status.resourceClaimStatuses.
 	//
 	// This field is immutable and no changes will be made to the
 	// corresponding ResourceClaim by the control plane after creating the
@@ -483,6 +500,11 @@ type PodGroupResourceClaim struct {
 	//
 	// Exactly one of ResourceClaimName and ResourceClaimTemplateName must
 	// be set.
+	//
+	// +optional
+	// +k8s:optional
+	// +k8s:unionMember
+	// +k8s:format=k8s-long-name
 	ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
 }
 ```
@@ -497,48 +519,130 @@ type PodGroupSpec struct {
 	...
 
 	// ResourceClaims defines which ResourceClaims may be shared among Pods in
-	// the group. Pods must reference these claims in order to consume the
-	// allocated devices.
+	// the group. Pods consume the devices allocated to a PodGroup's claim by
+	// defining a claim in its own Spec.ResourceClaims that matches the
+	// PodGroup's claim exactly. The claim must have the same name and refer to
+	// the same ResourceClaim or ResourceClaimTemplate.
 	//
 	// This is an alpha-level field and requires that the
-	// WorkloadPodGroupResourceClaimTemplate feature gate is enabled.
+	// DRAWorkloadResourceClaims feature gate is enabled.
 	//
 	// This field is immutable.
 	//
+	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge,retainKeys
 	// +listType=map
 	// +listMapKey=name
-	// +featureGate=WorkloadPodGroupResourceClaimTemplate
+	// +k8s:optional
+	// +k8s:listType=map
+	// +k8s:listMapKey=name
+	// +k8s:maxItems=4
+	// +k8s:alpha(since:"1.36")=+k8s:immutable
+	// +featureGate=DRAWorkloadResourceClaims
+	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name"`
+}
+```
+
+Similar to Pods, PodGroups will include a new `status.resourceClaimStatuses`
+field to resolve ResourceClaimTemplate references in `spec.resourceClaims` to
+the exact ResourceClaim generated for the PodGroup:
+
+```go
+// PodGroupStatus represents information about the status of a pod group.
+type PodGroupStatus struct {
+	...
+
+	// Status of resource claims.
 	// +optional
-	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty"`
+	// +patchMergeKey=name
+	// +patchStrategy=merge,retainKeys
+	// +listType=map
+	// +listMapKey=name
+	// +k8s:optional
+	// +k8s:listType=map
+	// +k8s:listMapKey=name
+	// +k8s:maxItems=4
+	// +featureGate=DRAWorkloadResourceClaims
+	ResourceClaimStatuses []PodGroupResourceClaimStatus `json:"resourceClaimStatuses,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name"`
+}
+
+// PodGroupResourceClaimStatus is stored in the PodGroupStatus for each
+// PodGroupResourceClaim which references a ResourceClaimTemplate. It stores the
+// generated name for the corresponding ResourceClaim.
+type PodGroupResourceClaimStatus struct {
+	// Name uniquely identifies this resource claim inside the PodGroup. This
+	// must match the name of an entry in podgroup.spec.resourceClaims, which
+	// implies that the string must be a DNS_LABEL.
+	//
+	// +required
+	Name string `json:"name" protobuf:"bytes,1,name=name"`
+
+	// ResourceClaimName is the name of the ResourceClaim that was generated for
+	// the PodGroup in the namespace of the PodGroup. If this is unset, then
+	// generating a ResourceClaim was not necessary. The
+	// podgroup.spec.resourceClaims entry can be ignored in this case.
+	//
+	// +optional
+	// +k8s:optional
+	// +k8s:format=k8s-long-name
+	ResourceClaimName *string `json:"resourceClaimName,omitempty"`
 }
 ```
 
 #### Pod
 
-When a PodGroup includes claims, the `name` of a claim in the
-PodGroup can be used on Pods in the group to associate the PodGroup's dedicated
-ResourceClaim. This complements existing references to ResourceClaims and
-ResourceClaimTemplates.
+The existing DRA API fields for Pods remain unchanged. To request a
+ResourceClaim reserved for its PodGroup, a Pod specifies a claim in
+`spec.resourceClaims` that exactly matches a claim made in its PodGroup's
+`spec.resourceClaims`. The `name`, `resourceClaimName`, and
+`resourceClaimTemplateName` fields must match between the Pod's and the
+PodGroup's claim. If a claim made by a Pod does not exactly match one made by
+its PodGroup, then the ResourceClaim is reserved (and for
+ResourceClaimTemplates, generated) for the Pod.
 
-```go
-// PodResourceClaim references exactly one ResourceClaim, either directly,
-// by naming a ResourceClaimTemplate which is then turned into a ResourceClaim
-// for the pod, or by naming a claim made for a PodGroup.
-//
-// It adds a name to it that uniquely identifies the ResourceClaim inside the Pod.
-// Containers that need access to the ResourceClaim reference it with this name.
-type PodResourceClaim struct {
-	...
+The `status.resourceClaimStatuses` field continues to include the names of
+ResourceClaims generated from ResourceClaimTemplates referenced in
+`spec.resourceClaimNames` whether they are generated
+for the Pod or the PodGroup. Status for ResourceClaims generated for the
+PodGroup is also recorded in the PodGroup's `status.resourceClaimStatuses`.
 
-	// PodGroupResourceClaim refers to the name of a claim associated
-	// with this pod's PodGroup.
-	//
-	// Exactly one of ResourceClaimName, ResourceClaimTemplateName,
-	// or PodGroupResourceClaim must be set.
-	PodGroupResourceClaim *string `json:"podGroupResourceClaim,omitempty"`
-}
+The following example demonstrates the matching semantics:
+
+```yaml
+apiVersion: scheduling.k8s.io/v1alpha2
+kind: PodGroup
+metadata:
+  name: podgroup
+spec:
+  resourceClaims:
+  - name: pg-claim
+    resourceClaimName: my-claim
+  - name: pg-claim-template
+    resourceClaimTemplateName: my-claim-template
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod
+spec:
+  resourceClaims:
+  # Matches the PodGroup's claim, reserved for the PodGroup:
+  - name: pg-claim
+    resourceClaimName: my-claim
+
+  # Matches the PodGroup's claim, reserved for the PodGroup, ResourceClaim is
+  # generated for the PodGroup and shared by its Pods:
+  - name: pg-claim-template
+    resourceClaimTemplateName: my-claim-template
+
+  # Does not match any PodGroup claim, reserved for the Pod:
+  - name: pod-claim
+    resourceClaimName: my-claim
+
+  # Does not match any PodGroup claim, generated and reserved for the Pod:
+  - name: pg-claim-template
+    resourceClaimTemplateName: my-other-claim-template
 ```
 
 #### Example
@@ -581,8 +685,8 @@ spec:
 The true workload API defines how ResourceClaims and ResourceClaimTemplates
 relate to groups of Pods. If the user is responsible for defining the Pods'
 `spec.resourceClaims` in a Pod template, then the PodGroups'
-`spec.resourceClaims[].name`s must be deterministic for the user to be able to
-reference them in the Pod spec.
+`spec.resourceClaims` must be deterministic for the user to be able to
+define matching claims in the Pod spec.
 
 The true workload controller then creates the following Workload API resources
 based on the true workload's definition:
@@ -595,13 +699,7 @@ metadata:
   namespace: default
 spec:
   podGroupTemplates:
-  - name: group-1
-    schedulingPolicy:
-      basic: {}
-    resourceClaims:
-    - name: pg-claim
-      resourceClaimTemplateName: pg-claim-template
-  - name: group-2
+  - name: group
     schedulingPolicy:
       basic: {}
     resourceClaims:
@@ -615,8 +713,11 @@ metadata:
   namespace: default
 spec:
   podGroupTemplateRef:
-    workloadName: my-workload
-    podGroupTemplateName: group-1
+    workload:
+      workloadName: my-workload
+      podGroupTemplateName: group
+  schedulingPolicy:
+    basic: {}
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
@@ -628,8 +729,11 @@ metadata:
   namespace: default
 spec:
   podGroupTemplateRef:
-    workloadName: my-workload
-    podGroupTemplateName: group-2
+    workload:
+      workloadName: my-workload
+      podGroupTemplateName: group
+  schedulingPolicy:
+    basic: {}
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
@@ -654,10 +758,10 @@ spec:
         image: "registry.k8s.io/pause:3.6"
         resources:
           claims:
-          - name: resource
+          - name: pg-claim
       resourceClaims:
-      - name: resource
-        podGroupResourceClaim: pg-claim
+      - name: pg-claim
+        resourceClaimTemplateName: pg-claim-template
       schedulingGroup:
         podGroupName: my-podgroup-1
 ---
@@ -681,10 +785,10 @@ spec:
         image: "registry.k8s.io/pause:3.6"
         resources:
           claims:
-          - name: resource
+          - name: pg-claim
       resourceClaims:
-      - name: resource
-        podGroupResourceClaim: pg-claim
+      - name: pg-claim
+        resourceClaimTemplateName: pg-claim-template
       schedulingGroup:
         podGroupName: my-podgroup-2
 ```
@@ -694,9 +798,9 @@ different PodGroups.
 Each group refers to the same ResourceClaimTemplate,
 `pg-claim-template`. This single ResourceClaimTemplate forms the basis of two
 different ResourceClaims which will be created by the ResourceClaim controller:
-one for each PodGroup. The Pod templates in the Deployments include a reference
-to the claim listed for the PodGroup, which ultimately resolves to its
-PodGroup's ResourceClaim. The result is that with a single
+one for each PodGroup. The Pod templates in the Deployments include a claim
+matching their PodGroup's claim, which ultimately resolves to the ResourceClaim
+generated for the PodGroup. The result is that with a single
 ResourceClaimTemplate, Pods in the same group all share the exact same allocated
 device, while Pods in the other group use an equivalent, but separately
 allocated, device.
@@ -716,16 +820,13 @@ When a PodGroup is created which references a ResourceClaimTemplate, the
 ResourceClaim controller will create a ResourceClaim from that template if one
 does not already exist for that PodGroup. Generated ResourceClaims will be owned (through
 `metadata.ownerReferences`) by the PodGroup and annotated with
-`resource.kubernetes.io/podgroup-claim-name` where the value is the name of the
+`resource.kubernetes.io/pod-claim-name` where the value is the name of the
 claim from the PodGroup's `spec.resourceClaims[].name` to facilitate mapping a
 single PodGroup claim to the ResourceClaim generated for its PodGroup. When a
 Pod is created which requests a claim from its PodGroup, the name of the
 ResourceClaim generated for the PodGroup's claim
 will be recorded in the Pod's `status.resourceClaimStatuses` like
-ResourceClaims generated for Pods. Like the
-`resource.kubernetes.io/podgroup-claim-name` annotation,
-`resource.kubernetes.io/podgroup-claim-name` is only to be used by the
-controller and will not be documented as part of the public API.
+ResourceClaims generated for Pods.
 
 #### Delete
 
@@ -742,27 +843,28 @@ deleting the ResourceClaim once its owning PodGroup is deleted.
 Generated and standalone ResourceClaims referenced by a PodGroup remain
 unallocated until kube-scheduler allocates the ResourceClaim by setting
 `status.allocation` for the first Pod in the PodGroup that references the
-PodGroup's claim. When a Pod's claim is requested through
-`podGroupResourceClaim`, the ResourceClaim's `status.reservedFor` list will
+PodGroup's claim. When a Pod's claim matches a claim made by its PodGroup,
+the ResourceClaim's `status.reservedFor` list will
 reference the PodGroup instead of each individual Pod.
 
-The name of a ResourceClaim referenced by a PodGroup via `resourceClaimName`
-will be recorded in the `status.resourceClaimStatuses` of each Pod that
-requests that PodGroup's claim. Along with names of ResourceClaims generated
-from templates (for the Pod or its PodGroup), this keeps all information about
-exactly which ResourceClaims are requested by the Pod in the Pod itself so the
-kubelet does not need to look up a Pod's PodGroup.
+The names of all ResourceClaims associated with a Pod continue to be represented
+in the Pod, no matter if those ResourceClaims are reserved for the Pod or its
+PodGroup. The names of ResourceClaims referenced via `resourceClaim` continue to
+match that value, and the names of ResourceClaims generated from
+ResourceClaimTemplates continue to be recorded in the Pod's
+`status.resourceClaimStatuses`. The kubelet does not need to look up a Pod's
+PodGroup to find all of the Pod's ResourceClaims.
 
 #### Deallocate
 
 The ResourceClaim controller will continue to deallocate claims when there are
 no entries in the ResourceClaim's `status.reservedFor`. References to PodGroups
 in `status.reservedFor` are removed after the PodGroup is deleted. PodGroup
-deletion should be gated by a finalizer managed by the creator of the PodGroup
+deletion is gated by a finalizer managed by kube-controller-manager
 to prevent the PodGroup from being removed from `status.reservedFor` before all
 of its Pods are done using the ResourceClaim. When no more Pods in the group are
-expected to run, the creator of the PodGroup is responsible for removing the
-finalizer and deleting the PodGroup.
+expected to run, the creator of the PodGroup is responsible for deleting it to
+free up the devices allocated by its ResourceClaims.
 
 ### Determining Allowed Pods for a ResourceClaim
 
@@ -773,7 +875,7 @@ only the name in the reference must match a Pod's
 being deleted before any of its Pods, a reference to the name of a PodGroup in a
 Pod will always refer to the exact same PodGroup, i.e. the PodGroup cannot be
 deleted and recreated with the same name without all of its Pods also being
-deleted in the meantime or if its finalizer is manually removed.
+deleted or terminating in the meantime or if its finalizer is manually removed.
 
 ### Finding Pods Using a ResourceClaim
 
@@ -793,17 +895,17 @@ reference a PodGroup that has been allocated a claim, but haven't
 yet been scheduled. This distinction is important for some of the usages of the
 `status.reservedFor` list described above:
 
-<!-- TBD if status.allocation.reservedForAnyPod will be used
-1. If the kubelet sees that the `status.allocation.ReservedForAnyPod` is set, it
-   will skip the check that the Pod is listed in the `ReservedFor` list and just
-   run the pod.
--->
-
 1. If the DRA scheduler plugin is trying to find candidates for deallocation in
    the `PostFilter` function and sees a ResourceClaim with a non-Pod reference,
    it will not attempt to deallocate. The plugin has no way to know how many
    Pods are actually consuming the ResourceClaim without the explicit list in
    `status.reservedFor` list and therefore it will not be safe to deallocate.
+
+     - Now the DRA plugin reuses the scheduler's internal view of PodGroups to
+       determine if none of the group's Pods are scheduled during `PostFilter`
+       and removes the PodGroup from `status.reservedFor` when no Pods in the
+       group have been scheduled. A future invocation of `PostFilter` may
+       deallocate a PodGroup's claim if its `status.reservedFor` is still empty.
 
 1. The device_taint_eviction controller will use the list of Pods referencing
    the PodGroup to determine the list of pods that needs to be
@@ -895,7 +997,7 @@ This can be done with:
 
 New integration tests will verify:
 - New API fields in Pod and PodGroup are persisted or rejected correctly
-  depending on the value of the `WorkloadPodGroupResourceClaimTemplate` feature
+  depending on the value of the `DRAWorkloadResourceClaims` feature
   gate.
 - ResourceClaimTemplates specified for PodGroups result in the correct
   ResourceClaims being allocated for the correct Pods.
@@ -908,6 +1010,11 @@ New integration tests will verify:
 
 Additionally, scheduler_perf tests will be added, aiming for the same thresholds
 as existing DRA tests.
+
+Integration tests added for alpha:
+
+- [TestDRA/all/WorkloadResourceClaims](https://github.com/kubernetes/kubernetes/blob/b5a943f629904bda73a8f6784ad3cd8325ead57c/test/integration/dra/workload_resource_claims.go#L38): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=dra&include-filter-by-regex=%2Fdra%2F&include-filter-by-regex=%2Fintegration%2Fdra%2F), [triage search](https://storage.googleapis.com/k8s-triage/index.html?pr=1&text=TestDRA%2F%5Cw%2B%2FWorkloadResourceClaims&job=kubernetes-integration)
+
 
 ##### e2e tests
 
@@ -942,6 +1049,13 @@ PodGroup.
 - When the PodGroup has been deleted, then the ResourceClaim
   is deallocated, and eventually deleted.
 
+e2e tests added for alpha: [SIG Node](https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all&include-filter-by-regex=DRAWorkloadResourceClaims), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=DRAWorkloadResourceClaims)
+
+- [allocates devices for PodGroups](https://github.com/kubernetes/kubernetes/blob/b5a943f629904bda73a8f6784ad3cd8325ead57c/test/e2e/dra/dra.go#L2142)
+- [generates claims from templates for PodGroups](https://github.com/kubernetes/kubernetes/blob/b5a943f629904bda73a8f6784ad3cd8325ead57c/test/e2e/dra/dra.go#L2153)
+- [NoSchedule keeps pod with PodGroup claim pending](https://github.com/kubernetes/kubernetes/blob/b5a943f629904bda73a8f6784ad3cd8325ead57c/test/e2e/dra/dra.go#L2276)
+- [NoSchedule can be tolerated for PodGroup claims](https://github.com/kubernetes/kubernetes/blob/b5a943f629904bda73a8f6784ad3cd8325ead57c/test/e2e/dra/dra.go#L2285)
+- [DeviceTaintRule evicts pod with PodGroup claim](https://github.com/kubernetes/kubernetes/blob/b5a943f629904bda73a8f6784ad3cd8325ead57c/test/e2e/dra/dra.go#L2299)
 
 ### Graduation Criteria
 
@@ -1086,11 +1200,25 @@ kubelet will refuse to run those Pods since it will still check whether the
 Pods are referenced in the `status.reservedFor` list.
 
 If the API server is on a version that supports the feature, but the scheduler
-is not, the scheduler will not know about the new fields added, so it will put
+is not, the scheduler will not know how to match a Pod's claim with a claim made
+by its PodGroup, so it will put
 the reference to the Pod in the `status.reservedFor` list rather than the
 PodGroup. It will do this even if there is already a PodGroup reference in the
 `status.reservedFor` list. This leads to the challenge described in the previous
 section.
+
+If the API server is on a version that supports the feature, but
+kube-controller-manager is not, then the ResourceClaim controller may observe
+PodGroups that define `spec.resourceClaims`. When Pods contain matching claims,
+the intent is that those claims are generated for the PodGroup instead of each
+Pod. Even when this feature is disabled, the ResourceClaim controller will check
+a Pod's claims against its PodGroup. If the controller _would have_ created a
+ResourceClaim for the PodGroup _if_ the feature _was_ enabled, then it will
+return an error. Users are expected to restart kube-controller-manager with the
+feature enabled to generate a ResourceClaim for the PodGroup. If the user
+intended to generate a ResourceClaim for that Pod, then the user has to recreate
+the PodGroup without the resource claim and all of its member Pods with the
+resource claim.
 
 ## Production Readiness Review Questionnaire
 
@@ -1135,7 +1263,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: WorkloadPodGroupResourceClaimTemplate
+  - Feature gate name: DRAWorkloadResourceClaims
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-controller-manager
@@ -1403,12 +1531,7 @@ Describe them, providing:
 -->
 
 This feature adds a new `spec.resourceClaims` list to the PodGroup API. It will
-have the same limits as the Pod API's `spec.resourceClaims`.
-
-The Pod API adds a new `spec.resourceClaims[].podGroupResourceClaim` field which
-is mutually exclusive with its sibling `resourceClaimName` and
-`resourceClaimTemplate` fields so it will not meaningfully impact the size of a
-Pod.
+be limited to 4 items.
 
 The size of a ResourceClaim's `spec.reservedFor` list will be reduced
 significantly when many Pods sharing the same claim make that claim through a
@@ -1504,6 +1627,7 @@ Major milestones might include:
 1.36:
   - 2025-12-12: KEP first draft published for review
   - 2026-01-28: Combined with [KEP-5194]
+  - 2026-03-23: [Initial implementation](https://github.com/kubernetes/kubernetes/pull/136989) merged
 
 ## Drawbacks
 
@@ -1549,14 +1673,6 @@ longer needs to be as flexible since true workloads can integrate with those
 common APIs. In order to integrate with this feature, true workload controllers
 create and delete PodGroup objects (which will also provide many additional
 features) and don't have to explicitly manage ResourceClaims.
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
 
 
 [KEP-4671]: https://kep.k8s.io/4671
