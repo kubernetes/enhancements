@@ -1,0 +1,34 @@
+title: Add user fields to atomic write volumes
+kep-number: 5936
+authors:
+  - "@gavinkflam"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-storage
+status: provisional
+creation-date: 2026-02-24
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - /kubernetes/kubernetes/issues/81089
+  - /kubernetes/kubernetes/issues/2630
+  - /kubernetes/kubernetes/issues/129043
+replaces:
+
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+
+feature-gates:
+  - name: AtomicWriteVolumeUserFields
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+metrics:
