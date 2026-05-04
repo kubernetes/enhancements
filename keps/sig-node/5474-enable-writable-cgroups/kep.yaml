@@ -1,0 +1,30 @@
+title: Enable Writable Cgroups
+kep-number: 5474
+authors:
+  - "@divya063"
+  - "@chrishenzie"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-auth
+status: provisional
+creation-date: 2025-08-25
+approvers:
+  - "@dchen1107"
+replaces: []
+
+# Features and stages
+stage: alpha
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38" 
+  stable: "v1.39"
+
+# Feature gate
+feature-gates:
+  - name: WritableCgroups
+    components:
+      - kube-apiserver
+      - kubelet
+
+# Metrics
