@@ -94,12 +94,12 @@ tags, and then generate with `hack/update-toc.sh`.
     - [GetNodeHint](#getnodehint)
     - [StoreScheduleResults](#storescheduleresults)
     - [Integration with Scheduling Cycle](#integration-with-scheduling-cycle)
-  - [Opportunistic batching](#opportunistic-batching)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Plugins need to keep signatures up to date](#plugins-need-to-keep-signatures-up-to-date)
-    - [We are narrowing the feature set where batching will work](#we-are-narrowing-the-feature-set-where-batching-will-work)
-    - [We don't have experience with batching in production](#we-dont-have-experience-with-batching-in-production)
+    - [Limited workload coverage](#limited-workload-coverage)
+    - [No prior production history](#no-prior-production-history)
+    - [Cached nodes are not re-filtered each cycle](#cached-nodes-are-not-re-filtered-each-cycle)
 - [Design Details](#design-details)
   - [Pod signature](#pod-signature)
   - [Test Plan](#test-plan)
@@ -156,7 +156,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -189,15 +189,14 @@ to increase, this leads to low performance when scheduling or rescheduling large
 increases user cost and slows down user jobs, both unpleasant impacts. Optimizations like this one
 have the potential to dramatically reduce the cost of scheduling in these scenarios.
 
-We are also working on gang scheduling (in addition to other forms of multi-pod scheduling), which
-will give us a way to consider multiple pods at the same time. "Opportunistic batching" provides a
-starting point for these mechanisms by providing signatures and batching, both necessary
-foundational mechanisms, and including them initially in a simple way.
+Gang scheduling and other multi-pod scheduling mechanisms require a way to consider multiple pods at
+the same time. Opportunistic batching provides a starting point by introducing signatures and batch
+state reuse, both foundational mechanisms, and including them in a transparent and incremental way.
 
-Another change is the shift towards 1-pod-per-node in batch and ML environments. Many of these
-environments (among others) only attempt to run a single user pod on each node, along with a
-complement of daemon set pods. This simplifies our scheduling needs significantly, as it allows to
-reuse not only filtering, but also scoring results.
+A common pattern in batch and ML environments is to run a single user pod on each node alongside a
+complement of daemonset pods. For these workloads, once a pod is placed on a node, that node is full
+and can be skipped for subsequent pods. This allows the scheduler to reuse not only filtering but
+also scoring results, reducing per-cycle cost.
 
 ### Goals
 
@@ -206,7 +205,7 @@ reuse not only filtering, but also scoring results.
  * Begin building infrastructure to support gang scheduling and other "multi-pod" scheduling
    mechanisms.
  * Ensure that the infrastructure we build is maintainable as we update, add and remove plugins.
- * Provide improved performance for a targeted set of workloads in this release.
+ * Reduce per-cycle scheduling cost for a targeted set of workloads in this release.
  * Provide a path where we can expand batching to apply to most or all workloads over the next few
    releases.
  * Allow users to continue to use out-of-tree plugins. For this KEP we need to ensure that out-of-
@@ -215,40 +214,39 @@ reuse not only filtering, but also scoring results.
 
 ### Non-Goals
 
- * We are not attempting to apply this optimization to all pods in this release. We will make the
-   addition of batching transparent, but only applicable to a reduced set of workloads in this KEP.
- * We are not adding gang scheduling of any kind in this KEP. This is purely a performance
-   improvement without adding dependency on the Workload API
-   [KEP-4671](https://github.com/kubernetes/enhancements/pull/5558), although we hope the work on
-   this KEP will help us with gang scheduling as we build it.
+ * Applying this optimization to all pods. Batching is transparent but limited to signable workloads
+   in this KEP.
+ * Adding gang scheduling. This is purely a performance improvement without dependency on the
+   Workload API [KEP-4671](https://github.com/kubernetes/enhancements/pull/5558), although this work
+   is intended to build toward it.
 
 ## Proposal
 
-We discuss each of the added items: pod scheduling signature, batching mechanism and opportunistic
-batching in turn.
+The batching mechanism is applied transparently to simple cases in the scheduling cycle, reusing the
+cached sorted node list from a previous cycle to provide node hints for subsequent identical pods.
+More complex integrations are left to future work. 
+
+The proposal covers two components: pod scheduling signature and batching mechanism.
 
 ### Pod scheduling signature
 
-The pod scheduling signature is used to determine if two pods are "the same" from a scheduling
-perspective. In specific, what this means is that any pod with the given signature will get the same
-scores / feasibility results from any arbitrary set of nodes. Also, assigning a pod to a node will
-not change the feasibility or scoring of other nodes. This is necessary for the cache to work, since
-we need to be able to reuse the previous work.
+The pod scheduling signature identifies pods that are equivalent from a scheduling perspective: any
+two pods with the same signature will receive identical scores and feasibility results for any given
+set of nodes. Assigning a pod to a node must not change the feasibility or scoring of other nodes.
+This is the invariant that allows cached results to be reused.
 
-Note that some pods will not have a signature, because the scoring uses not just pod and node
-attributes, but other pods in the system, global data about pod placement, etc. These pods get a nil
-signature, and we fall back to the existing path.
+Pods whose scheduling depends on cross-pod state or global placement data, rather than only pod and
+node attributes, receive a nil signature and fall back to the standard full-pipeline path.
 
-To allow non in-tree plugins to construct a signature, we add a new framework interface to
-implement. Each plugin returns a set of signature fragments that capture the pod attributes relevant
-to that plugin's scheduling decisions. To construct a full signature, the framework collects
-fragments from all plugins, and marshals them into a single `PodSignature` (a byte slice). If any
-plugin cannot generate a signature for a given pod (because it depends on information other than the
-pod and node), it returns an error status, and we generate a nil signature for that pod, skipping
+A new framework interface allows out-of-tree plugins to construct a signature. Each plugin returns a
+set of signature fragments that capture the pod attributes relevant to that plugin's scheduling
+decisions. To construct a full signature, the framework collects fragments from all plugins and
+marshals them into a single `PodSignature` (a byte slice). If any plugin cannot generate a signature
+for a given pod, it returns an error status and a nil signature is produced for that pod, skipping
 batching.
 
-If an enabled plugin that does Scoring, Prescoring, Filtering or Prefiltering does not implement
-this interface, batching is turned off for all pods.
+If any enabled plugin that participates in the PreScore, Score, PreFilter or Filter extension
+points does not implement this interface, batching is disabled for all pods.
 
 The signature interface and types are defined as follows:
 
@@ -305,15 +303,17 @@ current pod by checking:
 2. **Signature match:** The pod's signature must exactly match the cached signature.
 3. **Cache freshness:** The cached data must be sufficiently recent to avoid relying on stale
    scheduling decisions.
-4. **Last node is full:** The node chosen in the previous scheduling cycle must now be infeasible
-   for the new pod. This is verified by running filter plugins against that node. This validation
-   ensures the 1-pod-per-node constraint that allows us to reuse scoring results without rescoring.
+4. **Last chosen node feasibility check:** The node chosen in the previous scheduling cycle must now 
+   be infeasible for the new pod. This is verified by running filter plugins against that node. This 
+   validation ensures the one-pod-per-node constraint that allows us to reuse scoring results without 
+   rescoring.
 
-If all validations pass, the operation pops the next best node from the cached sorted list and
-returns it as a hint (see "Integration with Scheduling Cycle" below for how the hint is used).
+If all checks pass, the operation pops the next best node from the cached sorted list and returns it
+as a hint (see [Integration with Scheduling Cycle](#integration-with-scheduling-cycle) below for how
+the hint is used).
 
-If any validation fails, the batch state is invalidated (with the reason recorded in metrics), no
-hint is provided, and the scheduler proceeds with normal full evaluation of all nodes.
+If any check fails, the batch state is invalidated with the reason recorded in metrics, no hint is
+provided, and the scheduler falls back to full evaluation of all nodes.
 
 #### StoreScheduleResults
 
@@ -326,8 +326,8 @@ node) for use in the next cycle's validation.
 Then it determines whether to store new batch state:
 
 **If a hint was used** (hintedNode == chosenNode):
-- This means the batch worked! We successfully reused cached results.
-- No new batch state is stored; we continue using the existing batch.
+- The cached result was reused successfully.
+- No new batch state is stored; the existing batch continues.
 - Statistics are recorded (batchedPods counter incremented).
 
 **If no hint was provided or the hint was not used:**
@@ -356,12 +356,6 @@ nodes. This ensures correctness while providing significant performance benefits
 valid. The batching mechanism can be used in multiple places, including future gang scheduling
 implementations, without requiring changes to the Pod API.
 
-### Opportunistic batching
-
-We will then apply the batching mechanism to simple cases in the current code. We will target
-providing incremental value with minimal code changes in this KEP, and leave the more complex
-integration questions to gang scheduling. This involves using the same batch state (and snapshot and
-potentially plugin cyclestate) across multiple pods using the batching mechanism.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -369,36 +363,39 @@ potentially plugin cyclestate) across multiple pods using the batching mechanism
 
 #### Plugins need to keep signatures up to date
 
-The cache will only work if plugin maintainers are able to keep their portion of the signature up-
-to-date. We believe this should be doable because the logic is put into the plugin interface itself,
-and we are restricting it to portions of the pod spec, but there is still risk of subtle
-dependencies creeping in.
+The cache requires plugin maintainers to keep their portion of the signature up-to-date. By putting
+the logic into the plugin interface itself and restricting it to portions of the pod spec, the
+surface area for divergence is minimized, but subtle dependencies can still creep in over time.
 
-If plugin changes prove to be an issue, we could codify the signature as a new "Scheduling" object
-that only has a subset of the fields of the pod. Plugins that "opt-in" could only be given access to
-this reduced scheduling object, and we could then use the entire scheduling object as the signature.
-This would make it more or less impossible for the signature and plugins to be out of sync, and
-would naturally surface new dependencies as additions to the scheduling object. However, as we
-expect plugin changes to be relatively modest, we don't believe the complexity of making the
-interface changes is worth the risk today.
+If signature drift becomes a problem, the signature could be codified as a reduced "Scheduling"
+object containing only the fields relevant to scheduling decisions. Plugins that opt in would
+receive only this object, making it structurally impossible for the signature and plugin logic to
+diverge. This approach is deferred because plugin changes are expected to be infrequent and the
+additional interface complexity is not justified at this stage.
 
-#### We are narrowing the feature set where batching will work
+#### Limited workload coverage
 
-Because we are explicitly limiting the functionality that this cache will support, we run the risk
-of designing something that will not work for enough users for it to be useful. To mitigate this
-risk we are actively engaging with users and doing analysis of data available on K8s users to ensure
-we are still capturing a large enough number of user use cases. We also will address this by
-expanding over time; we expect to have a few interested parties up front, but will then evaluate
-expansions that could onboard more.
+By limiting the supported feature set, batching may not apply to all workloads. This is mitigated by
+targeting simple patterns first and providing a clear expansion path via the signing
+mechanism and future group-aware plugin support.
 
-#### We don't have experience with batching in production
+#### No prior production history
 
-Because we haven't deployed batching in production before, we are still somewhat limited in the
-information we have about user workloads. To mitigate this concern we will build in tracing /
-analytics to help us understand how frequently we see specific patterns, how often we are able to
-batch, and the most common reasons we are unable to batch. When possible we will collect this
-information even when the feature itself is disabled, to allow us to approach our next iterations
-with more data.
+Batching is a new code path with no prior production history. The built-in metrics provide visibility 
+into how often batching triggers, how often the cache is invalidated and why. Feature gate is enabled 
+by default, operators can disable it if unexpected behavior is observed.
+
+#### Cached nodes are not re-filtered each cycle
+
+Only `lastChosenNode` is re-filtered against the fresh snapshot each cycle. Other nodes in the
+cached list are not re-checked, so a node that has become infeasible since the initial full pass may
+remain in the list and be selected as a hint.
+
+This is bounded by the existing `maxBatchAge` expiry (500ms): a batch that has been running longer
+than 500ms is flushed and a full pipeline reruns. In a typical scheduling burst, where pods are
+processed every few milliseconds, the window for meaningful node state drift is very small.
+Operators can disable `OpportunisticBatching` to restore full-pipeline behavior if degradation is
+observed.
 
 ## Design Details
 
@@ -407,23 +404,22 @@ with more data.
 A pod scheduling signature is a hash of the pod's scheduling requirements. It is used to identify
 pods that can be scheduled together. To optimize the scheduling cycle, the signature is calculated
 and cached when a pod first enters the scheduling queue. By pre-calculating the signature during the
-queuing phase, the scheduler can avoid doing extra work during the time-sensitive scheduling process
-and helping the system handle larger batches of pods more smoothly.
+queuing phase, the scheduler avoids extra work during the time-sensitive scheduling process,
+allowing larger batches to be handled more smoothly.
 
-The following section outlines the attributes we are currently proposing to use as the signature for
-each of the plugins in the scheduler. We need the plugin owners to validate that these signatures
-are correct, or help us find the correct signature.
+The following section lists the pod attributes used as the signature for each plugin. Plugins that
+depend on cross-pod state or global placement data return an unsignable status; all others return a
+deterministic signature fragment covering the relevant fields.
 
 Note that the signature does not need to be stable across versions, or even invocations of the
 scheduler. It only needs to be comparable between pods on a given running scheduler instance.
 
- * **DynamicResources:** For now we mark a pod unsignable if it has dynamic resource claims. We
-   should improve this in the future, since most DRA claims are node specific and we should be able
-   to determine this with a little effort. We will attempt to pull forward at least some integration
-   of simple DRA claims with batching into this version as well.
+ * **DynamicResources:** Pods with dynamic resource claims are marked unsignable. Most DRA claims
+   are node-specific and could be made signable with additional work; this is deferred to a future
+   iteration.
  * **ImageLocality:** We use the canonicalized image names from the Volumes as the signature.
  * **InterPodAffinity:** If either the PodAffinity or PodAntiAffinity fields are set, the pod is
-   marked unsignable, otherwise we need to include the pod labels in the signature.
+   marked unsignable, otherwise the pod labels need to be included in the signature.
  * **NodeAffinity:** We use the NodeAffinity and NodeSelector fields, plus any defaults set in
    configuration as the signature.
  * **NodeName:** We use the NodeName field as the signature.
@@ -435,10 +431,10 @@ scheduler. It only needs to be comparable between pods on a given running schedu
  * **NodeUnschedulable:** We use the Tolerations field as the signature.
  * **NodeVolumeLimits:** We use all Volume information except from Volumes of type ConfigMap or
    Secret.
- * **PodTopologySpread:** If the PodTopologySpead field is set, or it is not set but a default set
+ * **PodTopologySpread:** If the PodTopologySpread field is set, or it is not set but a default set
    of rules are applied, we mark the pod unsignable, otherwise it returns an empty signature.
-   Because the plugin itself is creating the signature, it knows whether and what kind of default it
-   will apply.
+   Because the plugin itself is creating the signature, it knows whether and what default rules
+   apply.
  * **TaintToleration:** We use the Tolerations field as the signature.
  * **VolumeBinding:** Same as NodeVolumeLimits.
  * **VolumeRestrictions:** Same as NodeVolumeLimits.
@@ -512,16 +508,12 @@ Will add an extra function and test for plugins we touch.
 
 ###### New unit tests
 
-The code draft has first versions of most of these, will add more as we get through the discussion
-process.
-
-- schedule_one_test.go - Add test cases for opportunistic batching.
-- signature_test.go - Test cases for the framework signature call and the helper class
-- signature_consistency_test.go - Test cases to ensure the signature captures all the necessary
-  information. We will take a range of pod specs and node definitions, run them through the
-  filtering / scoring code, then ensure that the pods with matching signatures always get equivalent
-  results.
-- batching_test.go - Test cases for the batching mechanism, separate from the actual integration
+- `schedule_one_test.go` - Add test cases for opportunistic batching.
+- `signature_test.go` - Test cases for the framework signature call and the helper class.
+- `signature_consistency_test.go` - Test cases to ensure the signature captures all the necessary
+  information. A range of pod specs and node definitions are run through the filtering/scoring code;
+  pods with matching signatures must always receive equivalent results.
+- `batching_test.go` - Test cases for the batching mechanism, separate from the actual integration
   into the scheduling pipeline.
 
 ##### Integration tests
@@ -536,12 +528,11 @@ For more details, see https://github.com/kubernetes/community/blob/master/contri
 If integration tests are not necessary or useful, explain why.
 -->
 
-Will add a few integration tests:
- - Perf tests: Add a few tests into scheduler_perf that look at performance with batching enabled
-   and disabled for a few target scenarios.
- - End-to-end consistency: Add tests that run a set of pods through the scheduler end-to-end with
-   batching enable and disabled. Ensure the scheduling decisions are the same. Hopefully use same
-   pod spec and node definitions from the signature_consistency_test.
+Integration tests:
+- `scheduler_perf` tests measuring scheduling throughput with batching enabled and disabled for
+  representative scenarios.
+- End-to-end consistency: Tests running pods through the scheduler end-to-end with batching enabled
+  and disabled, verifying that scheduling decisions are the same.
 
 <!--
 This question should be filled when targeting a release.
@@ -575,10 +566,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
- - We will run the existing scheduling e2e tests with batching enabled and disabled, to ensure they
-   pass in both cases.
- - We will also add e2e tests ensuring that pod configurations we expect to be batched are in fact
-   batched.
+- Run the existing scheduling e2e tests with batching enabled and disabled, to ensure they pass in
+  both cases.
+- Add e2e tests ensuring that pod configurations we expect to be batched are in fact batched.
 
 <!--
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
@@ -652,7 +642,6 @@ in back-to-back releases.
 
 #### Deprecation
 
-<!--
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
@@ -668,13 +657,15 @@ in back-to-back releases.
 - Hand-done perf test runs
 - Integration tests
 - Initial e2e tests completed and enabled
-- Handle common 1-pod-per-node batches: host ports and resources
+- Handle common one-pod-per-node batches: host ports and resources
 - Parameter tuning (batch sizes, etc.)
-- Excluded: batching for non "1-pod-per-node" workloads
+- Pod scheduling signature is cached and reused across scheduling attempts, 
+  eliminating per-cycle recomputation.
+- Excluded: batching for non "one-pod-per-node" workloads
 
 #### GA
 
-- At least 1 test user with experience running the feature
+- At least one production deployment with evidence of improved scheduling throughput.
 
 ### Upgrade / Downgrade Strategy
 
@@ -690,12 +681,8 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-Users should continue to see the same behavior, just with better performance. If the feature has
-bugs, they can use the feature gates to disable it.
-
-Users should be able to take advantage of batching without any change to their behavior, other than
-ensuring the feature gate is enabled. Batching will not speed up all workloads, but workloads it can
-improve will be improved transparently.
+Users should continue to see the same behavior, just with better performance. 
+All batching state is in-memory only.
 
 ### Version Skew Strategy
 
@@ -760,7 +747,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `SchedulerOpportunisticBatching`
+  - Feature gate name: `OpportunisticBatching`
   - Components depending on the feature gate: `kube-scheduler`
 
 ###### Does enabling the feature change any default behavior?
@@ -829,8 +816,9 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-Rollout can fail if the feature is faulty, causing pods to either no schedule or schedule
-incorrectly.
+Rollout can fail if the feature is faulty, causing pods to either not schedule or schedule
+incorrectly. Already-running pods are not affected; the feature only influences placement decisions
+for pending pods.
 
 ###### What specific metrics should inform a rollback?
 
@@ -839,15 +827,12 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-Existing metrics:
-  - `pod_scheduling_sli_duration_seconds`
-  - `schedule_attempts_total` - specifically unschedulable and error cases
-  - `pending_pods`
-  - `unschedulable_pods`
-
-New metrics:
-  - Pods that cannot be batched.
-  - Pod batch failure reasons
+- `scheduler_pod_scheduling_sli_duration_seconds` - rising p99 indicates a scheduling regression.
+- `scheduler_schedule_attempts_total` (unschedulable or error) - unexpected increase.
+- `scheduler_batch_attempts_total` - confirms batching is being triggered; drop suggests pods are no
+  longer signable.
+- `scheduler_batch_cache_flushed_total` - unexpected spikes indicate the cache is being invalidated
+  more than expected.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -885,7 +870,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-- We will log statistics about how often pods are batched vs not batched.
+Query `scheduler_batch_attempts_total` - a non-zero value confirms that batching is active for at
+least some pods.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -898,8 +884,9 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-Operator can query metrics noting how many pods are batched or not. This will be a new metric added
-by this KEP.
+Operators can observe `scheduler_batch_attempts_total` increasing as batches are processed, and 
+`scheduler_pod_scheduling_sli_duration_seconds` improving for batch workloads. End users cannot 
+directly observe the feature; its effect is transparent, their pods are scheduled faster.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -918,7 +905,8 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-We should continue to maintain the existing scheduler SLOs.
+The existing scheduler SLOs apply. The feature should not increase scheduling latency for signable
+workloads; it should decrease it.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -927,8 +915,11 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-- Metric name: `pod_scheduling_sli_duration_seconds`
-  - Components exposing the metric: kube-scheduler
+  - `scheduler_pod_scheduling_sli_duration_seconds` - overall scheduling latency
+  - `scheduler_batch_attempts_total` - counts of batching attempt results
+  - `scheduler_batch_cache_flushed_total` - cache invalidation rate and reasons
+  - `scheduler_get_node_hint_duration_seconds` - hint path latency
+  - `scheduler_store_schedule_results_duration_seconds` - result storage latency
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1101,22 +1092,24 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 - [Increased pod scheduling latencies]
-  - Detection: pod scheduling latencies rise.
-  - Mitigations: turn off the opportunistic batching feature.
-  - Diagnostics: look for batching failures (in metrics), look for batching related log messages.
-  - Testing: No, because it is unclear why specifically this would happen.
+  - Detection: `scheduler_pod_scheduling_sli_duration_seconds` rises after enabling the feature.
+  - Mitigations: disable `OpportunisticBatching` to restore full-pipeline behavior.
+  - Diagnostics: check `scheduler_batch_cache_flushed_total` for unexpected invalidation spikes.
+  - Testing: integration perf tests establish expected latency bounds.
 
 - [Pods scheduled on incorrect nodes]
-  - Detection: pods on nodes where they should not exist (affinity rules, etc)
-  - Mitigations: turn off the opportunistic batching feature.
-  - Diagnostics: look for batching metrics, look for batching related log messages.
-  - Testing: yes, we will run tests to catch these kinds of issues before rolled out to production.
+  - Detection: pods on nodes where they should not be (affinity violations, resource overcommit).
+  - Mitigations: disable `OpportunisticBatching`.
+  - Diagnostics: check batching metrics and scheduler logs.
+  - Testing: correctness integration tests run scheduling with batching enabled and disabled and
+    compare placements.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-- Check to see if pods are being batched.
-- If they are being batched, look at latencies for batched pods vs non
-- If nominated nodes are failing feasibility, check if these pods were batched.
+1. Check `scheduler_batch_attempts_total` - a drop or zero value indicates pods are not being
+   batched. Verify signatures are being generated and the gate is enabled.
+2. Check `scheduler_batch_cache_flushed_total` - high flush rates indicate the cache is being
+   invalidated frequently. Examine the flush reason labels.
 
 ## Implementation History
 
@@ -1163,7 +1156,7 @@ The issues experienced by eCache were:
  * eCache was tightly coupled with plugins.
 
  We'll address each in turn, but at a high level the differences stem from our scope reduction in
- this cache, where we focus on simple constraints in a 1-pod-per-node world, and are comfortable
+ this cache, where we focus on simple constraints in a one-pod-per-node world, and are comfortable
  extending our "race" period slightly.
 
  #### eCache performance was still O(num nodes)
@@ -1185,9 +1178,9 @@ The issues experienced by eCache were:
 
  We can cache this more granular data because we only cache for simple plugins, and in fact avoid
  the complex plugins entirely. Thus we do not need to be concerned about cross pod dependencies,
- meaning we do not need to try to keep detailed information up-to-date. Because we assume 1-pod-per-
- node and some amount of "staleness" we simply need to invalidate whole hosts, rather than requiring
- upkeep of complex predicate results required to keep the eCache functional.
+ meaning we do not need to try to keep detailed information up-to-date. Because we assume one-pod-
+ per-node and some amount of "staleness" we simply need to invalidate whole hosts, rather than
+ requiring upkeep of complex predicate results required to keep the eCache functional.
 
  #### eCache was complex
 
@@ -1220,11 +1213,10 @@ eCache.
 
 ## Future work
 
-Today we have the ability to determine if a given node would still be feasible after we added a
-specific pod to it. This is powerful and will be used by this feature. However, we do not have the
-same capability when it comes to scoring. Adding this capability would make it much easier for us to
-do batching (and many other things) on a wider range of workloads. This work is not required for
-this KEP, but would increase the number of use cases where we could apply batching.
+- **Group-aware plugin signability**: Pods that use `PodTopologySpread`, `InterPodAffinity`, or
+  other group-aware scoring plugins are currently unsignable and receive no batching benefit.
+  Extending the signature mechanism to handle these plugins, possibly by incorporating their
+  constraints into the signature itself, would unlock batching for additional workloads.
 
 ## Infrastructure Needed (Optional)
 
