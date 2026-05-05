@@ -1,0 +1,44 @@
+title: CSI global mount fallback for volume reconstruction
+kep-number: 6058
+authors:
+  - "@cniackz"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2026-05-04
+reviewers:
+  - "@jsafrane"
+  - "@msau42"
+  - "@gnufied"
+approvers:
+  - "@xing-yang"
+  - "@msau42"
+
+see-also:
+  - "/keps/sig-storage/3756-volume-reconstruction"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
+
+# The following PRR answers are required at alpha release
+feature-gates:
+  - name: VolumeReconstructionFallback
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - reconstruct_volume_operations_total
+  - reconstruct_volume_operations_errors_total
