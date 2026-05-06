@@ -416,7 +416,7 @@ affect the scores of other nodes. This holds for all signable pods. Group-aware 
 | Scenario | Batching disabled | Batching enabled |
 |---|---|---|
 | One-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter, 0 scoring |
-| Multi-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter + O(1) Score + O(M) NormalizeScore |
+| Multi-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter + O(1) Score + O(M) NormalizeScore + O(M log M) sort |
 
 Where M is the number of nodes in the cached list (M ≤ N). For multi-pod-per-node workloads M stays
 close to N since nodes are re-inserted each cycle. However, both the O(N) Filter pass and the O(N)
