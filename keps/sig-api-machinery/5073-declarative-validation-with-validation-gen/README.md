@@ -411,6 +411,10 @@ We will integrate the linter functionality directly into `validation-gen` and co
 *   **Integration with Code Generation:** The linter can be integrated into the code generation workflow, ensuring that validation tags are checked before code is generated. For example, we could add a `--lint` flag.
 *   **CI Integration:** It's easy to integrate the linter into CI pipelines as part of the build and test process. We could run `validation-gen` with `--lint` flag and fail the build if any linting errors are found.
 
+Additionally, to support the lifecycle progression of migrated rules, the linter will enforce the following rules:
+*   **Required `since: "X.YZ"`**: The `since` field is required for all lifecycle wrappers (`+k8s:alpha`, `+k8s:beta`) and must be a valid Kubernetes minor version.
+*   **Stale Tag Warnings**: Alpha or Beta tags that are one or more releases old will produce warnings. These warnings do not fail codegen or CI but serve as a prompt to review graduation.
+
 ### Documentation Generation
 
 By having all validators, associated IDL tags, their descriptions, etc.  defined in code it is possible to automatically generate the documentation necessary for IDL tags which k8s developers can reference. This allows for: 
@@ -480,24 +484,61 @@ Our goal is to standardize on the Explicit Strategy and Lifecycle mechanism. The
 
 ## Lifecycle: Promotion Process (Continuous)
 
-This process applies to any individual validation rule.
+This process applies to any individual validation rule being migrated from handwritten to declarative validation.
 
-**Step 1: Alpha (Shadow)**
+### Graduation Process
 
-  - **Action:** Add rule with `+k8s:alpha(since:v1.N)=....`
-  - **Status:** Shadowed. Gather metrics.
+**Alpha -> Beta after one release of soak:**
 
-**Step 2: Beta (Gated)**
+Involves replacing `+k8s:alpha` with `+k8s:beta` and bumping `since: ...` to the current version.
 
-  - **Prerequisite:** 1 Release of clean metrics.
-  - **Action:** Change prefix to `+k8s:beta(since:v1.N+1)=....`
-  - **Status:** Enforced (Safety Switch active).
+Requirements:
+- The `+k8s:alpha(since: "X.YZ")` release has shipped and soaked for at least one release cycle.
+- No declarative validation mismatch or panic metrics have been hit for this case.
+- Related API versions must be graduated together or explained why not, using exemptions if necessary.
 
-**Step 3: GA (Permanent)**
+**Beta -> Stable after one release at Beta:**
 
-  - **Prerequisite:** Confidence in Beta stability.
-  - **Action:** Remove prefix. Delete handwritten code.
-  - **Status:** Enforced.
+Involves removing the `+k8s:beta` prefix and additionally removing the handwritten code for the validation in the same PR.
+
+Requirements:
+- The `+k8s:beta(since: "X.YZ")` release has shipped and soaked for at least one release cycle.
+- No declarative validation mismatch or panic metrics have been hit for this case.
+- The same PR removes the equivalent handwritten validation.
+- Reviewers agree the Beta safety switch is no longer needed.
+- Related API versions must be graduated together or explained why not, using exemptions if necessary.
+
+### Exemptions
+
+If a rule cannot graduate on schedule:
+
+```go
+// +k8s:validation-lifecycle-exempt="tracking issue #12345: mismatch under investigation"
+// +k8s:alpha(since: "1.37")=+k8s:minimum=0
+Replicas *int32 `json:"replicas,omitempty"`
+```
+
+The exemption suppresses only stale lifecycle warnings for that field. Exemptions should cite a real issue and explain the condition for removal. Creating the exception issue is a part of the process for adding an exception.
+
+### End-to-End Process and Ownership
+
+Default ownership follows the transition:
+- The PR author who introduces `+k8s:alpha(...)` owns the Alpha -> Beta review by default.
+- The author who graduates Alpha -> Beta owns the Beta -> Stable review by default.
+
+Ownership is not exclusive. Anyone can pick up lifecycle cleanup. The DV rotation owner is the final backstop owner for a given release.
+
+#### Roles and Responsibilities
+
+*   **PR author who introduces Alpha**: Adds the wrapper/tests and drives the Alpha -> Beta graduation.
+*   **PR author who graduates to Beta**: Resets `since: "X.YZ"` and drives the Beta -> Stable graduation.
+*   **API reviewer / approver**: Checks PR entry state, `since: "X.YZ"`, tag usage, tests, related API versions, and approves graduation or exemption.
+*   **SIG API Machinery approver/lead**: Resolves exemptions and disputed graduations.
+*   **[NEW] DV rotation owner**: Per-release owner for sweeping warning output, filing cleanup PRs, and tracking exemptions.
+
+The **DV rotation owner** is a work assignment from the Declarative Validation working group. One person is named for a release to watch warnings, coordinate cleanup, and make sure exemptions have owners. They perform two main tasks:
+1.  **Manual sweep**: Run `hack/update-codegen.sh validation` after the release version rolls, inspect warning output, and file or route Alpha -> Beta / Beta -> Stable cleanup PRs.
+2.  **CI follow-up**: Watch for blocking lifecycle lint errors in presubmit and route them to the right package/DV owners.
 
 ### Example Walkthrough: Two-Field Migration
 
