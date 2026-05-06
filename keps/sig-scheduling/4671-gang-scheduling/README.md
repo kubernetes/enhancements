@@ -722,12 +722,13 @@ type PodGroup struct {
 // PodGroupSpec defines the desired state of a PodGroup.
 type PodGroupSpec struct {
     // PodGroupTemplateRef references the PodGroupTemplate within the Workload object that was used to create
-	// the PodGroup.
+    // the PodGroup.
+    //
     // +optional
     PodGroupTemplateRef *PodGroupTemplateReference
     
     // SchedulingPolicy defines the scheduling policy for this instance of the PodGroup.
-	  // Controllers are expected to fill this field by copying it from a PodGroupTemplate.
+    // Controllers are expected to fill this field by copying it from a PodGroupTemplate.
     // This field is immutable.
     //
     // +required
@@ -1418,20 +1419,8 @@ we can start by skipping the Queueing Hints mechanism and relying solely on the 
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
 [X] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
-
 
 ##### Prerequisite testing updates
 
