@@ -642,6 +642,8 @@ Integration tests:
   chosen node) and no scheduling constraints are violated.
 - Add a multi-pod-per-node scenario to scheduler_perf and measure throughput with batching enabled
   and disabled; batching enabled should show measurably higher throughput.
+- Record scheduler memory usage in the multi-pod-per-node `scheduler_perf` run to validate the
+  cached raw score overhead stays within expected bounds.
 
 <!--
 This question should be filled when targeting a release.
@@ -949,6 +951,8 @@ that might indicate a serious problem?
 - `scheduler_batch_rescore_attempts_total` - zero value for a multi-pod-per-node workload 
   means those pods are not being rescored and the full pipeline runs for every cycle.
 - `scheduler_batch_rescore_duration_seconds` - unexpected latency in the rescore path.
+- `process_resident_memory_bytes` - unexpected growth may indicate cached raw scores
+  accumulating beyond expected bounds.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
