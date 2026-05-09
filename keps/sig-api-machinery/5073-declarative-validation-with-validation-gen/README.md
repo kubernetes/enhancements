@@ -517,7 +517,9 @@ lint rules make eligible-for-graduation cases visible. See
 
   - **Lint** in `validation-gen` errors on missing/malformed `since:` or
     missing `owner:` and warns (does not fail CI) on tags eligible for
-    graduation.
+    graduation. "Eligible" requires both the soak/metrics gate and the
+    chained-tag-stability gate to pass, a rule blocked by either does
+    not warn.
 
 ### Graduation Steps
 
@@ -534,8 +536,25 @@ metrics):
  Replicas *int32 `json:"replicas,omitempty"`
 ```
 
-DV is now authoritative; handwritten remains as the feature-gated
-fallback during Beta soak.
+DV is now authoritative. The handwritten code can be made authoritative (rolling back
+to +k8s:alpha functionality) by disabling the `DeclarativeValidationBeta` gate on
+kube-apiserver. This can be used to revert if a Beta migrated declarative validation rule misbehaves. 
+After Stable, the wrapper is gone and there is no per-rule rollback (no hand-written code to rollback to, 
+we confirmed the migration is safe at this point).
+
+**Rollback procedure** (applies during Beta soak only):
+
+- Disable `DeclarativeValidationBeta` the kube-apiserver:
+   `--feature-gates=DeclarativeValidationBeta=false`
+  - With the gate off, every `+k8s:beta(...)`-wrapped rule in the cluster
+     shadows rather than enforces. Handwritten validation becomes
+     authoritative, restoring `+k8s:alpha`-equivalent behavior. The rollback
+     using `DeclarativeValidationBeta` rolls back all instances of
+     `+k8s:beta`, it is not per-rule.
+- [optional] File an issue against the misbehaving rule. Keep it at
+   `+k8s:beta(...)` (do not graduate to Stable). Add a
+   `+k8s:validation-lifecycle-exempt` tag if the issue cannot be resolved
+   within the next release.
 
 **Step 3: Beta -> Stable**: (after >=1 release at Beta, zero mismatch/panic
 metrics, reviewers agree the safety switch is no longer needed):
@@ -546,9 +565,42 @@ metrics, reviewers agree the safety switch is no longer needed):
  Replicas *int32 `json:"replicas,omitempty"`
 ```
 
-The same PR removes the equivalent handwritten validation. If a
-transition cannot proceed safely, keep the current tag and add an
+The same PR removes the matching handwritten validation. Scope is
+per-rule, not "drop every `+k8s:beta` at once". The author bundles
+whatever set makes sense for that PR. Handwritten code lives in
+`pkg/apis/<group>/validation/validation.go`.
+
+There is no static check that the handwritten removal matches the
+graduated rule. The safety net is the existing
+[Migration Equivalency Tests](#migration-equivalency-tests) and the
+`declarative_validation_mismatch_total` metric. A wrong removal shows
+up as a test failure or a mismatch metric pre-merge.
+
+If a transition cannot proceed safely, keep the current tag and add an
 exemption with a tracking issue.
+
+**Chained-tag stability is also a gate.** `validation-gen`'s stability 
+lint enforces that the chained tag's stability is at-or-above
+the surrounding context:
+
+  - `+k8s:alpha(...)`: accepts Alpha, Beta, or Stable inner tags.
+  - `+k8s:beta(...)`: accepts Beta or Stable inner tags (Alpha errors).
+  - No wrapper in a stable-versioned package (e.g., `v1`): requires a
+    Stable inner tag. (In `v1betaN` packages the unwrapped context is
+    Beta, so removing the wrapper there does not require Stable.)
+
+So a graduation has two independent gates: the soak/metrics criteria
+above, and the stability of the tag definition it chains. In a `v1`
+package, removing `+k8s:beta(...)` from a Beta-only inner tag fails
+lint with `tag X with stability level "Beta" cannot be used in Stable
+validation`. Graduation is blocked until the chained tag definition
+itself graduates to Stable. (See
+[Tag Stability Levels](#tag-stability-levels) for tag-definition
+stability semantics.)
+
+The graduation-eligibility warning is stability-aware: a rule whose
+chained tag would block graduation does not warn, so it does not need
+an exemption while waiting for the chained tag to mature.
 
 ### When Lifecycle Tags Apply
 
@@ -573,11 +625,13 @@ Once a `+k8s:alpha(...)` or `+k8s:beta(...)` wrapper exists in
     non-empty.  String not directly parsed, split, etc. allowing for multiple 
     maintainers are listed inside the string in
     whatever form the author prefers (matching feature-gate convention).
-  - Alpha/Beta tags one or more releases old emit per-tag warnings
-    (non-blocking) prompting graduation review.
-
-`hack/update-codegen.sh validation` uses `DefaultKubeBinaryVersion` as
-the current release for these checks.
+  - Alpha/Beta tags one or more releases old emit per-tag graduation
+    warnings (non-blocking), but only when the chained tag's stability
+    is at-or-above the level required for the next transition. A rule
+    whose chained tag would block graduation does not warn. The
+    chained-tag-stability gate would block the graduation PR anyway, so
+    warning here would just force exemptions on rules correctly waiting
+    for the chained tag to mature.
 
 ### Example Walkthrough: Two-Field Migration
 
