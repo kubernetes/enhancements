@@ -21,6 +21,10 @@ latest-milestone: ""
 milestone:
   alpha: ""
 
+see-also:
+  - KEP-1669: "Move terminating endpoints to a non-ready state in kube-proxy"
+  - KEP-1672: "Track terminating endpoints in EndpointSlice"
+
 feature-gates:
   - name: PreserveUDPFlowsTerminatingEndpoints
     components:

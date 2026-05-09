@@ -8,10 +8,12 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Approach](#implementation-approach)
-  - [Conntrack Cleanup Strategy](#conntrack-cleanup-strategy)
   - [Kube-proxy Changes](#kube-proxy-changes)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Observability and Monitoring](#observability-and-monitoring)
+  - [Coordination with External Load Balancers](#coordination-with-external-load-balancers)
+  - [Conntrack Cleanup Granularity and Performance](#conntrack-cleanup-granularity-and-performance)
   - [Test Plan](#test-plan)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
@@ -24,6 +26,11 @@
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -134,7 +141,7 @@ The implementation will focus on the `EndpointSliceCache` (or `EndpointsChangeTr
 #### Observability and Monitoring
 
 To monitor the health of this feature and protect the node's networking stack, the following metrics will be introduced in `kube-proxy`:
-- `kubeproxy_preserved_udp_conntrack_flows_total`: A gauge tracking the total number of UDP flows currently being preserved for terminating endpoints.
+- `kubeproxy_preserved_udp_conntrack_flows`: A gauge tracking the total number of UDP flows currently being preserved for terminating endpoints.
 - `kubeproxy_conntrack_cleanup_deferred_total`: A counter incremented whenever a conntrack cleanup is deferred due to the `PreserveDuringTermination` strategy.
 - `kubeproxy_conntrack_safety_valve_flushes_total`: A counter incremented whenever the hard safety valve timeout triggers a forced cleanup.
 
@@ -227,6 +234,77 @@ Kube-proxy will resume respecting the `udpConnectionHandling`.
 ###### Are there any tests for feature enablement/disablement?
 
 Yes, unit tests will cover behavior with the feature gate both enabled and disabled.
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+During a rollout, nodes with the new kube-proxy will preserve UDP flows while nodes with the old kube-proxy will not. This creates a best-effort preservation window during rolling updates. Workloads are not negatively impacted — at worst, behavior reverts to the current default. During rollback, the new `udpConnectionHandling` field is ignored, and all UDP conntrack entries are cleaned up immediately upon termination.
+
+###### What specific metrics should inform a rollback?
+
+A sustained increase in `kubeproxy_conntrack_safety_valve_flushes_total` or `kubeproxy_preserved_udp_conntrack_flows` approaching `nf_conntrack_max` on any node indicates that the preservation mechanism is causing conntrack table pressure and may warrant a rollback.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade path tested?
+
+Manual testing during alpha and automated integration tests during beta will cover the upgrade->downgrade path, verifying that flows are correctly preserved during upgrade and cleaned up after downgrade.
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is functioning as expected?
+
+- Monitor `kubeproxy_preserved_udp_conntrack_flows` — a non-zero value indicates flows are being preserved.
+- Monitor `kubeproxy_conntrack_cleanup_deferred_total` — increasing values confirm that cleanups are being deferred.
+- Monitor `kubeproxy_conntrack_safety_valve_flushes_total` — increasing values indicate the safety valve is being triggered.
+- Verify with `conntrack -L` that UDP entries for terminating endpoints remain during termination.
+
+###### What are the reasonable SLOs for the feature?
+
+- No increase in packet loss for stateful UDP flows during endpoint termination compared to steady-state operation.
+- Conntrack table utilization should not exceed 80% of `nf_conntrack_max` on any node due to deferred cleanups.
+
+###### What are the SLIs that can be used to measure the feature?
+
+- `kubeproxy_preserved_udp_conntrack_flows` / `nf_conntrack_max` ratio per node.
+- Rate of `kubeproxy_conntrack_safety_valve_flushes_total`.
+- Rate of `kubeproxy_conntrack_cleanup_deferred_total`.
+
+### Dependencies
+
+###### Does this feature depend on any specific services, capabilities, or projects?
+
+- **Kernel**: Relies on netfilter conntrack (`nf_conntrack`) for UDP connection tracking. No specific kernel version requirement beyond what Kubernetes already requires.
+- **Kube-proxy**: The feature is implemented entirely within kube-proxy. No external dependencies.
+- **CNI Providers**: For full effectiveness, NetworkPolicies should allow traffic to `Terminating` pods (advisory, not a hard dependency).
+
+### Scalability
+
+###### Will enabling this feature impact the performance of the cluster?
+
+The primary concern is conntrack table pressure on nodes with many terminating UDP pods. The safety valve (hard limit of 2x `nf_conntrack_udp_timeout_stream`) prevents unbounded growth. Performance impact on kube-proxy sync loops is minimal since the additional logic is limited to a conditional check in the existing `detectStaleConntrackEntries` path.
+
+###### How many terminating UDP flows per node can this feature sustain?
+
+Up to the safety valve limit (2x `nf_conntrack_udp_timeout_stream`, ~360s by default). In practice, the number is bounded by the node's `nf_conntrack_max` minus the baseline conntrack utilization for healthy flows. The metrics provided enable operators to monitor this.
+
+### Troubleshooting
+
+###### How does this feature react if the API server becomes unavailable?
+
+Kube-proxy operates on a cached state of Services and EndpointSlices. If the API server is unavailable, kube-proxy continues to use its last known state. UDP flows already being preserved will remain preserved until either the endpoint is removed from the local cache (if the pod terminates), the safety valve triggers, or the API server recovers and delivers the updated state.
+
+###### What are other known failure modes?
+
+- **Zombie flows**: Pods stuck in `Terminating` indefinitely. Mitigated by the safety valve hard limit.
+- **Conntrack table exhaustion**: Mitigated by monitoring metrics and the safety valve.
+- **NetworkPolicy blocking**: If NetworkPolicies drop traffic to `Terminating` pods, preservation has no effect for external traffic. Mitigated by documentation and CNI coordination.
+
+###### What steps can be taken to debug this feature?
+
+1. Check `kubeproxy_preserved_udp_conntrack_flows` metric to see if flows are being preserved.
+2. Run `conntrack -L -p udp` on the node to inspect active conntrack entries.
+3. Check kube-proxy logs for the target endpoint's IP and port.
+4. Verify the Service has `udpConnectionHandling: PreserveDuringTermination` set on the target port.
 
 ## Implementation History
 
