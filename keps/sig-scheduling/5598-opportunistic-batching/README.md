@@ -103,6 +103,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Limited workload coverage](#limited-workload-coverage)
     - [No prior production history](#no-prior-production-history)
     - [Cached nodes are not re-filtered each cycle](#cached-nodes-are-not-re-filtered-each-cycle)
+    - [Rescore mixes scores from different cluster states](#rescore-mixes-scores-from-different-cluster-states)
     - [Memory overhead from raw score caching](#memory-overhead-from-raw-score-caching)
 - [Design Details](#design-details)
   - [Pod signature](#pod-signature)
@@ -479,6 +480,16 @@ than 500ms is flushed and a full pipeline reruns. In a typical scheduling burst,
 processed every few milliseconds, the window for meaningful node state drift is very small.
 Operators can disable `OpportunisticBatching` to restore full-pipeline behavior if degradation is
 observed.
+
+#### Rescore mixes scores from different cluster states
+
+When rescoring runs, only the last chosen node is scored against the current cycle state. The
+remaining cached nodes retain raw scores computed when the batch was created, so the resulting
+ranking combines scores from two different cluster states and may diverge slightly from a fresh
+full pipeline run.
+
+This is bounded by the same 500ms `maxBatchAge` expiry: a batch older than 500ms is flushed and a
+full pipeline reruns.
 
 #### Memory overhead from raw score caching
 
