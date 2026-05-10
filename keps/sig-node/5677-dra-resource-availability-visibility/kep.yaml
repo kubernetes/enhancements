@@ -23,7 +23,7 @@ see-also:
 
 stage: alpha
 
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 milestone:
   alpha: "v1.36"
@@ -36,6 +36,6 @@ feature-gates:
 disable-supported: true
 
 metrics:
-  - resourcepoolstatus_request_processing_duration_seconds
-  - resourcepoolstatus_request_processing_errors_total
-  - resourcepoolstatus_requests_processed_total
+  - resourcepoolstatusrequest_controller_request_processing_duration_seconds
+  - resourcepoolstatusrequest_controller_request_processing_errors_total
+  - resourcepoolstatusrequest_controller_requests_processed_total
