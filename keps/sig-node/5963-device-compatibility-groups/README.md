@@ -143,7 +143,7 @@ constraints, not just GPUs.
 
 **CompatibilityGroups Assignment**
 
-Add a `device.consumesCounters[].compatibilityGroups` field. Devices declare which  
+Add a `device.consumesCounters[].compatibilityGroups` field with type `[]string`. Devices declare which  
 named groups they belong to. For two devices consuming counters from the same  
 counter set to be co-allocated, they must share at least one compatibility group.
 
