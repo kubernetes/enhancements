@@ -799,7 +799,8 @@ Resource drivers are responsible for:
 2. Ensuring compatibility rules are symmetric and consistent across all devices
   in a ResourceSlice.
 3. Documenting their compatibility matrix.
-4. Continuing to validate at resource preparation time for version-skew safety.
+4. Continuing to validate at resource preparation time for version-skew safety
+    and to detect incorrect allocations made by a scheduler.
 
 ### Test Plan
 
