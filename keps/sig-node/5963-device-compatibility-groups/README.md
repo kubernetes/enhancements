@@ -864,7 +864,10 @@ unit and integration coverage; new tests are additive.
 
 ### Upgrade / Downgrade Strategy
 #### Upgrade
-Upon upgrading, no `ResourceSlice` leverages the new optional fields yet, so the current behavior remains as-is
+Upon upgrading, no `ResourceSlice` leverages the new optional fields yet because DRA drivers should updated after the cluster upgrade is complete, so the current behavior remains as-is.
+In the unlikely case of a DRA driver trying to use the feature while it's still being rolled out (enabled in apiserver,
+disabled in scheduler), the scheduler >= 1.37 will ignore the devices instead of doing incorrect
+allocations. They will get used as soon as the feature gets enabled also in the scheduler.
 
 #### Downgrade
 If downgrading to a version that does not have this enhancement implemented, older schedulers and api-servers do not know of the added optional field, and revert to their defined behavior prior to this enhancement
