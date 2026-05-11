@@ -1508,9 +1508,6 @@ In 1.36:
 - Workload-aware preemption design to ensure we won't break backward compatibility with it.
 - Both `Workload` and `PodGroup` APIs are integrated (alpha) with at least one true workload[^6] controller.
 - A deletion protection mechanism is implemented for `PodGroup` objects and finalizer is added to the API.
-- A `PodGroup` status lifecycle is designed and implemented, replacing the current one in alpha 
-  where `PodGroupScheduled=True` is terminal. The beta design must handle post-scheduling state changes 
-  (e.g., pod evictions, node failures) and define clear transition semantics for all condition states.
 - All e2e tests for `PodGroup` are added and graduate to conformance tests.
 - Performance tests are created and are being run in CI to protect against regressions.
 
