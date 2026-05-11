@@ -142,7 +142,7 @@ counter set to be allocated at the same time, they must share at least one compa
 
 Devices that omit this field are compatible only with other devices in the same
 counter set that also omit it. Existing ResourceSlices (where no device sets the
-field) continue to behave as today; drivers adopting this feature should annotate
+field) continue to behave as today; drivers adopting this feature need to annotate
 every device sharing a counter set.
 
 ### User Stories
