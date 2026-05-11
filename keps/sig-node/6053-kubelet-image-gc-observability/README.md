@@ -182,6 +182,10 @@ This metric supersets the existing
 `kubelet_image_garbage_collected_total{reason}`. The existing metric remains in
 place for compatibility. Implementations should increment both metrics for
 successful image deletions during the deprecation-free compatibility period.
+The existing metric's label values must remain unchanged; for example,
+`DeleteUnusedImages` may report `reason="all_unused"` for the new metric while
+continuing to report `reason="space"` for
+`kubelet_image_garbage_collected_total`.
 
 `kubelet_image_gc_skipped_images_total`
 
@@ -284,6 +288,9 @@ Implementation should instrument the following paths in
   target bytes, duration, outcome, and freed bytes.
 - `DeleteUnusedImages`: record attempt start, target bytes derived from
   eligible image sizes, duration, outcome, and freed bytes.
+- `imagesInEvictionOrder` and `detectImages`: record images skipped before
+  deletion eligibility ordering, including images in use and images pinned by
+  the runtime.
 - `freeSpace`: return structured summary data in addition to current return
   values, or update a per-attempt accumulator that records skipped images,
   deletion attempts, deletion successes, deletion failures, and freed bytes.
@@ -291,7 +298,9 @@ Implementation should instrument the following paths in
   where applicable.
 - `freeImage`: record deletion success and failure for the new deletion metric,
   while preserving the existing `ImageGarbageCollectedTotal` metric on
-  successful deletions.
+  successful deletions. If a new metric reason differs from the existing
+  metric's `age` or `space` reasons, keep the legacy reason unchanged and pass
+  the new metric reason separately.
 
 The first implementation should keep metrics in
 `pkg/kubelet/metrics/metrics.go` unless SIG Node and SIG Instrumentation prefer
@@ -318,7 +327,9 @@ None.
   - insufficient freed bytes
   - image deletion error
   - age-based cleanup
-  - `DeleteUnusedImages`
+  - images skipped because they are in use, too new, or pinned by the runtime
+  - `DeleteUnusedImages`, including preservation of the existing
+    `kubelet_image_garbage_collected_total{reason="space"}` behavior
 - `pkg/kubelet/metrics/metrics_test.go`: add metric registration and stability
   assertions for the new kubelet metrics.
 
@@ -341,6 +352,8 @@ Image GC and verifies the new metrics are exposed by kubelet.
 - Metrics are implemented as ALPHA metrics.
 - Unit tests cover success, failure, partial, and no-op Image GC outcomes.
 - Existing `kubelet_image_garbage_collected_total` behavior is preserved.
+- Existing `kubelet_image_garbage_collected_total` label values are not changed
+  by the new deletion reason labels.
 - Documentation lists the new kubelet metrics and label values.
 
 ### Beta
