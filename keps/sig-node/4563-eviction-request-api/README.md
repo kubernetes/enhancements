@@ -309,7 +309,7 @@ Example eviction request triggers:
 
 It is understood that multiple eviction requesters may request eviction of the same pod at the same
 time. The requesters should coordinate their intent and not remove the single instance of eviction
-request until all requesters have dropped their intent. For more details see [Eviction Requester](#eviction-requester-1)
+request until all requesters have withdrawn their intent. For more details see [Eviction Requester](#eviction-requester-1)
 section in the Design Details.
 
 ### Pod and Interceptor
@@ -496,7 +496,8 @@ When a requester decides that a pod needs to be evicted, it should create an Evi
 - `.spec.target.pod` should be set to fully identify the pod. The name and the UID should be
   specified to ensure that we do not evict a pod with the same name that appears immediately
   after the previous pod is removed.
-- `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation.
+- `.spec.requesters` It should add itself (requester subdomain) to the requesters list upon creation
+  and set `.intent` to `Eviction`.
 
 If the eviction request already exists for this pod, the requester should still add itself to the
 `.spec.requesters`. This has the following advantages:
@@ -506,9 +507,9 @@ If the eviction request already exists for this pod, the requester should still 
   [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples) for details).
 - Processing the eviction request result by the requester once the eviction process is complete.
 
-If the eviction is no longer needed, the requester should remove itself from the `.spec.requesters`
-of the EvictionRequest. If the requester's list is empty, the eviction request will be canceled and
-the eviction request controller will set a `Canceled` condition to `.status.conditions`.
+If the eviction is no longer needed, the requester should set `.intent` in the `.spec.requesters`
+of the EvictionRequest to `Withdrawn`. IIf all requesters' intents are withdrawn, the eviction will
+be canceled and the eviction request controller will set a `Canceled` condition to `.status.conditions`.
 
 It can observe the `Canceled` and `Evicted` conditions ([EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion))
 to decide if the EvictionRequest should be deleted/garbage collected.
@@ -716,39 +717,39 @@ type PodSpec struct {
 // .spec.target (e.g. termination of a pod).
 //
 // `.spec.requesters` field should be set and kept updated to preserve the eviction request.
-// 
-// If the target is a pod, the .status.targetInterceptors is populated from Pod's
-// .spec.evictionResponders. 
-// 
-// Interceptors should observe and communicate through the .status to help with the eviction
-// of the target when they see their name present in .status.activeInterceptors. InterceptorStatus
-// struct should then be periodically updated to indicate the progress or completion of the eviction
-// process by each interceptor in .status.intercerptors. If .status.interceptors[].heartbeatTime is
-// not updated within 20 minutes, the eviction request is passed over to the next interceptor.
 //
-// If there are no other interceptor and the target is a pod, the last default
-// imperative-eviction.k8s.io interceptor will evict the pod using the imperative Eviction API
+// If the target is a pod, the .status.targetResponders is populated from Pod's
+// .spec.evictionResponders.
+//
+// Responders should observe and communicate through the .status to help with the eviction
+// of the target when they see their state == Active in .status.targetResponders. ResponderStatus
+// struct should then be periodically updated to indicate the progress or completion of the eviction
+// process by each responder in .status.responders. If .status.responders[].heartbeatTime is
+// not updated within 20 minutes, the eviction request is passed over to the next responder.
+//
+// If there are no other responders and the target is a pod, the last default
+// imperative-eviction.k8s.io/evictor responder will evict the pod using the imperative Eviction API
 // (/evict endpoint).
 type EvictionRequest struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// Object's metadata.
-	// .metadata.name should match the .metadata.uid of the pod being evicted.
+	// metadata is the standard object metadata; More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata.
+	// .metadata.name is required and should match the .metadata.uid of the pod being evicted.
 	// .metadata.generateName is not supported.
 	// The labels of the eviction request object are synchronized with .metadata.labels of the
 	// eviction request's target. The labels of the target have a preference.
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
+	// +k8s:subfield(name)=+k8s:format=k8s-uuid
+	// +k8s:subfield(generateName)=+k8s:forbidden
 	metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	// Spec defines the eviction request specification.
-	// https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
-	// This field is required.
-	// +required
+    // spec defines the eviction request specification.
+    // https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+    // +required
 	Spec EvictionRequestSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
-	// Status represents the most recently observed status of the eviction request.
-	// Populated by interceptors and eviction request controller.
+	// status represents the most recently observed status of the eviction request.
+	// Populated by responders and evictionrequest-controller.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
 	// +optional
 	Status EvictionRequestStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
@@ -756,65 +757,105 @@ type EvictionRequest struct {
 
 // EvictionRequestSpec is a specification of an EvictionRequest.
 type EvictionRequestSpec struct {
-	// Target contains a reference to an object (e.g. a pod) that should be evicted.
-	// Target UID must be the same as the EvictionRequest's .metadata.name.
-	// This field is immutable.
-	// +required
+    // target contains a reference to an object (e.g. a pod) that should be evicted.
+    // Target UID must be the same as the EvictionRequest's .metadata.name.
+    // This field is required and immutable.
+    // +required
+    // +k8s:immutable
 	Target EvictionTarget `json:"target" protobuf:"bytes,1,opt,name=target"`
 
-	// Requesters allow you to identify entities, that requested the eviction of the target.
-	// At least one requester is required when creating an eviction request. 
-	// A requester is also required for the eviction request to be processed.
-	// Empty list indicates that the eviction request should be canceled.
+	// requesters allow you to identify entities, that requested the eviction of the target.
+	// At least one requester with the eviction intent is required when creating an eviction request.
+	// If all the requesters withdraw their eviction intent, the eviction will be canceled.
 	//
-	// Requester controllers are expected to reconcile this field and not overwrite any changes made
-	// by other controllers (e.g. via Server-Side Apply) in order to prevent conflicts and manage
-	// ownership.
+	// Requester controllers should use server-side-apply to manage the requester intent.
 	//
-	// The maximum length of the requesters list is 100.
-	// +optional
+	// Once added, items cannot be removed.
+	// The minimum length of the requesters list is 1, and the maximum is 100.
+	// +required
 	// +patchMergeKey=name
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	// +k8s:maxLength=100
+	// +k8s:required
+	// +k8s:listType=map
+	// +k8s:listMapKey=name
+	// +k8s:maxItems=100
 	Requesters []Requester `json:"requesters,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=requesters"`
 }
 
 // EvictionTarget contains a reference to an object that should be evicted.
 // +union
-type EvictionTarget struct {	
-    // Pod references a pod that is subject to eviction/termination.
-	// Pods that are part of the workload (.spec.workloadRef is set) are not supported.
-    // This field is immutable.
+type EvictionTarget struct {
+    // pod references a pod that is subject to eviction/termination.
+    // Pods that are part of a PodGroup (.spec.schedulingGroup is set) are not supported.
     // +optional
-	// +oneOf=TargetSelection
-	// +k8s:unionMember
-    Pod *LocalPodReference `json:"pod,omitempty" protobuf:"bytes,1,opt,name=pod"`
+    // +k8s:optional
+    // +k8s:unionMember
+    Pod *PodReference `json:"pod,omitempty" protobuf:"bytes,1,opt,name=pod"`
 }
 
-// LocalPodReference contains enough information to locate the referenced pod inside the same namespace.
-type LocalPodReference struct {
-	// Name of the pod.
-	// This field is required.
-	// +required
-	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
-	// UID of the pod.
-	// This field is required.
-	// +required
-	UID string `json:"uid" protobuf:"bytes,2,opt,name=uid"`
+// PodReference contains enough information to locate the referenced pod inside the same namespace.
+type PodReference struct {
+    // name of the target.
+    // This field is required.
+    // +required
+    // +k8s:required
+    // +k8s:format=k8s-long-name
+    Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+    // uid of the target.
+    // It can be found in .spec.metadata.uid of the target and is a lowercase UUID in 8-4-4-4-12 format.
+    // This field is required.
+    // +required
+    // +k8s:required
+    // +k8s:format=k8s-uuid
+    UID apimachinerytypes.UID `json:"uid" protobuf:"bytes,2,opt,name=uid,casttype=k8s.io/kubernetes/pkg/types.UID"`
 }
 
 // Requester allows you to identify the entity, that requested the eviction of the target.
 // +structType=atomic
 type Requester struct {
-	// Name must be a fully qualified domain name of at most 253 characters in length, consisting
-	// only of lowercase alphanumeric characters, periods and hyphens (e.g. foo.example.com).
-	// This field must be unique for each requester.
+    // name allows you to identify the entity, that requested the eviction of the target.
+    //
+    // It must be a valid domain-prefixed path (such as "acme.io/foo").
+    // Domain names *.k8s.io and *.kubernetes.io are reserved.
+    // This field must be unique for each requester.
     // This field is required.
     // +required
+    // +k8s:required
     Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+
+	// intent specifies the action that should be taken for the specified target.
+	//
+	// - Eviction means that the requester is interested in the eviction of the target.
+	// - Withdrawn means that the requester is no longer interested in the eviction of the target.
+	//   If all requesters' intents are withdrawn, the eviction will be canceled.
+	//   Cancellation consequences:
+	//   - Inactive responders will never run.
+	//   - Active responders are expected to cancel the eviction.
+	//   - Completed or Interrupted responders should not take any action.
+	// +required
+	// +k8s:required
+	Intent RequesterIntent `json:"intent" protobuf:"bytes,2,opt,name=intent,casttype=RequesterIntent"`
 }
+
+// RequesterIntent specifies a requester intent.
+// +k8s:enum
+type RequesterIntent string
+
+// These are intents that can be set by each requester.
+const (
+    // RequesterIntentEviction means that the requester is interested in the eviction of the target.
+    RequesterIntentEviction RequesterIntent = "Eviction"
+    
+    // RequesterIntentWithdrawn means that the requester is no longer interested in the eviction of the target.
+    // If all requesters' intents are withdrawn, the eviction will be canceled.
+    // Cancellation consequences:
+    // - Inactive responders will never run.
+    // - Active responders are expected to cancel the eviction.
+    // - Completed or Interrupted responders should not take any action.
+    RequesterIntentWithdrawn RequesterIntent = "Withdrawn"
+)
 
 // EvictionResponder allows you to specify the responder reacting to the EvictionRequest.
 // Responders should observe and communicate through the EvictionRequest API to help with
@@ -1008,8 +1049,8 @@ The API is designed to be extensible to include additional evictable targets (e.
 Currently, the `.spec.target.pod` field is required, but we might change this to include
 additional references in the future. 
 
-`.spec.requesters` must have at least one requester. The requester names must pass
-`IsFullyQualifiedDomainName` validation. 
+`.spec.requesters` must have at least one requester with `Eviction` intent. The requester names must
+pass `IsDomainPrefixedKey` validation. 
 
 `.status` is set to empty on creation.
 
@@ -1017,7 +1058,7 @@ Additional validation will be done on the controller side. For more details, see
 
 ##### UPDATE
 
-`.status.targetInterceptors` The interceptor names must pass `IsFullyQualifiedDomainName` validation.
+`.status.targetInterceptors` The interceptor names must pass `IsDomainPrefixedKey` validation.
 
 `.status.activeInterceptors` should be empty on creation as its selection should be left on the
 eviction request controller. To strengthen the validation, we should check that it is possible to
@@ -1067,7 +1108,7 @@ The eviction request is considered evicted if:
 The eviction request is considered canceled if:
 - Validation fails after eviction request is created, for example the target pod is not found. This
   additional validation is enforced by the eviction request controller. 
-- The length of the `.spec.requesters` is 0.
+- All requesters' intents are set to `Withdrawn`.
 
 
 Eviction controller will signal each of these by setting  `Canceled` or `Evicted` conditions to
@@ -1098,20 +1139,20 @@ metadata:
 1. A node drain controller starts draining a node Z and makes it unschedulable.
 2. The node drain controller creates an EvictionRequest for the only pod p-1 of application P to
    evict it from a node. It sets the`nodemaintenance.disruption-management.org` value to the
-   `.spec.requesters`.
+   `.spec.requesters[].name` and `Eviction` to `.spec.requesters[].intent`.
 3. The descheduling controller notices that the pod p-1 is running in the wrong zone. It wants to
    create an EvictionRequest (named after the pod's UID) for this pod, but the EvictionRequest
-   already exists. It sets the `descheduling.avalanche.io` value to the `.spec.requesters`.
+   already exists. It sets the `descheduling.avalanche.io` value to the `.spec.requesters[].name`
+   and `Eviction` to `.spec.requesters[].intent`.
 4. The eviction request controller designates Actor B as the next interceptor by updating
    `.status.activeInterceptors[0]`.
 5. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
 6. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
    again.
-7. The node drain controller removes the `nodemaintenance.disruption-management.org` from the
-   `.spec.requesters`.
-8. The eviction request controller notices the change in `.spec.requesters`, but there is still a
-   descheduling requester, so no action is required.
+7. The node drain controller sets its intent to `Withdrawn` in `.spec.requesters[].intent`.
+8. The eviction request controller notices the change in `.spec.requesters`, but there is still an
+   active descheduling requester, so no action is required.
 9. Actor B sets `.status.interceptors[].completionTime` on the eviction requests of pod p-1, which
    is ready to be deleted.
 10. The eviction request controller designates Actor A as the next interceptor by updating
@@ -1125,15 +1166,14 @@ metadata:
 1. A node drain controller starts draining a node Z and makes it unschedulable.
 2. The node drain controller creates an EvictionRequest for the only pod p-1 of application P to
    evict it from a node. It sets the `nodemaintenance.disruption-management.org` value to the
-   `.spec.requesters`.
+   ``.spec.requesters[].name` and `Eviction` to `.spec.requesters[].intent`.
 3. The eviction request controller designates Actor B as the next interceptor by updating
    `.status.activeInterceptors[0]`.
 4. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
 5. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
    again.
-6. The node drain controller removes the `nodemaintenance.disruption-management.org` from the
-   `.spec.requesters`.
+6. The node drain controller sets its intent to `Withdrawn` in `.spec.requesters[].intent`.
 7. The eviction request controller notices the change in `.spec.requesters`, and sets `Canceled`
    condition to `True`  as there is no requester present. It also clears out
    `.status.activeInterceptors` field.
@@ -1941,9 +1981,9 @@ as well.
 ### Cancellation of EvictionRequest
 
 The current implementation requires eviction requesters to set a `.spec.requesters` on the
-EvictionRequest in order for the EvictionRequest to be processed and the pod terminated. If the
-`.spec.requesters` field is left empty, the eviction request is canceled. Interceptors cannot
-prevent EvictionRequest cancellation.
+EvictionRequest in order for the EvictionRequest to be processed and the pod terminated. If all
+eviction intents are withdrawn in `.spec.requesters[].intent`, the eviction request is canceled.
+Interceptors cannot prevent EvictionRequest cancellation.
 
 Requesters are advised to reconcile the EvictionRequest object to ensure that the EvictionRequest is
 present, but they are not required to do so.
