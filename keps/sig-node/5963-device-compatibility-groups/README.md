@@ -81,12 +81,6 @@ would have to be decremented once when allocating the *first* device from a set
 of compatible devices, not once for *each* device. This cannot be expressed
 at the moment.
 
-Without a mechanism for this, incompatible allocations are only
-detected during resource preparation, after the scheduler has already made its
-decisions, leading to pod startup failures and resource thrashing. This KEP
-introduces API and scheduler changes so that compatibility constraints can be
-declared in ResourceSlice objects and enforced at scheduling time.
-
 ## Motivation
 
 Hardware devices often support multiple partitioning or virtualization schemes
@@ -118,7 +112,6 @@ single physical device.
 compatibility rules declared in ResourceSlice objects.
 - Provide a generic mechanism applicable to any hardware with partitioning
 constraints, not just GPUs.
-- Maintain backward compatibility with existing ResourceSlice specifications.
 
 ### Non-Goals
 
@@ -145,7 +138,7 @@ constraints, not just GPUs.
 
 Add a `device.consumesCounters[].compatibilityGroups` field with type `[]string`. Devices declare which  
 named groups they belong to. For two devices consuming counters from the same  
-counter set to be co-allocated, they must share at least one compatibility group.
+counter set to be allocated at the same time, they must share at least one compatibility group.
 
 Devices that omit this field are compatible only with other devices in the same
 counter set that also omit it. Existing ResourceSlices (where no device sets the
@@ -174,8 +167,8 @@ with cryptic error messages.
 
 ### Notes/Constraints/Caveats
 
-The compatibility relation is **symmetric**: if A can be co-allocated with B,
-then B can be co-allocated with A. It is **not transitive**: A and B sharing a
+The compatibility relation is **symmetric**: if A can be allocated with B,
+then B can be allocated with A. It is **not transitive**: A and B sharing a
 group, and B and C sharing a group, does not imply A and C share one.
 Concretely, the scheduler evaluates the pairwise predicate
 `groups(A) ∩ groups(B) ≠ ∅` against every already-allocated device on the same
@@ -287,10 +280,10 @@ spec:
 ```
 
 - `gpu-1-mig1` (groups: `mig`) and `gpu-1-foo-part` (groups: `foo`, `foobar`)
-share no compatibility group, so they cannot be co-allocated on the same
+share no compatibility group, so they cannot be allocated at the same time on the same
 counter set.
 - `gpu-1-foo-part` (groups: `foo`, `foobar`) and `gpu-1-bar-part` (groups:
-`bar`, `foobar`) share the `foobar` group, so they can be co-allocated on the
+`bar`, `foobar`) share the `foobar` group, so they can be allocated at the same time on the
 same counter set.
 
 ### Examples
@@ -650,7 +643,7 @@ pod-b becomes Unschedulable with event: "claim violates device compatibility
 constraints". No cryptic preparation failure, no resource thrashing.
 
 Two MIG devices (both group: `mig`) or two MPS devices (both group: `mps`) can
-still be co-allocated, since they share a group. Each device lists only its
+still be allocated at the same time, since they share a group. Each device lists only its
 own type because MIG and MPS are not compatible with each other; if they
 were, they would also share a composite group like `migmps`.
 
@@ -662,7 +655,7 @@ coexist. In this example, a device advertises three partition types: `foo`,
 is incompatible with both.
 
 By convention, each device's `compatibilityGroups` is a composite of the
-types it can be co-allocated with: each device lists its own type, plus a
+types it can be allocated with: each device lists its own type, plus a
 shared composite group for every set of types it is compatible with. So
 `foo` devices list `[foo, foobar]`, `bar` devices list `[bar, foobar]`, and
 `baz` — compatible with no other type — lists `[baz]`.
@@ -742,9 +735,9 @@ spec:
 ```
 
 `device-0-foo-0` (groups: `foo`, `foobar`) and `device-0-bar-0` (groups:
-`bar`, `foobar`) share the `foobar` group, so they can be co-allocated.
+`bar`, `foobar`) share the `foobar` group, so they can be allocated together.
 `device-0-baz-0` (groups: `baz`) shares no group with either, so it cannot be
-co-allocated with them.
+allocated with them.
 
 For instance, if pod-a is allocated `device-0-foo-0`, a subsequent pod
 requesting `device-0-bar-0` succeeds (both share `foobar`), but a pod
