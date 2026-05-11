@@ -113,21 +113,19 @@ mid-stream errors).
 
 | Message              | Contents                                              |
 |----------------------|-------------------------------------------------------|
-| Header               | ClusterId, MemberId, RaftTerm (sent immediately from v3rpc layer) |
-| First chunk          | Revision, Kvs                                         |
 | Intermediate chunks  | Kvs only                                              |
-| Final chunk          | Kvs, Count, More                                      |
+| Final chunk          | Header (ClusterId, MemberId, RaftTerm, Revision), Kvs, Count, More |
 
 Count is included in the final chunk because the server already visits
 every key during streaming, so the total is a free byproduct of the
 stream itself—no additional tree traversal is needed. Placing count on
 the first chunk would require an upfront O(total_keys) index walk before
-any data flows. Revision is only in the first data chunk. Clients
-reassemble by merging all messages.
+any data flows. Clients reassemble by merging all messages.
 
-Clients should not depend on the structure of this layout—it should be
-treated as internal design. The defined contract is that the merged
-`RangeResponse` produces identical results as `proto.Merge`.
+Clients seeking parity with unary `Range` do not need to inspect this
+layout. Merging the chunks via `proto.Merge` yields a `RangeResponse`
+identical to the unary result. The layout matters only for clients
+that want to process the stream chunk by chunk as it arrives.
 
 ### Supported Options
 
@@ -136,22 +134,23 @@ fields (e.g., `limit`, `keys_only`, `count_only`, `min_mod_revision`,
 `max_mod_revision`, `min_create_revision`, `max_create_revision`)
 except non-default sort order. Requests with non-default sort order
 require server-side post-processing that defeats streaming. The server
-returns `InvalidArgument` for these requests and clients should use
-the unary `Range` RPC instead.
+returns `Unimplemented` for these requests and clients should use the
+unary `Range` RPC instead.
 
 ### Chunk Sizing
 
-A new `MaxBytes` field is added to `RangeOptions`. The streaming loop passes
-a byte budget (derived from `MaxRequestBytes`) on each MVCC range call. The
-value-read loop in `kvstore_txn.go` already iterates one-by-one via the
-backend cursor — it accumulates byte size and breaks early when the budget
-is exceeded. This lets MVCC determine the chunk size based on actual data
-size rather than requiring the caller to estimate a key count limit.
+The streaming handler reuses the existing range path with an adaptive
+key-count limit. The first chunk uses a small initial limit; after
+each chunk the limit is doubled or halved based on the previous
+response size relative to a target derived from `MaxRequestBytes`,
+letting the server converge on chunk sizes appropriate for the
+observed value sizes without the client having to guess.
 
 ### Unsupported Pass Through
 
-- **leasing/kv**: Falls back to unary `Range`.
-- **grpcproxy**: Falls back to unary `Range`.
+- **leasing/kv**, **namespace/kv**, **ordering/kv**, **grpcproxy**:
+  return `Unimplemented`. Callers should not use `RangeStream` through
+  these wrappers and should use unary `Range` instead.
 
 ### Implementation Changes
 
@@ -160,28 +159,21 @@ The following components are modified:
 - **Proto** (`api/etcdserverpb/rpc.proto`): New `RangeStream` RPC on the KV
   service. New `RangeStreamResponse` message wrapping `RangeResponse`.
 - **v3rpc** (`server/etcdserver/api/v3rpc/key.go`): `kvServer.RangeStream` —
-  validates the request, sends the header message immediately, delegates to
-  `EtcdServer.RangeStream`.
+  validates the request and delegates to `EtcdServer.RangeStream`.
 - **EtcdServer** (`server/etcdserver/v3_server.go`): `RangeStream` — same auth
   and linearizability path as unary Range. `rangeStream` — the chunking loop:
   adaptive sizing, revision pinning, cursor advancement via
   `append(lastKey, '\x00')`.
-- **MVCC** (`server/storage/mvcc/`): `treeIndex.Revisions()` skips count
-  computation for RangeStream calls, enabling early exit at the limit
-  (`index.go`). The total count is derived from the running tally of
-  streamed keys and emitted on the final chunk at no extra cost.
 - **Client** (`client/v3/kv.go`): `RangeStreamToRangeResponse` — reassembles
   a stream into a single `RangeResponse` so callers can transparently switch
   between unary and streaming.
-- **gRPC Proxy** (`server/proxy/grpcproxy/`): `kvs2kvc.RangeStream` adapter
-  using channel-based `pipeStream` to bridge server/client stream interfaces.
 
 ### Test Plan
 
 ##### Unit tests
 
-- MVCC microbenchmarks (`server/storage/mvcc/kvstore_range_bench_test.go`) —
-  `BenchmarkRangeUnary` vs `BenchmarkRangeStream`
+- Server-side `RangeStream` chunking, revision pinning, and
+  `CountOnly` short-circuit behavior.
 
 ##### Integration tests
 
@@ -200,20 +192,14 @@ The following components are modified:
 RangeStream is gated behind a `RangeStream` feature gate in kube-apiserver
 (Alpha in 1.37, default disabled).
 
-A new `ListStream` method is added to the etcd `kubernetes.Interface`
-as a thin wrapper around the etcd client's `KV.GetStream()`. This
-returns a channel of chunks so callers receive key-value pairs as they
-arrive from the server, keeping the `kubernetes.Interface` abstraction
-consistent rather than reaching into `client.KV` directly.
-
 The primary integration point is the watch cache initialization path.
 When the feature gate is enabled, the watch cache `sync()` uses
-`ListStream` to receive chunks incrementally. Each chunk's key-value
+`KV.GetStream` to receive chunks incrementally. Each chunk's key-value
 pairs are converted to synthetic "created" events and queued inline
 without assembling the full list response in memory.
 
 For direct `GetList` calls (e.g., from controllers or when WatchList is
-disabled), the store consumes `ListStream` and decodes each chunk's
+disabled), the store consumes `KV.GetStream` and decodes each chunk's
 key-value pairs inline as they arrive, overlapping network I/O with
 decode. When the server returns `Unimplemented` or the feature gate is
 disabled, the store falls back to paginated `List` with a conservative

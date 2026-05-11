@@ -9,10 +9,12 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Informer and Cache Update](#informer-and-cache-update)
   - [Staleness Mitigation in Controllers](#staleness-mitigation-in-controllers)
+  - [Circuit Breaking Pattern in Controllers](#circuit-breaking-pattern-in-controllers)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -151,6 +153,14 @@ after I write on a previous reconcile so I can be assured that my reads are up
 to date. I use the newly provided  frameworks to ensure those objects are up to
 date, mitigating the risks that I am operating on stale data. 
 
+#### Story 3
+
+I am a controller author. I want to ensure that my controller doesn't perform
+time sensitive operations on stale reads. I perform live gets on certain disruptive
+operations and if my cache is out of sync I "break the circuit" and wait for my
+cache to catch up prior to processing, preventing any disruptive operations on stale
+reads.
+
 ### Risks and Mitigations
 
 There is the risk of skipping reconciles, if this is not correct and we don't
@@ -243,6 +253,20 @@ not being ready, we will requeue the object the same way as if an error
 occurred. This will have the same exponential backoff semantics so after a few
 reconciles of being unable to catch up the requeue will take longer and longer
 until the cache has enough time to actually catch up to the writes.
+
+### Circuit Breaking Pattern in Controllers
+
+With the same pattern, we can implement a circuit breaking approach to certain
+controllers, such as the node-lifecycle controller. There are scenarios, such
+as the obtaining of node lease objects, where controllers may pull stale
+information from the cache, causing the controller to wrongly believe that a
+lease is expired.
+
+We can perform live gets on these resources to ensure that we don't overreact
+to staleness in the cache. Simultaneously if it is determined that the cache
+is stale, we can use the same pattern where we mark the cache as not ready
+until the cache has at least caught up to our prior live get. This will prevent
+too many requests hitting the api server.
 
 ### Test Plan
 
@@ -338,6 +362,7 @@ If e2e tests are not necessary or useful, explain why.
 #### GA
 - Analysis of onboarded controllers and addition of others that may have the same staleness issues
 - Addition of additional E2E tests and stress tests to ensure edge cases are fully tested
+- Implementation of circuit breaking to prevent disruptive behavior during staleness
 
 <!--
 **Note:** *Not required until targeted at a release.*

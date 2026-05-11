@@ -55,7 +55,8 @@ aliases:
     - salaxander
   sig-etcd-leads:
     - ahrtr
-    - jmhbnz
+    - ivanvc
+    - jberkus
     - serathius
     - siyuanfoundation
   sig-instrumentation-leads:
