@@ -124,7 +124,7 @@ constraints, not just GPUs.
 
 - Allowing DRA drivers to specify compatibility between devices that do not
   share a counter set. The scope of compatibility constraints is limited to
-  virtual devices consuming from the same counter set (which, by convention,
+  virtual devices consuming from the same counter set (which typically
   represents a single underlying physical device).
 - Providing a centralized or cluster-wide registry of compatibility group
   names. Group names are opaque strings scoped to a single ResourceSlice pool
