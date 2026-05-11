@@ -25,7 +25,7 @@ To get started with this template:
 - [X] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [X] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
@@ -436,7 +436,7 @@ type PodGroupTemplate struct {
 	// PodGroup's claim exactly. The claim must have the same name and refer to
 	// the same ResourceClaim or ResourceClaimTemplate.
 	//
-	// This is an alpha-level field and requires that the
+	// This is a beta-level field and requires that the
 	// DRAWorkloadResourceClaims feature gate is enabled.
 	//
 	// This field is immutable.
@@ -523,7 +523,7 @@ type PodGroupSpec struct {
 	// PodGroup's claim exactly. The claim must have the same name and refer to
 	// the same ResourceClaim or ResourceClaimTemplate.
 	//
-	// This is an alpha-level field and requires that the
+	// This is a beta-level field and requires that the
 	// DRAWorkloadResourceClaims feature gate is enabled.
 	//
 	// This field is immutable.
@@ -609,7 +609,7 @@ PodGroup is also recorded in the PodGroup's `status.resourceClaimStatuses`.
 The following example demonstrates the matching semantics:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: podgroup
@@ -691,7 +691,7 @@ The true workload controller then creates the following Workload API resources
 based on the true workload's definition:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: Workload
 metadata:
   name: my-workload
@@ -705,32 +705,30 @@ spec:
     - name: pg-claim
       resourceClaimTemplateName: pg-claim-template
 ---
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: my-podgroup-1
   namespace: default
 spec:
-  podGroupTemplateRef:
-    workload:
-      workloadName: my-workload
-      podGroupTemplateName: group
+  workloadRef:
+    workloadName: my-workload
+    templateName: group
   schedulingPolicy:
     basic: {}
   resourceClaims:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
 ---
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: my-podgroup-2
   namespace: default
 spec:
-  podGroupTemplateRef:
-    workload:
-      workloadName: my-workload
-      podGroupTemplateName: group
+  workloadRef:
+    workloadName: my-workload
+    templateName: group
   schedulingPolicy:
     basic: {}
   resourceClaims:
@@ -866,12 +864,18 @@ expected to run, the creator of the PodGroup is responsible for deleting it to
 free up the devices allocated by its ResourceClaims.
 
 Claims reserved for a PodGroup can also be deallocated by the scheduler in the
-DynamicResource plugin's `PostFilter` phase. In `PostFilter`, the
+DynamicResource plugin's `Unreserve` phase when scheduling of a PodGroup failed
+and they are not reserved for any other resources (like other PodGroups). In that phase, the
 DynamicResources plugin uses the scheduler's internal view of PodGroups to
 determine if any of the group's Pods are scheduled. When no Pods in the group
 are scheduled, the scheduler removes the PodGroup from the claim's
-`status.reservedFor`. A future invocation of `PostFilter` will deallocate the
-ResourceClaim if its `status.reservedFor` list is still empty.
+`status.reservedFor`.
+
+The DynamicResources plugin will also implement the `PostFilter` phase of the
+PodGroup scheduling cycle which will perform a similar function to the Pod-level
+implementation. When a PodGroup fails to schedule, `PostFilter` will deallocate
+and unreserve the PodGroup's ResourceClaims which are reserved only for that
+PodGroup or for nobody.
 
 ### Determining Allowed Pods for a ResourceClaim
 
@@ -1349,12 +1353,43 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+The ResourceClaim controller run by kube-controller-manager may see a PodGroup
+with `spec.resourceClaims` even when the feature is disabled if a rollout has
+already enabled the feature for at least one kube-apiserver instance. When a Pod
+makes a claim for one of its PodGroup's ResourceClaimTemplates, whether the
+ResourceClaim controller should create a ResourceClaim once for the PodGroup or
+for each individual Pod is unclear. In Kubernetes 1.36, the controller creates
+one ResourceClaim for each Pod when the feature is disabled. In Kubernetes 1.37,
+the controller will not create a ResourceClaim for a Pod's claim which matches
+its PodGroup's when the feature is disabled.
+
+If a PodGroup has lingering `spec.resourceClaims` references to
+ResourceClaimTemplates meant to be replicated for each Pod, then an upgrade to
+Kubernetes 1.37 will not create new ResourceClaims for new Pods in the PodGroup
+with a matching claim.
+
+When downgrading to Kubernetes 1.36 with the feature disabled or disabling the
+feature on a 1.36 cluster, a ResourceClaimTemplate meant for a PodGroup will be
+replicated for each Pod while the feature is enabled for kube-apiserver and
+disabled for kube-controller-manager.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+A sudden increase in the `dynamic_resource_allocation_resourceclaim_creates_total`
+metric could mean that a ResourceClaimTemplate meant to be created for each
+PodGroup is being created for each Pod.
+
+An increase in the `scheduler_pending_pods` metric may indicate that the
+controller is not creating ResourceClaims that grouped Pods need in order to be
+schedulable.
+
+An increase in the `workqueue_retries_total{name="resource_claim"}` metric may
+indicate that the ResourceClaim controller is repeatedly running into errors.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1364,11 +1399,43 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+New automated upgrade/downgrade tests will exercise the following scenario where
+a Kubernetes 1.36 cluster is upgraded to 1.37 and then rolled back to 1.36:
+
+1. Create a cluster on the older version with the DRAWorkloadResourceClaims
+   feature enabled.
+1. Create a PodGroup `group-1` with member Pods `pod-1` and `pod-2`. The
+   PodGroup and Pods define matching resource claims for the
+   ResourceClaimTemplate named `template-1`.
+1. Verify that one ResourceClaim is generated from `template-1` and is reserved
+   for PodGroup `group-1`. Verify that Pods `pod-1` and `pod-2` are using the
+   same generated ResourceClaim.
+1. Upgrade the cluster to the new version.
+1. Create Pod `pod-3` as a member of PodGroup `group-1`.
+1. Verify that the same generated ResourceClaim from `template-1` stays reserved
+   only for PodGroup `group-1` and that no other ResourceClaims are generated.
+1. Verify that `pod-3` uses the same generated ResourceClaim as `pod-1` and
+   `pod-2`.
+1. Delete Pod `pod-2`.
+1. Verify that the generated ResourceClaim stays allocated and reserved only for
+   PodGroup `group-1`.
+1. Roll back the cluster upgrade.
+1. Create Pod `pod-4` as a member of PodGroup `group-1`.
+1. Verify that the same generated ResourceClaim from `template-1` stays reserved
+   only for PodGroup `group-1` and that no other ResourceClaims are generated.
+1. Verify that `pod-4` uses the same generated ResourceClaim as `pod-1` and
+   `pod-3`.
+1. Delete Pod `pod-3`.
+1. Verify that the generated ResourceClaim stays allocated and reserved only for
+   PodGroup `group-1`.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -1387,6 +1454,16 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+New `owner_api_group` and `owner_api_kind` labels will be added to the
+`dynamic_resource_allocation_resourceclaim_creates_total` metric to distinguish between claims
+created for a PodGroup or a Pod. A query for
+`dynamic_resource_allocation_resourceclaim_creates_total{owner_api_group="scheduling.k8s.io", owner_api_kind="PodGroup"}`
+shows how many ResourceClaims have been created for PodGroups.
+
+Pods using the feature can be identified by looking for the ResourceClaims in
+its `status.resourceClaimStatuses` whose `status.reservedFor` lists any items
+with `apiGroup` set to `scheduling.k8s.io` and `resource` set to `podgroups`.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1398,13 +1475,23 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
+<!--
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
+-->
+- [X] API
+  - Condition name: None
+  - Other field:
+    - When one of a Pod's `spec.resourceClaims` matches one of its PodGroup's
+      `spec.resourceClaims`, the ResourceClaim referenced in the Pod's
+      `status.resourceClaimStatuses` for that claim contains the PodGroup in its
+      `status.reservedFor` and not the Pod.
+    - ResourceClaims created from ResourceClaimTemplates for a PodGroup list the
+      PodGroup in its `metadata.ownerReferences`.
+<!--
 - [ ] Other (treat as last resort)
   - Details:
+-->
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1423,18 +1510,27 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+This feature does not affect the existing SLOs for Pods using ResourceClaims as
+described by [KEP-4381].
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
+- [X] Metrics
+  - Metric name: `dynamic_resource_allocation_resourceclaim_creates_total{owner_api_group="scheduling.k8s.io", owner_api_kind="PodGroup"}`,
+    `workqueue_*{name="resource_claim"}`
+  <!--
   - [Optional] Aggregation method:
+  -->
   - Components exposing the metric:
+    - kube-controller-manager
+<!--
 - [ ] Other (treat as last resort)
   - Details:
+-->
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1442,6 +1538,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No.
 
 ### Dependencies
 
@@ -1465,6 +1563,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -1589,6 +1689,19 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+When the API server is unavailable, the ResourceClaim controller is unable to
+see new Pods and PodGroups and cannot create ResourceClaims. Pods requiring
+those ResourceClaims in order to become schedulable will remain unschedulable
+until the API server becomes available again.
+
+Updates by kube-scheduler to ResourceClaims' `status.reservedFor` fields will
+also fail while the API server is unavailable. It will retry those updates with
+backoff until they succeed.
+
+The kubelet is still able to start Pods when they have already been scheduled,
+their `status.resourceClaimStatuses` are up to date, and their ResourceClaims'
+statuses are up to date.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1603,6 +1716,8 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+
+No other known failure modes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1623,6 +1738,8 @@ Major milestones might include:
   - 2025-12-12: KEP first draft published for review
   - 2026-01-28: Combined with [KEP-5194]
   - 2026-03-23: [Initial implementation](https://github.com/kubernetes/kubernetes/pull/136989) merged
+1.37:
+  - 2026-05-11: Beta promotion proposed
 
 ## Drawbacks
 
@@ -1670,6 +1787,7 @@ create and delete PodGroup objects (which will also provide many additional
 features) and don't have to explicitly manage ResourceClaims.
 
 
+[KEP-4381]: https://kep.k8s.io/4381
 [KEP-4671]: https://kep.k8s.io/4671
 [KEP-5832]: https://kep.k8s.io/5832
 [KEP-5194]: https://kep.k8s.io/5194
