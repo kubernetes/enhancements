@@ -140,8 +140,8 @@ Add a `device.consumesCounters[].compatibilityGroups` field with type `[]string`
 named groups they belong to. For two devices consuming counters from the same  
 counter set to be allocated at the same time, they must share at least one compatibility group.
 
-Devices that omit this field are compatible only with other devices in the same
-counter set that also omit it. Existing ResourceSlices (where no device sets the
+Devices with an empty `compatibilityGroups` field are compatible only with other devices in the same
+counter set that have it empty. Existing ResourceSlices (where no device sets the
 field) continue to behave as today; drivers adopting this feature need to annotate
 every device sharing a counter set.
 
