@@ -202,7 +202,7 @@ for correctness and documentation of their compatibility matrix.
 A new field `compatibilityGroups` is added inside each entry of
 `device.consumesCounters[]`. It contains a list of string group names.
 For two devices consuming counters from the same counter set to be allocated
-together, either both must omit the field (or set it to an empty list), or both
+together, either both must leave the field unset, or both
 must declare the field and share at least one group name. A nil
 `compatibilityGroups` and an empty `compatibilityGroups: []` are treated
 identically. This means a device that declares the field is never co-allocatable
