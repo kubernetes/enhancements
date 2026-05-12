@@ -61,8 +61,7 @@ disable-supported: true
 
 ## The following PRR answers are required at beta release
 metrics:
-  - evictionrequest_controller_imperative_evictions
-  - evictionrequest_controller_active_interceptor
-  - evictionrequest_controller_processed_interceptor
-  - evictionrequest_controller_active_requester
-  - evictionrequest_controller_pod_interceptors
+  - imperative_eviction_responder_controller_imperative_evictions
+  - evictionrequest_controller_responder_state
+  - evictionrequest_controller_requester_intent
+  - evictionrequest_controller_target_responders

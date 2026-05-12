@@ -453,11 +453,11 @@ purposes after it has reached the terminal phase (`Succeeded` or `Failed`).
 If there is no responder, and the application has insufficient availability and a blocking PDB or
 blocking validating admission webhook, then the imperative eviction responder controller will enter
 into an API-initiated eviction cold loop with a backoff. To mitigate this we will increment the
-`evictionrequest_controller_imperative_evictions` metric.
+`imperative_eviction_responder_controller_failed_evictions` metric.
 
 A responder could reconcile the status properly without making any progress. It is thus
 recommended to check `creationTimestamp` of the EvictionRequests and observe
-`evictionrequest_controller_active_responder` metric to see how much it takes for a responder
+`evictionrequest_controller_responder_state` metric to see how much it takes for a responder
 to complete the eviction. This metric can be also used to implement additional alerts.
 
 #### Disruptive Eviction
@@ -695,7 +695,7 @@ EvictionRequest can still be used to terminate them by other means.
 No attempt will be made to evict pods that are currently terminating.
 
 If the pod eviction fails, e.g. due to a blocking PodDisruptionBudget, the
-`evictionrequest_controller_imperative_evictions` metric is incremented, 
+`imperative_eviction_responder_controller_failed_evictions` metric is incremented, 
 `.status.responders[].message` is updated to reflect the new count, and the pod is
 added back to the queue with exponential backoff (maximum approx. 15 minutes).
 
@@ -1757,7 +1757,7 @@ the feature.
 ###### What specific metrics should inform a rollback?
 
 - If there is an unreasonably large number of evictions reported by a
-  `evictionrequest_controller_imperative_evictions` metric.
+  `imperative_eviction_responder_controller_failed_evictions` metric.
 - Large values of the `workqueue_depth` and `workqueue_work_duration_seconds` metrics may indicate
   a problem.
 
@@ -1771,7 +1771,7 @@ A manual test will be performed, as follows:
    terminates it. Observe that the EvictionRequest has `Evicted=True` condition at the end.
 4. Create an EvictionRequest B, pod B and PDB B targeting the pod B with `maxUnavailable=0`. Observe
    that the imperative eviction responder controller increases the
-   `evictionrequest_controller_imperative_evictions` metric and correctly updates
+   `imperative_eviction_responder_controller_failed_evictions` metric and correctly updates
    `.status.responders[].message`, but does not evict the pod.
 5. Downgrade to 1.35.
 6. Delete PDB B. Observe that the pod B keeps running without any termination.
@@ -1787,9 +1787,9 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-By observing the `evictionrequest_controller_imperative_evictions`,
-`evictionrequest_controller_active_responder`, `evictionrequest_controller_processed_responder`,
-`evictionrequest_controller_pod_responders` and `workqueue` metrics.
+By observing the `imperative_eviction_responder_controller_failed_evictions`,
+`evictionrequest_controller_responder_state`, `evictionrequest_controller_requester_intent`,
+`evictionrequest_controller_target_responders` and `workqueue` metrics.
 
 Cluster state can also be checked:
 - It is possible to create EvictionRequest objects.
@@ -1814,15 +1814,13 @@ This feature should comply with the existing SLO about processing mutating API c
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `evictionrequest_controller_imperative_evictions` (number of evictions per EvictionRequest and Pod)
+  - Metric name: `imperative_eviction_responder_controller_failed_evictions` (number of failed evictions per EvictionRequest and Pod)
     - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_active_responder` (active responders per EvictionRequest and Target)
+  - Metric name: `evictionrequest_controller_responder_state` (state of each responder per EvictionRequest and Target)
     - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_processed_responder` (processed responders per EvictionRequest and Target)
+  - Metric name: `evictionrequest_controller_requester_intent` (requesters intent (Eviction, Withdrawn) per EvictionRequest and Target)
       - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_active_requester` (active requesters per EvictionRequest and Target)
-      - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_pod_responders` (available responders per Pod)
+  - Metric name: `evictionrequest_controller_target_responders` (available responders per target (Pod))
       - Components exposing the metric: kube-controller-manager (new)
   - Metric name: `workqueue_depth`, `workqueue_adds_total`, `workqueue_queue_duration_seconds`, `workqueue_work_duration_seconds`, `workqueue_unfinished_work_seconds`, `workqueue_retries_total`
     - [Optional] Aggregation method: name=evictionrequests
