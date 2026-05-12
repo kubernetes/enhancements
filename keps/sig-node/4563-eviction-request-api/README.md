@@ -9,7 +9,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Eviction Requester](#eviction-requester)
-  - [Pod and Interceptor](#pod-and-interceptor)
+  - [Pod and Responder](#pod-and-responder)
   - [Eviction Request Controller](#eviction-request-controller)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
@@ -25,14 +25,14 @@
 - [Design Details](#design-details)
   - [EvictionRequest](#evictionrequest)
   - [Eviction Requester](#eviction-requester-1)
-  - [Interceptor](#interceptor)
+  - [Responder](#responder)
   - [Eviction Request Controller](#eviction-request-controller-1)
     - [Validation](#validation)
     - [Label Synchronization](#label-synchronization)
-    - [Interceptor Selection](#interceptor-selection)
+    - [Responder Selection](#responder-selection)
     - [Eviction](#eviction)
   - [Pod and EvictionRequest API](#pod-and-evictionrequest-api)
-    - [Remarks on Interceptors](#remarks-on-interceptors)
+    - [Remarks on Responders](#remarks-on-responders)
     - [EvictionRequest Validation on Admission](#evictionrequest-validation-on-admission)
       - [CREATE](#create)
       - [UPDATE](#update)
@@ -76,7 +76,7 @@
 - [Alternatives](#alternatives)
   - [EvictionRequest or Eviction subresource](#evictionrequest-or-eviction-subresource)
   - [Pod API](#pod-api)
-  - [Interceptor list in Pod's annotations](#interceptor-list-in-pods-annotations)
+  - [Responder list in Pod's annotations](#responder-list-in-pods-annotations)
   - [Enhancing PodDisruptionBudgets](#enhancing-poddisruptionbudgets)
   - [Cancellation of EvictionRequest](#cancellation-of-evictionrequest)
   - [The Name of the EvictionRequest Objects](#the-name-of-the-evictionrequest-objects)
@@ -248,10 +248,10 @@ For completeness here is a complete list of open PDB issues. Most are relevant t
 ### Goals
 
 - Introduce new EvictionRequest API (`evictionrequest.coordination.k8s.io`) and eviction request
-  controller.
-- Allow the EvictionRequest API to be extended with a set of interceptors for each pod.
+xx  controller.
+- Allow the EvictionRequest API to be extended with a set of responders for each pod.
 - Use API-initiated Eviction API of pods that support the eviction request process, only if there
-  are no active interceptors.
+  are no active non-default responders.
 
 ### Non-Goals
 
@@ -267,14 +267,14 @@ For completeness here is a complete list of open PDB issues. Most are relevant t
 
 We will introduce a new declarative API called EvictionRequest, whose purpose is to coordinate the
 eviction of a pod from a node. It creates a contract between the eviction requester, the pod, and
-the interceptor (described later). The contract is enforced by the eviction request controller, the
+the responder (described later). The contract is enforced by the eviction request controller, the
 API type and validation.
 
-Pods will carry a new field `.spec.evictionResponders`, which specifies a list of interceptors
+Pods will carry a new field `.spec.evictionResponders`, which specifies a list of responders
 involved in their lifecycle. This would allow multiple actors to take an action before the pod is
-terminated. Only one interceptor may progress with the eviction at a time. The interceptor with the
-index 0 is executed first. If there is no interceptor, or the last interceptor has
-finished without terminating the pod, the eviction request controller will attempt to evict the pod
+terminated. Only one responder may progress with the eviction at a time. The responder with the
+index 0 is executed first. If there is no responder, or the last responder has finished without
+terminating the pod, the imperative eviction responder controller will attempt to evict the pod
 using the existing API-initiated eviction.
 
 Multiple requesters can request the eviction of the same pod, and optionally withdraw their request
@@ -312,21 +312,22 @@ time. The requesters should coordinate their intent and not remove the single in
 request until all requesters have withdrawn their intent. For more details see [Eviction Requester](#eviction-requester-1)
 section in the Design Details.
 
-### Pod and Interceptor
+### Pod and Responder
 
-Any pod can be the subject to an eviction request. There can be multiple interceptors for a single
+Any pod can be the subject to an eviction request. There can be multiple responders for a single
 pod, and they should all advertise which pods they are responsible for. Normally, the
-owner/controller of the pod is the main interceptor. In a special case, the pod can be its own
-interceptor. The interceptor should decide what action to take when it observes an eviction request
-intent directed at that interceptor:
-1. It can decline the interception of the eviction request and wait for the pod to be intercepted by
-   another interceptor or evicted by the eviction request controller.
-2. It can do nothing and wait for the pod to be intercepted by another interceptor or evicted by the
-   eviction request controller. This is discouraged because the heartbeat has to timeout out after
-   20 minutes. It is therefore better to simply decline the interception.
+owner/controller of the pod is the main responder. In a special case, the pod can be its own
+responder. The responder should decide what action to take when it observes an eviction request
+intent directed at that responder:
+1. It can decline the eviction request and wait for the pod to be processed by
+   another responder or evicted by the imperative eviction responder controller.
+2. It can do nothing and wait for the pod to be processed by another responder or evicted by the
+   imperative eviction responder controller. This is discouraged because the heartbeat has to
+   timeout out after 20 minutes. It is therefore better to simply decline the processing of the
+   eviction request.
 3. It can start the eviction logic and periodically respond to the eviction request intent to signal
    that the eviction request is in progress and not stuck. The eviction logic is at the discretion
-   of the interceptor and can take many forms:
+   of the responder and can take many forms:
    - Migration of data (both persistent and ephemeral) from one node to another.
    - Waiting for a cleanup and release of important resources held by the pod.
    - Waiting for important computations to complete.
@@ -338,13 +339,13 @@ intent directed at that interceptor:
      still in an available state, the API-initiated eviction can be used to respect
      PodDisruptionBudgets.
 
-The end goal of an EvictionRequest is for a pod to be terminated by one of the interceptors, or by
-an API-initiated eviction triggered by the eviction request controller. Usually this will also
-coincide with the deletion of the pod (evict or delete call). In some scenarios, the pod may only be
-terminated (e.g. by a remote call) if the pod `restartPolicy` allows it, to preserve the pod data
-for further processing or debugging.
+The end goal of an EvictionRequest is for a pod to be terminated by one of the responders, or by
+an API-initiated eviction triggered by the imperative eviction responder controller. Usually this
+will also coincide with the deletion of the pod (evict or delete call). In some scenarios, the pod
+may only be terminated (e.g. by a remote call) if the pod `restartPolicy` allows it, to preserve the
+pod data for further processing or debugging.
 
-The interceptor should observe EvictionRequest cancellations. See
+The responder should observe EvictionRequest cancellations. See
 [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples) for details.
 
 We should discourage the creation of preventive EvictionRequests, so that they do not end up as
@@ -359,11 +360,11 @@ In order to fully enforce the eviction request contract and prevent code duplica
 requesters, we will introduce a new controller called the eviction request controller.
 
 Its responsibility is to observe eviction requests from requesters and periodically check that
-interceptors are making progress in evicting/terminating pods. It is important to see a consistent
-effort by the interceptors to reconcile the progress of the eviction request. This is important to
+responders are making progress in evicting/terminating pods. It is important to see a consistent
+effort by the responders to reconcile the progress of the eviction request. This is important to
 prevent stuck eviction requests that could bring node maintenance to a halt. If the eviction request
 controller detects that the eviction request progress updates have stopped (due to a timeout), it
-will assign another interceptor. If there is no other interceptor available, it will resort to pod
+will assign another responder. If there is no other responder available, it will resort to pod
 eviction by calling the eviction API (taking PodDisruptionBudgets into consideration).
 
 It is also responsible for reconciling the `Canceled`, `Evicted`, conditions
@@ -379,10 +380,10 @@ a set of nodes. I also want to see the progress of ongoing eviction requests and
 them if something goes wrong. This means to:
 - Easily identify pods that have accepted eviction requests and are making progress. If possible to
   be able to see eviction request's ETA.
-- Identify pods that are being evicted by the API-intiated eviction instead of being intercepted and
-  to be able to distinguish pods that are failing eviction.
-- See additional debug information from the active interceptor and be able to identify all the
-  registered interceptors.
+- Identify pods that are being evicted by the API-intiated eviction instead of being processed via
+  custom responders, and to be able to distinguish pods that are failing eviction.
+- See additional debug information from the active responder and be able to identify all the
+  registered responders.
 
 #### Story 2
 
@@ -399,9 +400,9 @@ first instead of downscaling.
 As an application owner, I want to have a custom logic tailored to my application for migration,
 down-scaling, or removal of pods. I want to be able to easily override the default eviction request
 process, including the eviction and PDBs, available to workloads. To achieve this, I also need to
-be able to identify other actors (interceptors) and an order in which they will run.
+be able to identify other actors (responders) and an order in which they will run.
 
-I want to be able to set the execution priority for my interceptor. If it is also the main
+I want to be able to set the execution priority for my responder. If it is also the main
 controller, then I also want to reserve a number of priorities for my organization to orchestrate
 multiple components requiring close interactions (e.g. Deployment and ReplicaSet controllers in the
 k8s case).
@@ -449,14 +450,14 @@ purposes after it has reached the terminal phase (`Succeeded` or `Failed`).
 
 ### Risks and Mitigations
 
-If there is no interceptor, and the application has insufficient availability and a blocking PDB or
-blocking validating admission webhook, then the eviction request controller will enter into an
-API-initiated eviction cold loop with a backoff. To mitigate this we will increment the
+If there is no responder, and the application has insufficient availability and a blocking PDB or
+blocking validating admission webhook, then the imperative eviction responder controller will enter
+into an API-initiated eviction cold loop with a backoff. To mitigate this we will increment the
 `evictionrequest_controller_imperative_evictions` metric.
 
-An interceptor could reconcile the status properly without making any progress. It is thus
+A responder could reconcile the status properly without making any progress. It is thus
 recommended to check `creationTimestamp` of the EvictionRequests and observe
-`evictionrequest_controller_active_interceptor` metric to see how much it takes for an interceptor
+`evictionrequest_controller_active_responder` metric to see how much it takes for a responder
 to complete the eviction. This metric can be also used to implement additional alerts.
 
 #### Disruptive Eviction
@@ -469,8 +470,8 @@ we can see many administrators override these default settings and many componen
 indiscriminately. There are also many ways that users use to prevent the eviction;
 PodDisruptionBudgets, validating admission webhooks, or just plain HA. Users who want to protect
 their applications in today's clusters should already be aware that they should be able to handle
-sudden evictions. Therefore, it should be okay for the eviction request controller to evict these
-pods.
+sudden evictions. Therefore, it should be okay for the imperative eviction responder controller to
+evict these pods.
 
 To mitigate the sudden eviction problem, users should use PodDisruptionBudgets or HA.
 
@@ -479,7 +480,7 @@ To mitigate the sudden eviction problem, users should use PodDisruptionBudgets o
 ### EvictionRequest
 
 We will introduce a new type called `evictionrequest.coordination.k8s.io` to enforce the contract
-between the eviction requesters and the interceptors. This type is a bit similar to
+between the eviction requesters and the responders. This type is a bit similar to
 `leases.coordination.k8s.io` in that it requires multiple actors to synchronize the state. Which in
 our case is the progress of the eviction.
 
@@ -509,7 +510,8 @@ If the eviction request already exists for this pod, the requester should still 
 
 If the eviction is no longer needed, the requester should set `.intent` in the `.spec.requesters`
 of the EvictionRequest to `Withdrawn`. IIf all requesters' intents are withdrawn, the eviction will
-be canceled and the eviction request controller will set a `Canceled` condition to `.status.conditions`.
+be canceled and the eviction request controller will set a `Canceled` condition to
+`.status.conditions`.
 
 It can observe the `Canceled` and `Evicted` conditions ([EvictionRequest Completion and Deletion](#evictionrequest-completion-and-deletion))
 to decide if the EvictionRequest should be deleted/garbage collected.
@@ -518,27 +520,27 @@ Eviction requesters are expected to use Server-Side apply to prevent conflicts a
 of their own `Requester` struct in the `.spec.requesters` list. The EvictionRequest resource should
 also be reconciled to indicate eviction intent.
 
-### Interceptor
+### Responder
 
-[Pod and Interceptor](#pod-and-interceptor) section provides a general overview.
+[Pod and Responder](#pod-and-responder) section provides a general overview.
 
-There can be multiple interceptors for a single pod, which can be given control of the eviction
+There can be multiple responders for a single pod, which can be given control of the eviction
 process by the eviction request controller.
 
-Interceptors can range from partial, which perform limited cleanup without terminating the pod, to
+Responders can range from partial, which perform limited cleanup without terminating the pod, to
 controllers and higher-level controllers, which can terminate the pod gracefully. Generic fallback
-interceptors can be used if all other concrete ones fail or are unavailable.
+responders can be used if all other concrete ones fail or are unavailable.
 
-First, the interceptor should register itself with all the pods it is interested in
-evicting/intercepting (either partially or fully) by adding itself to the
+First, the responder should register itself with all the pods it is interested in
+evicting/processing (either partially or fully) by adding itself to the
 `.spec.evictionResponders` field of the pod. This list is then added to the
 [EvictionRequest](#pod-and-evictionrequest-api) after creation by the eviction request controller.
 
-The Interceptor type should set the `name` field. For more
+The Responder type should set the `name` field. For more
 details see [Pod and EvictionRequest API](#pod-and-evictionrequest-api) and
-[Remarks on Interceptors](#remarks-on-interceptors).
+[Remarks on Responders](#remarks-on-responders).
 
-Example pod with interceptors:
+Example pod with responders:
 
 ```yaml
 apiVersion: v1
@@ -555,58 +557,71 @@ metadata:
       - name: sensitive-workload-operator.fruit-company.com
       - name: deployment.apps.k8s.io
       - name: replicaset.apps.k8s.io
-      - name: fallback-interceptor.rescue-company.com
+      - name: fallback-responder.rescue-company.com
 ```
 
-The interceptor should observe the eviction request objects that match the pods that the interceptor
-manages (e.g. through labels and labelSelector). It should start the eviction process only if it
-observes an interceptor name in the `.status.activeInterceptors` in the EvictionRequest object that
-matches the `name` it previously set in the pod's `.spec.evictionResponders`.
+The responder should observe the eviction request objects that match the pods that the responder
+manages (e.g. through labels and labelSelector). It should observe the TargetResponder struct in the
+`.status.targetResponders` in the EvictionRequest object that matches the `name` it previously set
+in the pod's `.spec.evictionResponders`. It should then react to the
+`.status.targetResponders[].state` field, and adjust the eviction process and the responder
+lifecycle accordingly.
 
-If the interceptor is not interested in intercepting/evicting the pod anymore, it should set
-`.status.interceptors[].completionTime`. If the
-interceptor is unable to respond to the eviction request, the interception will time out after 20
-minutes and control of the eviction process will be passed to the next interceptor at the higher
-list index. If there is none, the pod will get evicted by the eviction request controller.
+If the responder is not interested in evicting the pod anymore, it should set
+`.status.responders[].completionTime`. If the
+responder is unable to respond to the eviction request for 20
+minutes, the control of the eviction process will be passed to the next responders at the higher
+list index. This includes the default ones, such as `imperative-eviction.k8s.io/evictor`. If
+there is no responder available, the eviction request will be canceled with the
+`CanceledDueToNoRequesters` reason.
 
-If the interceptor is interested in intercepting/evicting the pod it should ensure to update the
+If the responder is interested in processing the eviction of the pod it should ensure to update the
 EvictionRequest status periodically at intervals of less than 20 minutes. Therefore, updating the
-status every 3 minutes may be sufficient to allow for potential disruption of the interceptor. The
+status every 3 minutes may be sufficient to allow for potential disruption of the responder. The
 status updates should look as follows:
 - Verify that the `.spec.target` is the desired target (e.g., there is a correct pod in the
   `.spec.target.pod`)
-- Check that the previously set `name` in the pod's `.spec.evictionResponders` is still included
-  in  `.status.activeInterceptors`. If not, it should abort the eviction process or output an error
-  (e.g. via an event or a condition).
-- Set `.status.interceptors[].heartbeatTime` to the present time to signal that the eviction request
-  is not stuck. `.status.interceptors[].startTime` should also be set the first time this field is
-  set.
-- Update `.status.interceptors[].expectedInterceptorFinishTime` if a reasonable estimation can be
-  made of how long the eviction process will take for the current interceptor. This can be modified
+- Observe the `.status.targetResponders[].state` field and act accordingly:
+  - `Inactive`: no action.
+  - `Active`: it should start or continue with the eviction process.
+  - `Canceled`: it should fully stop the eviction process work if possible, or aid in reconciling to
+    the healthy state as soon as possible. It should output an error (e.g. via an event or a
+    condition).
+  - `Interrupted`: set by the eviction request controller if the responder failed to start or update
+    the progress in `.status.responders`. If the responder wakes up, it should stop all the work.
+    There might be a different responder processing an eviction or recovering from the interrupted
+    responder, so the interrupted responder should not take any action in a standard scenario.
+  - `Completed`: this is done in a response of detecting a successful eviction ( completionTime or
+    the target is gone). The active responder is expected to have completed, or about to complete
+    shortly.
+- Set `.status.responders[].heartbeatTime` to the present time to signal that the eviction request
+  is not stuck. 
+- Update `.status.responders[].ExpectedCompletionTime` if a reasonable estimation can be
+  made of how long the eviction process will take for the current responder. This can be modified
   later to change the estimate.
-- Set `.status.interceptors[].completionTime` indicate whether the eviction process has completed or
-  not.
+- Set `.status.responders[].completionTime` to indicate whether the eviction process has completed
+  or not.
 - Set `.status.message` to inform about the progress of the eviction in human-readable form.
 - Optionally, `.status.conditions` can be set for additional details about the eviction request.
 - Optionally, an event can be emitted to inform about the start/progress of the eviction. Or lack
-  thereof, if the eviction request is blocked. The interceptor should ensure that an appropriate
+  thereof, if the eviction request is blocked. The responder should ensure that an appropriate
   number of events is emitted. `event.involvedObject` should be set to the current EvictionRequest.
 
-Interceptors should be aware that the EvictionRequest object can be deleted at any time. See
+Responders should be aware that the EvictionRequest object can be deleted at any time. See
   [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples) for details.
 
 The completion of the eviction request is communicated by pod termination (usually by an evict or
 delete call) and reaching the terminal phase (`Succeeded` or `Failed`). It can also withdraw from
-the eviction process by setting `.status.interceptors[].completionTime`.
+the eviction process by setting `.status.responders[].completionTime`.
 
-The interceptor should prefer the eviction API endpoint call for the pod deletion/termination to
+The responder should prefer the eviction API endpoint call for the pod deletion/termination to
 respect the PDBs, unless the eviction process is incompatible with the PDBs and the application has
-already been disrupted (either by the interceptor or by external forces). Or the interceptor has a
+already been disrupted (either by the responder or by external forces). Or the responder has a
 better insight into the application availability than the PDB. In these cases, it is possible to
 skip the eviction call and use the delete call directly.
 
-Also, the interceptor should not block the eviction request by updating
-the `.status.interceptors[].heartbeatTime` when no work is being done on the eviction. This should
+Also, the responder should not block the eviction request by updating
+the `.status.responders[].heartbeatTime` when no work is being done on the eviction. This should
 be decided solely by the user deploying the application and resolved by creating a PDB.
 
 ### Eviction Request Controller
@@ -635,41 +650,44 @@ If the validation fails, the eviction request will no longer be processed.
 
 The controller should synchronize target's `.metatada.labels` to the EvictionRequest's
 `metadata.labels`. This will overwrite any conflicting labels in the EvictionRequest. This is done
-to allow for custom label selectors that the interceptors can use when watching the eviction
+to allow for custom label selectors that the responders can use when watching the eviction
 requests.
 
-#### Interceptor Selection
+#### Responder Selection
 
-`.status.targetInterceptors` will be set from pod/target's `.spec.evictionResponders` in the same
-order. We will also append a set of default interceptors (`imperative-eviction.k8s.io`) to the end
-of the list. The `.status.targetInterceptors` will become immutable once set.
+`.status.targetResponders` will be set from pod/target's `.spec.evictionResponders` in the same
+order. A set of default responders (`imperative-eviction.k8s.io/evictor`) will also be appended to
+the end of the list. Once set, items cannot be added to or removed from `.status.targetResponders`.
 
 The controller should set `.status.observedGeneration` each time it observes a new generation of the
 EvictionRequest object.
 
-The eviction request controller reconciles EvictionRequests and first picks the index 0 interceptor
-from `.status.targetInterceptors` and sets its `name` to the `.status.activeInterceptors[0]`.
+The eviction request controller reconciles EvictionRequests and first picks the index 0 responder
+from `.status.targetResponders` and setting its `state` to `Active`.
+`.status.responders[].startTime` should also be set to establish a baseline for any non-cooperating
+responder.
 
-If active interceptor's `.status.interceptors[].completionTime` is set, or 20 minutes has elapsed
-since `.status.interceptors[].heartbeatTime`, then the eviction request controller sets
-`.status.activeInterceptors[0]` to the next interceptor at the higher list index from
-`.status.targetInterceptors`. During the switch to the new interceptor, the eviction request
-controller will also append `.status.processedInterceptors` with the last value of
-`.status.activeInterceptors`.
+If active responder's `.status.responders[].completionTime` is set, or 20 minutes have elapsed
+since `.status.responders[].heartbeatTime`, then the eviction request controller sets
+`.status.targetResponders[].state` to `Completed` or `Interrupted` respectively. The next responder
+at the higher list index from `.status.targetResponders[]` is then selected and its `state` is set
+to `Active`.
+
+If there is no `Eviction` in `.spec.requesters[].intent`, the eviction request is canceled and an
+`Active` states transition to `Canceled` states in `.status.targetResponders[].state`. 
+
+### Imperative Eviction Responder Controller
 
 #### Eviction
 
-The eviction request controller will implement an `imperative-eviction.k8s.io` interceptor. This
-interceptor observe EvictionRequests and evict pods that are unable to be
-terminated by calling the eviction API endpoint.
+The imperative eviction responder controller will implement an `imperative-eviction.k8s.io/evictor`
+responder. This responder observes EvictionRequests and evict pods that are unable to be terminated
+by calling the eviction API endpoint.
 
-Pods that are unable to be terminated:
-- EvictionRequest's `.status.activeInterceptors` list contains `imperative-eviction.k8s.io`
-  interceptor. All the other interceptors from `.status.targetInterceptors` should be in
- `.status.processedInterceptors`.
-- 20 minutes has elapsed since EvictionRequest's
-  `.status.interceptors[].heartbeatTime` of the active interceptor or from
-  `.metadata.creationTimestamp` if `.status.interceptors[].heartbeatTime` is nil.
+If a pod cannot be terminated and all the EvictionRequest's custom responders in the
+`.status.targetResponders` have been processed, then the `state` of
+`imperative-eviction.k8s.io/evictor` is set to `Active`. The controller should now start processing
+the eviction request.
 
 API-initiated eviction of DaemonSet pods and mirror pods is not supported. However, the
 EvictionRequest can still be used to terminate them by other means.
@@ -678,7 +696,7 @@ No attempt will be made to evict pods that are currently terminating.
 
 If the pod eviction fails, e.g. due to a blocking PodDisruptionBudget, the
 `evictionrequest_controller_imperative_evictions` metric is incremented, 
-`.status.interceptors[].message` is updated to reflect the new count, and the pod is
+`.status.responders[].message` is updated to reflect the new count, and the pod is
 added back to the queue with exponential backoff (maximum approx. 15 minutes).
 
 Example message: `Could not evict a pod due to failing eviction requests, number of retries: 7`.
@@ -874,90 +892,85 @@ type EvictionResponder struct {
 
 // EvictionRequestStatus represents the last observed status of the eviction request.
 type EvictionRequestStatus struct {
-    // EvictionRequest's .metadata.generation observed by the eviction request controller.
-	// This field is managed by Kubernetes. 
-    // +optional
-    ObservedGeneration int64 `json:"observedGeneration,omitempty" protobuf:"varint,1,opt,name=observedGeneration"`
-	
-    // Conditions contain information about the eviction request.
+	// conditions contain information about the eviction request.
 	//
-	// Eviction request specific conditions are: Evicted or Canceled (managed by Kubernetes),
+	// Eviction request specific conditions are: Evicted or Canceled (managed by evictionrequest-controller),
 	//
-	// - Canceled means that the eviction request is no longer being processed by any eviction
-	//   interceptor because the eviction request has been canceled.
+	// - Failed means that the eviction request is no longer being processed
+	//   by any eviction responder. This can happen if the request is canceled or if no responder
+	//   managed to evict the target (e.g. terminate or delete a pod).
 	// - Evicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
-    // +optional
-    // +patchMergeKey=type
-    // +patchStrategy=merge
-    // +listType=map
-    // +listMapKey=type
-    Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,2,rep,name=conditions"`
-		
-	// TargetInterceptors reference interceptors that should eventually respond to this eviction
-	// request to help with the graceful eviction of a target. These interceptors are selected
-	// sequentially, in the order in which they appear in the list and are added to the
-	// .status.activeInterceptors in a rolling fashion.
 	//
-	// If the target is a pod, the field is populated from Pod's .spec.evictionResponders. Default
-	// interceptors may be added to the list according to the target.
-	//
-	// Default interceptors:
-	// - imperative-eviction.k8s.io interceptor is appended to the end of the list if the target is
-	//   a pod. It will call the /evict API endpoint. This call may not succeed due to
-	//   PodDisruptionBudgets, which may block the pod termination. It will update the interceptor
-	//   message and try again with a backoff.
-	//
-	// The maximum length of the interceptors list is 15.
-	// This field is immutable once set.
-	// This field is managed by Kubernetes. 
+	// 	The maximum length of the conditions list is 500.
 	// +optional
-	// +patchMergeKey=name
+	// +patchMergeKey=type
 	// +patchStrategy=merge
 	// +listType=map
-	// +listMapKey=name
-	// +k8s:maxLength=15
-	TargetInterceptors []Interceptor `json:"targetInterceptors,omitempty"  patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=targetInterceptors"`
+	// +listMapKey=type
+	// +k8s:optional
+	// +k8s:listType=map
+	// +k8s:listMapKey=type
+	// +k8s:maxItems=500
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 
-    // ActiveInterceptors store a list of interceptors that should currently interact with the
-	// eviction process by updating .status.interceptors[], where .name is the active interceptor
-	// name. InterceptorStatus fields should be periodically updated to indicate the progress or
-	// completion of the eviction process. If .status.interceptors[].heartbeatTime field is not
-	// updated within 20 minutes, the eviction request is passed over to the next interceptor.
-	//
-	// The maximum allowed number of active interceptors is 1. An active interceptor is removed from
-	// this list when .status.interceptors[].completionTime is set.
-	// This field is managed by Kubernetes. 
-	// +optional
-	// +listType=set
-    // +k8s:maxLength=1
-	ActiveInterceptors []string `json:"activeInterceptors,omitempty" protobuf:"bytes,4,opt,name=activeInterceptors"`
-
-    // ProcessedInterceptors store a list of interceptors that have previously been selected
-    // and added to ActiveInterceptors. These interceptors may have reached completion, been
-    // canceled, failed to start or failed to update .interceptors[].heartbeatTime` in a timely
-	// manner.
-    // Please refer to the InterceptorStatus for each interceptor for more details.
-    // This field is managed by Kubernetes.
+    // observedGeneration is EvictionRequest's .metadata.generation observed by the evictionrequest-controller.
+    // The observed generation value cannot be negative and can only be incremented.
+    // The minimum value is 1.
+    // This field is managed by evictionrequest-controller.
     // +optional
-    // +listType=set
-    // +k8s:maxLength=15
-    ProcessedInterceptors []string `json:"processedInterceptors,omitempty" protobuf:"bytes,5,opt,name=processedInterceptors"`
+    // +k8s:optional
+    // +k8s:minimum=1
+    ObservedGeneration *int64 `json:"observedGeneration,omitempty" protobuf:"varint,2,opt,name=observedGeneration"`
 
-	// Interceptors represents the eviction process status of each declared interceptor. Only
-	// ActiveInterceptors should update the interceptor statuses. 
-	//
-	// The interceptor list should be the same length and have the same .name fields as
-	// .status.targetInterceptors. Only interceptors with .name that are included in
-	// .status.activeInterceptors can be mutated. First initialization of the list is allowed.
-	// 
-	// Each InterceptorStatus is managed by the designated interceptor.
+    // targetResponders reference responders that should eventually respond to this eviction
+    // request to help with the graceful eviction of a target. These responders are selected
+    // sequentially, in the order in which they appear in the list by setting the Active state to
+    // the TargetResponder .state field. The maximum number of active responders allowed is 1.
+    // Eventually each responder can end up in an Interrupted, Canceled or, Complete state.
+    // Responders should observe these states in order to navigate their lifecycle.
+    //
+    // If the target is a pod, the field is populated from Pod's .spec.evictionResponders. Default
+    // responders may be added to the list according to the target.
+    //
+    // Default responders:
+    // - imperative-eviction.k8s.io/evictor responder is appended to the end of the list if the
+    //   target is a pod. It will call the /evict API endpoint. This call may not succeed due to
+    //   PodDisruptionBudgets, which may block the pod termination. It will update the responder
+    //   message and try again with a backoff.
+    //
+    // The maximum length of the responders list is 17.
+    // The length and keys of the list cannot change once set.
+    // This field is managed by evictionrequest-controller.
     // +optional
     // +patchMergeKey=name
     // +patchStrategy=merge
     // +listType=map
     // +listMapKey=name
-    // +k8s:maxLength=15
-	Interceptors []InterceptorStatus `json:"interceptors,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,6,rep,name=interceptors"`
+    // +k8s:optional
+    // +k8s:listType=map
+    // +k8s:listMapKey=name
+    // +k8s:maxItems=17
+    TargetResponders []TargetResponder `json:"targetResponders,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=targetResponders"`
+
+    // responders represents the eviction process status of each declared responder.
+    //
+    // The responder list should be the same length and have the same .name fields as
+    // .status.targetResponders. Only responders with .name that have Active state in
+    // .targetResponders[].state should be updated and can be mutated. First initialization
+    // of the list is allowed.
+    //
+    // Each ResponderStatus is initialized by evictionrequest-controller and then managed by
+    // the designated responder.
+    // +optional
+    // +patchMergeKey=name
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=name
+    // +k8s:optional
+    // +k8s:listType=map
+    // +k8s:listMapKey=name
+    // +k8s:maxItems=17
+    Responders []ResponderStatus `json:"responders,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,6,rep,name=responders"`
 }
 
 type EvictionRequestConditionType string
@@ -965,7 +978,7 @@ type EvictionRequestConditionType string
 // These are built-in conditions of an eviction request.
 const (
     // EvictionRequestConditionCanceled means that the eviction request is no longer being processed
-	// by any eviction interceptor because the eviction request has been canceled.
+	// by any eviction responder because the eviction request has been canceled.
     EvictionRequestConditionCanceled EvictionRequestConditionType = "Canceled"
 
     // EvictionRequestConditionEvicted means that the target has been evicted (e.g. a pod has been
@@ -973,19 +986,88 @@ const (
     EvictionRequestConditionEvicted EvictionRequestConditionType = "Evicted"
 )
 
-// InterceptorStatus represents the last observed status of the eviction process of the interceptor.
-// It should be only updated by the designated interceptor whose name is .name field.
+// TargetResponder allows you to specify the responder reacting to the EvictionRequest.
+// Responders should observe and communicate through the EvictionRequest API (see .state) to help
+// with the graceful eviction of a target (e.g. termination of a pod).
 // +structType=atomic
-type InterceptorStatus struct {
+type TargetResponder struct {
+    // name allows you to identify the responder reacting to the EvictionRequest.
+    //
+    // It must be a valid domain-prefixed path (such as "acme.io/foo").
+    // This field must be unique for each responder.
+    // This field is required.
+    // +required
+    // +k8s:required
+    Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+
+    // state specifies a state that is assigned by the evictionrequest-controller. Responders should observe
+    // this state in order to navigate their lifecycle.
+    // - Inactive means that the responder should not yet process this eviction request.
+    // - Active means that the responder is either running or expected to start soon.
+    //   Also, startTime has been set in the ResponderStatus by the evictionrequest-controller.
+    //
+    //   An active responder should currently interact with the eviction process by updating
+    //   .status.responders, where .name is the active responder name. ResponderStatus fields
+    //   should be periodically updated to indicate the progress or completion of the eviction process.
+    //   If .status.responders[].heartbeatTime field is not updated within 20 minutes, the eviction
+    //   request is passed over to the next responder. Only one responder can be active at a time.
+    // - Interrupted means that the responder has failed to start or failed to update
+    //   heartbeatTime in ResponderStatus in a timely manner.
+    // - Canceled means that the responder has been canceled. In other words, there is no
+    //   Eviction intent in .spec.requesters.
+    // - Completed means that the responder has successfully completed and set completionTime
+    //   in ResponderStatus.
+    //
+    // Please refer to the ResponderStatus in .status.responders for more details on each responder.
+    // +required
+    // +k8s:required
+    State ResponderStateType `json:"state" protobuf:"bytes,2,opt,name=state,casttype=ResponderStateType"`
+}
+
+// ResponderStateType specifies a state that is assigned by the evictionrequest-controller.
+// +k8s:enum
+type ResponderStateType string
+
+const (
+    // ResponderStateInactive means that the responder should not yet process this eviction request.
+    ResponderStateInactive ResponderStateType = "Inactive"
+    
+    // ResponderStateActive means that the responder is either running or expected to start soon.
+    // Also, startTime has been set in the ResponderStatus by the evictionrequest-controller.
+    //
+    // An active responder should currently interact with the eviction process by updating
+    // .status.responders, where .name is the active responder name. ResponderStatus fields
+    // should be periodically updated to indicate the progress or completion of the eviction process.
+    // If .status.responders[].heartbeatTime field is not updated within 20 minutes, the eviction
+    // request is passed over to the next responder. Only one responder can be active at a time.
+    ResponderStateActive ResponderStateType = "Active"
+    
+    // ResponderStateInterrupted means that the responder has failed to start or failed to update
+    // heartbeatTime in ResponderStatus in a timely manner.
+    ResponderStateInterrupted ResponderStateType = "Interrupted"
+    
+    // ResponderStateCanceled means that the responder has been canceled. In other words, there is no
+    // Eviction intent in .spec.requesters.
+    ResponderStateCanceled ResponderStateType = "Canceled"
+    
+    // ResponderStateCompleted means that the responder has successfully completed and set completionTime
+    // in ResponderStatus.
+    ResponderStateCompleted ResponderStateType = "Completed"
+)
+
+// ResponderStatus represents the last observed status of the eviction process of the responder.
+// It should be only updated by the designated responder whose name is .name field.
+// +structType=atomic
+type ResponderStatus struct {
     // Name must be a fully qualified domain name of at most 253 characters in length, consisting
     // only of lowercase alphanumeric characters, periods and hyphens (e.g. bar.example.com).
-    // This field must be unique for each interceptor.
+    // This field must be unique for each responder.
     // This field is required and immutable.
     // +required
     Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
 
     // HeartbeatTime is the last time at which the eviction process was reported to be in progress
-    // by the interceptor.
+    // by the responder.
     // Cannot be set to the future time (after taking time skew of up to 10 seconds into account).
 	// The time can only be incremented. There must be at least 60 second increments during
 	// subsequent updates.
@@ -994,24 +1076,24 @@ type InterceptorStatus struct {
     HeartbeatTime *metav1.Time `json:"heartbeatTime,omitempty" protobuf:"bytes,2,opt,name=heartbeatTime"`
 
     // ExpectedFinishTime is the time at which the eviction process step is expected to end for the
-	// interceptor.
+	// responder.
 	// The time cannot be set to the past.
     // May be empty if no estimate can be made.
     // +optional
     ExpectedFinishTime *metav1.Time `json:"expectedFinishTime,omitempty" protobuf:"bytes,3,opt,name=expectedFinishTime"`
 
-	// StartTime tracks the time at which the Interceptor first started processing the eviction request.
+	// StartTime tracks the time at which the Responder first started processing the eviction request.
 	// It should be set to the present time (after taking time skew of up to 10 seconds into account).
 	// The initialization of this field must also set HeartbeatTime.
 	StartTime *metav1.Time `json:"startTime,omitempty" protobuf:"bytes,4,opt,name=startTime"`
 
-    // CompletionTime tracks the time at which the Interceptor stopped processing the eviction request. 
-	// Completion means that the interceptors has either fully or partially completed the
+    // CompletionTime tracks the time at which the Responder stopped processing the eviction request. 
+	// Completion means that the responders has either fully or partially completed the
     // eviction process, which may have resulted in target eviction (e.g. pod termination).
     // It should be set to the present time (after taking time skew of up to 10 seconds into account).
     CompletionTime *metav1.Time `json:"startTime,omitempty" protobuf:"bytes,4,opt,name=startTime"`
 	
-    // Message provides human-readable details about the state of the interceptor and the eviction
+    // Message provides human-readable details about the state of the responder and the eviction
 	// process.
     // This may be an empty string.
     // +required
@@ -1020,15 +1102,15 @@ type InterceptorStatus struct {
 
 ```
 
-#### Remarks on Interceptors
+#### Remarks on Responders
 
-- Other interceptors should insert themselves into the `.spec.evictionResponders` according to
-  their own needs. Lower index interceptors are selected first by the eviction request controller. 
-- The number of the interceptors is limited to 15 for the Pod and for the EvictionRequest. If there
-  is a need for a larger number of interceptors, the current use case should be re-evaluated.
-  Limiting the number of interceptors ensures that the EvictionRequest cannot be blocked
-  indefinitely by setting an abnormally large number of these interceptors on a pod.
-- To prevent misuse, we will maintain a list of allowed `*.k8s.io` interceptor names. And reject
+- Other responders should insert themselves into the `.spec.evictionResponders` according to
+  their own needs. Lower index responders are selected first by the eviction request controller. 
+- The number of the responders is limited to 15 for the Pod and for the EvictionRequest. If there
+  is a need for a larger number of responders, the current use case should be re-evaluated.
+  Limiting the number of responders ensures that the EvictionRequest cannot be blocked
+  indefinitely by setting an abnormally large number of these responders on a pod.
+- To prevent misuse, we will maintain a list of allowed `*.k8s.io` responder names. And reject
   any names with `k8s.io` suffix outside the main Kubernetes project on admission.
 
 
@@ -1037,7 +1119,7 @@ type InterceptorStatus struct {
 ##### CREATE
 
 We would like to prevent the creation of multiple EvictionRequests for the same pod because we do
-not expect the interceptors to support interaction with multiple EvictionRequests for a pod.
+not expect the responders to support interaction with multiple EvictionRequests for a pod.
 
 `.metadata.generateName` is not supported. If it is set, the request will be rejected.
 
@@ -1058,25 +1140,20 @@ Additional validation will be done on the controller side. For more details, see
 
 ##### UPDATE
 
-`.status.targetInterceptors` The interceptor names must pass `IsDomainPrefixedKey` validation.
+`.status.targetResponders` The responder names must pass `IsDomainPrefixedKey` validation. The items
+cannot be removed or added once set. State transitions should be validated. For example, only the
+index 0 responder can be set to `Active` in the beginning.  After that, it is only possible to set
+only the next responder at a higher index and so on. We can also condition this transition according
+to the other fields. `.status.responders[].completionTime` is set or
+`.status.responders[].heartbeatTime` has exceeded the 20-minute deadline.
 
-`.status.activeInterceptors` should be empty on creation as its selection should be left on the
-eviction request controller. To strengthen the validation, we should check that it is possible to
-set only the index 0 interceptor from the interceptor list in the beginning. After that, it is
-possible to set only the next interceptor at a higher index and so on. We can also condition this
-transition according to the other fields. `.status.interceptors[].completionTime` is set or
-`.status.interceptors[].heartbeatTime` has exceeded the 20-minute deadline.
-
-`.status.processedInterceptors` should include only interceptors that have previously been in
-`.status.activeInterceptors`.
-
-`.status.interceptors` should conform to the validation described in `.status.intercerptors` and in
-`InterceptorStatus` struct.
+`.status.responders` should conform to the validation described in `.status.responders` and in the
+`ResponderStatus` struct.
 
 ##### CREATE, UPDATE, DELETE
 
-Principal making the request should be authorized for deleting pods that match the EvictionRequest's
-`.spec.target.pod`.
+Principal behind the `Eviction` intent that makes the request should be authorized for deleting pods
+that match the EvictionRequest's `.spec.target.pod`.
 
 #### Immutability of EvictionRequest Fields
 
@@ -1084,11 +1161,12 @@ Principal making the request should be authorized for deleting pods that match t
 always scoped to a specific instance of a target/pod. If the pod is immediately recreated with the
 same name, but a different UID, a new EvictionRequest object should be created
 
-`.status.targetInterceptors` is only set once by the eviction request controller. We do not allow
-subsequent changes to this field to ensure the predictability of the eviction request process. For
-example, this allows requesters to predict which pods have which interceptors, if any. Also, late
-registration of the interceptor could go unnoticed and be preempted by the eviction request
-controller, resulting in the premature eviction of the pod.
+`.status.targetResponders` is only set once by the eviction request controller. We do not allow
+subsequent addition or removal of items to this field to ensure the predictability of the eviction
+request process. For example, this allows requesters to predict which pods have which responders,
+if any. Also, late registration of the responder could go unnoticed and be preempted by the eviction
+request controller, resulting in the premature eviction of the pod. The state field of the
+`TargetResponder` is mutable.
 
 ### EvictionRequest Process
 
@@ -1119,7 +1197,7 @@ is `True`.
 
 ### EvictionRequest Cancellation Examples
 
-Let's assume there is a single pod p-1 of application P with interceptors for actors A and B.
+Let's assume there is a single pod p-1 of application P with responders for actors A and B.
 These actors are generic and can represent any application (e.g. Deployment).
 
 ```yaml
@@ -1144,8 +1222,8 @@ metadata:
    create an EvictionRequest (named after the pod's UID) for this pod, but the EvictionRequest
    already exists. It sets the `descheduling.avalanche.io` value to the `.spec.requesters[].name`
    and `Eviction` to `.spec.requesters[].intent`.
-4. The eviction request controller designates Actor B as the next interceptor by updating
-   `.status.activeInterceptors[0]`.
+4. The eviction request controller designates Actor B as the next responder by updating
+   `.status.targetResponders[0].state` to `Active`.
 5. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
 6. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
@@ -1153,11 +1231,11 @@ metadata:
 7. The node drain controller sets its intent to `Withdrawn` in `.spec.requesters[].intent`.
 8. The eviction request controller notices the change in `.spec.requesters`, but there is still an
    active descheduling requester, so no action is required.
-9. Actor B sets `.status.interceptors[].completionTime` on the eviction requests of pod p-1, which
+9. Actor B sets `.status.responders[].completionTime` on the eviction requests of pod p-1, which
    is ready to be deleted.
-10. The eviction request controller designates Actor A as the next interceptor by updating
-    `.status.activeInterceptors[0]`.
-11. Actor A deletes the p-1 pod and sets `.status.interceptors[].completionTime`.
+10. The eviction request controller designates Actor A as the next responder by updating
+    `.status.targetResponders[1].state` to `Active`.
+11. Actor A deletes the p-1 pod and sets `.status.responders[].completionTime`.
 12. Once the pod terminates, the eviction request controller sets `Evicted` condition to `True`.
 13. The descheduling controller can delete the EvictionRequest.
 
@@ -1167,16 +1245,16 @@ metadata:
 2. The node drain controller creates an EvictionRequest for the only pod p-1 of application P to
    evict it from a node. It sets the `nodemaintenance.disruption-management.org` value to the
    ``.spec.requesters[].name` and `Eviction` to `.spec.requesters[].intent`.
-3. The eviction request controller designates Actor B as the next interceptor by updating
-   `.status.activeInterceptors[0]`.
+3. The eviction request controller designates Actor B as the next responder by updating
+   `.status.targetResponders[0].state` to `Active`.
 4. Actor B begins notifying users of application P that the application will experience
    a disruption and delays the disruption so that the users can finish their work.
 5. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
    again.
 6. The node drain controller sets its intent to `Withdrawn` in `.spec.requesters[].intent`.
 7. The eviction request controller notices the change in `.spec.requesters`, and sets `Canceled`
-   condition to `True`  as there is no requester present. It also clears out
-   `.status.activeInterceptors` field.
+   condition to `True`  as there is no requester present. It also updates
+   `.status.targetResponders[0].state` to `Canceled`.
 8. Actor B can detect the cancellation of the EvictionRequest object and notify users of application
    P that the disruption has been canceled.
 
@@ -1189,12 +1267,12 @@ eviction request process.
 - ReplicaSet and ReplicationController partial support is considered. The full eviction logic should
   be implemented by a higher level workload such as Deployments. ReplicaSets are intended to be a
   simple primitive without any sophisticated scaling logic. It could prefer the deletion of pods
-  with associated EvictionRequest objects during scale-down and expose an eviction interceptor on
+  with associated EvictionRequest objects during scale-down and expose an eviction responder on
   its pods to defer pod deletion. This could then be used by higher-level components for
   rebalancing pods.
 - Deployment support is considered. This could guarantee zero application disruption by scaling up
   before pod termination for rolling updates with a positive `.spec.strategy.rollingUpdate.maxSurge`
-  field. When acting as the active interceptor, it could create surge pods, wait for them to become
+  field. When acting as the active responder, it could create surge pods, wait for them to become
   available and coordinates safe pod deletion via ReplicaSets. It would also update the
   EvictionRequest status throughout the eviction process. Support for other strategies and
   configurations could be considered on an opt-in basis.
@@ -1208,7 +1286,7 @@ eviction request process.
   the observability of these scenarios to support DaemonSet eviction.
 - Jobs/CronJobs are not yet considered, because jobs should not normally run critical workloads
   that require eviction request and should therefore leave the node quickly and not block its drain.
-  If required, custom interceptors can be implemented to support custom eviction logic for
+  If required, custom responders can be implemented to support custom eviction logic for
   specialized types of jobs.
 
 #### Pod Surge Example
@@ -1220,26 +1298,26 @@ pods.
 This example can also be applied to other direct or higher level controllers
 (e.g. HorizontalPodAutoscaler) with the ability to create surge pods.
 
-1. A set of pods A of an application P are created with a Deployment controller interceptor and a
-   ReplicaSet controller interceptor.
+1. A set of pods A of an application P are created with a Deployment controller responder and a
+   ReplicaSet controller responder.
    Application P is a PostgresSQL instance that can have 1-n pods and requires no loss of
    availability.
 2. A node drain controller starts draining a node Z and makes it unschedulable.
 3. The node drain controller creates an EvictionRequests for a subset B of pods A to evict them from
    a node.
-4. The eviction request controller designates the deployment controller as the interceptor (index 0)
-   by updating `.status.activeInterceptors[0]`. No action (termination) is taken on the pods
-   yet.
+4. The eviction request controller designates the deployment controller as the responder (index 0)
+   by updating `.status.targetResponders[0].state` to `Active`. No action (termination) is taken on
+   the pods yet.
 5. The deployment controller creates a set of surge pods C to compensate for the future loss of
    availability of pods B. The new pods are created by temporarily surging the `.spec.replicas`
    count of the underlying replica sets up to the value of deployments `maxSurge`.
 6. Pods C are scheduled on a new schedulable node that is not under the node drain.
 7. Pods C become available.
 8. The deployment controller scales down the surging replica sets back to their original value.
-9. The deployment controller sets `Complete` `.status.interceptors[].completionTime` on the
+9. The deployment controller sets `Complete` `.status.responders[].completionTime` on the
    eviction requests of pods B that are ready to be deleted.
-10. The eviction request controller designates the replica set controller as the next interceptor by
-    updating `.status.activeInterceptors[0]`.
+10. The eviction request controller designates the replica set controller as the next responder by
+    updating `.status.targetResponders[1].state` to `Active`.
 11. The replica set controller deletes the pods to which an EvictionRequest object has been
     assigned, preserving the availability of the application.
 
@@ -1256,16 +1334,16 @@ in the future (e.g. Workload API, PodGroup API).
 
 We are considering adding a new `.spec.requesters[].type` field. This would help us distinguish
 between different eviction types. The default or explicitly defined `Soft` behavior gives each
-interceptor unlimited time, provided they responds periodically within a timeframe of less than 20
+responder unlimited time, provided they responds periodically within a timeframe of less than 20
 minutes. This would give each requester a way to request the gracefulness of the eviction
 (e.g. normal vs spot VM disruption). We would have to combine this list of types into final type and
 report in the status.
 
 We can introduce a more disruptive eviction request types. For example `Hard`, `SoftWithDeadline`,
-etc. The `Hard` type would allow us to use the interceptor infrastructure and
+etc. The `Hard` type would allow us to use the responder infrastructure and
 graceful termination in any pod deletion call. We have to examine each use case to determine the
 appropriate level of "softness" or "hardness" for each eviction request. For instance, we could
-introduce timeouts or deadlines for each interceptor or for the eviction request as a whole.
+introduce timeouts or deadlines for each responder or for the eviction request as a whole.
 
 This would help us introduce a graceful eviction in the following cases, among others:
 - Taint Based Eviction
@@ -1276,7 +1354,7 @@ This would allow us to synchronize almost all pod termination mechanisms under o
 pod termination before it occurs.
 
 However, some disruptions might still be unresolvable. For example, the kubelet reacting to OOM or
-OOD will use hard eviction thresholds without a possibility for interceptors to pursue cooperative
+OOD will use hard eviction thresholds without a possibility for responders to pursue cooperative
 eviction. There simply isn't enough time and resources to prevent the pod from being disrupted by
 the kernel.
 
@@ -1332,7 +1410,7 @@ supported, but could be considered if use cases arise.
 
 There is one issue with observability. All the actors in the system are expected to be aware of Pod
 target evictions. Even if the main controller that manages the Workload resource can
-observe/intercept the EvictionRequest, other interceptors might not do so. It might be useful to
+observe/respond to the EvictionRequest, other responders might not do so. It might be useful to
 treat Workload evictions as a syntactic sugar and transform such EvictionRequest into n number of
 Pod targeted EvictionRequests. The number n would depend on the policies mentioned above.
 
@@ -1345,31 +1423,31 @@ their start time. Then, a number of pods are selected to be preempted by a new p
 logic prefers pods that are not protected by PDBs, but cannot guarantee it. If there are not enough
 pods to be preempted on the node, PDBs will be violated.
 
-We could prefer nodes with pods that don't have interceptors. However, it is difficult to compare
-pods that have interceptors. One solution would be to track the `expectedInterceptorFinishTime` in
-the pod's `.spec.evictionResponders` for each interceptor. Another option would be to track some
+We could prefer nodes with pods that don't have responders. However, it is difficult to compare
+pods that have responders. One solution would be to track the `expectedResponderFinishTime` in
+the pod's `.spec.evictionResponders` for each responder. Another option would be to track some
 kind of weight. This is useful for other simulation purposes (e.g. node drain) as well.
 
-If we have to disrupt a pod with interceptors, we would like to give a guarantee to a preemptor pod
+If we have to disrupt a pod with responders, we would like to give a guarantee to a preemptor pod
 when it would run. We cannot block pod deletion in order to maintain backward compatibility. There
 are two non-competing options
 
 1. Add support for a new EvictionRequest type, such as `SoftWithDeadline` as discussed in
    [New EvictionRequest Types and Synchronization of Pod Termination Mechanisms](#new-evictionrequest-types-and-synchronization-of-pod-termination-mechanisms) that would
    override `Soft` EvictionRequests. Then, preemption would create an EvictionRequest with a maximum
-   eviction time for all interceptors instead of a DELETE request. The deadline could be a hardcoded
+   eviction time for all responders instead of a DELETE request. The deadline could be a hardcoded
    value or based on the pod's `TerminationGracePeriodSeconds`.
 2. Introduce a new `preemptionPolicy` called `PreemptLowerPriorityViaEvictionRequest` that would
    allow preemptor pods to specify that they are okay with lower-priority pods taking longer to
    leave the node. This opt-in behavior would allow users to provide graceful eviction guarantees to
    lower-priority pods.
 3. Add `preemptionPriorityClassName` or `disruptionPriorityClassName` field to the pod's
-   `.spec.evictionResponders`. This would allow critical workloads and interceptors to set a
+   `.spec.evictionResponders`. This would allow critical workloads and responders to set a
    higher priority during preemption, which would override the pod's `.spec.priority`. During
    preemption, we would still need options 1. or 2. though.
 
 The best-effort PDB preemption should remain the same as is it is today, since EvictionRequest works
-on top of the PDB API. We would now also prefer nodes and pods without interceptors.
+on top of the PDB API. We would now also prefer nodes and pods without responders.
 
 ### Adoption
 
@@ -1399,7 +1477,7 @@ that would benefit from the increased safety nad smoother, more capable eviction
 on each project, but we will try to promote the use of this feature. The Kured project has already
 expressed an interest in using the EvictionRequest and Node Maintenance features.
 
-The adoption of this feature by actors responding to (AKA interceptors) and resolving
+The adoption of this feature by actors responding to (AKA responders) and resolving
 EvictionRequests is also important. The main advantages are observability and graceful termination
 guarantees.
 - Core controllers can gradually adopt this feature. The deployment controller can particularly use
@@ -1425,7 +1503,7 @@ action from users.
   some of their own. This was presented to the Node Lifecycle WG ([recording](https://www.youtube.com/watch?v=Yn7Dp57VQD4&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
 - Datadog has also expressed interest in using the EvictionRequest API. Their in-house solution
   supports pre-activities which allow users to run custom code before drain/eviction. This concept
-  is analogous to the EvictionRequest's interceptors. This was presented to the Node Lifecycle WG
+  is analogous to the EvictionRequest's responders. This was presented to the Node Lifecycle WG
   ([recording](https://www.youtube.com/watch?v=7S1GpAstzSI&list=PL69nYSiGNLP3yd1ztIDecigN44mo6Nx_D)).
 
 
@@ -1486,10 +1564,11 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 - Switching on and off the gate should enable/disable the feature and increase pod validation.
-- Test all the interactions between the eviction request controller and the interceptor.
-- Test that the eviction of the pod happens if there is no interceptor or the interceptor stops
+- Test all the interactions between the eviction request controller and the responder.
+- Test the imperative eviction responder controller interactions.
+- Test that the eviction of the pod happens if there is no responder or the responder stops
   responding.
-- Test switching between different interceptors and resetting the EvictionRequest status.
+- Test switching between different responders and resetting the EvictionRequest status.
 - Test that the EvictionRequest has the `Canceled=True` condition when the EvictionRequest is
   canceled or when validation fails.
 - Test that the EvictionRequest has the `Evicted=True` condition when the pod is terminated.
@@ -1508,7 +1587,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 -->
 
-- Test the full eviction request flow with multiple interceptors.
+- Test the full eviction request flow with multiple responders.
 - Test the eviction backoff if the API-initiated eviction is blocked by a PDB. Check that the
   eviction terminates the pod once PDB stops blocking the disruption
 
@@ -1521,28 +1600,28 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 #### Alpha2
 
-- Consider various kinds of alternative ordering or dependency tracking of the interceptors. For
+- Consider various kinds of alternative ordering or dependency tracking of the responders. For
   example, use numeric priorities or roles.
 - Evaluate the relationship between the EvictionRequest API and Pod Deletion.
 - Consider introducing tge `.spec.heartbeatDeadlineSeconds` field to allow for customization of how
-  long a non-cooperating interceptor can take before proceeding to the next one. Lower values would
+  long a non-cooperating responder can take before proceeding to the next one. Lower values would
   improve the responsiveness of the system, while higher values would increase the workload's safety
-  when the interceptor is disrupted.
-- Consider introducing an EvictionRequestCancellationPolicy that could be used by interceptors to
+  when the responder is disrupted.
+- Consider introducing an EvictionRequestCancellationPolicy that could be used by responders to
   signal that cancelling the EvictionRequest is not possible. This could be used, for example, when
   the migration of the pod has mostly completed and it would be expensive or impossible to interrupt
   it.
-- Consider introducing a mechanism that allows potential interceptors to register their intent
+- Consider introducing a mechanism that allows potential responders to register their intent
   about upcoming pods. This would likely require a new API where I can express my intent to be
-  added as an interceptor for pods satisfying certain rules (e.g. by selector, CEL expression or
+  added as a responder for pods satisfying certain rules (e.g. by selector, CEL expression or
   other criteria). Then an eviction request controller would propagate that. With the increased
   number of interested parties and add-ons that cannot discover each other, also consider increasing
-  the maximum length of the interceptors' lists.
+  the maximum length of the responders' lists.
 - Consider adding garbage collection for EvictionRequests to avoid the permanent leakage of
   EvictionRequest objects, eventually leading to hitting storage limits.
 - Consider allowing each requester to specify a different type of eviction in the
   `.spec.requesters[].type` field. The default eviction type is `Soft` and gives unlimited time to
-  resolve the eviction request, provided the interceptors responds periodically within a timeframe
+  resolve the eviction request, provided the responders responds periodically within a timeframe
   of less than 20 minutes. This might be limiting in more disruptive scenarios, such as spot VMs.
   Even if we do not introduce a new eviction type, it might be useful to explicitly set this type
   field, so that, in the future, clients can implement a fallback behavior if they encounter a new
@@ -1556,8 +1635,8 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - Unit, integration and e2e tests passing.
 - Manual test for upgrade->downgrade->upgrade path will be performed.
 - Re-evaluate the immutability of `.spec.evictionResponders`. It might be better to introduce
-  interceptor registration mechanism suggested in `Alpha2`, to prevent performance issues (every
-  pod creation may have N additional API calls if N interceptors want to register themselves).
+  responder registration mechanism suggested in `Alpha2`, to prevent performance issues (every
+  pod creation may have N additional API calls if N responders want to register themselves).
 - Asses the state of the [Specialized Lifecycle Management](https://github.com/kubernetes/enhancements/issues/5683)
   (previously the [NodeMaintenance feature](https://github.com/kubernetes/enhancements/issues/4212)),
   and other components interested in using the EvictionRequest API.
@@ -1581,7 +1660,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - E2E tests should be graduated to conformance.
 - At least one workload (e.g., Deployment) should support eviction request to fully test
   the new API and flow.
-- Adoption: look at all the consumers of the API, especially the requesters and interceptors. Look
+- Adoption: look at all the consumers of the API, especially the requesters and responders. Look
   at how the API is being used and see if there are any pain points that we could address.
 - Evaluate whether we can make changes to the eviction API to increase the safety for applications
   and help with EvictionRequest API adoption. See [Changes to the Eviction API](#changes-to-the-eviction-api)
@@ -1604,7 +1683,8 @@ feature will not work properly. The feature should be used after a full upgrade 
 If kube-apiserver is behind, the EvictionRequest API will not be served.
 
 If kube-controller is behind, the eviction request controller will not run and reconcile the
-EvictionRequests. Thus, there will be no selection of interceptors or eviction of pods.
+EvictionRequests. Also, imperative eviction responder controller will not run. Thus, there will be no
+selection of responders or eviction of pods.
 
 ## Production Readiness Review Questionnaire
 
@@ -1624,7 +1704,7 @@ No.
 
 Yes it can be rolled backed by disabling the feature gate, but it will disable any pending eviction
 requests. This means that pods that have been requested to be evicted, will continue to run. Also,
-any component that depends on the EvictionRequest API (e.g. eviction requester, interceptor) will
+any component that depends on the EvictionRequest API (e.g. eviction requester, responder) will
 also stop working or will not operate correctly.
 
 Administrators should be careful when disabling the feature and watch for the following consequences:
@@ -1637,13 +1717,13 @@ Administrators should be careful when disabling the feature and watch for the fo
 Cluster admin should take the following precautions, before disabling this feature.
 - Ensure that no eviction requests are in progress and no new eviction requests will occur during
   the disablement.
-- Ensure that all dependent components (eviction requesters, interceptors) in the cluster support
+- Ensure that all dependent components (eviction requesters, responders) in the cluster support
   disabling the feature.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The eviction request controller will start working again. And the pending eviction requests will
-begin to migrate or evict pods from nodes.
+The eviction request controller and imperative eviction responder controller will start working
+again. And the pending eviction requests will begin to migrate or evict pods from nodes.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1690,9 +1770,9 @@ A manual test will be performed, as follows:
 3. Create an EvictionRequest A and pod A. Observe that the EvictionRequest evicts the pod and
    terminates it. Observe that the EvictionRequest has `Evicted=True` condition at the end.
 4. Create an EvictionRequest B, pod B and PDB B targeting the pod B with `maxUnavailable=0`. Observe
-   that the eviction request controller increases the
+   that the imperative eviction responder controller increases the
    `evictionrequest_controller_imperative_evictions` metric and correctly updates
-   `.status.interceptors[].message`, but does not evict the pod.
+   `.status.responders[].message`, but does not evict the pod.
 5. Downgrade to 1.35.
 6. Delete PDB B. Observe that the pod B keeps running without any termination.
 7. Upgrade to 1.36.
@@ -1708,8 +1788,8 @@ No.
 ###### How can an operator determine if the feature is in use by workloads?
 
 By observing the `evictionrequest_controller_imperative_evictions`,
-`evictionrequest_controller_active_interceptor`, `evictionrequest_controller_processed_interceptor`,
-`evictionrequest_controller_pod_interceptors` and `workqueue` metrics.
+`evictionrequest_controller_active_responder`, `evictionrequest_controller_processed_responder`,
+`evictionrequest_controller_pod_responders` and `workqueue` metrics.
 
 Cluster state can also be checked:
 - It is possible to create EvictionRequest objects.
@@ -1736,13 +1816,13 @@ This feature should comply with the existing SLO about processing mutating API c
 - [x] Metrics
   - Metric name: `evictionrequest_controller_imperative_evictions` (number of evictions per EvictionRequest and Pod)
     - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_active_interceptor` (active interceptors per EvictionRequest and Target)
+  - Metric name: `evictionrequest_controller_active_responder` (active responders per EvictionRequest and Target)
     - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_processed_interceptor` (processed interceptors per EvictionRequest and Target)
+  - Metric name: `evictionrequest_controller_processed_responder` (processed responders per EvictionRequest and Target)
       - Components exposing the metric: kube-controller-manager (new)
   - Metric name: `evictionrequest_controller_active_requester` (active requesters per EvictionRequest and Target)
       - Components exposing the metric: kube-controller-manager (new)
-  - Metric name: `evictionrequest_controller_pod_interceptors` (available interceptors per Pod)
+  - Metric name: `evictionrequest_controller_pod_responders` (available responders per Pod)
       - Components exposing the metric: kube-controller-manager (new)
   - Metric name: `workqueue_depth`, `workqueue_adds_total`, `workqueue_queue_duration_seconds`, `workqueue_work_duration_seconds`, `workqueue_unfinished_work_seconds`, `workqueue_retries_total`
     - [Optional] Aggregation method: name=evictionrequests
@@ -1765,21 +1845,21 @@ No.
 New API calls by the kube-controller-manager:
 - List and watch for EvictionRequests.
 - Update calls to reconcile EvictionRequest status. This is also done by an active 3rd party
-  interceptor.
+  responder.
 - At least one `/eviction` call for each EvictionRequest. And possibly more with a backoff. This
   should not dramatically increase the apiserver usage, as these calls should be made in similar
   situations as today. Instead of repeating the eviction API call manually with a components/cli
   (e.g. kubectl drain), it will be done by a controller.
 
-Interceptor calls and interactions with the Pod and EvictionRequest APIs
+Responder calls and interactions with the Pod and EvictionRequest APIs
 - Alpha1 still locks the mutation of Pod's `.spec.evictionResponders`. If the mutability
-  constraint is lifted in the future, it could result in N interceptor registration calls for each
+  constraint is lifted in the future, it could result in N responder registration calls for each
   pod when it is created, which could result in performance issues.
-- There are N interceptors per one EvictionRequest. Only one interceptor is instructed to interact
-  with it at a time. This interceptor is instructed to update the
-  `.status.interceptors[].heartbeatTime` and the rest of the interceptor status
-  `.status.interceptors[]`. We validate the `heartbeatTime` and only allow periodic updates that are
-  60+ seconds to prevent frequent interceptor status updates.
+- There are N responders per one EvictionRequest. Only one responder is instructed to interact
+  with it at a time. This responder is instructed to update the
+  `.status.responders[].heartbeatTime` and the rest of the responder status
+  `.status.responders[]`. We validate the `heartbeatTime` and only allow periodic updates that are
+  60+ seconds to prevent frequent responder status updates.
 
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -1822,7 +1902,7 @@ No.
 
 - It is not possible to communicate eviction intent via the EvictionRequest API.
 - EvictionRequest pods are not evicted/terminated.
-- Migration operations done by interceptors may still happen in the background, but the
+- Migration operations done by responders may still happen in the background, but the
   observability will be limited.
 
 ###### What are other known failure modes?
@@ -1854,10 +1934,10 @@ eviction subresource is not really feasible because we need to persist the evict
 information. EvictionRequests can take a long time, and we cannot block a single request until it is
 done or allow polling.
 
-There are multiple entities (Eviction Requesters, Interceptors, eviction request controller) that
+There are multiple entities (Eviction Requesters, Responders, eviction request controller) that
 need to communicate their intent to evict a pod, report on the progress of the eviction, manage the
 lifecycle of the eviction request, and to handle the change of ownership between requesters and
-between interceptors. This is better done through a standalone API resource object.
+between responders. This is better done through a standalone API resource object.
 
 Alternatively, additional subresource(s) could be used to store information in the pod. These
 subresources could offer similar actions and information as the EvictionRequest. RBAC could be also
@@ -1873,7 +1953,7 @@ disadvantages:
 
 The original proposal in the [Declarative Node Maintenance KEP](https://github.com/kubernetes/enhancements/pull/4213)
 was to use pod conditions to communicate the intent of EvictionRequest between the eviction
-requester and the interceptor.
+requester and the responder.
 
 Two new condition types would be introduced:
 1. `EvacuationRequested` condition should be set by a controller (e.g. node maintenance controller)
@@ -1917,19 +1997,19 @@ There are multiple issues with this approach:
 - Multiple eviction requesters can try to request an eviction of a pod at the same time and there is
   no simple way to track this in a single condition. It is much easier to handle concurrency on a
   standalone resource.
-- The observability of the eviction progress, interceptor reference and other useful information is
+- The observability of the eviction progress, responder reference and other useful information is
   lacking as we can see requested in the [User Stories](#user-stories-optional).
 
 
-### Interceptor list in Pod's annotations
+### Responder list in Pod's annotations
 
 We could support annotations in the Pod object that encode the `.spec.evictionResponders`
 information. For example, the value could be stored as
-`responder.evictionrequest.coordination.k8s.io/priority_${INTERCEPTOR_NAME}: ${PRIORITY}/${ROLE}`.
+`responder.evictionrequest.coordination.k8s.io/priority_${RESPONDER_NAME}: ${PRIORITY}/${ROLE}`.
 
 This was originally considered because it does not require changes to the Pod API. Unfortunately,
 there are major drawbacks:
-- The length of the INTERCEPTOR_NAME is limited to 63 characters.
+- The length of the RESPONDER_NAME is limited to 63 characters.
 - Validation is difficult as there are many constraints.
 -  This API is difficult or impossible to extend in the future.
 
@@ -1983,7 +2063,7 @@ as well.
 The current implementation requires eviction requesters to set a `.spec.requesters` on the
 EvictionRequest in order for the EvictionRequest to be processed and the pod terminated. If all
 eviction intents are withdrawn in `.spec.requesters[].intent`, the eviction request is canceled.
-Interceptors cannot prevent EvictionRequest cancellation.
+Responders cannot prevent EvictionRequest cancellation.
 
 Requesters are advised to reconcile the EvictionRequest object to ensure that the EvictionRequest is
 present, but they are not required to do so.
@@ -1996,17 +2076,17 @@ applications today that block the node drain (either via a PDB or via a validati
 webhook for API-initiated eviction). EvictionRequest and NodeMaintenance can be compared to the
 kubectl drain. If we forbid deletion of eviction requests, the cluster administrator has no way of
 reverting the node drain decision. With the kubectl drain, this can easily be done by simply
-stopping the process. If the eviction request controller fails to evict multiple pods in a loop
-(even with a backoff), many requests to the apiserver could degrade cluster performance. By deleting
-the NodeMaintenance and associated EvictionRequests, the administrator can break the loop and buy
-time to understand which applications are blocking the node drain and asses whether they can be
-safely deleted.
+stopping the process. If the imperative eviction responder controller fails to evict multiple pods
+in a loop (even with a backoff), many requests to the apiserver could degrade cluster performance.
+By deleting the NodeMaintenance and associated EvictionRequests, the administrator can break the
+loop and buy time to understand which applications are blocking the node drain and asses whether
+they can be safely deleted.
 
 ### The Name of the EvictionRequest Objects
 
 It would be useful for the name of the EvictionRequest object to be unique and predictable for each
 pod instance to prevent the creation of multiple EvictionRequests for the same pod. Because we do
-not expect the interceptors to support interaction with multiple EvictionRequests for a pod. We can
+not expect the responders to support interaction with multiple EvictionRequests for a pod. We can
 also verify `.spec.target.pod` field on admission. However, it would be difficult/impossible to
 change or support other naming strategies in the future.
 
@@ -2088,17 +2168,17 @@ Cons:
 ### Changes to the Eviction API
 
 We could forbid direct eviction for any pod that supports EvictionRequest (has at least one
-interceptor in `.spec.evictionResponders`).
+responder in `.spec.evictionResponders`).
 
 At this point, we know that there is a more graceful deletion of the pod available than just a PDB.
 We could ask the users making the eviction requests to create an EvictionRequest object instead.
 
-If the pod termination fails because the interceptor(s) do not respond, then the eviction request
+If the pod termination fails because the responder(s) do not respond, then the eviction request
 controller will proceed with the eviction. To support this, the eviction could only be allowed only
 at this point. That is, if there is a matching EvictionRequest object and the eviction conditions
 are met according to the [Eviction](#eviction) section.
 
-Eviction of these pods with interceptors would act as a PDB with a fallback to eviction if things
+Eviction of these pods with responders would act as a PDB with a fallback to eviction if things
 do not go according to plan.
 
 This would break the eviction assumption, that eviction can proceed quickly when no PDB exists or is
@@ -2109,8 +2189,8 @@ we can see in many projects today. They would only need a single controller resp
 EvictionRequest objects.
 
 Disadvantages:
-- A person deploying the application completely loses the ability to enforce PDBs on interceptors
-  that support it, because the interceptor controller cannot use the eviction API. The controller
+- A person deploying the application completely loses the ability to enforce PDBs on responders
+  that support it, because the responder controller cannot use the eviction API. The controller
   either has to use delete calls or take the PDB into consideration, which is prone to
   implementation mistakes and races.
 - There are many in-tree and out-of-tree components that use the eviction API. Initially, this
