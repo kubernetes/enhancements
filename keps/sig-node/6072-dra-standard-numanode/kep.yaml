@@ -1,0 +1,28 @@
+title: "DRA: Standard numaNode Device Attribute"
+kep-number: 6072
+authors:
+  - "@johnahull"
+owning-sig: sig-node
+participating-sigs:
+  - sig-scheduling
+  - wg-device-management
+status: provisional
+creation-date: 2026-05-12
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - "/keps/sig-scheduling/5491-dra-list-types-for-attributes"
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+feature-gates:
+  - name: DRAStandardNUMANode
+    components:
+      - kube-apiserver
+disable-supported: true
+metrics: []
