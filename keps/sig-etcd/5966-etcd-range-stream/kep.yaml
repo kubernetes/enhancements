@@ -25,7 +25,7 @@ milestone:
   beta: "v1.37"
 
 feature-gates:
-  - name: RangeStream
+  - name: EtcdRangeStream
     components:
       - kube-apiserver
 disable-supported: true

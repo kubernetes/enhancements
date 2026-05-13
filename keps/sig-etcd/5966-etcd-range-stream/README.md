@@ -41,18 +41,18 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -74,6 +74,9 @@ This KEP proposes a new server-streaming `RangeStream` RPC that reuses
 internally with adaptive chunk sizing and pins to a single MVCC revision for
 consistency. The total count is derived from the running tally of streamed
 keys, eliminating the separate index traversal required by paginated Range.
+
+The feature requires etcd 3.7+. With older etcd, kube-apiserver detects
+`Unimplemented` and continues using unary `Range` with no behavior change.
 
 ## Motivation
 
@@ -127,14 +130,16 @@ should retry the request.
 
 ### Risks and Mitigations
 
-- **etcd version skew.** Older etcd versions return gRPC `Unimplemented`.
-  kube-apiserver detects this at runtime, logs a warning, and falls back
-  to the existing paginated list path.
 - **Stream interrupted by compaction.** If the pinned revision is compacted
   mid-stream, the server returns `ErrCompacted`. kube-apiserver surfaces
   this as a watch cache initialization failure, and the cacher retries
   initialization. The behavior is identical to a paginated list that races
-  compaction.
+  compaction. A unary `Range` without pagination technically avoids this
+  problem, because a single non-streaming call does not pin a revision
+  across multiple reads. But at the scale where a stream takes longer than
+  kube-apiserver's compaction interval (5 minutes by default) to complete,
+  the unary response approaches protobuf's 2 GB message limit and is
+  itself unlikely to succeed.
 
 ## Design Details
 
@@ -217,6 +222,10 @@ The following components are modified:
 - **Client** (`client/v3/kv.go`): `RangeStreamToRangeResponse` — reassembles
   a stream into a single `RangeResponse` so callers can transparently switch
   between unary and streaming.
+- **etcdctl**: A `--stream` flag on `etcdctl get` issues a `RangeStream`
+  request and reassembles the chunks into a `RangeResponse` for display.
+  This provides a direct CLI entry point, useful for inspections and
+  comparisons against unary `get` on the same key range.
 
 ### Test Plan
 
@@ -235,9 +244,12 @@ assertion.
 
 - Server-side `RangeStream` chunking, revision pinning, and
   `CountOnly` short-circuit behavior.
-- kube-apiserver: `staging/src/k8s.io/apiserver/pkg/storage/etcd3` — new
-  tests cover `watcher.sync` routing through `syncStream`, `parseKV` event
-  construction, and the `Unimplemented` fallback path.
+- kube-apiserver: tests cover the watch cache initialization path
+  routing through `RangeStream` and event construction from streamed
+  chunks.
+- Backwards compatibility: unit tests cover the version skew case where
+  the gate is enabled against an etcd that returns `Unimplemented`,
+  confirming the fallback to unary `Range` does not regress.
 
 ##### Integration tests
 
@@ -250,11 +262,8 @@ assertion.
 - Robustness tests (Note: `tests/robustness/coverage` in the etcd repository
   will need updating once Kubernetes actually starts making calls, as monitored
   in [ci-etcd-k8s-coverage-amd64](https://testgrid.k8s.io/sig-etcd-periodics#ci-etcd-k8s-coverage-amd64)).
-- kube-apiserver: `test/integration/apiserver/rangestream_test.go`
-  (`TestRangeStreamList`) creates 200 Secrets, restarts kube-apiserver with
-  the `RangeStream` feature gate enabled, and verifies that
-  `apiserver_watch_cache_initialization_duration_seconds_count` increments via
-  the streaming path.
+- kube-apiserver: integration tests will be added for correctness and
+  benchmarks against the unary `Range` path.
 
 ##### e2e tests
 
@@ -262,7 +271,7 @@ e2e tests will be added to exercise the streaming behavior.
 
 ### Kubernetes API Server Integration
 
-RangeStream is gated behind a `RangeStream` feature gate in kube-apiserver
+RangeStream is gated behind a `EtcdRangeStream` feature gate in kube-apiserver
 (Beta in 1.37, default enabled).
 
 The primary integration point is the watch cache initialization path.
@@ -282,12 +291,13 @@ limit. The `storage.Interface` is unchanged.
 
 #### Beta
 
-- Feature implemented behind the `RangeStream` feature gate, default on.
+- Feature implemented behind the `EtcdRangeStream` feature gate, default on.
 - Watch cache initialization routes through `RangeStream` with
   automatic `Unimplemented` fallback for older etcd.
 - Feature is covered with unit, integration, and e2e tests.
 - Scalability test on a 5000-node cluster measuring latency on large
   list responses.
+- `etcdctl get --stream` available for direct CLI access to `RangeStream`.
 
 #### GA
 
@@ -308,22 +318,26 @@ Skew is between kube-apiserver and etcd. The supported combinations:
 - gate on + etcd 3.6 or older: falls back to unary `Range`.
 - gate off + any etcd version: uses unary `Range`.
 
-kube-apiserver caches the result of feature discovery rather than
-probing `RangeStream` on every list. The cache is refreshed
-periodically so an etcd upgrade is picked up without a kube-apiserver
-restart.
+We will reuse kube-apiserver's existing
+`storage.FeatureSupportChecker` to cache the feature result and avoid
+calling the streaming endpoint repeatedly when running against an
+older etcd version. The checker probes etcd periodically, so an
+etcd upgrade from 3.6 to 3.7 is picked up by a running kube-apiserver
+without a restart. If the cached response is incorrect (eg: cluster
+downgrade), the `Unimplemented` fallback will still fall back to
+`Range`.
 
 For HA kube-apiserver during a rolling upgrade, each apiserver
 negotiates with etcd on its own. An apiserver on the old version uses
 unary `Range` and one on the new version uses `RangeStream` when
-available. Watch cache state is per-apiserver, so they don't interact. For an etcd cluster rolling upgrade,
-requests may land on different members during the transition. Once a
-`RangeStream` call fails, kube-apiserver falls back to unary `Range`
-until the next feature-discovery refresh, then picks up RangeStream
-when every member supports it. For an etcd downgrade after
-kube-apiserver has started using RangeStream, the fallback is always
-live. The next call returns `Unimplemented` and kube-apiserver reverts
-to unary `Range`. Nothing on the apiserver side needs to be migrated.
+available. Watch cache state is per-apiserver, so they don't interact.
+For an etcd cluster rolling upgrade, requests may land on different
+members during the transition. Once a `RangeStream` call fails,
+kube-apiserver falls back to unary `Range`. For an etcd downgrade
+after kube-apiserver has started using RangeStream, the fallback is
+always live. The next call returns `Unimplemented` and kube-apiserver
+reverts to unary `Range`. Nothing on the apiserver side needs to be
+migrated.
 
 ## Production Readiness Review Questionnaire
 
@@ -332,7 +346,7 @@ to unary `Range`. Nothing on the apiserver side needs to be migrated.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `RangeStream`
+  - Feature gate name: `EtcdRangeStream`
   - Components depending on the feature gate: `kube-apiserver`
 
 On the etcd side, the feature is always on at v3.7+.
@@ -343,9 +357,13 @@ Watch cache initialization internally switches from a paginated `Range` loop to 
 `RangeStream` call. The data returned is the same and there is no visible user facing change.
 It is estimated that etcd memory and watch cache initialization time will improve.
 
+Clusters on etcd 3.6 or older are unaffected: the gate is on but
+kube-apiserver falls back to unary `Range` on the first `Unimplemented`
+response.
+
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Setting `RangeStream=false` and restarting kube-apiserver fully
+Yes. Setting `EtcdRangeStream=false` and restarting kube-apiserver fully
 disables the feature. The feature is stateless.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -475,9 +493,10 @@ No.
 ###### What are other known failure modes?
 
 - **Stream interrupted by compaction**
-  - Detection: cacher initialization metrics show repeated retries.
-    Apiserver logs include `mvcc: required revision has been compacted`.
-  - Mitigations: Increase `--etcd-compaction-interval`.
+  - Detection: apiserver logs include `mvcc: required revision has been
+    compacted`.
+  - Mitigations: kube-apiserver retries the watch cache initialization
+    with a newer revision.
   - Diagnostics: structured error from etcd is propagated.
   - Testing: covered by etcd integration tests in
     `tests/integration/v3_grpc_test.go`.
