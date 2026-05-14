@@ -6,11 +6,12 @@
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [Implementation](#implementation)
+  - [Targeted use cases](#targeted-use-cases)
     - [Accelerating startup of applications with long initialization times](#accelerating-startup-of-applications-with-long-initialization-times)
     - [Enabling fault-tolerance for long-running workloads](#enabling-fault-tolerance-for-long-running-workloads)
     - [Pod migration across nodes for load balancing and maintenance](#pod-migration-across-nodes-for-load-balancing-and-maintenance)
+- [Proposal](#proposal)
+  - [Implementation](#implementation)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [CRI API Extensions](#cri-api-extensions)
@@ -193,36 +194,7 @@ follow-on enhancement.
   of being cloned. For example, gVisor provides a special file (`/proc/gvisor/checkpoint`) that
   blocks until a restore is complete, allowing applications to refresh state on resume.
 
-## Proposal
-
-### Implementation
-
-In this proposal, we aim to provide CRI functionality to checkpoint and restore a running Pod, which
-includes all containers running in the Pod, along with Pod-level metadata and configurations. This
-functionality is inspired by [kubelet checkpoint], but extends it to the Pod level, allowing to capture
-and restore the execution state of a Pod, rather than individual containers. The exact implementation
-details of this checkpoint/restore mechanism are left to the container runtime, but we expect the Pod
-checkpoint to capture the complete execution context of all processes running in containers, including
-in-memory state, process hierarchies, open file descriptors, and Pod-level configuration and metadata.
-
-The implementation consists of three layers:
-
-1. **CRI APIs** (`CheckpointPod`, `RestorePod`): Container runtime interface for the actual
-   checkpoint/restore operations, implemented by container runtimes such as containerd and CRI-O.
-
-2. **Kubelet endpoints** (`POST /checkpoint/{ns}/{pod}`, `POST /restore/{ns}/{checkpointName}`):
-   Kubelet HTTP endpoints that translate API requests into CRI calls. The kubelet suspends health
-   checks during checkpointing, resolves the CRI sandbox ID, and manages checkpoint storage at
-   `/var/lib/kubelet/pod-checkpoints/`. For restore, the kubelet reads pod sandbox configuration
-   from the checkpoint, assigns a new Pod UID, updates cgroup parent paths, and delegates to the
-   container runtime.
-
-3. **API objects** in the `checkpoint.k8s.io` API group that provide declarative management of
-   checkpoint operations. `PodCheckpoint` is a namespace-scoped standalone object. Restore is
-   triggered by a new optional `restoreFrom` field on Pod spec rather than a separate object;
-   see [Restore Mechanism](#restore-mechanism). A [pod-snapshot-controller] watches
-   `PodCheckpoint` objects and calls the kubelet checkpoint endpoint through the API server
-   node proxy.
+### Targeted use cases
 
 #### Accelerating startup of applications with long initialization times
 
@@ -255,6 +227,38 @@ state across the move, significantly reducing recovery time compared to full Pod
 Partially served by the alpha scope: checkpoint and create a new Pod on the same node is
 covered; cross-node migration requires a follow-on cross-node transport enhancement, and live
 migration semantics require a follow-on live migration enhancement.
+
+
+## Proposal
+
+### Implementation
+
+In this proposal, we aim to provide CRI functionality to checkpoint and restore a running Pod, which
+includes all containers running in the Pod, along with Pod-level metadata and configurations. This
+functionality is inspired by [kubelet checkpoint], but extends it to the Pod level, allowing to capture
+and restore the execution state of a Pod, rather than individual containers. The exact implementation
+details of this checkpoint/restore mechanism are left to the container runtime, but we expect the Pod
+checkpoint to capture the complete execution context of all processes running in containers, including
+in-memory state, process hierarchies, open file descriptors, and Pod-level configuration and metadata.
+
+The implementation consists of three layers:
+
+1. **CRI APIs** (`CheckpointPod`, `RestorePod`): Container runtime interface for the actual
+   checkpoint/restore operations, implemented by container runtimes such as containerd and CRI-O.
+
+2. **Kubelet endpoints** (`POST /checkpoint/{ns}/{pod}`, `POST /restore/{ns}/{checkpointName}`):
+   Kubelet HTTP endpoints that translate API requests into CRI calls. The kubelet suspends health
+   checks during checkpointing, resolves the CRI sandbox ID, and manages checkpoint storage at
+   `/var/lib/kubelet/pod-checkpoints/`. For restore, the kubelet reads pod sandbox configuration
+   from the checkpoint, assigns a new Pod UID, updates cgroup parent paths, and delegates to the
+   container runtime.
+
+3. **API objects** in the `checkpoint.k8s.io` API group that provide declarative management of
+   checkpoint operations. `PodCheckpoint` is a namespace-scoped standalone object. Restore is
+   triggered by a new optional `restoreFrom` field on Pod spec rather than a separate object;
+   see [Restore Mechanism](#restore-mechanism). A [pod-snapshot-controller] watches
+   `PodCheckpoint` objects and calls the kubelet checkpoint endpoint through the API server
+   node proxy.
 
 ### Risks and Mitigations
 
