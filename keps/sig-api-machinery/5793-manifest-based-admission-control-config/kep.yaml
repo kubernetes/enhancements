@@ -19,17 +19,20 @@ see-also:
 replaces:
   - "/keps/sig-api-machinery/1872-manifest-based-admission-webhooks"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 milestone:
   alpha: "v1.36"
-  beta:
+  beta: "v1.37"
   stable:
 
 feature-gates:
   - name: ManifestBasedAdmissionControlConfig
+    components:
+      - kube-apiserver
+  - name: ExcludeAdmissionWebhookVirtualResources
     components:
       - kube-apiserver
 disable-supported: true
