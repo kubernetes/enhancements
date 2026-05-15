@@ -372,19 +372,17 @@ Same as enabling the feature for the first time.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, testing will be added for parity of watch cache behavior with RangeStream on and off.
+Yes, testing will be added for parity of watch cache behavior with
+RangeStream on and off. Skew against an etcd without `RangeStream` is
+covered by unit tests that inject an `Unimplemented` response and
+assert kube-apiserver falls back to paginated `Range`, plus manual
+verification against older etcd binaries.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-- **etcd does not support `RangeStream`.** kube-apiserver detects
-  `Unimplemented` and falls back to paginated list. No impact on
-  running workloads.
-- **etcd compacts the pinned revision mid-stream.** kube-apiserver
-  surfaces `ErrCompacted` to the cacher, which retries
-  initialization. This is identical to a paginated list racing
-  compaction. Watches that were already established are unaffected.
+No known failure modes.
 
 ###### What specific metrics should inform a rollback?
 
@@ -394,7 +392,9 @@ Yes, testing will be added for parity of watch cache behavior with RangeStream o
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-n/a.
+Yes. We will specifically test the upgrade, downgrade, and upgrade
+path. Tests cover both the startup `storage.FeatureSupportChecker`
+decision and the runtime `Unimplemented` fallback.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
