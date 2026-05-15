@@ -18,6 +18,7 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
     - [KEP-5254 Comparison (DRA: Constraints with CEL)](#kep-5254-comparison-dra-constraints-with-cel)
     - [Interaction with KEP-5491 (List Types for Attributes)](#interaction-with-kep-5491-list-types-for-attributes)
+    - [Naming and Override Semantics for Derived Attributes](#naming-and-override-semantics-for-derived-attributes)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
@@ -152,10 +153,10 @@ across requests.
 
 ## Proposal
 
-We propose extending `.devices.requests` with `derivedAttributes` and
-`.devices.constraints` with `matchDerivedAttribute`. A derived attribute defines
-a CEL expression evaluated against each candidate device object. The resulting
-value acts as a virtual attribute that can be referenced in constraints.
+We propose extending `.devices.requests` with `derivedAttributes`. A derived
+attribute defines a CEL expression evaluated against each candidate device
+object. The resulting value acts as a virtual attribute that can be referenced
+directly by existing `.devices.constraints[].matchAttribute` fields.
 
 ### Core Manifest Example: GPU & NIC NUMA Alignment
 
@@ -187,8 +188,8 @@ spec:
         - name: shared-numa-node
           expression: "device.attributes['dra.net'].numaNode"
     constraints:
-    # [NEW]: Match the derived attribute across both requests
-    - matchDerivedAttribute: shared-numa-node
+    # Match the derived attribute across both requests using existing matchAttribute
+    - matchAttribute: shared-numa-node
       requests: [gpu, nic]
 ```
 
@@ -266,10 +267,25 @@ capabilities in three key areas:
    synthesize a list from multiple individual scalar attributes inline (e.g.,
    `expression: "[device.attributes['v'].r1, device.attributes['v'].r2]"`).
    This allows bridging older scalar-only drivers with KEP-5491 list matching.
-3. **Constraint Matching Semantics**: When `matchDerivedAttribute` evaluates a
-   derived attribute that returns a list, it will adopt the exact same non-empty
+3. **Constraint Matching Semantics**: When `matchAttribute` evaluates a derived
+   attribute that returns a list, it will adopt the exact same non-empty
    intersection matching semantics defined by KEP-5491. Scalar return values
    will be treated as single-element lists.
+
+#### Naming and Override Semantics for Derived Attributes
+We debate two design paths for validating `derivedAttributes` names:
+
+1. **Option 1 (Allow FQDNs e.g., `vendo.com/attr`)**: Enables derived attributes
+   to cleanly **override** static driver attributes of the same name, providing
+   powerful inline flexibility at the slight risk of accidental shadowing.
+2. **Option 2 (Strictly Bare Names e.g., `shared-numa`)**: Enforces an absolute
+   syntactic boundary between static (FQDN) and derived (bare) attributes,
+   eliminating shadowing risks but preventing direct attribute overrides.
+
+Recommended: **Option 1 (Allowing FQDNs)**. Most manifest authors will naturally
+choose simple bare names. Conversely, authoring an FQDN override requires
+deliberate effort to duplicate a driver's schema, indicating clear user intent.
+Enabling this pattern provides great flexibility.
 
 ### Risks and Mitigations
 - **Risk**: A new CEL expression needs to be evaluated for each candidate device
@@ -326,21 +342,9 @@ type DerivedAttribute struct {
 }
 ```
 
-We extend `DeviceConstraint` with `MatchDerivedAttribute`:
-
-```go
-type DeviceConstraint struct {
-	// Existing fields...
-	Requests []string `json:"requests,omitempty"`
-	MatchAttribute *string `json:"matchAttribute,omitempty"`
-
-	// MatchDerivedAttribute requires that all devices in the specified requests
-	// evaluate to the exact same value for the given derived attribute name.
-	// +featureGate=DRADerivedAttributes
-	// +optional
-	MatchDerivedAttribute *string `json:"matchDerivedAttribute,omitempty"`
-}
-```
+`DeviceConstraint` in `resource.k8s.io/v1` requires zero Go struct modifications.
+Existing `MatchAttribute *string` fields will be reused to reference derived
+attributes.
 
 ### CEL Environment & Validation
 - **Environment**: The CEL environment for `Expression` is exactly the same
@@ -364,9 +368,11 @@ In `pkg/scheduler/framework/plugins/dynamicresources`:
 2. When evaluating candidate devices for a request, the plugin executes the
    cached CEL expressions against each `Device` object. The computed values are
    stored in a temporary map associated with the candidate device.
-3. When evaluating `matchDerivedAttribute` constraints, the plugin looks up the
-   computed values from the candidate devices. If the values do not match across
-   the specified requests, the permutation is pruned.
+3. When evaluating `matchAttribute` constraints during the plugin
+   implements a lookup precedence: it first checks if the attribute name matches
+   a cached derived attribute on the candidate device's request; if not found,
+   it falls back to looking up the static attribute on the `Device` object. If
+   values do not match across the specified requests, the permutation is pruned.
 
 ### Test Plan
 
@@ -429,8 +435,9 @@ None.
   enabled.
 - If `kube-apiserver` is upgraded and has the feature gate enabled but
   `kube-scheduler` does not, the older scheduler will ignore `derivedAttributes`
-  and `matchDerivedAttribute`, resulting in unconstrained scheduling or
-  scheduling failures. Standard n-1 control plane version skew rules apply.
+  and treat non-FQDN `matchAttribute` strings as static attributes on the device
+  objects, resulting in scheduling failures. Standard n-1 control plane version
+  skew rules apply.
 
 ## Production Readiness Review Questionnaire
 
@@ -463,8 +470,8 @@ correctly by the scheduler.
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. Unit tests in `pkg/apis/resource/validation` verify that
-`derivedAttributes` and `matchDerivedAttribute` are rejected when the feature
-gate is disabled.
+`derivedAttributes` and non-FQDN `matchAttribute` strings are rejected when the
+feature gate is disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
