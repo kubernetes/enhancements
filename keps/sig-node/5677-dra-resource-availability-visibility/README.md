@@ -409,7 +409,7 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
      capacity (the `max(0, …)` floor in the controller hides the
      overcount as "0 available" rather than as a negative number).
 
-   Alpha 1.37 adds optional `counterSets[]` and `shareableDevices[]`
+   Alpha 1.37 adds optional `counterSets[]` and `shareableSummary`
    sub-objects to each `PoolStatus`, caps the per-device contribution
    to `allocatedDevices` at 1, and skips AdminAccess allocations in
    all accounting. See "Partitionable & Consumable Device Accounting"
@@ -626,14 +626,17 @@ non-nil status indicates the request has been processed.
 | `pools[].availableDevices` | `*int32` (optional) | `totalDevices - allocatedDevices - unavailableDevices`. Unset when `validationError` is set. |
 | `pools[].unavailableDevices` | `*int32` (optional) | Count of physical devices with at least one `NoSchedule` or `NoExecute` taint. **0 in Alpha 1.36** (hard-coded); **computed from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s in Alpha 1.37**. Unset when `validationError` is set. |
 | `pools[].validationError` | `*string` (optional, max 256 bytes) | Set when the pool's data could not be fully validated (e.g., incomplete slice publication). When set, count fields above may be unset. |
-| `pools[].counterSets[]` | atomic list of `CounterSetStatus`, max 32 (Alpha 1.37) | Per-`CounterSet` capacity / consumed / available, derived from `ResourceSlice.Spec.SharedCounters` and the `consumesCounters` of each non-AdminAccess allocation. Omitted when the pool has no shared counters. **Note:** this is a new `CounterSetStatus` type, not a reuse of the spec-side `CounterSet`. The spec's `Counter` only carries `Value` (inventory); a status-side type is needed to add the `consumed` and `available` fields without overloading the spec type. |
+| `pools[].counterSets[]` | atomic list of `CounterSetStatus`, max 32 (Alpha 1.37, **provisional** — revisit at Beta) | Per-`CounterSet` capacity / consumed / available, derived from `ResourceSlice.Spec.SharedCounters` and the `consumesCounters` of each non-AdminAccess allocation. Omitted when the pool has no shared counters. The spec-side per-slice cap is `ResourceSliceMaxCounterSets = 8`; pools can contain many slices with no per-pool cap upstream, so the status cap of 32 is a deliberate starting point rather than a mirror of any spec constant. Over-cap pools produce a per-pool `validationError` instead of silent truncation. A user-friendlier "devices-by-type" view (grouping by a driver-declared type attribute) is a deliberate follow-up, blocked on upstream agreement about how the type axis is declared. **Note:** `CounterSetStatus` is a new type, not a reuse of the spec-side `CounterSet`. The spec's `Counter` only carries `Value` (inventory); a status-side type is needed to add the `consumed` and `available` fields without overloading the spec type. |
 | `pools[].counterSets[].name` | string (required) | Counter-set name as declared in `ResourceSlice.Spec.SharedCounters[].Name`. |
 | `pools[].counterSets[].counters` | `map[string]CounterStatus` (required) | Per-counter status. `CounterStatus` is a new type with three required `resource.Quantity` fields: `capacity` (mirrors the spec-side `Counter.Value`), `consumed` (sum of consumption from non-AdminAccess allocations), and `available` (`capacity − consumed`, never negative). |
-| `pools[].shareableDevices[]` | atomic list, max 256 (Alpha 1.37) | Per-device capacity / consumed / allocations for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. |
-| `pools[].shareableDevices[].name` | string (required) | Device name (matches `ResourceSlice.Spec.Devices[].Name`). |
-| `pools[].shareableDevices[].capacity` | `map[QualifiedName]DeviceCapacity` (required) | Mirrors the source `ResourceSlice.Spec.Devices[].Capacity` field; same `DeviceCapacity` wrapper as the spec so future fields (e.g. `RequestPolicy`) are forward-compatible. |
-| `pools[].shareableDevices[].consumed` | `map[QualifiedName]resource.Quantity` (required) | Sum of `DeviceRequestAllocationResult.ConsumedCapacity` across non-AdminAccess allocations on this device. Quantity rather than `DeviceCapacity` because the spec's per-result `consumedCapacity` is itself a plain `Quantity`. |
-| `pools[].shareableDevices[].allocations` | int32 (required) | Number of concurrent non-AdminAccess claims sharing this device. |
+| `pools[].shareableSummary` | `*ShareableSummaryStatus` (optional) | Pool-level aggregate for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. Per-device detail was intentionally not included: a per-device list would scale to hundreds of entries on large pools, so the aggregate gives the operator-relevant signal in three small numbers plus a per-capacity-key breakdown. |
+| `pools[].shareableSummary.fullyAvailable` | int32 (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
+| `pools[].shareableSummary.partiallyConsumed` | int32 (required) | Count of shareable devices with **at least one** non-AdminAccess claim. `fullyAvailable + partiallyConsumed` equals the total number of shareable devices in the pool. |
+| `pools[].shareableSummary.capacity[]` | atomic list of `ShareableCapacityStatus`, max 32 (Alpha 1.37) | Per-capacity-key aggregate across all shareable devices in the pool. Cap of 32 matches the per-device combined `Attributes + Capacity` cap (no single device can carry more than 32 capacity keys); aggregation across devices may introduce additional keys but homogeneous-schema pools rarely exceed this. |
+| `pools[].shareableSummary.capacity[].name` | string (`QualifiedName`, required) | Capacity key as it appears in `ResourceSlice.Spec.Devices[].Capacity`. |
+| `pools[].shareableSummary.capacity[].total` | `resource.Quantity` (required) | Sum of `Device.Capacity[name].Value` across all shareable devices in the pool that carry this key. Devices that do not carry the key contribute nothing (rather than zero), which is the correct behaviour for heterogeneous-schema pools. |
+| `pools[].shareableSummary.capacity[].consumed` | `resource.Quantity` (required) | Sum of `DeviceRequestAllocationResult.ConsumedCapacity[name]` across non-AdminAccess allocations on shareable devices that carry this key. |
+| `pools[].shareableSummary.capacity[].available` | `resource.Quantity` (required) | `total − consumed`, clamped at zero (never negative). |
 | `conditions[]` | map list by `type`, max 10 | `Complete` (True when processed) or `Failed` (True on error). |
 
 ### Controller Implementation
@@ -748,13 +751,23 @@ consistently:
    non-AdminAccess allocation walks the chosen device's
    `consumesCounters` and adds to `consumed`. `available` is
    `capacity − consumed`.
-5. **`shareableDevices[]`** is emitted when the pool has any device
-   with `allowMultipleAllocations=true`. Each entry's `consumed` is
-   the sum of `result.consumedCapacity` across non-AdminAccess
-   allocations on that device; `allocations` is the number of such
-   claims. Entries are emitted only for devices that have at least
-   one non-AdminAccess allocation — devices with zero claims are
-   omitted to keep the response compact.
+5. **`shareableSummary`** is emitted when the pool has any device
+   with `allowMultipleAllocations=true`. The controller scans all
+   shareable devices in the pool and produces three fields:
+   `fullyAvailable` (devices with zero non-AdminAccess claims),
+   `partiallyConsumed` (devices with at least one non-AdminAccess
+   claim), and `capacity[]` — a per-capacity-key aggregate where
+   each entry sums `Device.Capacity[name].Value` over devices
+   carrying the key (`total`) and
+   `DeviceRequestAllocationResult.ConsumedCapacity[name]` over
+   non-AdminAccess allocations on those devices (`consumed`), with
+   `available = total − consumed` clamped at zero. A per-device
+   array would scale to hundreds of entries on large pools; the
+   aggregate gives the operator-relevant signal far more compactly.
+   Heterogeneous-schema pools are handled by the rule "devices that
+   do not carry a given key contribute nothing to that key's total"
+   — the aggregate stays correct rather than reporting zeros that
+   would misrepresent capacity.
 
 `availableDevices` keeps its existing definition
 (`totalDevices − allocatedDevices − unavailableDevices`). On plain
@@ -772,8 +785,11 @@ not.** Two cases the operator must understand:
   `allocatedDevices`. A pool of N shareable devices each holding
   one tiny claim will report `allocatedDevices=N` and
   `availableDevices=0`, even though most of each device's capacity
-  is free. Operators must consult `shareableDevices[].consumed` vs
-  `shareableDevices[].capacity` for the real signal.
+  is free. Operators must consult
+  `shareableSummary.capacity[].available` vs `.total` for the
+  remaining-capacity signal, and the
+  `fullyAvailable`/`partiallyConsumed` counts for the
+  share-pattern signal.
 
 This is documented as a deliberate trade-off: `availableDevices`
 remains a stable scalar that older clients can use, and the new
@@ -781,10 +797,12 @@ sub-objects carry the precise truth. The KEP does not redefine
 `availableDevices` per pool shape because doing so would silently
 change its meaning for existing 1.36 consumers.
 
-Both new arrays are omitted when empty so plain pools stay compact,
-and both have caps (`counterSets[]` `+k8s:maxItems=32`,
-`shareableDevices[]` `+k8s:maxItems=256`) to keep the response well
-under the apiserver's per-object size limit.
+Both new sub-objects are omitted when empty so plain pools stay
+compact. `counterSets[]` carries `+k8s:maxItems=32` (provisional —
+revisit at Beta; pools larger than this produce a per-pool
+`validationError` rather than silent truncation) and
+`shareableSummary.capacity[]` carries `+k8s:maxItems=32` to match
+the per-device combined `Attributes + Capacity` cap.
 
 #### TTL-Based Cleanup
 
@@ -886,9 +904,10 @@ Additional cases (Alpha 1.37):
   `allowMultipleAllocations=true` and three concurrent claims
   contributes exactly `1` to `allocatedDevices`, not `3`.
 - **AdminAccess skipped**: an AdminAccess allocation against a
-  device does not increment `allocatedDevices`, does not appear in
-  `shareableDevices[].allocations`, and does not subtract from any
-  `counterSets[].counters[].available`.
+  device does not increment `allocatedDevices`, does not move
+  `shareableSummary.partiallyConsumed`, does not contribute to
+  `shareableSummary.capacity[].consumed`, and does not subtract
+  from any `counterSets[].counters[].available`.
 - **`unavailableDevices` from taints**: a pool with `M` devices,
   `K` of which carry a `NoSchedule` or `NoExecute` taint (via
   `Spec.Devices[].Taints` or matching `DeviceTaintRule`), reports
@@ -900,23 +919,29 @@ Additional cases (Alpha 1.37):
   `sharedCounters: [{name: memory, counters: {memory: {value: 80Gi}}}]`
   with two non-AdminAccess allocations consuming 30Gi each reports
   `counterSets[0].counters[memory] = {capacity: 80Gi, consumed: 60Gi, available: 20Gi}`.
-- **`shareableDevices[]` aggregation**: a pool with one device
-  `nic-0` (`allowMultipleAllocations=true`, capacity `bandwidth=10Gi`)
-  and three claims with `consumedCapacity[bandwidth]` of 3Gi/4Gi/2Gi
-  reports `shareableDevices[0] = {name: nic-0, capacity: {bandwidth: 10Gi}, consumed: {bandwidth: 9Gi}, allocations: 3}`.
-- **Both arrays omitted on plain pools**: a pool with no
+- **`shareableSummary` aggregation**: a pool with three devices
+  (`nic-0`, `nic-1`, `nic-2`, all `allowMultipleAllocations=true`,
+  each with `bandwidth=10Gi`), where `nic-0` has two claims totalling
+  7Gi and `nic-1` has one claim of 2Gi and `nic-2` has no claims,
+  reports
+  `shareableSummary = {fullyAvailable: 1, partiallyConsumed: 2,
+  capacity: [{name: bandwidth, total: 30Gi, consumed: 9Gi, available: 21Gi}]}`.
+- **`shareableSummary` heterogeneous-schema handling**: a pool with
+  two devices that carry different capacity keys (`nic-a` has
+  `bandwidth=10Gi`, `nic-b` has `packets-per-sec=1M`) produces a
+  `capacity[]` with two entries; each entry's `total` only sums
+  the device(s) that carry that key.
+- **Both sub-objects omitted on plain pools**: a pool with no
   `sharedCounters` and no `allowMultipleAllocations=true` device
-  produces a `PoolStatus` with both fields absent (not empty
-  arrays — confirms `omitempty` behaviour).
-- **Per-device omit when zero claims**: a pool with two
-  `allowMultipleAllocations=true` devices `nic-0` (1 claim) and
-  `nic-1` (0 claims) produces a `shareableDevices` array containing
-  only the `nic-0` entry; the slice for `nic-1` is left nil.
+  produces a `PoolStatus` with both `counterSets` and
+  `shareableSummary` absent (confirms `omitempty` behaviour on a
+  slice and a pointer field respectively).
 - **`+k8s:maxItems` truncation**: a pool with >32 counter sets or
-  >256 shareable devices yields a `validationError` rather than
-  silent truncation. The controller measures size before populating
-  the field and writes `validationError` directly when over-cap,
-  avoiding a rejected write against the apiserver.
+  >32 distinct capacity keys in `shareableSummary.capacity[]` yields
+  a `validationError` rather than silent truncation. The controller
+  measures size before populating the field and writes
+  `validationError` directly when over-cap, avoiding a rejected
+  write against the apiserver.
 
 #### Integration tests
 
@@ -941,8 +966,10 @@ Additional cases (Alpha 1.37):
    expected `consumed`/`available`.
 9. **Consumable end-to-end**: seed a pool with at least one
    `allowMultipleAllocations=true` device and multiple claims that
-   each set `consumedCapacity`; assert `shareableDevices[]` is
-   populated and `allocatedDevices` is capped at 1 per device.
+   each set `consumedCapacity`; assert `shareableSummary` is
+   populated with the expected `fullyAvailable`,
+   `partiallyConsumed`, and per-key `capacity[]` aggregates, and
+   that `allocatedDevices` is capped at 1 per device.
 10. **AdminAccess invisibility**: in addition to a normal claim,
     create an AdminAccess claim against the same device; assert the
     AdminAccess claim does not appear in any tally.
@@ -980,10 +1007,12 @@ Added in Alpha 1.37:
    pool": seed the test driver to publish a pool with `sharedCounters`
    and devices that `consumesCounters`; schedule a pod; assert
    `counterSets[]` shows the expected `consumed`/`available`.
-5. "should report per-device sharing on a consumable pool": seed the
-   test driver with an `allowMultipleAllocations=true` device;
-   schedule two pods that each consume a slice of capacity; assert
-   `shareableDevices[]` shows both `consumed` and `allocations=2`,
+5. "should report shareable-device aggregate on a consumable pool":
+   seed the test driver with two `allowMultipleAllocations=true`
+   devices; schedule two pods that each consume a slice of capacity
+   on one of them; assert `shareableSummary` reports
+   `fullyAvailable=1`, `partiallyConsumed=1`, the per-key
+   `capacity[]` aggregate is consistent with the consumed slice,
    and `allocatedDevices=1` (cap-at-1 verified end-to-end).
 6. "should not count AdminAccess claims as consumers": create an
    AdminAccess claim against an otherwise-fully-allocated device;
@@ -1026,7 +1055,7 @@ graduation. The reasoning, strongest first:
    (b) does not reflect shared-counter consumption on partitionable
    devices. The visible symptom is `availableDevices=0` reported on
    pools that actually have free capacity. Fixing this requires new
-   API fields (`counterSets[]`, `shareableDevices[]`), not just a
+   API fields (`counterSets[]`, `shareableSummary`), not just a
    controller patch — and adding new API surface in Beta is exactly
    what Alpha cycles exist to avoid. This is the load-bearing
    reason; the points below are supporting evidence.
@@ -1049,8 +1078,10 @@ Scope of the 1.37 Alpha:
 - Feature gate `DRAResourcePoolStatus` stays Alpha, default off.
 - **Add `counterSets[]` to `PoolStatus`** for partitionable pools
   (populated only when the pool's slices declare `sharedCounters`).
-- **Add `shareableDevices[]` to `PoolStatus`** for pools that
-  contain at least one device with `allowMultipleAllocations=true`.
+- **Add `shareableSummary` to `PoolStatus`** (`fullyAvailable`,
+  `partiallyConsumed`, plus per-capacity-key `total`/`consumed`/`available`
+  aggregates) for pools that contain at least one device with
+  `allowMultipleAllocations=true`.
 - **Cap the per-device contribution to `allocatedDevices` at 1**,
   fixing the consumable overcount.
 - **Skip AdminAccess allocations** in all device, counter, and
@@ -1076,7 +1107,7 @@ Scope of the 1.37 Alpha:
 #### Beta
 
 Beta criteria will be revisited after the Alpha 1.37 work lands
-(`counterSets[]` / `shareableDevices[]`, `unavailableDevices`,
+(`counterSets[]` / `shareableSummary`, `unavailableDevices`,
 cap-at-1, AdminAccess skip) and the feature has soaked across the
 1.36 + 1.37 cycles. The target milestone and API-version graduation
 plan are intentionally left open at this point.
@@ -1095,7 +1126,7 @@ plan are intentionally left open at this point.
   clusters that do not opt in.
 - API stays at `resource.k8s.io/v1alpha3`. Stored objects from 1.36
   remain readable; the new optional fields (`counterSets[]`,
-  `shareableDevices[]`) are populated by the 1.37 controller when
+  `shareableSummary`) are populated by the 1.37 controller when
   the source data warrants it. Older clients ignore the unknown
   fields.
 - The change to `allocatedDevices` semantics (cap at 1 per physical
@@ -1118,7 +1149,7 @@ plan are intentionally left open at this point.
   both 1.36 and 1.37, so both components must opt in explicitly.
 - **1.36 ↔ 1.37 skew:** API is `resource.k8s.io/v1alpha3` in both
   releases. A 1.37 KCM serving a 1.36 apiserver may emit
-  `counterSets[]` / `shareableDevices[]` on objects whose 1.36
+  `counterSets[]` / `shareableSummary` on objects whose 1.36
   apiserver storage understands them as opaque optional fields —
   no compatibility issue. A 1.36 KCM serving a 1.37 apiserver
   simply does not populate the new fields.
@@ -1274,11 +1305,13 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of existing API objects?
 
 No to existing types. The Alpha 1.37 controller adds optional
-`counterSets[]` (`+k8s:maxItems=32`) and `shareableDevices[]`
-(`+k8s:maxItems=256`) sub-objects to each `PoolStatus`. Both are
-omitted on plain pools, so the typical response size is unchanged;
-on partitionable or consumable pools the response grows by a bounded
-amount.
+`counterSets[]` (`+k8s:maxItems=32`, provisional) and `shareableSummary`
+(a fixed-shape sub-object with an inner `capacity[]` capped at
+`+k8s:maxItems=32`) to each `PoolStatus`. Both are omitted on plain
+pools, so the typical response size is unchanged; on partitionable or
+consumable pools the response grows by a bounded, small amount
+(`shareableSummary` is much smaller than the per-device list it
+replaces).
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1290,7 +1323,7 @@ Minimal:
 - etcd: Small objects, bounded by built-in TTL cleanup (Alpha: 1h completed / 24h pending)
 - KCM: Reuses existing `resource.k8s.io/v1` informers for ResourceSlice and ResourceClaim, adds a small controller with its own work queue
 - API server: Standard API operations
-- Response size: Bounded by the required `driver` field (one driver's pools), the `limit` field (default 100, max 1000), the `+k8s:maxItems=1000` constraint on `status.pools`, and (for Alpha 1.37) `+k8s:maxItems=32` on `counterSets[]` and `+k8s:maxItems=256` on `shareableDevices[]` per pool
+- Response size: Bounded by the required `driver` field (one driver's pools), the `limit` field (default 100, max 1000), the `+k8s:maxItems=1000` constraint on `status.pools`, and (for Alpha 1.37) `+k8s:maxItems=32` on `counterSets[]` and on `shareableSummary.capacity[]` per pool
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
