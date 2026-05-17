@@ -707,20 +707,20 @@ Example message: `Could not evict a pod due to failing eviction requests, number
 
 type PodSpec struct {
     ...
-    // evictionResponders reference responders that react to EvictionRequests.
-    // Responders should observe and communicate through the EvictionRequest API to help with
+    // evictionResponders reference responders that react to Evictions based on EvictionRequests.
+    // Responders should observe and communicate through the Eviction Resource API to help with
     // the graceful termination of a pod. The responders are selected sequentially, in the order
     // in which they appear in the list.
     //
     // Responders should periodically report on an eviction progress by updating the
-    // .status.responders[].heartbeatTime field of the EvictionRequest object. If this field is
+    // .status.responders[].heartbeatTime field of the Eviction object. If this field is
     // not updated within 20 minutes, the eviction request is passed over to the next responder at
     // a higher index. If there is no other responder, the last default
     // imperative-eviction.k8s.io/evictor responder will evict the pod using the imperative
     // Eviction API (/evict endpoint).
     //
     // The maximum length of the responders list is 16.
-    // Responders are not supported when the pod is part of a workload (.spec.workloadRef is set).
+    // Responders are not supported when the pod is part of a PodGroup (.spec.schedulingGroup is set).
     // This field can only be set on creation and is immutable afterwards.
     // +featureGate=EvictionRequestAPI
     // +optional
@@ -734,7 +734,116 @@ type PodSpec struct {
 // EvictionRequest defines a request that should ideally result in a graceful eviction of a
 // .spec.target (e.g. termination of a pod).
 //
-// `.spec.requesters` field should be set and kept updated to preserve the eviction request.
+// The evictionrequest-controller observes intents of all EvictionRequests and transforms them into
+// Evictions.
+//   - .spec.requesterName is set as a label on the Eviction for easier lookup.
+//   - Each target can have a set of responders assigned to it. Eviction objects are observed by
+//     these responders, who implement the eviction logic and update the Eviction's status with
+//     progress.
+//
+// There is many-to-many relationship between EvictionRequests and Evictions.
+//
+// If all requesters withdraw their eviction intent for a common target, the eviction will be
+// canceled. Deleting an EvictionRequest also counts as a withdrawal.
+// Once all EvictionRequest of a target are removed, the corresponding Evictions are eventually
+// garbage collected.
+//
+// +k8s:validation-gen-nolint // Note: remove this when the API got GA
+type EvictionRequest struct {
+    metav1.TypeMeta `json:",inline"`
+
+    // metadata is the standard object metadata; More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata.
+    // +optional
+    metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+    // spec defines the eviction request specification.
+    // https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+    // +required
+    Spec EvictionRequestSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
+
+    // status represents the most recently observed status of the eviction request.
+    // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+    // +optional
+    Status EvictionRequestStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
+}
+
+// EvictionRequestSpec is a specification of an EvictionRequest.
+type EvictionRequestSpec struct {
+    // target contains a reference to an object (e.g. a pod) that should be evicted.
+    // This field is required and immutable.
+    // +required
+    // +k8s:immutable
+    // NOTE: the EvictionTarget type will be duplicated into EvictionRequestTarget in the actual implementation
+    Target EvictionTarget `json:"target" protobuf:"bytes,1,opt,name=target"`
+
+    // requesterName allows you to identify the entity, that requested the eviction of the target.
+    //
+    // It must be a valid domain-prefixed path (such as "acme.io/foo").
+    // Domain names *.k8s.io and *.kubernetes.io are reserved.
+    // This field is required and immutable.
+    // +required
+    // +k8s:required
+    RequesterName string `json:"requesterName" protobuf:"bytes,2,opt,name=requesterName"`
+
+    // intent specifies the action that should be taken for the specified target.
+    //
+    // - Eviction means that the requester is interested in the eviction of the target.
+    // - Withdrawn means that the requester is no longer interested in the eviction of the target.
+    //   If all requesters' intents are withdrawn for a common target, the eviction will be canceled.
+    //   Cancellation consequences:
+    //   - Inactive responders will never run.
+    //   - Active responders are expected to cancel the eviction.
+    //   - Completed or Interrupted responders should not take any action.
+    // +required
+    // +k8s:required
+    // NOTE: the RequesterIntent type will be duplicated into EvictionRequestIntent in the actual implementation
+    Intent RequesterIntent `json:"intent" protobuf:"bytes,3,opt,name=intent,casttype=EvictionRequestIntent"`
+}
+
+// EvictionRequestStatus represents the last observed status of the eviction request.
+type EvictionRequestStatus struct {
+    // conditions contain information about the eviction request.
+    //
+    // EvictionRequest specific conditions are: Evicted or Failed (managed by evictionrequest-controller).
+    // - Failed means that the eviction request is no longer being processed
+    //   by any eviction responder. This can happen if the request is canceled or if no responder
+    //   managed to evict the target (e.g. terminate or delete a pod).
+    // - Evicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
+    //
+    // These conditions can be reset if the eviction was unsuccessful and a new Eviction intent has
+    // been submitted.
+    //
+    // The maximum length of the conditions list is 100.
+    // +optional
+    // +patchMergeKey=type
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=type
+    // +k8s:optional
+    // +k8s:listType=map
+    // +k8s:listMapKey=type
+    // +k8s:maxItems=100
+    Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+
+    // observedGeneration is EvictionRequest's .metadata.generation observed by the evictionrequest-controller.
+    // The observed generation value cannot be negative and can only be incremented.
+    // The minimum value is 1.
+    // This field is managed by evictionrequest-controller.
+    // +optional
+    // +k8s:optional
+    // +k8s:minimum=1
+    ObservedGeneration *int64 `json:"observedGeneration,omitempty" protobuf:"varint,2,opt,name=observedGeneration"`
+}
+
+// Eviction initiates an eviction process, which should ideally result in a graceful eviction of a
+// .spec.target (e.g. termination of a pod).
+//
+// The evictionrequest-controller observes intents of all EvictionRequests and transforms them into
+// Evictions. It manages the Eviction lifecycle.
+// Requesters are preserved in .status.requesters even after they have withdrawn their request.
+// If all requesters withdraw their eviction intent for a common target, the eviction will be
+// canceled. Once all EvictionRequest corresponding to this Eviction .spec.target have been
+// removed, this Eviction object will eventually be garbage collected.
 //
 // If the target is a pod, the .status.targetResponders is populated from Pod's
 // .spec.evictionResponders.
@@ -748,58 +857,41 @@ type PodSpec struct {
 // If there are no other responders and the target is a pod, the last default
 // imperative-eviction.k8s.io/evictor responder will evict the pod using the imperative Eviction API
 // (/evict endpoint).
-type EvictionRequest struct {
+// +k8s:validation-gen-nolint // Note: remove this when the API got GA
+type Eviction struct {
     metav1.TypeMeta `json:",inline"`
 
     // metadata is the standard object metadata; More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata.
-    // .metadata.name is required and should match the .metadata.uid of the pod being evicted.
-    // .metadata.generateName is not supported.
-    // The labels of the eviction request object are synchronized with .metadata.labels of the
-    // eviction request's target. The labels of the target have a preference.
+    // .metadaata.name set by the evictionrequest-controller is purely informative and subject to change.
+    // .spec.target field should be used to identify the target precisesly.
+    //
+    // The requester and responder names will be used as label keys and added to the labels of the
+    // eviction in one of the following formats:
+    // 1. acme.io/foo: "requester"
+    // 2. acme.io/foo: "responder"
+    // 3. acme.io/foo: "requesterresponder"
     // +optional
-    // +k8s:subfield(name)=+k8s:format=k8s-uuid
-    // +k8s:subfield(generateName)=+k8s:forbidden
     metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-    // spec defines the eviction request specification.
+    // spec defines the eviction specification.
     // https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
     // +required
-    Spec EvictionRequestSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
+    Spec EvictionSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
-    // status represents the most recently observed status of the eviction request.
+    // status represents the most recently observed status of the eviction.
     // Populated by responders and evictionrequest-controller.
     // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
     // +optional
-    Status EvictionRequestStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
+    Status EvictionStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
-// EvictionRequestSpec is a specification of an EvictionRequest.
-type EvictionRequestSpec struct {
+// EvictionSpec is a specification of an Eviction.
+type EvictionSpec struct {
     // target contains a reference to an object (e.g. a pod) that should be evicted.
-    // Target UID must be the same as the EvictionRequest's .metadata.name.
     // This field is required and immutable.
     // +required
     // +k8s:immutable
     Target EvictionTarget `json:"target" protobuf:"bytes,1,opt,name=target"`
-
-    // requesters allow you to identify entities, that requested the eviction of the target.
-    // At least one requester with the eviction intent is required when creating an eviction request.
-    // If all the requesters withdraw their eviction intent, the eviction will be canceled.
-    //
-    // Requester controllers should use server-side-apply to manage the requester intent.
-    //
-    // Once added, items cannot be removed.
-    // The minimum length of the requesters list is 1, and the maximum is 100.
-    // +required
-    // +patchMergeKey=name
-    // +patchStrategy=merge
-    // +listType=map
-    // +listMapKey=name
-    // +k8s:required
-    // +k8s:listType=map
-    // +k8s:listMapKey=name
-    // +k8s:maxItems=100
-    Requesters []Requester `json:"requesters,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=requesters"`
 }
 
 // EvictionTarget contains a reference to an object that should be evicted.
@@ -810,11 +902,12 @@ type EvictionTarget struct {
     // +optional
     // +k8s:optional
     // +k8s:unionMember
-    Pod *PodReference `json:"pod,omitempty" protobuf:"bytes,1,opt,name=pod"`
+    Pod *EvictionPodReference `json:"pod,omitempty" protobuf:"bytes,1,opt,name=pod"`
 }
 
-// PodReference contains enough information to locate the referenced pod inside the same namespace.
-type PodReference struct {
+// EvictionPodReference contains enough information to locate the referenced pod inside the same
+// namespace.
+type EvictionPodReference struct {
     // name of the target.
     // This field is required.
     // +required
@@ -830,63 +923,17 @@ type PodReference struct {
     UID apimachinerytypes.UID `json:"uid" protobuf:"bytes,2,opt,name=uid,casttype=k8s.io/kubernetes/pkg/types.UID"`
 }
 
-// Requester allows you to identify the entity, that requested the eviction of the target.
-// +structType=atomic
-type Requester struct {
-    // name allows you to identify the entity, that requested the eviction of the target.
-    //
-    // It must be a valid domain-prefixed path (such as "acme.io/foo").
-    // Domain names *.k8s.io and *.kubernetes.io are reserved.
-    // This field must be unique for each requester.
-    // This field is required.
-    // +required
-    // +k8s:required
-    Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
-
-    // intent specifies the action that should be taken for the specified target.
-    //
-    // - Eviction means that the requester is interested in the eviction of the target.
-    // - Withdrawn means that the requester is no longer interested in the eviction of the target.
-    //   If all requesters' intents are withdrawn, the eviction will be canceled.
-    //   Cancellation consequences:
-    //   - Inactive responders will never run.
-    //   - Active responders are expected to cancel the eviction.
-    //   - Completed or Interrupted responders should not take any action.
-    // +required
-    // +k8s:required
-    Intent RequesterIntent `json:"intent" protobuf:"bytes,2,opt,name=intent,casttype=RequesterIntentEviction"`
-}
-
-// RequesterIntent specifies a requester intent.
-// +k8s:enum
-type RequesterIntent string
-
-// These are intents that can be set by each requester.
-const (
-    // RequesterIntentEviction means that the requester is interested in the eviction of the target.
-    RequesterIntentEviction RequesterIntent = "Eviction"
-
-    // RequesterIntentWithdrawn means that the requester is no longer interested in the eviction of the target.
-    // If all requesters' intents are withdrawn, the eviction will be canceled.
-    // Cancellation consequences:
-    // - Inactive responders will never run.
-    // - Active responders are expected to cancel the eviction.
-    // - Completed or Interrupted responders should not take any action.
-    RequesterIntentWithdrawn RequesterIntent = "Withdrawn"
-)
-
-// EvictionRequestStatus represents the last observed status of the eviction request.
-type EvictionRequestStatus struct {
+// EvictionStatus represents the last observed status of the eviction request.
+type EvictionStatus struct {
     // conditions contain information about the eviction request.
     //
-    // Eviction request specific conditions are: Evicted or Canceled (managed by evictionrequest-controller),
-    //
+    // Eviction request specific conditions are: Evicted or Failed (managed by evictionrequest-controller).
     // - Failed means that the eviction request is no longer being processed
     //   by any eviction responder. This can happen if the request is canceled or if no responder
     //   managed to evict the target (e.g. terminate or delete a pod).
     // - Evicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
     //
-    // 	The maximum length of the conditions list is 500.
+    // 	The maximum length of the conditions list is 100.
     // +optional
     // +patchMergeKey=type
     // +patchStrategy=merge
@@ -895,10 +942,10 @@ type EvictionRequestStatus struct {
     // +k8s:optional
     // +k8s:listType=map
     // +k8s:listMapKey=type
-    // +k8s:maxItems=500
+    // +k8s:maxItems=100
     Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 
-    // observedGeneration is EvictionRequest's .metadata.generation observed by the evictionrequest-controller.
+    // observedGeneration is Eviction's .metadata.generation observed by the evictionrequest-controller.
     // The observed generation value cannot be negative and can only be incremented.
     // The minimum value is 1.
     // This field is managed by evictionrequest-controller.
@@ -906,6 +953,20 @@ type EvictionRequestStatus struct {
     // +k8s:optional
     // +k8s:minimum=1
     ObservedGeneration *int64 `json:"observedGeneration,omitempty" protobuf:"varint,2,opt,name=observedGeneration"`
+
+    // requesters allow you to identify the entities, that requested the eviction of the target.
+    // If all the requesters withdraw their eviction intent, the eviction will be canceled.
+    //
+    // Once added, items cannot be removed.
+    // +optional
+    // +patchMergeKey=name
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=name
+    // +k8s:optional
+    // +k8s:listType=map
+    // +k8s:listMapKey=name
+    Requesters []Requester `json:"requesters,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=requesters"`
 
     // targetResponders reference responders that should eventually respond to this eviction
     // request to help with the graceful eviction of a target. These responders are selected
@@ -935,7 +996,7 @@ type EvictionRequestStatus struct {
     // +k8s:listType=map
     // +k8s:listMapKey=name
     // +k8s:maxItems=17
-    TargetResponders []TargetResponder `json:"targetResponders,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,3,rep,name=targetResponders"`
+    TargetResponders []TargetResponder `json:"targetResponders,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=targetResponders"`
 
     // responders represents the eviction process status of each declared responder.
     //
@@ -955,36 +1016,115 @@ type EvictionRequestStatus struct {
     // +k8s:listType=map
     // +k8s:listMapKey=name
     // +k8s:maxItems=17
-    Responders []ResponderStatus `json:"responders,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,6,rep,name=responders"`
+    Responders []ResponderStatus `json:"responders,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,5,rep,name=responders"`
 }
 
-type EvictionRequestConditionType string
+type EvictionConditionType string
 
 // These are built-in conditions of an eviction request.
 const (
-    // EvictionRequestConditionFailed means that the eviction request is no longer being processed
+    // EvictionConditionFailed means that the eviction request is no longer being processed
     // by any eviction responder. This can happen if the request is canceled or if no responder
     // managed to evict the target (e.g. terminate or delete a pod).
-    EvictionRequestConditionFailed EvictionRequestConditionType = "Failed"
+    EvictionConditionFailed EvictionConditionType = "Failed"
 
-    // EvictionRequestConditionEvicted means that the target has been evicted (e.g. a pod has been
+    // EvictionConditionEvicted means that the target has been evicted (e.g. a pod has been
     // terminated or deleted).
-    EvictionRequestConditionEvicted EvictionRequestConditionType = "Evicted"
+    EvictionConditionEvicted EvictionConditionType = "Evicted"
 )
 
-// TargetResponder allows you to specify the responder reacting to the EvictionRequest.
-// Responders should observe and communicate through the EvictionRequest API (see .state) to help
+type EvictionConditionReason string
+
+// These are built-in condition reasons of an eviction request.
+const (
+    // EvictionConditionReasonAwaitingEviction means that this Eviction works as expected and the target
+    // is scheduled for an eviction.
+    // This reason is set for the Failed and Evicted condition.
+    EvictionConditionReasonAwaitingEviction EvictionConditionReason = "AwaitingEviction"
+    // EvictionConditionReasonEvictionInvalid means that the Eviction is not accepted because the
+    // initial configuration is not valid.
+    // This reason is set for the Failed condition.
+    EvictionConditionReasonEvictionInvalid EvictionConditionReason = "EvictionInvalid"
+    // EvictionConditionReasonCanceledDueToNoRequesters means that the Eviction is canceled because it has
+    // no requesters with an eviction intent.
+    // This reason is set for the Failed condition.
+    EvictionConditionReasonCanceledDueToNoRequesters EvictionConditionReason = "CanceledDueToNoRequesters"
+    // EvictionConditionReasonSucceeded means that the Eviction has successfully evicted the target.
+    // This reason is set for the Failed condition.
+    EvictionConditionReasonSucceeded EvictionConditionReason = "Succeeded"
+    // EvictionConditionReasonNoFurtherResponder means that the Eviction responders failed to evict
+    // the target and that no further responder is available.
+    // This reason is set for the Failed condition.
+    EvictionConditionReasonNoFurtherResponder EvictionConditionReason = "NoFurtherResponder"
+    // EvictionConditionReasonPodDeleted means that the target pod has been deleted.
+    // This reason is set for the Evicted condition.
+    EvictionConditionReasonPodDeleted EvictionConditionReason = "PodDeleted"
+    // EvictionConditionReasonPodTerminal means that the target pod has reached a terminal state.
+    // This reason is set for the Evicted condition.
+    EvictionConditionReasonPodTerminal EvictionConditionReason = "PodTerminal"
+    // EvictionConditionReasonEvictionFailed means that the eviction of the target was unsuccessful.
+    // This reason is set for the Evicted condition.
+    EvictionConditionReasonEvictionFailed EvictionConditionReason = "EvictionFailed"
+)
+
+// Requester allows you to identify the entity, that requested the eviction of the target.
+// +structType=atomic
+type Requester struct {
+    // name allows you to identify the entity, that requested the eviction of the target.
+    //
+    // It must be a valid domain-prefixed path (such as "acme.io/foo").
+    // Domain names *.k8s.io and *.kubernetes.io are reserved.
+    // This field must be unique for each requester.
+    // This field is required.
+    // +required
+    // +k8s:required
+    Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+
+    // intent specifies the action that should be taken for the specified target.
+    //
+    // - Eviction means that the requester is interested in the eviction of the target.
+    // - Withdrawn means that the requester is no longer interested in the eviction of the target.
+    //   If all requesters' intents are withdrawn, the eviction will be canceled.
+    //   Cancellation consequences:
+    //   - Inactive responders will never run.
+    //   - Active responders are expected to cancel the eviction.
+    //   - Completed or Interrupted responders should not take any action.
+    // +required
+    // +k8s:required
+    Intent RequesterIntent `json:"intent" protobuf:"bytes,2,opt,name=intent,casttype=RequesterIntent"`
+}
+
+// RequesterIntent specifies a requester intent.
+// +k8s:enum
+type RequesterIntent string
+
+// These are intents that can be set by each requester.
+const (
+    // RequesterIntentEviction means that the requester is interested in the eviction of the target.
+    RequesterIntentEviction RequesterIntent = "Eviction"
+
+    // RequesterIntentWithdrawn means that the requester is no longer interested in the eviction of the target.
+    // If all requesters' intents are withdrawn, the eviction will be canceled.
+    // Cancellation consequences:
+    // - Inactive responders will never run.
+    // - Active responders are expected to cancel the eviction.
+    // - Completed or Interrupted responders should not take any action.
+    RequesterIntentWithdrawn RequesterIntent = "Withdrawn"
+)
+
+// TargetResponder allows you to specify the responder reacting to the Eviction.
+// Responders should observe and communicate through the Eviction API (see .state) to help
 // with the graceful eviction of a target (e.g. termination of a pod).
 // +structType=atomic
 type TargetResponder struct {
-    // name allows you to identify the responder reacting to the EvictionRequest.
+    // name allows you to identify the responder reacting to the Eviction.
     //
     // It must be a valid domain-prefixed path (such as "acme.io/foo").
     // This field must be unique for each responder.
     // This field is required.
     // +required
     // +k8s:required
-    Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
 
     // state specifies a state that is assigned by the evictionrequest-controller. Responders should observe
     // this state in order to navigate their lifecycle.
@@ -1045,7 +1185,7 @@ const (
 // It should be only updated by the designated responder whose name is .name field.
 // +structType=granular
 type ResponderStatus struct {
-    // name allows you to identify the responder reacting to the EvictionRequest.
+    // name allows you to identify the responder reacting to the Eviction.
     //
     // It must be a valid domain-prefixed path (such as "acme.io/foo").
     // This field is initialized by Kubernetes and must be unique for each responder.
@@ -1101,7 +1241,6 @@ type ResponderStatus struct {
     // +k8s:maxLength=4000
     Message string `json:"message,omitempty" protobuf:"bytes,6,opt,name=message"`
 }
-
 ```
 
 #### Remarks on Responders
