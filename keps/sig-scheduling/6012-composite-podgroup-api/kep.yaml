@@ -2,6 +2,7 @@ title: CompositePodGroup API
 kep-number: 6012
 authors:
   - "@tosi3k"
+  - "@mm4tt"
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
