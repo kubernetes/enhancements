@@ -1,0 +1,36 @@
+title: Workload Aware Scheduling Controller APIs
+kep-number: 6089
+authors:
+  - "@mm4tt"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-apps
+status: provisional
+creation-date: 2026-05-18
+reviewers:
+  - "@dom4ha"
+approvers:
+  - "@dom4ha"
+
+see-also:
+  - "/keps/sig-apps/5547-integrate-workload-with-job"
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/5729-resourceclaim-support-for-workloads"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+  - "/keps/sig-scheduling/6012-composite-podgroup-api"
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+
+feature-gates:
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
