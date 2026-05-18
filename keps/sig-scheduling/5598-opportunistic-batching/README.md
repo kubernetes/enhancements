@@ -690,8 +690,6 @@ If e2e tests are not necessary or useful, explain why.
 
 - Run the existing scheduling e2e tests with batching enabled and disabled, to ensure they pass in
   both cases.
-- Add e2e tests ensuring that pod configurations we expect to be batched are in fact batched.
-- Add an e2e test with a multi-pod-per-node workload that asserts that rescoring is triggered.
 
 <!--
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
