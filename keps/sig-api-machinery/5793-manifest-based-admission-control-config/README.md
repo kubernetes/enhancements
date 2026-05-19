@@ -326,7 +326,7 @@ machinery.
 exclusion today. For beta, they will implement `WantsExcludedAdmissionResources` and skip
 dispatch for the same set, gated by a new `ExcludeAdmissionWebhookVirtualResources` feature
 gate that defaults to enabled in 1.37. The gate is opt-out for clusters that need the prior
-behavior.
+behavior temporarily.
 
 Excluded resources (from `exclusion.Excluded()`, all API versions):
 
@@ -527,12 +527,14 @@ This ensures that platform-level policies enforced via static config take preced
 `WantsExcludedAdmissionResources` and consume the same `exclusion.Excluded()` list that
 `generic.Plugin` already injects into `ValidatingAdmissionPolicy` and `MutatingAdmissionPolicy`.
 At admit time, when the `ExcludeAdmissionWebhookVirtualResources` feature gate is enabled, a
-request whose GroupResource is in the excluded set is not dispatched to webhooks. When the gate
-is disabled, dispatch behaves as it does today.
+request whose GroupResource is in the excluded set is not dispatched to webhooks (both static
+and REST-based). When the gate is disabled, dispatch behaves as it does today.
 
 This change is independent of the `staticManifestsDir` machinery and does not require operators
-to configure manifest-based admission. It is grouped with this KEP at beta because it shares
-review surface and rollout messaging with the broader manifest-based admission work.
+to configure manifest-based admission. It is grouped with this KEP at beta because we want
+webhook and CEL admission to behave consistently before manifest-based admission graduates to
+beta, and it shares review surface and rollout messaging with the broader manifest-based
+admission work.
 
 ### Test Plan
 
