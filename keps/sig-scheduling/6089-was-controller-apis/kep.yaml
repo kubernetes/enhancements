@@ -9,8 +9,10 @@ status: provisional
 creation-date: 2026-05-18
 reviewers:
   - "@dom4ha"
+  - "@soltysh"
 approvers:
   - "@dom4ha"
+  - "@soltysh"
 
 see-also:
   - "/keps/sig-apps/5547-integrate-workload-with-job"
@@ -30,6 +32,10 @@ milestone:
   stable: "v1.39"
 
 feature-gates:
+  - name: WorkloadWithJob
+    components:
+      - kube-apiserver
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
