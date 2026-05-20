@@ -34,6 +34,7 @@
   - [PodGroup Creation Ordering](#podgroup-creation-ordering)
   - [Ownership and Object Relationship](#ownership-and-object-relationship)
   - [Pod Group minCount Mutability](#pod-group-mincount-mutability)
+  - [Workload Controllers Integration](#workload-controllers-integration)
   - [Scheduler Changes](#scheduler-changes)
     - [North Star Vision](#north-star-vision)
     - [GangScheduling Plugin](#gangscheduling-plugin)
@@ -126,11 +127,10 @@ their resources.  This allows other workloads to try to allocate those resources
 New core types called `Workload` and `PodGroup` are introduced to tell the kube-scheduler that a 
 group of pods should be scheduled together and to define policy options related to gang scheduling. 
 Pods may have an object reference in their spec to the `PodGroup` they belong to. The `Workload` 
-and `PodGroup` objects are intended to evolve[^2] via  future KEPs to support additional 
+and `PodGroup` objects are intended to evolve[^2] via future KEPs to support additional 
 kube-scheduler improvements, such as topology-aware scheduling.
 
-In 1.36, we redesigned the API in order to clearly decouple the Workload API from the runtime PodGroup API [^4].
-In the updated design:
+The API is structured to decouple template from runtime grouping:
 
 - `Workload` represents a static template defining the scheduling hierarchy and scheduling policy 
 definition that specifies what workload behavior should be applied.
@@ -226,34 +226,15 @@ See [Future plans](#future-plans) for more details.
 
 ## Proposal
 
-This KEP introduces both the `Workload` and `PodGroup` APIs in `scheduling.k8s.io/v1beta1`. The 1.36 revision, 
-as detailed in the original design [^4], addresses feedback regarding the ambiguity of the original "monolithic" 
-Workload. By decoupling policy (Workload) from runtime grouping (PodGroup), we improve clarity, scalability 
-and lifecycle management. This approach also provides a more readable and intuitive structure for complex workloads 
-like JobSet and LeaderWorkerSet.
-
+This KEP introduces both the `Workload` and `PodGroup` APIs in `scheduling.k8s.io`.
 The `Workload` API defines the scheduling policy and references one or more `podGroupTemplates`. Each `PodGroup` 
 is a standalone runtime object created from those templates, representing a self-contained scheduling unit that 
 encapsulates the runtime state.
 
-To maintain long-term API quality and ensure a clean path to GA, the Workload API remains in Alpha for the 1.36 
-cycle. We have decided to completely abandon the original v1alpha1 version of the API in favor of v1alpha2, where 
-only the new decoupled model is supported. This allows for the finalization of the architectural changes and ensures 
-that the graduated Beta API will be clean and free of transitional technical debt or legacy semantics.
-
 In v1.37, the API will be promoted to `v1beta1`. At the same time, a new `v1alpha3` version will be created
 to replace `v1alpha2`, enabling backward-incompatible changes around `DisruptionMode` for planned alpha features.
 
-The `spec.workloadRef` field was introduced in v1.35 to identify the scheduling context. In the v1.36 revision, we are
-replacing this with a new field, `spec.schedulingGroup`, to align with the decoupled architecture:
-
-- Immediate Execution Context: The Pod now points strictly to the immediate execution context (the runtime PodGroup). 
-  We are removing the direct Workload reference because it is not strictly necessary for the scheduler's operation. 
-  We may re-introduce a direct workload reference in the future (most probably in status, not spec) if concrete use 
-  cases (e.g., enhanced debuggability, UX) emerge. 
-- Future Extensibility: We anticipate the API will evolve to include concepts like PodSubGroup[^5]. Therefore, we 
-  structure this reference as a PodSchedulingGroup object. This allows us to easily extend the API in the future
-  (e.g., via a oneOf pattern) to support hierarchical scheduling.
+The `spec.schedulingGroup` on the Pod object is used to identify the scheduling context, which is the runtime `PodGroup`.
 
 A sample pod with these new fields looks like this:
 
@@ -752,11 +733,13 @@ type PodGroupStatus struct {
     // Conditions represent the latest observations of the PodGroup's state.
     //
     // Known condition types:
-    // - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
+    // - "PodGroupInitiallyScheduled": Indicates whether the scheduling requirement has been satisfied.
+    //   Once this condition transitions to True, it serves as a terminal state and will never revert to False,
+    //   even if pods are subsequently evicted and group constraints are no longer met.
     // - "DisruptionTarget": Indicates whether the PodGroup is about to be terminated
     //   due to disruption such as preemption.
     //
-    // Known reasons for the PodGroupScheduled condition:
+    // Known reasons for the PodGroupInitiallyScheduled condition:
     // - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
     //   affinity/anti-affinity rules, or insufficient capacity for the gang.
     // - "SchedulerError": The PodGroup cannot be scheduled due to some internal error
@@ -789,23 +772,6 @@ type WorkloadPodGroupTemplateReference struct {
     // +required
     PodGroupTemplateName string
 }
-
-// PodGroupStatus represents information about the status of a pod group.
-type PodGroupStatus struct {
-	// Conditions represent the latest observations of the PodGroup's state.
-	//
-	// Known condition types:
-	// - "PodGroupScheduled": Indicates whether the scheduling requirement has been satisfied.
-	//
-	// Known reasons for the PodGroupScheduled condition:
-	// - "Unschedulable": The PodGroup cannot be scheduled due to resource constraints,
-	//   affinity/anti-affinity rules, or insufficient capacity for the gang.
-	// - "SchedulerError": The PodGroup cannot be scheduled due to some internal error
-	//   that happened during scheduling, for example due to nodeAffinity parsing errors.
-	//
-	// +optional
-	Conditions []metav1.Condition
-}
 ```
 
 Individual `PodGroup` objects are treated as independent scheduling units. If a `Workload` defines 
@@ -821,32 +787,38 @@ in the code to allow for extending this structure if needed in the future.
 
 ### PodGroup Status Lifecycle
 
-The `PodGroup.Status` is managed by kube-scheduler to reflect the scheduling status. For alpha, we introduce 
-a `Conditions` field with the `PodGroupScheduled` condition type, but more fields may be added for beta and GA.
+The `PodGroup.Status` is managed by kube-scheduler to reflect the scheduling status. We introduce
+a `Conditions` field with the `PodGroupInitiallyScheduled` condition type.
 
 `PodGroup` status mirrors `Pod` status semantics rather than defining PodGroup-specific reasons:
 - If pods are unschedulable (i.e., timeout, resources, affinity, etc.), the scheduler updates the 
-`PodGroupScheduled` condition to `False` and sets the reason fields accordingly.
-- If pods are scheduled, the scheduler updates the `PodGroupScheduled` condition to `True` after the group 
+`PodGroupInitiallyScheduled` condition to `False` and sets the reason fields accordingly.
+- If pods are scheduled, the scheduler updates the `PodGroupInitiallyScheduled` condition to `True` after the group 
 got accepted by the Permit phase.
 
 For basic scheduling policy, when the pod related to the `PodGroup` gets scheduled, the scheduler updates 
-the `PodGroupScheduled` condition to `True`.
+the `PodGroupInitiallyScheduled` condition to `True`.
 
 #### Status Transition Rules
 
-Once a `PodGroup` transitions to `PodGroupScheduled=True`, it is treated as a terminal scheduling 
+Once a `PodGroup` transitions to `PodGroupInitiallyScheduled=True`, it is treated as a terminal scheduling 
 state and does not revert to `False`. Specifically, once the group's scheduling constraint (`minCount`) 
 has been satisfied, subsequent failed scheduling cycles for additional pods beyond `minCount` do not 
 regress the condition. On same-status transitions (e.g., `True` → `True`), the condition message may 
 be updated, but `LastTransitionTime` remains unchanged.
 
-This is a deliberate simplification. In practice, scheduled pods may later be evicted
-or impacted by node failures, but the `PodGroup` status will not track
-these post-scheduling disruptions. While a more robust status lifecycle capable of reflecting
-post-scheduling state changes is a desirable future enhancement, we do not consider it
-a blocker for beta graduation. Handling such behavior is tied to rescheduling 
-mechanisms, which remain out of scope for this KEP.
+Note that in practice, scheduled pods may later be evicted or impacted by node failures,
+but the `PodGroup` status will not track these post-scheduling disruptions.
+The current condition provides enough  visibility into the initial scheduling result
+to support beta and GA of this feature. However, future extensions to the status could:
+
+- Add a new condition tracking the outcome of the most recent scheduling cycle
+  (except in cases where the PodGroup is still feasible but additional pods weren't scheduled).
+  This would be a useful extension of the current condition and straightforward to implement.
+
+- Add a more robust status lifecycle mechanism capable of reflecting live post-scheduling state changes,
+  including current pod counts. It's likely that a new, separate component would be responsible
+  for tracking such changes and updating the status.
 
 #### Implementation Notes (Alpha)
 
@@ -971,6 +943,16 @@ and `PodGroupTemplate` is proposed to be mutable in v1.37. Specifically:
 While broader PodGroup spec mutability, such as modifying the number of `PodGroupTemplates` in a `Workload`,
 may be desirable, we are strictly scoping API mutability in v1.37 to the `minCount` field.
 Further relaxation of validation rules will be considered in the future if driven by strong use cases.
+
+### Workload Controllers Integration
+
+The Job controller integrated with this API in v1.36 (Alpha) via [KEP-5547], proving its initial capability. Currently,
+there are ongoing integrations with broader ecosystem workload controllers, such as JobSet, LeaderWorkerSet, KubeRay, and TrainJob.
+
+We are working closely with the communities behind these workloads, and the feedback is positive and supportive.
+There are no identified blockers for Beta graduation. Any feedback we have received can be delivered
+in a backward-compatible manner through subsequent KEPs, meaning the current API remains
+a solid baseline for these use cases.
 
 ### Scheduler Changes
 
@@ -1124,8 +1106,8 @@ The cycle proceeds as follows:
 #### Queuing and Ordering
 
 Workload-aware preemption ([KEP-5710](https://github.com/kubernetes/enhancements/pull/5711))
-will introduce a specific scheduling priority for a workload.
-Having that in mind, the queueing mechanism should support the workload's scheduling priority.
+will introduce a specific scheduling priority for a `PodGroup`.
+Having that in mind, the queueing mechanism should support the `PodGroup`'s scheduling priority.
 
 To ensure that we process the `PodGroup` instance at an appropriate time and
 don't starve other pods from being scheduled, we need to have a good queueing mechanism
@@ -1206,6 +1188,18 @@ The list and configuration of plugins used by this algorithm will be the same as
      the number of pods that have passed the Workload Scheduling Cycle to ensure
      that Pods do not wait unnecessarily if some have been rejected while new pods
      have been added to the cluster.
+
+     In this successful case, preemption will not be attempted even if some pods remain unschedulable
+     This means that as long as the scheduling constraints (`minCount`) are met, the schedulable pods
+     will move to binding. Any subsequent preemption for unschedulable pods will be handled in the next
+     [Workload Scheduling Cycle](#workload-scheduling-cycle) if still needed. Triggering both binding
+     and preemption in the same cycle would be ambiguous, and such precedence wouldn't be clear
+     from the scheduler's perspective. Alternatively, always attempting preemption to free up space,
+     even for schedulable groups, would be unnecessarily disruptive and delay the startup of the group. 
+     
+     Unschedulable pods will be requeued using their old timestamp, meaning the subsequent scheduling
+     and preemption attempt should start immediately after the current cycle,
+     unless a higher-priority pod or pod group comes in between.
 
    * If `schedulableCount < minCount`, the cycle fails. The scheduler attempts
      [Workload-aware Preemption](#workload-aware-preemption) to free sufficient space for the `PodGroup` through disruption.
@@ -1384,6 +1378,9 @@ became a beta graduation criterion for this KEP, the `WorkloadAwarePreemption` f
 will also be merged into `GenericWorkload`. This means the lifecycle of workload-aware preemption will be directly tied
 to the Workload API and gang scheduling features.
 
+However, this KEP and [KEP-5710] remain separate because they introduce different functionalities
+and operate on different abstraction layers.
+
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
@@ -1422,7 +1419,6 @@ With Workload Scheduling Cycle features, we will significantly expand test cover
 - Deadlocks and livelocks do not occur when multiple gangs compete for resources or interleave with standard pods.
 - Failed pod groups are requeued correctly and retry successfully when resources become available.
 - Scheduler correctly captures updated `minCount` value for pending pod groups, potentially unblocking them from PreEnqueue.
-- Changes to `minCount` value during Workload Scheduling Cycle doesn't affect the current cycle, but the subsequent ones.
 
 We will also benchmark the performance impact of these changes to measure:
 
@@ -1474,6 +1470,8 @@ In 1.36:
   and deliver a proper algorithm of handling PodGroup preemptions.
 - Implement PodGroup queueing algorithm.
 - Both `Workload` and `PodGroup` APIs are integrated (alpha) with at least one true workload[^6] controller.
+- There are no blockers or concerns from the true workload controller[^6] communities,
+  proving that the Workload and PodGroup APIs serve as a solid baseline for their use cases.
 - A deletion protection mechanism is implemented for `PodGroup` objects and finalizer is added to the API.
 - All e2e tests for `PodGroup` are added.
 - Performance tests are created and are being run in CI to protect against regressions.
@@ -1481,6 +1479,7 @@ In 1.36:
 #### GA
 
 - All issues and gaps identified as feedback during beta are resolved
+- Promote the e2e API tests to conformance together with a test for gang scheduling behavior.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1535,12 +1534,9 @@ This section must be completed when targeting alpha to a release.
     - kube-apiserver
     - kube-scheduler
     - kube-controller-manager
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+
+This KEP and workload-aware preemption ([KEP-5710]) are tightly coupled and controlled by the same feature gate.
+They graduate in lockstep, meaning their graduation paths (Alpha, Beta, GA) and timelines are identical.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1607,19 +1603,19 @@ behavior).
 2. Attempt to create a Pod with `spec.schedulingGroup` set.
 3. The `spec.schedulingGroup` field is dropped by the API server. The pod is created successfully
    but without the `schedulingGroup` reference, resulting in immediate standard scheduling (one-by-one).
-4. Restart/Upgrade API Server and Scheduler to v1.37 (with feature gates enabled).
+4. Restart/Upgrade API Server and Scheduler to v1.37 with feature gates enabled.
 5. Create two PodGroup objects: `gang-test-A` and `gang-test-B` (both with `minCount=2`).
 6. Create a Pod `test-pod-1` with `spec.schedulingGroup` pointing to `gang-test-A`.
 7. The Pod stays in `Pending` state (waiting for the gang). Verify that
    `scheduler_pending_entities{type="podgroup", queue="gated"}` metric is incremented.
 8. Create a Pod `test-pod-2` pointing to the same pod group.
 9. Both pods are scheduled successfully in the same cycle (Gang Scheduling works). 
-10. Downgrade API Server and Scheduler to v1.36 (with feature gates disabled).
+10. Downgrade API Server and Scheduler to v1.36 with feature gates disabled.
 11. Create `test-pod-3` pointing to `gang-test-B`. Note: We use a pod group created in step 5 because creating new
     PodGroup objects is disabled.
 12. The pod is scheduled immediately (PodGroup logic is ignored because the schedulingGroup field is dropped by
     the v1.36 API server). If Gang Scheduling were active, this pod would hang pending waiting for a second member.
-13. Upgrade API Server and Scheduler back to v1.37 (feature gates enabled).
+13. Upgrade API Server and Scheduler back to v1.37 with feature gates enabled.
 14. Create `test-pod-4` and `test-pod-5` pointing to `gang-test-B`; verifying that Gang Scheduling functionality is
     restored (these pods wait for `minCount=2` before scheduling).
 
@@ -1656,7 +1652,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [x] API .status
-  - Condition name: `PodGroupScheduled`
+  - Condition name: `PodGroupInitiallyScheduled`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -2013,8 +2009,8 @@ Kubernetes uses for most resource names.
 
 [#5501]: https://github.com/kubernetes/enhancements/pull/5501
 [extended proposal]: https://docs.google.com/document/d/1ulO5eUnAsBWzqJdk_o5L-qdq5DIVwGcE7gWzCQ80SCM/edit?
-[KEP-5547]: https://github.com/kubernetes/enhancements/pull/5871
-[KEP-5710]: https://github.com/kubernetes/enhancements/pull/5710
+[KEP-5547]: https://github.com/kubernetes/enhancements/issues/5547
+[KEP-5710]: https://github.com/kubernetes/enhancements/issues/5710
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/website]: https://git.k8s.io/website
