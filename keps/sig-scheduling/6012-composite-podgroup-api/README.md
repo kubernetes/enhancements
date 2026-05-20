@@ -28,11 +28,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [API overview](#api-overview)
   - [Changes to the <code>Workload</code> API](#changes-to-the-workload-api)
   - [Changes to the <code>PodGroup</code> API](#changes-to-the-podgroup-api)
-    - [<code>TemplateReference</code>](#templatereference)
+    - [<code>WorkloadReference</code>](#workloadreference)
     - [Standalone <code>PodGroup</code> objects](#standalone-podgroup-objects)
   - [<code>CompositePodGroup</code> API](#compositepodgroup-api)
     - [Spec](#spec)
-      - [Template reference](#template-reference)
+      - [Workload reference](#workload-reference)
       - [Scheduling policy](#scheduling-policy)
       - [Scheduling constraints](#scheduling-constraints)
       - [Disruption mode, priority class name and priority](#disruption-mode-priority-class-name-and-priority)
@@ -41,10 +41,11 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Object ownership and garbage collection](#object-ownership-and-garbage-collection)
   - [API validation](#api-validation)
     - [<code>Workload</code>](#workload)
-    - [Runtime validation of group structure](#runtime-validation-of-group-structure)
+    - [Group hierarchy](#group-hierarchy)
   - [Changes in kube-scheduler](#changes-in-kube-scheduler)
     - [Multi-level scheduling](#multi-level-scheduling)
       - [Scheduling sequence for Pods](#scheduling-sequence-for-pods)
+      - [Suboptimal scheduling decisions](#suboptimal-scheduling-decisions)
     - [Integration with workload-aware preemption](#integration-with-workload-aware-preemption)
     - [Multi-level topology-aware scheduling](#multi-level-topology-aware-scheduling)
       - [Preemption in topology-aware scheduling](#preemption-in-topology-aware-scheduling)
@@ -195,9 +196,13 @@ upon accordingly.
   workload APIs.
   - This will be addressed in a KEP spawned from a discussion in
     [API Design for WAS Controller Integration](https://docs.google.com/document/d/1VG7Zto9JYuPG4Anb01WMRryJlfV6met0jgob3T2NjZ4/edit?usp=sharing).
-- Add support for associating ResourceClaims with instances of the new API.
-  - We will continue supporting sharing ResourceClaims among Pods within an
-  individual `PodGroup`, however.
+- Add support for associating `ResourceClaims` with instances of the new API.
+  - We will continue supporting sharing `ResourceClaims` among Pods within an
+    individual `PodGroup`, however.
+- Guarantee an optimal result of multi-level scheduling algorithms.
+  - Bin packing is inherently an NP-hard problem and it becomes even more
+    complex for multi-level structures. While we aim to design efficient
+	heuristics, guaranteeing an optimal placement is out of scope.
 
 ## Proposal
 
@@ -339,15 +344,15 @@ flowchart TD
         ChildCPGT --> PGT2
     end
 
-    RootCPG -. "TemplateRef" .-> RootCPGT
+    RootCPG -. "WorkloadRef" .-> RootCPGT
 
-    ChildCPG1 -. "TemplateRef" .-> ChildCPGT
-    ChildCPG2 -. "TemplateRef" .-> ChildCPGT
+    ChildCPG1 -. "WorkloadRef" .-> ChildCPGT
+    ChildCPG2 -. "WorkloadRef" .-> ChildCPGT
 
-    PG1 -. "TemplateRef" .-> PGT1
-    PG2 -. "TemplateRef" .-> PGT2
-    PG3 -. "TemplateRef" .-> PGT1
-    PG4 -. "TemplateRef" .-> PGT2
+    PG1 -. "WorkloadRef" .-> PGT1
+    PG2 -. "WorkloadRef" .-> PGT2
+    PG3 -. "WorkloadRef" .-> PGT1
+    PG4 -. "WorkloadRef" .-> PGT2
 
     classDef composite stroke-width:2px;
     classDef podgroup stroke-width:1px;
@@ -457,7 +462,7 @@ creation.
 
 There are two changes to the `PodGroup` spec:
 
-- `PodGroupTemplateRef` field gets replaced with an optional `TemplateRef` that
+- `PodGroupTemplateRef` field gets replaced with an optional `WorkloadRef` that
   contains a reference to the `Workload` together with a name of a template
   within that `Workload` object.
 - New field called `ParentCompositePodGroupName` is added which denotes a name
@@ -468,14 +473,14 @@ There are two changes to the `PodGroup` spec:
 type PodGroupSpec struct {
 	// ... existing fields ...
 
-	// TemplateRef references an optional PodGroup template within other object
-	// (e.g. Workload) that was used to create the PodGroup.
+	// WorkloadRef references an optional PodGroup template within the Workload
+	// object that was used to create the PodGroup.
 	// This field is immutable.
 	//
 	// +optional
 	// +k8s:optional
 	// +k8s:immutable
-	TemplateRef *TemplateReference
+	WorkloadRef *WorkloadReference
 
 	// ParentCompositePodGroupName contains the name of the parent composite pod group
 	// within the same namespace as this pod group.
@@ -493,26 +498,13 @@ type PodGroupSpec struct {
 }
 ```
 
-#### `TemplateReference`
+#### `WorkloadReference`
 
-`TemplateReference` contains information about the referred `Workload` and the
+`WorkloadReference` contains information about the referred `Workload` and the
 reference to the template definition embedded in that `Workload` object that was
 used to create that particular `PodGroup`.
 
 ```go
-// TemplateReference TODO.
-// Exactly one field must be set.
-// +union
-type TemplateReference struct {
-	// Workload references the Workload object that was used to create a particular
-	// PodGroup or CompositePodGroup.
-	//
-	// +optional
-	// +k8s:optional
-	// +k8s:unionMember
-	Workload *WorkloadReference
-}
-
 // WorkloadReference references the Workload object together with the template
 // that was used to create a particular PodGroup or CompositePodGroup.
 type WorkloadReference struct {
@@ -543,13 +535,13 @@ type WorkloadReference struct {
 
 #### Standalone `PodGroup` objects
 
-In [KEP-4671], we introduced the notion of standalone `PodGroups` which are
+In [KEP-4671], we introduced a notion of standalone `PodGroups` which are
 `PodGroup` objects that can be created without a matching `Workload` object and
-their template reference is hence nil.
+their workload reference is hence nil.
 
 This proposal wants to preserve this possibility but limit the use of it to the
 flat workloads exclusively. In other words, `PodGroup` objects with a non-nil
-parent reference must have a template reference.
+parent reference must have a workload reference.
 
 Because this check cannot be verified today with the use of declarative
 validation, we will start with checking this using handwritten validation. When
@@ -612,15 +604,15 @@ type CompositePodGroupSpec struct {
 	// +k8s:format=k8s-long-name
 	ParentCompositePodGroupName *string
 
-	// TemplateRef references an optional CompositePodGroup template within other object
-	// (e.g. Workload) that was used to create the CompositePodGroup.
+	// WorkloadRef references an optional CompositePodGroup template within the
+	// Workload object that was used to create the CompositePodGroup.
 	// This field is required.
 	// This field is immutable.
 	//
 	// +required
 	// +k8s:required
 	// +k8s:immutable
-	TemplateRef *TemplateReference
+	WorkloadRef *WorkloadReference
 
 	// SchedulingPolicy defines the scheduling policy for this instance of the CompositePodGroup.
 	// Controllers are expected to fill this field by copying it from a CompositePodGroupTemplate.
@@ -695,15 +687,15 @@ type CompositePodGroupSpec struct {
 }
 ```
 
-##### Template reference
+##### Workload reference
 
-The `TemplateRef` has analogous semantics of a corresponding field in the
-`PodGroup` API - with an exception that it is supposed to refer to a
-`CompositePodGroupTemplate` entry within the `Workload` object, not to a
+The `WorkloadRef` has semantics that matches the meaning of a corresponding
+field in the `PodGroup` API - with an exception that it is supposed to refer to
+a `CompositePodGroupTemplate` entry within the `Workload` object, not to a
 `PodGroupTemplate` entry.
 
-Another difference is that the `TemplateRef` is marked as required. Contrary to
-the `PodGroup` API, we do not support the notion of standalone groups in the
+Another difference is that the `WorkloadRef` is required here. Contrary to the
+`PodGroup` API, we do not support the notion of standalone groups in the
 `CompositePodGroup` API.
 
 ##### Scheduling policy
@@ -914,17 +906,28 @@ references would be ambiguous.
 To verify both of these conditions, we will add a new admission plugin that
 targets new `Workload` objects and performs both of these checks.
 
-#### Runtime validation of group structure
+#### Group hierarchy
 
-TODO - discuss the validation of parents and the following:
+Because `Workload` API embeds the whole template hierarchy, we can statically
+verify its depth in kube-apiserver. Unfortunately, we cannot perform analogous
+checks for the group hierarchy in a way that completely eliminates race
+conditions - due to the eventually consistent nature of Kubernetes, cross-object
+validation can be performed only in a best-effort manner.
 
-- we need to dynamically check in kube-scheduler that group hierarchy doesn't
-  contain a cycle and its height is not too long,
-- checking these conditions in kube-apiserver's admission layer is not enough
-  (and would result in best effort validation only in HA control plane setups),
-- when kube-scheduler discovers either of those two conditions, it updates the
-  status of the groups, deeming these groups invalid (as well as the ones that
-  come after).
+That said, a misbehaving controller might create a `Workload` object and a set
+of group objects that form a hierarchy which is not reflected in that
+`Workload`. In such case, the controller can create a group hierarchy that:
+
+- Is deeper than allowed,
+- Contains a cyclical parent reference relationship,
+- References to more than a single `Workload`.
+
+Each of these should be treated as a failure mode since it is essentially a
+manifestation of the API misuse. Because of that we will make kube-scheduler
+responsible for discovering them in runtime. Specifically, if scheduler notices
+any of these modes, it will update the status of all the groups within the group
+hierarchy accordingly (i.e. deeming those groups invalid) and will not proceed
+to scheduling it at all.
 
 ### Changes in kube-scheduler
 
@@ -958,10 +961,10 @@ gang scheduling in the `GangScheduling` plugin:
 ##### Scheduling sequence for Pods
 
 When processing an individual `PodGroup` in a scheduling cycle iteration,
-scheduler follows a certain logic that pertains the sequence in which Pods
-belonging to that particular `PodGroup` are being scheduled. We need to
-establish analogous logic for the `CompositePodGroup` whenever scheduler pops
-one from the scheduling queue.
+scheduler imposes a certain sequence in which Pods belonging to that particular
+`PodGroup` are being scheduled. We need to establish analogous sequencing logic
+for the `CompositePodGroup` whenever scheduler pops one from the scheduling
+queue.
 
 In most use cases, `PodGroup` contains homogeneous Pods. Because of that, it
 makes sense to schedule Pods from a single `PodGroup` sequentially to take
@@ -980,10 +983,28 @@ For 2., we can start with something simple in alpha, like e.g. sorting
 necessary.
 
 For 3., we can reuse the logic that is leveraged by the scheduler already when
-it processes single `PodGroups`.
+scheduling a single `PodGroup`.
 
-TODO: discuss the problem of scheduling CPGs that did not manage to get
-scheduled because of the sequence imposed here.
+##### Suboptimal scheduling decisions
+
+As already mentioned, optimal multi-level scheduling is an NP-hard computational
+problem underneath, so solving it at a large scale is infeasible.
+`kube-scheduler` mitigates this through operating on a single Pod at a time
+while making scheduling decisions for a whole group hierarchy. This is
+essentially a heuristic that relaxes the requirement for global optimum in
+exchange for drastically reduced computational complexity.
+
+In particular, this implies that `kube-scheduler` might fail to find a placement
+for a multi-level gang even despite the sufficiency of resources in the cluster.
+This can be a side effect of suboptimal placement decisions that were made for
+individual Pods, e.g. due to the sequence in which placement for individual Pods
+of a gang was established. This problem already exists in case of scheduling a
+heterogeneous `PodGroup` gang but it might manifest itself to a larger degree.
+
+For Beta, we will decide whether or not we need additional heuristics to
+increase the chance of getting a group hierarchy scheduled. That said,
+regardless of what we eventually do, we will not overcome the problem's
+NP-hardness with heuristics.
 
 #### Integration with workload-aware preemption
 
@@ -1011,11 +1032,13 @@ To achieve this, we need to:
 
 #### Multi-level topology-aware scheduling
 
-TODO - describe the greedy recursive algorithm.
+TODO: describe the greedy recursive algorithm with top-down domain generation
+and constraints resolution.
 
 ##### Preemption in topology-aware scheduling
 
-TODO
+TODO: refer to the community discussion and decision made in the document in
+https://docs.google.com/document/d/1qMjV0Uwq5J9g2cYriWnLzDekaswc6dLA1h9GU4pCTtI/edit?usp=sharing.
 
 ### Test Plan
 
@@ -1029,7 +1052,18 @@ N/A
 
 ##### Unit tests
 
-TODO
+- `k8s.io/kubernetes/pkg/apis/scheduling/validation`: `2026-05-20` - 90.6%
+- `k8s.io/kubernetes/pkg/registry/scheduling/workload`: `2026-05-20` - 95.1%
+- `k8s.io/kubernetes/pkg/registry/scheduling/podgroup`: `2026-05-20` - 90.9%
+- `k8s.io/kubernetes/pkg/scheduler`: `2026-05-20` - 76.8%
+- `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2026-05-20` - 92.1%
+- `k8s.io/kubernetes/pkg/scheduler/backend/cache`: `2026-05-20` - 84.9%
+- `k8s.io/kubernetes/pkg/scheduler/framework`: `2026-05-20` - 73.0%
+- `k8s.io/kubernetes/pkg/scheduler/framework/preemption`: `2026-05-20` - 76.5%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption`: `2026-05-20` - 89.6%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/topologyaware`: `2026-05-20` - 91.5%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort`: `2026-05-20` - 60.0%
+- `k8s.io/kubernetes/pkg/scheduler/framework/runtime`: `2026-05-20` - 82.8%
 
 ##### Integration tests
 
@@ -1037,7 +1071,11 @@ TODO
 
 ##### e2e tests
 
-TODO
+We will add basic API tests for the new `CompositePodGroup` API, that will later
+be promoted to conformance. These tests will cover `CompositePodGroup` creation,
+validation, status updates and lifecycle management.
+
+More tests will be added for beta release.
 
 ### Graduation Criteria
 
@@ -1058,9 +1096,12 @@ TODO
   to it.
 - At least one true workload controller (e.g. `JobSet`) is integrated with the
   `CompositePodGroup` API.
-- Scheduler detects group hierarchies that contain cycles or are too high. 
+- Scheduler detects invalid group hierarchies (i.e. hierarchies which are too
+  deep, have a cycle or refer to two or more Workloads).
 - All e2e tests for the `CompositePodGroup` API are added and graduated to
   conformance tests.
+- Decision about additional heuristics that increase the chance of finding a
+  placement for multi-level gang.
 
 #### GA
 
@@ -1068,11 +1109,35 @@ TODO
 
 ### Upgrade / Downgrade Strategy
 
-TODO
+Standard procedures for features introducing new APIs and API fields should be used:
+
+- `kube-apiserver` is required to be upgraded first before any other components
+  that use the new API.
+- Since the `CompositePodGroup` has dependency on the `Workload` API, the
+  feature gate for it needs to be enabled.
+- Similarly, preemption- and topology-specific fields of the `CompositePodGroup`
+  API depend on relevant feature gates to be enabled.
+- On downgrade, `kube-scheduler` should be downgraded first (to stop processing
+  the new fields) before `kube-apiserver` is downgraded.
+
+Note that downgrade `kube-apiserver` will not result in clearing the new fields
+for objects that already have them set in etcd. Therefore, existing
+`CompositePodGroup` objects remain in etcd but are ignored.
 
 ### Version Skew Strategy
 
-TODO
+The feature is limited to the control plane, so the version skew with nodes
+(kubelets) doesn't matter.
+
+For the API changes (introduction of `CompositePodGroup` API and the field
+changes in the `PodGroup` and the `Workload` APIs), the old version of
+components (in particular kube-apiserver) may not handle those. Thus, users
+should not set those fields before confirming all control plane instances were
+upgraded to the version supporting those.
+
+For the multi-level scheduling features themselves, they are purely in-memory
+features of `kube-scheduler`, so the skew doesn't really matter (as there is
+always only single kube-scheduler instance being a leader).
 
 ## Production Readiness Review Questionnaire
 
@@ -1300,7 +1365,12 @@ No.
 
 Yes - new fields are added to the `Workload` and `PodGroup` APIs.
 
-TODO
+The exact size increase will be small, however:
+
+- `PodGroup` is extended with a single string field,
+- Templates definition in the `Workload` object is evolved into a tree-like
+  structure and we enforce an explicit limit on the depth and width of that
+  tree.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
