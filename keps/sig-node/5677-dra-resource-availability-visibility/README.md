@@ -1059,9 +1059,13 @@ graduation. The reasoning, strongest first:
    controller patch — and adding new API surface in Beta is exactly
    what Alpha cycles exist to avoid. This is the load-bearing
    reason; the points below are supporting evidence.
-2. **No production DRA driver has integrated yet.** The original
-   Beta criteria explicitly required this, and it cannot be
-   back-filled inside the same release that graduates to Beta.
+2. **No production DRA driver has been validated against yet.**
+   The original Beta criteria required out-of-tree validation
+   against at least one production DRA driver; no driver-side code
+   change is needed (the controller reads existing ResourceSlice /
+   allocation fields), but operational validation in a real-driver
+   environment cannot be back-filled inside the same release that
+   graduates to Beta.
 3. **Several Alpha reviewer follow-ups remain open** (batched TTL
    deletes, deterministic metrics tests, e2e assertion tightening).
    Resolving them inside another Alpha cycle is lower-stakes than
