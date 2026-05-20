@@ -302,6 +302,8 @@ limit. The `storage.Interface` is unchanged.
 #### GA
 
 - Conformance tests.
+- At least two cloud providers have run the feature in production and
+  confirmed it is stable.
 
 ### Upgrade / Downgrade Strategy
 
