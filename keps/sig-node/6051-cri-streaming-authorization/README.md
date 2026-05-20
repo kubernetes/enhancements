@@ -7,6 +7,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Call Order](#call-order)
   - [User Stories](#user-stories)
     - [Story 1: Defense in Depth](#story-1-defense-in-depth)
     - [Story 2: Audit Logging for Compliance](#story-2-audit-logging-for-compliance)
@@ -14,12 +15,17 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Config Change](#config-change)
+  - [Server Integration](#server-integration)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -64,7 +70,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 Adds an optional `AuthorizeStream` hook to the CRI streaming server configuration.
 The hook is invoked after a short-lived stream URL token is validated and before
 exec, attach, or port-forward streams are served. When `nil`, existing behavior
-is preserved — making this fully backward-compatible.
+is preserved, making this fully backward-compatible for existing embedders.
 
 ## Motivation
 
@@ -106,16 +112,18 @@ authorization check.
 
 ## Proposal
 
-Add an `AuthorizeStream func(http.ResponseWriter, *http.Request) error` field
-to the `streaming.Config` struct. When non-nil, the server calls this function
-after token validation succeeds and before serving the stream. If the function
-returns a non-nil error, the request is rejected with `403 Forbidden`.
+Add an `AuthorizeStream func(*http.Request, any) error` field to the
+`streaming.Config` struct. When non-nil, the server calls this function after
+token validation succeeds and before serving the stream. The second argument is
+the cached CRI stream request (`*runtimeapi.ExecRequest`,
+`*runtimeapi.AttachRequest`, or `*runtimeapi.PortForwardRequest`). If the
+function returns a non-nil error, the request is rejected with `403 Forbidden`.
 
 ### Call Order
 
 1. HTTP request arrives at `/exec/<token>` (or `/attach/`, `/portforward/`)
 2. Token validated via `cache.Consume(token)` — 404 if invalid or expired
-3. **NEW**: `AuthorizeStream(w, r)` called — 403 if rejected
+3. **NEW**: `AuthorizeStream(r, cachedRequest)` called — 403 if rejected
 4. Stream served via `ServeExec()` / `ServeAttach()` / `ServePortForward()`
 
 ### User Stories
@@ -144,9 +152,10 @@ without modifying the kubelet or the CRI gRPC API.
 
 - The hook runs on every streaming request, so it should be fast to avoid
   adding latency to exec/attach/port-forward setup.
-- The hook receives the standard `http.ResponseWriter` and `http.Request`,
-  giving implementers access to headers, TLS peer certificates, and request
-  metadata for authorization decisions.
+- The hook receives the standard `http.Request` and the cached CRI stream
+  request, giving implementers access to headers, TLS peer certificates, request
+  metadata, and the target container or port-forward request for authorization
+  decisions.
 - The hook is called **after** token validation, so it does not need to
   validate the token itself.
 
@@ -167,10 +176,10 @@ without modifying the kubelet or the CRI gRPC API.
 type Config struct {
     // ... existing fields ...
 
-    // AuthorizeStream, if non-nil, is called after the stream token is
-    // validated and before the stream is served. If it returns a non-nil
-    // error, the request is rejected with HTTP 403 Forbidden.
-    AuthorizeStream func(http.ResponseWriter, *http.Request) error
+    // AuthorizeStream, if non-nil, is called after a stream URL token has been
+    // validated and before the stream is served. Implementations can authenticate
+    // the HTTP request and authorize access to the cached CRI stream request.
+    AuthorizeStream func(req *http.Request, streamRequest any) error
 }
 ```
 
@@ -182,15 +191,20 @@ the hook is called immediately after `cache.Consume(token)` succeeds:
 ```go
 func (s *Server) serveExec(req *restful.Request, resp *restful.Response) {
     token := req.PathParameter("token")
-    cachedRequest, err := s.cache.Consume(token)
-    if err != nil {
+    cachedRequest, ok := s.cache.Consume(token)
+    if !ok {
         // ... handle 404 ...
+        return
+    }
+    exec, ok := cachedRequest.(*runtimeapi.ExecRequest)
+    if !ok {
+        // ... handle invalid cached request ...
         return
     }
     // NEW: stream-time authorization
     if s.config.AuthorizeStream != nil {
-        if err := s.config.AuthorizeStream(resp, req.Request); err != nil {
-            http.Error(resp, err.Error(), http.StatusForbidden)
+        if err := s.config.AuthorizeStream(req.Request, exec); err != nil {
+            http.Error(resp.ResponseWriter, err.Error(), http.StatusForbidden)
             return
         }
     }
@@ -216,6 +230,7 @@ provide a solid foundation for testing the new hook.
   - hook returns nil (allow)
   - hook returns error (reject with 403)
   - hook is called after token validation (not called for invalid tokens)
+  - hook receives the expected cached CRI stream request type
 - Coverage target: >90% for new code paths
 
 - `k8s.io/cri-streaming/pkg/streaming`: `<date>` - `<test coverage>`
@@ -224,22 +239,25 @@ provide a solid foundation for testing the new hook.
 
 Integration tests are not strictly necessary for this change since the hook is
 a simple callback that does not interact with other Kubernetes components.
-The unit tests and node e2e tests provide sufficient coverage.
+Unit tests in `k8s.io/cri-streaming/pkg/streaming` provide sufficient coverage
+for alpha.
 
 ##### e2e tests
 
-- Node e2e tests for exec/attach/port-forward with:
-  - Feature gate disabled (default behavior preserved)
-  - Feature gate enabled, hook allows the request
-  - Feature gate enabled, hook denies the request (expect 403)
+- No Kubernetes e2e tests are required for alpha because this change adds an
+  opt-in callback to the CRI streaming library and does not change kubelet,
+  Kubernetes API, or default cluster behavior.
+- If a CRI runtime integrates the hook during later stages, runtime-specific
+  integration or node e2e coverage should verify allow and deny paths for
+  exec/attach/port-forward.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature implemented behind `CRIStreamingAuthorization` feature gate
+- Hook implemented in `k8s.io/cri-streaming` with default nil behavior
 - Unit tests with >90% coverage on new code paths
-- Node e2e tests for hook allow/deny paths
+- Tests for nil, allow, deny, and invalid-token paths
 - At least one CRI runtime (containerd or cri-o) expresses interest
 
 #### Beta
@@ -259,16 +277,18 @@ The unit tests and node e2e tests provide sufficient coverage.
 
 - **Upgrade**: The `AuthorizeStream` field defaults to `nil`. Existing
   configurations without the field work without changes. No migration needed.
-- **Downgrade**: Removing the field from Config is backward-compatible since
-  Go ignores unknown struct fields during unmarshaling. The feature gate can
-  be disabled to revert to previous behavior.
+- **Downgrade**: Existing embedders that do not set `AuthorizeStream` can
+  downgrade without changes. Embedders that add source code references to the
+  new field must remove those references before building against an older
+  `k8s.io/cri-streaming` version, because Go struct literals do not tolerate
+  unknown fields.
 
 ### Version Skew Strategy
 
 This enhancement only affects the CRI streaming server within the same node.
 There is no cross-component coordination required:
 - The kubelet does not need to know whether the CRI shim uses the hook.
-- The CRI shim can enable the hook independently of the kubelet version.
+- The CRI shim can set the hook independently of the kubelet version.
 - No version skew concerns between control plane and nodes.
 
 ## Production Readiness Review Questionnaire
@@ -277,29 +297,33 @@ There is no cross-component coordination required:
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `CRIStreamingAuthorization`
-  - Components depending on the feature gate: kubelet
+- [ ] Feature gate
+- [x] Other
+  - CRI streaming embedders enable the feature by setting
+    `streaming.Config.AuthorizeStream` to a non-nil callback. Omitting the field
+    or setting it to nil preserves existing behavior.
 
 ###### Does enabling the feature change any default behavior?
 
 No. When `AuthorizeStream` is nil (the default), behavior is identical to
-the current implementation. The feature gate only enables the code path
-that checks for the hook's presence.
+the current implementation. Behavior only changes for embedders that opt in by
+setting a non-nil hook.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Setting the feature gate to `false` and restarting the kubelet disables
-the hook check. Existing streaming connections are not affected (they are
-already established).
+Yes. Removing the hook configuration, or setting it to nil, disables the
+additional authorization check after the CRI streaming server is restarted.
+Existing streaming connections are not affected because they are already
+established.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No side effects. The hook is stateless and evaluated per-request.
+No side effects from the CRI streaming library. The hook is evaluated
+per-request; any state is owned by the embedder's hook implementation.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. Unit tests will cover both enabled and disabled states.
+Yes. Unit tests will cover nil hook, allow, deny, and invalid-token states.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -328,7 +352,8 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- Check if the `CRIStreamingAuthorization` feature gate is enabled on the kubelet.
+- Check whether the CRI runtime or shim configured a non-nil
+  `AuthorizeStream` hook.
 - Check the `cri_streaming_authorization_requests_total` metric for non-zero values.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -411,18 +436,18 @@ etcd. If an implementer's hook calls the API server, that is their concern.
 
 - **Hook returns error for all requests**: All new streaming requests fail with 403.
   - Detection: High `cri_streaming_authorization_requests_total` with status=rejected.
-  - Mitigation: Disable the feature gate or fix the hook implementation.
+  - Mitigation: Remove or disable the hook, or fix the hook implementation.
   - Testing: Unit test for hook error path.
 - **Hook takes too long**: Stream setup latency increases.
   - Detection: High `cri_streaming_authorization_duration_seconds`.
-  - Mitigation: Implement a timeout in the hook or disable the feature gate.
+  - Mitigation: Implement a timeout in the hook or remove or disable the hook.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 1. Check `cri_streaming_authorization_duration_seconds` for elevated latency.
 2. Check `cri_streaming_authorization_requests_total` for high rejection rates.
 3. Review CRI runtime logs for hook errors.
-4. Disable the `CRIStreamingAuthorization` feature gate to restore default behavior.
+4. Remove or disable the `AuthorizeStream` hook to restore default behavior.
 
 ## Implementation History
 

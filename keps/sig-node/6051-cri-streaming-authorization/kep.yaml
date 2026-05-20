@@ -20,17 +20,12 @@ replaces:
 
 stage: alpha
 
-latest-milestone: "v1.34"
+latest-milestone: "v1.37"
 
 milestone:
-  alpha: "v1.34"
-  beta: "v1.36"
-  stable: "v1.38"
-
-feature-gates:
-  - name: CRIStreamingAuthorization
-    components:
-      - kubelet
+  alpha: "v1.37"
+  beta: "v1.39"
+  stable: "v1.41"
 disable-supported: true
 
 metrics:
