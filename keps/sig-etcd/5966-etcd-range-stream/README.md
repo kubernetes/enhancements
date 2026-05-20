@@ -272,7 +272,7 @@ e2e tests will be added to exercise the streaming behavior.
 ### Kubernetes API Server Integration
 
 RangeStream is gated behind a `EtcdRangeStream` feature gate in kube-apiserver
-(Beta in 1.37, default enabled).
+(Beta in 1.37).
 
 The primary integration point is the watch cache initialization path.
 When the feature gate is enabled, the watch cache `sync()` uses
@@ -291,7 +291,9 @@ limit. The `storage.Interface` is unchanged.
 
 #### Beta
 
-- Feature implemented behind the `EtcdRangeStream` feature gate, default on.
+- Feature implemented behind the `EtcdRangeStream` feature gate, default off
+  initially. May flip to default on within Beta if testing data and
+  API Machinery leads agree there is sufficient signal of stability.
 - Watch cache initialization routes through `RangeStream` with
   automatic `Unimplemented` fallback for older etcd.
 - Feature is covered with unit, integration, and e2e tests.
