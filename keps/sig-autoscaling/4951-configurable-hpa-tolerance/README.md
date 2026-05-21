@@ -68,6 +68,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade](#upgrade)
     - [Downgrade](#downgrade)
@@ -358,10 +359,8 @@ configurable tolerance is specified.
 
 The new [e2e autoscaling tests] covering this feature are:
 
-- [Test with large configurable tolerance](https://github.com/kubernetes/kubernetes/blob/07142400ecd02126602ffaa6f91712cd3f1e170c/test/e2e/autoscaling/horizontal_pod_autoscaling_behavior.go#L509): [SIG autoscaling](https://testgrid.k8s.io/sig-autoscaling-hpa#gci-gce-autoscaling-hpa-cpu-alpha-beta-pull&include-filter-by-regex=HPAConfigurableTolerance.*large%20configurable%20tolerance), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=HPAConfigurableTolerance.*large%20configurable%20tolerance)
-
-Before the graduation to beta, we will add an integration test verifying the autoscaling
-behavior when smaller and larger than default tolerances are set on an HPA.
+- [Test with large configurable tolerance](https://github.com/kubernetes/kubernetes/blob/07142400ecd02126602ffaa6f91712cd3f1e170c/test/e2e/autoscaling/horizontal_pod_autoscaling_behavior.go#L509): [SIG autoscaling](https://testgrid.k8s.io/sig-autoscaling-hpa-presubmits#gci-gce-autoscaling-hpa-cpu-alpha-beta-pull&include-filter-by-regex=HPAConfigurableTolerance.*large%20configurable%20tolerance), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=HPAConfigurableTolerance.*large%20configurable%20tolerance)
+- [Test with both larger and smaller than default tolerances](https://github.com/kubernetes/kubernetes/blob/96914184bc3fe6d3c0195b5828c07a821ca6e093/test/e2e/autoscaling/horizontal_pod_autoscaling_behavior.go#L549): [SIG autoscaling](https://testgrid.k8s.io/sig-autoscaling-hpa-presubmits#gci-gce-autoscaling-hpa-cpu-alpha-beta-pull&include-filter-by-regex=HPAConfigurableTolerance.*small.*tolerance), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=HPAConfigurableTolerance.*small.*tolerance)
 
 [e2e autoscaling tests]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling
 
@@ -438,6 +437,11 @@ in back-to-back releases.
 
 - All tests described in the [`e2e tests` section](#e2e-tests) are implemented
   and linked in this KEP.
+- We have monitored for negative user feedback and addressed relevant concerns.
+
+#### Stable
+
+- Observe real-world usage.
 - We have monitored for negative user feedback and addressed relevant concerns.
 
 ### Upgrade / Downgrade Strategy
@@ -978,6 +982,7 @@ Major milestones might include:
 2025-03-24: [Implementation PR](https://github.com/kubernetes/kubernetes/pull/130797) merged.
 2025-05-15: Kubernetes v1.33 released (includes this feature).
 2025-05-16: This KEP updated for beta graduation.
+2026-05-21: This KEP updated for stable graduation.
 
 ## Drawbacks
 
