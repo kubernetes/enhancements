@@ -1,0 +1,34 @@
+title: TLS Credentials in gRPC Probe
+kep-number: 4939
+authors:
+  - "@amritansh1502"
+  - "@ngopalak-redhat"
+owning-sig: sig-node
+participating-sigs:
+  - sig-network
+status: implementable
+creation-date: 2026-05-21
+reviewers:
+  - "@SergeyKanzhelev"
+  - "@aojea"
+approvers:
+  - "@mrunalp"
+see-also:
+  - "/keps/sig-node/2727-grpc-probe"
+replaces:
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+
+feature-gates:
+  - name: GRPCContainerProbeTLS
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
