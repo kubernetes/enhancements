@@ -156,15 +156,6 @@ is already running on a GPU, I want the scheduler to automatically exclude all
 MPS devices on that same GPU from consideration for new allocations, rather than
 allowing an allocation that will fail at device preparation time.
 
-#### Story 2
-
-As a hardware vendor publishing DRA drivers for an accelerator that supports
-multiple exclusive operating modes (for example, exclusive mode, software
-partitioning, and hardware partitioning), I want to declare the compatibility
-constraints directly in my ResourceSlice, so that the Kubernetes scheduler
-can enforce those constraints without requiring my driver to fail pod startup
-with cryptic error messages.
-
 ### Notes/Constraints/Caveats
 
 The compatibility relation is **symmetric**: if A can be allocated with B,
@@ -178,20 +169,19 @@ least one group (see Example 4).
 
 ### Risks and Mitigations
 
-**Scheduler performance impact**: Evaluating compatibility constraints during  
+**Scheduler performance impact**
+
+Evaluating compatibility constraints during  
 device selection adds work to each scheduling cycle that involves DRA devices.
 
-**Older schedulers ignoring new field**: A kube-scheduler that does not  
-understand `compatibilityGroups` will ignore this  
-field and may allocate incompatible devices. This degrades to the current  
-behavior (driver fails at preparation time). Mitigation: document the version  
-skew behavior clearly; drivers must still validate at preparation time even  
-when the scheduler enforces constraints.
+**Older schedulers ignoring devices with compatibilityGroups**
 
-**Incorrect driver declarations**: If a driver declares incorrect compatibility
-constraints, the scheduler may either reject valid allocations or permit invalid
-ones. Mitigation: the API is driver-authored and opt-in; drivers are responsible
-for correctness and documentation of their compatibility matrix.
+At alpha, if the `DRADeviceCompatibilityGroups` feature-gate is disabled, devices which present the `compatibilityGroups` field will be ignored by `kube-scheduler`.
+This is in order to allow enablement of the feature without user intervention (pod deletion) when graduating to beta. 
+
+**Drivers must be aware of the enablement status of the `DRADeviceCompatibilityGroups` flag**
+
+The feature flag can be enabled/disabled at runtime. This requires drivers that leverage this feature to identfy when it is disabled and update the ResourceSlices they manage to not leverage the feature.
 
 ## Design Details
 
@@ -223,68 +213,6 @@ types additionally lists a shared composite group (e.g., `t1t2`). A type that
 is compatible with no other type lists only `[T]`. The scheduler does not
 parse group names — this convention is purely for readability; any opaque
 strings that satisfy the symmetry requirement work.
-
-Example showing MIG and FOO partitions on the same physical GPU:
-
-```yaml
-apiVersion: resource.k8s.io/v1
-kind: ResourceSlice
-spec:
-  driver: gpu.example.com
-  pool:
-    name: node-1-pool
-    generation: 1
-    resourceSliceCount: 2
-  sharedCounters:
-    - name: gpu-1-cs
-      counters:
-        multiprocessors:
-          value: "152"
----
-apiVersion: resource.k8s.io/v1
-kind: ResourceSlice
-spec:
-  driver: gpu.example.com
-  pool:
-    name: node-1-pool
-    generation: 1
-    resourceSliceCount: 2
-  nodeName: node-1
-  devices:
-    - name: gpu-1-mig1
-      consumesCounters:
-        - counterSet: gpu-1-cs
-          compatibilityGroups:
-            - mig
-          counters:
-            multiprocessors:
-              value: "2"
-    - name: gpu-1-foo-part
-      consumesCounters:
-        - counterSet: gpu-1-cs
-          compatibilityGroups:
-            - foo
-            - foobar
-          counters:
-            multiprocessors:
-              value: "17"
-    - name: gpu-1-bar-part
-      consumesCounters:
-        - counterSet: gpu-1-cs
-          compatibilityGroups:
-            - bar
-            - foobar
-          counters:
-            multiprocessors:
-              value: "17"
-```
-
-- `gpu-1-mig1` (groups: `mig`) and `gpu-1-foo-part` (groups: `foo`, `foobar`)
-share no compatibility group, so they cannot be allocated at the same time on the same
-counter set.
-- `gpu-1-foo-part` (groups: `foo`, `foobar`) and `gpu-1-bar-part` (groups:
-`bar`, `foobar`) share the `foobar` group, so they can be allocated at the same time on the
-same counter set.
 
 ### Examples
 
@@ -639,8 +567,7 @@ The scheduler allocates `gpu-0-mig-1g-0` (group: `mig`) to pod-a. When
 evaluating `gpu-0-mps-0` (group: `mps`) for pod-b, it checks
 compatibility: both devices consume from `gpu-0-counters`, but they share no
 compatibility group (`mig` vs `mps`). The scheduler rejects the allocation and
-pod-b becomes Unschedulable with event: "claim violates device compatibility
-constraints". No cryptic preparation failure, no resource thrashing.
+pod-b becomes Unschedulable with generic event: "could not allocate all claims". No cryptic preparation failure, no resource thrashing.
 
 Two MIG devices (both group: `mig`) or two MPS devices (both group: `mps`) can
 still be allocated at the same time, since they share a group. Each device lists only its
