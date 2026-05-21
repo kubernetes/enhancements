@@ -86,19 +86,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Glossary
 
-Hotplug: Dynamically add compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (online/offline resources) or via hardware (physical additions while the system is running) which is purely additive to the existing capacity.
-
-Hotunplug: Dynamically remove compute resources (CPU, Memory, Swap Capacity and HugePages) to the node, either via software (make resources go offline) or via hardware (physical removal while the system is running)
-
-Node Compute Resource: CPU, Memory, Swap Capacity and HugePages
-
+* **In-Place Resource Resize:** Dynamically increasing or decreasing compute resources (CPU, Memory, Swap Capacity, and HugePages) on a node without requiring a node reboot or kubelet restart.
+* **Node Compute Resource:** CPU, Memory, Swap Capacity, and HugePages.
 ## Summary
 
-The proposal seeks to facilitate compute resource hot-plug and unplug capabilities on a node to streamline cluster capacity updates compared to adding/removing nodes from the existing cluster.
-The revised node configurations will be automatically propagated at both the node and cluster levels.
+This proposal facilitates dynamic compute resource resizing (increases and decreases in capacity) on a node to streamline cluster capacity updates, offering a seamless alternative to adding or removing nodes from an existing cluster. The revised node configurations automatically propagate at both the node and cluster levels.
 
-Furthermore, this proposal intends to enhance the initialization and reinitialization processes of resource managers, including the CPU manager and memory manager in response to alterations in a node's CPU and memory configurations
-aimed at optimizing resource management, improve scalability, and minimize disruptions to cluster operations.
+Furthermore, this proposal enhances the initialization and reinitialization processes of resource managers (including the CPU manager and memory manager) in response to alterations in a node's CPU and memory configurations. This optimizes resource management, improves scalability, and minimizes disruptions to cluster operations.
 
 ## Motivation
 Currently, the node's resource configurations are recorded solely during the kubelet bootstrap phase and is subsequently cached, assuming the node's compute capacity remains unchanged throughout the cluster's lifecycle.
