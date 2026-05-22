@@ -19,25 +19,35 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Story 1: Specialized Hardware](#story-1-specialized-hardware)
-    - [Story 2: Optimize System Performance](#story-2-optimize-system-performance)
-    - [Story 3: Reduce Operational Complexity](#story-3-reduce-operational-complexity)
-    - [Story 4: Increase Compute Capacity on-the-fly](#story-4-increase-compute-capacity-on-the-fly)
-    - [Story 5: Avoid Workload Disruption](#story-5-avoid-workload-disruption)
+    - [Story 1: Maximizing Specialized Hardware](#story-1-maximizing-specialized-hardware)
+    - [Story 2: Vertical Scaling for Performance](#story-2-vertical-scaling-for-performance)
+    - [Story 3: Reducing Operational Complexity (Scale-Up vs. Scale-Out)](#story-3-reducing-operational-complexity-scale-up-vs-scale-out)
+    - [Story 4: Instant Capacity Utilization](#story-4-instant-capacity-utilization)
+    - [Story 5: Zero-Disruption Operations](#story-5-zero-disruption-operations)
+    - [Story 6: Safe Resource Reclaim (Downscaling)](#story-6-safe-resource-reclaim-downscaling)
+    - [Story 7: Dynamic Storage Expansion](#story-7-dynamic-storage-expansion)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [OOMScoreAdjust Drift for Existing Pods](#oomscoreadjust-drift-for-existing-pods)
+    - [Container Swap Limit Re-calculation Overhead](#container-swap-limit-re-calculation-overhead)
+    - [Kubelet Sub-Manager Synchronization Failure](#kubelet-sub-manager-synchronization-failure)
+    - [API Status Clamping](#api-status-clamping)
+    - [Application-Level Hardware Assumptions](#application-level-hardware-assumptions)
+    - [Coordination with External NRI/Runtime Plugins](#coordination-with-external-nriruntime-plugins)
 - [Design Details](#design-details)
-  - [Handling node compute capacity reconfiguration](#handling-node-compute-capacity-reconfiguration)
-    - [Flow Control for updating swap limit for containers](#flow-control-for-updating-swap-limit-for-containers)
+  - [Architecture Flow](#architecture-flow)
+    - [Phase 1:Host-Level Enforcement (ContainerManager)](#phase-1host-level-enforcement-containermanager)
+    - [Phase 2: Cluster &amp; Runtime Enforcement (Kubelet)](#phase-2-cluster--runtime-enforcement-kubelet)
+    - [Flow Control: Container Swap Limit Recalculation](#flow-control-container-swap-limit-recalculation)
+    - [Flow Control: Hardware Degradation and Capacity Starvation](#flow-control-hardware-degradation-and-capacity-starvation)
     - [Compatibility with Cluster Autoscaler](#compatibility-with-cluster-autoscaler)
-      - [API Changes](#api-changes)
-  - [Handling Resource Reconfiguration](#handling-resource-reconfiguration)
-    - [Flow Control](#flow-control)
+    - [Proposed Core Code Changes](#proposed-core-code-changes)
+  - [Observability and Metrics](#observability-and-metrics)
   - [Test Plan](#test-plan)
       - [Unit tests](#unit-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.35)](#phase-1-alpha-target-135)
+    - [Phase 1: Alpha (target 1.37)](#phase-1-alpha-target-137)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -90,361 +100,346 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 * **Node Compute Resource:** CPU, Memory, Swap Capacity, and HugePages.
 ## Summary
 
-This proposal facilitates dynamic compute resource resizing (increases and decreases in capacity) on a node to streamline cluster capacity updates, offering a seamless alternative to adding or removing nodes from an existing cluster. The revised node configurations automatically propagate at both the node and cluster levels.
+This proposal facilitates dynamic native resource resizing (increases and decreases in capacity) on a node to streamline cluster capacity updates, offering a seamless alternative to adding or removing nodes from an existing cluster. The revised node configurations automatically propagate at both the node and cluster levels.
 
-Furthermore, this proposal enhances the initialization and reinitialization processes of resource managers (including the CPU manager and memory manager) in response to alterations in a node's CPU and memory configurations. This optimizes resource management, improves scalability, and minimizes disruptions to cluster operations.
+This KEP introduces the ability for the Kubelet to dynamically monitor and reconcile changes to the node's native hardware capacity. When a change is detected via cAdvisor, the Kubelet will seamlessly update its internal sub-managers, top-level kubepods cgroups, eviction thresholds, container swap limits, and the Node API object's Capacity and Allocatable fields—all without requiring a Kubelet restart.
 
 ## Motivation
-Currently, the node's resource configurations are recorded solely during the kubelet bootstrap phase and is subsequently cached, assuming the node's compute capacity remains unchanged throughout the cluster's lifecycle.
-In a conventional Kubernetes environment, cluster resources might need modifications over time due to inaccurate resource allocation or escalating/subsiding workloads, requiring intervention to add or remove compute resources within the cluster.
 
-Contemporarily, kernel capabilities enable the dynamic addition of CPUs and memory to a node (for example: https://docs.kernel.org/core-api/cpu_hotplug.html and https://docs.kernel.org/core-api/memory-hotplug.html).
-This can be across different architecture and compute environments like Cloud, Bare-metal or VM. During this exercise it can lead to Kubernetes being unaware of the node's altered compute capacities during a live-resize,
-causing the node to retain outdated information and leading to inconsistencies or an imbalance in the cluster, thus affecting the optimal scheduling and deployment of workloads. As a side effect, it is also possible for the workloads
-to be force migrated to a different node, causing a temporary spike in the CPU/Memory utilisation which is undesirable.
+Currently, a node's resource configurations are recorded solely during the Kubelet bootstrap phase and subsequently cached, operating under the assumption that the node's native capacity remains immutable throughout its lifecycle. In a conventional Kubernetes environment, cluster resources frequently require modifications over time due to inaccurate initial provisioning or escalating/subsiding workloads, traditionally forcing operators to add or remove entire nodes from the cluster.
 
-With the current state of implementation in the Kubernetes realm, the available workarounds to allow the cluster to be aware of the changes in the cluster's capacity is by 
-restarting the node or at-least the kubelet, which does not have a certain set of best-practices to follow.
+Contemporarily, modern hypervisors, cloud providers, and kernel capabilities enable the dynamic hot-plugging and hot-unplugging of native resources such as CPU, Memory (e.g., [CPU Hotplug](https://docs.kernel.org/core-api/cpu_hotplug.html), [Memory Hotplug](https://docs.kernel.org/core-api/memory-hotplug.html)), and Ephemeral Storage block devices.
 
-One of the major drawback of current system is around timing and coupling the kubelet restart to detect the available resources. For example, in cloud environments, if an infrastructure admin decides to scale up/down the compute capacity of the nodes, 
-it may hard to time the completion of resize operation based on the added capacity and align the same with the restart of kubelet.
-Also, there may exist few APIs provided by the cloud SDK to perform resize operation and coupling with a kubelet restart is not seamless.
+Because Kubernetes is currently unaware of these altered capacities during a live-resize, it retains outdated information, leading to two severe failure modes:
 
-However, this approach does carry a few drawbacks such as:
- - Introducing a downtime for the existing/to-be-scheduled workloads on the cluster until the node is available.
- - For bare-metal clusters it involves significant amount time for the nodes to be available.
- - Necessity to reconfigure the underlying services post node-reboot.
- - Managing the associated nuances that a kubelet restart or node reboot carries such as
-   - https://github.com/kubernetes/kubernetes/issues/109595
-   - https://github.com/kubernetes/kubernetes/issues/119645
-   - https://github.com/kubernetes/kubernetes/issues/125579
-   - https://github.com/kubernetes/kubernetes/issues/127793
+- Cluster-Level Starvation (Upscaling): If capacity is added, the Kubernetes Scheduler and Cluster Autoscaler remain blind to it, rendering the new expensive hardware useless for pending workloads.
 
-Therefore, it is necessary to handle capacity updates gracefully across the cluster, rather than resetting the cluster components to achieve the same outcome.
+- Node-Level Instability (Downscaling): If capacity is removed, the Kubelet's stale top-level cgroups, container swap limits, and Eviction Manager thresholds do not adjust. Because the Kubelet assumes the resources still exist, it fails to evict pods defensively, causing the host's Linux kernel to invoke the OOM killer or exhaust the disk, violently terminating processes and potentially crashing the node.
 
-Given that the capability to live-resize a node exists in the Linux and Windows kernels, enabling the kubelet to be aware of the underlying changes in the node's compute capacity will mitigate any actions that are required to be made
-by the Kubernetes administrator.
+With the current state of implementation in the Kubernetes realm, the only available workaround to synchronize these capacity changes is to restart the node or at least the Kubelet. This is highly problematic because coupling a Kubelet restart to an infrastructure resize operation (like a Cloud SDK call) is rarely seamless and lacks established best practices.
 
-Node resource reconfiguration proves advantageous in scenarios such as:
-- Efficiently managing resource demands with a limited number of nodes by increasing the capacity of existing nodes instead of provisioning new ones, which brings less overhead on the control-plane.
-- The procedure of establishing new nodes is considerably more time-intensive than expanding the capabilities of current nodes.
-- Improved inter-pod network latencies as the inter-node traffic can be reduced if more pods can be hosted on a single node.
-- Mitigate a few of the existing limitations/issues that are associated with a node/kubelet restart.
+Furthermore, relying on a Kubelet restart or node reboot carries significant drawbacks:
 
-Implementing this KEP will empower nodes to recognize and adapt to changes in their compute configurations and allow facilitating the efficient and effective deployment of pod workloads to nodes capable of meeting the required compute demands.
+- Introducing downtime for existing or to-be-scheduled workloads until the node is fully available again.
+
+- For bare-metal clusters, rebooting involves a significant amount of time before nodes return to a Ready state.
+
+- The necessity to reconfigure underlying services post-reboot.
+
+- Triggering a myriad of known edge-case nuances and bugs associated with Kubelet restarts, such as:
+
+    - https://github.com/kubernetes/kubernetes/issues/109595
+
+    - https://github.com/kubernetes/kubernetes/issues/119645
+
+    - https://github.com/kubernetes/kubernetes/issues/125579
+
+    - https://github.com/kubernetes/kubernetes/issues/127793
+
+Therefore, it is necessary to handle capacity updates gracefully across the cluster organically, rather than resetting core cluster components to achieve the same outcome. Enabling the Kubelet to dynamically detect and adapt to underlying capacity changes mitigates manual administrative toil and unlocks several distinct advantages:
+
+- Control Plane Efficiency: Managing resource demands by scaling existing nodes in-place brings significantly less overhead to the control plane compared to provisioning and joining entirely new nodes.
+
+- Speed to Delivery: Expanding the capabilities of current nodes is considerably more time-efficient than the procedure of establishing new virtual machines.
+
+- Network Optimization: Improved inter-pod network latencies, as inter-node traffic is reduced when more pods can be hosted locally on a single scaled-up node.
+
+- Stability: Avoids the aforementioned historical bugs and disruption risks associated with forced Kubelet restarts.
+
+Implementing this KEP will empower nodes to recognize and adapt to changes in their native configurations instantly, facilitating the safe, efficient, and uninterrupted deployment of workloads.
 
 ### Goals
 
-* Achieve seamless node capacity resized through dynamic node resource reconfiguration.
-* Enable the re-initialization of resource managers (CPU manager, memory manager) and kube runtime manager without reset to accommodate alterations in the node's resource allocation.
-* Recalculating and updating swap memory limit for existing pods.
+* API Synchronization: Update Node API Capacity and Allocatable fields dynamically without requiring a Kubelet restart or node drain.
+
+* Component Sync: Re-initialize internal Kubelet managers (CPU, Memory, Eviction) to safely align with the altered hardware capacity.
+
+* Cgroup Enforcement: Update the host's top-level /kubepods and QoS cgroup boundaries to physical enforce the resized limits.
+
+* Container Swap: Recalculate and update swap memory limits for actively running containers via the CRI.
 
 ### Non-Goals
 
-* Dynamically adjust system reserved and kube reserved values.
-* Update the autoscaler to utilize resource hotplug.
-* Re-balance workloads across the nodes.
-* Update runtime/NRI plugins with host resource changes.
+* Reserved Adjustments: Dynamically changing --system-reserved and --kube-reserved values (these remain static from bootstrap).
+
+* Infrastructure Orchestration: Executing the physical hardware hot-plug or updating the autoscaler to trigger it.
+
+* Workload Re-balancing: Automatically migrating or re-balancing existing workloads across the cluster to utilize the new space.
+
+* NRI Plugins: Propagating host resource changes to external Node Resource Interface (NRI) plugins.
+
+* OOM Score Updates: Dynamically rewriting oom_score_adj for running processes, due to severe latency and race condition risks.
+
+* Pod Resizing: Dynamically resizing individual Pod resource requests and limits (covered independently by KEP-1287).
+
 
 ## Proposal
 
-This KEP strives to enable node resource reconfigurable by making the kubelet to watch and retrieve machine resource information from cAdvisor's cache as and when it changes as it's already updated periodically.
-The kubelet will fetch this information, subsequently entrusting the node status updater to disseminate these updates at the node level across the cluster.
-Moreover, this KEP aims to refine the initialization and reinitialization processes of resource managers, including the memory manager and CPU manager, to ensure their adaptability to changes in node configurations.
-With this proposal it is also necessary to recalculate and update swap limit for the pods that had been existing before resize which carries a small overhead.
+This KEP introduces an event-driven reconciliation architecture to handle native resource reconfiguration safely and dynamically. Instead of relying on a static boot-time cache or periodic polling, the Kubelet's ContainerManager is updated to react to capacity change events from the underlying system hardware (via cAdvisor).
+
+When a hardware capacity change event is triggered, the Kubelet executes a two-phase, non-blocking reconciliation pipeline:
+
+ - Host-Level Reconciliation: The ContainerManager immediately intercepts the event and updates its internal capacity state. It dynamically re-synchronizes its native sub-managers (CPU Manager, Memory Manager) and rewrites the top-level /kubepods and Quality of Service (QoS) cgroups to physically enforce the new host boundaries. Once the host filesystem is secure, it emits an internal Go channel signal.
+
+ - Cluster & Runtime Reconciliation: A dedicated listener in the main Kubelet loop catches this signal and executes the final integration steps:
+
+   - Cache Refresh: Refreshes the Kubelet's internal hardware cache to prevent the node status updater from incorrectly clamping the new Allocatable values down to stale boot-time metrics.
+
+   - Eviction Sync: Adjusts absolute thresholds in the Eviction Manager to protect the node from disk or memory exhaustion during a hardware downscale.
+
+   - Runtime Update: Recalculates proportional swap limits for actively running pods and safely propagates them down to the Container Runtime Interface (CRI).
+
+   - API Dissemination: Triggers an immediate node status sync, publishing the newly updated Capacity and Allocatable values to the Kubernetes API server so the control plane can utilize them.
 
 ### User Stories
 
-#### Story 1: Specialized Hardware
+#### Story 1: Maximizing Specialized Hardware
 
-As a Kubernetes user, I want to allocate more resources (CPU, memory) to a node with existing specialized hardware or CPU Capabilities (for example:https://www.kernel.org/doc/html/v5.8/arm64/elf_hwcaps.html)
-so that additional workloads can leverage the hardware to be efficiently scheduled and run without manual intervention.
+As a Cluster Administrator, I want to seamlessly add CPU and memory to an existing node equipped with specialized, scarce hardware (e.g., custom ASICs, specific CPU architectures), so that I can maximize the utilization of that specific hardware without draining the node or disrupting the workloads already utilizing it.
 
-#### Story 2: Optimize System Performance
+#### Story 2: Vertical Scaling for Performance
 
-As a Performance Analyst, I want the kernel to optimize system performance by making better use of local resources when a node is resized, so that my applications run faster with fewer disruptions. This is achieved when there are
-Fewer Context Switches: With more CPU cores and memory on a resized node, the kernel has a better chance to spread workloads out efficiently. This can reduce contention between processes, leading to fewer context switches (which can be costly in terms of CPU time) 
-and less process interference and also reduces latency.
-Better Memory Allocation: If the kernel has more memory available, it can allocate larger contiguous memory blocks, which can lead to better memory locality (i.e., keeping related data closer in physical memory),improved paging and swap limits thus 
-reducing latency for applications that rely on large datasets, in the case of a database applications.
+As a Performance Engineer, I want to dynamically increase the compute capacity of a node running a monolithic database or data-heavy application, so that the application can immediately benefit from larger memory caches and reduced context-switching without suffering the downtime of a pod migration.
 
-#### Story 3: Reduce Operational Complexity
+#### Story 3: Reducing Operational Complexity (Scale-Up vs. Scale-Out)
 
-As a Site Reliability Engineer (SRE), I want to reduce the operational complexity of managing multiple worker nodes, so that I can focus on fewer resources and simplify troubleshooting and monitoring.
+As a Site Reliability Engineer (SRE), I want the option to vertically scale existing nodes instead of always horizontally provisioning new VMs, so that I can manage fewer, larger nodes to simplify network topology, monitoring overhead, and overall cluster complexity.
 
-#### Story 4: Increase Compute Capacity on-the-fly
+#### Story 4: Instant Capacity Utilization
 
-As a Cluster administrator, I want to resize a Kubernetes node dynamically, so that I can quickly reconfigure the available capacity of the nodes without waiting for new nodes to join the cluster.
+As a Cluster Administrator, I want the Kubernetes control plane to instantly recognize when a node's capacity is expanded on-the-fly via my cloud provider, so that pending workloads can be scheduled onto that new space immediately without the latency of waiting for a new VM to boot and join the cluster.
 
-#### Story 5: Avoid Workload Disruption
+#### Story 5: Zero-Disruption Operations
 
-As a Cluster administrator, I expect my existing workloads to function without having to undergo a disruption which is induced during capacity addition followed by a node/kubelet restart to
-detect the change in compute capacity, which can bring in further complications.
+As an Application Owner, I expect my running workloads to experience zero downtime or disruption when the infrastructure administrator adds capacity to the underlying node, entirely avoiding the historical risks and bugs associated with forced Kubelet restarts or node reboots.
+
+#### Story 6: Safe Resource Reclaim (Downscaling)
+
+As a Cluster Administrator, I want to dynamically reclaim (hot-unplug) underutilized memory or CPU from a node without restarting the Kubelet, with the confidence that the Kubelet will automatically adjust its cgroups and eviction thresholds to protect the node from kernel panics or Out-Of-Memory (OOM) crashes.
+
+#### Story 7: Dynamic Storage Expansion
+
+As a Storage Administrator, I want to dynamically expand the root block volume of a worker node on the fly, so that the Kubelet instantly recognizes the increased Ephemeral Storage capacity and allows pods to utilize the new space without triggering false disk-pressure evictions.
+
 
 ### Notes/Constraints/Caveats (Optional)
 
 ### Risks and Mitigations
 
-- Change in Swap limit:
-    - The formula to calculate the swap limit is `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
-    - With change in nodeTotalMemory and totalPodsSwapAvailable post compute resize, The existing swap limit may not be inline with the
-      actual swap limit for existing pods.
-        - This can be mitigated by recalculating the swap limit for the existing pods. However, there can be an associated overhead for
-          recalculating the scores.
+1. #### OOMScoreAdjust Drift for Existing Pods
 
-- Change in OOMScoreAdjust value:
-    - The formula to calculate OOMScoreAdjust is `1000 - (1000*containerMemReq)/memoryCapacity`
-    - With change in memoryCapacity post compute resize, The existing OOMScoreAdjust may not be inline with the
-      actual OOMScoreAdjust for existing pods.
-    - It's not recommended to update the OOMScoreAdjust of a running container as OOMScoreAdjust value is set for init process(pid 1) which is 
-      responsible for running all other container's processes.
-    - When we update OOMScoreAdjust for a running container, it is set for container init only, and possibly processes which will be started later and
-      running won't get the OOMScoreAdjust new value.
-        - This can be mitigated by updating the OOMScoreAdj formula to not consider current memory value, hence the new OOMScoreAdj formula looks like this
-            `min(0, 1000 - (1000*containerMemoryRequest)/initialMemoryCapacity)`
+    **Risk**: The Kubelet calculates a container's `oom_score_adj` upon creation using the formula: `1000 - (1000 * containerMemoryRequest) / nodeMemoryCapacity`. 
+If a node's memory capacity changes, the OOM scores of existing Burstable pods will mathematically drift compared to newly scheduled Burstable pods, potentially skewing the Linux OOM killer's tie-breaker logic.
 
-- Post up-scale any failure in re-sync of Resource managers may be lead to incorrect or rejected allocation, which can lead to underperformed or rejected workload.
-  - To mitigate the risks adequate tests should be added to avoid the scenarios where failure to re-sync resource managers can occur.
+    **Mitigation**: We explicitly accept this minor drift. Updating `oom_score_adj` for running containers requires identifying and rewriting the `/proc/<PID>/oom_score_adj` file for every single running thread inside the container. 
+This introduces severe latency, high CPU overhead, and dangerous race conditions. The overarching QoS hierarchy (Guaranteed pods remain invincible, BestEffort pods remain first-to-die) is strictly preserved, making the risk of a slightly skewed Burstable tie-breaker acceptable compared to the danger of rewriting thousands of running PIDs.
 
-- Lack of coordination about change in resource availability across kubelet/runtime/NRI plugins.
-  - The runtime/NRI plugins should be updated to react to change in resource information on the node.
+2. #### Container Swap Limit Re-calculation Overhead
 
-- Kubelet missing on processing compute resize instance(s)
-  - Kubelet observes the underlying node for any resource reconfiguration events as and when generated, 
-    this ensures that the capacity is updated in set intervals and can technically not miss to update the actual capacity obtained from cAdvisor.
+    **Risk**: The proportional swap limit for a container relies on the node's total memory capacity. Upon a resize, ignoring this math leads to stranded swap space (during upscaling) or immediate host kernel panics (during downscaling). However, recalculating and applying this to all active pods introduces CRI overhead.
 
+    **Mitigation**: The Kubelet implements a highly targeted CRI method (ResizeContainersOnNodeCapacityChange). The Kubelet safely iterates over the active pod cache in memory and only pushes updates to the CRI for containers currently in a Running state. Furthermore, if the node operates with Swap disabled, this entire loop short-circuits instantly, resulting in zero overhead.
 
-- Workloads that are dependent on the initial node configuration, such as:
-  - Workloads that spawns per-CPU processes (threads, workpools, etc.)
-  - Workloads that depend on the CPU-Memory relationships (e.g Processes that depend on NUMA/NUMA alignment.)
-  - Dependency of external libraries/device drivers to support resource reconfiguration as a supported feature.
+3. #### Kubelet Sub-Manager Synchronization Failure
+    
+    **Risk**: During an upscale, if the internal Kubelet sub-managers (CPU Manager, Memory Manager) fail to synchronize the new capacity, the Kubelet might reject new pod allocations, leading to underutilized hardware and scheduling deadlocks.
+    
+    **Mitigation**: The reconciliation loop is built to be self-healing. If a sub-manager fails to sync, it emits an error but does not crash the Kubelet. The system emits a Prometheus metric (kubelet_node_resize_errors_total) to immediately alert cluster operators. Furthermore, because cAdvisor continues to report the new capacity, the ContainerManager will re-attempt the reconciliation on the next evaluation cycle.
+
+4. #### API Status Clamping
+
+    **Risk**: The Kubelet's node status updater relies on a boot-time MachineInfo cache. If the ContainerManager updates its internal Allocatable limits but fails to update this global cache, the status updater will aggressively clamp the new Allocatable value down to the stale boot-time Capacity, hiding the new hardware from the control plane forever.
+    
+    **Mitigation**: The event-driven signal explicitly forces a refresh of kl.setCachedMachineInfo() before calling syncNodeStatus(). This ensures the status updater evaluates the new limits against the live physical reality, bypassing the clamping safeguard safely.
+
+5. #### Application-Level Hardware Assumptions
+
+    **Risk**: Workloads often read /proc/cpuinfo or /proc/meminfo exactly once during their startup routine. If the node is vertically scaled, applications that spawn fixed per-CPU thread pools or rely on strict NUMA boundary alignments will not organically scale to use the new resources.
+    
+    **Mitigation**: This is an accepted limitation and is treated as an application-level responsibility. Applications must be written to dynamically poll their limits (e.g., listening to cgroup file changes) or be manually restarted by their controlling Deployment to read the new hardware layout. The Kubelet's responsibility is solely to make the hardware available at the cgroup boundary.
+
+6. #### Coordination with External NRI/Runtime Plugins
+
+   **Risk**: External Node Resource Interface (NRI) plugins or custom runtime wrappers may cache node capacity independently of the Kubelet, leading to split-brain resource tracking after a resize event.
+   
+   **Mitigation**: Updating external plugins is explicitly listed as a Non-Goal. Plugin maintainers will be responsible for subscribing to the Kubelet's Node API updates or utilizing future NRI specification enhancements to react to host-level capacity changes.
+
 
 ## Design Details
 
-The diagram below shows the interaction between kubelet, node and cAdvisor.
+To handle hardware capacity safely, the Kubelet splits responsibilities into two distinct layers:
+
+- **The ContainerManager**: Enforces physical boundaries directly on the Linux host (e.g., cgroups).
+
+- **The Main Kubelet Loop**: Manages cluster-level operations, including API updates, Pod Eviction, and the Container Runtime (CRI).
+
+This KEP replaces the static boot-time hardware evaluation with an event-driven reconciliation pipeline.
+
+### Architecture Flow
+
+The diagram below illustrates the interaction between cAdvisor, the Container Manager, the Host filesystem, and the API Server during a resize event.
 
 ```mermaid
 sequenceDiagram
-    participant node as Node
-    participant kubelet as Kubelet
-    participant cache as cAdvisor-cache
-    participant machine as Machine-info
+    participant cAdvisor as cAdvisor Cache
+    participant cm as ContainerManager
+    participant host as Linux Host (cgroups)
+    participant kubelet as Main Kubelet Loop
+    participant cri as CRI (Container Runtime)
+    participant api as API Server
 
-    kubelet->>cache: fetch
-    cache->>machine: fetch
-    machine->>cache: update
-    cache->>kubelet: update
-
-    alt On Resource Plug
-        kubelet->>node: Recalculate Swap, re-init managers, & update capacity
-        
-    else On Resource Unplug
-        kubelet->>node: Adjust OOMScore/Swap, re-init managers, & rerun admission
-    end
+    cAdvisor->>cm: Polled MachineInfo (Drift Detected)
+    cm->>cm: Sync CPU/Memory Sub-managers
+    cm->>host: Enforce Node Allocatable & QoS Cgroups
+    cm->>kubelet: Non-blocking Signal (nodeCapacityUpdateCh)
+    kubelet->>kubelet: Refresh internal MachineInfo cache
+    kubelet->>kubelet: Synchronize Eviction Thresholds
+    kubelet->>cri: ResizeContainersOnNodeCapacityChange (Swap)
+    kubelet->>api: Patch Node.Status (Capacity & Allocatable)
 ```
 
-The interaction sequence is as follows:
-1. Kubelet will fetch machine resource information from cAdvisor's cache, Which is configurable a flag in cAdvisor `update_machine_info_interval`.
-2. If the machine resource is increased or decreased:
-    * Recalculate, update Swap limit of all the running containers.
-    * Re-initialize resource managers.
-    * Update node with new updated capacity - when the resources have increased and
-    * Rerun pod admission controller - when the resources have decreased.
+The reconciliation sequence executes in two distinct phases to guarantee host stability before the control plane is notified:
 
-With increase in cluster resources the following components will be updated:
-1. Update in Swap Memory limit:
-    * Currently, the swap memory limit is calculated by
-      `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
-    * Reconfiguration of nodeTotalMemory or totalPodsSwapAvailable will result in updated swap memory limit for pods deployed post resize and also recalculate the same for existing pods.
+#### Phase 1:Host-Level Enforcement (ContainerManager)
 
-2. Resource managers are re-initialised.
+* The ContainerManager periodically checks cAdvisor's machine info.
 
-3. Update Node capacity.
+* If a capacity drift is detected between the physical hardware and the internal cm.capacity cache, the ContainerManager locks its state and updates the internal cache.
 
-4. Scheduler:
-    * Scheduler keeps trying to schedule any pending pods.
-    * The scheduler `watches` the updates to available capacity of the node and schedule pods accordingly. 
-   The scheduler is already doing this today, and this KEP does not require any changes in the scheduler implementation.
+* Sub-managers (CPU Manager, Memory Manager) are re-initialized with the new capacity via a new ResourceResizer interface.
+
+* Top-level host boundaries (/kubepods cgroup) and QoS cgroups are immediately rewritten to physically enforce the new limits on the Linux kernel.
+
+* A signal is emitted via nodeCapacityUpdateCh.
 
 
-### Handling node compute capacity reconfiguration
+#### Phase 2: Cluster & Runtime Enforcement (Kubelet)
 
-Once the capacity of the node is altered, the following are the sequence of events that occur in the kubelet. If any errors are 
-observed in any of the steps, operation is retried from step 1 along with a `FailedNodeResize` event and condition under the node object.
-1. Resizing existing containers:
-    a. With changes in the memory capacity of the node, the kubelet proceeds to update fields that are directly related to
-      the available memory on the host. This would lead to recalculation of swap_limits.
-    b. This is achieved by invoking the CRI API - UpdateContainerResources.
+* A dedicated Goroutine in the main Kubelet loop catches the capacity update signal.
 
-2. Reinitialise Resource Manager:
-     a. Resource managers such as CPU,Memory are updated with the latest available capacities on the host. This posts the latest
-        available capacities under the node.
-     b. This is achieved by calling ResyncComponents() of ContainerManager interface to re-sync the resource managers.
+* The Kubelet's global MachineInfo cache is refreshed to prevent the Status Manager from clamping the new Allocatable values down to the stale boot-time baseline.
 
-3. Updating the node allocatable resources:
-     a. As the scheduler keeps a tab on the available resources of the node, post updating the available capacities,
-        the scheduler proceeds to schedule any pending pods.
+* Eviction Synchronization: The Eviction Manager's absolute memory and disk thresholds are recalculated. This is critical during a hot-unplug to ensure the Kubelet evicts pods before the host kernel invokes an Out-Of-Memory (OOM) panic.
 
+* CRI Swap Update: Proportional Swap limits are recalculated for all active pods and pushed to the CRI.
 
-#### Flow Control for updating swap limit for containers
+* The Node API object is patched, alerting the Kubernetes Scheduler to the new capacity.
 
-Formula to calculate Swap Limit: `(<containerMemoryRequest>/<nodeTotalMemory>)*<totalPodsSwapAvailable>`
+#### Flow Control: Container Swap Limit Recalculation
+
+If a node is configured with Swap, a container's swap limit is dynamically proportional to the total node memory. Failing to update this during a resize leads to stranded resources or immediate kernel panics.
+
+**Formula**: `(<containerMemoryRequest> / <nodeTotalMemory>) * <totalPodsSwapAvailable>`
 ```
-T=0: Node Resources:
-        - Memory: 6G
-        - Swap: 4G
-     Pod:
-        - container1
-            - MemoryRequest: 2G
-            - State: Running
-     Runtime:
-        - <cgroup_path>/memory.swap.max: 1.33G
-        
-T=1: Resize Node to Hotplug Memory:
-        - Memory: 8G
-        - Swap: 4G
-     Pod:
-        - container1
-            - MemoryRequest: 2G
-            - State: Running
-     Runtime:
-        - <cgroup_path>/memory.swap.max: 1G
+T=0: Initial Node Resources
+- Node Memory: 6G
+- Node Swap: 4G
+Pod (Running):
+- MemoryRequest: 2G
+Runtime Cgroup (<cgroup_path>/memory.swap.max): 1.33G
+
+T=1: Hot-plug Memory (Upscale)
+- Node Memory: 8G  (+2G)
+- Node Swap: 4G
+Pod (Running):
+- MemoryRequest: 2G
+Runtime Cgroup (<cgroup_path>/memory.swap.max): 1.0G (Recalculated via CRI)
 ```
+
+#### Flow Control: Hardware Degradation and Capacity Starvation
+
+During a hot-unplug (downscale) event, the node's physical capacity may drop below the total resources currently requested by active workloads. Because the Kubelet can no longer fulfill the strict scheduling contract, it must intervene to prevent system lockups or kernel panics.
+
+* **Memory Starvation:** If the newly reduced node memory capacity falls below the aggregate memory requests or active working set of running pods, the Eviction Manager will trigger standard memory-pressure evictions.
+* **CPU Starvation (Guaranteed QoS):** If the node's CPU core count drops below the threshold required to fulfill the exclusive core allocations of `Guaranteed` pods (managed by the `static` CPU Manager policy), the Kubelet cannot safely throttle the workload without violating the SLA.
+
+In these starvation scenarios, the Kubelet's eviction manager will gracefully terminate the affected pods with a `Failed` status (Reason: `NodeCapacityExceeded`). This explicitly forces the cluster-wide controllers (e.g., Deployments, StatefulSets) to immediately reschedule the workload onto a capable, healthy node.
 
 #### Compatibility with Cluster Autoscaler
 
-The Cluster Autoscaler (CA) presently anticipates uniform allocatable values among nodes within the same NodeGroup, using existing Nodes as templates for 
-newly provisioned Nodes from the same NodeGroup. However, with the introduction of In-Place Node Resource Resize, this assumption may no longer hold true.
-If not appropriately addressed, this could cause the Cluster Autoscaler to randomly select a Node from the group and assume identical allocatable values for all upcoming Nodes. 
-This could lead to suboptimal decisions, such as repeatedly attempting to provision Nodes for pending Pods that are incompatible, or overlooking potential Nodes that could accommodate such Pods.
+The Cluster Autoscaler (CA) presently anticipates uniform allocatable values among nodes within the same NodeGroup, using existing nodes as templates for newly provisioned nodes. With In-Place Node Resource Resize, nodes within a single group may horizontally drift in capacity.
 
-To ensure the Cluster Autoscaler acknowledges resource resize, the following approaches have been proposed by the Cluster Autoscaler team:
-1. Capture Node's Initial Allocatable Values:
-   * Introduce a new field within the Node object to record initial node allocatable values, which remain unchanged during resource resize.
-   * The Cluster Autoscaler can leverage this field to anticipate potential resize of resources, using it as a template for configuring new Nodes.
+If not addressed, the CA could randomly select a dynamically scaled node as a template, assuming identical scaled values for all upcoming new nodes, leading to suboptimal or failed provisioning.
 
-2. Identify Nodes Affected by resource resize:
-   * By flagging a Node as being impacted by resize, the Cluster Autoscaler could revert to a less reliable but more conservative "scale from 0 nodes" logic.
+To ensure the Cluster Autoscaler remains stable, we will Capture the Node's Initial Allocatable Values via Annotations:
 
-Given that this KEP and autoscaler are inter-related, the above approaches were discussed in the community with relevant stakeholders, and have decided approaching this problem through the approach 1. 
-The same will be targeted around the beta graduation of this KEP
+* During the initial boot, the Kubelet will stamp the node with an annotation representing its baseline boot capacity (e.g., `resize.node.kubernetes.io/initial-capacity: <json_resource_list>`).
 
-##### API Changes
+* This baseline annotation remains immutable during dynamic resize events.
 
+* The Cluster Autoscaler will be updated to read this annotation (if present) to construct reliable templates for new node provisioning, ignoring the dynamically shifting Node.Status.Capacity fields for template generation.
+
+#### Proposed Core Code Changes
+
+1. **The Dedicated Kubelet Listener** (`pkg/kubelet/kubelet.go`)
+
+   Instead of hijacking the main syncLoopIteration, capacity updates are handled cleanly in the Kubelet's asynchronous `Run()` method:
 ```go
-type NodeStatus struct {
-    // ... existing fields
-	// InitialCapacity represents the total resources of a node at the time of creation.
-	// +featureGate=InPlaceNodeResourceResize
-	// +optional
-	InitialCapacity ResourceList `json:"initialCapacity,omitempty"`
+// Listen for dynamic node capacity changes if the feature gate is enabled.
+if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
+    go wait.Until(func() {
+        for range kl.containerManager.NodeCapacityUpdates() {
+            // 1. Refresh internal cache to prevent Status Manager clamping
+            if info, err := kl.cadvisor.MachineInfo(); err == nil {
+                info.Timestamp = time.Time{}
+                kl.setCachedMachineInfo(info)
+            }
+
+            currentCapacity := kl.containerManager.GetCapacity(kl.supportLocalStorageCapacityIsolation())
+
+            // 2. Sync Eviction Thresholds for safe downscaling
+            kl.evictionManager.SynchronizeThresholds(currentCapacity)
+
+            // 3. Update active container Swap boundaries via CRI
+            kl.containerRuntime.ResizeContainersOnNodeCapacityChange(ctx, kl.GetActivePods(), currentCapacity, totalSwap)
+
+            // 4. Disseminate updates to the API Server
+            kl.syncNodeStatus(ctx)
+        }
+    }, 0, wait.NeverStop)
 }
 ```
 
+2. **The Sub-Manager Interfaces** (`pkg/kubelet/kubelet.go`)
 
-### Handling Resource Reconfiguration
-
-This KEP aims at enabling the kubelet to capture the current available capacity of the node (Regardless of whether it was a hotplug or hotunplug of resources.)
-
-With the changes proposed in this KEP, post resource resize - if new resources are added, the Kubelet triggers a recalculation of container Swap limits, re-initializes the node's resource managers,
-and updates the node status to reflect the increased capacity.
-
-In the case of resource unplug - the Kubelet performs a more critical update by adjusting OOMScoreAdj and Swap limits to prevent system instability, re-initializing managers, updating capacity,
-and re-running pod admission to ensure existing pods can still safely fit within the reduced hardware footprint.
-
-If there are not enough resources available to accommodate them post hot-unplug, the workload may tend to under perform or transition to "Pending" state or get migrated to a suitable node which meets the workload`s resource requirement.
-
-If the remaining aggregate capacity (CPU, memory, or hugepages) falls below the total amount of resources currently requested by all scheduled or running pods, the following sequence is triggered:
- - Condition Update: The node enters a "Resource Starvation" state.
- - Standard Reconcile: The Kubelet initiates the normal eviction algorithm.
- - Prioritization: Pods are ranked for eviction based on their Quality of Service (QoS) class and resource usage relative to their requests.
-
-#### Flow Control
-
-```
-T=0: Node initial Resources:
-    - Memory: 10G
-
-T=1: Resize Node to Hotplug Memory
-    - Current Memory: 10G
-    - Update Memory: 15G
-
-T=2: Resize Node to HotUnplug Memory
-    - Current Memory: 15G
-    - UpdatedMemory: 5G
-
-T=3: Resize Node to Hotplug Memory
-    - Current Memory: 5G
-    - Updated Memory Size: 15G
-```
-
-The operations surrounding hot unplug are listed below:
-* Pod re-admission:
-    * Given that there is probability that the current Pod resource usage may exceed the available capacity of node, its necessary to check if the pod can continue Running
-      or if it has to be terminated due to resource crunch.
-* Recalculate OOM adjust score and Swap limits:
-    * Since the total capacity of the node has changed, values associated with the nodes memory capacity must be recomputed.
-* Handling unplug of reserved CPUs.
-
-**Proposed Code changes**
-
-**Pseudocode for Resource Resize**
-
+   Resource managers must implement a new interface to accept dynamic sync events natively, avoiding a full Kubelet restart.
 ```go
-func (kl *Kubelet) syncLoopIteration(ctx context.Context, configCh <-chan kubetypes.PodUpdate, handler SyncHandler,
-syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.PodLifecycleEvent) bool {
-    .
-    .
-    case machineInfo := <-kl.nodeResourceManager.MachineInfo():
-        // Resync the resource managers.
-        klog.InfoS("Resync resource managers because of change in MachineInfo")
-        if err := kl.containerManager.ResyncComponents(machineInfo); err != nil {
-            klog.ErrorS(err, "Failed to resync resource managers with machine info update")
-			kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.FailedNodeResize, err.Error())
-            break
-        }
-		
-        // Resize the containers.
-        klog.InfoS("Resizing containers due to change in MachineInfo")
-        if err := resizeContainers(); err != nil {
-            klog.ErrorS(err, "Failed to resize containers with change in machine info")
-            kl.recorder.Eventf(kl.nodeRef, v1.EventTypeWarning, events.FailedNodeResize, err.Error())
-            break
-        }
-        
-
-        
-        // Update the cached MachineInfo.
-        kl.setCachedMachineInfo(machineInfo)
-    .
-    .
+// ResourceResizer defines the interface for sub-managers to accept dynamic capacity changes
+type ResourceResizer interface {
+    // SyncCapacity safely re-evaluates the sub-manager's internal state against the new hardware
+    SyncCapacity(machineInfo *cadvisorapi.MachineInfo) error
 }
 ```
 
-**Changes to resource managers to adapt to resize of resources**
+3. **Resource Manager Synchronization**
 
-1. Adding ResyncComponents() method to ContainerManager interface
-```go
-    // Manages the containers running on a machine.
-    type ContainerManager interface {
-        .
-        .
-        // ResyncComponents will resyc the resource managers like cpu, memory and topology managers
-	// with updated machineInfo
-	ResyncComponents(machineInfo *cadvisorapi.MachineInfo) error
-	.
-	.
-    )
-```
+When the `ContainerManager` detects a capacity drift, it invokes the `SyncCapacity()` method on its internal sub-managers. This triggers specific state reconciliations:
 
-2. Adding a method Sync to all the resource managers and will be invoked once there is resource resize.
+- **CPU Manager:** 
+  * **Upscale (Hot-plug):** 
+  
+  Newly added CPUs are instantly detected and added to the "shared pool" (the default cpuset). They immediately become available for pods in the Burstable and BestEffort QoS classes, or for new Guaranteed pods requesting exclusive cores.
 
-```go
-        // SyncMachineInfo will sync the Manager with the latest machine info
-        SyncMachineInfo(machineInfo *cadvisorapi.MachineInfo) error
-```
+  * **Downscale (Hot-unplug):** 
+  
+  If CPUs are removed, the CPU Manager removes them from the shared pool. If a removed CPU was actively pinned to a Guaranteed pod, the Kubelet relies on the Eviction Manager to terminate the pod before the hardware is physically removed.
 
-3. In case of resource unplug, the Pod Admission Controller handles the housekeeping operations related to pod eviction if the available compute resources falls below the required compute resources.
+
+- **Memory Manager:**
+
+  - The Memory Manager recalculates the total memory and hugepages available per NUMA node. It updates its internal state machine so that future TopologyManager admission checks accurately reflect the resized NUMA boundaries.
+
+- **Topology Manager:**
+
+  - While the Topology Manager itself does not store capacity state, the underlying updates to the CPU and Memory managers ensure that any subsequent topology alignment checks (for new pods) use the freshly updated hardware boundaries.
+
+### Observability and Metrics
+
+To ensure cluster operators can monitor resize events and failures, this KEP introduces the following Prometheus metrics within the Kubelet:
+
+- `kubelet_node_resize_requests_total`: Counter tracking the number of successful native resource resize events (labeled by resource name and direction: `increase`/`decrease`).
+
+- `kubelet_node_resize_errors_total`: Counter tracking failures during the reconciliation pipeline (labeled by the failing subsystem, e.g., `cpu_manager_sync`, `cgroup_update`).
 
 ### Test Plan
 
@@ -454,32 +449,56 @@ to implement this enhancement.
 
 ##### Unit tests
 
-1. Add necessary tests in kubelet_node_status_test.go to check for the node status behaviour with dynamic node scale up.
-2. Add necessary tests in kubelet_pods_test.go to check for the pod cleanup and pod addition workflow.
-3. Add necessary tests in eventhandlers_test.go to check for scheduler behaviour with dynamic node capacity change.
-4. Add necessary tests in resource managers to check for managers behaviour to adopt dynamic node capacity change.
-5. Add necessary tests to validate change in oom_score and swap limit for containers post resize.
+1. **cAdvisor Cache Refresh** (`kubelet_node_status_test.go`): Verify that injecting a new `MachineInfo` struct successfully updates the Kubelet's internal cache, and that the subsequent node status sync does not incorrectly clamp the new `Allocatable` values to the old boot-time capacity.
+
+2. **Cgroup Enforcement** (`container_manager_linux_test.go`): Verify that when a capacity change is detected, `enforceNodeAllocatableCgroups` and `UpdateQOSCgroups` are invoked with the newly calculated boundaries, and that the `nodeCapacityUpdateCh` signal is successfully emitted without blocking.
+
+3. **Sub-Manager Re-initialization** (`cpu_manager_test.go`, `memory_manager_test.go`): Verify that the CPU and Memory managers properly implement the `ResourceResizer` interface and cleanly accept `SyncCapacity()` calls without leaking state or crashing.
+
+4. **Eviction Threshold Sync** (`eviction_manager_test.go`): Verify that `SynchronizeThresholds` correctly recalculates absolute byte values (e.g., < `100Mi` vs `10%`) when the underlying capacity increases or decreases.
+
+5. **CRI Swap Limit Recalculation** (`kubelet_test.go`): Verify the math for proportional swap limits. Ensure `ResizeContainersOnNodeCapacityChange` correctly iterates over active pods and invokes the mock CRI interface with the newly calculated boundaries (explicitly validating that `oom_score_adj` is not touched).
 
 ##### e2e tests
 
-Following scenarios need to be covered:
+These tests will utilize a mock `cAdvisor` interface to inject dynamic hardware capacity changes into a running test Kubelet to validate the end-to-end reconciliation pipeline.
 
-* Node resource information before and after resource hot plug for the following scenarios.
-  * upsize -> downsize
-  * upsize -> downsize -> upsize
-  * downsize -> upsize
-* State of Pending pods due to lack of resources after resource hot plug.
-* Resource manager states after the resync of components.
+* **Scenario 1: Safe Upscale and Scheduling**
+
+  - **Action**: Inject an upscale event (e.g., `10G` -> `15G` memory).
+
+  - **Validation:** Verify the `/kubepods` host cgroup expands. Verify the Node API object reflects the new capacity. Verify a previously `Pending` pod (due to lack of memory) is successfully scheduled and transitions to `Running`.
+
+
+* **Scenario 2: Safe Downscale and Eviction (Resource Starvation)**
+
+  - **Action**: Schedule pods that consume 8G of memory. Inject a downscale event reducing the node's total memory to 5G.
+
+  - **Validation**: Verify the Kubelet updates its Eviction Manager thresholds and successfully evicts the lowest-priority pod (e.g., `BestEffort`) to protect the node before the cgroups enforce the 5G limit.
+
+
+* **Scenario 3: Proportional Swap Recalculation**
+
+  - **Action**: Deploy a pod on a swap-enabled node. Inject a memory upscale event.
+
+  - **Validation**: Inspect the active pod's `memory.swap.max` cgroup file on the host filesystem and verify the limit was proportionally reduced based on the new total node memory.
+
+
+* **Scenario 4: Upsize -> Downsize -> Upsize (Flapping)**
+
+  - **Action**: Rapidly inject alternating capacity changes.
+
+  - **Validation**: Ensure the `ContainerManager` reconciliation loop does not deadlock, the cgroups settle on the final capacity, and no duplicate capacity update signals block the main Kubelet loop.
 
 ### Graduation Criteria
 
 
-#### Phase 1: Alpha (target 1.35)
+#### Phase 1: Alpha (target 1.37)
 
 * Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `InPlaceNodeResourceResize`
   feature gate.
-* Unit test coverage.
-* E2E tests.
+* Comprehensive Unit Test coverage for the `ContainerManager` reconciliation loop, cache bypass, and Eviction Manager synchronization.
+* E2E Node tests (`e2e_node`) validating the end-to-end flow using a mocked `cAdvisor` machine-info injector.
 * Documentation mentioning high level design.
 
 
@@ -499,13 +518,11 @@ enhancement:
 
 ##### Upgrade 
 
-To upgrade the cluster to use this feature, Kubelet should be updated to enable featuregate. 
-Existing cluster does not have any impact as the node resources already been updated during cluster creation.
+To upgrade the cluster to use this feature, the Kubelet must be restarted with the `InPlaceNodeResourceResize` feature gate enabled. Existing clusters do not experience any immediate impact upon upgrade; the Kubelet will simply begin mirroring the existing physical hardware capacity dynamically.
 
 ##### Downgrade
 
-It's always possible to trivially downgrade to the previous kubelet, It does not have any impact as the future node resource hot plug wont be reflected in cluster.
-
+It is trivially possible to downgrade by disabling the feature gate and restarting the Kubelet. The Kubelet will simply revert to its legacy behavior: capturing the node capacity once during boot and freezing it. Any subsequent hardware hot-plugs will be safely ignored.
 
 ### Version Skew Strategy
 
@@ -557,8 +574,8 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:InPlaceNodeResourceResize
-    - Components depending on the feature gate: kubelet
+    - Feature gate name: `InPlaceNodeResourceResize`
+    - Components depending on the feature gate: `kubelet`
 - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
@@ -568,30 +585,24 @@ This section must be completed when targeting alpha to a release.
 
 ###### Does enabling the feature change any default behavior?
 
-No behavior change when there is no change in node allocatable resources, and this feature is guarded by `InPlaceNodeResourceResize` feature gate.
+No immediate behavior changes occur if the underlying node hardware has not changed.
+If the hardware does change, the default behavior changes from "ignoring the hardware change" to:
 
-With feature enabled:
-    Hotplug of resource will lead to increase in Node allocatable resource and allowing Pending pods to be scheduled.
-    HotUnplug of resource will lead to decrease in Node allocatable resource, where the Pod Admission controller reruns to identify if any workloads are required to be evicted.
+- Upscale: Dynamically patching the `Node` Allocatable resources and rewriting host cgroups, allowing pending pods to be scheduled.
+
+- Downscale: Dynamically shrinking host cgroups, lowering Eviction Manager thresholds, and potentially triggering pod evictions.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. The feature can be disabled by restarting kubelet with the feature-gate off.
-Once disabled any hot plug of resources won't reflect at the cluster level.
+Yes. The feature can be disabled by restarting the Kubelet with the feature gate turned off. The Kubelet will freeze its capacity at whatever `cAdvisor` reported during that specific boot cycle.
 
 ###### What happens if we re-enable the feature if it was previously rolled back?
 
-To re-enable the feature, need to turn on the feature-gate and restart the kubelet,
-with feature re-enabled, the node resources will be updated dynamically with any changes in the underlying node's compute capacity.
-Cluster will be automatically updated with the new resource information. If there are any pending pods due to lack of resources they will turn into
-running state.
+The Kubelet will immediately poll the live cAdvisor data, detect any drift that occurred while the feature was disabled, and execute a one-time reconciliation to update the internal cgroups and the API Server's `Node.Status`.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, the tests will be added along with alpha implementation.
-* Validate the hot plug of resource to machine is updated at the node resource level.
-* Validate the hot plug of resource made the pending pods to transition into running state.
-* Validate the resource managers are update with the latest machine information after hot plug of resources.
+Yes, unit tests will validate that the `capacityReconciler` Go routine completely short-circuits and exits if `utilfeature.DefaultFeatureGate.Enabled()` returns false.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -611,9 +622,7 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-Rollout may fail if the resource managers are not re-synced properly due to programmatic errors.
-In case of rollout failures, running workloads are not affected, If the pods are on pending state they remain pending.
-Rollback failure should not affect running workloads.
+Rollout failures are isolated to the specific node. If the `ContainerManager` fails to enforce the new top-level `/kubepods` cgroups due to a filesystem error, the main Kubelet loop will not be signaled, and the API Server will not be updated. Existing running workloads are perfectly safe and will continue to operate under their current cgroup limits.
 
 ###### What specific metrics should inform a rollback?
 
@@ -621,9 +630,7 @@ Rollback failure should not affect running workloads.
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
-If there is significant increase in `node_resize_resync_errors_total` metric means the feature is not working as expected.
-In case of pending pods and hot plug of resource but still there is no change `scheduler_pending_pods` metric
-means the feature is not working as expected.
+An operator should roll back the feature if there is a sustained spike in the `kubelet_node_resize_errors_total` metric, indicating the Kubelet is deadlocking or failing to write to the host filesystem.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -633,7 +640,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-It will be tested manually as a part of implementation and there will also be automated tests to cover the scenarios.
+Yes, manual testing of the upgrade -> downgrade -> upgrade path validates that the Kubelet safely falls back to static boot-time caching without disrupting running workloads.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -651,8 +658,8 @@ previous answers based on experience in the field.
 -->
 
 Monitor the metrics
-- `node_resize_resync_request_total`
-- `node_resize_resync_errors_total`
+- `kubelet_node_resize_requests_total`
+- `kubelet_node_resize_errors_total`
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -662,12 +669,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-This feature will be built into kubelet and behind a feature gate. Examining the kubelet feature gate would help 
-in determining whether the feature is used. The enablement of the kubelet feature gate can be determined from the 
-`kubernetes_feature_enabled` metric.
-
-In addition, newly added metrics `node_resize_resync_request_total`, `node_resize_resync_errors_total` are incremented in case of up-scale of resource
-and failing to re-sync resources managers respectively.
+The enablement of the Kubelet feature gate can be determined via the `kubernetes_feature_enabled` metric. Operational use can be observed when the `kubelet_node_resize_requests_total` counter increments during a hardware change.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -680,9 +682,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-End user can do a hot plug of resource and verify the same change as reflected at the node resource level.
-In case there were any pending pods prior to resource hot plug, those pods should transition into Running with addition
-of new resources.
+An end-user can verify the feature by executing a hot-plug via their hypervisor, and then running `kubectl get node <node-name> -o yaml`. The `.status.capacity` and `.status.allocatable` fields will natively reflect the newly added hardware within ~10 seconds.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -701,9 +701,7 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-For each node, the value of the metric `node_resize_resync_request_total` is expected to match the number of time the node is resized.
-For each node, the value of the metric `node_resize_resync_errors_total` is expected to be zero.
-
+For each dynamically resized node, the `kubelet_node_resize_errors_total` counter is expected to remain strictly at 0.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -713,8 +711,8 @@ Pick one more of these and delete the rest.
 
 - [X] Metrics
     - Metric name:
-      - `node_resize_resync_request_total`
-      - `node_resize_resync_errors_total`
+      - `kubelet_node_resize_requests_total`
+      - `kubelet_node_resize_errors_total`
    - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -723,8 +721,7 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-- `node_resize_resync_request_total`
-- `node_resize_resync_errors_total`
+No
 
 ### Dependencies
 
@@ -748,8 +745,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
-No, It does not depend on any service running on the cluster, But depends on cAdvisor package to fetch
-the machine resource information.
+
+**cAdvisor (Internal):** The Kubelet strictly relies on the integrated `cAdvisor` package to successfully read the underlying Linux kernel and hardware capacity.
+
+**Container Runtime (CRI):** The Kubelet relies on the runtime (e.g., containerd, CRI-O) to successfully honor the `UpdateContainerResources` RPC call to propagate recalculated Swap limits.
 
 ### Scalability
 
@@ -778,9 +777,13 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-No, It won't add/modify any user facing APIs.
-The resource managers might need to be updated with new methods to resync their components with updated
-machine information.
+Yes, but with strictly negligible throughput.
+
+- **API Call**: PATCH `/api/v1/nodes/<node-name>/status`
+
+- **Throughput**: Extremely low. This call is only triggered at the exact moment a physical hardware capacity change is detected on the host. It does not introduce a periodic polling load on the API Server.
+
+- **Originating Component**: Kubelet
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -808,6 +811,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 No
+
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
 <!--
@@ -818,7 +822,9 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
+
 Negligible, In the case of resource reconfiguration the resource manager may take some time to re-sync.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -830,8 +836,10 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
-Negligible computational overhead might be introduced into kubelet as it periodically needs to fetch machine information 
-from cAdvisor cache and re-sync all the resource managers with the updated machine information.
+
+Negligible computational overhead is introduced. The Kubelet utilizes an event-driven Go channel to signal capacity updates, avoiding heavy CPU polling cycles.
+
+
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
 <!--
@@ -843,10 +851,8 @@ If any of the resources can be exhausted, how this is mitigated with the existin
 Are there any tests that were run/should be run to understand performance characteristics better
 and validate the declared limits?
 -->
-Yes, It could.
-Since the nodes computational capacity is increased dynamically there might be more pods scheduled on the node.
-This is however be mitigated by maxPods kubelet configuration that limits the number of pods on a node and the associated 
-Pod Network CIDR.
+
+Yes, organically. Expanding a node's capacity allows the Scheduler to place more Pods onto the node, consuming more PIDs/sockets. However, this is strictly mitigated by the pre-existing `--max-pods` Kubelet configuration, which enforces a hard ceiling regardless of the underlying hardware size.
 
 ### Troubleshooting
 
@@ -863,9 +869,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-This feature is node local and mainly handled in kubelet, It has no dependency on etcd.
-In case there are pending pods and there is hot plug of resources, The scheduler relies on the API server to fetch node information. 
-Without access to the API server, it cannot make scheduling decisions as the node resources are not updated. The pending pods would remain in same condition.
+If the API Server is unavailable during a hardware resize, the Kubelet will successfully update the local host cgroups, sub-managers, and Eviction thresholds to protect the node. However, the `syncNodeStatus` call will fail. The local node will be physically resized and stable, but the cluster Scheduler will remain "blind" to the new capacity until API connectivity is restored.
 
 ###### What are other known failure modes?
 
@@ -882,13 +886,21 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-This feature mainly does two operations, mainly to fetch machine information from cAdvisor and reinitialize resource managers.
-Failure scenarios can occur in cAdvisor level that is if it wrongly updated with incorrect machine information.
+* **Cgroup Enforcement Failure**
+
+  - **Detection**: Spike in `kubelet_node_resize_errors_total` with the label `subsystem="cgroup_update"`.
+
+  - **Mitigations**: Investigate host filesystem or AppArmor/SELinux denials preventing the Kubelet from writing to `/sys/fs/cgroup`.
+
+* **CRI Swap Update Failure**
+
+    Detection: Spike in `kubelet_node_resize_errors_total` with the label `subsystem="container_swap_resize"`.
+
+    Mitigations: Verify the Container Runtime (containerd/CRI-O) is healthy and accepting RPC calls.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-If the SLOs are not being met, one can examine the kubelet logs. It is also advised not to reconfigure node resources further.
-
+Examine Kubelet logs for errors emitted by `container_manager_linux`.go. Disable the feature gate to freeze capacity evaluation until the host-level conflict is resolved.
 ## Implementation History
 
 <!--
@@ -908,31 +920,41 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
-If the removed resources (specifically CPUs or Memory zones) were the exclusive resources allocated to specific containers via the CPU or Memory Manager, those affected pods are immediately evicted or killed.
-This occurs because the hardware backing their specific isolation requirements no longer exists.
+If dynamically removed resources (specifically CPUs or NUMA Memory zones) were exclusively pinned and allocated to specific containers via the CPU Manager or Topology Manager, the underlying hardware backing their strict isolation guarantees no longer exists on the motherboard.
 
-
+Because the node can no longer fulfill the Pod's strict Requests contract, those affected pods must be forcefully evicted by the Kubelet with a `Failed` status (Reason: `NodeCapacityExceeded`). While this protects the node, it does introduce a disruptive pod termination that would not occur if the node capacity remained static.
 ## Alternatives
-
-* Horizontally scale the cluster by incorporating additional compute nodes.
-* Use fake placeholder resources that are available but not enabled (e.g., balloon drivers)
-
 <!--
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+* **Node Replacement (Horizontal Scaling):** Instead of resizing existing nodes, operators can horizontally scale by provisioning entirely new, larger nodes, draining the original nodes, and deleting them.
+
+  * _Why it was rejected:_ This introduces significant workload disruption during the drain process, increases control plane overhead, and takes considerably longer to execute than a simple underlying hypervisor hot-plug.
+
+
+* **Manual Kubelet Restarts:** Administrators can hot-plug the hardware and then manually restart the `kubelet` systemd service to force it to read the new capacity.
+
+  * _Why it was rejected:_ This causes temporary node `NotReady` states, breaks active `exec`/`port-forward` sessions, and risks triggering historic edge-case bugs associated with Kubelet restarts.
+
+* **Balloon Drivers / Fake Placeholder Resources:** Pre-provisioning massive virtual machines but using memory ballooning or fake placeholder resources to artificially restrict the Kubelet, "inflating" them when capacity is needed.
+
+  * _Why it was rejected:_ This is highly inefficient, complex to manage at the hypervisor level, and confuses the Kubernetes Scheduler, which relies on accurate, native cgroup boundaries.
+
 ## Infrastructure Needed (Optional)
-VMs of cluster should support hot plug of compute resources for e2e tests.
+
+For standard Kubernetes CI (e2e_node tests), no special infrastructure is needed because the tests will utilize a mocked cAdvisor client to simulate hardware capacity events.
+
+However, for provider-specific end-to-end integration testing in the future, underlying infrastructure VMs that natively support CPU and Memory hot-plugging will be required to validate the complete hardware-to-API lifecycle.
 
 ## Future Work
-  
-* Fetching machine info via CRI
-    * At present, the machine data is retrieved from cAdvisor's cache through periodic checks. There is ongoing development to utilize CRI APIs for this purpose.
-    * Presently, resource managers are updated through regular polling. Once the CRI APIs are enhanced to fetch machine information, we can significantly enhance the reinitialization of resource managers, 
-      enabling them to respond more effectively to resize events.
 
-* Knobs to alter Kube and System reserved
-    * Currently, these values are calculated and set by individual cloud providers or vendors.
-    * This can be further explored to enable options to set the kube and system reserved capacities as tunables.
+* **Dynamic System and Kube Reserved Adjustments**
+
+  * Currently, the `--system-reserved` and `--kube-reserved` values are static configurations defined during Kubelet bootstrap. If a node scales massively (e.g., from 16GB to 128GB of memory), the OS and Kubelet might organically require a dynamically scaled reservation rather than the original static threshold. Future iterations could explore allowing these reservations to be expressed as percentages or dynamic tunables.
+
+* **NRI (Node Resource Interface) Integration**
+
+  * Extending the internal Kubelet resize event broadcaster so that external NRI plugins can natively subscribe to hardware capacity changes. This would allow third-party runtime wrappers and advanced topology managers to react to node upscales and downscales simultaneously with the Kubelet.
