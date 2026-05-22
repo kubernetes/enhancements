@@ -685,14 +685,18 @@ The DRA scheduler plugin is enhanced to:
 4. Emit clear scheduling events when a device is rejected due to compatibility.
 
 **Complexity.** Let *M* be the number of devices already allocated on a
-counter set, *N* the number of candidates under consideration for that
-counter set, and *G* the maximum number of groups declared per counter-set
-consumption entry. The additional filter cost per scheduling cycle is
-O(*N* · *M* · *G*) for pairwise group-intersection checks, with typical *G*
-≤ 4 (hardware partition modes per device are small in practice). The
-existing DRA allocation loop already iterates over candidates per counter
-set, so the new work is a constant-factor-per-candidate addition rather than
-a new outer loop.
+counter set at the start of a scheduling round, *N* the number of candidates
+considered during the round on that counter set, and *G* the maximum number
+of groups declared per counter-set consumption entry. The scheduler
+maintains a **rolling intersection** of `compatibilityGroups` over the
+allocated set on the counter set: it is initialized from the *M* pre-existing
+devices in O(*M* · *G*), checked against each candidate's groups in O(*G*),
+and updated in O(*G*) each time a candidate is admitted within the round.
+The additional filter cost per scheduling cycle is therefore O((*M* + *N*) ·
+*G*), with typical *G* ≤ 4 (hardware partition modes per device are small in
+practice). The existing DRA allocation loop already iterates over candidates
+per counter set, so the new work is a constant-factor-per-candidate addition
+rather than a new outer loop.
 
 ### Interaction with Multi-Request Claims and Device Constraints
 
