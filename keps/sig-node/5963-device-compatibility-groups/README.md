@@ -882,13 +882,13 @@ during scheduling of *new* allocations, so disabling the gate or rolling back
 binaries does not disturb existing pod/device bindings.
 
 ###### What specific metrics should inform a rollback?
-A new scheduler metric
-`scheduler_dra_compatibility_rejections_total{driver,counter_set,reason}`
-counts claim filter rejections caused by compatibility constraints. A rollback
-is warranted if this metric spikes unexpectedly after a driver update (likely
-an incorrect compatibility matrix — see Risks → Incorrect driver declarations).
-Operators should also watch `scheduler_unschedulable_pods` correlated with
-events matching `Insufficient compatible DRA devices`.
+Rollback should be informed by an unexpected rise in scheduling failures of
+pods that use DRA devices, surfaced via scheduling events emitted when
+candidates are rejected due to compatibility constraints (see Monitoring →
+How can someone using this feature know that it is working for their
+instance?). A sudden uptick in such events after a driver update is a
+likely signal of an incorrect compatibility matrix — see Risks → Incorrect
+driver declarations.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 Upgrade → downgrade → upgrade will be covered by the integration test
@@ -924,16 +924,15 @@ This feature is not intended for use by workload usage, it is intended for DRA D
 N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
-Operators can use `scheduler_dra_compatibility_rejections_total` together with
-`scheduler_unschedulable_pods` and the standard DRA scheduler plugin latency
-metrics to determine whether compatibility filtering is contributing to
-scheduling failures or latency regressions.
+N/A — this feature does not introduce new SLIs. Operators can observe
+scheduling events for compatibility-based filter reasons to determine
+whether compatibility filtering is contributing to scheduling failures.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
-No — `scheduler_dra_compatibility_rejections_total{driver,counter_set,reason}`
-(introduced by this KEP; see Rollout → What specific metrics should inform a
-rollback) covers the primary observability need. Additional breakdowns can be
-added post-alpha if field feedback justifies them.
+None planned. Observability is provided through scheduling events emitted
+by kube-scheduler when candidates are rejected due to compatibility
+constraints (see Monitoring → How can someone using this feature know that
+it is working for their instance?).
 
 ### Dependencies
 DRA Partitionable Devices enabled
