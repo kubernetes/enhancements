@@ -159,13 +159,14 @@ allowing an allocation that will fail at device preparation time.
 ### Notes/Constraints/Caveats
 
 The compatibility relation is **symmetric**: if A can be allocated with B,
-then B can be allocated with A. It is **not transitive**: A and B sharing a
-group, and B and C sharing a group, does not imply A and C share one.
-Concretely, the scheduler evaluates the pairwise predicate
-`groups(A) ∩ groups(B) ≠ ∅` against every already-allocated device on the same
-counter set; it does not compute transitive closures. Drivers that want three
-device types to be mutually co-allocatable must ensure every pair shares at
-least one group (see Example 4).
+then B can be allocated with A. A candidate device is admitted only if its
+`compatibilityGroups` share at least one entry with the **rolling
+intersection** of `compatibilityGroups` maintained across all devices
+already allocated on the same counter set — i.e., the candidate must
+declare at least one group that is present in every already-allocated
+device's list. Drivers that want a set of device types to be mutually
+co-allocatable must therefore include a common shared group in every
+type's list (see Example 4 for the `foobar` pattern).
 
 ### Risks and Mitigations
 
