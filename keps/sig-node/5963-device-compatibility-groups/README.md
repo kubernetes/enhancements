@@ -856,7 +856,7 @@ apiserver may drop on writes.
     and hides it on reads of `ResourceSlice`. Prevents drivers from persisting
     values that cannot be enforced.
   - **kube-scheduler**: when disabled, ignores the field on read and does not
-    perform the pairwise intersection check during filtering.
+    perform the rolling-intersection check during filtering.
 - No control-plane downtime is required to toggle the gate.
 - No node downtime or reprovisioning is required.
 
