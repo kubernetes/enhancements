@@ -212,12 +212,12 @@ different pieces of underlying hardware. Two devices that do not share any
 counter set are never compared via this field, even if they live on the same
 node or in the same `ResourceSlice`.
 
-**Naming convention used in examples.** A device of type `T` lists `T` in its
-groups. When types `T1…Tn` are mutually co-allocatable, every device of those
-types additionally lists a shared composite group (e.g., `t1t2`). A type that
-is compatible with no other type lists only `[T]`. The scheduler does not
-parse group names — this convention is purely for readability; any opaque
-strings that satisfy the symmetry requirement work.
+**Naming convention used in examples.** A device's `compatibilityGroups`
+lists the groups it agrees to be allocated alongside other devices in.
+Group names in the examples are chosen for readability (e.g., `mig`,
+`mps`, `foobar`) and hint at which devices agree to be in the group;
+the scheduler does not parse them, so any opaque strings will do as
+long as compatible devices declare a common group.
 
 ### Examples
 
