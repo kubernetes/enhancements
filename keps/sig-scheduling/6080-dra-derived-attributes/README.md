@@ -290,10 +290,12 @@ Enabling this pattern provides great flexibility.
 ### Risks and Mitigations
 - **Risk**: A new CEL expression needs to be evaluated for each candidate device
   (in addition to any CEL expressions evaluated for device selectors).
-- **Mitigation**: This evaluation adds a constant time increment to each device
-  evaluation. The remainder of the scheduling cycle—including constraint
-  evaluation—remains exactly the same because the derived attribute acts as a
-  standard, non-derived attribute during constraint matching.
+- **Mitigation**: To prevent redundant evaluations of the same expression on
+  a single device (which may be evaluated multiple times or against multiple
+  requests), the scheduler plugin caches both the compiled CEL ASTs and the
+  evaluated derived attribute values for each candidate device. Evaluation
+  happens exactly once per candidate device per scheduling cycle, making the
+  latency overhead strictly linear O(N) with the number of candidate devices.
 
 ## Design Details
 
@@ -314,20 +316,25 @@ type DeviceRequest struct {
 	// for each candidate device.
 	// +featureGate=DRADerivedAttributes
 	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +k8s:maxItems=8
 	DerivedAttributes []DerivedAttribute `json:"derivedAttributes,omitempty"`
 }
 
 type DerivedAttribute struct {
 	// Name is the identifier for this derived attribute, used in constraints.
+  //
+	// Format: https://github.com/kubernetes/kubernetes/blob/0f935974ee0e38fb77a09e3be1e8754b5720605e/pkg/apis/resource/types.go#L621-L637
 	//
 	// +required
-	Name string `json:"name"`
+	Name QualifiedName `json:"name"`
 
 	// Expression is a CEL expression evaluated against each candidate device.
 	// The expression must evaluate to a primitive scalar (string, integer,
-	// boolean) or a list of scalars ([]string, []int64, []bool) to act as a
-	// virtual grouping key. Any other return type is an error and causes
-	// device validation or allocation to fail.
+	// boolean, or semver) or a list of these scalars ([]string, []int64,
+	// []bool, []semver) to act as a virtual grouping key. Any other return type
+	// is an error and causes CEL evaluation for the device to fail.
 	//
 	// The expression's input is an object named "device", which carries the
 	// following properties:
@@ -336,6 +343,18 @@ type DerivedAttribute struct {
 	//    (e.g. device.attributes["dra.example.com"] evaluates to an object with all
 	//    of the attributes which were prefixed by "dra.example.com").
 	//  - capacity (map[string]object): the device's capacities, grouped by prefix.
+	//
+	// When pod scheduling encounters CEL runtime errors (such as looking
+	// up an attribute that isn't defined) for some devices, it will abort
+	// allocation and fail scheduling for the Pod. Surfacing evaluation
+	// errors immediately prevents silent topology matching failures that are
+	// extremely hard to detect. A robust expression should, for example, check
+	// for the existence of attributes before referencing them to avoid
+	// runtime evaluation errors.
+	//
+	// The length of the expression must be smaller or equal to 10 Ki. The
+	// cost of evaluating it is also limited based on the estimated number
+	// of logical steps.
 	//
 	// +required
 	Expression string `json:"expression"`
@@ -350,16 +369,20 @@ attributes.
 - **Environment**: The CEL environment for `Expression` is exactly the same
   as that for `CELDeviceSelector`, containing a single variable `device`.
 - **Return Type**: The CEL expression must evaluate to a scalar (string,
-  integer, boolean) or a list of scalars (`[]string`, `[]int64`, `[]bool`).
-  The CEL-Go runtime maintains strict type definitions (`ref.Val.Type()`),
-  ensuring zero ambiguity between a genuine list and a literal string formatted
-  like a list (e.g., `"[pci1, pci2]"`). For scalar results, the scheduler
-  converts integer and boolean values to canonical strings, treating them as
-  single-element lists. For list results, the scheduler adopts the set
-  intersection matching semantics defined by KEP-5491.
+  integer, boolean, or semver) or a list of these scalars (`[]string`, `[]int64`,
+  `[]bool`, `[]semver`).
 - **Validation**: `kube-apiserver` validates the CEL syntax during
-  `ResourceClaim` creation and update. If compilation fails, the request is
-  rejected with an `Invalid` API error.
+  `ResourceClaim` creation and update.
+- **Runtime Error Handling**: If a CEL expression fails to evaluate on a
+  candidate device at runtime (due to a missing attribute, null pointer
+  reference, type mismatch, or other runtime error), the scheduler will abort
+  the allocation and fail scheduling for the Pod immediately, even if other
+  candidate devices or nodes evaluate successfully. This matches the behavior
+  of CEL device selectors in the scheduler, where any runtime evaluation
+  failure aborts allocation and fails scheduling for the Pod rather than
+  silently filtering it out. Surfacing evaluation errors immediately prevents
+  silent topology matching failures and ensures that broken expressions are
+  detected and resolved.
 
 ### Scheduler Plugin Implementation
 In `pkg/scheduler/framework/plugins/dynamicresources`:
@@ -417,7 +440,7 @@ None.
 - Verify scheduler performance and latency overhead with large device counts.
 
 #### GA
-- Proven adoption in real-world DRA drivers (e.g., dra-driver-cpu,
+- Proven adoption in deployment manifests and user documentation for real-world DRA drivers (e.g., dra-driver-cpu,
   dra-driver-nvidia-gpu, dra-driver-nvidia-tpus, dranet).
 - Allowing time for feedback
 - All issues and gaps identified as feedback during beta are resolved
