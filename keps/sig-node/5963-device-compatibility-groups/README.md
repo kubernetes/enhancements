@@ -676,14 +676,9 @@ group).
 
 The DRA scheduler plugin is enhanced to:
 
-1. Maintain a cache of allocated devices per node, including their compatibility
-  fields (`compatibilityGroups` values).
-2. For each candidate device during allocation, evaluate whether it is compatible
-  with all currently allocated devices on the node, and whether all allocated
-   devices are compatible with it (bidirectional check).
-3. Remove candidate devices from consideration if they violate compatibility
-  constraints.
-4. Emit clear scheduling events when a device is rejected due to compatibility.
+1. For each candidate device during allocation:
+2. Calculate `compatibilityGroups` intersection of already allocated devices
+3. If the intersection between [2] and the `compatibilityGroups` of the candidate is empty, skip the device for this allocation, otherwise, continue with allocation attempt.   
 
 **Complexity.** Let *M* be the number of devices already allocated on a
 counter set at the start of a scheduling round, *N* the number of candidates
