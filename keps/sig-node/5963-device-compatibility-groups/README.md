@@ -702,12 +702,13 @@ rather than a new outer loop.
 ### Interaction with Multi-Request Claims and Device Constraints
 
 **Multiple requests within one claim.** The compatibility predicate is
-evaluated pairwise between every device already allocated *on the same counter
-set* and each candidate, regardless of whether the allocated device belongs to
-the same claim, a different claim on the same pod, or a different pod entirely.
-Two devices within a single `ResourceClaim` that land on the same counter set
-are therefore subject to the same pairwise check: the second request sees the
-first as already-allocated state.
+evaluated between each candidate and the rolling intersection of
+`compatibilityGroups` across all devices already allocated on the same
+counter set, regardless of whether an allocated device belongs to the same
+claim, a different claim on the same pod, or a different pod entirely. Two
+devices within a single `ResourceClaim` that land on the same counter set
+are therefore subject to the same check: the second request sees the first
+folded into the rolling intersection.
 
 **Allocation order.** The scheduler does not reorder requests within a claim
 to improve feasibility. If requests are ordered such that an early compatible
