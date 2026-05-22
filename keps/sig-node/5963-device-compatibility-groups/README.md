@@ -957,11 +957,11 @@ Yes, additional field to the `ResourceSlice` API
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 Scheduling cycles that involve DRA devices incur an additional
-O(*N* · *M* · *G*) group-intersection check per counter set (see Design
+O((*M* + *N*) · *G*) rolling-intersection check per counter set (see Design
 Details → Scheduler Changes), where *M* is devices already allocated on that
 counter set, *N* is candidates considered, and *G* is groups per device. For
 realistic values (*M* ≤ 16, *N* ≤ 64, *G* ≤ 4) the added work is in the low
-thousands of string comparisons per counter set per cycle and is not expected
+hundreds of string comparisons per counter set per cycle and is not expected
 to be measurable against existing DRA scheduling cost. Benchmarks will be run
 during alpha and reported in the Implementation History.
 
