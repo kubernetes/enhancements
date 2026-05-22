@@ -2,6 +2,7 @@ title: Workload-aware preemption
 kep-number: 5710
 authors:
   - "@wojtek-t"
+  - "@argh4k"
 owning-sig: sig-scheduling
 participating-sigs:
 status: implementable
@@ -14,16 +15,17 @@ approvers:
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-preemption"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
 # and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -34,7 +36,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: WorkloadAwarePreemption
+  - name: GenericWorkload
     components:
       - kube-apiserver
       - kube-scheduler
@@ -42,3 +44,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - scheduler_podgroup_preemption_attempts_total
+  - scheduler_podgroup_preemption_attempt_duration_seconds
+  - scheduler_podgroup_preemption_victims
