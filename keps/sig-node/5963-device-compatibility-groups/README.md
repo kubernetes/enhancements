@@ -978,8 +978,8 @@ TBD
 
 ## Implementation History
 
-- 2026-03-17: KEP opened, status `provisional`.
 - 2026-04-18: KEP under review; API shape and default semantics settled.
+
 
 ## Drawbacks
 
