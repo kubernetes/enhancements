@@ -797,7 +797,10 @@ disabled in scheduler), the scheduler >= 1.37 will ignore the devices instead of
 allocations. They will get used as soon as the feature gets enabled also in the scheduler.
 
 #### Downgrade
-If downgrading to a version that does not have this enhancement implemented, older schedulers and api-servers do not know of the added optional field, and revert to their defined behavior prior to this enhancement
+If downgrading to a version that does not have this enhancement implemented, older schedulers and api-servers do not know of the added optional field, and revert to their defined behavior prior to this enhancement when the current version is the initial alpha.
+When downgrading to the alpha release in 1.37, the scheduler will refuse to allocate devices
+which depend on the feature. Eventually, the downgraded DRA driver will remove those
+devices.
 
 Allocated devices that leveraged this new field will remain allocated, and future allocations will not take `compatibilityGroups` into consideration.
 
