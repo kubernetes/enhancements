@@ -748,9 +748,10 @@ unit and integration coverage; new tests are additive.
 
 ##### Unit tests
 
-- `k8s.io/dynamic-resource-allocation/structured`: pairwise group-intersection
-  predicate (empty, nil, single, multiple groups; nil-vs-nil, nil-vs-set,
-  set-vs-set; `[]` treated as nil).
+- `k8s.io/dynamic-resource-allocation/structured`: group-intersection
+  predicate against the rolling intersection of the allocated set (empty,
+  nil, single, multiple groups; nil-vs-nil, nil-vs-set, set-vs-set; `[]`
+  treated as nil).
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: filter
   behavior with mixed compatible and incompatible candidates on the same
   counter set; no-op behavior when the feature gate is disabled; no-op
