@@ -50,6 +50,9 @@
   - [Alternative 2: Instance Metadata Enhancement](#alternative-2-instance-metadata-enhancement)
   - [Alternative 3: Node Label Patching (e.g., AWS metadata-labeler)](#alternative-3-node-label-patching-eg-aws-metadata-labeler)
   - [Alternative 4: CRD-based Topology Retrieval (e.g., vSphere CSINodeTopology)](#alternative-4-crd-based-topology-retrieval-eg-vsphere-csinodetopology)
+  - [Alternative 5: Fold NodeGetID into NodeGetInfo](#alternative-5-fold-nodegetid-into-nodegetinfo)
+  - [Alternative 6: Reactive-Only Discovery](#alternative-6-reactive-only-discovery)
+  - [Alternative 7: Static Node Context Object](#alternative-7-static-node-context-object)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -165,6 +168,8 @@ Returns only the node identifier, obtainable locally without cloud API credentia
 **Example implementations**:
 - **AWS EBS**: `http://169.254.169.254/latest/meta-data/instance-id`, no IAM credentials needed
 - **Alibaba Cloud**: `http://100.100.100.200/latest/meta-data/instance-id`, no cloud API credentials needed
+
+**Why a separate RPC instead of reusing `NodeGetInfo`**: `NodeGetID` serves as a protocol handshake — when the CO calls `NodeGetID` instead of `NodeGetInfo`, the SP knows the CO supports the new flow and will obtain topology/limits from `ControllerGetNodeInfo`. This is necessary because there is no safe "I don't know yet" value for `NodeGetInfo`'s existing fields: `max_volumes_per_node = 0` means "CO decides" (treated as unlimited), and empty `accessible_topology` means "no topological constraint" (node won't match zone-restricted PVs). Both lead to silent mis-scheduling if an old CO consumes them. With a separate RPC, removing node credentials while still running an old CO produces a loud `NodeGetInfo` RPC error rather than silent incorrect behavior. See [Alternative 5](#alternative-5-fold-nodegetid-into-nodegetinfo) for detailed discussion.
 
 #### ControllerGetNodeInfo RPC
 
@@ -662,6 +667,36 @@ The vSphere CSI driver uses a [`CSINodeTopology`](https://github.com/kubernetes-
 **Why not**: Provider-specific. Node registration blocks until the controller updates the CR, and if the controller is slow or down, the node waits until timeout. Requires additional CRD and controller. Not portable to other COs.
 
 This proposal provides a standardized CSI spec approach that all drivers can adopt, avoiding provider-specific implementations.
+
+### Alternative 5: Fold NodeGetID into NodeGetInfo
+
+Instead of introducing a new `NodeGetID` RPC, reuse the existing `NodeGetInfo` and have the CO ignore (or combine) its topology/limit fields when `ControllerGetNodeInfo` is available.
+
+**Why not**:
+
+1. **No safe empty values**: If the SP returns empty/zero values from `NodeGetInfo` (because node credentials are removed), an old CO misinterprets them: `max_volumes_per_node = 0` is treated as "unlimited" (silent over-scheduling), and empty `accessible_topology` means "no topological constraint" (silent under-scheduling for zone-restricted volumes). Both are hard to debug. With a separate `NodeGetID`, premature credential removal causes a loud `NodeGetInfo` RPC error instead.
+
+2. **CO still needs `node_id`**: Without a separate RPC, the new CO would still call `NodeGetInfo` to obtain `node_id` for the controller-side workflow. gRPC does not return a response alongside an error, so `NodeGetInfo` must succeed — meaning the SP must have cloud credentials to populate the response. The security goal (removing credentials from nodes) is fundamentally unreachable.
+
+3. **No clear topology combination semantic**: For count, `min(node, controller)` is well-defined. For topology, there is no natural combination — intersection, union, and override all have problems. Empty topology from the node cannot express "unknown, wait for controller" in the current spec. The asymmetry between count and topology makes a "combine both" design inelegant.
+
+4. **Field ownership contention (Kubernetes-specific)**: If both kubelet (from `NodeGetInfo`) and external-attacher (from `ControllerGetNodeInfo`) write to `CSINode.Spec.Drivers`, they fight over the same fields. Periodic updates (KEP-4876) cause oscillation, and the scheduler sees stale intermediate values during the update window. Workarounds (storing node_limit elsewhere, making the scheduler aware of mid-update state) add complexity that `NodeGetID` avoids by design: kubelet writes only an annotation, external-attacher exclusively owns `Spec.Drivers`.
+
+### Alternative 6: Reactive-Only Discovery
+
+Skip upfront reporting entirely and let Kubernetes learn capacity from `RESOURCE_EXHAUSTED` failures.
+
+**Why not**: Learning from failures is expensive — by the time an error occurs, Kubernetes has already created a volume (especially in WaitForFirstConsumer mode), scheduled a pod, and potentially started containers. Teardown involves expensive cloud operations. Additionally, this approach is one-sided: there is no mechanism to detect when capacity *increases*, only failures signal capacity decrease. Furthermore, most use cases do not have dynamic out-of-band attachment, so the effective volume limit is basically static. Designing a complex estimation algorithm (handling cold start, parallel attachment, multiple scheduler instances, etc.) to discover a static value is overkill.
+
+However, reactive error handling remains necessary as a complement to proactive reporting. Out-of-band volume attachments (manually attached disks, network interfaces) can always occur, so the CO must handle violations after the fact. The existing `RESOURCE_EXHAUSTED` → re-query mechanism (KEP-4876) serves this purpose and is unchanged by this KEP.
+
+### Alternative 7: Static Node Context Object
+
+Store controller-side information in a "node context" (similar to volume context or publish context) — call the controller once per node, persist the result, and have kubelet pass it to the node plugin on subsequent calls so the node can answer `NodeGetInfo` accurately.
+
+**Why not**: This approach is fundamentally misaligned with the information flow. The CO must call the node first to obtain `node_id`, then call the controller with that ID. The controller's output (topology, limits, attached volumes) is consumed by the CO itself for scheduling — there is no reason to route it back to the node plugin. The node plugin is not the consumer of this information; the scheduler and external-attacher are.
+
+Additionally, even if we could pass controller context to the node, the data needed for accurate volume limit calculation (the list of attached volumes) is dynamic and constantly changing. A one-time-populate approach only works for static data, but the set-difference calculation for non-CSI volumes requires current state. This would require continuous polling and re-population, making it no simpler than the proposed design while adding an unnecessary extra hop.
 
 ## Infrastructure Needed
 
