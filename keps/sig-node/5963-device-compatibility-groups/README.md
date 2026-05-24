@@ -753,7 +753,7 @@ unit and integration coverage; new tests are additive.
   exists on another node.
 - Upgrade → downgrade → upgrade: allocations made during the "upgrade" phase
   remain valid after downgrade; re-enabling enforcement does not re-evaluate
-  existing allocations (seehttps://github.com/kubernetes/kubernetes/blob/1f77090cd12d05c462e2e180b4f8becc12735728/test/e2e_dra/upgradedowngrade_test.go#L234-L287).
+  existing allocations (see https://github.com/kubernetes/kubernetes/blob/1f77090cd12d05c462e2e180b4f8becc12735728/test/e2e_dra/upgradedowngrade_test.go#L234-L287).
 
 ##### e2e tests
 
