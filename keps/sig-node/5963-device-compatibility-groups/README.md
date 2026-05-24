@@ -797,35 +797,52 @@ Allocated devices that leveraged this new field will remain allocated, and futur
 ### Version Skew Strategy
 
 The feature introduces a new optional field on `ResourceSlice` and new
-enforcement logic in the scheduler. Skew behaviors to consider:
+enforcement logic in the scheduler. Both `kube-apiserver` and
+`kube-scheduler` can be running an old version (which doesn't know the
+field), a new version with the feature gate disabled, or a new version
+with the feature gate enabled. The table below summarises the behaviour
+for every combination on a single cluster.
 
-**New kube-apiserver + old kube-scheduler.** The apiserver accepts and persists
-`compatibilityGroups`. An old scheduler ignores the field and may allocate
-incompatible devices. This degrades to the pre-KEP behavior: the DRA driver
-rejects the allocation at resource preparation time. Drivers MUST continue to
-validate at preparation time for this reason (see Driver Responsibilities).
+| kube-apiserver ↓ \ kube-scheduler → | old | new, gate off | new, gate on |
+|---|---|---|---|
+| **old**           | Pre-KEP      | Pre-KEP          | Pre-KEP          |
+| **new, gate off** | Pre-KEP      | Pre-KEP          | Pre-KEP          |
+| **new, gate on**  | Driver-only  | Devices skipped  | **Full feature** |
 
-**Old kube-apiserver + new kube-scheduler.** The old apiserver drops the unknown
-field on writes. ResourceSlices in etcd therefore do not carry
-`compatibilityGroups`, and the new scheduler sees only nil values, producing the
-pre-KEP behavior. No incorrect allocations result.
+- **Pre-KEP.** The apiserver does not serve `compatibilityGroups` (it
+  either doesn't know the field, or has the gate off, in which case it
+  strips on writes and hides on reads). The scheduler sees no
+  constraints and allocates as before this KEP. Drivers reject
+  incompatible allocations at preparation time.
+- **Driver-only.** The apiserver persists and serves
+  `compatibilityGroups`, but an old scheduler doesn't recognise the
+  field and allocates without considering it. Pods may be scheduled
+  with incompatible devices; the DRA driver rejects them at preparation
+  time.
+- **Devices skipped.** The apiserver serves `compatibilityGroups`, and
+  a new scheduler with the gate off recognises the field but is not
+  permitted to enforce it. To avoid allocations it cannot validate, the
+  scheduler excludes any device that declares `compatibilityGroups`
+  from consideration. Devices that do not declare the field are
+  scheduled normally.
+- **Full feature.** The scheduler filters incompatible candidates
+  during allocation. Drivers continue to validate at preparation time
+  for defense in depth.
 
-**Mixed-version HA kube-scheduler.** If one replica enforces the field and
-another does not, the enforcing replica may reject allocations the
-non-enforcing replica would accept. Both outcomes are safe (either the
-scheduler correctly rejects, or the driver rejects at preparation time).
-Resolution is to complete the scheduler rollout.
+**Mixed-version HA kube-scheduler.** Replicas may temporarily operate
+in different cells of the table (e.g., during a rolling restart or a
+gate flip). If some replicas don't enforce and others do, the
+non-enforcing replicas may allow allocations the enforcing replicas
+would reject; if some replicas skip declared devices, those behave more
+conservatively than the enforcing replicas. In all cases the worst-case
+outcome is a driver-side rejection at preparation time; no incorrect
+allocations result. Resolution is to complete the rollout.
 
-**Downgrade with in-flight allocations.** Devices already allocated under the
-new rules remain allocated across a downgrade; the post-downgrade scheduler
-will not consider `compatibilityGroups` for future allocations, reverting to
-pre-KEP behavior. No existing allocations are invalidated.
-
-**Feature gate off on one component.** If `DRADeviceCompatibilityGroups` is
-enabled on kube-apiserver but disabled on kube-scheduler (or vice versa),
-behavior matches the corresponding skew row above — apiserver stores the field
-but scheduler ignores it, or scheduler enforces on field values that the
-apiserver may drop on writes.
+**Downgrade with in-flight allocations.** Devices already allocated
+under the new rules remain allocated across a downgrade; the
+post-downgrade scheduler will not consider `compatibilityGroups` for
+future allocations, reverting to pre-KEP behavior. No existing
+allocations are invalidated.
 
 ## Production Readiness Review Questionnaire
 
