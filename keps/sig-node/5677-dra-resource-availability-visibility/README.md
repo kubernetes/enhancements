@@ -33,6 +33,7 @@
     - [Incomplete-Pool Handling and Requeue](#incomplete-pool-handling-and-requeue)
     - [Reusing Existing Informers](#reusing-existing-informers)
     - [Partitionable &amp; Consumable Device Accounting](#partitionable--consumable-device-accounting)
+      - [Devices That Are Both Partitionable and Consumable](#devices-that-are-both-partitionable-and-consumable)
     - [TTL-Based Cleanup](#ttl-based-cleanup)
     - [Controller RBAC](#controller-rbac)
   - [kubectl Integration](#kubectl-integration)
@@ -412,7 +413,8 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
    Alpha 1.37 adds optional `counterSets[]` and `shareableSummary`
    sub-objects to each `PoolStatus`, caps the per-device contribution
    to `allocatedDevices` at 1, and skips AdminAccess allocations in
-   all accounting. See "Partitionable & Consumable Device Accounting"
+   all accounting. See
+   [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting)
    under Controller Implementation.
 
 7. **Incomplete pools**: When a pool's observed ResourceSlice count is less
@@ -559,7 +561,7 @@ spec:
 status:
   # Total number of pools that matched the filter (even if the response is
   # truncated by `limit`). If 0, no pools matched.
-  poolCount: 2
+  poolCount: 4
 
   # First `spec.limit` matching pools, sorted by driver then pool name.
   # If len(pools) < poolCount, the response was truncated.
@@ -579,6 +581,45 @@ status:
     # validationError is set when a pool is incomplete (observed < expected
     # slice count). When set, count fields are unset. Max 256 bytes.
     validationError: "pool example.com/gpu/node-2 is incomplete: observed 1/2 slices at generation 5"
+  # Partitionable pool (Alpha 1.37): partitions draw from a shared CounterSet.
+  # availableDevices can read high while the shared counter is nearly exhausted,
+  # so the real "can another claim fit" signal lives in counterSets[].
+  - driver: example.com/gpu
+    poolName: node-3
+    generation: 7
+    nodeName: node-3
+    resourceSliceCount: 1
+    totalDevices: 6
+    allocatedDevices: 2
+    availableDevices: 4
+    unavailableDevices: 0
+    counterSets:                  # emitted only when the pool has sharedCounters
+    - name: gpu-0
+      counters:
+        memory:                   # capacity/consumed/available are resource.Quantity
+          capacity: 80Gi
+          consumed: 60Gi
+          available: 20Gi
+  # Consumable pool (Alpha 1.37): devices with allowMultipleAllocations=true.
+  # allocatedDevices counts each shared device once (cap-at-1), so it can read
+  # "1 available" while capacity headroom remains; consult shareableSummary.
+  - driver: example.com/gpu
+    poolName: node-4
+    generation: 3
+    nodeName: node-4
+    resourceSliceCount: 1
+    totalDevices: 3
+    allocatedDevices: 2
+    availableDevices: 1
+    unavailableDevices: 0
+    shareableSummary:             # emitted only when the pool has shareable devices
+      fullyAvailableDevices: 1    # devices with zero non-AdminAccess claims
+      partiallyAvailableDevices: 2
+      capacity:                   # per-capacity-key aggregate across shareable devices
+      - name: example.com/memory
+        total: 240Gi
+        consumed: 90Gi
+        available: 150Gi
 
   # Conditions indicating processing status.
   # Known types: "Complete" (True when processed successfully) and
@@ -587,7 +628,7 @@ status:
   - type: Complete
     status: "True"
     reason: CalculationComplete
-    message: "Calculated status for 2 pools (1 incomplete)"
+    message: "Calculated status for 4 pools (1 incomplete)"
     lastTransitionTime: "2026-02-07T10:30:00Z"
 ```
 
@@ -630,8 +671,8 @@ non-nil status indicates the request has been processed.
 | `pools[].counterSets[].name` | string (required) | Counter-set name as declared in `ResourceSlice.Spec.SharedCounters[].Name`. |
 | `pools[].counterSets[].counters` | `map[string]CounterStatus` (required) | Per-counter status. `CounterStatus` is a new type with three required `resource.Quantity` fields: `capacity` (mirrors the spec-side `Counter.Value`), `consumed` (sum of consumption from non-AdminAccess allocations), and `available` (`capacity − consumed`, never negative). |
 | `pools[].shareableSummary` | `*ShareableSummaryStatus` (optional) | Pool-level aggregate for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. Per-device detail was intentionally not included: a per-device list would scale to hundreds of entries on large pools, so the aggregate gives the operator-relevant signal in three small numbers plus a per-capacity-key breakdown. |
-| `pools[].shareableSummary.fullyAvailable` | int32 (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
-| `pools[].shareableSummary.partiallyConsumed` | int32 (required) | Count of shareable devices with **at least one** non-AdminAccess claim. `fullyAvailable + partiallyConsumed` equals the total number of shareable devices in the pool. |
+| `pools[].shareableSummary.fullyAvailableDevices` | int32 (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
+| `pools[].shareableSummary.partiallyAvailableDevices` | int32 (required) | Count of shareable devices with **at least one** non-AdminAccess claim. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. |
 | `pools[].shareableSummary.capacity[]` | atomic list of `ShareableCapacityStatus`, max 32 (Alpha 1.37) | Per-capacity-key aggregate across all shareable devices in the pool. Cap of 32 matches the per-device combined `Attributes + Capacity` cap (no single device can carry more than 32 capacity keys); aggregation across devices may introduce additional keys but homogeneous-schema pools rarely exceed this. |
 | `pools[].shareableSummary.capacity[].name` | string (`QualifiedName`, required) | Capacity key as it appears in `ResourceSlice.Spec.Devices[].Capacity`. |
 | `pools[].shareableSummary.capacity[].total` | `resource.Quantity` (required) | Sum of `Device.Capacity[name].Value` across all shareable devices in the pool that carry this key. Devices that do not carry the key contribute nothing (rather than zero), which is the correct behaviour for heterogeneous-schema pools. |
@@ -754,8 +795,8 @@ consistently:
 5. **`shareableSummary`** is emitted when the pool has any device
    with `allowMultipleAllocations=true`. The controller scans all
    shareable devices in the pool and produces three fields:
-   `fullyAvailable` (devices with zero non-AdminAccess claims),
-   `partiallyConsumed` (devices with at least one non-AdminAccess
+   `fullyAvailableDevices` (devices with zero non-AdminAccess claims),
+   `partiallyAvailableDevices` (devices with at least one non-AdminAccess
    claim), and `capacity[]` — a per-capacity-key aggregate where
    each entry sums `Device.Capacity[name].Value` over devices
    carrying the key (`total`) and
@@ -788,7 +829,7 @@ not.** Two cases the operator must understand:
   is free. Operators must consult
   `shareableSummary.capacity[].available` vs `.total` for the
   remaining-capacity signal, and the
-  `fullyAvailable`/`partiallyConsumed` counts for the
+  `fullyAvailableDevices`/`partiallyAvailableDevices` counts for the
   share-pattern signal.
 
 This is documented as a deliberate trade-off: `availableDevices`
@@ -803,6 +844,36 @@ revisit at Beta; pools larger than this produce a per-pool
 `validationError` rather than silent truncation) and
 `shareableSummary.capacity[]` carries `+k8s:maxItems=32` to match
 the per-device combined `Attributes + Capacity` cap.
+
+##### Devices That Are Both Partitionable and Consumable
+
+Alpha 1.37 computes `counterSets[]` and `shareableSummary`
+**independently** per pool; it does not cross-account between them.
+When a single physical device is both partitionable and consumable —
+its partitions draw from a shared `CounterSet` *and* individual
+partitions allow multiple allocations — consuming capacity on one
+partition can make sibling partitions unallocatable through the shared
+counter, even though those siblings still appear as unconsumed devices.
+
+Concretely: a device offered as one full partition (80Gi) or two half
+partitions (40Gi each), all backed by one 80Gi `CounterSet`. Allocate
+60Gi against the full partition and the two half partitions can no
+longer be satisfied — only 20Gi remains on the counter — yet a naive
+per-device capacity sum would still advertise the halves' 80Gi as
+available. Alpha 1.37 does **not** subtract those counter-blocked
+siblings from `availableDevices` or from
+`shareableSummary.capacity[].available`. For such a pool,
+`counterSets[].counters[].available` (20Gi here) is the authoritative
+remaining-allocatability bound; `shareableSummary` reports raw
+device-capacity aggregates that do not net out counter constraints.
+
+Folding the two constraints into a single availability number is
+intentionally out of scope for Alpha 1.37: it requires deciding which
+bound wins when both a shared counter and a per-device capacity limit
+apply, which is exactly the kind of semantics a soak cycle should
+inform before it is committed to the API. Until then the rule for
+operators is explicit — on a partitionable pool, treat `counterSets[]`
+as the binding signal.
 
 #### TTL-Based Cleanup
 
@@ -905,7 +976,7 @@ Additional cases (Alpha 1.37):
   contributes exactly `1` to `allocatedDevices`, not `3`.
 - **AdminAccess skipped**: an AdminAccess allocation against a
   device does not increment `allocatedDevices`, does not move
-  `shareableSummary.partiallyConsumed`, does not contribute to
+  `shareableSummary.partiallyAvailableDevices`, does not contribute to
   `shareableSummary.capacity[].consumed`, and does not subtract
   from any `counterSets[].counters[].available`.
 - **`unavailableDevices` from taints**: a pool with `M` devices,
@@ -924,7 +995,7 @@ Additional cases (Alpha 1.37):
   each with `bandwidth=10Gi`), where `nic-0` has two claims totalling
   7Gi and `nic-1` has one claim of 2Gi and `nic-2` has no claims,
   reports
-  `shareableSummary = {fullyAvailable: 1, partiallyConsumed: 2,
+  `shareableSummary = {fullyAvailableDevices: 1, partiallyAvailableDevices: 2,
   capacity: [{name: bandwidth, total: 30Gi, consumed: 9Gi, available: 21Gi}]}`.
 - **`shareableSummary` heterogeneous-schema handling**: a pool with
   two devices that carry different capacity keys (`nic-a` has
@@ -967,8 +1038,8 @@ Additional cases (Alpha 1.37):
 9. **Consumable end-to-end**: seed a pool with at least one
    `allowMultipleAllocations=true` device and multiple claims that
    each set `consumedCapacity`; assert `shareableSummary` is
-   populated with the expected `fullyAvailable`,
-   `partiallyConsumed`, and per-key `capacity[]` aggregates, and
+   populated with the expected `fullyAvailableDevices`,
+   `partiallyAvailableDevices`, and per-key `capacity[]` aggregates, and
    that `allocatedDevices` is capped at 1 per device.
 10. **AdminAccess invisibility**: in addition to a normal claim,
     create an AdminAccess claim against the same device; assert the
@@ -1011,7 +1082,7 @@ Added in Alpha 1.37:
    seed the test driver with two `allowMultipleAllocations=true`
    devices; schedule two pods that each consume a slice of capacity
    on one of them; assert `shareableSummary` reports
-   `fullyAvailable=1`, `partiallyConsumed=1`, the per-key
+   `fullyAvailableDevices=1`, `partiallyAvailableDevices=1`, the per-key
    `capacity[]` aggregate is consistent with the consumed slice,
    and `allocatedDevices=1` (cap-at-1 verified end-to-end).
 6. "should not count AdminAccess claims as consumers": create an
@@ -1082,8 +1153,8 @@ Scope of the 1.37 Alpha:
 - Feature gate `DRAResourcePoolStatus` stays Alpha, default off.
 - **Add `counterSets[]` to `PoolStatus`** for partitionable pools
   (populated only when the pool's slices declare `sharedCounters`).
-- **Add `shareableSummary` to `PoolStatus`** (`fullyAvailable`,
-  `partiallyConsumed`, plus per-capacity-key `total`/`consumed`/`available`
+- **Add `shareableSummary` to `PoolStatus`** (`fullyAvailableDevices`,
+  `partiallyAvailableDevices`, plus per-capacity-key `total`/`consumed`/`available`
   aggregates) for pools that contain at least one device with
   `allowMultipleAllocations=true`.
 - **Cap the per-device contribution to `allocatedDevices` at 1**,
