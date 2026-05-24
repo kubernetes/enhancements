@@ -13,6 +13,7 @@
     - [Story 3: Build an HPA troubleshooting view](#story-3-build-an-hpa-troubleshooting-view)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Open Questions](#open-questions)
 - [Design Details](#design-details)
   - [API](#api)
   - [Decision Model](#decision-model)
@@ -128,9 +129,11 @@ existing scaling semantics intact.
 
 ## Proposal
 
-Add a new optional `status.lastScaleDecision` field to
-`autoscaling/v2.HorizontalPodAutoscaler`. The field records the latest
-meaningful scaling decision observed by the HPA controller.
+This KEP proposes adding a bounded, machine-readable decision trace for HPA
+scaling decisions. The preferred initial API surface is a new optional
+`status.lastScaleDecision` field on `autoscaling/v2.HorizontalPodAutoscaler`.
+This KEP also discusses alternatives such as conditions, events, controller
+logs, and a separate subresource.
 
 The field is written only by the HPA controller and is guarded by the
 `HPAStatusDecisionTrace` feature gate. When the feature gate is disabled, the
@@ -206,11 +209,30 @@ object.
     `metricIndex` is valid only for the HPA spec generation observed by the
     controller.
 
+### Open Questions
+
+- Should the initial API surface be `status.lastScaleDecision`, or should SIG
+  Autoscaling prefer a different API shape such as a subresource?
+- What is the correct feature-gating implementation pattern for an alpha field
+  on the existing GA `autoscaling/v2` HPA API? This must follow Kubernetes API
+  review guidance and should be finalized with SIG API Machinery and SIG
+  Architecture before the KEP moves to `implementable`.
+- Should each metric decision include only `metricIndex`, or also a minimal
+  user-facing metric identity such as metric type and metric name?
+- Is `lastScaleDecision` the right field name, or would
+  `lastScalingDecision` better match Kubernetes API naming conventions?
+- Is the proposed Alpha API scope small enough, or should the initial field be
+  limited further to only selected metric, per-metric proposed replicas,
+  invalid metric reasons, final reason, and coarse constraints?
+- Should the final decision status include an explicit direction field, even
+  though clients can infer it from `currentReplicas` and `desiredReplicas`?
+
 ## Design Details
 
 ### API
 
-Add a new optional field to `HorizontalPodAutoscalerStatus`:
+For the preferred initial status-based API surface, add a new optional field to
+`HorizontalPodAutoscalerStatus`:
 
 ```go
 type HorizontalPodAutoscalerStatus struct {
@@ -236,43 +258,32 @@ type HorizontalPodAutoscalerScaleDecision struct {
     // CurrentReplicas is the observed replica count used for the decision.
     CurrentReplicas int32 `json:"currentReplicas" protobuf:"varint,3,opt,name=currentReplicas"`
 
-    // RecommendedReplicas is the replica count recommended before final HPA
-    // constraints such as min/max replicas, stabilization, tolerance, and
-    // behavior policies are applied, when such a recommendation could be
-    // computed. It is absent when all metrics are invalid or unavailable and
-    // the controller cannot compute an initial recommendation.
+    // RecommendedReplicas is the replica count selected from valid metric
+    // recommendations before final HPA constraints such as min/max replicas,
+    // stabilization, tolerance, and behavior policies are applied, when such a
+    // recommendation could be computed. It is absent when all metrics are
+    // invalid or unavailable and the controller cannot compute an initial
+    // recommendation.
     // +optional
     RecommendedReplicas *int32 `json:"recommendedReplicas,omitempty" protobuf:"varint,4,opt,name=recommendedReplicas"`
 
     // DesiredReplicas is the final desired replica count selected by the HPA.
     DesiredReplicas int32 `json:"desiredReplicas" protobuf:"varint,5,opt,name=desiredReplicas"`
 
-    // Direction describes whether the final decision scales up, scales down, or
-    // keeps the current replica count.
-    Direction HPAScaleDecisionDirection `json:"direction" protobuf:"bytes,6,opt,name=direction,casttype=HPAScaleDecisionDirection"`
-
     // Reason is a stable, coarse reason for the final decision.
-    Reason HPAScaleDecisionReason `json:"reason" protobuf:"bytes,7,opt,name=reason,casttype=HPAScaleDecisionReason"`
+    Reason HPAScaleDecisionReason `json:"reason" protobuf:"bytes,6,opt,name=reason,casttype=HPAScaleDecisionReason"`
 
     // Metrics contains one entry per configured metric that was evaluated.
     // +listType=atomic
     // +optional
-    Metrics []HPAMetricScaleDecision `json:"metrics,omitempty" protobuf:"bytes,8,rep,name=metrics"`
+    Metrics []HPAMetricScaleDecision `json:"metrics,omitempty" protobuf:"bytes,7,rep,name=metrics"`
 
     // Constraints describes coarse HPA constraints that affected the final
     // desired replica count after the initial recommendation was computed.
     // +listType=atomic
     // +optional
-    Constraints []HPAScaleDecisionConstraint `json:"constraints,omitempty" protobuf:"bytes,9,rep,name=constraints"`
+    Constraints []HPAScaleDecisionConstraint `json:"constraints,omitempty" protobuf:"bytes,8,rep,name=constraints"`
 }
-
-type HPAScaleDecisionDirection string
-
-const (
-    HPAScaleDecisionDirectionUp   HPAScaleDecisionDirection = "Up"
-    HPAScaleDecisionDirectionDown HPAScaleDecisionDirection = "Down"
-    HPAScaleDecisionDirectionNone HPAScaleDecisionDirection = "None"
-)
 
 type HPAScaleDecisionReason string
 
@@ -313,7 +324,6 @@ const (
     HPAMetricScaleDecisionStatusUsed    HPAMetricScaleDecisionStatus = "Used"
     HPAMetricScaleDecisionStatusValid   HPAMetricScaleDecisionStatus = "Valid"
     HPAMetricScaleDecisionStatusInvalid HPAMetricScaleDecisionStatus = "Invalid"
-    HPAMetricScaleDecisionStatusIgnored HPAMetricScaleDecisionStatus = "Ignored"
 )
 
 type HPAMetricScaleDecisionReason string
@@ -352,7 +362,8 @@ The controller records:
 1. the current replica count observed for the scale target;
 2. each configured metric evaluation, identified by its `spec.metrics` index,
    and its proposed replica count, if one was computed;
-3. the initial recommendation selected from valid metrics;
+3. the initial recommendation selected from valid metrics, before applying
+   replica limits, stabilization, tolerance, or scaling behavior policies;
 4. any coarse HPA constraint that affected the final decision; and
 5. the final desired replica count written to HPA status.
 
@@ -375,11 +386,23 @@ resource, and external metrics.
 
 When invalid metrics prevent a scale down, the trace records an
 `InvalidMetricGuard` constraint. When the HPA stays within tolerance, the trace
-records a `Tolerance` constraint and the final direction is `None`.
+records a `Tolerance` constraint and the final desired replica count remains the
+current replica count.
 
 `constraints` is an unordered set of coarse, user-observable constraint
 categories that affected the final decision. It intentionally does not expose
 the sequence of controller helper calls or intermediate replica counts.
+
+`reason` is the primary explanation for the final decision. `constraints`
+contains additional coarse categories that affected the final replica count.
+For example, a decision may have `reason: ReplicaLimit` and
+`constraints: ["MaxReplicas"]`; clients should use `reason` as the headline and
+`constraints` as structured supporting context.
+
+`observedGeneration` is duplicated inside the decision snapshot even though HPA
+status already has an `observedGeneration` field. The decision-local value
+binds `metricIndex` and all other decision details to the HPA spec generation
+that the controller used when computing this specific decision.
 
 The controller must not write status solely because `time` changed. Trace
 updates piggyback on the existing HPA status update path. If the semantic
@@ -410,6 +433,10 @@ When the apiserver feature gate is disabled:
 Disabling the gate therefore behaves like other gated alpha fields on GA APIs:
 new writes cannot introduce or preserve the field and downgrade does not
 require an explicit data migration.
+
+The exact implementation pattern for gating an alpha field on an existing GA API
+must follow Kubernetes API review guidance and will be finalized with SIG API
+Machinery and SIG Architecture.
 
 ### Test Plan
 
@@ -503,6 +530,10 @@ Cluster operators should keep the feature gate settings consistent across
 This feature is enabled by the `HPAStatusDecisionTrace` feature gate on
 `kube-apiserver` and `kube-controller-manager`.
 
+Enabling the feature does not change any default HPA scaling behavior. It only
+adds an optional status field when the feature gate is enabled. The HPA scaling
+algorithm and `desiredReplicas` calculation are unchanged.
+
 Rollback is supported by disabling the feature gate. Disabling the feature gate
 removes the new observability surface but does not change HPA scaling behavior.
 
@@ -510,6 +541,11 @@ removes the new observability surface but does not change HPA scaling behavior.
 
 The feature can be rolled out by enabling the gate first on the apiserver and
 then on the controller manager. Rollback can be performed in the reverse order.
+
+No control-plane downtime, node reprovisioning, or workload restart is expected
+when enabling or disabling this feature.
+
+The PRR approver is TBD while this KEP is provisional.
 
 ### Monitoring Requirements
 
@@ -526,6 +562,9 @@ increase HPA status update frequency when the computed decision is unchanged.
 This feature depends on the HPA controller and the `autoscaling/v2` HPA API.
 There are no new external service dependencies.
 
+The feature does not introduce new external API calls. The HPA controller
+populates the field as part of existing HPA status updates.
+
 ### Scalability
 
 The field stores only the latest decision and one entry per configured HPA
@@ -533,6 +572,10 @@ metric. It should scale with the existing HPA metric count. Implementations must
 avoid adding extra status writes only for the trace. Before Beta, the KEP should
 include either scalability test results or analysis showing the maximum added
 status size for supported HPA metric counts.
+
+Enabling this feature increases HPA object size by O(number of configured HPA
+metrics). The Alpha API is intentionally bounded to one latest decision and
+coarse enum values to limit that growth.
 
 ### Troubleshooting
 
