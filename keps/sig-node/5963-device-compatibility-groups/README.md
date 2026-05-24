@@ -186,7 +186,7 @@ This is in order to allow enablement of the feature without user intervention (p
 
 **Drivers must be aware of the enablement status of the `DRADeviceCompatibilityGroups` flag**
 
-The feature flag can be enabled/disabled at runtime. This requires drivers that leverage this feature to identfy when it is disabled and update the ResourceSlices they manage to not leverage the feature.
+The feature flag can be enabled/disabled at runtime. This requires drivers to identfy the flag status and update the ResourceSlices they manage accordingly.
 
 ## Design Details
 
@@ -194,7 +194,7 @@ The feature flag can be enabled/disabled at runtime. This requires drivers that 
 
 #### CompatibilityGroups Assignment
 
-A new field `compatibilityGroups` is added inside each entry of
+A new optional field `compatibilityGroups` is added inside each entry of
 `device.consumesCounters[]`. It contains a list of string group names.
 For two devices consuming counters from the same counter set to be allocated
 together, either both must leave the field unset, or both
@@ -575,27 +575,14 @@ compatibility group (`mig` vs `mps`). The scheduler rejects the allocation and
 pod-b becomes Unschedulable with generic event: "could not allocate all claims". No cryptic preparation failure, no resource thrashing.
 
 Two MIG devices (both group: `mig`) or two MPS devices (both group: `mps`) can
-still be allocated at the same time, since they share a group. Each device lists only its
-own type because MIG and MPS are not compatible with each other; if they
-were, they would also share a composite group like `migmps`.
+still be allocated at the same time, since they share a group.
 
 #### Example 4: Multiple compatible groups with an incompatible group
 
-A device may support more than two partitioning schemes, some of which can
-coexist. In this example, a device advertises three partition types: `foo`,
-`bar`, and `baz`. `foo` and `bar` can coexist on the same device, but `baz`
-is incompatible with both.
+A device may be compatible with multiple groups.
+In this example, devices advertise compatibility with multiple groups
 
-By convention, each device's `compatibilityGroups` is a composite of the
-types it can be allocated with: each device lists its own type, plus a
-shared composite group for every set of types it is compatible with. So
-`foo` devices list `[foo, foobar]`, `bar` devices list `[bar, foobar]`, and
-`baz` — compatible with no other type — lists `[baz]`.
-
-This example is written generically — the counter name `units` stands in for
-any hardware-specific resource (SMs, bandwidth, slots).
-
-ResourceSlices — a device advertising foo, bar, and baz partitions:
+ResourceSlices — devices advertising compatibility with the `foo`, `bar`, and `baz` groups:
 
 ```yaml
 apiVersion: resource.k8s.io/v1
@@ -681,8 +668,8 @@ group).
 The DRA scheduler plugin is enhanced to:
 
 1. For each candidate device during allocation:
-2. Calculate `compatibilityGroups` intersection of already allocated devices
-3. If the intersection between [2] and the `compatibilityGroups` of the candidate is empty, skip the device for this allocation, otherwise, continue with allocation attempt.   
+2. Calculate rolling intersection of `compatibilityGroups` of already allocated devices
+3. If the intersection of *2* and the `compatibilityGroups` of the candidate is empty, skip the device for this allocation, otherwise, continue with allocation attempt.   
 
 **Complexity.** Let *M* be the number of devices already allocated on a
 counter set at the start of a scheduling round, *N* the number of candidates
@@ -730,8 +717,7 @@ Resource drivers are responsible for:
 1. Populating `compatibilityGroups` for all devices with compatibility requirements.
 2. Ensuring compatibility rules are symmetric and consistent across all devices
   in a ResourceSlice.
-3. Documenting their compatibility matrix.
-4. Continuing to validate at resource preparation time for version-skew safety
+3. Continuing to validate allocations at resource preparation time for version-skew safety
     and to detect incorrect allocations made by a scheduler.
 
 ### Test Plan
@@ -761,13 +747,13 @@ unit and integration coverage; new tests are additive.
 ##### Integration tests
 
 - Feature gate enablement/disablement round-trip: field is persisted when
-  enabled, dropped on write when disabled.
+  enabled, dropped on write when disabled (see https://github.com/kubernetes/kubernetes/blob/1f77090cd12d05c462e2e180b4f8becc12735728/test/integration/dra/core.go#L161).
 - Scheduler rejects a claim when the only remaining candidate on a node
   belongs to an incompatible group; admits it when a compatible candidate
   exists on another node.
 - Upgrade → downgrade → upgrade: allocations made during the "upgrade" phase
   remain valid after downgrade; re-enabling enforcement does not re-evaluate
-  existing allocations.
+  existing allocations (seehttps://github.com/kubernetes/kubernetes/blob/1f77090cd12d05c462e2e180b4f8becc12735728/test/e2e_dra/upgradedowngrade_test.go#L234-L287).
 
 ##### e2e tests
 
@@ -776,20 +762,17 @@ unit and integration coverage; new tests are additive.
   the same node leaves the second pod Unschedulable with the documented
   event; reversing the order reproduces the behavior symmetrically.
 - Same driver with compatible groups (`foo`, `bar`) — both pods schedule.
-- Feature-gate-off baseline: the second pod reaches preparation and the
-  driver rejects it (pre-KEP behavior preserved).
 
 ### Graduation Criteria
 #### Alpha
 - API defined and implemented
 - All relevant code is merged and placed behind a feature flag
-- Unit and integration tests
+- Unit, integration and E2E tests implemented and passing reliably
 - Driver-author documentation published under `kubernetes/website` (DRA
   drivers section), including the strict nil-matching rule and a worked
   MIG/MPS example.
 
 #### Beta
-- E2E tests passing in CI 
 - Validated with at least one production DRA driver (out-of-tree testing)
 
 #### GA
@@ -851,11 +834,10 @@ apiserver may drop on writes.
   - Feature gate name: DRADeviceCompatibilityGroups
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
 - Gate behavior per component:
-  - **kube-apiserver**: when disabled, strips `compatibilityGroups` on writes
-    and hides it on reads of `ResourceSlice`. Prevents drivers from persisting
-    values that cannot be enforced.
-  - **kube-scheduler**: when disabled, ignores the field on read and does not
-    perform the rolling-intersection check during filtering.
+  - **kube-apiserver**: When enabled, persists `compatibilityGroups` to devices in `ResourceSlice`s.
+    When disabled, strips `compatibilityGroups` on writes.
+  - **kube-scheduler**: When enabled, respects `compatibilityGroups` declared by devices in `ResourceSlice`s.
+    When disabled, skips devices that declare `compatibilityGroups`.
 - No control-plane downtime is required to toggle the gate.
 - No node downtime or reprovisioning is required.
 
@@ -1030,4 +1012,6 @@ include `bar` in their group list). It was rejected because:
   than silent incorrect behavior under exclusion semantics.
 
 ## Infrastructure Needed (Optional)
+
+N/A
 
