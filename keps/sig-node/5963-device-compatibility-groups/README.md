@@ -162,22 +162,19 @@ allowing an allocation that will fail at device preparation time.
 
 ### Notes/Constraints/Caveats
 
-The compatibility relation is **symmetric**: if A can be allocated with B,
-then B can be allocated with A. A candidate device is admitted only if its
-`compatibilityGroups` share at least one entry with the **rolling
-intersection** of `compatibilityGroups` maintained across all devices
-already allocated on the same counter set — i.e., the candidate must
+A candidate device is admitted only if its`compatibilityGroups` share at 
+least one entry with the **rollingintersection** of `compatibilityGroups` 
+maintained across all devices already allocated on the same counter set — i.e., the candidate must
 declare at least one group that is present in every already-allocated
-device's list. Drivers that want a set of device types to be mutually
-co-allocatable must therefore include a common shared group in every
-type's list (see Example 4 for the `foobar` pattern).
+device's list. Drivers that want a set of devices to be allocated at the 
+same time must therefore include a common shared group in every
+device's list (see Example 4 for the `foobar` pattern).
 
 ### Risks and Mitigations
 
 **Scheduler performance impact**
 
-Evaluating compatibility constraints during  
-device selection adds work to each scheduling cycle that involves DRA devices.
+Evaluating compatibility constraints during device selection adds work to each scheduling cycle that involves DRA devices.
 
 **Older schedulers ignoring devices with compatibilityGroups**
 
@@ -186,7 +183,7 @@ This is in order to allow enablement of the feature without user intervention (p
 
 **Drivers must be aware of the enablement status of the `DRADeviceCompatibilityGroups` flag**
 
-The feature flag can be enabled/disabled at runtime. This requires drivers to identfy the flag status and update the ResourceSlices they manage accordingly.
+The feature flag can be enabled/disabled at runtime. This requires drivers to identify the flag status and update the `ResourceSlice`s they manage accordingly.
 
 ## Design Details
 
@@ -200,8 +197,8 @@ For two devices consuming counters from the same counter set to be allocated
 together, either both must leave the field unset, or both
 must declare the field and share at least one group name. A nil
 `compatibilityGroups` and an empty `compatibilityGroups: []` are treated
-identically. This means a device that declares the field is never co-allocatable
-with a sibling that omits it.
+identically. This means a device that declares the field is never allocated 
+on a shared counter at the same time with a sibling that omits it.
 
 The field is placed on each `consumesCounters[]` entry rather than on the
 device itself because compatibility is a physical-hardware property scoped to
@@ -715,9 +712,7 @@ conjunction.
 Resource drivers are responsible for:
 
 1. Populating `compatibilityGroups` for all devices with compatibility requirements.
-2. Ensuring compatibility rules are symmetric and consistent across all devices
-  in a ResourceSlice.
-3. Continuing to validate allocations at resource preparation time for version-skew safety
+2. Continuing to validate allocations at resource preparation time for version-skew safety 
     and to detect incorrect allocations made by a scheduler.
 
 ### Test Plan
@@ -761,7 +756,7 @@ unit and integration coverage; new tests are additive.
   a single counter set. Scheduling a `mig` pod followed by an `mps` pod on
   the same node leaves the second pod Unschedulable with the documented
   event; reversing the order reproduces the behavior symmetrically.
-- Same driver with compatible groups (`foo`, `bar`) — both pods schedule.
+- Same driver with devices who are compatible with each other (declare a shared group) — both pods schedule.
 
 ### Graduation Criteria
 #### Alpha
@@ -984,7 +979,7 @@ TBD
 
 ## Implementation History
 
-- 2026-04-18: KEP under review; API shape and default semantics settled.
+- 1.37 - initial alpha implementation
 
 
 ## Drawbacks
