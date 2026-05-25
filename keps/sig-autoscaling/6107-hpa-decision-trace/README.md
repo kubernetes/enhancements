@@ -1,4 +1,4 @@
-# KEP-6107: Improve HPA status explainability for operational tooling
+# KEP-6107: Improve HPA explainability for operational tooling
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
