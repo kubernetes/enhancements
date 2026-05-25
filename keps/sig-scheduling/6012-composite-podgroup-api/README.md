@@ -46,8 +46,11 @@ tags, and then generate with `hack/update-toc.sh`.
     - [<code>Workload</code>](#workload)
     - [Group hierarchy](#group-hierarchy)
   - [Changes in kube-scheduler](#changes-in-kube-scheduler)
-    - [Multi-level scheduling](#multi-level-scheduling)
-      - [Scheduling sequence for Pods](#scheduling-sequence-for-pods)
+    - [Multi-level gang scheduling](#multi-level-gang-scheduling)
+      - [Prerequisites](#prerequisites)
+      - [GangScheduling Plugin Changes](#gangscheduling-plugin-changes)
+      - [Recursive Scheduling Cycle Execution](#recursive-scheduling-cycle-execution)
+      - [Scheduling sequence for PodGroups](#scheduling-sequence-for-podgroups)
       - [Suboptimal scheduling decisions](#suboptimal-scheduling-decisions)
     - [Integration with workload-aware preemption](#integration-with-workload-aware-preemption)
     - [Multi-level topology-aware scheduling](#multi-level-topology-aware-scheduling)
@@ -283,21 +286,41 @@ This might be a good place to talk about core concepts and how they relate.
 
 #### Suboptimal Placement Decisions due to NP-Hardness of Multi-level Scheduling
 
-While the greedy scheduling heuristic of `kube-scheduler` already introduces suboptimal placements for single-level gangs and topology constraints, these inefficiencies can be significantly amplified when scheduling the much larger, hierarchical workload trees enabled by the `CompositePodGroup` API.
+While the greedy scheduling heuristic of `kube-scheduler` already introduces suboptimal
+placements for single-level gangs and topology constraints, these inefficiencies can be
+significantly amplified when scheduling the much larger, hierarchical workload trees enabled
+by the `CompositePodGroup` API.
 
-*Mitigation:* This is a fundamental limitation of solving an NP-complete problem within a heuristic-based scheduling loop. In Beta and future releases, we will utilize real-world user feedback to incrementally refine and locally optimize scheduling heuristics fors pecifically reported use cases.
+*Mitigation:* This is a fundamental limitation of solving an NP-complete problem within a
+heuristic-based scheduling loop. In Beta and future releases, we will utilize real-world
+user feedback to incrementally refine and locally optimize scheduling heuristics for
+specifically reported use cases.
 
 #### Consistency and Validity Across Decoupled Hierarchy Objects
 
-Because the scheduling hierarchy is represented using separate, decoupled runtime objects (`CompositePodGroup` and `PodGroup`), there is a risk of declaring conflicting, malformed, or cyclic configurations (such as cyclic parent references, excessive nesting depth, or diverging priorities) that cannot be reliably prevented by API admission.
+Because the scheduling hierarchy is represented using separate, decoupled runtime objects
+(`CompositePodGroup` and `PodGroup`), there is a risk of declaring conflicting, malformed,
+or cyclic configurations (such as cyclic parent references, excessive nesting depth, or
+diverging priorities) that cannot be reliably prevented by API admission.
 
-*Mitigation:* The static template definition within `Workload` will enforce unique names and a depth limit of 4 levels at admission time. In the runtime group hierarchy, `kube-scheduler` will detect invalid states (such as cycles, excessive depth, or priority divergence) during the scheduling cycle, immediately mark the affected groups as invalid via status Conditions, and skip scheduling their constituent Pods to maintain cluster stability and raise operator visibility.
+*Mitigation:* The static template definition within `Workload` will enforce unique names and
+a depth limit of 4 levels at admission time. In the runtime group hierarchy,
+`kube-scheduler` will detect invalid states (such as cycles, excessive depth, or priority
+divergence) during the scheduling cycle, immediately mark the affected groups as invalid via
+status Conditions, and skip scheduling their constituent Pods to maintain cluster stability
+and raise operator visibility.
 
 #### API Coverage and Extensibility Gaps
 
-The newly introduced `CompositePodGroup` API might fail to cover the scheduling needs of complex, fast-evolving AI and distributed workload classes (such as disaggregated serving, complex leader-worker arrangements, or novel hardware topologies).
+The newly introduced `CompositePodGroup` API might fail to cover the scheduling needs of
+complex, fast-evolving AI and distributed workload classes (such as disaggregated serving,
+complex leader-worker arrangements, or novel hardware topologies).
 
-*Mitigation:* We are mitigating this by performing extensive upfront research on key state-of-the-art use cases, specifically including `JobSet` (for bulk training) and `LeaderWorkerSet` (for serving/inference). The `CompositePodGroup` API is designed using the composite pattern, ensuring that it is open for future extensions with new scheduling and disruption policies without requiring API schema redesigns.
+*Mitigation:* We are mitigating this by performing extensive upfront research on key
+state-of-the-art use cases, specifically including `JobSet` (for bulk training) and
+`LeaderWorkerSet` (for serving/inference). The `CompositePodGroup` API is designed using the
+composite pattern, ensuring that it is open for future extensions with new scheduling and
+disruption policies without requiring API schema redesigns.
 
 
 
@@ -722,7 +745,11 @@ Another difference is that the `WorkloadRef` is required here. Contrary to the
 
 ##### Scheduling policy
 
-Analogous to the scheduling policy defined at the `PodGroup` level for Pods, the `CompositePodGroupSchedulingPolicy` specifies the policy for scheduling child groups belonging to a `CompositePodGroup`. Specifically, this determines whether the nested child groups are admitted and scheduled independently (`Basic`) or treated as an all-or-nothing scheduling unit (`Gang`).
+Analogous to the scheduling policy defined at the `PodGroup` level for Pods, the
+`CompositePodGroupSchedulingPolicy` specifies the policy for scheduling child groups
+belonging to a `CompositePodGroup`. Specifically, this determines whether the nested child
+groups are admitted and scheduled independently (`Basic`) or treated as an all-or-nothing
+scheduling unit (`Gang`).
 
 
 ```go
@@ -837,16 +864,28 @@ type AllCompositeDisruptionMode struct {
 }
 ```
 
-The nesting of scheduling groups with potentially differing `DisruptionModes` at separate levels of the hierarchy introduces support for complex disruption semantics. 
+The nesting of scheduling groups with potentially differing `DisruptionModes` at separate
+levels of the hierarchy introduces support for complex disruption semantics. 
 
-However, not all hierarchical disruption configurations represent semantically clear runtime states. For example, if a parent `CompositePodGroup` is configured with the `All` disruption mode (requiring the entire subtree to be preempted or disrupted as a single atomic unit) but contains child groups configured with the `Single` disruption mode (allowing their individual elements to be preempted independently), the expected behavior is highly ambiguous. 
+However, not all hierarchical disruption configurations represent semantically clear runtime
+states. For example, if a parent `CompositePodGroup` is configured with the `All` disruption
+mode (requiring the entire subtree to be preempted or disrupted as a single atomic unit) but
+contains child groups configured with the `Single` disruption mode (allowing their
+individual elements to be preempted independently), the expected behavior is highly
+ambiguous. 
 
-To ensure deterministic preemption and eviction behavior, the API will enforce the following structural restrictions for the Alpha release:
+To ensure deterministic preemption and eviction behavior, the API will enforce the following
+structural restrictions on the Workload level API for the Alpha release:
 
-*   A `CompositePodGroup` configured with the `All` disruption mode can only have children groups (nested `CompositePodGroups` or leaf `PodGroups`) that are also configured with the `All` disruption mode.
-*   A `CompositePodGroup` configured with the `Single` disruption mode can have children groups configured with either the `Single` or `All` disruption modes.
+*   A `CompositePodGroupTemplate` configured with the `All` disruption mode can only have
+children groups (nested `CompositePodGroupTemplates` or leaf `PodGroupTemplates`) that are also
+configured with the
+`All` disruption mode.
+*   A `CompositePodGroupTemplate` configured with the `Single` disruption mode can have children
+groups configured with either the `Single` or `All` disruption modes.
 
-More complex configurations will be considered for Beta and future releases once concrete production use-cases and community feedback are established.
+Runtime structure validation and more complex configurations will be considered for Beta and
+future releases once concrete production use-cases and community feedback are established.
 
 
 
@@ -983,59 +1022,249 @@ to scheduling it at all.
 
 ### Changes in kube-scheduler
 
-#### Multi-level scheduling
+#### Multi-level gang scheduling
 
-So far, Kubernetes handled two possible kinds of scheduling units - `PodGroups`
-and Pods that didn't belong to `PodGroups`. Such units corresponded one-to-one
-to the units enqueued in the scheduling queue that were popped by the scheduler
-and later passed to the scheduling cycle.
+Below we describe the high-level changes in `kube-scheduler` required to
+support multi-level gang scheduling.
 
-The introduction of `CompositePodGroup` API naturally evolves the space of
-possible scheduling units. In principle, a scheduling unit is a tree-shaped
-group hierarchy and this induces the following types of entities that will be
-stored in the scheduling queue:
+##### Prerequisites
+To enable multi-level gang scheduling, we must generalize internal data
+structures, extend the core scheduling queue, and adapt plugin extension
+points:
 
-- Pods not belonging to a `PodGroup`,
-- `PodGroups` without a parent reference,
-- `CompositePodGroups` without a parent reference.
+1. **Polymorphic `PodGroupInfo` Generalization:** In the internal scheduler
+   implementation, the existing `PodGroupInfo` struct (which represents a
+   scheduling group in queue memory and cache) is generalized to
+   polymorphically represent both leaf `PodGroups` and `CompositePodGroups`.
+   This unified representation significantly reduces code and interface
+   duplication, allowing scheduling plugins to process all hierarchy levels
+   uniformly.
+2. **Scheduling Queue Support for CPGs:** The core scheduling queue is extended
+   to natively support root `CompositePodGroups` (CPGs without a parent
+   reference) and standalone `PodGroups` as the sole root scheduling units
+   enqueued in the active scheduling queue. To preserve this root-only queue
+   property in the presence of unsynchronized object arrivals (e.g. a member
+   pod arriving before its parent PG/CPG object is created/observed), unobserved
+   groups are tracked in a dedicated `unschedulablePodGroups` structure and
+   only moved into the active scheduling queue when the root of their
+   hierarchy (having no parent reference) is successfully observed and cached.
+3. **`PreEnqueue` Extension Point:** Currently, this extension point is
+   defined strictly at the individual `Pod` level. We introduce/add support
+   for `PreEnqueue` at the `PodGroupInfo` level (operating on CPG/PG groups) to
+   recursively verify if the tree has enough active members to schedule before
+   enqueuing.
+   *(Note: Alternatively, PreEnqueue could operate at the Pod-level, requiring
+   re-calculating parent CPG tree admissibility recursively for every member
+   pod. For Alpha, we will evaluate both approaches and select the simplest,
+   using the group-level PreEnqueue point as the KEP's default baseline, and
+   finalize on Beta).*
+4. **`PlacementFeasible` Extension Point:** Currently, this extension point
+   exists at the `PodGroup` level (introduced in PR #138643). We extend this
+   existing extension point under our polymorphic `PodGroupInfo` representation
+   to support the validation of hierarchical constraints at the
+   `CompositePodGroup` level.
 
-The PrioritySort plugin continues determining the order in the scheduling queue
-and its logic gets extended to the new types of scheduling units in a natural
-way, i.e. the priority of the scheduling hierarchy root determines the order in
-the queue.
+##### GangScheduling Plugin Changes
 
-TODO - describe the changes required to handle waiting mechanism for multi-level
-gang scheduling in the `GangScheduling` plugin:
-- `PreEnqueue`
-- `Permit`
-- Queuing hints
+1. **`PreEnqueue`:**
+   Executed strictly on the root node (represented by a root `PodGroupInfo`
+   object) of the popped hierarchy. It recursively verifies that the subtree
+   contains the required minimum quantities:
+   * **For a leaf `PodGroup`:** Verifies if the group is `admissible` (total
+     pending or running member pods in the cluster $\ge$ `minCount`).
+   * **For a `CompositePodGroup`:** Verifies that the number of `admissible`
+     child groups in its subtree $\ge$ `minGroupCount`.
+   * If the root-level check fails, the scheduling unit is rejected and remains
+     in the unschedulable queue.
 
-##### Scheduling sequence for Pods
+2. **`PlacementFeasible`:**
+   Executed at each level (for both leaf and nested parent `PodGroupInfo`
+   objects) during in-memory simulation to determine if a group satisfies
+   active member constraints. Under this KEP, we extend the existing
+   `PlacementFeasible` checker implementation to support `PodGroupInfo`
+   representing `CompositePodGroups`:
+   * **For a leaf `PodGroup`:** We do not introduce any changes. The
+     implementation relies on the pre-existing behavior where both in-memory scheduled
+     member pods and remaining pending member pods in queue are evaluated against `minCount`
+     to return `Success`, `Unschedulable`, or `UnschedulableAndUnresolvable`.
+   * **For a `CompositePodGroup`:** We recursively evaluate the sum of
+     in-memory scheduled child groups and the remaining admissible child groups
+     against the parent's `minGroupCount` threshold:
+     - **`Success`:** Returned if in-memory scheduled child groups $\ge$
+       `minGroupCount`.
+     - **`Unschedulable`:** Returned if in-memory scheduled child groups <
+       `minGroupCount`, but the sum of scheduled groups and remaining child
+       groups $\ge$ `minGroupCount` (indicating the CPG is currently
+       unschedulable but remains resolvable in future passes).
+     - **`UnschedulableAndUnresolvable`:** Returned if the sum of scheduled
+       groups and remaining admissible child groups < `minGroupCount` (the
+       parent CPG is mathematically impossible to schedule), immediately
+       aborting the recursive cycle early.
 
-When processing an individual `PodGroup` in a scheduling cycle iteration,
-scheduler imposes a certain sequence in which Pods belonging to that particular
-`PodGroup` are being scheduled. We need to establish analogous sequencing logic
-for the `CompositePodGroup` whenever scheduler pops one from the scheduling
-queue.
+##### Recursive Scheduling Cycle Execution
+In `schedule_one_podgroup.go`, the scheduler processes a popped root unit (a root
+`PodGroupInfo`) by running the recursive **`podGroupSchedulingDefaultAlgorithm`**
+routine. Throughout this recursive simulation phase, all pod-to-node assignments
+are tracked strictly **in memory** in the `nodeInfoSnapshot` as temporary state
+before final binding:
 
-In most use cases, `PodGroup` contains homogeneous Pods. Because of that, it
-makes sense to schedule Pods from a single `PodGroup` sequentially to take
-advantage of opportunistic batching. Taking this into account, we propose the
-following approach when computing the order of processing Pods belonging to a
-`CompositePodGroup`:
+1. **If the active node is a leaf `PodGroup`:** Runs the flat, single-level
+   `PodGroupSchedulingAlgorithm` (simulating member pod placements in memory)
+   and returns the status.
+2. **If the active node is a `CompositePodGroup`:**
+   * Recursively executes `podGroupSchedulingDefaultAlgorithm` for each child
+     group (storing simulated assignments in memory).
+   * Invokes the extended `PlacementFeasible` checker under `PodGroupInfo`,
+     which evaluates the simulated child groups and returns the resolved CPG
+     status (`Success`, `Unschedulable`, or `UnschedulableAndUnresolvable`).
+3. **Commit Bindings:** If the root-level recursion resolves and returns
+   `Success`, the scheduler commits and writes the entire tree's resolved pod
+   bindings from memory to the API server.
 
-1. Firstly, we enumerate all `PodGroups` that are descendants of a
-   `CompositePodGroup`,
-2. Next, we sort those `PodGroups` according to some criteria,
-3. Lastly, we will go over these `PodGroups` in order established above and
-   schedule Pods belonging to the individual `PodGroup` sequentially.
 
-For 2., we can start with something simple in alpha, like e.g. sorting
-`PodGroups` by their creation timestamp, and changing that logic in beta if
-necessary.
+> [!NOTE]
+> **No-Backtracking:** Sibling child groups under a `CompositePodGroup` are
+> simulated sequentially in their pre-sorted order without backtracking. If a
+> child group placement (e.g. `PG-1`) consumes resources in a way that
+> subsequently blocks its sibling (e.g. `PG-2`) from meeting its `minCount`
+> minimum requirement, which in turn prevents the parent CPG from satisfying
+> its `minGroupCount` threshold, the scheduler does not retroactively
+> evaluate alternative placements for the earlier child group.
+>
+> Enforcing a greedy recursive choice without backtracking prevents exponential
+> scheduling complexity at the cost of sub-optimal decisions that may trigger
+> preemption. While sufficient for the **Alpha** phase, these greedy
+> scheduling algorithm trade-offs will be re-evaluated for the **Beta**
+> release to explore bounded backtracking heuristics (such as restricted
+> search depth or bounded branches) that optimize overall scheduling success
+> rates.
 
-For 3., we can reuse the logic that is leveraged by the scheduler already when
-scheduling a single `PodGroup`.
+##### Scheduling sequence for PodGroups
+
+To ensure a deterministic processing sequence, child groups under a
+`CompositePodGroup` are sorted and cached inside the scheduling queue when the
+group objects are added to queue memory. During the scheduling cycle, the
+scheduler evaluates descendant child groups in this pre-sorted order.
+
+For the **Alpha** release, we can start with something simple, like e.g. sorting
+`PodGroups` / `CompositePodGroups` by their creation timestamp, and changing that
+that logic in beta if necessary.
+
+###### Preemption triggering rules
+Preemption is strictly evaluated and executed only at the root level of the
+group hierarchy, preventing isolated and competing preemption passes at
+intermediate levels.
+
+Consistent with flat gang scheduling ([KEP-4671]), direct scheduling and
+preemption never occur inside the same scheduling cycle. If a root CPG is popped
+from the queue, the recursive scheduling cycle evaluates direct in-memory
+placement feasibility, resulting in exactly one of four distinct runtime
+preemption and binding cases:
+
+1. **Minimal Gang is Unresolvable (`PlacementFeasible = UnschedulableAndUnresolvable`):**
+   If the sum of in-memory scheduled child groups and remaining admissible
+   child groups under the candidate domain is less than `minGroupCount`, the
+   minimal gang constraints cannot be satisfied in this cycle. Because
+   preemption is guaranteed to fail (as slots are not the limiting factor), the
+   direct scheduling cycle fails. **The scheduler does not trigger preemption.**
+   The root CPG is returned to the queue (backed off), bypassing unneeded
+   preemption CPU passes and evictions (see [Inadmissible child groups (futile
+   cycles)](#inadmissible-child-groups-futile-cycles)).
+2. **Minimal Gang is Resolvable (`PlacementFeasible = Unschedulable`):**
+   If the in-memory scheduled child groups count is less than `minGroupCount`
+   but the total potential count (scheduled + remaining) $\ge$ `minGroupCount`,
+   the gang cannot schedule directly due to resource/capacity constraints.
+   However, this indicates that preemption is capable of resolving this group.
+   **The scheduler triggers the preemption loop at the root CPG level** (as a
+   separate preemption execution cycle) to search for lower-priority victim
+   pods, evict them, and place the CPG in the unschedulable queue.
+3. **Minimal Gang is Feasible (`PlacementFeasible = Success`):**
+   If in-memory scheduled child groups successfully satisfy `minGroupCount`,
+   the direct scheduling cycle is a complete success. The scheduler
+   **immediately commits and writes only these minimal gang bindings** to the
+   API server in this pass. Any extra pending member pods (those exceeding the
+   minimum limits that failed placement) do not bind in this cycle and do not
+   trigger preemption. Instead, they are returned to the queue to be evaluated
+   independently in subsequent distinct cycles (see [Resource stealing under
+   greedy evaluation](#resource-stealing-under-greedy-evaluation)).
+4. **Subsequent Scale-Up (`PlacementFeasible = Success` in greedily scheduled tree):**
+   If the root CPG is already successfully scheduled (active) in the cache, any
+   extra pending member pods (or scaled-up members) pop from the queue and
+   trigger the recursive scheduling cycle starting at the root CPG level. Since
+   the hierarchy is already active, subsequent cycles run in greedy mode (placed
+   members can exceed `minCount` bounds). If capacity is full, the scheduler
+   **triggers the preemption engine at the root CPG level** to clear space for
+   these extra member pods (see [Handling new pods for scheduled
+   hierarchies](#handling-new-pods-for-scheduled-hierarchies)).
+
+###### Inadmissible child groups (futile cycles)
+A root `CompositePodGroup` might successfully pass the `PreEnqueue` queue filter,
+yet contain child groups that are currently inadmissible (e.g. they do not
+have enough active member pods in the cluster queue to reach their `minCount`).
+For example, consider a root CPG (`minGroupCount=3`) containing four nested child
+groups, where the first three child groups are admissible, but the fourth `PG-4`
+has only 2 pending pods out of its `minCount=5`.
+
+In this situation, evaluating the inadmissible child groups during the recursive
+scheduling cycle is futile: they cannot schedule, and if not handled correctly,
+they will trigger a costly preemption algorithm pass which will also not
+succeed.
+
+To optimize performance, the scheduler will bypass evaluating futile child
+groups:
+* **Alpha:** Futile cycles are not skipped in the Alpha phase (admissibility
+  checks on nested children are not executed).
+* **Beta:** We will implement branch-skipping heuristics by extending the
+  `PlacementFeasible` checker (or its internal hierarchy validator) to run
+  checks *before* simulating child placements (rather than only after child
+  simulations). If a child group fails its minimum group count requirements prior
+  to evaluation (e.g. a child group has only 2 member pods out of its
+  `minCount=5`), the pre-simulation `PlacementFeasible` checker returns
+  failure early, bypassing any child pod placements and avoiding the costly
+  preemption pass entirely.
+
+###### Resource stealing under greedy evaluation
+When a CPG is evaluated, child groups are processed sequentially in their
+pre-sorted order. Under standard greedy evaluation, child groups try to
+schedule as many member pods as possible (exceeding their `minCount` requirements).
+
+This can lead to **resource stealing** in capacity-constrained clusters: an
+early, greedy child group consumes all available slots, preventing a sibling
+child group from reaching its `minCount` and causing the entire root CPG gang
+to fail scheduling.
+
+To resolve this, we will introduce a **non-greedy** scheduling cycle mode:
+* **Alpha:** The scheduling cycle is greedy. Resource stealing in constrained
+  hierarchies is a known limitation in the Alpha phase.
+* **Beta:** We will implement a non-greedy in-memory scheduling mode. During the
+  initial scheduling of a CPG, the CPG-level `PlacementFeasible` checker will
+  stop placing extra pods once the parent's `minGroupCount` child group limits
+  are met. The CPG is committed, and subsequent cycles will process additional
+  pods greedily once capacity is available.
+
+We can implement this behavior in two ways for the Beta phase:
+* **Double-run in a single cycle:** The scheduler runs the recursive algorithm
+  twice in a single active scheduling cycle (first pass non-greedy for minimal gang,
+  second pass greedy for extras).
+* **Distinct scheduling cycles (Preferred):** The scheduler runs a single
+  non-greedy pass in the active cycle, commits the minimal gang, and lets
+  extra pending member pods trigger separate, subsequent scheduling cycles
+  (running in greedy mode) to place the remaining pods.
+
+We target distinct scheduling cycles as the preferred Beta solution. By spacing
+evaluations across multiple cycles, the scheduler mitigates Head-of-Line (HoL)
+blocking (permitting higher-priority workloads arriving in queue to schedule
+between passes) and likely reduces code overhead in comparison to double-run approach.
+
+###### Handling new pods for scheduled hierarchies
+If new pods belong to an already scheduled `CompositePodGroup` tree (e.g., due to a
+controller scaling up), the scheduler pops these pending pods from the queue
+and triggers the recursive scheduling algorithm starting directly at the root CPG
+level.
+
+Because subsequent scheduling cycles for already scheduled CPG hierarchies run
+in greedy mode (active child groups/pods are evaluated past their `minCount` limits),
+the new pods are successfully scheduled.
 
 ##### Suboptimal scheduling decisions
 
@@ -1073,100 +1302,220 @@ preemption would actually make the `CompositePodGroup` schedulable, scheduler:
 
 To achieve this, we need to:
 
-- Adapt the relevant `PodGroup` preemption abstractions and data structures to
-  cover the use case of `CompositePodGroup` as preemptor,
-- Adjust the logic responsible for computing prospective victims to account for
-  the `CompositePodGroup` objects with the `All` disruption mode,
-- Adapt the `PreEnqueue` method of `DefaultPreemption` plugin to
-  `CompositePodGroup` preemptors,
-- Invoke the workload-aware preemption for `CompositePodGroup` when needed in
-  the scheduling cycle.
+- **Adapt preemption abstractions to CompositePodGroup preemptors:** Generalize
+  the core preemption abstractions and data structures (including wrapping the
+  scheduling context closure `podGroupSchedulingFunc` into a hierarchical
+  `compositePodGroupSchedulingFunc`) to support `CompositePodGroup` as the root
+  scheduling and preemption unit.
+- **Group running pods into collective preemption victims:** The preemption
+  algorithm must group running victim pods into collective victim objects.
+  This is done by traversing up the parent CPG tree for each victim pod to
+  resolve the highest ancestor configured with the `ALL` disruption mode
+  (moving up as long as the parent mode is `ALL`).
+- **Adapt PreEnqueue and plugin lifecycles:** Adapt the `PreEnqueue` method of
+  the `DefaultPreemption` plugin and internal queue structures to properly
+  track pending `CompositePodGroup` preemptors while they wait for victim
+  evictions.
+- **Invoke hierarchical preemption:** Invoke the preemption algorithm
+  for `CompositePodGroup` preemptors in the scheduling cycle when
+  direct scheduling fails.
 
 #### Multi-level topology-aware scheduling
 
-In single-level topology-aware scheduling ([KEP-5732]), the scheduler generates a flat list of candidate placements for a leaf `PodGroup`, runs in-memory simulations across these placements, and scores them using `PlacementScorerPlugins` to select the optimal placement.
+In single-level topology-aware scheduling ([KEP-5732]), the scheduler generates a flat list
+of candidate placements for a leaf `PodGroup`, runs in-memory simulations across these
+placements, and scores them using `PlacementScorerPlugins` to select the optimal placement.
 
-For multi-level scheduling using `CompositePodGroups` (which do not own pods directly but instead act as parents for nested `CompositePodGroups` or leaf `PodGroups`), the scheduler resolves placements **recursively** down the hierarchy tree:
+For multi-level scheduling using `CompositePodGroups` (which do not own pods directly but
+instead act as parents for nested `CompositePodGroups` or leaf `PodGroups`), the scheduler
+resolves placements **recursively** down the hierarchy tree:
 
 ##### CompositePodGroup Scheduling Algorithm
 
-The scheduling of a `CompositePodGroup` (CPG) and its descendants under the multi-level topology-aware framework is resolved recursively:
+The multi-level topology-aware scheduling (TAS) algorithm
+(`podGroupSchedulingPlacementAlgorithm`) is a direct extension of the recursive
+`podGroupSchedulingDefaultAlgorithm` execution cycle defined in
+[Multi-level gang scheduling](#multi-level-gang-scheduling), augmented to
+determine appropriate topology placements.
 
-1. **Placement Generation:** The scheduler generates candidate placements (topology domains matching the CPG's topology constraint). If a parent group has already been assumed in a specific placement, candidate generation at the current level is strictly restricted to placements located within that parent placement.
-2. **Candidate Evaluation:** For each candidate placement of the CPG, the scheduler:
-   * Temporarily assumes the candidate placement in memory.
-   * **Recursive Child Resolution:** Resolves each child group down the hierarchy under the active in-memory context:
-     * If the child is a nested `CompositePodGroup`, the scheduler recursively invokes this CPG scheduling algorithm.
-     * If the child is a leaf `PodGroup`, the scheduler invokes the standard, single-level topology scheduling algorithm ([KEP-5732]) for that `PodGroup` (generating candidate placements restricted strictly to the assumed parent placement, simulating pod scheduling, scoring, and selecting the optimal choice).
-     * If any child group fails to schedule (returns infeasible), the current candidate parent CPG placement is marked as infeasible. Sibling child groups are not evaluated, and no backtracking between alternative child subtree placements is performed.
-   * **Placement Scoring:** If all children are successfully scheduled under this context, the scheduler runs the registered `CompositePodGroup` placement scorer plugins on the CPG. These plugins evaluate the complete resolved assignments tree under this branch and return a score.
-   * Reverts the temporary CPG placement assumption in memory.
-3. **Selection:**
-   * After evaluating all CPG candidate placements, the scheduler selects the candidate placement with the highest score and returns it along with its resolved score.
-   * If all candidate placements are infeasible, the CPG returns a failure, terminating the scheduling cycle and triggering preemption inside the cluster to clear capacity under the failed branch.
+The algorithm recursively evaluates and identifies feasible placements (topology
+domains satisfying the CPG's topology constraints), scoring and selecting the
+best resolved configuration:
+
+1. **Placement Generation:** The scheduler generates candidate topology domains
+   matching the CPG's topology constraint. If a parent CPG has already been
+   assumed in a specific topology domain (e.g., `net-block-A`), candidate
+   placement generation for its descendants is strictly restricted to domains
+   located within that parent domain (e.g., racks within `net-block-A`).
+2. **Candidate Placement Evaluation & Filtering:** For each candidate parent
+   domain, the scheduler:
+   * Temporarily assumes the candidate parent domain in the `nodeInfoSnapshot`
+     as the active scheduling context.
+   * **Recursive Child Group Resolution:** Sequentially invokes the recursive
+     `podGroupSchedulingPlacementAlgorithm` cycle for each child group,
+     confining their placement candidates strictly to nodes within the assumed
+     parent domain scope. Sibling child groups are evaluated in their
+     pre-sorted order without sibling backtracking, taking into account the
+     assumed pod assignments of already simulated siblings inside the
+     `nodeInfoSnapshot`. These sibling assignments are automatically reverted
+     when the parent domain assumption is reverted.
+   * **Group Constraint Verification:** Invokes the extended `PlacementFeasible`
+     checker under `PodGroupInfo`. If it returns `Success` after processing all
+     children, the parent placement is marked as **feasible** and stored in the
+     list of feasible placements.
+   * Reverts the temporary parent domain assumption in the `nodeInfoSnapshot`.
+3. **Best Placement Selection:** The scheduler runs the registered
+   `PodGroupInfo` placement scorer plugins, which are extended to support
+   `CompositePodGroups` alongside `PodGroups`, over the **entire list of saved
+   feasible placements** and selects the one with the highest score. The method
+   returns pod-to-node assignments from the best placement together with the
+   `Success` status to the parent group.
+
+
+At the root level, the scheduler commits and writes the entire tree's resolved pod bindings
+to the API server. Analogous to multi-level gang scheduling, if direct scheduling fails for
+the root CPG, the scheduler invokes the preemption algorithm strictly at the root CPG level
+(if needed).
 
 > [!NOTE]
-> Enforcing a greedy recursive selection without backtracking prevents exponential scheduling complexity at the cost of sub-optimal placements that may trigger preemption. While sufficient for the **Alpha** phase, this greedy search trade-off will be re-evaluated for **Beta** to explore bounded backtracking heuristics that optimize overall placement success.
+> **Backtracking Search Space in TAS:** Compared to flat capacity evaluations under
+> gang scheduling, the topology placement search space under TAS is multidimensional
+> and exponentially larger, as each tree level generates and evaluates multiple
+> physical topology domains.
+>
+> To manage the scheduling latency trade-off, the scheduling cycle avoids
+> backtracking when evaluating child groups under a target parent candidate
+> domain. At any single level in the tree, this reduces the search complexity
+> for placing $C$ child groups, each with $D$ placement options, from
+> exponential ($\mathcal{O}(D^C)$) to linear ($\mathcal{O}(C \cdot D)$).
+>
+> While this greedy search trade-off helps prevent severe scheduling latency
+> degradation in the **Alpha** phase, it increases placement failure rates in
+> capacity-constrained environments. Bounded backtracking heuristics and their
+> latency trade-offs will be thoroughly evaluated for **Beta**.
 
 ###### Example
-Consider a workload consisting of a root `CompositePodGroup` (`CPG-root`) and two child `PodGroups` (`PG-1` and `PG-2`). The `CPG-root` defines a topology constraint of `block` (demanding that the entire workload land inside a single net-block), while both `PG-1` and `PG-2` define topology constraints of `rack` (demanding that pods within each group land inside a single rack).
+Consider a workload consisting of a root `CompositePodGroup` (`CPG-root`)
+configured with a gang scheduling policy (`minGroupCount=2`), containing two
+child `PodGroups` (`PG-1` and `PG-2`). Both child groups are gangs requiring a
+minimum pod count (`minCount=5`) of homogeneous pods. `CPG-root` defines a
+topology constraint of `block` (demanding that all groups land inside a single
+net-block), while both `PG-1` and `PG-2` require a `rack` topology constraint.
 
-The cluster physical topology consists of two net-blocks:
-*   `block-A` contains `rack-A1` and `rack-A2`.
-*   `block-B` contains `rack-B1` and `rack-B2`.
+The cluster physical topology is configured as follows:
+* `block-A` contains `rack-A1` (has 3 free slots) and `rack-A2` (has 5 free slots).
+* `block-B` contains `rack-B1` (has 5 free slots) and `rack-B2` (has 5 free slots).
 
-The algorithm resolves this hierarchy recursively:
+The scheduling algorithm resolves this hierarchy recursively:
 
-1.  **CPG-root Evaluation:**
-    *   Generates block placements for `CPG-root`: `block-A` and `block-B`.
-    *   **Evaluate Candidate `block-A`:**
-        1. Temporarily assumes `block-A` in memory.
-        2. **Resolve child `PG-1` under `block-A`:**
-           * Restricted to `block-A`. Invokes standard flat PG scheduling cycle.
-           * `PG-1` generates rack candidate placements: `rack-A1` and `rack-A2`.
-           * `PG-1` simulates pods under `rack-A1` $\to$ succeeds. Local score = 80.
-           * `PG-1` simulates pods under `rack-A2` $\to$ succeeds. Local score = 40.
-           * `PG-1` selects and temporarily reserves `rack-A1` in memory.
-        3. **Resolve child `PG-2` under `block-A`:**
-           * Restricted to `block-A` (under the active memory context containing `PG-1` in `rack-A1`).
-           * `PG-2` generates rack candidates in `block-A`: `rack-A1` and `rack-A2`.
-           * `PG-2` simulates pods under `rack-A1` $\to$ fails (insufficient capacity).
-           * `PG-2` simulates pods under `rack-A2` $\to$ fails (insufficient capacity).
-           * Since `PG-2` cannot find any feasible placement, the PG scheduling cycle returns a failure.
-           * **No Backtracking:** The scheduler does not backtrack to evaluate alternative rack configurations for `PG-1` (e.g. trying `PG-1` on `rack-A2` to see if `PG-2` fits on `rack-A1`). The greedy decision is locked in this subtree branch.
-        4. Because child `PG-2` failed to schedule, parent candidate `block-A` is marked as **infeasible**.
-        5. Reverts `block-A` assumption in memory.
-    *   **Evaluate Candidate `block-B`:**
-        1. Temporarily assumes `block-B` in memory.
-        2. **Resolve child `PG-1` under `block-B`:**
-           * Restricted to `block-B`. Invokes standard flat PG scheduling.
-           * `PG-1` generates rack candidates in `block-B`: `rack-B1` and `rack-B2`.
-           * `PG-1` simulates pods under `rack-B1` $\to$ succeeds. Local score = 90.
-           * `PG-1` simulates pods under `rack-B2` $\to$ succeeds. Local score = 50.
-           * `PG-1` selects and temporarily reserves `rack-B1` in memory.
-        3. **Resolve child `PG-2` under `block-B`:**
-           * Restricted to `block-B` (under active memory context containing `PG-1` in `rack-B1`).
-           * `PG-2` generates rack candidates: `rack-B1` and `rack-B2`.
-           * `PG-2` simulates pods under `rack-B1` $\to$ succeeds. Local score = 75.
-           * `PG-2` simulates pods under `rack-B2` $\to$ succeeds. Local score = 45.
-           * `PG-2` selects and temporarily reserves `rack-B1` in memory.
-        4. Both child groups scheduled successfully under parent candidate `block-B`!
-        5. **CPG Placement Scoring:** The scheduler runs `CPG-root` placement scorer plugins on the complete resolved layout under `block-B`. The scorer plugins evaluate this nested placement (both child groups landing inside `rack-B1` under `block-B`) and return a score (e.g. `95`).
-        6. Reverts `block-B` assumption in memory.
-    *   **Final Selection:**
-        - The scheduler completes CPG candidate parent evaluations:
-          * `block-A`: Infeasible.
-          * `block-B`: Feasible (score: 95).
-        - It selects `block-B` as the winning block-level placement, locking in the overall resolved placement path: `[CPG-root: block-B], [PG-1: rack-B1], [PG-2: rack-B1]`.
-        - The scheduler proceeds to bind the pods of `PG-1` and `PG-2` to their target nodes inside `rack-B1`.
+1. **CPG-root Evaluation:**
+   * Generates block placements for `CPG-root`: `block-A` and `block-B`.
+   * **Evaluate Candidate `block-A`:**
+     1. Temporarily assumes `block-A` in `nodeInfoSnapshot`.
+     2. **Resolve child `PG-1` under `block-A`:**
+        * Restricted to `block-A`. Invokes standard flat PG scheduling cycle.
+        * `PG-1` generates rack candidate placements in `block-A`: `rack-A1` and
+          `rack-A2`.
+        * The scheduler simulates `PG-1` under candidates in `nodeInfoSnapshot`:
+          - Simulates `PG-1` under `rack-A1` $\to$ fails (only 3 slots free).
+          - Simulates `PG-1` under `rack-A2` $\to$ succeeds (5 slots free).
+        * PG-level scorer plugins evaluate feasible candidates: only `rack-A2`
+          is feasible, and is selected.
+        * The cycle returns `PG-1`'s resolved 5 pod-to-node assignments under
+          `rack-A2` along with `Success` status to `CPG-root`.
+        * `CPG-root` temporarily reserves `PG-1`'s returned assignments under
+          `rack-A2` in memory snapshot.
+     3. **Resolve child `PG-2` under `block-A`:**
+        * Restricted to `block-A` (under the active memory snapshot containing
+          `PG-1` in `rack-A2`).
+        * `PG-2` generates rack candidates in `block-A`: `rack-A1` and `rack-A2`.
+        * The scheduler simulates `PG-2` under candidates in `nodeInfoSnapshot`:
+          - Simulates `PG-2` under `rack-A1` $\to$ fails (only 3 slots free).
+          - Simulates `PG-2` under `rack-A2` $\to$ fails (0 slots left,
+            greedily assumed by sibling `PG-1` in memory snapshot).
+        * Since `PG-2` cannot find any feasible placement, its scheduling cycle
+          returns a failure.
+        * **No Backtracking:** Sibling child groups are simulated sequentially
+          without backtracking. The scheduler does not evaluate alternative rack
+          configurations for `PG-1` (e.g. attempting to schedule `PG-1` on
+          `rack-A1` to see if `PG-2` could fit on `rack-A2`).
+     4. **CPG Constraint Verification:** The scheduler invokes the CPG-level
+        `PlacementFeasible` checker on candidate `block-A`. Since only `PG-1`
+        succeeded, the total feasible child group count is 1. Because
+        `minGroupCount=2`, `PlacementFeasible` returns failure and candidate
+        `block-A` is marked as **infeasible**.
+     5. Reverts `block-A` assumption in `nodeInfoSnapshot`.
+   * **Evaluate Candidate `block-B`:**
+     1. Temporarily assumes `block-B` in `nodeInfoSnapshot`.
+     2. **Resolve child `PG-1` under `block-B`:**
+        * Restricted to `block-B`. Invokes standard flat PG scheduling.
+        * `PG-1` generates rack candidates in `block-B`: `rack-B1` and `rack-B2`.
+        * The scheduler simulates `PG-1` under candidates in `nodeInfoSnapshot`:
+          - Simulates `PG-1` under `rack-B1` $\to$ succeeds (5 slots free).
+          - Simulates `PG-1` under `rack-B2` $\to$ succeeds (5 slots free).
+        * PG-level scorer plugins scores both feasible candidates:
+          - `rack-B1` scores 90.
+          - `rack-B2` scores 50.
+        * The cycle selects `rack-B1` (highest score), and returns `PG-1`'s
+          resolved assignments under `rack-B1` along with `Success` status.
+        * `CPG-root` temporarily reserves `PG-1`'s returned assignments under
+          `rack-B1` in memory snapshot.
+     3. **Resolve child `PG-2` under `block-B`:**
+        * Restricted to `block-B` (under active memory snapshot containing
+          `PG-1` in `rack-B1`).
+        * `PG-2` generates rack candidates in `block-B`: `rack-B1` and `rack-B2`.
+        * The scheduler simulates `PG-2` under candidates in `nodeInfoSnapshot`:
+          - Simulates `PG-2` under `rack-B1` $\to$ fails (0 slots left,
+            greedily assumed by sibling `PG-1`).
+          - Simulates `PG-2` under `rack-B2` $\to$ succeeds (5 slots free).
+        * PG-level scorer plugins evaluate feasible candidates: only `rack-B2`
+          is feasible, and is selected.
+        * The cycle returns `PG-2`'s resolved assignments under `rack-B2` along
+          with `Success` status.
+        * `CPG-root` temporarily reserves `PG-2`'s returned assignments under
+          `rack-B2` in memory snapshot.
+     4. **CPG Constraint Verification:** The scheduler invokes the CPG-level
+        `PlacementFeasible` checker on candidate `block-B`. Both child groups
+        (`PG-1` and `PG-2`) simulated successfully, so feasible child count is
+        2. Since `minGroupCount=2`, `PlacementFeasible` returns success and
+        candidate `block-B` is saved as a **feasible placement**.
+     5. Reverts `block-B` assumption in `nodeInfoSnapshot`.
+2. **Feasible Placement Scoring:** The scheduler runs `CPG-root` placement
+   scorer plugins on the saved feasible placement (`block-B`). The scorer
+   plugins evaluate the overall resolved assignments layout (both child groups
+   placed in their respective racks under `block-B`) and return a score (e.g.,
+   `95`).
+3. **Final Selection:**
+   * The scheduler completes CPG evaluations and selects the feasible placement
+     with the highest score (`block-B`, score: 95).
+   * It locks in the resolved placement path:
+     `[CPG-root: block-B], [PG-1: rack-B1], [PG-2: rack-B2]`.
+   * The scheduler commits the resolved layout and proceeds to bind the pods of
+     `PG-1` and `PG-2` to their physical target nodes inside `block-B`.
 
 
 
 
 ##### Preemption in topology-aware scheduling
 
-TODO: refer to the community discussion and decision made in the document in
-https://docs.google.com/document/d/1qMjV0Uwq5J9g2cYriWnLzDekaswc6dLA1h9GU4pCTtI/edit?usp=sharing.
+Workload preemption under topology constraints is the domain of [KEP-5710] (Workload-Aware Preemption) and [KEP-5732] (Topology-Aware Workload Scheduling).
+
+Under KEP-6012, this topology-aware preemption behavior works for `CompositePodGroups` out-of-the-box without major changes, based on the following architectural factors:
+
+1. **Decoupled Simulation Framework:** The preemption algorithm evaluates victim selection
+by running in-memory simulations and invoking the workload's scheduling callback. The
+algorithm is completely decoupled from the scheduling internals: it does not care whether
+the callback is placing a single flat `PodGroup` or recursively resolving a
+`CompositePodGroup` hierarchy.
+2. **Pod-Bounded Performance Complexity:** The performance cost of scheduling (including
+preemption) simulations is dominated strictly by the total number of pods in the workload.
+For example, evaluating 100 `Pods` inside a single, flat `PodGroup` has the same
+computational complexity as 100 `Pods` distributed across multiple child `PodGroups` nested
+under parent `CompositePodGroups`.
+
+Consequently, since topology-aware preemption is designed and implemented to work for a flat
+`PodGroup` as a part of [KEP-5710], it should automatically work for a hierarchical
+`CompositePodGroup` with no significant overhead or architectural modifications.
 
 ### Test Plan
 
@@ -1195,7 +1544,46 @@ N/A
 
 ##### Integration tests
 
-TODO
+We will create new integration tests (and extend the existing `PodGroup` integration test
+suite in `test/integration/scheduler/`) to cover the hierarchical and multi-level aspects of
+the CPG API and the recursive scheduling resolutions:
+
+- **Multi-level TAS:**
+  - Verify that the scheduler successfully schedules a hierarchical CPG workload's pods
+	strictly on nodes satisfying the nested combination of topology constraints when valid
+	placement paths exist.
+  - Verify that scheduling fails for the CPG workload when the cluster state cannot satisfy
+	the nested topology constraints.
+- **Multi-level Gang Scheduling:**
+  - Verify that CPG hierarchies satisfying their nested child group `minCount` and
+    `minGroupCount` requirements are enqueued, and those failing are rejected
+    and remain in the unschedulable queue.
+  - Verify that CPG parent nodes satisfy simulation checks and successfully
+    schedule when the simulated child group count $\ge$ `minGroupCount`, and
+    fail when they fall below this threshold.
+- **Workload-Aware Preemption for Multi-level Workloads:**
+  - Verify that the preemption victim selection logic correctly respects
+    disruption boundaries across different hierarchical layouts (under various
+    configurations of `All`, `Single`, and mixed nested combinations), ensuring
+    correct cascading subtree evictions or allowing partial on-demand preemption.
+  - Verify that preemption is evaluated and triggered strictly at the root CPG
+    level when direct scheduling fails, and that the `PreEnqueue` method of
+    `DefaultPreemption` successfully backs off and queues CPG preemptors awaiting
+    evictions.
+  - Verify that if the root CPG is feasible (`PlacementFeasible = Success`) but
+    extra member pods require preemption (`NeedsPreemption = True`), the
+    scheduler successfully commits and writes the minimal gang bindings even if
+    preemption fails to clear space for the extra members.
+
+We will also add and extend the existing scheduler performance benchmarks in `test
+integration/scheduler_perf/` to measure the scheduling throghput of multi-level workload
+scheduling, including:
+
+- Multi-level gang and basic policies
+- Multi-level TAS
+- Multi-level preemptions
+
+
 
 ##### e2e tests
 
@@ -1224,11 +1612,21 @@ More tests will be added for beta release.
   to it.
 - At least one true workload controller (e.g. `JobSet`) is integrated with the
   `CompositePodGroup` API.
-- Scheduler detects invalid group hierarchies (i.e. hierarchies which are too
-  deep, have a cycle or refer to two or more Workloads).
+- Scheduler detects invalid runtime group hierarchies (i.e. hierarchies which
+  are too deep, have a cycle, refer to two or more Workloads, or have an
+  invalid combination of scheduling policies or disruption modes at different
+  levels of the hierarchy).
 - All e2e tests for the `CompositePodGroup` API are added and graduated to
   conformance tests.
-- The recursive greedy scheduling search trade-offs are re-evaluated, and a decision on incorporating advanced backtracking heuristics (such as restricted search depth or bounded branches) is made to optimize placement success rates for multi-level gangs.
+- The recursive greedy scheduling search trade-offs are re-evaluated, and a decision on
+incorporating advanced backtracking heuristics (such as restricted search depth or bounded
+branches) is made to optimize scheduling success rates for multi-level gangs.
+- Scheduler bypasses futile scheduling simulations for inadmissible nested child groups
+during the recursive cycle (e.g. by executing PreEnqueue or PlacementFeasible validations
+prior to branch resolution) to protect performance and avoid redundant preemption passes.
+- A non-greedy CompositePodGroup scheduling simulation mode is introduced and re-evaluated
+to mitigate resource stealing and gang deadlock occurrences among sibling child groups in
+capacity-constrained environments.
 
 #### GA
 
@@ -1501,7 +1899,16 @@ The exact size increase will be small, however:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-TODO
+Although the recursive greedy scheduling algorithm was designed with
+performance in mind, the scheduling latency and Pod Startup SLO may potentially
+increase, especially for large clusters, complex multi-level workloads, and
+fine-grained topology constraints.
+
+Due to the recursive nature of multi-level scheduling, the latency impact may
+be slightly higher than in the flat scheduling model. We will measure the exact
+impact using performance benchmarks and scalability tests, and update this
+section accordingly.
+
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
