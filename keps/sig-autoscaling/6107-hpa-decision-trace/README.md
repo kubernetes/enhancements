@@ -7,19 +7,18 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Existing Signals and Gaps](#existing-signals-and-gaps)
   - [User Stories](#user-stories)
     - [Story 1: Summarize current HPA state in a dashboard](#story-1-summarize-current-hpa-state-in-a-dashboard)
-    - [Story 2: Explain why scaling is limited](#story-2-explain-why-scaling-is-limited)
-    - [Story 3: Understand multi-metric HPA outcomes](#story-3-understand-multi-metric-hpa-outcomes)
-  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [Story 2: Explain why scaling did not occur](#story-2-explain-why-scaling-did-not-occur)
+    - [Story 3: Understand multi-metric HPA behavior](#story-3-understand-multi-metric-hpa-behavior)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Open Questions](#open-questions)
-  - [Related Work](#related-work)
+    - [Open Questions for Alpha](#open-questions-for-alpha)
+    - [Open Questions for Beta / Later](#open-questions-for-beta--later)
 - [Design Details](#design-details)
-  - [Existing HPA Signals](#existing-hpa-signals)
-    - [Current HPA Condition Reference](#current-hpa-condition-reference)
-  - [Gap Analysis](#gap-analysis)
-  - [Possible Improvements](#possible-improvements)
+  - [Proposed Field](#proposed-field)
+  - [Status Update Semantics](#status-update-semantics)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -56,11 +55,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for
-    [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+    [Conformance Tests]
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806)
-    must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) [all GA Endpoints]
+    must be hit by [Conformance Tests]
     within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -71,395 +70,365 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   mailing list discussions or SIG meetings, relevant PRs/issues, and release
   notes
 
+[Conformance Tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
+[all GA Endpoints]: https://github.com/kubernetes/community/pull/1806
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes.io]: https://kubernetes.io/
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
-HorizontalPodAutoscaler exposes current and desired replica counts, current
-metric values, and conditions such as `AbleToScale`, `ScalingActive`, and
-`ScalingLimited`. Events and controller logs provide additional context for
-specific reconciliations.
+This KEP improves the explainability of HorizontalPodAutoscaler (HPA) for
+operational tooling by adding a new field `lastScaleDecision` to
+`HorizontalPodAutoscalerStatus`.
 
-This KEP evaluates whether those existing signals provide enough stable and
-actionable information for operational tooling to explain the current HPA state.
-The goal is not to expose the HPA controller's internal decision process. The
-goal is to identify which troubleshooting workflows are already covered by
-existing HPA status, conditions, Events, and logs, and whether any remaining
-gaps require documentation improvements, wording improvements, or a narrowly
-scoped API change.
+Currently, it is difficult for dashboards, alert systems, and operators to
+understand why HPA reported a particular `desiredReplicas` value, especially in
+multi-metric configurations or when scaling is suppressed by tolerance or
+stabilization. Existing conditions and Events provide partial information, but
+they do not offer a single, structured, machine-readable summary of the latest
+effective scaling outcome.
 
-The initial direction is intentionally conservative. Several cases that appear
-to require a new decision trace are already represented by existing conditions,
-for example `ScalingLimited` with `TooFewReplicas` or `TooManyReplicas`,
-`ScalingActive=False` with metric-fetch failure reasons, and stabilization
-related condition reasons. This KEP therefore starts with a gap analysis before
-proposing any new API surface.
+This KEP proposes a narrowly scoped `lastScaleDecision` field that summarizes
+the effective outcome in a stable, user-facing way, without exposing the
+controller's internal calculation details.
 
 ## Motivation
 
-Platform teams and SRE teams often need to explain HPA behavior from dashboards,
-alert enrichment tools, or `kubectl`-style workflows. These tools frequently
-need a concise user-facing interpretation of the current HPA state, such as why
-scaling is limited or whether metric collection is failing.
+Platform teams and SRE teams often need to explain HPA behavior from
+dashboards, alert enrichment tools, or `kubectl`-style workflows. These tools
+frequently need a concise, machine-readable interpretation of why HPA scaled,
+did not scale, or reported a particular `desiredReplicas` value.
 
-Today, this information is distributed across HPA status fields, HPA conditions,
-Events, controller logs, and user knowledge of HPA behavior. Some cases are
-already well represented in stable object state. Other cases may require
-wording or documentation improvements. A smaller set of cases may reveal actual
-API gaps, especially for multi-metric HPAs where users want to understand which
-metric, if any, effectively determined the observed `desiredReplicas`.
+Today, this information is distributed across HPA status fields, conditions,
+Events, controller logs, and user knowledge of HPA behavior. Existing signals
+are useful, and this KEP does not aim to replace them. However, several
+important workflows remain difficult to support consistently from stable object
+state alone.
 
-This KEP is motivated by improving HPA explainability for operational tooling
-while avoiding unnecessary API surface and avoiding commitments to controller
-implementation details.
+This KEP improves HPA explainability by adding a bounded current-state summary
+of the latest effective scaling outcome. The summary is intended for users and
+operational tools, not as a serialized copy of the controller's internal
+calculation process.
 
 ### Goals
 
-- Document how existing HPA status fields, conditions, Events, and controller
-  logs map to common troubleshooting workflows.
-- Identify which workflows are already supported by stable HPA object state.
-- Identify gaps that can be addressed by documentation or clearer condition
-  wording.
-- Identify any remaining narrow API gaps, with particular attention to
-  multi-metric HPAs and user-facing interpretation of `desiredReplicas`.
-- Preserve the existing HPA scaling algorithm and user-facing scaling behavior.
-- Avoid exposing internal controller decision logic as API.
+- Add a `lastScaleDecision` field to `HorizontalPodAutoscalerStatus` that
+  captures the most recent effective scaling outcome in a machine-readable
+  format.
+- Enable operational tooling to explain the current observed `desiredReplicas`
+  value without parsing controller logs or free-form condition messages.
+- Represent stable, user-facing concepts such as outcome, reason, selected
+  metric, current replicas, and desired replicas.
+- Keep the initial Alpha scope narrow, with Resource metrics as the first
+  supported metric source.
+- Avoid exposing internal controller decision logic or intermediate calculation
+  state as Kubernetes API.
+- Preserve backward compatibility and existing HPA scaling behavior.
 
 ### Non-Goals
 
+- Exposing the full internal decision trace or every intermediate calculation
+  step.
+- Exposing raw tolerance thresholds, adjusted metric values, missing-metric pod
+  counts, or not-ready pod accounting as stable API in the initial Alpha.
+- Persisting historical scaling decisions.
 - Changing how HPA computes desired replicas.
-- Adding a broad machine-readable trace of every HPA decision step.
-- Exposing per-metric internal replica recommendations unless SIG Autoscaling
-  determines that a narrowly scoped user-facing API is necessary.
-- Persisting historical decision traces.
-- Providing a general audit log for autoscaling decisions.
-- Replacing HPA events, conditions, controller logs, or metrics.
+- Replacing existing conditions, Events, `status.currentMetrics`, or controller
+  logs.
 - Defining a new autoscaling recommendation API outside HPA.
 
 ## Proposal
 
-This KEP proposes to first treat HPA explainability as a gap-analysis problem,
-not as a new status-field design. The KEP will compare the identified
-troubleshooting workflows against existing HPA surfaces:
+This KEP proposes adding a new `lastScaleDecision` field to
+`HorizontalPodAutoscalerStatus`. The HPA controller will populate this field
+with a user-facing summary of the latest effective scaling outcome.
 
-- `status.currentReplicas`, `status.desiredReplicas`, `status.currentMetrics`,
-  and `status.observedGeneration`;
-- conditions such as `AbleToScale`, `ScalingActive`, and `ScalingLimited`;
-- Events emitted by the HPA controller; and
-- kube-controller-manager logs.
+The field is designed to answer common operational questions such as:
 
-For each workflow, the KEP classifies the result as one of:
+- Did the HPA scale up, scale down, or keep the replica count unchanged?
+- What `desiredReplicas` value does the latest effective outcome explain?
+- Which stable, user-facing reason best explains the outcome?
+- When the answer is unambiguous, which metric selected the effective
+  recommendation?
+- Was the outcome suppressed, limited, stabilized, or blocked by a metric error?
 
-- already covered by existing stable object state;
-- covered, but needing better documentation or clearer wording;
-- covered only by Events or logs and therefore not ideal for current-state
-  tooling; or
-- not covered by a stable user-facing surface and potentially requiring a
-  narrowly scoped API improvement.
+The field is not intended to expose the ordered sequence of controller helper
+calls, exact intermediate per-pod accounting, or all internal inputs used during
+replica calculation.
 
-Any API addition proposed after this analysis should be limited to
-user-observable state and should avoid exposing the ordered sequence of
-controller helper calls, intermediate calculations, or implementation-specific
-local variables.
+### Existing Signals and Gaps
 
-The Alpha outcome of this KEP is expected to be one of:
+Existing HPA status already exposes `currentReplicas`, `desiredReplicas`,
+`currentMetrics`, `observedGeneration`, and `conditions`. These signals are
+useful, and this proposal does not aim to replace them.
 
-1. documentation-only guidance for interpreting existing HPA status and
-   conditions;
-2. condition reason or message clarification without adding new API fields; or
-3. a follow-up narrowly scoped API proposal if SIG Autoscaling agrees that a
-   real gap remains.
+However, they do not provide a single structured explanation of the effective
+scaling outcome. In particular, tooling cannot reliably determine:
 
-Before this KEP can move to `implementable`, the selected outcome must be
-identified explicitly.
+- which metric effectively selected the final recommendation in a multi-metric
+  HPA;
+- whether the final outcome was suppressed by tolerance or stabilization;
+- whether missing metrics, not-ready pods, or metric errors materially affected
+  the user-facing outcome;
+- whether the current `desiredReplicas` reflects a fresh calculation or a
+  conservative fallback.
+
+Events and controller logs can contain additional details, but they are not a
+stable current-state API. Events are recent diagnostic history, and logs are
+implementation-specific and often unavailable to namespace-scoped users.
 
 ### User Stories
 
 #### Story 1: Summarize current HPA state in a dashboard
 
-A platform team builds a dashboard for application teams in a multi-tenant
-cluster. Application teams can read their own HPA objects, but they do not have
-access to kube-controller-manager logs. The dashboard should summarize whether
-the HPA is active, limited, unable to fetch metrics, or affected by other
-well-known current-state conditions.
+A platform team builds a dashboard that shows why an HPA currently reports a
+particular `desiredReplicas` value. The dashboard reads `lastScaleDecision` to
+display a short structured summary such as "scaled up because CPU utilization
+selected a higher replica count" without parsing controller logs.
 
-This KEP evaluates whether the dashboard can derive that summary from existing
-HPA status and conditions without parsing logs or relying on ephemeral Events.
-Before presenting a definitive summary, the dashboard should compare
-`status.observedGeneration` with `metadata.generation` and treat status as stale
-when the generations differ.
+#### Story 2: Explain why scaling did not occur
 
-#### Story 2: Explain why scaling is limited
+An operator notices that `desiredReplicas` did not change despite increased
+load. By inspecting `lastScaleDecision.outcome` and
+`lastScaleDecision.reason`, the operator can tell whether the latest effective
+outcome was a no-scale decision, a stabilized decision, a limited decision, or
+a conservative fallback caused by metric errors.
 
-An operator sees that an HPA's `desiredReplicas` is different from what they
-expected. They want to know whether the value is limited by `minReplicas`,
-`maxReplicas`, metric availability, or stabilization.
+#### Story 3: Understand multi-metric HPA behavior
 
-Existing conditions already expose several of these cases. For example,
-`ScalingLimited=True` with `TooFewReplicas` or `TooManyReplicas` describes
-replica bounds, and `ScalingActive=False` with metric-fetch related reasons
-describes metric collection failures. This KEP documents those mappings and
-identifies whether wording or documentation improvements are enough.
-
-#### Story 3: Understand multi-metric HPA outcomes
-
-An operator configures an HPA with several metrics. The HPA reports a
-`desiredReplicas` value, but the operator wants to know which metric, if any,
-effectively determined the observed outcome.
-
-When multiple metrics are configured, the HPA selects the maximum recommendation
-computed from the valid metrics before applying later constraints. Existing
-`status.currentMetrics` entries show observed metric values, but they do not
-directly identify which metric produced the effective recommendation that led to
-the reported `desiredReplicas`.
-
-The controller internally determines the metric associated with the largest
-replica recommendation and may include that information in a condition message
-or Event. However, that information is not exposed as a structured field.
-Relying on free-form condition messages is not ideal for operational tooling.
-Tooling also cannot reliably recompute the exact per-metric recommendations
-from `status.currentMetrics` alone, because the current metric values reported
-in status do not necessarily expose the adjusted values used internally after
-missing-metric and pod-readiness handling.
-
-This may be the narrowest remaining gap after accounting for existing
-conditions, Events, and status fields. This KEP treats it as an open question
-for SIG Autoscaling rather than assuming that a new decision-trace field is
-required.
-
-### Notes/Constraints/Caveats
-
-Conditions are part of the HPA object state and are better suited than logs for
-current-state tooling. Events are useful for human troubleshooting and recent
-history, but they are not a durable current-state API. Controller logs are
-implementation-specific and often not available to namespace-scoped users.
-
-The KEP should not require a new API field for cases that are already described
-by existing conditions or status fields. Any proposed improvement should be
-limited to information that is stable, user-facing, and meaningful outside the
-controller implementation.
+An operator configures an HPA with multiple metrics. `lastScaleDecision`
+identifies the selected metric when a single metric clearly drove the result.
+In cases where a single metric cannot be clearly identified as the driver due
+to errors, ties, or subsequent constraints, `selectedMetric` is left unset, and
+`outcome` together with `reason` provide the explanation.
 
 ### Risks and Mitigations
 
-- Risk: The KEP proposes unnecessary API surface for cases already covered by
-  conditions.
-  - Mitigation: Start with an explicit mapping from workflows to existing HPA
-    signals and prefer documentation or wording improvements where sufficient.
-- Risk: A new API accidentally commits Kubernetes to HPA implementation details.
-  - Mitigation: Treat any future API addition as a last resort and limit it to
-    coarse, user-observable state.
-- Risk: Tooling relies on Events or log messages as if they were stable APIs.
-  - Mitigation: Clearly distinguish stable object state from diagnostic history
-    and implementation-specific logs.
-- Risk: Multi-metric explainability remains ambiguous.
-  - Mitigation: Keep the multi-metric case as a focused open question and gather
-    SIG Autoscaling feedback before proposing a field shape.
+- Risk: The new status field may expose too much of the controller's internal
+  decision process.
+  Mitigation: Limit the field to user-facing outcome summaries and avoid
+  exposing intermediate calculations.
+- Risk: Updating the field on every reconciliation may increase API server and
+  etcd write load.
+  Mitigation: Update the field only when the effective outcome or explanation
+  materially changes.
+- Risk: Tooling may start depending on details that are not intended to be
+  stable.
+  Mitigation: Clearly document which fields are stable API semantics and avoid
+  adding descriptive fields that mirror internal local variables.
+- Risk: Multi-metric outcomes may be more complex than a single selected metric.
+  Mitigation: Treat `selectedMetric` as optional and require outcome/reason
+  values to represent error-blocked, suppressed, limited, or conservative
+  fallback cases.
 
 ### Open Questions
 
-- Can dashboards and alert enrichment tools reliably derive a concise
-  user-facing interpretation of the current HPA state from existing conditions?
-- Are current condition reasons and messages documented clearly enough for
-  users and tool authors?
-- Do multi-metric HPAs expose enough stable information for users and tooling to
-  understand which metric, if any, effectively determined `desiredReplicas`?
-- If a gap remains, is it an API gap or primarily a documentation / wording gap?
-- Would narrowly scoped new condition reasons or message improvements be
-  preferable to adding a new status field?
+#### Open Questions for Alpha
 
-### Related Work
+- Should this field be protected by a feature gate?
+- Should the first Alpha support only Resource metrics?
+- What is the minimal set of `Outcome` and `Reason` values required for Alpha?
+- Should this be a new status field, new condition reasons, or an improvement
+  to existing Events?
 
-- [kubernetes/kubernetes#138992](https://github.com/kubernetes/kubernetes/issues/138992)
-  discussed a structured HPA scaling decision status. This KEP supersedes the
-  broader direction from that issue by first evaluating whether existing HPA
-  status fields, conditions, Events, and logs already cover the identified
-  troubleshooting workflows.
+#### Open Questions for Beta / Later
+
+- Should missing metric and not-ready pod information be exposed directly,
+  summarized, or omitted?
+- What is the exact compatibility behavior for `autoscaling/v1` clients?
+- Which outcome and reason values should be part of the stable API contract?
+- Should multi-metric support include a bounded list of evaluated metric
+  summaries, or only the selected metric where unambiguous?
 
 ## Design Details
 
-### Existing HPA Signals
+### Proposed Field
 
-The following existing surfaces are relevant to HPA explainability:
+The initial API shape is intentionally small. Field and enum names are
+illustrative and require SIG Autoscaling review before this KEP is marked
+implementable. Alpha should use the smallest useful set of outcome and reason
+values. Before Beta, the supported `Outcome` and `Reason` values must be
+documented as the stable API contract for this field.
 
-- `status.currentReplicas` and `status.desiredReplicas` show the observed and
-  selected replica counts.
-- `status.observedGeneration` identifies the HPA spec generation observed by
-  the controller when computing the current status. Tooling should compare it
-  with `metadata.generation` before presenting status-derived explanations as
-  current.
-- `status.currentMetrics` shows current metric values for configured metrics
-  when they are available.
-- `status.conditions` provides current-state condition types, statuses, reasons,
-  and messages.
-- Events provide recent diagnostic history such as failed metric fetches and
-  successful rescale messages.
-- Controller logs provide implementation-specific details for cluster operators
-  with access to kube-controller-manager logs.
+```go
+type HorizontalPodAutoscalerStatus struct {
+    // Existing fields omitted.
 
-#### Current HPA Condition Reference
+    // lastScaleDecision summarizes the most recent effective scaling outcome
+    // observed by the HPA controller.
+    // +optional
+    LastScaleDecision *LastScaleDecision `json:"lastScaleDecision,omitempty"`
+}
 
-The main HPA condition types used by this KEP are:
+type LastScaleDecision struct {
+    // lastTransitionTime is updated when the effective outcome or the
+    // information needed to explain the current desiredReplicas materially
+    // changes. It is not a last-reconciled timestamp.
+    LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 
-- `AbleToScale`, which describes whether the controller can access and update
-  the scale target. Example reasons include `SucceededGetScale`,
-  `FailedGetScale`, `SucceededRescale`, `FailedUpdateScale`,
-  `ReadyForNewScale`, `ScaleUpStabilized`, and `ScaleDownStabilized`.
-- `ScalingActive`, which describes whether the HPA can compute replica counts
-  from its metric inputs. Example reasons include `ValidMetricFound`,
-  `ScalingDisabled`, `InvalidSelector`, `FailedGetResourceMetric`,
-  `FailedGetContainerResourceMetric`, `FailedGetExternalMetric`,
-  `FailedGetObjectMetric`, and `FailedGetPodsMetric`.
-- `ScalingLimited`, which describes whether the computed desired replica count
-  was limited by HPA constraints. Example reasons include `TooFewReplicas`,
-  `TooManyReplicas`, `ScaleUpLimit`, `ScaleDownLimit`, and
-  `DesiredWithinRange`.
+    CurrentReplicas int32 `json:"currentReplicas"`
+    DesiredReplicas int32 `json:"desiredReplicas"`
 
-The exact condition messages are still important to review for user clarity,
-but tools should prefer condition types and documented reasons over parsing
-free-form messages. If this KEP recommends relying on particular reasons, those
-reasons should be documented as part of the user-facing interpretation
-contract.
+    // outcome is a stable, user-facing category for the latest effective
+    // scaling outcome.
+    Outcome ScaleDecisionOutcome `json:"outcome"`
 
-### Gap Analysis
+    // reason is a documented, stable, user-facing reason that explains the
+    // outcome. The set of valid reasons will be defined as part of the stable
+    // API contract before Beta.
+    Reason string `json:"reason,omitempty"`
 
-| Workflow | Existing signal | Initial assessment |
-| --- | --- | --- |
-| Determine whether status reflects the latest HPA spec | Compare `metadata.generation` and `status.observedGeneration` | Covered by existing status. Tooling should avoid presenting a definitive explanation when status is stale. |
-| Determine whether the desired replica count is raised to `minReplicas` | `ScalingLimited=True` with reason `TooFewReplicas` | Covered by existing conditions. Documentation may need to make this easier to discover. |
-| Determine whether scaling is capped by `maxReplicas` | `ScalingLimited=True` with reason `TooManyReplicas` | Covered by existing conditions. Documentation may need to make this easier to discover. |
-| Determine whether scaling was limited by behavior rate policies | `ScalingLimited=True` with `ScaleUpLimit` or `ScaleDownLimit` | Covered by existing conditions, but documentation should make this easier to discover. |
-| Determine that scaling is not currently limited | `ScalingLimited=False` with `DesiredWithinRange` | Covered by existing conditions. Useful as part of dashboard summarization. |
-| Detect resource metric fetch failures | `ScalingActive=False` with reasons such as `FailedGetResourceMetric`; Events | Covered by existing conditions and Events. |
-| Detect external metric fetch failures | `ScalingActive=False` with reasons such as `FailedGetExternalMetric`; Events | Covered by existing conditions and Events. |
-| Identify stabilization effects | Stabilization-related condition reasons such as `ScaleUpStabilized` or `ScaleDownStabilized` | Likely covered, but wording and documentation should be reviewed. |
-| Determine whether a condition message contains useful but non-contractual detail | Condition `message` | Available, but tools should avoid parsing messages unless the relevant reason or message contract is documented. |
-| Summarize current HPA state for dashboards | Combination of `desiredReplicas`, `currentReplicas`, `currentMetrics`, and conditions | Likely possible, but the expected interpretation should be documented. |
-| Recompute exact per-metric replica recommendations from `status.currentMetrics` | `status.currentMetrics` | Not reliably covered. Current metric values do not necessarily expose the adjusted values used internally after missing-metric and pod-readiness handling. |
-| Identify the metric that effectively determined `desiredReplicas` for a multi-metric HPA | `status.currentMetrics`, Events such as `SuccessfulRescale`, and controller behavior | Potential remaining gap. `currentMetrics` exposes observed values, but does not directly identify the metric that produced the effective recommendation. Needs SIG Autoscaling feedback before proposing an API change. |
+    // selectedMetric identifies the metric that selected the effective
+    // recommendation when that is stable and unambiguous.
+    // +optional
+    SelectedMetric *ScaleDecisionMetric `json:"selectedMetric,omitempty"`
+}
 
-### Possible Improvements
+type ScaleDecisionOutcome string
 
-The preferred improvement depends on the result of the gap analysis:
+// These Outcome values are provisional.
+// For Alpha, implementations should start with a minimal useful set
+// (recommended: ScaledUp, ScaledDown, NoScale, Limited, ErrorBlocked).
+// Stabilized and Suppressed may be added later if needed.
+// The final stable set of Outcome and Reason values must be documented
+// before Beta graduation.
+const (
+    ScaleDecisionScaledUp      ScaleDecisionOutcome = "ScaledUp"
+    ScaleDecisionScaledDown    ScaleDecisionOutcome = "ScaledDown"
+    ScaleDecisionNoScale       ScaleDecisionOutcome = "NoScale"
+    ScaleDecisionLimited       ScaleDecisionOutcome = "Limited"
+    ScaleDecisionStabilized    ScaleDecisionOutcome = "Stabilized"
+    ScaleDecisionSuppressed    ScaleDecisionOutcome = "Suppressed"
+    ScaleDecisionErrorBlocked  ScaleDecisionOutcome = "ErrorBlocked"
+)
 
-- If existing conditions are sufficient, improve documentation for condition
-  types, reasons, and recommended tooling interpretation.
-- If current condition messages are confusing, clarify wording while preserving
-  compatibility expectations for condition types and reasons.
-- If a narrow current-state gap remains, consider adding or refining
-  user-facing condition reasons before adding a new status field.
-  "Narrowly scoped" in this context means adding or refining condition reasons
-  on existing condition types such as `AbleToScale`, `ScalingActive`, and
-  `ScalingLimited` without changing the semantics of the condition types
-  themselves.
-- If the multi-metric case cannot be represented by conditions without
-  ambiguity, discuss a minimal API shape with SIG Autoscaling. Such an API
-  should expose only stable user-facing information, not the controller's full
-  decision trace.
+type ScaleDecisionMetric struct {
+    Type string `json:"type"`
+    Name string `json:"name,omitempty"`
+}
+```
+
+This KEP does not propose exposing raw per-metric recommendations,
+ready-pod counts, missing-metric pod counts, tolerance thresholds, or adjusted
+metric values in the initial Alpha. Those details are useful for debugging, but
+they risk freezing implementation details into the Kubernetes API.
+
+### Status Update Semantics
+
+The controller SHOULD update `lastScaleDecision` only when the effective
+scaling outcome changes, or when the information required to explain the
+current `desiredReplicas` materially changes. Implementations should avoid
+updating this field solely because reconciliation time has advanced.
+
+`lastTransitionTime` has `lastTransitionTime` semantics: it records when the
+reported outcome summary last changed. It is not a `lastEvaluatedTime` and must
+not force a status update on every reconciliation.
 
 ### Test Plan
 
-<!--
-**Note:** This section is provisional and must be completed before targeting a
-release milestone.
--->
-
 #### Prerequisite testing updates
 
-No prerequisite testing updates are expected while the KEP remains in the
-gap-analysis phase.
+No prerequisite test framework changes are expected. Existing HPA controller
+unit tests should be extended where the controller populates status.
 
 #### Unit tests
 
-If the outcome is documentation-only, no Kubernetes code unit tests are
-required. If condition wording, condition reasons, or HPA status behavior is
-changed, existing HPA controller tests should be updated to cover the affected
-condition transitions and messages.
+Unit tests should cover at least:
+
+- scale up for Resource metrics;
+- scale down for Resource metrics;
+- no-scale due to tolerance;
+- min replica limiting;
+- max replica limiting;
+- metric error cases that block or conservatively affect scaling;
+- no status write when only reconciliation time advances and the effective
+  outcome summary is unchanged.
 
 #### Integration tests
 
-If no API or controller behavior changes are proposed, no new integration tests
-are required. If a narrowly scoped API or condition behavior change is proposed,
-integration coverage should verify that the HPA status exposes the intended
-current-state signal for representative metric and replica-limit cases.
+Integration tests should verify that the HPA status field is persisted and
+served correctly through the Kubernetes API when the feature is enabled.
 
 #### e2e tests
 
-No new e2e tests are expected during the gap-analysis phase. If a future Beta
-change adds or changes API-visible behavior, e2e coverage should be considered
-for representative HPA troubleshooting scenarios.
+No new e2e test is required for Alpha. Beta should consider e2e coverage for a
+representative dashboard or CLI consumption workflow if SIG Autoscaling and SIG
+Testing consider it valuable.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Existing HPA signals are mapped to the identified troubleshooting workflows.
-- SIG Autoscaling has reviewed the mapping against existing conditions, Events,
-  logs, and status fields.
-- SIG Autoscaling has reviewed the gap classification and agreed on which
-  workflows are considered covered versus potential gaps.
-- Any remaining gap is classified as documentation, wording, condition semantics,
-  or API surface.
-- If an API change is still needed, the Alpha scope is limited to a narrow
-  user-facing improvement.
+- `lastScaleDecision` is added behind a feature gate.
+- The HPA controller populates the field for Resource metrics.
+- Unit tests cover scale up, scale down, no-scale due to tolerance, metric
+  error handling, and min/max replica limiting.
+- Unit tests verify that status is not updated solely because reconciliation
+  time advanced.
+- Documentation must explain how `lastScaleDecision` relates to existing HPA
+  conditions such as `ScalingLimited` and `ScalingActive`,
+  `status.currentMetrics`, and Events. It should also clarify when
+  `selectedMetric` is expected to be set versus left unset.
 
 #### Beta
 
-- Feedback from Alpha users and SIG Autoscaling is incorporated.
-- Documentation clearly describes how users and tools should interpret relevant
-  HPA conditions and status fields.
-- Any introduced API-visible behavior has test coverage and compatibility
-  expectations documented.
+- Multi-metric behavior is specified and tested.
+- Upgrade and downgrade behavior is documented.
+- Status update frequency is measured and shown not to introduce significant API
+  server or etcd load.
+- Feedback from at least one dashboard, CLI, or operational tooling use case is
+  incorporated.
+- The stable outcome and reason values are documented.
 
 #### GA
 
-- The selected improvement has proven useful for troubleshooting and tooling.
-- No unresolved scalability, compatibility, or status interpretation issues
-  remain.
-- Documentation covers common troubleshooting scenarios.
+- The field has demonstrated usefulness for operational tooling across common
+  HPA configurations.
+- No unresolved scalability, compatibility, or API semantics issues remain.
+- Documentation covers common troubleshooting scenarios and version skew
+  expectations.
 
 ### Upgrade / Downgrade Strategy
 
-If the final outcome is documentation-only, there is no upgrade or downgrade
-impact.
+On upgrade, new kube-controller-manager versions may begin populating
+`lastScaleDecision` when the feature gate is enabled and the served HPA API
+version includes the field.
 
-If a future revision proposes an API-visible change, the upgrade and downgrade
-strategy must be updated to describe the specific field, condition, or behavior
-being added or changed.
+On downgrade or feature-gate disablement, older controllers will stop updating
+the field. Clients must treat the field as optional. Tooling should fall back to
+existing HPA status, conditions, Events, and logs when the field is absent or
+stale.
+
+The exact behavior for stored objects and clients using `autoscaling/v1` remains
+an open question until the API shape is finalized.
 
 ### Version Skew Strategy
 
-If the final outcome is documentation-only, version skew is not applicable.
-
-If a future revision proposes an API-visible change, the version skew strategy
-must be updated to describe behavior across kube-apiserver,
-kube-controller-manager, and clients.
+During version skew, kube-apiserver and kube-controller-manager versions may not
+both understand or populate the new field. Clients must not assume that the
+field is present. Tooling should also compare `metadata.generation` and
+`status.observedGeneration` before presenting the summary as current.
 
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
 
-This KEP is currently in a gap-analysis phase and does not propose enabling a
-new feature gate. If the outcome is documentation-only, there is no feature
-enablement or rollback behavior.
-
-If a future revision proposes an API-visible change, this section must be
-updated with the feature gate, component ownership, and rollback behavior.
+The field should be guarded by a feature gate for Alpha unless SIG Autoscaling
+and SIG Architecture agree that a gate is unnecessary for this API addition.
+Rollback consists of disabling the feature gate or downgrading the controller,
+after which clients should rely on existing HPA signals.
 
 ### Rollout, Upgrade and Rollback Planning
 
-No control-plane downtime, node reprovisioning, or workload restart is expected
-for the gap-analysis or documentation-only outcomes.
-
-The PRR approver is TBD while this KEP is provisional.
+No workload restart, node reprovisioning, or control-plane downtime is expected.
+The change affects HPA status updates produced by kube-controller-manager.
 
 ### Monitoring Requirements
 
-Existing HPA controller metrics should continue to be used to monitor HPA
-behavior. This KEP does not currently require a new SLI.
-
-If a future API-visible change is proposed, reviewers should verify that it does
-not increase HPA status update frequency for unchanged HPA state.
+Existing API server and etcd metrics should be used to monitor status write
+load. The implementation should also be evaluated with HPA controller metrics
+to ensure that status updates do not increase unexpectedly.
 
 ### Dependencies
 
@@ -468,56 +437,55 @@ are no new external service dependencies.
 
 ### Scalability
 
-The gap-analysis and documentation-only outcomes do not increase HPA object
-size, status update frequency, or controller work.
+The new field increases HPA object size slightly. The Alpha field shape is kept
+small and bounded to avoid unbounded per-metric or per-pod data.
 
-If a future revision proposes a new status field or condition behavior, this
-section must include analysis of object size, status update frequency, and any
-additional controller work.
+The implementation must avoid updating `lastScaleDecision` on every
+reconciliation. Status writes should occur only when the effective outcome or
+the explanation of the current `desiredReplicas` materially changes. Beta
+graduation requires measurement showing that the additional status updates do
+not introduce significant API server or etcd load. That measurement should
+compare HPA status update frequency with and without this field enabled for
+representative HPA workloads.
 
 ### Troubleshooting
 
 Users should continue to inspect HPA status and conditions with
-`kubectl get hpa -o yaml` or API clients. This KEP aims to document how to
-interpret those existing signals and to identify whether any narrow gap remains.
+`kubectl get hpa -o yaml`. `lastScaleDecision` provides a concise summary, while
+Events and logs remain useful for recent history and deeper debugging.
 
 ## Implementation History
 
 - 2026-05-23: Initial provisional KEP draft.
-- 2026-05-25: Pivoted from a broad decision-trace API proposal to an HPA
-  explainability gap analysis focused on existing signals.
+- 2026-05-25: Pivoted to propose `lastScaleDecision` for HPA explainability.
+- 2026-05-25: Narrowed `lastScaleDecision` to a user-facing outcome summary
+  and added status update, scalability, and compatibility constraints.
 
 ## Drawbacks
 
-Starting with gap analysis may delay a concrete API proposal. However, it
-reduces the risk of adding unnecessary API surface for information already
-available through existing HPA conditions, status fields, Events, or logs.
+Adding a new HPA status field increases API surface and object size. Even a
+small field creates long-term compatibility expectations once clients depend on
+it. After the field is added to the Kubernetes API, removing it or changing the
+meaning of documented outcome and reason values would be difficult.
 
-If the remaining multi-metric explainability gap is real, a documentation-only
-outcome may not be enough for tooling. The KEP keeps that case open for focused
-SIG Autoscaling discussion.
+The field may still be less detailed than some debugging workflows want,
+because it intentionally avoids exposing internal calculation details. Users
+who need detailed historical diagnostics may still need Events, metrics, and
+controller logs.
 
 ## Alternatives
 
-- **Add `status.lastScaleDecision`.** The initial draft proposed a bounded
-  machine-readable decision trace with per-metric entries, final reasons, and
-  constraints. Feedback indicated that much of the desired information is
-  already surfaced through HPA conditions and Events, and that exposing decision
-  logic risks expanding the API surface unnecessarily. This alternative is
-  deferred unless the gap analysis identifies a narrow need that cannot be
-  addressed through existing status or conditions.
-- **Use events only.** Events are useful for humans and recent history, but they
-  are not a durable current-state API for automation.
-- **Use conditions only.** Conditions already cover several important workflows.
-  This may be sufficient if documentation and wording are improved. The
-  multi-metric case needs further evaluation.
-- **Use controller logs only.** Logs are implementation-specific and difficult
-  for namespace-scoped users and dashboards to consume consistently.
-- **Expose a separate subresource.** A subresource could provide more detail,
-  but it is a larger API addition and is not justified unless a concrete gap is
-  identified.
-- **Expose historical traces.** History would help post-incident analysis, but
-  it increases storage and API complexity and is outside the scope of this KEP.
+- Documentation and condition wording improvements only. This is lower risk,
+  but may be insufficient for multi-metric cases and stable tooling workflows.
+- New or refined condition reasons. This may cover some user-facing outcomes,
+  but conditions do not naturally carry selected metric identity or a compact
+  outcome summary for tooling.
+- Events only. Events are useful for human troubleshooting and recent history,
+  but they are not suitable as a stable current-state API for tooling.
+- Exposing a full decision trace. This is rejected as too broad and too likely
+  to leak internal implementation details.
+- Exposing historical decision records. This would help post-incident analysis,
+  but it increases storage and API complexity and is outside this KEP's scope.
 
 ## Infrastructure Needed
 
