@@ -1,4 +1,4 @@
-title: Machine-readable HPA scaling decision trace
+title: Improve HPA status explainability for operational tooling
 kep-number: 6107
 authors:
   - "@mattsu2020"
@@ -26,13 +26,8 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates:
-  - name: HPAStatusDecisionTrace
-    components:
-      - kube-apiserver
-      - kube-controller-manager
-disable-supported: true
+feature-gates: []
+disable-supported: false
 
 # The following PRR answers are required at beta release
-metrics:
-  - TBD
+metrics: []
