@@ -793,11 +793,11 @@ a `Conditions` field with the `PodGroupInitiallyScheduled` condition type.
 `PodGroup` status mirrors `Pod` status semantics rather than defining PodGroup-specific reasons:
 - If pods are unschedulable (i.e., timeout, resources, affinity, etc.), the scheduler updates the 
 `PodGroupInitiallyScheduled` condition to `False` and sets the reason fields accordingly.
-- If pods are scheduled, the scheduler updates the `PodGroupInitiallyScheduled` condition to `True` after the group 
-got accepted by the Permit phase.
+- If pods are scheduled, the scheduler updates the `PodGroupInitiallyScheduled` condition to `True` after
+the member pods moved to the binding phase.
 
-For basic scheduling policy, when the pod related to the `PodGroup` gets scheduled, the scheduler updates 
-the `PodGroupInitiallyScheduled` condition to `True`.
+For basic scheduling policy, when the pod related to the `PodGroup` gets scheduled (moves to binding),
+the scheduler updates the `PodGroupInitiallyScheduled` condition to `True`.
 
 #### Status Transition Rules
 
@@ -1480,6 +1480,9 @@ In 1.36:
 
 - All issues and gaps identified as feedback during beta are resolved
 - Promote the e2e API tests to conformance together with a test for gang scheduling behavior.
+
+This KEP and workload-aware preemption ([KEP-5710]) are tightly coupled and controlled by the same feature gate.
+They graduate in lockstep, meaning the graduation criteria of [KEP-5710] should be also met when targeting to a release.
 
 ### Upgrade / Downgrade Strategy
 
