@@ -684,14 +684,9 @@ type CompositePodGroupSpec struct {
 	// Controllers are expected to fill this field by copying it from a CompositePodGroupTemplate.
 	// One of Single, All. Defaults to Single if unset. This field is immutable.
 	//
-	// This field is available only when the WorkloadAwarePreemption feature gate
-	// is enabled.
-	//
-	// +featureGate=WorkloadAwarePreemption
 	// +optional
-	// +k8s:ifDisabled("WorkloadAwarePreemption")=+k8s:forbidden
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:optional
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:immutable
+	// +k8s:optional
+	// +k8s:immutable
 	// +default={"single": {}}
 	DisruptionMode *CompositeDisruptionMode
 
@@ -701,15 +696,11 @@ type CompositePodGroupSpec struct {
 	// (i.e. if no priority class is specified, admission control can set this to the global default
 	// priority class if it exists. Otherwise, the composite pod group's priority will be zero).
 	// This field is immutable.
-	// This field is available only when the WorkloadAwarePreemption feature gate
-	// is enabled.
 	//
-	// +featureGate=WorkloadAwarePreemption
 	// +optional
-	// +k8s:ifDisabled("WorkloadAwarePreemption")=+k8s:forbidden
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:optional
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:format=k8s-long-name
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:immutable
+	// +k8s:optional
+	// +k8s:format=k8s-long-name
+	// +k8s:immutable
 	PriorityClassName string
 
 	// Priority is the value of priority of this composite pod group. Various system components
@@ -718,15 +709,11 @@ type CompositePodGroupSpec struct {
 	// controller populates this field from PriorityClassName.
 	// The higher the value, the higher the priority.
 	// This field is immutable.
-	// This field is available only when the WorkloadAwarePreemption feature gate
-	// is enabled.
 	//
-	// +featureGate=WorkloadAwarePreemption
 	// +optional
-	// +k8s:ifDisabled("WorkloadAwarePreemption")=+k8s:forbidden
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:optional
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:immutable
-	// +k8s:ifEnabled("WorkloadAwarePreemption")=+k8s:maximum=1000000000 # HighestUserDefinablePriority
+	// +k8s:optional
+	// +k8s:immutable
+	// +k8s:maximum=1000000000 # HighestUserDefinablePriority
 	Priority *int32
 }
 ```
@@ -1049,12 +1036,18 @@ points:
 2. **Scheduling Queue Support for CPGs:** The core scheduling queue is extended
    to natively support root `CompositePodGroups` (CPGs without a parent
    reference) and standalone `PodGroups` as the sole root scheduling units
-   enqueued in the active scheduling queue. To preserve this root-only queue
+   enqueued in the scheduling queue. To preserve this root-only queue
    property in the presence of unsynchronized object arrivals (e.g. a member
-   pod arriving before its parent PG/CPG object is created/observed), unobserved
-   groups are tracked in a dedicated `unschedulablePodGroups` structure and
-   only moved into the active scheduling queue when the root of their
-   hierarchy (having no parent reference) is successfully observed and cached.
+   pod arriving before its parent PG/CPG object is created/observed):
+   * Unobserved groups are tracked in a dedicated `unschedulablePodGroups`
+     structure and only moved into the active scheduling queue when the root of
+     their hierarchy (having no parent reference) is successfully observed and
+     cached.
+   * Member pods belonging to any nested child groups inside an unobserved
+     hierarchy are placed and held inside the queue's `pendingPodGroupMembers`
+     cache. These pods are blocked from active scheduling passes and only
+     promoted when their full hierarchy, including the root CPG, is successfully
+     observed and enqueued.
 3. **`PreEnqueue` Extension Point:** Currently, this extension point is
    defined strictly at the individual `Pod` level. We introduce/add support
    for `PreEnqueue` at the `PodGroupInfo` level (operating on CPG/PG groups) to
@@ -1066,10 +1059,21 @@ points:
    using the group-level PreEnqueue point as the KEP's default baseline, and
    finalize on Beta).*
 4. **`PlacementFeasible` Extension Point:** Currently, this extension point
-   exists at the `PodGroup` level (introduced in PR #138643). We extend this
-   existing extension point under our polymorphic `PodGroupInfo` representation
-   to support the validation of hierarchical constraints at the
+   exists at the `PodGroup` level (introduced in [PR #138643](https://github.com/kubernetes/kubernetes/pull/138643)).
+   We extend this existing extension point under our polymorphic `PodGroupInfo`
+   representation to support the validation of hierarchical constraints at the
    `CompositePodGroup` level.
+5. **`Permit` Extension Point:** Currently, the `Permit` extension point is
+   defined strictly at the `Pod` level, where flat gang scheduling blocks member
+   pods until `minCount` pods are scheduled. Under this KEP, we do not introduce
+   a new group-level extension point. Instead, we extend the implementation of
+   the existing Pod-level `Permit` plugin: when an individual member pod is
+   evaluated, the plugin climbs its group hierarchy up to the root group and
+   traverses the entire tree structure to verify that all constraints are
+   satisfied before releasing waiting pods for binding. We will re-evaluate in
+   Beta whether this additional `Permit`-level verification pass is strictly
+   required long-term, but include it as a prerequisite under Alpha to maintain
+   consistency and correctness.
 
 ##### GangScheduling Plugin Changes
 
@@ -1085,18 +1089,19 @@ points:
      in the unschedulable queue.
 
 2. **`PlacementFeasible`:**
-   Executed at each level (for both leaf and nested parent `PodGroupInfo`
-   objects) during in-memory simulation to determine if a group satisfies
-   active member constraints. Under this KEP, we extend the existing
-   `PlacementFeasible` checker implementation to support `PodGroupInfo`
-   representing `CompositePodGroups`:
+   Executed for each `PodGroupInfo` node in the popped hierarchy tree under the
+   recursive `podGroupSchedulingDefaultAlgorithm` routine during in-memory
+   simulation to determine if a group satisfies active member constraints.
+   Under this KEP, we extend the existing `PlacementFeasible` checker
+   implementation to support `PodGroupInfo` representing `CompositePodGroups`:
    * **For a leaf `PodGroup`:** We do not introduce any changes. The
-     implementation relies on the pre-existing behavior where both in-memory scheduled
-     member pods and remaining pending member pods in queue are evaluated against `minCount`
-     to return `Success`, `Unschedulable`, or `UnschedulableAndUnresolvable`.
-   * **For a `CompositePodGroup`:** We recursively evaluate the sum of
-     in-memory scheduled child groups and the remaining admissible child groups
-     against the parent's `minGroupCount` threshold:
+     implementation relies on the pre-existing behavior, evaluating in-memory
+     scheduled member pods and remaining pending member pods in the queue against
+     `minCount` to return `Success`, `Unschedulable`, or
+     `UnschedulableAndUnresolvable`.
+   * **For a `CompositePodGroup`:** We evaluate the in-memory scheduled
+     child groups and remaining admissible child groups against the parent's
+     `minGroupCount` threshold:
      - **`Success`:** Returned if in-memory scheduled child groups $\ge$
        `minGroupCount`.
      - **`Unschedulable`:** Returned if in-memory scheduled child groups <
@@ -1108,6 +1113,26 @@ points:
        parent CPG is mathematically impossible to schedule), immediately
        aborting the recursive cycle early.
 
+3. **`Permit`:**
+   Executed at the Permit stage of the scheduling cycle strictly at the
+   individual `Pod` level. We extend the implementation of the existing
+   `Permit` plugin to climb the parent group references and traverse the tree
+   structure to verify constraints before releasing member pods for final
+   binding:
+   * **If the Pod belongs to a standalone group (not part of a hierarchy):**
+     We do not introduce any changes. The plugin relies on the pre-existing
+     behavior to hold member pods in a waiting state and release them once
+     the group's `minCount` member pods are successfully scheduled.
+   * **If the Pod belongs to a group hierarchy tree (nested under a parent
+     CPG):**
+     We override the flat group-level checks. When a member pod is evaluated,
+     the plugin climbs parent references up to the root CPG ancestor. It
+     traverses the entire hierarchy tree structure in the permit cache
+     (ensuring all nested child groups satisfy parent `minGroupCount` and
+     child `minCount` thresholds) starting at this root level, releasing the
+     waiting member pods for final binding only when the entire tree's
+     constraints are satisfied.
+
 ##### Recursive Scheduling Cycle Execution
 In `schedule_one_podgroup.go`, the scheduler processes a popped root unit (a root
 `PodGroupInfo`) by running the recursive **`podGroupSchedulingDefaultAlgorithm`**
@@ -1115,9 +1140,9 @@ routine. Throughout this recursive simulation phase, all pod-to-node assignments
 are tracked strictly **in memory** in the `nodeInfoSnapshot` as temporary state
 before final binding:
 
-1. **If the active node is a leaf `PodGroup`:** Runs the flat, single-level
-   `PodGroupSchedulingAlgorithm` (simulating member pod placements in memory)
-   and returns the status.
+1. **If the active node is a leaf `PodGroup`:** Runs the same logic as in the
+   flat, single-level `PodGroupSchedulingDefaultAlgorithm` (simulating member
+   pod placements in memory) and returns the status.
 2. **If the active node is a `CompositePodGroup`:**
    * Recursively executes `podGroupSchedulingDefaultAlgorithm` for each child
      group (storing simulated assignments in memory).
@@ -1128,6 +1153,27 @@ before final binding:
    `Success`, the scheduler commits and writes the entire tree's resolved pod
    bindings from memory to the API server.
 
+###### In-memory simulation revert pacing across the recursion stack
+
+In the existing flat gang scheduling implementation,
+`podGroupSchedulingDefaultAlgorithm` is fully self-contained. When a member
+pod is assumed, a `revertFn` is registered and executed via `defer` upon
+function exit, restoring the `nodeInfoSnapshot` to its pre-execution state.
+
+Under a nested `CompositePodGroup` hierarchy, deferred local reverts on
+function exit would prematurely clear assumed pod allocations of a
+successfully simulated child group (e.g. `PG-1`) before its sibling (e.g.
+`PG-2`) is evaluated. Sibling groups would fail to see the consumed capacity
+in the memory snapshot, leading to resource over-commitments and deadlocks.
+
+To resolve this, the recursive algorithm does not defer execution of the
+revert closures locally. Instead, as each child group runs its in-memory
+simulation, the registered `revertFn` closures are returned and accumulated
+(`[]revertFn`) up the recursion stack to the root CPG. Upon exit from the
+root-level `podGroupSchedulingDefaultAlgorithm` execution pass, the
+accumulated revert closures are always executed all-at-once, cleanly
+restoring the shared `nodeInfoSnapshot` to its pre-execution state before the
+separate, asynchronous binding cycle triggers.
 
 > [!NOTE]
 > **No-Backtracking:** Sibling child groups under a `CompositePodGroup` are
@@ -1162,7 +1208,7 @@ Preemption is strictly evaluated and executed only at the root level of the
 group hierarchy, preventing isolated and competing preemption passes at
 intermediate levels.
 
-Consistent with flat gang scheduling ([KEP-4671]), direct scheduling and
+Consistent with flat gang scheduling ([KEP-4671]), binding and
 preemption never occur inside the same scheduling cycle. If a root CPG is popped
 from the queue, the recursive scheduling cycle evaluates direct in-memory
 placement feasibility, resulting in exactly one of four distinct runtime
