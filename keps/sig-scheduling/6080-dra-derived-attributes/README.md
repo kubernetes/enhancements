@@ -318,6 +318,7 @@ type DeviceRequest struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+	// +k8s:optional
 	// +k8s:maxItems=8
 	DerivedAttributes []DerivedAttribute `json:"derivedAttributes,omitempty"`
 }
