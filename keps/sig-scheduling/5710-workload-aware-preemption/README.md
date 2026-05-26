@@ -14,7 +14,6 @@
     - [AI Training Job as preemptor](#ai-training-job-as-preemptor)
     - [Preemption of Multihost Inference](#preemption-of-multihost-inference)
     - [Preemption of Multihost Inference that can run in a degraded mode](#preemption-of-multihost-inference-that-can-run-in-a-degraded-mode)
-    - [Preemption cost](#preemption-cost)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -79,7 +78,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -157,8 +156,8 @@ and many others) and bring the true value for every Kubernetes user.
 
 ## Proposal
 
-This KEP is tightly coupled with [KEP-4671: Gang Scheduling using Workload Object] one. It is building
-on foundations introduced there and assumes the knowledge of the concepts introduces there. 
+This KEP is tightly coupled with [KEP-4671: Gang Scheduling using Workload Object] one.
+It is building on foundations introduced there and assumes the knowledge of the concepts introduced there.
 
 We believe that providing a Gang Scheduling capability without a dedicated preemption mechanism for it
 is of no use for the high performance batch workloads for which this feature is primarily designed.
@@ -228,18 +227,13 @@ I don't want to preempt the whole replica (one leader and N workers) if a single
 would be preempted, because I prefer to serve in a degraded mode than be completely
 disrupted.
 
-#### Preemption cost
-
-When a long-running AI Training job, its cost of preemption differs over time and depends
-on how long ago it checkpointed its state. I want to be able to somehow influence the
-preemption priority of my job based on how much would it really cost me.
-
-This story is treated directionally and will not be addressed in Alpha and Beta.
-
 
 ### Notes/Constraints/Caveats
 
-For alpha we defined a Workload Aware Preemption as a separate feature that can be disabled independently of the Gang Scheduling. We acknowledge that for Beta, releasing the Gang Scheduling without Workload Aware Preemption does not provide enough value for the end users. That's why in Beta we merge those two features and progress them together under single `GenericWorkload` feature gate.
+For alpha we defined a Workload Aware Preemption as a separate feature that can be disabled
+independently of the Gang Scheduling. We acknowledge that for Beta, releasing the Gang Scheduling
+without Workload Aware Preemption does not provide enough value for the end users. That's why in
+Beta we merge those two features and progress them together under single `GenericWorkload` feature gate.
 
 <!--
 What are the caveats to the proposal?
@@ -326,8 +320,6 @@ type PodGroupSpec struct {
     // Controllers are expected to fill this field by copying it from a PodGroupTemplate.
     // One of Single, All. Defaults to Single if unset.
     // This field is immutable.
-    // This field is available only when the GangScheduling feature gate
-    // is enabled.
     DisruptionMode *DisruptionMode 
 }
 ```
@@ -422,7 +414,7 @@ the possible divergence in the documentation.
 For Beta and GA, we will disallow the divergence between the priority of the `Pod` and the `PodGroup`. 
 This will be done by the scheduler, which will fail scheduling of the `PodGroup`, once it observes such divergence.
 This mechanism will follow a similar mechanism already implemented in scheduler that disallows `PodGroup` with pods having different `spec.schedulerName`.
-This information will be visible to the user in the description of the `PodScheduled` `Conditions` in the `Pod.Status`
+This information will be visible to the user in the description of the `PodScheduled` `Conditions` in the `Pod.Status` and `PodGroup.Status`:
 
 ```yaml
 status:
@@ -431,6 +423,29 @@ status:
     status: "False"
     reason: SchedulerError
     message: 'all pods in a single pod group should match the priority of the pod group, got: 1 and 2'
+```
+
+and via `FailedScheduling` event:
+
+```json
+{
+  "apiVersion": "v1",
+  "kind": "Event",
+  "metadata": {
+    ...
+  },
+  "involvedObject": {
+    ...
+  },
+  "reason": "FailedScheduling",
+  "message": "all pods in a single pod group should have the same .spec.schedulerName set, got: \"custom-scheduler-1\" and \"custom-scheduler-2\"",
+  "source": {
+    "component": "default-scheduler"
+  },
+  "type": "Warning",
+  "action": "Scheduling",
+  "reportingComponent": "default-scheduler"
+}
 ```
 
 We might relax this restriction in the future if there is a strong use cases that justify it. 
@@ -554,10 +569,10 @@ with preemption:
 1. For every domain computed above run the following points:
 
    1. Identify the list of all potential victims in that domain:
-      - all running pod groups with (preemption) priority lower then preemptor priority; note that
+      - all running pod groups with (preemption) priority lower than preemptor priority; note that
         some pods from that pod group may be running outside of currently considered domain D - they
         need to contribute to scoring, but they won't contribute to feasibility of domain D.
-      - all individual pods with priority lower then preemptor priority
+      - all individual pods with priority lower than preemptor priority
 
    1. If removing all potential victims would not make the preemptor schedulable, the preemptor
       is unschedulable with preemption in currently considered domain D.
@@ -625,116 +640,15 @@ we will be able to achieve in-place replacement with relatively localized change
 The algorithm described above assumes that we can cheaply check if a potential victim pod can be placed back where they are currently running after preemptor has been `assumed` on the target node. However there is no extension point like this implemented in the scheduler as of right now. During scheduling, the scheduler uses Filter plugins to check whether a pod can run on a given node. This process is heavy and requires to build a `cycleState` object, particularly for plugins that have inter pod constraints such as pod affinity (pod running on node A can fail "Filter" on node B). Running `Filter()` and building a `cycleState` for all of the victims does not seem like a feasible option from performance perspective.
 
 However, one can note that actually do not need a full Filter check. Instead of checking if the victim pod can be scheduled back on its node, we need to check whether keeping the victim pod on a node will break the schedulability of the preemptor that we assumed. Mainly, this means that we do not have to meet the scheduling constraints for victim pod, and we only care about scheduling constraints of the preemptor pod that could be broken. Such check can be implemented by extending Filter plugins with a new method.
-We propose to tenantively call it `Reprieve` with following semantics for Beta:
+We propose to tenantively call it `Reprieve` with following semantics:
 
 ```go 
-// ReprieveExtension is an interface that is included in Filter plugins that allow specifying
-// reprieve method used by workload aware preemption.
-type ReprieveExtension interface {
-    // Reprieve is called by the workload aware preemption.
-    // All FilterPlugins should return "Success" to declare that
-    // the given victim pod can be placed back on the given node
-    // without breaking the schedulability of the preemptor pod on this node.
-    // If Reprieve does not return "Success", it will return "Unschedulable"
-    // or "Error".
-    //
-    // "Error" aborts preemption.
-    //
-    // For the node being evaluated Filter plugins should look at the passed
-    // nodeInfo reference for this particular node's information instead of
-    // looking it up in the NodeInfoSnapshot because during preemption
-    // the state of the node can be mutated to evaluate the possibility of  preempting 
-    // them to schedule preemptor pods. The same stands for all nodes belonging 
-    // to the cluster, as they might be out of sync with NodeInfoSnapshot.
-
-    // Plugins are encouraged to check the context for cancellation.
-    // Once canceled, they should return as soon as possible with
-    // an Unschedulable status that includes the
-    // `context.Cause(ctx)` error explanation.
-    Reprieve(ctx context.Context, victimPod *v1.Pod, nodeInfo NodeInfo,  preemptorPods []*v1.Pod clusterNodes []NodeInfo) *Status
-}
-
-// FilterPlugin is an interface for Filter plugins. These plugins are called at the
-// filter extension point for filtering out hosts that cannot run a pod.
-// This concept used to be called 'predicate' in the original scheduler.
-// These plugins should return "Success", "Unschedulable" or "Error" in Status.code.
-// However, the scheduler accepts other valid codes as well.
-// Anything other than "Success" will lead to exclusion of the given host from
-// running the pod. Plugins that implement FilterPlugin should
-// also implement SignPlugin to enable batching optimizations.
+// ...
+// FilterPlugin also needs to implement Reprieve method
+// for effective preemption for pod groups.
 type FilterPlugin interface {
     Plugin
-    // Filter is called by the scheduling framework.
-    // All FilterPlugins should return "Success" to declare that
-    // the given node fits the pod. If Filter doesn't return "Success",
-    // it will return "Unschedulable", "UnschedulableAndUnresolvable" or "Error".
-    //
-    // "Error" aborts pod scheduling and puts the pod into the backoff queue.
-    //
-    // For the node being evaluated, Filter plugins should look at the passed
-    // nodeInfo reference for this particular node's information (e.g., pods
-    // considered to be running on the node) instead of looking it up in the
-    // NodeInfoSnapshot because we don't guarantee that they will be the same.
-    // For example, during preemption, we may pass a copy of the original
-    // nodeInfo object that has some pods removed from it to evaluate the
-    // possibility of preempting them to schedule the target pod.
-    //
-    // Plugins are encouraged to check the context for cancellation.
-    // Once canceled, they should return as soon as possible with
-    // an UnschedulableAndUnresolvable status that includes the
-    // `context.Cause(ctx)` error explanation. For example, the
-    // context gets canceled when a sufficient number of suitable
-    // nodes have been found and searching for more isn't necessary
-    // anymore.
-    Filter(ctx context.Context, state CycleState, pod *v1.Pod, nodeInfo NodeInfo) *Status 
-    // ReprieveExtension returns a ReprieveExtension interface if the plugin implements one,
-    // or nil if it does not.
-    ReprieveExtension() ReprieveExtension
-}
-```
 
-We expect that for Filter plugins that do not enforce inter pod constraints the implementation should be trivial. We will
-provide an implementation for all the in-tree Filter plugins. We expect that the owners of out-of-tree plugins will 
-follow with the implementation of `Reprieve` for their plugins.
-
-For Beta, the workload aware preemption, thus the gang scheduling will be disabled if any of the Filter plugins registered does not support the Reprieve extension.
-
-For GA, we state that the Reprieve method is required for an effective workload aware preemption. That's why we will promote the Reprieve extension to become a method of the FilterPlugin interface as follows:
-
-```go
-// FilterPlugin is an interface for Filter plugins. These plugins are called at the
-// filter extension point for filtering out hosts that cannot run a pod.
-// This concept used to be called 'predicate' in the original scheduler.
-// These plugins should return "Success", "Unschedulable" or "Error" in Status.code.
-// However, the scheduler accepts other valid codes as well.
-// Anything other than "Success" will lead to exclusion of the given host from
-// running the pod. Plugins that implement FilterPlugin should
-// also implement SignPlugin to enable batching optimizations.
-type FilterPlugin interface {
-    Plugin
-    // Filter is called by the scheduling framework.
-    // All FilterPlugins should return "Success" to declare that
-    // the given node fits the pod. If Filter doesn't return "Success",
-    // it will return "Unschedulable", "UnschedulableAndUnresolvable" or "Error".
-    //
-    // "Error" aborts pod scheduling and puts the pod into the backoff queue.
-    //
-    // For the node being evaluated, Filter plugins should look at the passed
-    // nodeInfo reference for this particular node's information (e.g., pods
-    // considered to be running on the node) instead of looking it up in the
-    // NodeInfoSnapshot because we don't guarantee that they will be the same.
-    // For example, during preemption, we may pass a copy of the original
-    // nodeInfo object that has some pods removed from it to evaluate the
-    // possibility of preempting them to schedule the target pod. The same stands for
-    // all nodes belonging to the cluster, as they might be out of sync with NodeInfoSnapshot.
-    //
-    // Plugins are encouraged to check the context for cancellation.
-    // Once canceled, they should return as soon as possible with
-    // an UnschedulableAndUnresolvable status that includes the
-    // `context.Cause(ctx)` error explanation. For example, the
-    // context gets canceled when a sufficient number of suitable
-    // nodes have been found and searching for more isn't necessary
-    // anymore.
     Filter(ctx context.Context, state CycleState, pod *v1.Pod, nodeInfo NodeInfo) *Status
 
     // Reprieve is called by the preemption.
@@ -760,21 +674,46 @@ type FilterPlugin interface {
 }
 ```
 
+We expect that for Filter plugins that do not enforce inter pod constraints the implementation should be trivial. We will
+provide an implementation for all the in-tree Filter plugins. We expect that the owners of out-of-tree plugins will
+follow with the implementation of `Reprieve` for their plugins.
+
+<!-- TODO(argh4k): Add short description of implementation of reprieve for in-tree Filter Plugins -->
+
+When trying to reprieve Pods belonging to the PodGroup with `DisruptionMode=All` the preemption logic will be responsible,
+for making sure that either all of Pods can be reprieved or none of them will be reprieved.
+
+
 ### Pod Group Post Filter
 
-As part of minimizing preemptions goal, arguably the most important thing to do is to avoid unnecessary preemptions. However, with the current model of preemption when preemption is triggered immediately after the victims are decided and PostFilter is run per Pod in PodGroup, it doesn't achieve this goal. The reason for that is that the proposed placement (nomination) can actually appear to be invalid and not be proceeded with, if the whole PodGroup fails to schedule. In such case we will not even proceed to binding and the preemption will be completely unnecessary disruption.
+As part of minimizing preemptions goal, arguably the most important thing to do is to avoid unnecessary preemptions. However, with the model of preemption when preemption is triggered immediately after the victims are decided and PostFilter is run per Pod in PodGroup, it doesn't achieve this goal. The reason for that is that the proposed placement (nomination) can actually appear to be invalid and not be proceeded with, if the whole PodGroup fails to schedule. In such case we will not even proceed to binding and the preemption will be completely unnecessary disruption.
 
-For alpha, to avoid triggering unnecessary preemptions, we disabled the default preemption plugin in PostFilter for pods from PodGroup if the workload aware preemption was enabled.
+For alpha, to avoid triggering unnecessary preemptions, we disabled the default preemption
+plugin in PostFilter for pods from PodGroup if the workload aware preemption was enabled.
 
-For beta, we acknowledge that the default preemption is not the only PostFilter plugin out there. Other PostFilter plugins can also perform disruptive actions. In the current model, those plugins works only on the outcome of single pod scheduling cycle, within a PodGroup cycle. With that they do not have a full picture of the pod group scheduling outcome and can perform actions that are either not optimal or in the worst case will not make the PodGroup schedulable anwyay.
+For beta, we acknowledge that the default preemption is not the only PostFilter plugin out there.
+Other PostFilter plugins can also perform disruptive actions. In the current model, those plugins
+works only on the outcome of single pod scheduling cycle, within a PodGroup cycle. With that they
+do not have a full picture of the pod group scheduling outcome and can perform actions that are
+either not optimal or in the worst case will not make the PodGroup schedulable anwyay.
 
-For beta and GA we propose to disable all PostFilter plugins in the pod group scheduling cycle in favor of the newly added PodGroupPostFilter extension point. This extension point will be called only once after the whole pod group fails to schedule. 
-It will provide data about the outcome of whole PodGroup scheduling cycle and allow users to define actions that can be taken to make the PodGroup schedulable. Workload Aware Preemption will be one of the implementations of this extension point. As part of the beta promotion we will provide the implementation for other in tree plugin that implements the PostFilter interface (namely the DRA Plugin). We expect owners of out of tree PostFilters to follow with their own implementations.
+For beta and GA we propose to disable all PostFilter plugins in the pod group scheduling cycle in
+favor of the newly added PodGroupPostFilter extension point. This extension point will be called
+only once after the whole pod group fails to schedule. It will provide data about the outcome of
+whole PodGroup scheduling cycle and allow users to define actions that can be taken to make the
+PodGroup schedulable. Workload Aware Preemption will be one of the implementations of this
+extension point. As part of the beta promotion we will provide the implementation for other in
+tree plugin that implements the PostFilter interface (namely the DRA Plugin). We expect owners
+of out of tree PostFilters to follow with their own implementations.
+
+The evaluation of PodGroupPostFilter plugins will reuse the same logic as the PostFilter one. Mainly,
+the plugins will be executed in the same order as they appear in the scheduler configuration,
+and the first plugin that returns a success result, will stop evaluation of any further plugins.
 
 ```go
 // PodGroupPostFilterResult stores information about nominated nodes for a pod group.
 type PodGroupPostFilterResult struct {
-    NominatedNodeNames map[*v1.Pod]*fwk.NominatingInfo
+    NominatingInfos map[*v1.Pod]*fwk.NominatingInfo
 }
 
 // PodGroupPostFilterPlugin is an interface for "PodGroupPostFilter" plugins. These plugins are called
@@ -814,7 +753,7 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
 
 1. Non-uniform priority across CompositePodGroups.
 
-   We anticipate that in the future the `CompositePodGroup` concept will be introduced. We can envision
+   The `CompositePodGroup` concept is also being introduced to Workload API. We can envision
    a case where different `CompositePodGroups` will require to have different preemption priorities.
    To achieve that, we could introduce `PriorityClassName` field also at the `CompositePodGroup` level, with the semantic that lower-level structure overwrites the higher-level one (e.g. priority set for `PodGroup` overwrites the priority
    for `CompositePodGroup`). So the API and semantics proposed in this KEP would allow for achieving
@@ -853,7 +792,7 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    we make preemption priority mutable.
 
    However, given an ability to achieve both of these in backward compatible way later, we leave
-   those for future extensions.
+   those for future extensions. We expect this improvement to come up in a dedicated, follow up KEP.
 
 1. PodGroupPostFilter extension
    
@@ -944,8 +883,6 @@ For GA we will promote those tests to conformance.
 
 #### GA
 
-- Decision about additional sorting/scoring preemption victims to minimize preemption cost
-- Decision whether we support mutability of Priority for GA
 - E2E test promoted to conformance
 - Performance benchmarks have well defined thresholds and are run as part of the scheduler-perf of sig-scalability-benchmarks
 - All known issues resolved 
@@ -997,8 +934,8 @@ creating the `PodGroup` object.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the preemption algorithm changes can be disabled by simply disabling the feature gate
-in kube-scheduler. However, this requires also disabling a Gang Scheduling feature.
+Yes, the preemption algorithm changes can be disabled by simply disabling `GenericWorkload` feature gate
+in kube-scheduler. However, this will also disable a Gang Scheduling feature.
 
 The new API changes and admission can also be disabled by disabling the feature gate in
 kube-apiserver. However keep in mind that it doesn't result in clearing the new fields
@@ -1028,7 +965,7 @@ enablement/disablement tests - the logic will be covered by regular feature test
 
 The API fields related to Workload Aware Preemption are no longer hidden behind a separate
 feature gate and will be promoted with the whole API to beta. There is no need for the
-dedicated enablement/disablement tests at the kube-apiserver registry layer
+dedicated enablement/disablement tests at the kube-apiserver registry layer.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1047,6 +984,7 @@ This results in a fallback to the status quo behavior, meaning that pods will be
 - `scheduler_podgroup_preemption_attempts_total{result="error"}`: A sudden spike indicates internal errors or panics within 
 the workload aware preemption logic.
 - `scheduler_podgroup_preemption_attempt_duration_seconds`: A significant P99 latency would indicate that the performance of the new logic is unacceptable.
+- `plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}`: A sudden increase of the latency of default preemption, especially if there is no PodGroup objects in the cluster indicates an issue with the workload aware default preemption.
 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -1133,8 +1071,30 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [X] Events
-  - Event Reason: Preempting
-  - The preemption message will have "cluster" set as a node name.
+  - ```json
+    {
+    "kind": "Event",
+    "involvedObject": {
+      "kind": "Pod",
+    },
+    "related": {
+      "kind": "PodGroup",
+    },
+    "reason": "Preempted",
+    "message": "Preempted by podgroup ... on node cluster",
+    "source": {
+      "component": "default-scheduler"
+    },
+    "type": "Normal",
+    "action": "Preempting",
+    "reportingComponent": "default-scheduler"
+    }
+    ```
+- [X] API .status
+  - Object: PodGroup
+  - Condition Name: `PodGroupScheduled`
+  - reason: `Unschedulable`
+  - message: `pod group is waiting for podgroup preemption to complete`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1149,6 +1109,7 @@ feature primarily in terms of non-regression to ensure the workload aware preemp
   when scheduling pods requires preemption of pods grouped in PodGroups (DisruptionMode = All) compared to scheduling an equivalent number of pods in PodGroups that would require preemption of similar number of pods but not grouped in PodGroup.
   This can be measured by the number of Pod binding API calls arriving to the API server
   (`apiserver_request_total{resource="pods", subresource="binding"}`).
+- Default Preemption Performance: There should be no significant regression in the default preemption performance, especially when there are no PodGroups in the cluster. This can be measured by the `plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}` metric.
 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
@@ -1158,7 +1119,8 @@ feature primarily in terms of non-regression to ensure the workload aware preemp
     - scheduler_podgroup_preemption_attempts_total
     - scheduler_podgroup_preemption_attempt_duration_seconds
     - scheduler_podgroup_preemption_victims
-    - plugin_execution_duration_seconds{extension_point=Reprieval}
+    - plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="Reprieval"}
+    - plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -1243,7 +1205,7 @@ Calls to update NominatedNodeNames for preemptor pods are using PatchPodStatus f
 - Diagnostics: Scheduler logs at V=6 searching for logs from podgrouppreemption.go file to trace where preemption slows down.
 - Testing: The scheduler performance benchmarks should catch potential issues with a poor performance of the workload aware preemption
 
-1. WorkloadAwarePreemption does not remove low level pods to make a place for the preemptor
+2. WorkloadAwarePreemption does not remove low level pods to make a place for the preemptor
 - Detection: Check Pod Events/Status. Expected reason: a message indicating why preemption failed
 - Metrics: `scheduler_podgroup_preemption_attempts_total{result=error}`
 - Mitigations:
@@ -1255,7 +1217,7 @@ Calls to update NominatedNodeNames for preemptor pods are using PatchPodStatus f
 - Testing:
   - Covered by integration tests
 
-1. WorkloadAwarePreemption removes more pods than necessary 
+3. WorkloadAwarePreemption removes more pods than necessary
 
 - Detection: The amount of pods with status `preempted by podgroup X` is higher than expected for a given pod group
 - Mitigations: If intended, delete the PodGroup object and recreate the pods without `schedulingGroup`to disable gang  
@@ -1265,6 +1227,8 @@ Calls to update NominatedNodeNames for preemptor pods are using PatchPodStatus f
 - Testing: The scheduler performance benchmarks should catch potential issues with a poor performance of the workload aware preemption
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+<!-- TODO-->
 
 ## Implementation History
 

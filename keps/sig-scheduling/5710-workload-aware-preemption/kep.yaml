@@ -15,7 +15,7 @@ approvers:
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
-  - "/keps/sig-scheduling/5732-topology-aware-workload-preemption"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -40,6 +40,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-scheduler
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
