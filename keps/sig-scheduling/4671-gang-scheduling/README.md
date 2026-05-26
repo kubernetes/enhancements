@@ -39,7 +39,7 @@
     - [North Star Vision](#north-star-vision)
     - [GangScheduling Plugin](#gangscheduling-plugin)
     - [Future plans](#future-plans)
-  - [Scheduler Changes for v1.36](#scheduler-changes-for-v136)
+  - [Scheduler Changes for Beta](#scheduler-changes-for-beta)
     - [The Workload Scheduling Cycle](#the-workload-scheduling-cycle)
     - [Queuing and Ordering](#queuing-and-ordering)
     - [Scheduling Algorithm](#scheduling-algorithm)
@@ -932,8 +932,8 @@ and `PodGroupTemplate` is proposed to be mutable in v1.37. Specifically:
 * Modifying a `PodGroupTemplate` will not affect existing `PodGroup` instances.
   Changes should apply exclusively to new instances created from the updated template by the controllers.
 
-* Because the scheduler operates on an eventually consistent view of the cluster state,
-  updates to `minCount` may not be immediately visible. If a modification occurs while the scheduler
+* In case of `PodGroup` instances, updates to `minCount` may not be immediately visible, as the scheduler
+  operates on an eventually consistent view of the cluster state. If a modification occurs while the scheduler
   is actively processing that specific `PodGroup` in a scheduling cycle, the previous value
   may still be evaluated for that cycle. The new value will take effect in the subsequent cycle.
 
@@ -1040,7 +1040,7 @@ batch workloads. Potential features include:
 - Allow `PodGroup` objects to reference parent `PodGroup` for hierarchical scheduling structures.
 - Design hierarchical `PodGroup` lifecycle management and status tracking.
 
-### Scheduler Changes for v1.36
+### Scheduler Changes for Beta
 
 For the `Alpha` phase in v1.35, we focused on plumbing the `Workload` API and implementing
 the `GangScheduling` plugin using simple barriers (`PreEnqueue` and `Permit`).
@@ -1048,7 +1048,7 @@ While this satisfied the correctness requirement for "all-or-nothing" scheduling
 it did not address performance or efficiency at scale, scheduling livelocks,
 nor did it solve the problem of partial preemption application.
 
-For v1.36, we propose introducing a **Workload Scheduling Cycle**.
+For Beta (initially planed for v1.36, but deferred to v1.37), we proposed introducing a **Workload Scheduling Cycle**.
 This mechanism processes all Pods belonging to a single `PodGroup` in one batch,
 rather than attempting to schedule them individually in isolation using the
 traditional pod-by-pod approach. While introduction of this phase itself won't
@@ -1132,9 +1132,11 @@ The queue will support queuing `PodGroup` instances alongside individual Pods.
 
 4. During a Workload Scheduling Cycle, all member Pods are retrieved from the `QueuedPodGroupInfo`.
    Based on the cycle's outcome:
-   * **Success:** Pods are moved directly to the binding cycle.
+   * **Success:** Pods are moved directly to the binding cycle. Remaining unschedulable pods
+     are returned to the `active` queue to attempt the preemption for them shortly after.
    * **Failure/Preemption:** The `QueuedPodGroupInfo` (containing the unschedulable pods) is returned
-     to the `backoff` or `unschedulable` structure.
+     to the `backoff` or `unschedulable` structure. If the state of the pod group changed during scheduling attempt,
+     e.g., new member pods were added, the `QueuedPodGroupInfo` may be moved to the `active` queue directly.
 
 While this represents a significant architectural change to the scheduling
 queue and `scheduleOne` loop, it provides a clean separation of concerns and
@@ -1306,7 +1308,7 @@ all pod group's pods will be rejected as unschedulable.
 #### Interaction with Basic Policy
 
 For pod groups using the `Basic` policy, the Workload Scheduling Cycle is
-optional. In the v1.36 timeframe, this cycle will be applied to
+optional. However, this cycle will be applied to
 `Basic` pod groups to leverage the batching performance benefits, but the
 "all-or-nothing" (`minCount`) checks will be skipped; i.e., we will try to
 schedule as many pods from such PodGroup as possible.
@@ -1613,7 +1615,8 @@ behavior).
    `scheduler_pending_entities{type="podgroup", queue="gated"}` metric is incremented.
 8. Create a Pod `test-pod-2` pointing to the same pod group.
 9. Both pods are scheduled successfully in the same cycle (Gang Scheduling works). 
-10. Downgrade API Server and Scheduler to v1.36 with feature gates disabled.
+10. Downgrade API Server and Scheduler to v1.36 with feature gates
+    (`GenericWorkload` and `GangScheduling` defined in that release) disabled.
 11. Create `test-pod-3` pointing to `gang-test-B`. Note: We use a pod group created in step 5 because creating new
     PodGroup objects is disabled.
 12. The pod is scheduled immediately (PodGroup logic is ignored because the schedulingGroup field is dropped by
