@@ -678,11 +678,24 @@ We expect that for Filter plugins that do not enforce inter pod constraints the 
 provide an implementation for all the in-tree Filter plugins. We expect that the owners of out-of-tree plugins will
 follow with the implementation of `Reprieve` for their plugins.
 
-<!-- TODO(argh4k): Add short description of implementation of reprieve for in-tree Filter Plugins -->
+For currently implemented in-tree plugins that implement FilterPlugin interface the Reprieve method will work as follows:
+- NodeName: No-op. Scheduling constraint without inter pod constraints.
+- NodePorts: The Reprieve method will check whether the preemptor pods do not use the same `hostPort` as victim pod. If they do, reprieving victim pod breaks schedulability of the preemptor.
+- NodeAffinity: No-op. Scheduling constraint without inter pod constraints.
+- TaintToleration: No-op. Scheduling constraint without inter pod constraints.
+- NodeResourceFit: The Reprieve method will check whether there is enough space for the victim pod given the current state of the node (with preemptor assumed).
+- NodeUnschedulable: No-op. Scheduling constraint without inter pod constraints. 
+- VolumeBinding:  The reprieve method will check whether reprieving victim will not cause exceed the CSI storage capacity limity for any storage class on a given node.
+- VolumeRestrictions: The Reprieve method will check whether the volume of victim does not conflict with the node local volumes of the preemptor pods. It will also check whether victim is not trying using `ReadWriteOncePod` PVC that is taken by any of the preemptor pod.
+- VolumeZone: No-op. Scheduling constraint between pod's PVs and node labels
+- PodTopologySpread: The reprieve method has to check whether reprieving a victim pod will not cause the skew of topologySpreadConstraint on the preemptor pod. This one can be potentially the hardest one to implement efficiently as it might require iterating over multiple nodes to calculate skew.
+- InterPodAffinity: We need to check whether preemptor does not have hard anti affinity to the victim pod. If so, reprieving victim would break the schedulability of the preemptor.  We also need to check whether reprieving back the victim pod won't violate any topology constraints (preemptor pod cannot be scheduled in a topology with specific pods running and victim is one of those specific pods). 
+- NodeDeclaredFeatures: No-op. Scheduling constraint.
+- NodeVolumeLimits: The Reprieve method will check whether the limits on the maximum volume attachment count per node won't be broken with assumed preemptor and reprieved victim. 
+- DynamicResources: No-op with current implementation. There is no way to simulate de allocation of the DRA devices  in the preemption, so the preemptor pods cannot take over the devices from victim pods.
 
 When trying to reprieve Pods belonging to the PodGroup with `DisruptionMode=All` the preemption logic will be responsible,
 for making sure that either all of Pods can be reprieved or none of them will be reprieved.
-
 
 ### Pod Group Post Filter
 
@@ -1095,6 +1108,11 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Condition Name: `PodGroupScheduled`
   - reason: `Unschedulable`
   - message: `pod group is waiting for podgroup preemption to complete`
+- [X] API .status
+  - Object: Pod
+  - Condition Name: `DisruptionTarget`
+  - reason: `PreemptionByScheduler`
+  - message: `default-scheduler: preempting to accommodate a higher priority podgroup"
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1228,7 +1246,23 @@ Calls to update NominatedNodeNames for preemptor pods are using PatchPodStatus f
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-<!-- TODO-->
+If workload aware preemption latency is the problem:
+
+1. Increase Log Verbosity: Set the default scheduler log level to `-v=6` (or `-v=10` for deep tracing) to capture internal scheduling steps.
+2. Examine Scheduler Logs: Filter logs for source file `podgrouppreemption.go` and look for execution duration messages in the preemption evaluation flow.
+3. Identify Expensive Reprieve Plugins: Determine which specific filter plugins are taking too long during victim reprieval. Plugins that maintain complex topological indexing or search trees (such as `InterPodAffinity` or `PodTopologySpread`) may be executing expensive logic repeatedly in their `Reprieve` methods over candidate domains.
+4. Disable Feature: If the regression is critical and impacting cluster health, disable the GenericWorkload feature gate. This will revert the scheduler to the standard pod-by-pod logic, restoring baseline performance (at the cost of losing gang semantics together with workload aware preemption).
+
+If preemptor workloads are stuck and preemption attempts fail:
+
+1. Inspect Preemptor Pod Status and Events:
+   - Run `kubectl describe pod <preemptor-pod>` to inspect scheduler warnings or event logs. Look for errors with message `pod group preemption`.
+   - Check status conditions of the preemptor Pods and their parent `PodGroup`:
+     - Preemptor Pods: Check for `{type: PodScheduled, status: False, reason: Unschedulable}` with a detailed descriptive message.
+     - Preemptor PodGroup: Check for the `PodGroupScheduled` status condition with `reason: Unschedulable` and message (e.g., `pod group is waiting for podgroup preemption to complete`).
+2. Examine Scheduler Logs: Filter logs for source file `podgrouppreemption.go` and look for messages indicating why the preemption attempts are failing.
+3. Disable Feature: Instead of using PodGroup, create pods as separate pods and rely on the default preemption algorithm.
+
 
 ## Implementation History
 
