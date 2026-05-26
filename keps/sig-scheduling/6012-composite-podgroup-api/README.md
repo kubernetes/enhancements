@@ -20,8 +20,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Backward compatibility](#backward-compatibility)
   - [User Stories](#user-stories)
     - [AI training on TPUs](#ai-training-on-tpus)
-    - [AI training on GPUs](#ai-training-on-gpus)
-    - [Disaggregated inference](#disaggregated-inference)
+    - [Disaggregated serving under LeaderWorkerSet](#disaggregated-serving-under-leaderworkerset)
+    - [Replicated training jobs under JobSet](#replicated-training-jobs-under-jobset)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Suboptimal Placement Decisions due to NP-Hardness of Multi-level Scheduling](#suboptimal-placement-decisions-due-to-np-hardness-of-multi-level-scheduling)
@@ -155,20 +155,23 @@ workloads that are characterized by a flat structure. [KEP-5547] is an example
 of a successful integration of the new APIs with the Job controller for a fully
 parallel static indexed Job.
 
-Many modern distributed workloads (especially the AI ones) have scheduling
-requirements that cannot be satisfied using the API abstractions available
-today, however. Multi-level topology-aware scheduling is the most apparent
-feature gap in Kubernetes today that such workloads strongly demand. Multi-level
-topology constraints form a hierarchy which often correspond to the physical
-layout of a data center they are being run in. This hierarchy can be mentally
-represented as a rooted tree where each node corresponds to a specific portion
-of a workload and contains topological constraints that must be respected when
-it is being scheduled.
+Many modern distributed workloads (especially AI ones) demand scheduling
+capabilities that cannot be expressed using today's flat APIs. The primary gap
+is the ability to model complex, heterogeneous workloads composed of distinct
+groups with multi-level dependencies.
+
+Multi-level topology-aware scheduling (TAS) is a prominent example. In
+hardware architectures like TPU slices, a multi-level topology layout is
+critical to reflecting hardware layouts and obtaining desired performance.
+Conversely, workloads like disaggregated serving (prefill and decode) rely on
+single-level network domains but require a multi-level structure to enforce
+complex lifecycle dependencies (e.g. requiring at least $N$ Prefill and $M$
+Decode groups).
 
 These workloads often require multi-level gang scheduling. In this model, a
 parent group dictates that it cannot be scheduled until a specified minimum
-number of its child sub-groups are schedulable. Essentially, this extends
-traditional gang scheduling by treating entire sub-groups, rather than
+number of its child groups are schedulable. Essentially, this extends
+traditional gang scheduling by treating entire child groups, rather than
 individual Pods, as members of a gang.
 
 In addition, a multi-level workload might tolerate partial disruptions. There
@@ -251,27 +254,25 @@ specific 4x4x4 cubes, while the entire workload is guaranteed to live within a
 single superslice (e.g., 8x8x16). This allows me to leverage the specific
 hierarchical network topology of TPU clusters for optimal training performance.
 
-#### AI training on GPUs
+#### Disaggregated serving under LeaderWorkerSet
 
-As an AI researcher running large-scale GPU workloads, I want to schedule my
-training jobs using a similar multi-level topology-aware approach. Specifically,
-I want to ensure that individual shards are scheduled across GPUs connected via
-NVLink, while the entire workload is contained within a single high-bandwidth
-network domain (like a single rack or InfiniBand fabric). This allows me to
-maximize inter-GPU bandwidth for tightly coupled operations while keeping the
-broader job efficiently localized.
+As a machine learning engineer deploying disaggregated serving (prefill and
+decode stages) under `LeaderWorkerSet`, I want to express complex dependencies across
+heterogeneous worker groups. Both stages require single-level high-bandwidth topology
+co-location, but rely on a hierarchy to enforce holistic workload lifecycle
+policies: requiring at least $N$ Prefill and $M$ Decode active groups to serve, and
+ensuring that non-topological components (like frontend pods) share the preemption
+fate of the core execution engines.
 
-#### Disaggregated inference
+#### Replicated training jobs under JobSet
 
-As a machine learning engineer deploying a disaggregated inference workload[^4],
-I want to schedule a complex LLM serving workload where the prefill and decode
-stages are separated into distinct worker groups. Specifically, I want to ensure
-that the individual Pods within each stage are tightly co-located (e.g. on the
-same machine or rack) to optimize for their respective compute or memory
-requirements, while the prefill and decode gangs are collectively scheduled
-within the same high-bandwidth network fabric. This hierarchical placement
-ensures minimal latency when transferring KV caches between the stages,
-maximizing overall serving throughput.
+As an infrastructure operator running complex training pipelines, I want to schedule
+a multi-stage `TrainJob` under `JobSet` containing replicated sub-jobs with varied
+scheduling requirements. For instance, the pre-training data initialization stage
+can use a basic scheduling policy (starting as soon as some data-downloaders are
+ready), while the subsequent core Trainer stage (MPI Launcher and workers) requires
+strict gang scheduling. Both stages belong to the same parent CPG to coordinate
+coordinated start and collective preemption fate-sharing.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -525,7 +526,8 @@ type PodGroupSpec struct {
 	// +optional
 	// +k8s:optional
 	// +k8s:immutable
-	WorkloadRef *WorkloadReference
+  // +k8s:ifEnabled(CompositePodGroup)=+k8s:dependentRequired("parentCompositePodGroupName")
+	WorkloadRef *WorkloadReference `json:"workloadRef"`
 
 	// ParentCompositePodGroupName contains the name of the parent composite pod group
 	// within the same namespace as this pod group.
@@ -539,7 +541,9 @@ type PodGroupSpec struct {
 	// +k8s:ifEnabled(CompositePodGroup)=+k8s:optional
 	// +k8s:ifEnabled(CompositePodGroup)=+k8s:immutable
 	// +k8s:ifEnabled(CompositePodGroup)=+k8s:format=k8s-long-name
-	ParentCompositePodGroupName *string
+  // +k8s:ifEnabled(CompositePodGroup)=+k8s:dependentRequired("workloadRef")
+  
+	ParentCompositePodGroupName *string `json:"parentCompositePodGroupName"`
 }
 ```
 
@@ -587,11 +591,6 @@ their workload reference is hence nil.
 This proposal wants to preserve this possibility but limit the use of it to the
 flat workloads exclusively. In other words, `PodGroup` objects with a non-nil
 parent reference must have a workload reference.
-
-Because this check cannot be verified today with the use of declarative
-validation, we will start with checking this using handwritten validation. When
-this feature gap is eventually addressed, however, we will migrate to the
-declarative validation.
 
 ### `CompositePodGroup` API
 
@@ -894,6 +893,12 @@ way as they already are for Pods and `PodGroups` - specifically, the `Priority`
 admission controller gets extended to additionally support the
 `CompositePodGroup` API.
 
+For the **Alpha** release, we enforce a strict single-priority constraint: all
+member groups and pods within a single group hierarchy tree **must share the exact
+same priority and PriorityClassName**. Support for differing group-level
+priorities under basic scheduling policies will be explored for the **Beta**
+release.
+
 The value of the `Priority` field is being used in the following two contexts:
 
 - `CompositePodGroup` objects without a parent reference are being put in the
@@ -905,7 +910,7 @@ The value of the `Priority` field is being used in the following two contexts:
 
 #### Status
 
-Analogous to `PodGroupStatus`, `CompositePodGroupStatus` represents the current observed state of a `CompositePodGroup`.
+Analogous to `PodGroupStatus`, `CompositePodGroupStatus` represents the observed state of a `CompositePodGroup`.
 
 ```go
 // CompositePodGroupStatus represents information about the status of a composite pod group.
@@ -913,8 +918,10 @@ type CompositePodGroupStatus struct {
 	// Conditions represent the latest observations of the CompositePodGroup's state.
 	//
 	// Known condition types:
-	// - "CompositePodGroupScheduled": Indicates whether the overall scheduling requirement
-	//   for the subtree under this CompositePodGroup has been satisfied.
+	// - "CompositePodGroupInitiallyScheduled": Indicates whether the overall scheduling requirement
+	//   for the subtree under this CompositePodGroup has been satisfied. Once this condition
+  //   transitions to True, it serves as a terminal state and will never revert to False,
+  //   even if pods are subsequently deleted and group constraints are no longer met.
 	// - "DisruptionTarget": Indicates whether the CompositePodGroup is about to be terminated
 	//   due to disruption such as preemption.
 	//
@@ -994,7 +1001,7 @@ Apart from that, we also need to validate uniqueness of template names within
 the whole template hierarchy in a single `Workload` object - otherwise, template
 references would be ambiguous.
 
-To verify both of these conditions, we will add a new admission plugin that
+To verify both of these conditions, we will add a new hand-written validation that
 targets new `Workload` objects and performs both of these checks.
 
 #### Group hierarchy
@@ -1188,7 +1195,7 @@ preemption and binding cases:
    independently in subsequent distinct cycles (see [Resource stealing under
    greedy evaluation](#resource-stealing-under-greedy-evaluation)).
 4. **Subsequent Scale-Up (`PlacementFeasible = Success` in greedily scheduled tree):**
-   If the root CPG is already successfully scheduled (active) in the cache, any
+   If the root CPG is already successfully scheduled in the cache, any
    extra pending member pods (or scaled-up members) pop from the queue and
    trigger the recursive scheduling cycle starting at the root CPG level. Since
    the hierarchy is already active, subsequent cycles run in greedy mode (placed
@@ -1289,36 +1296,23 @@ NP-hardness with heuristics.
 
 #### Integration with workload-aware preemption
 
-If a root `CompositePodGroup` cannot fit, `kube-scheduler` will perform similar
-steps to the ones when processing a single `PodGroup`. Specifically, if
-preemption would not help in making a particular `CompositePodGroup`
-schedulable, it is put back to the scheduling queue. On the other hand, if
-preemption would actually make the `CompositePodGroup` schedulable, scheduler:
+If a root `PodGroupInfo` (representing a root CPG or standalone PG) is
+unschedulable and triggers preemption (Case 2 and Case 4 in
+[Preemption triggering rules](#preemption-triggering-rules)), the scheduler
+performs the standard preemption steps to calculate victims and spawn evictions.
+To support multi-level workloads under this unified preemption framework:
 
-- spawns the preemption goroutines for the calculated victims,
-- moves the `CompositePodGroup` to the unschedulable queue,
-- blocks its move into the active queue until all victims are successfully
-  preempted.
-
-To achieve this, we need to:
-
-- **Adapt preemption abstractions to CompositePodGroup preemptors:** Generalize
-  the core preemption abstractions and data structures (including wrapping the
-  scheduling context closure `podGroupSchedulingFunc` into a hierarchical
-  `compositePodGroupSchedulingFunc`) to support `CompositePodGroup` as the root
-  scheduling and preemption unit.
-- **Group running pods into collective preemption victims:** The preemption
-  algorithm must group running victim pods into collective victim objects.
-  This is done by traversing up the parent CPG tree for each victim pod to
-  resolve the highest ancestor configured with the `ALL` disruption mode
-  (moving up as long as the parent mode is `ALL`).
-- **Adapt PreEnqueue and plugin lifecycles:** Adapt the `PreEnqueue` method of
-  the `DefaultPreemption` plugin and internal queue structures to properly
-  track pending `CompositePodGroup` preemptors while they wait for victim
-  evictions.
-- **Invoke hierarchical preemption:** Invoke the preemption algorithm
-  for `CompositePodGroup` preemptors in the scheduling cycle when
-  direct scheduling fails.
+* **Group running pods into collective preemption victims:** When evaluating
+  preemption costs, the preemption algorithm groups victim pods into collective
+  victim objects. For each victim pod candidate, the scheduler traverses up its
+  parent group hierarchy (following parent references under the `PodGroupInfo`
+  cache) to resolve the highest ancestor configured with the `All` disruption
+  mode. This highest ancestor CPG node defines the indivisible preemption unit.
+* **Adapt PreEnqueue and plugin lifecycles:** The `PreEnqueue` method of the
+  `DefaultPreemption` plugin and internal queue backoff structures are extended
+  to track pending root `PodGroupInfo` preemptors while they wait in the queue for
+  their calculated victim evictions to successfully delete and free up cluster
+  capacity.
 
 #### Multi-level topology-aware scheduling
 
@@ -1625,8 +1619,11 @@ branches) is made to optimize scheduling success rates for multi-level gangs.
 during the recursive cycle (e.g. by executing PreEnqueue or PlacementFeasible validations
 prior to branch resolution) to protect performance and avoid redundant preemption passes.
 - A non-greedy CompositePodGroup scheduling simulation mode is introduced and re-evaluated
-to mitigate resource stealing and gang deadlock occurrences among sibling child groups in
-capacity-constrained environments.
+  to mitigate resource stealing and gang deadlock occurrences among sibling child groups in
+  capacity-constrained environments.
+- Support for differing group-level priorities across a single hierarchy tree
+  under basic scheduling policies and separating queueing priority from
+  preemption priority is re-evaluated.
 
 #### GA
 
