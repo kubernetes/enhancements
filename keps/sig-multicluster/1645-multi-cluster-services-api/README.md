@@ -1183,12 +1183,9 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-Kube-proxy and must be updated to a supported version before MCS services may be
-used. To take advantage of MCS DNS, the DNS provider must be upgraded to a
-version that implements the MCS spec. Kube-proxy MCS support will be guarded by
-a `MultiClusterServices` feature gate. When enabled, kube-proxy will watch the
-`serviceimports.multicluster.k8s.io` CRD. MCS support will be dynamically
-enabled and disabled as the CRD is created and deleted.
+The MCS API is defined as a set of CRDs (`ServiceExport` and `ServiceImport`) that are installed and managed independently of core Kubernetes components. As such, the upgrade and downgrade strategy is the responsibility of each MCS implementation. The two key components of the implementations are:
+- mcs-controller component: responsible for watching `ServiceExport` resources and managing the lifecycle of `ServiceImport` objects and their associated `EndpointSlice` resources.
+- MCS DNS component: responsible for serving the `<svc>.<ns>.svc.clusterset.local` domain, conforming to the multicluster DNS specification as defined in this KEP's [specification.md](specification.md).
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
 this is in the test plan.
@@ -1203,9 +1200,8 @@ enhancement:
 
 ### Version Skew Strategy
 
-Kube-proxy and DNS must be upgraded before new MCS API versions may be used.
-Backwards compatibility will be maintained in accordance with the [deprecation
-policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+- mcs-controller component <-> MCS CRD versions: The mcs-controller component must support the installed version of the `ServiceExport` and `ServiceImport` CRDs. Backwards compatibility will be maintained in accordance with the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+- MCS DNS component <-> MCS DNS spec: The MCS DNS component must conform to the multicluster DNS specification as defined in this KEP's [specification.md](specification.md).
 <!--
 If applicable, how will the component handle version skew with other
 components? What are the guarantees? Make sure this is in the test plan.
