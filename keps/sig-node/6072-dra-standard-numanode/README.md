@@ -383,7 +383,7 @@ Negligible. The SLIT distance read is a single file read plus socket lookup (~mi
 
 ### Do nothing — use vendor-specific names
 
-Drivers continue publishing NUMA under vendor-specific names. Cross-driver matching requires middleware (topology coordinator, CEL selectors with hardcoded names, manual alias tables in each driver).
+Drivers continue publishing NUMA under vendor-specific names. Cross-driver matching requires CEL selectors with hardcoded vendor attribute names or manual alias tables in each driver.
 
 **Rejected because:** The alias tables are growing organically and inconsistently. No single name covers all drivers.
 
