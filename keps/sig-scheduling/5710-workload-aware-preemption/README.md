@@ -460,8 +460,9 @@ Note that, for workload-aware preemption we will support the `preemptionPolicy` 
 of requestion `PriorityClass` - namely both currently existing modes: `PreemptLowerPriority`
 and `Never`.
 
-As the `preemptionPolicy` is also a field of the Pod, we will apply the same constraints to this field as we will
-for the priority. Namely, all pods within `PodGroup` will have to share the same `preemptionPolicy`. This will be enforced on the scheduler level.
+As the `preemptionPolicy` is also a field of the Pod, we will apply the same constraints as
+for the priority. Namely, all pods within `PodGroup` will have to share the same `preemptionPolicy`. 
+This will be enforced on the scheduler level.
 
 Given that components operate on integer priorities, we will introduce a corresponding fields
 that reflect priority of a PodGroup (similarly to how it's done in Pod API).
@@ -540,7 +541,7 @@ To check if a pod P can be scheduled on a given node with preemption we:
    and working down until the set of remaining victims still keeps the node feasible.
 
 Once we find enough nodes feasible for preemption and list of victims for them, we score that and
-choose the best options.
+choose the best option.
 
 The above algorithm achieves our principles, as by reprieving the highest priority pods first, it
 effectively tries to minimize the cascading preemptions later.
@@ -578,10 +579,13 @@ with preemption:
       is unschedulable with preemption in currently considered domain D.
 
    1. For the [Topology-Aware Scheduling] "checking whether preemptor becomes schedulable" yields a list 
-      of potential placements. For the alpha support of TAS, we will only assume the best placement. With the
-      progression of TAS to Beta, we might change the algorithm to consider multiple placements.
+      of potential placements. For the alpha support of TAS, we will only assume the best placement (based on
+      TAS Placement Scoring plugins). With the progression of TAS to Beta, we might change the algorithm to 
+      consider top N placements and adjust their scores based on the amount of preemption victims each placement yields,
+      and only after that selecting the best one.
       We can also see a future where if the algorithm is performant enough, even for the non TAS case,
-      we will generate multiple potential placements and consider them. 
+      we will generate multiple potential placements and consider them, to select a placement that yields 
+      the lowest amount of disruptions. 
 
    1. For each placement computed above run the following points:
 
@@ -590,9 +594,9 @@ with preemption:
           priority prioritizing pod groups over individual pods.
 
       1.  Perform best-effort reprieval of pod groups and pods violating PodDisruptionBudgets. We achieve
-          it by scheduling and temporarily adding the preemptor to `nodeInfo` structure (assuming that
-          all potential victims are removed), and then iterating over potential victims that would violate
-          PodDisruptionBudget to check if these can be placed in the exact same place they are running now.
+          it by temporarily scheduling the preemptor (assuming that all potential victims are removed),
+          and then iterating over potential victims that would violate PodDisruptionBudget to check if these
+          can be placed in the exact same place they are running now.
           If they can we simply leave them where they are running now and remove from the potential victims
           list.
 
