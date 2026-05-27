@@ -526,7 +526,7 @@ type PodGroupSpec struct {
 	// +optional
 	// +k8s:optional
 	// +k8s:immutable
-  // +k8s:ifEnabled(CompositePodGroup)=+k8s:dependentRequired("parentCompositePodGroupName")
+	// +k8s:ifEnabled(CompositePodGroup)=+k8s:dependentRequired("parentCompositePodGroupName")
 	WorkloadRef *WorkloadReference `json:"workloadRef"`
 
 	// ParentCompositePodGroupName contains the name of the parent composite pod group
@@ -541,7 +541,7 @@ type PodGroupSpec struct {
 	// +k8s:ifEnabled(CompositePodGroup)=+k8s:optional
 	// +k8s:ifEnabled(CompositePodGroup)=+k8s:immutable
 	// +k8s:ifEnabled(CompositePodGroup)=+k8s:format=k8s-long-name
-  // +k8s:ifEnabled(CompositePodGroup)=+k8s:dependentRequired("workloadRef")
+	// +k8s:ifEnabled(CompositePodGroup)=+k8s:dependentRequired("workloadRef")
   
 	ParentCompositePodGroupName *string `json:"parentCompositePodGroupName"`
 }
@@ -907,8 +907,8 @@ type CompositePodGroupStatus struct {
 	// Known condition types:
 	// - "CompositePodGroupInitiallyScheduled": Indicates whether the overall scheduling requirement
 	//   for the subtree under this CompositePodGroup has been satisfied. Once this condition
-  //   transitions to True, it serves as a terminal state and will never revert to False,
-  //   even if pods are subsequently deleted and group constraints are no longer met.
+	//   transitions to True, it serves as a terminal state and will never revert to False,
+	//   even if pods are subsequently deleted and group constraints are no longer met.
 	// - "DisruptionTarget": Indicates whether the CompositePodGroup is about to be terminated
 	//   due to disruption such as preemption.
 	//
