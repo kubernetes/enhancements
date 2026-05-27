@@ -814,6 +814,13 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    to allow plugins to have more insights into why a given pod group cannot be scheduled. One example of that
    would be an extension similar to the NodeToStatusReader object passed to a PostFilter plugins.
 
+1. Custom Scoring functions
+
+   During the Workload Aware Preemption we remove all potential victims and assume the preemptor. After
+   that we try to reprieve the victims. With a custom scoring functions we could change influence the 
+   placement of the preemptor in order to optimize for the reducing the preemption cost. Such change
+   can be designed and implemented as a dedicated, follow up KEP. 
+
 
 ### Test Plan
 
