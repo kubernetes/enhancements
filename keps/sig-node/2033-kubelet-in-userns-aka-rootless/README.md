@@ -728,7 +728,7 @@ in back-to-back releases.
   - https://github.com/GoogleCloudPlatform/anthos-samples/blob/8aff62c3f0bd835bda7479a01a591e1849c48fe9/anthos-attached-clusters/kind/main.tf#L37
   - https://github.com/GoogleCloudPlatform/cloud-solutions/blob/pino-logging-gcp-config-v1.1.0/projects/k8s-hybrid-neg-controller/hack/kind-cluster-config.yaml#L24
   - https://github.com/GoogleCloudPlatform/solutions-workshops/blob/grpc-xds/v0.5.0/grpc-xds/hack/kind-cluster-config-2.yaml#L24
-  In beta, nodes will have `kubernetes.io/running-in-user-namespace: <BOOL>` labels.
+  In beta, nodes will have `node.kubernetes.io/running-in-user-namespace: <BOOL>` labels.
   [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will be updated too to have `RunningInUserNamespace *bool`.
 
 - GA: Assuming no negative user feedback based on production experience, promote after >= 2 releases in beta.
@@ -944,7 +944,10 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Nodes will have `kubernetes.io/running-in-user-namespace: <BOOL>` labels.
+Nodes will have `node.kubernetes.io/running-in-user-namespace: <BOOL>` labels.
+An operator may utilize this label to avoid scheduling workloads that require real root privileges (e.g., CNI plugin installer)
+on nodes running in user namespaces.
+
 [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo) will be updated too to have `RunningInUserNamespace *bool`.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -961,7 +964,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] Events
   - Event Reason:
 - [X] API .status
-  - Condition name: Nodes will have `kubernetes.io/running-in-user-namespace: <BOOL>` labels. [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo)` will be updated to have `RunningInUserNamespace *bool`.
+  - Condition name: Nodes will have `node.kubernetes.io/running-in-user-namespace: <BOOL>` labels. [`NodeSystemInfo`](https://pkg.go.dev/k8s.io/api/core/v1#NodeSystemInfo)` will be updated to have `RunningInUserNamespace *bool`.
   - Other field: 
 - [ ] Other (treat as last resort)
   - Details:
