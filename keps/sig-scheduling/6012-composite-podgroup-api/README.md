@@ -1107,11 +1107,11 @@ points:
      - **`Unschedulable`:** Returned if in-memory scheduled child groups <
        `minGroupCount`, but the sum of scheduled groups and remaining child
        groups $\ge$ `minGroupCount` (indicating the CPG is currently
-       unschedulable but remains resolvable in future passes).
+       unschedulable but may become schedulable when more siblings are simulated).
      - **`UnschedulableAndUnresolvable`:** Returned if the sum of scheduled
        groups and remaining admissible child groups < `minGroupCount` (the
-       parent CPG is mathematically impossible to schedule), immediately
-       aborting the recursive cycle early.
+       CPG is mathematically impossible to schedule), immediately
+       aborting the recursive cycle early for this CPG.
 
 3. **`Permit`:**
    Executed at the Permit stage of the scheduling cycle strictly at the
@@ -1143,17 +1143,48 @@ before final binding:
 1. **If the active node is a leaf `PodGroup`:** Runs the same logic as in the
    flat, single-level `PodGroupSchedulingDefaultAlgorithm` (simulating member
    pod placements in memory) and returns the status.
-2. **If the active node is a `CompositePodGroup`:**
-   * Recursively executes `podGroupSchedulingDefaultAlgorithm` for each child
-     group (storing simulated assignments in memory).
-   * Invokes the extended `PlacementFeasible` checker under `PodGroupInfo`,
-     which evaluates the simulated child groups and returns the resolved CPG
-     status (`Success`, `Unschedulable`, or `UnschedulableAndUnresolvable`).
+2. **If the active node is a `CompositePodGroup`:** Iterates through its nested
+   child groups in their pre-sorted order, executing the recursive
+   `podGroupSchedulingDefaultAlgorithm` sequentially. After in-memory scheduling
+   each child group, the scheduler invokes the extended `PlacementFeasible`
+   checker under the parent `PodGroupInfo` to evaluate the CPG's current
+   status, triggering distinct branches based on the returned result:
+   * **`Unschedulable`:** The parent CPG constraints are not yet fully met (e.g.,
+     the minimum number of child groups, `minGroupCount`, has not been
+     in-memory scheduled yet), but it remains resolvable. The scheduler
+     continues processing the remaining sibling child groups in the sequence.
+   * **`UnschedulableAndUnresolvable`:** The parent CPG is mathematically
+     impossible to satisfy. The scheduler immediately aborts the loop, skips
+     evaluating all subsequent sibling groups under this CPG, and returns the
+     failure status up to its parent.
+   * **`Success`:** The parent CPG's nested minimum constraints have been
+     successfully satisfied. In the **Alpha** phase, the scheduling algorithm
+     operates greedily and does not stop upon meeting the minimum group count
+     requirements. Instead, it continues scheduling the remaining optional
+     child groups to maximize cluster utilization (see [Resource stealing
+     under greedy evaluation](#resource-stealing-under-greedy-evaluation)).
 3. **Commit Bindings:** If the root-level recursion resolves and returns
    `Success`, the scheduler commits and writes the entire tree's resolved pod
    bindings from memory to the API server.
 
-###### In-memory simulation revert pacing across the recursion stack
+> [!NOTE]
+> **No-Backtracking:** Sibling child groups under a `CompositePodGroup` are
+> simulated sequentially in their pre-sorted order without backtracking. If a
+> child group placement (e.g. `PG-1`) consumes resources in a way that
+> subsequently blocks its sibling (e.g. `PG-2`) from meeting its `minCount`
+> minimum requirement, which in turn prevents the parent CPG from satisfying
+> its `minGroupCount` threshold, the scheduler does not retroactively
+> evaluate alternative placements for the earlier child group.
+>
+> Enforcing a greedy recursive choice without backtracking prevents exponential
+> scheduling complexity at the cost of sub-optimal decisions that may trigger
+> preemption. While sufficient for the **Alpha** phase, these greedy
+> scheduling algorithm trade-offs will be re-evaluated for the **Beta**
+> release to explore bounded backtracking heuristics (such as restricted
+> search depth or bounded branches) that optimize overall scheduling success
+> rates.
+
+###### In-memory simulation state revert across the recursion stack
 
 In the existing flat gang scheduling implementation,
 `podGroupSchedulingDefaultAlgorithm` is fully self-contained. When a member
@@ -1175,22 +1206,6 @@ accumulated revert closures are always executed all-at-once, cleanly
 restoring the shared `nodeInfoSnapshot` to its pre-execution state before the
 separate, asynchronous binding cycle triggers.
 
-> [!NOTE]
-> **No-Backtracking:** Sibling child groups under a `CompositePodGroup` are
-> simulated sequentially in their pre-sorted order without backtracking. If a
-> child group placement (e.g. `PG-1`) consumes resources in a way that
-> subsequently blocks its sibling (e.g. `PG-2`) from meeting its `minCount`
-> minimum requirement, which in turn prevents the parent CPG from satisfying
-> its `minGroupCount` threshold, the scheduler does not retroactively
-> evaluate alternative placements for the earlier child group.
->
-> Enforcing a greedy recursive choice without backtracking prevents exponential
-> scheduling complexity at the cost of sub-optimal decisions that may trigger
-> preemption. While sufficient for the **Alpha** phase, these greedy
-> scheduling algorithm trade-offs will be re-evaluated for the **Beta**
-> release to explore bounded backtracking heuristics (such as restricted
-> search depth or bounded branches) that optimize overall scheduling success
-> rates.
 
 ##### Scheduling sequence for PodGroups
 
@@ -1208,49 +1223,36 @@ Preemption is strictly evaluated and executed only at the root level of the
 group hierarchy, preventing isolated and competing preemption passes at
 intermediate levels.
 
-Consistent with flat gang scheduling ([KEP-4671]), binding and
-preemption never occur inside the same scheduling cycle. If a root CPG is popped
-from the queue, the recursive scheduling cycle evaluates direct in-memory
-placement feasibility, resulting in exactly one of four distinct runtime
-preemption and binding cases:
+Consistent with flat gang scheduling ([KEP-4671]), binding and preemption
+never occur inside the same scheduling cycle. The preemption triggering
+rules under this KEP are identical to [KEP-4671]:
+* **If the root-level scheduling policy is satisfied:** If the recursive direct
+  in-memory simulation successfully schedules at least `minGroupCount` child
+  groups under a CPG tree, the scheduling cycle succeeds. The scheduler does
+  not trigger preemption in this cycle. Instead, it commits pod bindings for
+  all successfully placed member pods (comprising the minimal gang and any
+  extra pods that placed under Alpha's greedy pass). Any remaining member
+  pods that failed scheduling are marked as `Unschedulable` and return to the
+  scheduling queue, which subsequently places the entire root CPG hierarchy
+  back into the queue for re-evaluation.
+* **If the root-level scheduling policy is not satisfied:** If the recursive
+  in-memory simulation fails to schedule at least `minGroupCount` child groups
+  under a CPG tree, no pod bindings are committed in this pass.
+  The scheduler then triggers the workload preemption at the root CPG level.
+* **During subsequent cycles:** In subsequent scheduling cycles, when the CPG
+  with pending extra or newly scaled member pods pop from the queue, the
+  standard recursive scheduling algorithm is executed for the root CPG
+  hierarchy (where these pending pods are evaluated under greedy rules along
+  with the active tree). If the recursive algorithm fails to place any of
+  these pending member pods, the scheduler triggers the preemption engine at
+  the root CPG level to clear capacity.
 
-1. **Minimal Gang is Unresolvable (`PlacementFeasible = UnschedulableAndUnresolvable`):**
-   If the sum of in-memory scheduled child groups and remaining admissible
-   child groups under the candidate domain is less than `minGroupCount`, the
-   minimal gang constraints cannot be satisfied in this cycle. Because
-   preemption is guaranteed to fail (as slots are not the limiting factor), the
-   direct scheduling cycle fails. **The scheduler does not trigger preemption.**
-   The root CPG is returned to the queue (backed off), bypassing unneeded
-   preemption CPU passes and evictions (see [Inadmissible child groups (futile
-   cycles)](#inadmissible-child-groups-futile-cycles)).
-2. **Minimal Gang is Resolvable (`PlacementFeasible = Unschedulable`):**
-   If the in-memory scheduled child groups count is less than `minGroupCount`
-   but the total potential count (scheduled + remaining) $\ge$ `minGroupCount`,
-   the gang cannot schedule directly due to resource/capacity constraints.
-   However, this indicates that preemption is capable of resolving this group.
-   **The scheduler triggers the preemption loop at the root CPG level** (as a
-   separate preemption execution cycle) to search for lower-priority victim
-   pods, evict them, and place the CPG in the unschedulable queue.
-3. **Minimal Gang is Feasible (`PlacementFeasible = Success`):**
-   If in-memory scheduled child groups successfully satisfy `minGroupCount`,
-   the direct scheduling cycle is a complete success. The scheduler
-   **immediately commits and writes only these minimal gang bindings** to the
-   API server in this pass. Any extra pending member pods (those exceeding the
-   minimum limits that failed placement) do not bind in this cycle and do not
-   trigger preemption. Instead, they are returned to the queue to be evaluated
-   independently in subsequent distinct cycles (see [Resource stealing under
-   greedy evaluation](#resource-stealing-under-greedy-evaluation)).
-4. **Subsequent Scale-Up (`PlacementFeasible = Success` in greedily scheduled tree):**
-   If the root CPG is already successfully scheduled in the cache, any
-   extra pending member pods (or scaled-up members) pop from the queue and
-   trigger the recursive scheduling cycle starting at the root CPG level. Since
-   the hierarchy is already active, subsequent cycles run in greedy mode (placed
-   members can exceed `minCount` bounds). If capacity is full, the scheduler
-   **triggers the preemption engine at the root CPG level** to clear space for
-   these extra member pods (see [Handling new pods for scheduled
-   hierarchies](#handling-new-pods-for-scheduled-hierarchies)).
+In summary, workload preemption is triggered at the root CPG level if and only
+if: the CPG root scheduling policy is not satisfied, OR the policy is
+satisfied but there are unschedulable pods and none of them successfully
+scheduled.
 
-###### Inadmissible child groups (futile cycles)
+###### Inadmissible child groups
 A root `CompositePodGroup` might successfully pass the `PreEnqueue` queue filter,
 yet contain child groups that are currently inadmissible (e.g. they do not
 have enough active member pods in the cluster queue to reach their `minCount`).
@@ -1260,64 +1262,92 @@ has only 2 pending pods out of its `minCount=5`.
 
 In this situation, evaluating the inadmissible child groups during the recursive
 scheduling cycle is futile: they cannot schedule, and if not handled correctly,
-they will trigger a costly preemption algorithm pass which will also not
-succeed.
+they will trigger a costly preemption which will also not succeed.
 
 To optimize performance, the scheduler will bypass evaluating futile child
 groups:
 * **Alpha:** Futile cycles are not skipped in the Alpha phase (admissibility
   checks on nested children are not executed).
 * **Beta:** We will implement branch-skipping heuristics by extending the
-  `PlacementFeasible` checker (or its internal hierarchy validator) to run
-  checks *before* simulating child placements (rather than only after child
-  simulations). If a child group fails its minimum group count requirements prior
-  to evaluation (e.g. a child group has only 2 member pods out of its
-  `minCount=5`), the pre-simulation `PlacementFeasible` checker returns
-  failure early, bypassing any child pod placements and avoiding the costly
-  preemption pass entirely.
+  `PlacementFeasible` checker to run checks *before* in-memory scheduling of
+  child placements (in addition to after each child group evaluation). If a
+  `PodGroupInfo` fails its minimum count requirements prior to evaluation
+  (e.g. a PG has only 2 member pods out of its `minCount=5`), the
+  pre-simulation `PlacementFeasible` checker returns
+  `UnschedulableAndUnresolvable` early, bypassing any child pod placements and
+  avoiding the costly preemption entirely.
+
+  Additionally, for already active (scheduled) `CompositePodGroup` trees under
+  subsequent scale-up passes, the preemption triggering rules will be modified
+  in Beta to distinguish between resource starvation and child group
+  admissibility. Specifically, if a child group has satisfied its `minCount`
+  minimum constraint but has pending optional pods (e.g. has scheduled 10 out
+  of required 10 pods, but has 2 additional member pods unplaced due to cluster
+  capacity saturation), the scheduler **will** trigger preemption at the root
+  CPG level to clear capacity. Conversely, if a child group failed placement
+  simply because it is inadmissible (e.g. has only 2 active member pods out of
+  its `minCount=5` in the cluster), the scheduler **will bypass** preemption
+  entirely, as evicting victim pods can never resolve the child group's
+  missing members.
 
 ###### Resource stealing under greedy evaluation
 When a CPG is evaluated, child groups are processed sequentially in their
-pre-sorted order. Under standard greedy evaluation, child groups try to
-schedule as many member pods as possible (exceeding their `minCount` requirements).
+pre-sorted order. Under the greedy evaluation, child groups try to
+schedule as many member pods as possible (potentially exceeding their `minCount`
+requirements).
 
 This can lead to **resource stealing** in capacity-constrained clusters: an
 early, greedy child group consumes all available slots, preventing a sibling
 child group from reaching its `minCount` and causing the entire root CPG gang
 to fail scheduling.
 
-To resolve this, we will introduce a **non-greedy** scheduling cycle mode:
-* **Alpha:** The scheduling cycle is greedy. Resource stealing in constrained
-  hierarchies is a known limitation in the Alpha phase.
-* **Beta:** We will implement a non-greedy in-memory scheduling mode. During the
-  initial scheduling of a CPG, the CPG-level `PlacementFeasible` checker will
-  stop placing extra pods once the parent's `minGroupCount` child group limits
-  are met. The CPG is committed, and subsequent cycles will process additional
-  pods greedily once capacity is available.
+For the **Alpha** phase, we do not optimize or solve this resource stealing
+challenge for complex, constrained layouts. Instead, we focus on ensuring that
+the most common and typical use-cases work out-of-the-box: scenarios
+where the minimum constraints equal the actual size (`minCount = actualCount`
+and `minGroupCount` equals the total child group count). Under this standard
+baseline, optional this problem doesn't exist.
 
-We can implement this behavior in two ways for the Beta phase:
+For the **Beta** release, we will evaluate two distinct alternatives to solve
+resource stealing for arbitrary, multi-level layouts:
+
 * **Double-run in a single cycle:** The scheduler runs the recursive algorithm
-  twice in a single active scheduling cycle (first pass non-greedy for minimal gang,
-  second pass greedy for extras).
-* **Distinct scheduling cycles (Preferred):** The scheduler runs a single
-  non-greedy pass in the active cycle, commits the minimal gang, and lets
-  extra pending member pods trigger separate, subsequent scheduling cycles
-  (running in greedy mode) to place the remaining pods.
-
-We target distinct scheduling cycles as the preferred Beta solution. By spacing
-evaluations across multiple cycles, the scheduler mitigates Head-of-Line (HoL)
-blocking (permitting higher-priority workloads arriving in queue to schedule
-between passes) and likely reduces code overhead in comparison to double-run approach.
+  twice within a single scheduling cycle: a non-greedy pass first to place the
+  minimal gang, followed by a greedy pass for extra pods. This approach is highly
+  responsive; if active member pods are deleted and cause a scheduled CPG to
+  fall below its minimum thresholds, a single active cycle can immediately
+  recover the gang via a non-greedy pass. In terms of complexity, running two
+  passes in a single cycle does not significantly degrade latency, since the CPU
+  cost is strictly dominated by individual pod schedulings (each pod is
+  still evaluated exactly once end-to-end in both models).
+* **Distinct scheduling cycles:** The scheduler runs a single non-greedy pass in the
+  active cycle, commits the minimal gang, and lets extra pending member pods
+  trigger separate, subsequent scheduling cycles (running in greedy mode) to
+  place the remaining pods. This approach reduces scheduling latency under single
+  passes and mitigates Head-of-Line (HoL) queue blocking by allowing
+  higher-priority workloads to interleave and schedule in between the separate
+  greedy passes. A potential drawback is that cycle mode is not a one-off
+  transition from non-greedy to greedy. If active member pods are deleted (e.g. due to
+  node failures) and cause the CPG tree to drop below its
+  `minGroupCount` threshold, the scheduling policy is no longer satisfied. The
+  scheduler must then dynamically oscillate the cycle mode back to non-greedy
+  to re-secure the minimal gang. Coordinating this behavior
+  across separate, decoupled scheduling passes in the queue introduces
+  complexity in the code.
 
 ###### Handling new pods for scheduled hierarchies
-If new pods belong to an already scheduled `CompositePodGroup` tree (e.g., due to a
-controller scaling up), the scheduler pops these pending pods from the queue
-and triggers the recursive scheduling algorithm starting directly at the root CPG
-level.
+If new member pods belong to an already scheduled `CompositePodGroup` tree (e.g.,
+due to a controller scaling up), they pop from the queue and trigger the
+standard recursive scheduling algorithm starting at the root CPG level. The CPG
+hierarchy is evaluated in greedy mode, meaning that successfully scheduled child
+groups are allowed to exceed their `minCount` limits.
 
-Because subsequent scheduling cycles for already scheduled CPG hierarchies run
-in greedy mode (active child groups/pods are evaluated past their `minCount` limits),
-the new pods are successfully scheduled.
+If the recursive algorithm succeeds in placing these new pods, they are bound to nodes.
+However, if the recursive algorithm fails to schedule them (due to saturated capacity):
+* The root CPG scheduling policy remains satisfied (since the minimal gang was
+  already successfully scheduled and remains active in the cluster).
+* The individual member pods fail scheduling and trigger the preemption
+  engine at the root CPG level.
 
 ##### Suboptimal scheduling decisions
 
@@ -1658,15 +1688,17 @@ More tests will be added for beta release.
   levels of the hierarchy).
 - All e2e tests for the `CompositePodGroup` API are added and graduated to
   conformance tests.
-- The recursive greedy scheduling search trade-offs are re-evaluated, and a decision on
-incorporating advanced backtracking heuristics (such as restricted search depth or bounded
-branches) is made to optimize scheduling success rates for multi-level gangs.
-- Scheduler bypasses futile scheduling simulations for inadmissible nested child groups
-during the recursive cycle (e.g. by executing PreEnqueue or PlacementFeasible validations
-prior to branch resolution) to protect performance and avoid redundant preemption passes.
-- A non-greedy CompositePodGroup scheduling simulation mode is introduced and re-evaluated
-  to mitigate resource stealing and gang deadlock occurrences among sibling child groups in
-  capacity-constrained environments.
+- The recursive greedy scheduling search trade-offs are re-evaluated, and a
+  decision on incorporating advanced backtracking heuristics (such as
+  restricted search depth or bounded branches) is made to optimize scheduling
+  success rates for multi-level gangs.
+- Scheduler bypasses futile scheduling cycles for inadmissible nested child
+  groups during recursion by extending `PlacementFeasible` to execute checks
+  prior to in-memory scheduling (to protect performance and avoid redundant
+  preemption passes).
+- A non-greedy `CompositePodGroup` scheduling cycle mode is introduced and
+  re-evaluated to mitigate resource stealing and gang deadlock occurrences
+  among sibling child groups in capacity-constrained environments.
 - Support for differing group-level priorities across a single hierarchy tree
   under basic scheduling policies and separating queueing priority from
   preemption priority is re-evaluated.
