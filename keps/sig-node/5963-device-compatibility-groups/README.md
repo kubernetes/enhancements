@@ -96,8 +96,6 @@ arise:
   leading to pod startup failures.
 3. **Poor User Experience**: Users receive cryptic preparation failures instead
   of clear scheduling feedback.
-4. **Resource Thrashing**: The scheduler may repeatedly attempt incompatible
-  allocations before giving up.
 
 The current workaround—having DRA drivers fail resource preparation when
 incompatible allocations are attempted—is insufficient because it provides no
