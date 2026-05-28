@@ -162,8 +162,8 @@ Without this KEP, drivers must use a "placeholder pattern" today:
 
 1. Publish devices with `capacity: 1` initially
 2. Wait for first claim to determine affinity value
-3. Update ResourceSlice with actual capacity and affinity as attribute
-4. Use CEL selector to match affinity attribute
+3. Update ResourceSlice with actual capacity, writing the affinity value into the device's `attributes` map
+4. Use CEL selector to match against that `attributes` entry
 
 **Problems**:
 - Race condition: Second pod may go to different device before expansion
@@ -173,7 +173,7 @@ Without this KEP, drivers must use a "placeholder pattern" today:
 ### Goals
 
 - Enable the scheduler to gate remaining capacity on a device based on a
-  required sharing attribute
+  required affinity key
 - Provide a mechanism for drivers to signal compatibility requirements for
   shared hardware via `sharingAffinity` on the ResourceSlice — without
   requiring drivers to change their existing opaque config schemas, and
@@ -191,7 +191,7 @@ Without this KEP, drivers must use a "placeholder pattern" today:
 
 ### Non-Goals
 
-- Defining hardware-specific attribute names (these remain driver-defined)
+- Defining hardware-specific affinity key names (these remain driver-defined)
 - Managing the physical lifecycle of the device configuration (this remains
   the driver's responsibility)
 - Changing how capacity is tracked (that's KEP-5075)
@@ -643,7 +643,7 @@ currently uses a first-fit algorithm with no affinity-aware preference, so
 the scheduler does not actively pack compatible claims onto already-locked
 devices. Where domain-specific validation is feasible, cluster
 administrators can use `DeviceClass` CEL selectors to restrict which
-attribute values are accepted (e.g., constraining subnet IDs to a known
+affinity values are accepted (e.g., constraining subnet IDs to a known
 set) — this is an admin-side guardrail against rare or arbitrary values
 poisoning devices. Affinity-aware preference (within-node) and a Score
 contribution (cross-node) are planned as a beta-scope addition to
@@ -1942,9 +1942,9 @@ type DeviceRequest struct {
 }
 
 type SharingAffinity struct {
-    AttributeName string
-    Value         string
-    Strategy      SharingStrategy
+    AffinityKey string
+    Value       string
+    Strategy    SharingStrategy
 }
 ```
 
@@ -1955,7 +1955,7 @@ type SharingAffinity struct {
   property of an individual request. Putting it on `DeviceRequest` would
   imply the consumer chooses the strategy, when in reality the device (and
   its driver) dictates which keys must agree across consumers.
-- **Single key only**: The shape above implies one `AttributeName`/`Value`
+- **Single key only**: The shape above implies one `AffinityKey`/`Value`
   pair per request. Multi-key affinity (e.g., `subnet` + `pkey` + `vlan`)
   would require either repeating the field or introducing a list, both of
   which converge structurally to "a map of typed parameters" — which is
