@@ -807,7 +807,7 @@ for every combination on a single cluster.
 
 - **Pre-KEP.** The apiserver does not serve `compatibilityGroups` (it
   either doesn't know the field, or has the gate off, in which case it
-  strips on writes and hides on reads). The scheduler sees no
+  strips on writes). The scheduler sees no
   constraints and allocates as before this KEP. Drivers reject
   incompatible allocations at preparation time.
 - **Driver-only.** The apiserver persists and serves
