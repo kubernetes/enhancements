@@ -163,7 +163,7 @@ allowing an allocation that will fail at device preparation time.
 ### Notes/Constraints/Caveats
 
 A candidate device is admitted only if its`compatibilityGroups` share at 
-least one entry with the **rollingintersection** of `compatibilityGroups` 
+least one entry with the **rolling intersection** of `compatibilityGroups` 
 maintained across all devices already allocated on the same counter set — i.e., the candidate must
 declare at least one group that is present in every already-allocated
 device's list. Drivers that want a set of devices to be allocated at the 
