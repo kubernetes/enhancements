@@ -162,7 +162,7 @@ allowing an allocation that will fail at device preparation time.
 
 ### Notes/Constraints/Caveats
 
-A candidate device is admitted only if its`compatibilityGroups` share at 
+A candidate device is admitted only if its `compatibilityGroups` share at 
 least one entry with the **rolling intersection** of `compatibilityGroups` 
 maintained across all devices already allocated on the same counter set — i.e., the candidate must
 declare at least one group that is present in every already-allocated
