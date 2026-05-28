@@ -1,1003 +1,1271 @@
 # KEP-1432: Volume Health Monitor
 
-## Table of Contents
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
 - [Motivation](#motivation)
-- [User Experience](#user-experience)
-  - [Use Cases](#use-cases)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-- [Implementation](#implementation)
-  - [Kubelet Metrics changes](#kubelet-metrics-changes)
-  - [CSI changes](#csi-changes)
-    - [Add ControllerGetVolume RPC](#add-controllergetvolume-rpc)
-    - [Add Node Volume Health Function](#add-node-volume-health-function)
-  - [External controller](#external-controller)
-    - [CSI interface](#csi-interface)
-    - [Node down event](#node-down-event)
-  - [Kubelet](#kubelet)
-    - [CSI interface](#csi-interface-1)
-  - [Alternatives](#alternatives)
-    - [Alternative option 1](#alternative-option-1)
-    - [Alternative option 2](#alternative-option-2)
-    - [Alternative option 3](#alternative-option-3)
-    - [Optional HTTP(RPC) service](#optional-httprpc-service)
-    - [External node agent](#external-node-agent)
-      - [CSI interface](#csi-interface-2)
-- [Graduation Criteria](#graduation-criteria)
-  - [Alpha](#alpha)
-  - [Alpha -&gt; Beta](#alpha---beta)
-  - [Beta -&gt; GA](#beta---ga)
-- [Test Plan](#test-plan)
-  - [Unit tests](#unit-tests)
-  - [E2E tests](#e2e-tests)
+  - [User Stories](#user-stories)
+    - [Story 1: Volume deleted out-of-band](#story-1-volume-deleted-out-of-band)
+    - [Story 2: Backend unreachable from a subset of nodes](#story-2-backend-unreachable-from-a-subset-of-nodes)
+    - [Story 3: Cross-driver dashboards](#story-3-cross-driver-dashboards)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Where reports live, and why](#where-reports-live-and-why)
+  - [The CSI surface](#the-csi-surface)
+  - [The Kubernetes surface](#the-kubernetes-surface)
+  - [Reconciliation contract](#reconciliation-contract)
+  - [Authorization](#authorization)
+  - [Feature gate](#feature-gate)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [Embed VolumeCondition in existing RPCs (the original alpha)](#embed-volumecondition-in-existing-rpcs-the-original-alpha)
+  - [A standalone per-PVC VolumeHealth CRD](#a-standalone-per-pvc-volumehealth-crd)
+  - [A per-PVC map[node]Health directly on pvc.status](#a-per-pvc-mapnodehealth-directly-on-pvcstatus)
+  - [PV taints with NoEffect](#pv-taints-with-noeffect)
+  - [DRA-style device taints for storage (KEP-5055)](#dra-style-device-taints-for-storage-kep-5055)
+  - [Push-based health ingest](#push-based-health-ingest)
+  - [A richer error enum](#a-richer-error-enum)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [x] (R) Design details are appropriately documented
-- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [x] (R) Graduation criteria is in place
-- [x] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [x] "Implementation History" section is up-to-date for milestone
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [ ] (R) Graduation criteria is in place
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [ ] (R) Production readiness review completed
+- [ ] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
 
+## Summary
+
+A `PersistentVolumeClaim` can be bound, mounted, and serving traffic
+while the underlying storage is silently failing. The backend volume
+might have been deleted out-of-band by an admin who didn't realize it
+was still in use. A multipath link can drop and shave throughput in
+half. The filesystem can corrupt, or a node can lose its data-plane
+network to the storage backend without losing its control-plane
+network. In all of these cases, the storage system knows or could
+detect that something is wrong; Kubernetes today has no first-class
+way to see it.
+
+This KEP defines a uniform mechanism for CSI drivers to report volume
+and backend health, and surfaces those reports on three durable
+Kubernetes status fields where automation can act on them. Drivers
+report through four new RPCs: `ControllerListVolumeHealth` and
+`ControllerGetVolumeHealth` on the controller plugin, and
+`NodeGetVolumeHealth` and `NodeGetStorageHealth` on the node plugin.
+The `csi-external-health-monitor-controller` sidecar consumes the
+controller-side RPCs and writes to
+`PersistentVolumeClaim.Status.HealthStatus`. The kubelet consumes the
+node-side RPCs and writes to `Pod.Status.VolumeHealth` (per pod, per
+volume) and `CSINode.Status.StorageHealth` (per driver, per node). A
+single feature gate, `CSIVolumeHealth`, gates the kubelet and the
+apiserver.
+
+This is not the first attempt. An alpha for KEP-1432 shipped in
+Kubernetes v1.21 that overloaded `ListVolumes`, `ControllerGetVolume`,
+and `NodeGetVolumeStats` with an embedded `VolumeCondition` field and
+surfaced findings only as Kubernetes events. The original API never
+graduated, and the CSI spec is now removing it
+([container-storage-interface/spec#604][spec-pr]). This KEP
+documents the replacement and resets graduation to alpha.
+
+[spec-pr]: https://github.com/container-storage-interface/spec/pull/604
+
 ## Motivation
 
-Currently there is no way to monitor Persistent Volumes after they are provisioned in Kubernetes. This makes it very hard to debug and detect root causes when something happens to the volumes. An application may detect that it can no longer write to volumes. However, the root cause happened at the underlying storage system level. This requires application and infrastructure team jointly debug and find out what has triggered the problem. It could be that the volume runs out of capacity and needs an expansion. It could be that the volume was deleted by accident outside of Kubernetes. In the case of local storage, the local PVs may not be accessed any more due to the nodes break down. In either case, it will take lots of effort to find out what has happened at the infrastructure layer. It will also take complicated process to recover. Admin usually needs to intervene and fix the problem.
+The original alpha was structurally constrained in three ways that
+together made it hard to graduate:
 
-With health monitoring, unhealthy volumes can be detected and fixed early and therefore could prevent more serious problems to occur. While some problems may be corrected automatically by a Kubernetes controller, most problems may involve manual admin intervention or need to be fixed with specific application knowledge. In any case, volume health monitoring is a very important tool that would be beneficial to Kubernetes users.
+The first constraint was that health was embedded in stat and list
+RPCs. A CO calling `ListVolumes` purely to enumerate volumes paid the
+cost of a health probe whether it wanted one or not, and a driver
+implementing `LIST_VOLUMES` was forced to wire health into the same
+code path. In most real backends, listing volumes and reporting their
+health are very different operations on very different timelines, and
+forcing them into one RPC made both worse.
 
-## User Experience
+The second constraint was that `NodeGetVolumeStats` is contractually
+defined to be valid only for staged or published volumes. The volumes
+most worth reporting on are precisely the ones the kubelet can never
+call `NodeGetVolumeStats` against: the ones whose filesystems are
+corrupt, the ones the driver could not stage in the first place. The
+original alpha could see only volumes that were already healthy enough
+to mount, which inverts the use case.
 
-### Use Cases
+The third constraint was that findings were surfaced only as
+Kubernetes events. Events are an operator-affordance, not a state
+machine. They have a TTL, they aren't joined to the PVC by API
+consumers in any structured way, and they can't be driven by a
+remediation controller without screen-scraping. Anyone serious about
+acting on volume health needs durable status.
 
-Many things could happen to the underlying storage system after a volume is provisioned in Kubernetes.
+This KEP separates health from stats, separates the controller and
+node planes, and stores the result on durable, well-typed status
+fields that automation can consume.
 
-* Volume could be deleted by accident outside of Kubernetes.
-* The disk that the volume resides on could be removed temporarily for maintenance.
-* The disk that the volume resides on could fail.
-* There may be configuration issues with the underlying storage system that affect the volume’s health.
-* Volume could be out of capacity.
-* The disk may be degrading which affects its performance.
+### Goals
 
-If the volume is mounted on a pod and used by an application, the following problems could also happen.
-* There may be read/write I/O errors.
-* The file system on the volume may be corrupted.
-* Filesystem may be out of capacity.
-* Volume may be unmounted by accident outside of Kubernetes.
+- Provide a CSI-spec-level mechanism for drivers to report
+  per-volume health from the controller, per-volume health from the
+  node (including for volumes that have not been successfully
+  published), and overall storage-backend health from a node.
+- Surface those reports on stable Kubernetes API status fields:
+  controller-side volume health on
+  `PersistentVolumeClaim.Status.HealthStatus`, node-side per-volume
+  health on `Pod.Status.VolumeHealth`, and node-side backend health
+  on `CSINode.Status.StorageHealth`.
+- Define a small, machine-parseable error vocabulary
+  (`Inaccessible`, `DataLoss`, `Degraded`, `StorageUnreachable`,
+  `StorageDegraded`) that admits driver-specific elaboration via
+  `reason` and `message`.
+- Make health reporting opt-in per driver (via CSI capabilities) and
+  per cluster (via the `CSIVolumeHealth` feature gate). A driver
+  that implements no health capability is not probed and incurs no
+  cost.
+- Keep ownership consistent with the existing Node Authorizer model:
+  nodes never write PVC status.
 
-If the CSI driver has implemented the CSI volume health function proposed in this design document, Kubernetes could communicate with the CSI driver to retrieve any errors detected by the underlying storage system. Kubernetes can report an event and log an error about this PVC so that user can inquire this information and decide how to handle them. For example, if the volume is out of capacity, user can request a volume expansion to get more space. In the first phase, volume health monitoring is informational only as it is only reported in the events and logs. In the future, we will also look into how Kubernetes may use volume health information to automatically reconcile.
+### Non-Goals
 
-There could be conditions that cannot be reported by a CSI driver. One or more nodes where the volume is attached to may be down. This can be monitored and detected by the volume health controller so that user knows what has happened.
+This KEP defines reporting, not reaction. Kubernetes will not start
+gating scheduling, admission, or volume reconciliation on health
+values. Future KEPs may layer behavior on top (a CSIDriver opt-in to
+prevent pod scheduling on `Inaccessible` volumes is a natural next
+step), but they are out of scope here.
 
-The Kubernetes components that monitor the volumes and report events with volume health information include the following:
+The error vocabulary is also deliberately small. It does not cover
+storage-backend specifics like multipath loss, capacity exhaustion,
+or disk-level performance degradation. Those signals belong in the
+`reason` field, where drivers can name them precisely without forcing
+every CO to learn a new enum value.
 
-* Extend Kubelet's existing volume monitoring capability to also monitor volume health on each kubernetes worker node.
-  * In addition to gathering existing volume stats, Kubelet also watches volume health of the PVCs on that node. If a PVC has an abnormal health condition, an event will to reported on the pod object that is using the PVC. If multiple pods are using the same PVC, events will be reported on multiple pods.
-* An external monitoring controller on the master node.
-  * Monitoring controller reports events on the PVCs.
-
-Details will be described in the following proposal section.
+In-tree volume plugins are out of scope; this design applies only to
+CSI drivers.
 
 ## Proposal
 
-Volume monitoring is the main focus of this proposal. Reactions are not in the scope of this proposal.
+The CSI spec gains four RPCs, the Kubernetes API gains three optional
+status fields, and the kubelet and apiserver gain one feature gate.
+That is the entire user-visible surface.
 
-The following area will be the focus of this proposal at first:
+The controller plugin learns to answer either "give me all volumes
+that currently have adverse conditions" (paginated, via
+`ControllerListVolumeHealth`) or "what's the condition of *this*
+volume" (via `ControllerGetVolumeHealth`). A driver can implement
+either or both. The `csi-external-health-monitor-controller` sidecar,
+which already runs alongside many CSI controllers, polls whichever is
+available and writes the result to
+`pvc.status.healthStatus`. Because the sidecar lives in the control
+plane, the cluster's existing trust boundary handles the question of
+who can write what to a PVC.
 
-* Provide a mechanism for CSI drivers to report volume health problems at the controller and node levels.
+The node plugin learns to answer two questions: "what's the condition
+of this volume on this node" (via `NodeGetVolumeHealth`) and "what's
+the condition of the storage backend from this node" (via
+`NodeGetStorageHealth`). The kubelet calls them and writes the
+results to `pod.status.volumeHealth` for the pods running on that
+node and to `csinode.status.storageHealth` for the driver registered
+on that node. Both targets are objects the kubelet can already write
+to under its existing Node Authorizer permissions, so no new
+authorization surface is needed for the node-side path.
 
-Two main parts are involved here in the architecture.
+The two reports are independent. A volume can be reported as
+`Inaccessible` from a node, because that node lost its data-plane
+route to the backend, while the controller plugin reports the same
+volume as healthy. A volume can also be reported as `Degraded` from
+the controller plane while a node sees it just fine, because the
+backend's monitoring caught a slow trend that the data path hasn't
+yet expressed. Forcing these two perspectives into one truth would
+hide useful information; this design surfaces them separately and
+lets consumers decide what to do.
 
-- External Controller:
-  - The external controller will be deployed as a sidecar together with the CSI controller driver, similar to how the external-provisioner sidecar is deployed.
-  - Trigger controller RPC to check the health condition of the CSI volumes.
-  - The external controller sidecar will also watch for node failure events. This component can be enabled via a flag.
+### User Stories
 
-- Kubelet:
-  - Kubelet already collects volume stats from CSI node plugin by calling CSI function NodeGetVolumeStats.
-  - In addition to existing volume stats collected already, Kubelet will also check volume condition collected from the same CSI function and log events to Pods if volume condition is abnormal.
-  - Note that currently we do not have CSI support for local storage. When the support is available, we will implement relavant CSI monitoring interfaces as well.
-  - Expose Volume Health information as Kubelet VolumeStats Metrics.
+#### Story 1: Volume deleted out-of-band
 
-The volume health monitoring by Kubelet will be controlled by a new feature gate called `VolumeHealth`.
+A storage admin accidentally deletes a backend volume that is bound
+to a PVC. The controller plugin learns about it on its next
+reconciliation against the backend and starts reporting
+`{status: Inaccessible, reason: VolumeNotFound}` from
+`ControllerListVolumeHealth`. The external monitor sidecar writes
+that onto `pvc.status.healthStatus`. The application owner sees the
+condition on `kubectl describe pvc` and recreates the PVC from a
+snapshot. None of the nodes hosting the workload need to be involved.
+In fact, if the workload still has a mount cached in the kernel page
+cache, the nodes might not notice for some time.
 
-## Implementation
+#### Story 2: Backend unreachable from a subset of nodes
 
-### Kubelet Metrics changes
+A network change makes the storage backend's data path unreachable
+from one rack of nodes while the control plane keeps working fine.
+CSI controller calls all succeed and report the volume healthy. On
+the affected nodes the kubelet calls `NodeGetStorageHealth`, gets
+back `{status: StorageUnreachable, reason: NetworkPartition}`, and
+writes that onto `csinode.status.storageHealth` for the driver. A
+future scheduler opt-in (out of scope) can use that to avoid placing
+new pods needing the driver onto those nodes. Today, an operator can
+see the condition with a single `kubectl get csinode` and route
+around it manually.
 
-Add a new field in the [VolumeStats metrics API](https://github.com/kubernetes/kubernetes/blob/v1.22.1/staging/src/k8s.io/kubelet/pkg/apis/stats/v1alpha1/types.go#L263).
+#### Story 3: Cross-driver dashboards
 
-```
-// VolumeStats contains data about Volume filesystem usage.
-type VolumeStats struct {
-	// Embedded FsStats
-	FsStats `json:",inline"`
-	// Name is the name given to the Volume
-	// +optional
-	Name string `json:"name,omitempty"`
-	// Reference to the PVC, if one exists
-	// +optional
-	PVCRef *PVCReference `json:"pvcRef,omitempty"`
+Clusters that run more than one CSI driver (block, file, object)
+get a uniform health schema across all of them. A platform team's
+Prometheus dashboard can query
+`csi_volume_health_status{status="Inaccessible"}` and see unhealthy
+volumes regardless of which driver they live on, because every
+driver writes through the same status fields with the same enum
+values.
 
-	// Note: Add the following new field
-	// +optional
-        // VolumeHealthStats contains data about volume health
-        VolumeHealthStats `json:"volumeHealthStats,omitempty"`
-}
+### Risks and Mitigations
 
-// VolumeHealthStats contains data about volume health.
-type VolumeHealthStats struct {
-        // Normal volumes are available for use and operating optimally.
-        // An abnormal volume does not meet these criteria.
-        Abnormal bool `json:"abnormal,omitempty"`
-}
-```
+The most-debated risk is write churn. Every node updates pods it
+runs whenever a volume's reported health changes, every driver
+reports on every volume it manages, and at scale this could amplify
+into a substantial PATCH rate against the apiserver. The design
+addresses this in two ways: both writers compute the desired
+`Conditions` list, compare it element-by-element to the on-disk
+value, and PATCH only on difference; in steady state, with no
+unhealthy volumes, the sustained PATCH rate is zero. Probe intervals
+are tunable on both writers, and operators of large clusters can
+relax them without changing the contract this KEP defines.
 
-Modify [parsePodVolumeStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/volume_stat_calculator.go#L172) to include the new field in the returned `stats.VolumeStats`.
+A second risk is compromised or malicious nodes lying about a
+volume's health to influence operator behavior. This was the
+original objection to per-PVC node-keyed health, and it's why the
+original alpha used events. The present design routes node-side
+reports through `Pod.Status` and `CSINode.Status`, both of which the
+kubelet can already write to under existing Node Authorizer rules,
+scoped to its own pods and its own node, and never grants any node
+access to PVC status. A compromised node can lie about its own pods
+and its own node, which it could already do; it cannot taint a PVC
+seen by the rest of the cluster.
 
-The newly added Volume Health stats will be stored in [persistentStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/volume_stat_calculator.go#L168).
+A third risk is driver misclassification. A driver that reports
+`DataLoss` for a transient `Degraded` condition could trigger
+aggressive remediation in downstream automation. The mitigation is
+in the spec text: each enum value has explicit MUST and MUST NOT
+guidance, and conformance tests exercise the expected patterns
+against the mock driver.
 
-This is returned in [GetPodVolumeStats](https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/kubelet/server/stats/fs_resource_analyzer.go#L99).
+## Design Details
 
-Since Prometheus does not store string metrics, `volume_health_status` will be stored as either 1 or 0. The `volume_health_status` label could be `status: abnormal`.
+### Where reports live, and why
 
-```
-var volumeHealthMetric = metrics.NewGaugeVec(
-	&metrics.GaugeOpts{
-		Subsystem:      KubeletSubsystem,
-                Name:           "volume_health_status",
-                Help:           "Volume health status. The count is either 1 or 0.",
-                StabilityLevel: metrics.ALPHA,
-                },
-                []string{"volume_plugin", "pvc_namespace", "pvc_name", "volume_health_status"},
-)
-```
+Three Kubernetes objects gain one optional status field each. The
+choice of object is the most consequential decision in this KEP, so
+it's worth saying plainly why each is where it is.
 
-### CSI changes
+Controller-reported volume health goes on
+`PersistentVolumeClaim.Status.HealthStatus`. The PVC is the object
+users already look at when they want to know about a volume, both
+through `kubectl describe pvc` and through dashboards that watch
+PVC status. The writer is the external monitor sidecar, which runs
+in the control plane. No node ever writes here, which closes off
+the malicious-node concern that originally pushed the team away
+from per-PVC health.
 
-Container Storage Interface (CSI) specification will be modified to provide volume health check leveraging existing RPCs and adding new ones.
+Node-reported per-volume health goes on `Pod.Status.VolumeHealth`,
+keyed by the volume name from `pod.spec.volumes`. Three forces
+push this decision: first, the kubelet already writes
+`Pod.Status` for pods bound to its own node, and the Node Authorizer
+already scopes that permission tightly, so no new authorization
+surface is needed. Second, the data is naturally pod-scoped: a
+filesystem corruption observed from one node is an observation of
+that node, and the most useful place to surface it is on the pods
+that are actually using the volume from that node. Third, this
+choice mirrors KEP-4680 (Resource Health on PodStatus for DRA),
+which made the same call for the same reasons; readers building
+cross-stack workload health dashboards can treat DRA resource
+health and CSI volume health uniformly.
 
-- Modify existing ListVolumes controller RPC
- - External controller calls the existing `ListVolumes` RPC to check health condition of volumes if supported by the CSI driver.
+A reasonable alternative would have been a per-PVC
+`map[node]HealthReport` field, with each kubelet writing its own
+key. We rejected it on two grounds. The first is staleness: a node
+that reported `Inaccessible` and then died would leave its entry on
+the PVC indefinitely, requiring a sweeper. The second is trust:
+allowing kubelets to write PVC status, even with map-keyed-by-node
+SSA, reopens the malicious-node concern that the controller-only
+write path closes. Storing per-node observations on `Pod.Status`
+sidesteps both: pod GC handles staleness, and the kubelet's
+existing authorization scope handles trust.
 
-- Add new GetVolume controller RPC
-  - External controller calls a new `GetVolume` RPC to check health condition of a particular volume if it is supported and ListVolumes is not supported.
+Node-reported backend health goes on
+`CSINode.Status.StorageHealth`, keyed by driver name. The CSINode
+object is already where the kubelet records facts about the CSI
+drivers installed on its node, so this is a natural extension of
+that pattern. The kubelet on each node is the sole writer for that
+node's CSINode, just as it is for `CSINode.Spec.Drivers` today.
 
-- Extend the existing NodeGetVolumeStats RPC
-  - For any PV that is mounted, the external node agent calls `NodeGetVolumeStats` to see if volume is still mounted;
-  - Calls `NodeGetVolumeStats` to check if volume is usable, e.g., filesystem corruption, bad blocks, etc.
+### The CSI surface
 
-A new `VOLUME_CONDITION` controller capability is added. If a CSI driver supports `LIST_VOLUMES` and `VOLUME_CONDITION` capability, it MUST provide volume health information in `ListVolumesResponse`.
+The corresponding CSI spec change is
+[container-storage-interface/spec#604][spec-pr].
 
-A new `GET_VOLUME` controller capability is added. If a CSI driver supports `GET_VOLUME` capability, it MUST support calling `GetVolume` to provide general volume information in `GetVolumeResponse`. If a driver supports `VOLUME_CONDITION`, it MUST provide additional health information in `GetVolumeResponse`.
+The legacy alpha is removed in that PR. The deletions are:
 
-A new node capability is added. If CSI driver supports the `VOLUME_CONDITION` node capability, it MUST provide health information in `NodeGetVolumeStats`.
+- the `volume_condition` field on `ListVolumesResponse.VolumeStatus`,
+  `ControllerGetVolumeResponse.VolumeStatus`, and
+  `NodeGetVolumeStatsResponse`;
+- the standalone `message VolumeCondition`; and
+- the `VOLUME_CONDITION` controller and node capability values.
 
-Detailed changes needed in the CSI Spec are described in the following.
+None of these were ever declared stable.
+Drivers that implemented them continue to compile against the old
+spec but will need to migrate to the new RPCs to surface health
+under this KEP.
 
-#### Add ControllerGetVolume RPC
+The shared types are `VolumeHealth` (per-volume) and
+`StorageBackendHealth` (per-backend). Each carries a status drawn
+from a small enum, an optional CamelCase `reason` for grouping,
+and an optional human-readable `message`. `VolumeHealth` carries a
+list of entries rather than a single status, because a volume can
+exhibit multiple concurrent conditions and forcing the driver to
+choose one would lose information.
 
-Add a new `ControllerGetVolume` RPC. `ControllerGetVolumeResponse` should contain current information of a volume if it exists. If the volume does not exist any more, `ControllerGetVolume` should return gRPC error code `NOT_FOUND`.
-
-Add `VolumeCondition` message in `VolumeStatus` field in `ControllerGetVolumeResponse`. This can indicate additional health information for the volume.
-
-Whether the volume is still attached to a node is already handled by `LIST_VOLUMES_PUBLISHED_NODES` controller capability. This capability will be used by Kubernetes to reconcile - re-attach the volume if the volume is not attached any more.
-
-```
-message ControllerGetVolumeRequest {
+```protobuf
+message VolumeHealth {
   option (alpha_message) = true;
 
-  // The ID of the volume to fetch current volume information for.
-  // This field is REQUIRED.
-  string volume_id = 1;
-}
-```
+  message VolumeHealthEntry {
+    // The health status category. REQUIRED.
+    VolumeHealthErrorType status = 1;
 
-```
-message ControllerGetVolumeResponse {
-  option (alpha_message) = true;
+    // A brief CamelCase machine-parseable reason. OPTIONAL.
+    // Used for grouping volumes with similar conditions in
+    // dashboards and CLI displays.
+    string reason = 2;
 
-  message VolumeStatus{
-    // A list of all the `node_id` of nodes that this volume is
-    // controller published on.
-    // This field is OPTIONAL.
-    // This field MUST be specified if the PUBLISH_UNPUBLISH_VOLUME
-    // controller capability is supported.
-    // published_node_ids MAY include nodes not published to or
-    // reported by the SP. The CO MUST be resilient to that.
-    repeated string published_node_ids = 1;
-
-    // Information about the current condition of the volume.
-    // This field is OPTIONAL.
-    // This field MUST be specified if the
-    // VOLUME_CONDITION controller capability is supported.
-    VolumeCondition volume_condition = 2;
+    // A user-friendly description. OPTIONAL.
+    string message = 3;
   }
 
-  // This field is REQUIRED
-  Volume volume = 1;
-
-  // This field is REQUIRED.
-  VolumeStatus status = 2;
-}
-```
-
-```
-// VolumeCondition represents the current condition of a volume.
-message VolumeCondition {
-  option (alpha_message) = true;
-
-  // Normal volumes are available for use and operating optimally.
-  // An abnormal volume does not meet these criteria.
-  // This field is REQUIRED.
-  bool abnormal = 1;
-
-  // The message describing the condition of the volume.
-  // This field is REQUIRED.
-  string message = 2;
-}
-```
-
-Add `GET_VOLUME` and `VOLUME_CONDITION` controller capabilities.  If a driver supports `GET_VOLUME` capability, it MUST implement the `ControllerGetVolume` RPC.  If a driver supports `VOLUME_CONDITION`, it MUST supports the `volume_condition` field in the `status` field in `ControllerGetVolumeResponse`.
-
-If a driver supports `LIST_VOLUMES` and `VOLUME_CONDITION` controller capabilities, it MUST supports the `volume_condition` field in the `status` field in `ListVolumesResponse`.
-
-```
-// Specifies a capability of the controller service.
-message ControllerServiceCapability {
-  message RPC {
-    enum Type {
-      UNKNOWN = 0;
-      CREATE_DELETE_VOLUME = 1;
-      PUBLISH_UNPUBLISH_VOLUME = 2;
-      LIST_VOLUMES = 3;
-      GET_CAPACITY = 4;
-      // Currently the only way to consume a snapshot is to create
-      // a volume from it. Therefore plugins supporting
-      // CREATE_DELETE_SNAPSHOT MUST support creating volume from
-      // snapshot.
-      CREATE_DELETE_SNAPSHOT = 5;
-      LIST_SNAPSHOTS = 6;
-
-      // Plugins supporting volume cloning at the storage level MAY
-      // report this capability. The source volume MUST be managed by
-      // the same plugin. Not all volume sources and parameters
-      // combinations MAY work.
-      CLONE_VOLUME = 7;
-
-      // Indicates the SP supports ControllerPublishVolume.readonly
-      // field.
-      PUBLISH_READONLY = 8;
-
-      // See VolumeExpansion for details.
-      EXPAND_VOLUME = 9;
-
-      // Indicates the SP supports the
-      // ListVolumesResponse.entry.published_nodes field
-      LIST_VOLUMES_PUBLISHED_NODES = 10;
-
-      // Indicates that the Controller service can report volume
-      // conditions.
-      // An SP MAY implement `VolumeCondition` in only the Controller
-      // Plugin, only the Node Plugin, or both.
-      // If `VolumeCondition` is implemented in both the Controller and
-      // Node Plugins, it SHALL report from different perspectives.
-      // If for some reason Controller and Node Plugins report
-      // misaligned volume conditions, CO SHALL assume the worst case
-      // is the truth.
-      // Note that, for alpha, `VolumeCondition` is intended be
-      // informative for humans only, not for automation.
-      VOLUME_CONDITION = 11 [(alpha_enum_value) = true];
-
-      // Indicates the SP supports the ControllerGetVolume RPC.
-      // This enables COs to, for example, fetch per volume
-      // condition after a volume is provisioned.
-      GET_VOLUME = 12 [(alpha_enum_value) = true];
-    }
-
-    Type type = 1;
-  }
-
-  oneof type {
-    // RPC that the controller supports.
-    RPC rpc = 1;
-  }
-}
-```
-
-#### Add Node Volume Health Function
-
-Node Volume Health checks if a volume is still mounted and usable. To check whether a volume is usable, the CSI driver shall check if filesystem is corrupted, whether there are bad blocks, etc. in this RPC.
-
-Instead of adding a new RPC, we can leverage the existing NodeGetVolumeStats RPC.
-
-```
-rpc NodeGetVolumeStats (NodeGetVolumeStatsRequest)
-    returns (NodeGetVolumeStatsResponse) {}
-```
-
-In the NodeGetVolumeStatsRequest, there are `volume_id`, `volume_path`, and `staging_target_path`. CSI driver can figure out whether a volume is still mounted based on these parameters.
-
-In NodeGetVolumeStatsResponse, there is already a `VolumeUsage` which includes information (available, used, and total) of the file system on the volume.
-
-A new message `volume_condition` will be added to `NodeGetVolumeStatsResponse`. A new Node capability `VOLUME_CONDITION` will be added to indicate whether a CSI driver has implemented this function. In a `volume_condition` message, there is a boolean parameter `abnormal` indicating whether the volume is normal or not and a message that describes the details of the volume condition.
-
-```
-message NodeGetVolumeStatsRequest {
-  // The ID of the volume. This field is REQUIRED.
+  // The ID of the volume. REQUIRED.
   string volume_id = 1;
 
-  // It can be any valid path where volume was previously
-  // staged or published.
-  // It MUST be an absolute path in the root filesystem of
-  // the process serving this request.
-  // This is a REQUIRED field.
-  string volume_path = 2;
+  // Health statuses associated with the volume. An empty list
+  // means no adverse health condition is known by the Plugin.
+  //
+  // The SP MAY report multiple concurrent conditions. A future
+  // CSI version MAY add VolumeHealthErrorType values; a Plugin
+  // that adopts a newer spec MAY report newer values alongside
+  // existing ones, but MUST NOT remove an older error entry
+  // until that condition is no longer present. The CO MAY
+  // ignore unknown VolumeHealthErrorType values.
+  //
+  // OPTIONAL.
+  repeated VolumeHealthEntry health_statuses = 2;
+}
 
-  // The path where the volume is staged, if the plugin has the
-  // STAGE_UNSTAGE_VOLUME capability, otherwise empty.
-  // If not empty, it MUST be an absolute path in the root
-  // filesystem of the process serving this request.
-  // This field is OPTIONAL.
+enum VolumeHealthErrorType {
+  UNKNOWN_VOLUME_HEALTH_TYPE = 0;
+
+  // The volume is not accessible. From
+  // ControllerListVolumeHealth / ControllerGetVolumeHealth, the
+  // CO MAY interpret this as the volume not being accessible
+  // from any node. From NodeGetVolumeHealth, the CO MAY
+  // interpret this as the volume not being accessible from that
+  // node.
+  INACCESSIBLE = 1;
+
+  // Data loss is known or strongly suspected on the underlying
+  // volume.
+  DATA_LOSS = 2;
+
+  // The volume is usable but is not operating optimally.
+  DEGRADED = 3;
+}
+```
+
+```protobuf
+message StorageBackendHealth {
+  option (alpha_message) = true;
+
+  // Health status. REQUIRED.
+  StorageHealthErrorType status = 1;
+
+  // A brief CamelCase machine-parseable reason. OPTIONAL.
+  string reason = 2;
+
+  // A user-friendly description. OPTIONAL.
+  string message = 3;
+
+  // Volume capability affected. OPTIONAL. When set, COs MAY
+  // interpret the condition as affecting only volumes of the
+  // given capability. For example, RWX multi-attach may be
+  // degraded while RWO is unaffected.
+  VolumeCapability volume_capability = 4;
+}
+
+enum StorageHealthErrorType {
+  UNKNOWN_STORAGE_HEALTH_ERROR_TYPE = 0;
+
+  // The storage backend is unreachable from this node. Volumes
+  // using this backend are expected to be unavailable.
+  STORAGE_UNREACHABLE = 1;
+
+  // The storage backend is operating in a degraded state
+  // (e.g. reduced path count, high latency). Volumes using this
+  // backend may experience reduced performance.
+  STORAGE_DEGRADED = 2;
+}
+```
+
+`ControllerListVolumeHealth` is the preferred RPC for the external
+monitor sidecar. It is paginated, and one polling cycle covers the
+volumes the driver knows about. The spec asks drivers to *return
+health information about all the volumes that they know about* and
+*SHOULD omit volumes with no known adverse health condition*; in
+practice every well-behaved driver will return only adverse-condition
+entries, but the CO is required to tolerate either shape.
+
+The CO must also tolerate inconsistent paging. The spec says
+explicitly that volumes created, deleted, or transitioning health
+during a paged list call MAY produce duplicates, omissions, or both,
+and the CO SHALL NOT expect a consistent view across pages. This
+shapes the reconciliation contract below: a single list pass cannot
+reliably tell the CO that a volume has *recovered* (an absence might
+be a recovery, or it might be a paging gap), so the sidecar's
+recovery rule is more careful than its detection rule.
+
+```protobuf
+message ControllerListVolumeHealthRequest {
+  option (alpha_message) = true;
+  int32 max_entries = 1;
+  string starting_token = 2;
+  map<string, string> secrets = 3 [(csi_secret) = true];
+}
+
+message ControllerListVolumeHealthResponse {
+  option (alpha_message) = true;
+  // List of volume health entries. Drivers SHOULD omit volumes
+  // with no known adverse health condition.
+  repeated VolumeHealth entries = 1;
+  string next_token = 2;
+}
+```
+
+For drivers whose backends cannot enumerate efficiently, the sidecar
+falls back to per-volume `ControllerGetVolumeHealth` calls.
+
+```protobuf
+message ControllerGetVolumeHealthRequest {
+  option (alpha_message) = true;
+  string volume_id = 1;
+  map<string, string> secrets = 2 [(csi_secret) = true];
+}
+
+message ControllerGetVolumeHealthResponse {
+  option (alpha_message) = true;
+  VolumeHealth volume_health = 1;
+}
+```
+
+On the node side, `NodeGetVolumeHealth` differs from
+`NodeGetVolumeStats` in one important way. `NodeGetVolumeStats` is
+contractually valid only for staged or published volumes, which
+excludes the most interesting unhealthy cases. `NodeGetVolumeHealth`
+MAY be called for volumes the CO has merely *attempted* to stage or
+publish, including ones whose mount failed because the filesystem
+is corrupt. The original alpha could never reach those.
+
+```protobuf
+message NodeGetVolumeHealthRequest {
+  option (alpha_message) = true;
+  string volume_id = 1;
+  // The path where the volume is or was expected to be published
+  // on the node. OPTIONAL.
+  string volume_publish_path = 2;
+  // The path where the volume is or was staged. OPTIONAL.
   string staging_target_path = 3;
 }
-```
 
-```
-message NodeGetVolumeStatsResponse {
-  // This field is OPTIONAL.
-  repeated VolumeUsage usage = 1;
-  // Information about the current condition of the volume.
-  // This field is OPTIONAL.
-  // This field MUST be specified if the VOLUME_CONDITION node
-  // capability is supported.
-  VolumeCondition volume_condition = 2 [(alpha_field) = true];
-}
-```
-
-```
-message VolumeUsage {
-  enum Unit {
-    UNKNOWN = 0;
-    BYTES = 1;
-    INODES = 2;
-  }
-  // The available capacity in specified Unit. This field is OPTIONAL.
-  // The value of this field MUST NOT be negative.
-  int64 available = 1;
-
-  // The total capacity in specified Unit. This field is REQUIRED.
-  // The value of this field MUST NOT be negative.
-  int64 total = 2;
-
-  // The used capacity in specified Unit. This field is OPTIONAL.
-  // The value of this field MUST NOT be negative.
-  int64 used = 3;
-
-  // Units by which values are measured. This field is REQUIRED.
-  Unit unit = 4;
-}
-```
-
-```
-// VolumeCondition represents the current condition of a volume.
-message VolumeCondition {
+message NodeGetVolumeHealthResponse {
   option (alpha_message) = true;
-
-  // Normal volumes are available for use and operating optimally.
-  // An abnormal volume does not meet these criteria.
-  // This field is REQUIRED.
-  bool abnormal = 1;
-
-  // The message describing the condition of the volume.
-  // This field is REQUIRED.
-  string message = 2;
+  VolumeHealth volume_health = 1;
 }
 ```
 
-Add a `VOLUME_CONDITION` node capability. If driver supports this capability, it MUST fetch `volume_condition` information in `NodeGetVolumeStats`.
+`NodeGetStorageHealth` covers the conditions that are node-local and
+not visible from the controller plane: a top-of-rack switch failure,
+a host-side multipath collapse, a NIC misconfiguration that severs
+this node's data path while leaving the control plane intact.
 
-```
-message NodeGetCapabilitiesRequest {
-  // Intentionally empty.
+```protobuf
+message NodeGetStorageHealthRequest {
+  option (alpha_message) = true;
+  map<string, string> secrets = 1 [(csi_secret) = true];
+}
+
+message NodeGetStorageHealthResponse {
+  option (alpha_message) = true;
+  // Health information for storage backends or classes available
+  // from this node. An empty list means the node plugin observes
+  // no adverse condition.
+  repeated StorageBackendHealth backend_health = 1;
 }
 ```
 
-```
-message NodeGetCapabilitiesResponse {
-  // All the capabilities that the node service supports. This field
-  // is OPTIONAL.
-  repeated NodeServiceCapability capabilities = 1;
-}
-```
+Drivers advertise support through four new capabilities. The
+controller adds `LIST_VOLUME_HEALTH` and `GET_VOLUME_HEALTH` to its
+`ControllerServiceCapability` enum; the node adds `GET_VOLUME_HEALTH`
+and `STORAGE_HEALTH` to its `NodeServiceCapability` enum. The
+controller and node spell their per-volume capability the same way
+(`GET_VOLUME_HEALTH`); they are disambiguated by which service-capability
+enum they belong to, the way other CSI capabilities already are.
 
-```
-// Specifies a capability of the node service.
-message NodeServiceCapability {
-  message RPC {
-    enum Type {
-      UNKNOWN = 0;
-      STAGE_UNSTAGE_VOLUME = 1;
-      // If Plugin implements GET_VOLUME_STATS capability
-      // then it MUST implement NodeGetVolumeStats RPC
-      // call for fetching volume statistics.
-      GET_VOLUME_STATS = 2;
-      // See VolumeExpansion for details.
-      EXPAND_VOLUME = 3;
-      // Indicates that the Node service can report volume conditions.
-      // An SP MAY implement `VolumeCondition` in only the Node
-      // Plugin, only the Controller Plugin, or both.
-      // If `VolumeCondition` is implemented in both the Node and
-      // Controller Plugins, it SHALL report from different
-      // perspectives.
-      // If for some reason Node and Controller Plugins report
-      // misaligned volume conditions, CO SHALL assume the worst case
-      // is the truth.
-      // Note that, for alpha, `VolumeCondition` is intended to be
-      // informative for humans only, not for automation.
-      VOLUME_CONDITION = 4 [(alpha_enum_value) = true];
-    }
+A driver may implement any combination of these or none at all. A
+driver that advertises only `GET_VOLUME_HEALTH` on the controller is
+probed per-volume by the sidecar; a driver that advertises
+`LIST_VOLUME_HEALTH` is probed via list, even if it also advertises
+`GET_VOLUME_HEALTH`.
 
-    Type type = 1;
-  }
+### The Kubernetes surface
 
-  oneof type {
-    // RPC that the controller supports.
-    RPC rpc = 1;
-  }
-}
-```
+Three optional status fields are added to existing types. All are
+gated by the `CSIVolumeHealth` feature gate at the apiserver, with
+the standard "drop on save when disabled, preserve when already
+set" behavior.
 
-### External controller
+The PVC field is the canonical place to look at controller-side
+health for a bound volume. It is owned by the external monitor
+sidecar and never written by nodes.
 
-#### CSI interface
-Call ListVolumes() RPC periodically to check the health condition of volumes themselves. The frequency of the check should be tunable. A configure option will be available in the external controller to adjust this value.
-
-If ListVolumes is not supported but GetVolume is supported, call ControllerGetVolume() RPC for volumes periodically to check the health condition of volumes themselves. The frequency of the check should be tunable. A configure option will be available in the external controller to adjust this value.
-
-The external monitoring controller reports events on the PVCs.
-
-#### Node down event
-* External monitoring controller will check if node is marked as unresponsive by the node controller.
-* The external monitoring controller will track which pods are using which PVCs and what nodes they got scheduled to.
-* In the case that a node goes down, the controller will report an event for all PVCs on that node.
-* The external monitoring controller reports node down events on the PVCs. The node down monitoring component can be enabled via a flag.
-
-### Kubelet
-
-#### CSI interface
-
-Kubelet already collects volume stats from CSI node plugin by calling CSI function NodeGetVolumeStats.
-https://github.com/kubernetes/kubernetes/blob/v1.21.0-alpha.2/pkg/volume/csi/csi_metrics.go#L71
-
-In addition to volume stats collected already, Kubelet will also check the mounting and other health conditions from NodeGetVolumeStats.
-
-If abnormal volume condition is detected from NodeGetVolumeStats, Kubelet will retrieve all the pods used by the particular volume and report events on the pod objects. If multiple pods are using the same volume, events will be reported on all pods. This can be done by adding logic in csi_client after the NodeGetVolumeStats call to send events to pods if volume condition is abnormal.
-https://github.com/kubernetes/kubernetes/blob/v1.21.0-alpha.2/pkg/volume/csi/csi_client.go#L608
-
-This new volume health monitoring by Kubelet will be gated by the `VolumeHealth` feature gate. If enabled, Kubelet will monitor volume health when calling NodeGetVolumeStats CSI function and report events on pods when abnormal volume condition is detected. If not enabled, Kubelet works the same as before and will not check volume health when calling NodeGetVolumeStats CSI function.
-
-### Alternatives
-
-#### Alternative option 1
-
-The Status field in the PVC will be used to mark volumes if they are unhealthy. The external monitoring controller sidecar will be responsible of monitoring the volumes and updating the PVC status field when needed.
-
-```
-// PersistentVolumeClaimHealthConditionType defines the health condition of PV claim.
-// Valid values are "HealthFailure", "HealthWarning", "HealthUnknown".
-type PersistentVolumeClaimHealthConditionType string
-
-// These are valid health conditions of PVC
-const (
-        // PersistentVolumeClaimHealthFailure - Volume health failure indicates a severe problem that makes the volume unusable
-        PersistentVolumeClaimHealthFailure PersistentVolumeClaimHealthConditionType = "HealthFailure"
-        // PersistentVolumeClaimHealthWarning - Volume health warning indicates there is a problem but volume is still usable
-        PersistentVolumeClaimHealthWarning PersistentVolumeClaimHealthConditionType = "HealthWarning"
-        // PersistentVolumeClaimHealthUnknown - Volume health unknown indicates the health condition of the volume is unknown
-        PersistentVolumeClaimHealthUnknown PersistentVolumeClaimHealthConditionType = "HealthUnknown"
-)
-
-// PersistentVolumeClaimHealthCondition represents the current health condition of PV claim
-type PersistentVolumeClaimHealthCondition struct {
-        Type   PersistentVolumeClaimHealthConditionType
-        Status ConditionStatus
-        ErrorCode string
-        // +optional
-        LastProbeTime metav1.Time
-        // +optional
-        LastTransitionTime metav1.Time
-        // +optional
-        Reason string
-        // +optional
-        Message string
-}
-
-// PersistentVolumeClaimStatus represents the status of PV claim
+```go
 type PersistentVolumeClaimStatus struct {
-        // Phase represents the current phase of PersistentVolumeClaim
-        // +optional
-        Phase PersistentVolumeClaimPhase
-        // AccessModes contains all ways the volume backing the PVC can be mounted
-        // +optional
-        AccessModes []PersistentVolumeAccessMode
-        // Represents the actual resources of the underlying volume
-        // +optional
-        Capacity ResourceList
-        // +optional
-        Conditions []PersistentVolumeClaimCondition
-        // +optional
-        HealthConditions []PersistentVolumeClaimHealthCondition
+    // ... existing fields ...
+
+    // healthStatus contains the latest controller-reported
+    // health information for the volume bound to this claim.
+    // Populated by the csi-external-health-monitor-controller
+    // sidecar. Nodes do not write this field.
+    // +optional
+    // +featureGate=CSIVolumeHealth
+    HealthStatus *VolumeHealthStatus `json:"healthStatus,omitempty"`
 }
 
-// ConditionStatus defines conditions of resources
-type ConditionStatus string
-
-// These are valid condition statuses. "ConditionTrue" means a resource is in the condition;
-// "ConditionFalse" means a resource is not in the condition; "ConditionUnknown" means kubernetes
-// can't decide if a resource is in the condition or not. In the future, we could add other
-// intermediate conditions, e.g. ConditionDegraded.
-const (
-        ConditionTrue    ConditionStatus = "True"
-        ConditionFalse   ConditionStatus = "False"
-        ConditionUnknown ConditionStatus = "Unknown"
-)
-```
-
-To avoid stale information being stored on a PVC, each periodic update will mark the PVC with the latest health information, replacing previous health information added by the external controller. If the PVC becomes healthy after being marked as unhealthy previously, the controller should remove the previous information.
-
-As mentioned earlier, reaction is not in the scope of this proposal but will be considered in the future. Before reacting to any negative health condition, the controller responsible for the reaction should call GetVolume() again to ensure the information is update to date.
-
-Alternative option 1 is not in the main proposal because it requires giving all nodes access to a credential that has the ability to modify all PVCs. This is not desirable as it allows a malicious node to put an unhealthy status on a PVC.
-
-#### Alternative option 2
-
-If the agent on the node cannot be used to modify the PVC status and the monitoring logic cannot be added to Kubelet directly, we can introduce a CRD to represent the volume health. This volume health CRD is in the same namespace as the PVC that it is monitoring. It contains the PVC name and health conditions as defined in the main option. It needs to have a one on one mapping with the PVC. In the PVC status, there will be a `volumeHealthName` field pointing back to the volume health CRD.
-
-Both the controller and the agent can create the volume health CRD for a PVC if it does not exist yet. Only one volume health CRD should be created for a PVC. Only the controller can set the `volumeHealthName` field in the PVC status.
-
-```
-type VolumeHealth struct {
-        metav1.TypeMeta
-        metav1.ObjectMeta
-	Spec VolumeHealthSpec
-	// +optional
-	Status *VolumeHealthStatus
-}
-
-type VolumeHealthSpec struct {
-	// The PVC name that this VolumeHealth object is monitoring
-	PersistentVolumeClaimName string
-}
-
-// Note: PersistentVolumeClaimHealthCondition is already defined in the
-// main section.
 type VolumeHealthStatus struct {
-        HealthConditions []PersistentVolumeClaimHealthCondition
+    // conditions is the set of adverse conditions reported by
+    // the CSI controller plugin. An empty list (or absence)
+    // means the controller plugin reports no adverse condition.
+    // +optional
+    // +listType=map
+    // +listMapKey=status
+    Conditions []VolumeHealthCondition `json:"conditions,omitempty"`
+
+    // lastProbeTime is the most recent time the CO obtained a
+    // response from the controller plugin.
+    LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
 }
 
-// PersistentVolumeClaimStatus represents the status of PV claim
-type PersistentVolumeClaimStatus struct {
-        // Phase represents the current phase of PersistentVolumeClaim
-        // +optional
-        Phase PersistentVolumeClaimPhase
-        // AccessModes contains all ways the volume backing the PVC can be mounted
-        // +optional
-        AccessModes []PersistentVolumeAccessMode
-        // Represents the actual resources of the underlying volume
-        // +optional
-        Capacity ResourceList
-        // +optional
-        Conditions []PersistentVolumeClaimCondition
-        // +optional
-        VolumeHealthName *string
+type VolumeHealthCondition struct {
+    // status is the machine-parseable category. One of
+    // "Inaccessible", "DataLoss", "Degraded".
+    Status VolumeHealthStatusType `json:"status"`
+    // reason is a brief CamelCase machine-parseable reason
+    // (e.g. "VolumeNotFound").
+    // +optional
+    Reason string `json:"reason,omitempty"`
+    // message is a human-readable description.
+    // +optional
+    Message string `json:"message,omitempty"`
+    // lastTransitionTime is when this condition entry first
+    // appeared at its current (status, reason) tuple.
+    LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+}
+
+type VolumeHealthStatusType string
+const (
+    VolumeHealthInaccessible VolumeHealthStatusType = "Inaccessible"
+    VolumeHealthDataLoss     VolumeHealthStatusType = "DataLoss"
+    VolumeHealthDegraded     VolumeHealthStatusType = "Degraded"
+)
+```
+
+`Conditions` is a `+listType=map` keyed by `status`, so each adverse
+category appears at most once per PVC. A driver reporting two
+distinct categories produces two entries; a driver re-reporting an
+existing category updates its `reason`, `message`, and
+`lastTransitionTime` (the last only when `reason` changes).
+
+The Pod field is owned by the kubelet on the pod's node. It mirrors
+the two-level shape of KEP-4680: an outer entry per `pod.spec.volumes`
+name, an inner list of conditions per entry.
+
+```go
+type PodStatus struct {
+    // ... existing fields ...
+
+    // volumeHealth surfaces node-reported health for each volume
+    // the pod is using. Populated by the kubelet on the pod's
+    // node. Entries are keyed by the volume name from
+    // pod.spec.volumes.
+    // +optional
+    // +listType=map
+    // +listMapKey=name
+    // +featureGate=CSIVolumeHealth
+    VolumeHealth []PodVolumeHealth `json:"volumeHealth,omitempty"`
+}
+
+type PodVolumeHealth struct {
+    // name matches an entry in pod.spec.volumes.
+    Name string `json:"name"`
+
+    // conditions is the set of adverse conditions reported by
+    // the CSI node plugin for this volume on this node.
+    // +optional
+    // +listType=map
+    // +listMapKey=status
+    Conditions []VolumeHealthCondition `json:"conditions,omitempty"`
+
+    LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
 }
 ```
 
-Alternative option 2 does not address the concerns from option 1. Assuming the node-level sidecar is running in a pod as a service account, we need to grant that service account permission to modify any instance of the volume health CR, and then the monitoring controller just copies that into the PVC status.
+The CSINode field is owned by the kubelet on the node, keyed by
+driver name. The Node Authorizer is extended to allow the kubelet
+to PATCH `csinodes/status.storageHealth` for its own node only,
+matching how it already PATCHes `csinodes/spec.drivers`.
 
-#### Alternative option 3
+```go
+type CSINodeStatus struct {
+    // storageHealth is the set of backend health reports for
+    // each CSI driver registered on the node, as observed by
+    // the kubelet via NodeGetStorageHealth.
+    // +optional
+    // +listType=map
+    // +listMapKey=name
+    // +featureGate=CSIVolumeHealth
+    StorageHealth []StorageHealthCondition `json:"storageHealth,omitempty"`
+}
 
-We can also reuse the PV Taints and introduce a new Taint called PVUnhealthMessage for PV health condition whose key is specific (PVUnhealthMessage) and value can be set differently. 
+type StorageHealthCondition struct {
+    // name is the CSI driver name, matching CSINodeDriver.name.
+    Name string `json:"name"`
 
-For example, if the PV is not attached now, we can mark the PV using the PVUnhealthMessage taint like this:
+    // status is one of "StorageUnreachable", "StorageDegraded".
+    Status StorageHealthStatusType `json:"status"`
+
+    // reason is a brief CamelCase machine-parseable reason.
+    // +optional
+    Reason string `json:"reason,omitempty"`
+
+    // message is a human-readable description.
+    // +optional
+    Message string `json:"message,omitempty"`
+
+    // accessModes are the access modes affected. An empty list
+    // means all access modes are affected.
+    // +optional
+    AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+    // volumeMode is the volume mode (Filesystem or Block)
+    // affected. Nil means both are affected.
+    // +optional
+    VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
+
+    LastProbeTime      metav1.Time `json:"lastProbeTime,omitempty"`
+    LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+}
+
+type StorageHealthStatusType string
+const (
+    StorageHealthUnreachable StorageHealthStatusType = "StorageUnreachable"
+    StorageHealthDegraded    StorageHealthStatusType = "StorageDegraded"
+)
 ```
-Key: “PVUnhealthMessage”
-Value: “AttachError - the pv is not attached to node1 now”
-VolumeTaintEffect: NoEffect
-```
 
-If the volume is deleted, we can mark the PV using the PVUnhealthMessage taint like this:
-```
-Key: “PVUnhealthMessage” 
-Value: “VolumeError - the volume is deleted from backend”
-VolumeTaintEffect: NoEffect
-```
+`AccessModes` and `VolumeMode` exist because backends can degrade
+asymmetrically: a multipath fault may affect RWX multi-attach while
+RWO works fine, and a block-mode regression on a backend that serves
+both block and filesystem volumes may not affect filesystem volumes
+at all. These fields let drivers express that asymmetry; consumers
+that don't care can ignore them.
 
-Note that:
+### Reconciliation contract
 
-- all the VolumeTaintEffects are NoEffect now at first, we may talk about the reactions later in another proposal;
-- the taint Value is string now, it is theoretically possible that several errors are detected for one PV, we may extend the string to cover this situation: combine the errors together and splited by semicolon or other symbols.
+The two writers (the external monitor sidecar and the kubelet)
+follow the same rules. Each reads the current state from its
+configured CSI plugin, computes the desired status, compares it to
+what's stored on the API object, and PATCHes only on difference.
 
-This was initially brought up to address the external data populator use case, but there were lots of concerns about this proposal. We do not want our main proposal to depend on something that is not approved.
+The detection rule is direct. A probe that returns one or more
+adverse conditions writes those conditions to the corresponding
+status field. If the same conditions are already present, the
+write is a no-op and is suppressed.
 
-#### Optional HTTP(RPC) service
+The recovery rule is more careful, because the spec does not let
+the CO trust an absence in a single list pass. A writer treats a
+volume as recovered, and clears its conditions, only on a positive
+healthy signal:
 
-Create a HTTP(RPC) service to receive volume health condition reports from other components.
+- an empty `health_statuses` from `ControllerGetVolumeHealth`,
+  which is per-volume and therefore consistent;
+- an empty `health_statuses` from `NodeGetVolumeHealth`, also
+  per-volume; or
+- a `ControllerListVolumeHealth` result in which the volume has
+  been absent across two consecutive complete list cycles.
 
-Users can extend the volume health condition monitoring by setting up their own detector and report the result to the service.
+The two-cycle rule for List absorbs the paging inconsistency the
+spec warns about. Without it, a volume that
+was present on cycle N's first page and disappeared from cycle
+N+1's first page (because it now appears on a later page) would be
+spuriously cleared.
 
-This optional service is out of scope for this KEP but may be introduced in a future KEP if needed.
+A driver that supports both `LIST_VOLUME_HEALTH` and
+`GET_VOLUME_HEALTH` lets the sidecar collapse the two-cycle rule
+into one: when a previously-unhealthy volume is absent from the
+current list, the sidecar issues a single `ControllerGetVolumeHealth`
+to confirm. An empty `health_statuses` from Get clears the
+condition; a non-empty result simply updates it.
 
-This option is not in the main proposal because it is a push-based method while CSI uses pull-based method.
+A failed RPC is never a recovery signal. The writer leaves existing
+conditions untouched and increments
+`csi_volume_health_probe_total{result="error"}`. The no-signal case
+(driver crash, network blip, RPC deadline) is observably different
+from the explicit-healthy case, and conflating them would have the
+cluster report transient driver failures as volume recoveries.
 
-#### External node agent
+`LastTransitionTime` is per-condition. When a condition is added,
+the writer sets it to the probe time. When an existing condition's
+`(status, reason)` tuple is unchanged, the writer preserves it. When
+`reason` changes for the same `status`, the writer updates it.
+Consumers reading `LastTransitionTime` get a stable answer to
+"how long has this condition been in this shape" rather than a
+moving timestamp that updates on every probe.
 
-In the initial proposal and first alpha implementation of this feature, there is an external node agent component.
+The sidecar's polling and the kubelet's polling are independent.
+Each has its own configurable interval, its own timeout, and its
+own metrics. The two writers do not coordinate, and they do not
+need to: they write to different objects and report from different
+perspectives.
 
-* An external monitoring node agent on each kubernetes worker node.
-  * The node agent watches volume health of the PVCs on that node. If a PVC has an abnormal health condition, an event will to reported on the pod object that is using the PVC. If multiple pods are using the same PVC, events will be reported on multiple pods.
+The kubelet adds one rule that doesn't apply to the sidecar.
+`NodeGetVolumeHealth` MUST NOT be called for a volume the kubelet
+has not at least once attempted to mount. This is a contract for
+drivers, which may legitimately gate health probing on internal
+state established at mount time, while still letting us report
+health for volumes whose mount failed.
 
-When moving this feature to beta, we decided to combine this with existing volume stats check in Kubelet as both are calling the same CSI function NodeGetVolumeStats.
+### Authorization
 
-Here's the initial proposal:
+Three new permissions are granted, each scoped as tightly as the
+existing model allows:
 
-- The external node agent will be deployed as a sidecar together with the CSI node driver on every Kubernetes worker node.
-- The external node agent triggers node RPC to check volume's mounting conditions.
-- Note that currently we do not have CSI support for local storage. When the support is available, we will implement relavant CSI monitoring interfaces as well.
+- The external monitor sidecar's service account is granted PATCH
+  on `persistentvolumeclaims/status`. It already has the GET and
+  LIST permissions it needs on PVCs and PVs.
+- Kubelets are granted PATCH on `pods/status.volumeHealth` for pods
+  bound to their own node.
+- Kubelets are granted PATCH on `csinodes/status.storageHealth` for
+  their own node only.
 
-##### CSI interface
-Call NodeGetVolumeStats() RPC to check the mounting and other health conditions. The frequency of the check should be tunable. A configure option will be available in the external node agent to adjust this value.
+Both kubelet extensions follow the same scoping pattern the Node
+Authorizer already applies to existing kubelet writes on those
+objects. Nodes are explicitly not granted any access to PVC status,
+which is the central security improvement over the
+originally-rejected "node writes per-PVC health" design.
 
-The external node agent will go through all the pods on that node and find out all volumes used by those pods. It will watch all those volumes and call NodeGetVolumeStatus() to find out their health status.
+### Feature gate
 
-The external node agent reports events on the pod object. If multiple pods are using the same volume, report events on all pods.
+A single feature gate, `CSIVolumeHealth`, gates the apiserver and
+kubelet. When disabled, the apiserver drops the new fields on save
+(preserving them if already set on the old object, per the standard
+field-level feature-gate handling), the kubelet does not call the
+new RPCs, and the Node Authorizer extensions are inactive.
 
-## Graduation Criteria
-### Alpha
-* Initial feature implementation, including:
-  * External controller volume health monitoring.
-  * Kubelet volume health monitoring.
-* Implementation in the csi-mock driver.
-* Add basic unit tests.
+The external monitor sidecar does not depend on a feature gate. Its
+deployment is the controller-side opt-in. If the apiserver does not
+have `CSIVolumeHealth` enabled, the sidecar's writes are silently
+dropped server-side, which is the right behavior: the sidecar
+doesn't need to know whether the cluster has the feature on, only
+that its own writes succeed or fail.
 
-### Alpha -> Beta
-* Unit tests and e2e tests outlined in design proposal implemented.
+### Test Plan
 
-### Beta -> GA
-* Volume health support is added to multiple CSI drivers.
-* Volume health feature deployed in production and have gone through at least one K8s upgrade.
+[ ] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
 
-## Test Plan
-### Unit tests
-* Unit tests for external controller and Kubelet volume health monitoring. The following failure scenario will be simulated in the unit tests:
-  * VolumeNotFound
-  * OutOfCapacity
-  * VolumeUnmounted
-  * NodeDown
+Two pieces of test infrastructure are extended in lockstep with the
+implementation:
 
-### E2E tests
-* e2e tests for external controller and Kubelet volume health monitoring. Hostpath CSI driver and GCE PD driver will be used for e2e tests. The following failure scenario will be tested in the e2e tests:
-  * VolumeNotFound
-  * OutOfCapacity
-  * VolumeUnmounted
-* Add stress and scale tests before moving from beta to GA.
+- [`kubernetes-csi/csi-test`](https://github.com/kubernetes-csi/csi-test):
+  the mock CSI driver implements the four new RPCs and capabilities,
+  with configurable health responses.
+- [`kubernetes-csi/csi-driver-host-path`](https://github.com/kubernetes-csi/csi-driver-host-path):
+  the hostpath driver gains a flag to inject specific health states,
+  for upstream e2e jobs.
+
+##### Unit tests
+
+- `k8s.io/kubernetes/pkg/apis/core/validation` and
+  `k8s.io/kubernetes/pkg/apis/storage/validation`: validation of the
+  new fields, including the `+listType=map +listMapKey=status`
+  constraint that rejects duplicate-status entries.
+- `pkg/registry/core/{persistentvolumeclaim,pod}` and
+  `pkg/registry/storage/csinode`: feature-gate drop-on-save,
+  including the case where the field is already set on the old
+  object and the gate is now disabled.
+- `pkg/kubelet/volumemanager`: probing, `Pod.Status` patching, and
+  no-op suppression.
+- `plugin/pkg/auth/authorizer/node`: own-pod and own-node scoping
+  for the new PATCH permissions.
+- `kubernetes-csi/external-health-monitor`: capability detection,
+  list-vs-get fallback, leader election, no-op suppression, and the
+  two-cycle (or Get-confirmed) recovery rule.
+
+##### Integration tests
+
+- The apiserver round-trips the new fields with the gate on and
+  drops them with it off.
+- The Node Authorizer accepts kubelet writes only for own-node
+  entries.
+- The external monitor sidecar runs end-to-end against the mock
+  driver and exercises the unhealthy → updated → healthy → cleared
+  cycle.
+
+##### e2e tests
+
+- Volume-side enums (`Inaccessible`, `DataLoss`, `Degraded`)
+  injected via the hostpath driver: verify each surfaces on
+  `pvc.status.healthStatus` and `pod.status.volumeHealth`, then
+  recovery clears the condition.
+- Backend-side enums (`StorageUnreachable`, `StorageDegraded`)
+  injected via the hostpath driver: verify each surfaces on
+  `csinode.status.storageHealth`, then recovery clears.
+- Negative authorization: a kubelet attempting to PATCH another
+  node's CSINode is rejected; a kubelet attempting to PATCH a PVC
+  status is rejected.
+
+### Graduation Criteria
+
+#### Alpha
+
+- The CSI spec changes land in
+  [container-storage-interface/spec][spec-pr].
+- The mock CSI driver implements the new RPCs.
+- The `CSIVolumeHealth` feature gate is plumbed through the apiserver
+  and kubelet, including field validation, drop-on-save, and the
+  Node Authorizer extensions.
+- The external monitor sidecar uses the new RPCs and writes to
+  `pvc.status.healthStatus`.
+- Initial unit and integration tests are in place.
+
+#### Beta
+
+- All e2e tests are implemented, in TestGrid, and stable for at
+  least two minor releases.
+- At least two CSI drivers other than the mock driver implement
+  the new capabilities in production.
+- A scalability test on a cluster of at least 5,000 PVCs across at
+  least 100 nodes confirms that steady-state apiserver write rate
+  remains at or near zero with no-op suppression in place.
+- Documentation is merged into kubernetes.io.
+
+#### GA
+
+- No outstanding bugs against the feature for two releases.
+- At least one downstream remediation user (a reactor controller
+  built on top of the alpha or beta status fields) is in production.
+- Conformance tests for the new RPCs run against drivers that
+  advertise the relevant capabilities.
+
+### Upgrade / Downgrade Strategy
+
+The upgrade order is:
+
+1. Roll out the apiserver with `CSIVolumeHealth` enabled. The new
+   status fields begin to be accepted.
+2. Roll out kubelets with the gate enabled.
+3. Update CSI drivers that implement the new capabilities. Drivers
+   that don't are unaffected.
+4. Deploy the external monitor sidecar alongside CSI controllers
+   that opt in to controller-side reporting.
+
+Downgrade reverses the order. The sidecar should be removed before
+the apiserver gate is disabled, to avoid spurious failed-PATCH log
+noise. Disabling the gate on the apiserver stops new writes to the
+new fields and drops them from new objects on the next write;
+existing values on disk are preserved until the next write to the
+object. Older kubelets without the feature simply do not call the
+new RPCs.
+
+### Version Skew Strategy
+
+The skew matrix is small. Health writes are best-effort and never
+on the data path, so every skew combination degrades cleanly:
+
+- New kubelet against old apiserver: the kubelet attempts to PATCH
+  the new status subresources, gets rejected, logs the failure, and
+  continues. Running workloads are unaffected; only health
+  visibility is suppressed.
+- New apiserver with old kubelets: no node-side writes happen.
+  Controller-side reports on PVC still work, because the sidecar
+  writes to the apiserver directly.
+- Mixed kubelet rollout: `Pod.Status.VolumeHealth` is populated
+  inconsistently across the cluster, depending on which node a pod
+  runs on. Consumers handle this the way they handle any other
+  best-effort `Pod.Status` field. Absence of a value is not the
+  same as a healthy report, and dashboards joining health to pod
+  identity should be node-aware.
+- Old driver: a driver that does not advertise the new capabilities
+  is not probed by either writer, and the feature is dormant for
+  that driver. There is no pressure on driver authors to upgrade.
 
 ## Production Readiness Review Questionnaire
 
-### Feature enablement and rollback
+### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
+###### How can this feature be enabled / disabled in a live cluster?
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [x] Other
-    - Describe the mechanism:
-      This feature has a feature gate called `VolumeHealth` for Kubelet.
-      It is enabled when the feature gate in turned on.
-      The health monitoring feature in external controller does not have a
-      feature gate because it is out of tree.
-      It is enabled when the health monitoring controller sidecar is deployed with the CSI driver.
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-      Enabling the `VolumeHealth` feature gate will require downtime of Kubelet.
-      From the controller side, it only affects the health monitoring controller sidecar.
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-      Not for the controller side volume monitoring.
-      For Kubelet, enabling/disabling the feature requires downtime of a node.
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `CSIVolumeHealth`
+  - Components depending on the feature gate: `kube-apiserver`,
+    `kubelet`.
 
-* **Does enabling the feature change any default behavior?**
-  Enabling the `VolumeHealth` feature gate will allow Kubelet to monitor volume health, emit new metric, and
-  generate events on Pods so it will change the default behavior.
-  Enabling the feature from the controller side will allow events to be reported on PVCs when
-  abnormal volume conditions are detected.
+For controller-side reporting, deployment of the
+`csi-external-health-monitor-controller` sidecar is also required.
+The sidecar's deployment is itself the controller-side opt-in.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we rollback
-  the enablement)?**
-  Yes. Uninstalling the health monitoring controller sidecar will disable the feature from
-  the controller side.
-  Disabling the feature gate on Kubelet will prevent Kubelet from monitoring volume health and emitting the new metric.
-  Existing events will not be removed but they will disappear after a period of time.
-  Disabling the feature should not break an existing application as these events are for humans
-  only, not for automation.
+###### Does enabling the feature change any default behavior?
 
-* **What happens if we reenable the feature if it was previously rolled back?**
-  Events will be added to PVCs or Pods when abnormal volume conditions are
-  detected again and the new metric will be emitted by Kubelet again.
+The apiserver accepts and persists three new optional status
+fields, which are not populated unless something writes to them.
+A kubelet whose nodes have CSI drivers advertising the node-side
+`GET_VOLUME_HEALTH` or `STORAGE_HEALTH` capability issues periodic
+RPCs to those drivers. No scheduling, admission, or
+volume reconciliation behavior changes.
 
-* **Are there any tests for feature enablement/disablement?**
-  There will be unit tests for the feature `VolumeHealth` enablement/disablement.
-  Since there is no feature gate for this feature on the controller side and the only way to
-  enable or disable this feature is to install or unistall the sidecar, we cannot write
-  tests for feature enablement/disablement on the controller side.
+###### Can the feature be disabled once it has been enabled?
+
+Yes. Disabling the feature gate stops new writes to the new
+fields and drops them from new objects on the next write per
+standard field-level feature-gate handling. Existing values on
+disk are preserved until the next write to the object. Disabling
+does not break any existing workload: nothing in this KEP changes
+scheduling, admission, or pod-admission outcomes.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Probing resumes. Status fields begin to be populated again on the
+next polling cycle. Stale values from before the rollback are
+overwritten on the next write.
+
+###### Are there any tests for feature enablement/disablement?
+
+Yes. Unit tests in the relevant `pkg/registry/...` packages
+exercise the field-level feature gate, including the case where
+the field was set on the old object and the gate is now disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
-   This feature does not have a feature gate on the controller side. It is enabled when
-   the health monitoring controller sidecar is deployed with the CSI driver.
-   So the only way for a rollout to fail is that deploying the health
-   monitoring controller sidecar with the CSI driver fails. If
-   the health monitoring controller cannot be deployed, no events on volume
-   condition will be reported on PVCs.
+The feature does not touch the data path. A rollout failure
+(a sidecar crash, a kubelet panic on the new code path) is detectable
+through standard component metrics. Running workloads continue to
+run; only the visibility of volume health is affected.
 
-   If enabling the `VolumeHealth` feature fails, no event on volume condition will be
-   reported on the pod and the new `volume_stats_health_abnormal` metric won't be emitted.
+###### What specific metrics should inform a rollback?
 
-* **What specific metrics should inform a rollback?**
-  An event will be recorded on the PVC when the controller has successfully retrieved an
-  abnormal volume condition from the storage system. When other errors occur in the controller,
-  the errors will also be recorded as events. When a rollback happens on the controller side, that means the external health monitor controller is uninstalled. After that we won't see events on the PVC due to abnormal volume conditions.
+A rising `csi_volume_health_probe_total{result="error"}` rate
+post-rollout indicates driver-side or transport failures. A rising
+apiserver PATCH rate for `persistentvolumeclaims/status`,
+`pods/status`, or `csinodes/status` that correlates with the
+rollout indicates either a bug in a writer or a misbehaving driver
+flapping its reports. Both writers are designed to suppress no-op
+writes, so a sustained rate is a signal worth investigating.
 
-  In Kubelet, an event will be recorded on the Pod and a `volume_stats_health_abnormal` metric will be emitted when Kubelet has successfully retrieved an
-  abnormal volume condition. If the call to `NodeGetVolumeStats` fails for other reasons,
-  an error will be returned and whether this will be logged as an event on the Node is up to
-  the existing Kubelet logic and will not be changed. When a rollback happens, that means the feature gate is disabled again. The new metric won't be emitted after that.
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
-  Manual testing will be done to upgrade from 1.22 to 1.23 and downgrade from 1.23 back to 1.22.
+Manual validation across at least one minor version skew (n / n-1)
+is planned during alpha. Automated upgrade/downgrade e2e is in
+scope for beta.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
-  No.
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+The CSI spec removes the legacy alpha `VOLUME_CONDITION` capability
+and `volume_condition` fields. No deprecation period applies because
+the prior shape was alpha and never declared stable. Drivers that
+implemented the alpha shape continue to compile against the old
+spec but must migrate to the new RPCs to surface health under this
+KEP.
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
+###### How can an operator determine if the feature is in use by workloads?
 
-* **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+`kubectl get pvc -A -o json | jq '.items[] | select(.status.healthStatus != null)'`
+enumerates PVCs with controller-reported health. The analogous
+queries against `pods` and `csinodes` enumerate node-side health.
+The `csi_volume_health_probe_total` counter, exposed by both the
+sidecar and the kubelet, shows the ongoing probing rate.
 
-  An operator can check the metric `csi_sidecar_operations_seconds`,
-  Container Storage Interface operation duration with gRPC error code status
-  total. It is reported from CSI external-health-monitor-controller sidecar.
-  For the health monitor controller sidecar, `csi_sidecar_operations_seconds`
-  will be measuring `ListVolumes` or `GetVolume` RPC.
-  The `csi_sidecar_operations_seconds` metric should be sliced by process after
-  they are aggregated to show metrics for different sidecars.
+###### How can someone using this feature know that it is working for their instance?
 
-  In Kubelet, an operator can check whether the feature gate `VolumeHealth`
-  is enabled and whether the new metric `volume_stats_health_abnormal` is emitted.
+- [X] API .status
+  - Fields: `pvc.status.healthStatus`,
+    `pod.status.volumeHealth`,
+    `csinode.status.storageHealth`.
+- [X] Metrics
+  - `csi_volume_health_probe_total` increments when probes run.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine
-the health of the service?**
-  - [ ] Metrics
-    - Metric name: csi_sidecar_operations_seconds, volume_stats_health_abnormal
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-      csi-external-health-monitor-controller exposes the `csi_sidecar_operations_seconds` metric.
-      In Kubelet, a call to `NodeGetVolumeStats` is meant to collect volume stats metrics. The new metric name is `volume_stats_health_abnormal`.
-  - [ ] Other (treat as last resort)
-    - Details:
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  <!--
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
-  -->
+The success rate of CSI health RPCs is comparable to the success
+rate of other CSI RPCs the driver implements; this KEP does not
+introduce a new latency tier. The lag between a driver reporting a
+new condition and that condition appearing on the corresponding
+Kubernetes status field is bounded by one probe interval.
 
-  The metrics `csi_sidecar_operations_seconds` includes a gRPC status code. If the
-  status code is `OK`, the call is successful; otherwise, it is not successful. We
-  can look at the ratio of successful vs non-successful statue codes to figure out
-  the success/failure ratio.
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-  In Kubelet, the new metric `volume_stats_health_abnormal` will be emitted. Whether we can successfully retrieve this metric depending on the CSI call 'NodeGetVolumeStats'. This is an existing call in Kubelet. As long as the CSI driver has implemented this capability to provide volume health, it should be in the response of "NodeGetVolumeStats' call.
+- [X] Metrics
+  - `csi_volume_health_probe_duration_seconds`: histogram of
+    health-probe RPC latency.
+  - `csi_volume_health_probe_total`: counter of probes by
+    outcome.
+  - `csi_volume_health_status`: gauge per posted condition.
+  - `csi_storage_health_status`: gauge per posted backend
+    condition.
 
-* **Are there any missing metrics that would be useful to have to improve observability
-of this feature?**
-  <!--
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
-  -->
-  No.
+  Exact label sets are defined alongside the implementation, not
+  in this KEP, so they can evolve without a KEP amendment.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+Not at alpha. Reviewer feedback during alpha → beta will inform
+additions.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
+###### Does this feature depend on any specific services running in the cluster?
 
-* **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
+The feature has two dependencies, both of which are opt-in:
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]: installation of csi-external-health-monitor-controller sidecar
-    - Usage description:
-      - Impact of its outage on the feature: Installation of csi-external-health-monitor-controller sidecar is required for the feature to work from the controller side. If csi-external-health-monitor-controller is not installed, abnormal volume conditions will not be reported as events on PVCs.
-        Note that CSI driver needs to be updated to implement volume health RPCs in controller/node plugins. The minimum kubernetes version should be 1.13: https://kubernetes-csi.github.io/docs/introduction.html#kubernetes-releases. K8s v1.13 is the minimum supported version for CSI driver to work, however, different CSI drivers have different requirements on supported k8s versions so users are supposed to check documentation of the CSI drivers. If the CSI node plugin on one node has been upgraded to support volume health while it is not upgraded on 3 other nodes, then we will only expect to see volume health events on pods running on that one upgraded node.
-        In addition, since Kubelet is doing volume health monitoring from the node side, the supported Kubernetes version will have to be the version that supports `VolumeHealth` feature. So the minimum Kubernetes version will be 1.21.
-      - Impact of its degraded performance or high-error rates on the feature: If abnormal volume conditions are reported with degraded performance or high-error rates, that would affect how soon or how accurately users could manually react to these conditions.
-
+- The `csi-external-health-monitor-controller` sidecar, for
+  controller-side health reporting. Absent it, the controller side
+  is dormant and the feature degrades gracefully to node-side
+  reporting only.
+- CSI driver implementations of the new RPCs and capabilities, for
+  the corresponding probes to do anything. Absent them, the feature
+  is dormant for that driver.
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
+###### Will enabling / using this feature result in any new API calls?
 
-_For beta, this section is required: reviewers must answer these questions._
+- The sidecar PATCHes `persistentvolumeclaims/status` at most once
+  per PVC per polling cycle, with no-op suppression on unchanged
+  values.
+- The kubelet PATCHes `pods/status` at most once per pod per
+  probing cycle, with no-op suppression.
+- The kubelet PATCHes `csinodes/status` at most once per driver
+  per probing cycle, with no-op suppression.
+- The sidecar LIST/WATCHes `persistentvolumeclaims` and
+  `persistentvolumes`, which is already done by similar sidecars.
 
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
+In steady state with no unhealthy volumes, no-op suppression brings
+sustained PATCH rate to zero. Under sustained all-unhealthy load,
+the rate is bounded by the writer's polling interval, which is
+operator-configurable.
 
-* **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods): Only events will be reported to PVCs or Pods if this feature is enabled.
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-    csi-external-health-monitor-controller sidecar.
-    There is a monitor interval for the controller to control how often to check the volume health.
-    It is configurable with 1 minute as default. Will consider changing it to 5 minutes by default
-    to avoid overloading the K8s API server.
-    When scaled out across many nodes, low frequency checks can still produce high volumes of
-    events. To control this, we should use options on the eventrecorder to control QPS per key.
-    This way we can collapse keys and have a slow update cadence per key.
-    From the Kubelet side, since `NodeGetVolumeStats` has already been called by Kubelet, no additional
-    call is needed.
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-    We are adding a new `Abnormal` field to the existing Kubelet metrics API. It will be retrieved by the periodic metrics collection call. We are not changing the existing frequency of that call.
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+###### Will enabling / using this feature result in introducing new API types?
 
-* **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type: Adding 'Abnormal` field to Kubelet VolumeStats metrics API
-  - Supported number of objects per cluster: No
-  - Supported number of objects per namespace (for namespace-scoped objects): No
+No new API types. Three new optional status fields on existing
+types: PVC, Pod, CSINode.
 
-* **Will enabling / using this feature result in any new calls to the cloud
-provider?**
-  No.
+###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-* **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
-  Describe them, providing:
-  - API type(s): Yes. We are adding new 'Abnormal` field to Kubelet VolumeStats metrics API.
-  - Estimated increase in size: (e.g., new annotation of size 32B):
-    New string of max length of 128 bytes; new int of 4 bytes.
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
-    The controller reports events on PVC while Kubelet reports events on Pod. They work independently of each other. It is recommended that CSI driver should not report duplicate information through the controller and Kubelet. For example, if the controller detects a failure on one volume, it should record just one event on one PVC. If Kubelet detects a failure, it should record an event on every pod used by the affected PVC.
+Indirectly, via the CSI driver: `ControllerListVolumeHealth`
+implementations typically call into the storage backend's API.
+The cost depends on the driver and backend; this KEP does not
+prescribe an implementation.
 
-    Recovery event will be reported once if the volume condition changes from abnormal back to normal.
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-* **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
-  On the controller side, this feature will periodically query storage systems to get the latest volume conditions. So this will have an impact on the performance of the operations running on the storage systems.
-  In Kubelet, `NodeGetVolumeStats` is an existing call, so it won't have additional performance impact.
+Three new optional status fields. Each entry holds a small list
+of conditions (status / reason / message / timestamps). Fields
+are populated only when a driver reports adverse conditions, so
+typical steady-state cost is zero.
 
-* **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
-  From the controller side, this will increase load on the storage systems as it periodically queries them.
-  From the node side, there will be no change because NodeGetVolumeStats is already being called by Kubelet to retrieve volume stats.
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No. The feature runs out-of-band of the volume attach / mount
+path.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+The external monitor sidecar's resource profile is that of the
+existing alpha sidecar, applied to a slightly different set of
+RPCs. The kubelet adds one periodic gRPC call per registered
+driver and a per-PVC call bounded by the set of `InUse` volumes.
+Apiserver work is bounded by the PATCH rates above.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
+###### How does this feature react if the API server and/or etcd is unavailable?
 
-_This section must be completed when targeting beta graduation to a release._
+The kubelet and the sidecar log errors and back off. No status
+writes happen. When the apiserver is reachable again, the next
+polling cycle resumes writing.
 
-* **How does this feature react if the API server and/or etcd is unavailable?**
-  If API server and/or etcd is unavailable, error messages will be logged and the controller/Kubelet will not be able to report events on PVCs or Pods.
+###### What are other known failure modes?
 
-* **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-      If there are log messages indicating abnormal volume conditions but there are no events reported or new metric emitted, we can check the timestamp of the messages to see if events have disappeared based on TTL or if they are never reported. If there are problems on the storage systems but they are not reported in logs or events, we can check the logs of the storage systems to figure out why this has happened.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+- A driver returning errors on `ControllerListVolumeHealth` is
+  detectable through `csi_volume_health_probe_total` with a
+  non-success result label. The sidecar falls back to per-volume
+  `ControllerGetVolumeHealth` if the driver advertises that
+  capability; otherwise it logs and skips the cycle.
+- A driver reporting stale `Inaccessible` after a transient outage
+  has resolved shows up as `LastTransitionTime` not advancing
+  despite `LastProbeTime` advancing. The mitigation is to file a
+  driver bug; operators can clear
+  `pvc.status.healthStatus.conditions` by hand, and the sidecar
+  will overwrite on the next cycle.
+- A sidecar uninstalled while unhealthy entries are present leaves
+  those entries on PVCs with no writer to clear them. Re-installing
+  the sidecar clears stale entries on the next cycle if the volume
+  has recovered; an admin can also clear the field directly.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
-  If SLOs are not being met, analysis should be made to understand what have caused the problem. Debug level logging should be enabled to collect verbose logs. Look at logs to find out what might have caused the events to be missed. If it indicates an underlying problem on the storage system, then storage admin can be pulled in to help find the root cause.
+###### What steps should be taken if SLOs are not being met to determine the problem?
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+Inspect the relevant component's metrics and logs (sidecar for
+controller-side, kubelet for node-side), correlate with the
+driver's own logs, and identify whether the issue is in the
+driver, the CO, or the apiserver path.
 
 ## Implementation History
 
-- 20210902: Update KEP to add volume health to Kublet metrics.
-- 20210117: Update KEP for Alpha
+- 2019-05-30: Original KEP submitted as monitoring-only.
+- 2020-05-12: KEP creation date in current form.
+- 2021-01-17: Update for original alpha (v1.21).
+- 2021-09-02: Add volume health to kubelet metrics.
+- 2026-02-25: Working group concludes that node-reported per-volume
+  health belongs on `Pod.Status` (DRA-aligned) and storage-backend
+  health on `CSINode.Status`.
+- 2026-05-21: Provisional CSI spec PR opened
+  ([container-storage-interface/spec#604][spec-pr]).
+- 2026-05-27: KEP rewritten end-to-end against the redesigned CSI
+  APIs and Kubernetes status fields. Targeting v1.37 alpha.
 
-- 20191021: KEP updated
+## Drawbacks
 
-- 20190730: KEP updated
+N/A.
 
-- 20190530: KEP submitted
+## Alternatives
 
-- Demo implementation (using annotations): 
-https://github.com/NickrenREN/kubemonitor/tree/master/build/kube_storage_monitor/local_monitor
-https://github.com/NickrenREN/kubemonitor/tree/master/build/kube_storage_monitor/node_watcher
+### Embed VolumeCondition in existing RPCs (the original alpha)
+
+The original alpha embedded `VolumeCondition` in `ListVolumes`,
+`ControllerGetVolume`, and `NodeGetVolumeStats` and surfaced findings
+as Kubernetes events. The Motivation section explains why this shape
+is being replaced rather than promoted.
+
+### A standalone per-PVC VolumeHealth CRD
+
+Considered, with controller-reported health and a
+`map[node]HealthReport` of node-reported health. Routing node writes
+through a CRD doesn't address the trust concern that pushed the
+original design away from per-PVC health, because nodes still have to
+be granted PATCH on the CRD; it just moves the authorization problem.
+It also adds CRD installation, RBAC, and lifecycle burden to
+operators. Storing per-node observations on `Pod.Status` instead
+avoids both, and pod GC handles staleness automatically.
+
+### A per-PVC map[node]Health directly on pvc.status
+
+Considered for the same reasons and rejected for the same reasons.
+Granting kubelets PATCH on `pvc/status`, even with map-keyed-by-node
+SSA, reopens the malicious-node concern that the controller-only
+write path closes.
+
+### PV taints with NoEffect
+
+Considered as a way to encode health in an existing mechanism. PV
+taints were never approved upstream for general use, and `Taint` was
+designed to express scheduling effects, not status; the `value` field
+is a single string, so encoding multiple concurrent conditions
+degenerates into an ad-hoc protocol.
+
+### DRA-style device taints for storage (KEP-5055)
+
+Considered. We could not identify a use case where a workload author
+would write a `Toleration` for, say, `Degraded` storage. Storage
+remediation is overwhelmingly an operator concern (rebuild from
+snapshot, fail over to a replica), not a tolerations concern.
+`DataLoss` does not translate cleanly into a taint effect, because
+the right reaction is application-specific. Backend health on
+`CSINode` would need multiple taints per driver per access mode per
+volume mode, which would force `Taint` to grow new fields.
+
+### Push-based health ingest
+
+Considered. CSI is pull-based by design, and introducing push
+semantics here would diverge from the rest of the contract. Future
+versions of CSI may add streaming RPCs; at that point this KEP can
+revisit.
+
+### A richer error enum
+
+A larger enum like `MULTIPATH_LOSS`, `OUT_OF_CAPACITY`, `DISK_FULL`,
+`PERFORMANCE_DEGRADED` was considered. Most of these candidates are
+not CO-actionable: they are storage-admin or application-author
+concerns, and the `reason` field already gives drivers a place to
+surface storage-specific signals. Adding them to the enum would force
+every CO consumer to handle them as permanently-supported values,
+which is a lot of weight to pay for signals that don't drive CO
+behavior.
+
+## Infrastructure Needed
+
+- Mock CSI driver
+  ([`kubernetes-csi/csi-test`](https://github.com/kubernetes-csi/csi-test))
+  extended to implement the new RPCs and capabilities.
+- Hostpath CSI driver
+  ([`kubernetes-csi/csi-driver-host-path`](https://github.com/kubernetes-csi/csi-driver-host-path))
+  extended with a flag to inject specific health states for upstream
+  e2e jobs.
+- `csi-external-health-monitor-controller` sidecar
+  ([`kubernetes-csi/external-health-monitor`](https://github.com/kubernetes-csi/external-health-monitor))
+  updated to use the new RPCs and write to
+  `pvc.status.healthStatus`.
+
+[spec-pr]: https://github.com/container-storage-interface/spec/pull/604
