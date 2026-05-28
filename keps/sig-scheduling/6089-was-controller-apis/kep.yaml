@@ -2,6 +2,7 @@ title: Workload Aware Scheduling Controller APIs
 kep-number: 6089
 authors:
   - "@mm4tt"
+  - "@helayoty"
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
