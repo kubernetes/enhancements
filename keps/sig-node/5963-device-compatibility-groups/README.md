@@ -87,11 +87,6 @@ at the moment.
 
 ## Motivation
 
-Hardware devices often support multiple partitioning or virtualization schemes
-that are mutually exclusive at the hardware level. For example, an NVIDIA GPU
-can be configured for MIG (Multi-Instance GPU) slicing or MPS (Multi-Process
-Service) sharing, but not both simultaneously on the same physical device.
-
 Without a mechanism to express these constraints in DRA, the following problems
 arise:
 
