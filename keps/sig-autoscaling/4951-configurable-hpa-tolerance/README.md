@@ -340,7 +340,13 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-N/A, the feature is tested using unit tests and e2e tests.
+A test will be added to the [podautoscaler integration tests] to ensure HPA
+configurable tolerances are correctly taken into account both when scaling up
+and down.
+
+- [Test HPA with tolerance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/podautoscaler) ([Testgrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&width=20&include-filter-by-regex=sig-autoscaling) [triage search](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=sig-autoscaling))
+
+[podautoscaler integration tests]: https://github.com/kubernetes/kubernetes/tree/master/test/integration/podautoscaler
 
 ##### e2e tests
 
