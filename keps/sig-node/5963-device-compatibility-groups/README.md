@@ -106,7 +106,7 @@ arise:
 
 The current workaround—having DRA drivers fail resource preparation when
 incompatible allocations are attempted—is insufficient because it provides no
-mechanism to inform the scheduler, and does not prevent repeated failed attempts.
+mechanism to inform the scheduler, and does not prevent repeated failed attempts when a replacement pod gets created for a failed one.
 
 ### Goals
 
