@@ -70,7 +70,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes an extension to the Dynamic Resource Allocation (DRA) ResourceSlice API to
-support mutually exclusive device allocation constraints. Hardware devices often
+support mutually exclusive device allocation constraints between sets of devices. Hardware devices often
 support multiple partitioning or virtualization schemes (for example, GPU MIG
 slicing vs. MPS sharing) that provide different trade-offs in terms of isolation,
 performance, and resource sharing. These schemes are frequently mutually exclusive
