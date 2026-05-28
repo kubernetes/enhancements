@@ -185,6 +185,8 @@ This is in order to allow enablement of the feature without user intervention (p
 
 The feature flag can be enabled/disabled at runtime. This requires drivers to identify the flag status and update the `ResourceSlice`s they manage accordingly.
 
+In general, admins should avoid deploying DRA drivers with features enabled that aren't also enabled in the cluster.
+
 ## Design Details
 
 ### API
