@@ -444,8 +444,7 @@ The scheduler sees `gpu-0-mig-1g-0` (20 SMs) and `gpu-0-mps-0` (50 SMs).
 Total: 70 <= 100 — the counter capacity check passes. The scheduler allocates
 both. But at preparation time, the driver fails because MIG and MPS cannot be
 active simultaneously on the same physical GPU. Pod-b gets a cryptic
-preparation error. The scheduler may retry the same incompatible combination
-repeatedly, causing resource thrashing.
+preparation error.
 
 #### Example 3: How the proposed API solves the problem
 
