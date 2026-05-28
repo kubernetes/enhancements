@@ -204,8 +204,7 @@ upon accordingly.
 - Extend topology-aware scheduling with the notion of preferred constraints.
 - Define the way how to express multi-level scheduling requirements in true
   workload APIs.
-  - This will be addressed in a KEP spawned from a discussion in
-    [API Design for WAS Controller Integration](https://docs.google.com/document/d/1VG7Zto9JYuPG4Anb01WMRryJlfV6met0jgob3T2NjZ4/edit?usp=sharing).
+  - This will be addressed in a [KEP-6089](https://kep.k8s.io/6089).
 - Add support for associating `ResourceClaims` with instances of the new API.
   - We will continue supporting sharing `ResourceClaims` among Pods within an
     individual `PodGroup`, however.
@@ -526,7 +525,6 @@ type PodGroupSpec struct {
 	// +optional
 	// +k8s:optional
 	// +k8s:immutable
-	// +k8s:ifEnabled(CompositePodGroup)=+k8s:dependentRequired("parentCompositePodGroupName")
 	WorkloadRef *WorkloadReference `json:"workloadRef"`
 
 	// ParentCompositePodGroupName contains the name of the parent composite pod group
