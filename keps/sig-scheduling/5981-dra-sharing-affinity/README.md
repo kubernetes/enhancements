@@ -104,17 +104,26 @@ configuration. For example:
   must use the same bitstream. Once bitstream-ml-v2 is loaded, other pods
   needing bitstream-crypto-v1 must use a different FPGA.
 
-This KEP introduces a `sharingAffinity` field on the `ResourceSlice`
-spec that allows drivers to declare, via CEL expressions, how to extract
+This KEP introduces a `sharingAffinity` field on `ResourceSlice.spec`
+that allows drivers to declare, via CEL expressions, how to extract
 the affinity keys that constrain sharing from the driver's existing
-opaque device configuration. On the claim side, there is no API change —
-workloads continue to author their driver's opaque config exactly as
-they do today. When the scheduler is evaluating a candidate device in
-a slice that declares `sharingAffinity`, it runs each of that
-slice's published CEL extractors against the opaque-config objects
-that are in scope for the request currently being filtered (per
-`DeviceClaimConfiguration.Requests`), collects the non-empty
-key/value pairs returned, and records them in `AllocatedState`
+opaque device configuration. `sharingAffinity` is published as
+**pool-level metadata** in a dedicated slice within the pool — a
+slice that carries `sharingAffinity` does not carry `devices`, and
+vice versa — mirroring the established `sharedCounters` (KEP-4815)
+pattern. This gives one source of truth per pool for how to
+interpret the driver's opaque-config schema, even when the pool is
+chunked across many ResourceSlices.
+
+On the claim side, there is no API change — workloads continue to
+author their driver's opaque config exactly as they do today. When
+the scheduler is evaluating a candidate device, it looks up the
+pool's metadata slice, runs each published CEL extractor whose
+selector matches the candidate device (or that has no selector)
+against the opaque-config objects in scope for the request
+currently being filtered (per `DeviceClaimConfiguration.Requests`),
+and — if every applicable group is fully satisfied —
+records the resulting key/value pairs in `AllocatedState`
 alongside consumed capacity. This enables the scheduler to gate remaining capacity
 on locked devices and safely reuse them for compatible claims when
 selected by the existing allocator. Alpha provides correctness only —
@@ -214,20 +223,38 @@ Without this KEP, drivers must use a "placeholder pattern" today:
 ## Proposal
 
 Add a `sharingAffinity` field to `ResourceSlice.spec` that publishes
-a list of driver-defined CEL extractors. Each extractor's CEL
-expressions are evaluated by the scheduler against every opaque
-config object in a claim; expressions return either a string value
-(the affinity key for that object) or the empty string `""` (meaning
-"this extractor does not apply to this object"). The non-empty
-returns across all (extractor × opaque-config) pairs form the
-claim's effective affinity key map.
+a list of driver-defined CEL extractors. Each list entry is an
+**applicability group**: an all-or-nothing bundle of CEL expressions
+that together describe one schema variant the driver supports. The
+scheduler evaluates an extractor's CEL expressions against every
+opaque-config object the claim carries; each expression returns
+either a string value (the affinity key for that object) or the
+empty string `""` (meaning "this extractor does not apply to this
+object"). A claim satisfies an applicability group when every key
+in that group's `cel` map returns a non-empty value across the
+claim's opaque configs. The non-empty returns from a
+fully-satisfied group form the claim's effective affinity key map.
+
+`sharingAffinity` is published in a dedicated **metadata slice**
+that is mutually exclusive with `devices`. Device-bearing slices in the
+same pool reference back to the metadata slice via the standard
+pool tuple `(driver, pool.name, pool.generation, nodeName)`. This
+keeps the driver-schema declaration in one place per pool even when
+the pool is chunked across many slices.
 
 ```yaml
+# Metadata slice: carries sharingAffinity, no devices.
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
+metadata:
+  name: networking-node-a-meta
 spec:
   driver: networking.example.com
   nodeName: node-a
+  pool:
+    name: node-a
+    generation: 7
+    resourceSliceCount: 2
   sharingAffinity:
     - cel:
         subnet: |
@@ -238,6 +265,21 @@ spec:
           object.apiVersion == "networking.example.com/v1"
             && object.kind == "NICConfig"
             ? object.ibPKey : ""
+---
+# Device slice: carries devices, no sharingAffinity. Joined to the
+# metadata slice by the (driver, pool.name, generation, nodeName)
+# tuple.
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: networking-node-a-0
+spec:
+  driver: networking.example.com
+  nodeName: node-a
+  pool:
+    name: node-a
+    generation: 7
+    resourceSliceCount: 2
   devices:
     - name: eth1
       allowMultipleAllocations: true
@@ -273,6 +315,56 @@ sharingAffinity:
           ? object.subnetID : ""
 ```
 
+A heterogeneous pool can publish per-kind extractors so each
+device kind binds to its own keys, and can additionally publish a
+no-selector "default" extractor for keys every device in the pool
+shares. Multiple applicable extractors for a candidate device are
+all evaluated and Strict Gating requires every one to be fully
+satisfied (see [Targeting extractors at specific device
+kinds](#targeting-extractors-at-specific-device-kinds)):
+
+```yaml
+sharingAffinity:
+  # Applies to every device in the pool (no selector). Common
+  # affinity dimension shared by NICs and VFs alike.
+  - cel:
+      vendor: |
+        object.apiVersion == "networking.example.com/v1"
+          && has(object.vendor)
+          ? object.vendor : ""
+  # Applies only to NIC devices. Subnet and partition key (pkey)
+  # are the NIC-specific affinity dimensions.
+  - selector:
+      cel:
+        expression: 'device.attributes["type"].string == "nic"'
+    cel:
+      subnet: |
+        object.apiVersion == "networking.example.com/v1"
+          && object.kind == "NICConfig"
+          ? object.subnetID : ""
+      pkey: |
+        object.apiVersion == "networking.example.com/v1"
+          && object.kind == "NICConfig"
+          ? object.ibPKey : ""
+  # Applies only to VF devices. Parent-NIC UUID is the VF-specific
+  # affinity dimension.
+  - selector:
+      cel:
+        expression: 'device.attributes["type"].string == "vf"'
+    cel:
+      parentNIC: |
+        object.apiVersion == "networking.example.com/v1"
+          && object.kind == "VFConfig"
+          ? object.parentNICUUID : ""
+```
+
+For a candidate NIC device, the *common* and *NIC* extractors are
+both applicable, so the claim's opaque configs must produce
+non-empty `vendor`, `subnet`, *and* `pkey`. The merged effective
+affinity map is `{vendor, subnet, pkey}`. For a VF device, the
+applicable set is *common + VF* and the merged map is
+`{vendor, parentNIC}`.
+
 A claim continues to author the driver's opaque config exactly as it
 does today — no new claim-side API field is introduced:
 
@@ -284,6 +376,7 @@ config:
       parameters:
         apiVersion: networking.example.com/v1
         kind: NICConfig
+        vendor: acme
         subnetID: subnet-A
         ibPKey: "0x8001"
         qos: gold       # driver-private; not extracted, not seen by scheduler
@@ -292,18 +385,22 @@ config:
 ```
 
 When the scheduler evaluates a multi-allocatable device backed by a
-slice that declares `sharingAffinity`:
+pool that declares `sharingAffinity`:
 
-1. **First claim**: When evaluating a candidate device in this slice,
-   the scheduler runs every `sharingAffinity` entry's
-   CEL expressions against every opaque config object that is in scope
-   for the request currently being filtered (per
-   `DeviceClaimConfiguration.Requests`). For each (extractor, opaque-config)
-   pair and each CEL
-   key, a non-empty string return contributes that key/value to the
-   claim's effective affinity map; an empty-string return contributes
-   nothing for that key from that object. The merged non-empty map
-   is recorded in `AllocatedState` alongside consumed capacity.
+1. **First claim**: When evaluating a candidate device in this pool,
+   the scheduler looks up the pool's metadata slice and, for each
+   `sharingAffinity` entry whose `selector` matches the candidate
+   device (or has no selector), runs the entry's CEL expressions
+   against every opaque config object that is in scope for the
+   request currently being filtered (per
+   `DeviceClaimConfiguration.Requests`). For each such applicable
+   group, if every CEL key in that group's `cel` map
+   produces a non-empty return across the claim's opaque configs,
+   the group is *satisfied*. The claim is eligible for the device
+   only if **every** applicable group is satisfied; the union of
+   their key/value contributions is the claim's effective affinity
+   map and is recorded in `AllocatedState` alongside consumed
+   capacity.
 2. **Subsequent claims**: The scheduler runs the same extraction for
    each new claim and compares the merged key set to
    `AllocatedState`'s `LockedAffinity`.
@@ -321,14 +418,21 @@ fields.
 
 **Alpha Design Decisions**
 
-**1. Placement of extraction: ResourceSlice (driver-side, slice-level)**
+**1. Placement of extraction: ResourceSlice (driver-side, pool-level metadata slice)**
 
-`sharingAffinity` lives on `ResourceSlice.spec`, not on individual
-`Device` entries and not on the claim. The driver is the natural owner:
-the extraction logic describes the driver's own opaque config schema,
-which is uniform across all devices published in a slice and evolves
-with driver versions, not with hardware instances. Slice-level
-placement also avoids per-device duplication. Per-device overrides
+`sharingAffinity` lives on `ResourceSlice.spec` and is **mutually
+exclusive with `devices`**. A pool publishes one metadata slice that carries
+`sharingAffinity` and zero devices; the pool's device-bearing slices
+carry devices and no `sharingAffinity`.
+
+The driver is the natural owner: the extraction logic describes the
+driver's own opaque config schema, which is uniform across all
+devices the driver publishes in this pool and evolves with driver
+versions, not with hardware instances. Pool-level placement avoids
+per-slice duplication, removes the drift risk of having to keep the
+extractor block in sync across many slices when a pool is chunked,
+and aligns the declaration site with what is being declared (a
+driver-schema property, not a device property). Per-device overrides
 can be added later if a driver ever needs them.
 
 **2. How affinity values reach the scheduler: CEL on opaque config**
@@ -342,22 +446,20 @@ schema(s) it applies to (typically by inspecting `object.apiVersion`
 ```go
 // SharingAffinityExtractor declares CEL expressions that produce
 // sharing-affinity key/value pairs from a driver's opaque device
-// config.
+// config. Each entry in a pool's `sharingAffinity` list is an
+// applicability group. See Design Details → API Enhancement for
+// the canonical godoc.
 //
 // +featureGate=DRASharingAffinity
 type SharingAffinityExtractor struct {
-    // CEL is a map from affinity key name to a CEL expression.
-    // Inside the expression, the variable `object` refers to the
-    // parsed opaque-config object. The expression must return a
-    // string. An empty-string return means "no contribution for
-    // this key from this object" — the idiom an extractor uses to
-    // ignore opaque-config objects whose apiVersion / kind it does
-    // not handle.
-    //
-    // The maximum number of CEL entries per extractor is 8.
-    //
-    // +required
-    // +k8s:maxProperties=8
+    // Optional; restricts this extractor to devices whose attributes
+    // satisfy the CEL expression. Omitted = applies to every device
+    // in the pool.
+    Selector *DeviceSelector
+
+    // Map from affinity key name to a CEL expression over the
+    // claim's opaque-config object. Empty-string return = no
+    // contribution. Max 8 entries.
     CEL map[string]string
 }
 ```
@@ -389,41 +491,56 @@ the claim. For each (extractor, opaque-config, key) triple:
   extractor does not handle this opaque-config schema." Empty returns
   are not errors.
 
-After evaluating every extractor against every opaque-config object,
-the scheduler unions the non-empty contributions into the claim's
-effective affinity map. The device is eligible only if that map
-covers **every key the slice declares** (Strict Gating — the union
-of keys across all the slice's extractors) and is self-consistent
-(no key appears with two different non-empty values).
+After evaluating each applicable extractor (its selector matches
+the candidate device, or no selector is set) against every
+opaque-config object, the scheduler checks whether the group of
+each such extractor is *satisfied* — every key in its `cel` map
+produces a non-empty return across the claim's opaque configs.
+The device is eligible only if **every** applicable group is fully
+satisfied (Strict Gating — per-group, all-or-nothing, applied
+across all applicable groups).
 
 **Extraction failure modes**
 
 The scheduler's contract for a sharing-affinity device on a candidate
 claim is:
 
-1. **Missing key(s) — Strict Gating**: the union of non-empty
-    contributions does not cover every key the slice declares (the
-    extreme case is "no keys produced at all"; a partial case is
-    "produced `subnet` but not `pkey`"). The claim is **filtered
-    out** for any device in such a slice. This is the safe default
-    — the driver declared that sharing requires scheduler-readable
-    extraction across every declared dimension, and a claim that
-    leaves any dimension unset cannot participate. The claim
-    remains eligible for devices in slices that do not declare
+1. **Some applicable group not satisfied — Strict Gating**: at
+    least one applicable entry in the pool's `sharingAffinity` list
+    (its `selector` matches the candidate device, or it has no
+    selector) does not have all of its declared keys produced as
+    non-empty by the claim's opaque configs (the extreme case is
+    "no keys produced at all"; a partial case is a NIC schema group
+    that produced `subnet` but not `pkey`). The claim is filtered
+    out for any device in such a pool. This is the safe default —
+    the driver declared that sharing requires scheduler-readable
+    extraction across every applicable schema variant, and a claim
+    that fully matches none of them cannot participate. The claim
+    remains eligible for devices in pools that do not declare
     `sharingAffinity`.
 2. **Inconsistent extraction within one claim**: two (extractor,
     opaque-config) pairs produce the same key with different non-empty
     values. The claim is rejected for that device (Event emitted;
     treated the same as a self-inconsistent claim).
-3. **CEL evaluation error or non-string return**: the device is
+3. **Key collision across applicable extractors** (ResourceSlice
+    author error): two or more applicable extractors declare the
+    same key name in their `cel` maps for the candidate device.
+    The lock state would be ambiguous about which group's value to
+    store. The device is filtered out for that request, an Event
+    is emitted on the pod, and the slice's author is expected to
+    deduplicate keys or tighten selectors so that each candidate
+    device sees at most one extractor per key name. See
+    [Targeting extractors at specific device kinds](#targeting-extractors-at-specific-device-kinds)
+    for admission-time and runtime enforcement.
+4. **CEL evaluation error or non-string return**: the device is
    filtered out for that claim, an Event is emitted on the pod, and
    the scheduler does **not** silently lock the device to an empty
    key set.
-4. **Cost-budget exhaustion**: same as evaluation error.
-5. **Missing field on the parsed object**: a CEL expression
+5. **Cost-budget exhaustion**: same as evaluation error.
+6. **Missing field on the parsed object**: a CEL expression
    dereferences a field absent from `object` (e.g., `object.subnet`
    on an object with no `subnet`), raising a CEL runtime error.
-   Sub-case of case 3 (filter + Event). This may indicate:
+   Sub-case of case 4 (filter + Event). This may indicate:
    - the claim carries an opaque-config object the extractor was
      not meant to inspect (unrelated driver-tuning config, or a
      config for a different driver kind in the same claim);
@@ -536,15 +653,12 @@ expression on the slice that extracts the subnet from its opaque config
 - **Affinity is set by the first compatible claim on a clean device**: Once a
   device is allocated with an affinity value, that value is locked until all
   claims release the device.
-- **Extractors and keys**: The slice's `sharingAffinity` lists one or
-  more extractors, each declaring CEL expressions for one or more
-  keys. An extractor's CEL is evaluated against every opaque-config
-  object the claim carries; a non-empty string return contributes a
-  `key → value` to the claim's effective affinity map, an empty
-  string contributes nothing. Under Strict Gating, the claim must
-  produce a non-empty value for **every key the slice declares**
-  (the union of keys across all the slice's extractors); a single
-  missing key filters the device out for that claim.
+- **Extractors and applicability groups**: The pool's
+  `sharingAffinity` lists one or more extractors; each entry is an
+  applicability group. Evaluation semantics (Strict Gating, per-group
+  all-or-nothing, selector-based per-device dispatch) are detailed in
+  [Filter Phase and Device Selection](#filter-phase-and-device-selection)
+  and [Targeting extractors at specific device kinds](#targeting-extractors-at-specific-device-kinds).
 - **Driver-private keys are invisible to the scheduler**: Keys not present
   in the slice's `cel` map (e.g., qos, mtu, vlan) are not extracted and do
   not participate in lock evaluation. They flow through opaquely to the
@@ -646,16 +760,18 @@ extraction change as part of a node reimage).
 
 To clarify the interaction between claims and devices, the following matrix
 outlines how the scheduler and driver evaluate candidates based on whether
-the slice declares `sharingAffinity` (**AE**) and whether the claim
-yields a non-empty extracted value for **every** key the slice declares
-(**KE** — keys extracted; under Strict Gating this is all-or-nothing):
+the device's pool declares a `sharingAffinity` Affinity Extractor list
+(**AE**) and whether the claim
+fully satisfies an applicability group in that pool's
+`sharingAffinity` list (**GS** — group satisfied; under Strict Gating this
+is per-group, all-or-nothing):
 
-| Scenario | Slice AE | Claim KE | Scheduler Outcome | Driver Outcome |
+| Scenario | Pool AE | Claim GS | Scheduler Outcome | Driver Outcome |
 |---|---|---|---|---|
 | **Standard Feature Use** | Yes | Yes | **Match enforced.** Extracted values match lock + capacity available → scheduled. | **Validates** hardware mode matches claim config at `NodePrepareResources`. Rejects if stale or inconsistent. |
-| **Strict Gating** | Yes | No | **Filtered out.** Device excluded — claim's opaque configs did not produce a non-empty value for at least one key the slice declares (anything from "no keys at all" to "some keys missing"). | **N/A** — claim never reaches the driver for this device. |
+| **Strict Gating** | Yes | No | **Filtered out.** Device excluded — at least one applicable group for this candidate device was not fully satisfied by the claim's opaque configs (anything from "no keys at all" to "an applicable group had at least one key missing"). | **N/A** — claim never reaches the driver for this device. |
 | **Legacy Device Transition** | Yes (newly added) | Yes | **Filtered out** while legacy claims are active (`Status: Unreconstructable`). Allowed once device drains clean. | **Validates** as normal once claim reaches the driver. During transition, driver continues serving legacy claims. |
-| **Permissive Sharing** | No | Yes | **Allowed.** Slice has no `sharingAffinity`; opaque config is not evaluated for affinity. Standard capacity matching applies. | **Must enforce** hardware compatibility independently. Scheduler provides no affinity gating for this device. |
+| **Permissive Sharing** | No | Yes | **Allowed.** Pool has no `sharingAffinity`; opaque config is not evaluated for affinity. Standard capacity matching applies. | **Must enforce** hardware compatibility independently. Scheduler provides no affinity gating for this device. |
 | **Legacy/Basic** | No | No | **Allowed.** Standard DRA capacity and attribute matching. | **Must enforce** hardware compatibility independently. This is the pre-KEP-5981 behavior. |
 
 The top rows show the scheduler as the primary enforcer with the driver as
@@ -744,13 +860,9 @@ reads, so alpha is the infrastructure step, not a dead end.
 type ResourceSliceSpec struct {
     // ... existing fields (Driver, NodeName, Pool, Devices, etc.) ...
 
-    // SharingAffinity declares how the scheduler should pull
-    // sharing-affinity keys out of opaque device configs carried by
-    // claims targeting devices in this slice. If empty or absent,
-    // devices in this slice participate in unconstrained sharing
-    // (the default DRA behavior).
-    //
-    // The maximum number of entries is 8.
+    // SharingAffinity declares per-pool affinity extractors. Mutually
+    // exclusive with Devices in a single ResourceSlice. See
+    // SharingAffinityExtractor for semantics.
     //
     // +optional
     // +listType=atomic
@@ -761,19 +873,29 @@ type ResourceSliceSpec struct {
 
 // SharingAffinityExtractor declares CEL expressions that produce
 // sharing-affinity key/value pairs from a driver's opaque device
-// config.
+// config. Each extractor entry in a pool's `sharingAffinity` list is
+// an applicability group — an all-or-nothing bundle describing one
+// schema variant the driver supports.
 //
 // +featureGate=DRASharingAffinity
 type SharingAffinityExtractor struct {
+    // Selector, if set, restricts this extractor to devices in the
+    // pool whose attributes satisfy the CEL expression. The same
+    // DeviceSelector type used by DeviceRequest.selectors is reused
+    // here, so the `device` binding inside the CEL expression refers
+    // to the candidate device's attributes. If omitted, the extractor
+    // applies to every device in the pool (implicit dispatch).
+    //
+    // +optional
+    Selector *DeviceSelector
+
     // CEL is a map from affinity key name to a CEL expression.
     // Inside the expression, the variable `object` refers to the
     // parsed opaque-config object. The expression must return a
-    // string. An empty-string return means "no contribution for
-    // this key from this object" — the idiom an extractor uses to
-    // ignore opaque-config objects whose apiVersion / kind it does
-    // not handle.
-    //
-    // The maximum number of CEL entries per extractor is 8.
+    // string. An empty-string return means "no contribution for this
+    // key from this object" — the idiom an extractor uses to ignore
+    // opaque-config objects whose apiVersion / kind it does not
+    // handle.
     //
     // +required
     // +k8s:maxProperties=8
@@ -902,35 +1024,46 @@ type AllocatedState struct {
 ##### Filter Phase and Device Selection
 
 **Filter phase**: For a given node, the scheduler evaluates each device.
-A device whose parent slice declares `sharingAffinity` is a candidate
-ONLY if:
+A device whose pool declares `sharingAffinity` (looked up via the
+pool's metadata slice) is a candidate ONLY if:
 
 1. It has sufficient consumable capacity (KEP-5075).
 2. The device's `AffinityStates[deviceID].Status` is not
    `AffinityStatusUnreconstructable`.
-3. For each (extractor, opaque-config-object) pair where the opaque
-   config is in scope for this request (per-request scoping via
-   `DeviceClaimConfiguration.Requests`), every CEL expression in the
-   extractor's `cel` map evaluates successfully and returns a string
-   value. CEL evaluation errors, non-string returns, missing fields,
-   or cost-budget exhaustion cause the device to be filtered out for
-   that claim and an Event to be emitted.
-4. Across all (extractor, opaque-config) pairs and all CEL keys, the
-   non-empty returns are unioned into the claim's effective affinity
-   map. The map must cover **every key the slice declares** (Strict
-   Gating); a missing key for any declared name filters the device.
-   Two pairs producing the same key with different non-empty values
-   is treated as a self-inconsistent claim and the device is
-   filtered out.
+3. For each extractor in the pool's `sharingAffinity` list whose
+   selector (if set) matches the candidate device's attributes
+   (extractors without a selector are considered applicable to every
+   device in the pool), the scheduler evaluates the extractor's CEL
+   expressions against every opaque-config object in scope for this
+   request (per-request scoping via
+   `DeviceClaimConfiguration.Requests`). Every CEL expression in the
+   extractor's `cel` map must evaluate successfully and return a
+   string value. CEL evaluation errors, non-string returns, missing
+   fields, or cost-budget exhaustion cause the device to be filtered
+   out for that claim and an Event to be emitted. Extractors whose
+   selector does not match the candidate device are skipped — their
+   `cel` map is not evaluated against this device.
+4. Every applicable extractor's group is fully
+   satisfied — every key in each such group's `cel` map produces a
+   non-empty return across the claim's opaque configs (Strict
+   Gating, per-group, all-or-nothing, applied across all applicable
+   groups). The contributions from satisfied groups are merged into
+   the claim's effective affinity map. Two contributions producing
+   the same key with different non-empty values are treated as a
+   self-inconsistent claim and the device is filtered out. Two
+   applicable extractors declaring the same key name are treated
+   as a ResourceSlice author error (key collision); the device is
+   filtered out for that request and an Event is emitted so the
+   driver can republish the slice with deduplicated keys or
+   tightened selectors.
 5. The device's `AffinityStates[deviceID].LockedAffinity` is either
    empty (unlocked) OR matches the claim's effective affinity map
    exactly for ALL extracted keys.
 
-If a device has `AffinityStates[deviceID].Status == AffinityStatusUnreconstructable`, or if the
-effective affinity map does not cover every key the slice declares
-(missing or empty for any declared name), or extraction fails (any
-reason in #3), the device is filtered out for sharing-affinity
-scheduling. This is the safe default: the
+If a device has `AffinityStates[deviceID].Status == AffinityStatusUnreconstructable`, or if no
+applicability group is fully satisfied by the claim, or extraction
+fails (any reason in #3), the device is filtered out for
+sharing-affinity scheduling. This is the safe default: the
 driver declared that sharing requires scheduler-readable extraction,
 and a scheduler that cannot reconstruct the current or requested
 affinity state cannot evaluate placement safely. Claims that do not
@@ -948,6 +1081,56 @@ Affinity-aware preference (within a node) and node-level scoring (across
 nodes) are planned for beta — see [Affinity-aware scoring (planned for
 Beta)](#affinity-aware-scoring-planned-for-beta).
 
+##### Targeting extractors at specific device kinds
+
+When a pool publishes structurally different device kinds (for
+example, a networking driver that publishes both NICs and
+sub-functions/VFs), the extractor's optional `Selector` field
+(`DeviceSelector`, the same type used by `DeviceRequest.selectors`)
+restricts an extractor to candidate devices whose attributes
+satisfy the CEL expression. Drivers reuse existing device
+attributes (`type`, `family`, `vendor`, etc.) for dispatch — no
+extra group-name pointer is required on the device side.
+
+If an extractor's `selector` is omitted, the extractor applies to
+every device in the pool. Homogeneous pools (one device kind) leave
+`selector` empty and the behavior is identical to the
+implicit-dispatch model. Heterogeneous pools set a selector per
+extractor; for a given candidate device, only the extractors whose
+selector matches participate in Filter step 3/4 evaluation,
+bounding work to the relevant groups. Multiple applicable
+extractors are allowed (for example, a no-selector "common"
+extractor plus one or more device-kind-specific extractors); see
+the key-collision rule below.
+
+Key collisions across applicable extractors are treated as a
+ResourceSlice author error. Within the set of extractors
+applicable to any single candidate device, key names must be
+unique — otherwise the lock state on that device would be
+ambiguous about which extractor's value to store. Two enforcement
+layers catch this:
+
+- **Admission-time (best-effort)**: API server validation rejects
+  the slice when two extractors share textually-identical (or
+  normalized-equivalent) selectors and overlap on at least one key
+  name, including the case of two entries that both omit
+  `selector`. This catches the common authoring mistake of
+  duplicating a block and forgetting to rename keys.
+- **Runtime (authoritative)**: during Filter, the scheduler counts
+  key contributions from applicable extractors for the candidate
+  device. If the same key name is produced by more than one
+  applicable extractor, the device is treated as non-viable for
+  the request, an Event is emitted on the pod, and the claim stays
+  Pending — the driver may republish the slice with deduplicated
+  keys or tightened selectors to fix.
+
+This permits a common factoring pattern: a no-selector "default"
+extractor for keys every device in the pool shares, plus per-kind
+extractors keyed off `device.attributes["type"]` for kind-specific
+keys. It also permits two selectored extractors to reuse a key
+name (e.g., both NIC and VF extractors declaring `subnet`) as long
+as no candidate device matches both selectors. See the worked
+example in [Proposal](#proposal) for the factored pattern in YAML.
 
 ##### Reserve Phase: Tentative Locking
 
@@ -978,11 +1161,10 @@ be rebuilt from already-cached state (bound `ResourceClaim`s and their
 `ResourceSlice`s) before the first scheduling cycle. The behavior
 contract is:
 
-- **Recovery**: for each bound claim on a device whose slice declares
-  `sharingAffinity`, the scheduler re-derives the claim's key map and
-  records it as the device's `LockedAffinity`. Because CEL is sandboxed
-  and side-effect-free, re-extraction is deterministic and idempotent —
-  no new API calls are required.
+- **Recovery**: for each bound claim on a device whose pool declares
+  `sharingAffinity` (looked up via the pool's metadata slice), the
+  scheduler re-derives the claim's key map and records it as the
+  device's `LockedAffinity`. No new API calls are required.
 - **Conservative fallback on ambiguity**: if extraction fails, yields no
   keys, or yields inconsistent values across claims sharing the device
   (which by construction should not happen, but may arise from historical
@@ -1213,9 +1395,10 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   - Compatibility matrix: device in a slice without `sharingAffinity`
     is unaffected — claims with or without matching opaque configs both
     pass (Legacy/Basic and Permissive Sharing rows)
-  - Strict Gating: device's slice has `sharingAffinity` but the
-    claim's opaque configs fail to produce a non-empty value for at
-    least one key the slice declares → device filtered out
+  - Strict Gating: device's pool has `sharingAffinity` but at
+    least one applicable group is not fully satisfied by the
+    claim's opaque configs (at least one of its keys returns
+    empty) → device filtered out
   - Multi-request scoping: claim with two requests (`mgmt-nic` and
     `data-nic`) each with distinct opaque configs → each request resolves
     independently; one request's extracted values do not influence the
@@ -1226,7 +1409,17 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   - Validation: per-entry `cel` map exceeding max 8 keys is rejected
   - Validation: CEL expressions are syntactically valid at admission
     (parse-check only; runtime cost is bounded per-eval at the scheduler)
+  - Validation: a single `ResourceSlice` with both `devices` and
+    `sharingAffinity` set is rejected (mutual exclusion)
+  - Validation: two `sharingAffinity` entries with textually-identical
+    (or normalized-equivalent) selectors that overlap on at least one
+    CEL key name are rejected at admission (best-effort key-collision
+    check); the case where both entries omit `selector` is included
+  - Validation: per-entry `selector.cel.expression` is syntactically
+    valid at admission (parse-check only); the same `DeviceSelector`
+    validation path used by `DeviceRequest.selectors` is reused
   - Round-trip serialization of `SharingAffinityExtractor`
+    (including the optional `Selector` field)
 
 ##### Integration tests
 
@@ -1267,9 +1460,57 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
   config — verify each affected device has
   `AffinityStates[deviceID].Status == AffinityStatusUnreconstructable` and the 6th Pod is filtered from
   those devices until all legacy claims drain
-- Partial Key: Slice declares both `subnet` and `pkey` CEL extractions;
-  claim's opaque config has `subnetID` but no `ibPKey` — verify the
-  device is filtered out (CEL eval for `pkey` errors)
+- Partial Key (heterogeneous group): Pool declares two applicability
+  groups — a NIC group with `subnet` + `pkey`, and a VF group with
+  `parentNIC`. Claim's opaque config has `subnetID` (so `subnet`
+  resolves) but no `ibPKey` (so the NIC group is not fully
+  satisfied), and is not a VFConfig (so the VF group is not
+  satisfied either) — verify the device is filtered out (some
+  applicable group not satisfied)
+- Heterogeneous Pool Match: Same pool as above. Claim is a `NICConfig`
+  with both `subnetID` and `ibPKey` set — verify the NIC group is
+  satisfied and a NIC device in the pool is eligible. A second claim
+  with `VFConfig` and `parentNICUUID` set — verify the VF group is
+  satisfied and a VF device in the pool is eligible. Neither claim
+  interferes with the other's lock state.
+- Selector-Scoped Dispatch (heterogeneous pool): Pool declares a NIC
+  extractor with `selector: device.attributes["type"].string == "nic"`
+  and a VF extractor with `selector: device.attributes["type"].string == "vf"`.
+  A `NICConfig` claim is evaluated against a VF device — the NIC
+  extractor's selector does not match the VF device, so its CEL is
+  not evaluated; the VF extractor's CEL returns empty for a
+  `NICConfig`; no applicable group is satisfied; verify the
+  device is filtered out. Conversely, the same `NICConfig` claim
+  against a NIC device satisfies the NIC group and the device is
+  eligible. Confirms per-extractor selector gating prevents
+  wrong-group lock pollution and bounds CEL work to applicable
+  extractors only.
+- Factored Extractors (no-selector + per-kind): Pool declares a
+  no-selector "common" extractor with key `vendor`, a NIC
+  extractor (`type == "nic"`) with key `subnet`, and a VF
+  extractor (`type == "vf"`) with key `parentNIC`. A `NICConfig`
+  claim providing `vendor` and `subnetID` makes both applicable
+  groups (common + NIC) satisfied on a NIC device — verify the
+  device is eligible and the merged effective affinity map is
+  `{vendor, subnet}`. The same claim missing `vendor` fails the
+  common group — verify the device is filtered out (some
+  applicable group not satisfied).
+- Key Collision Across Applicable Extractors (slice-author error):
+  Pool declares a no-selector extractor with key `subnet` and a
+  NIC extractor (`type == "nic"`) also with key `subnet`. A claim
+  evaluated against a NIC device makes both applicable. Verify the
+  scheduler treats the device as non-viable for the request,
+  emits an Event on the pod, and the claim stays Pending. After
+  the driver republishes the slice with the colliding key renamed
+  (e.g., the no-selector extractor's `subnet` becomes
+  `commonSubnet`), the next scheduling cycle succeeds.
+- Shared Key Across Disjoint Selectors (allowed): Pool declares a
+  NIC extractor (`type == "nic"`) and a VF extractor
+  (`type == "vf"`), both with key `subnet`. A NIC claim sees only
+  the NIC extractor as applicable on a NIC device — verify the
+  device is eligible and no collision is reported. The VF
+  extractor's `subnet` does not collide because it never applies
+  to the same device.
 - First-Fit Behavior: Two devices available on a node, one already locked
   to subnet-X, one clean; new claim whose extraction yields subnet-X —
   verify the claim is allocated successfully (Filter excludes nothing;
@@ -1735,8 +1976,10 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-- ResourceSlice: Small increase per slice with `sharingAffinity` —
-  up to 8 extractors, each with up to 8 CEL expressions
+- ResourceSlice: One additional metadata slice per pool that uses
+  this feature (carrying `sharingAffinity` and zero devices); the
+  metadata slice holds up to 8 extractors, each with up to 8 CEL
+  expressions. Device-bearing slices are unchanged.
 - ResourceClaim: **No change.** The claim side carries no new fields.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -1882,12 +2125,15 @@ Recommended debugging flow:
 - Fragmentation risk remains if affinity values are too fine-grained
 - Conservative handling of legacy in-use devices can temporarily strand
   schedulable capacity during rollout or migration
-- If a slice declares `sharingAffinity` but a claim's opaque configs
-  do not produce a non-empty value for every key the slice declares,
-  devices in that slice are filtered out for that claim by the
-  "Strict Gating" rule. Drivers should coordinate with workload
-  teams to ensure claims carry compatible opaque configs covering
-  every declared key before enabling `sharingAffinity` on slices.
+- If a pool declares `sharingAffinity` but a claim's opaque configs
+  do not fully satisfy every applicable group for a
+  given candidate device (every key in those groups' `cel` maps
+  non-empty), that device is filtered out for that claim by the
+  "Strict Gating" rule; if no device in the pool has all applicable
+  groups satisfied by the claim, the entire pool is filtered out.
+  Drivers should coordinate with workload teams to ensure claims
+  carry compatible opaque configs matching a published group before
+  enabling `sharingAffinity` on the pool.
 - Per-evaluation CEL cost is bounded but non-zero; under pathological
   CEL expressions a slice could elevate per-candidate Filter cost. The
   per-eval cost budget and admission-time parse check are the primary
@@ -2136,8 +2382,8 @@ tracking via CEL-extracted parameters.
 
 ### Soft / Preferred Affinity Keys
 
-The Alpha design enforces hard all-or-nothing matching: every key
-returned by the slice's `sharingAffinity` extractors must
+The Alpha design enforces hard all-or-nothing matching at the
+applicability-group level: every key in the satisfied group must
 agree with the device's current lock, or the device is filtered out.
 Real-world hardware may have hierarchical constraints where some keys
 are strict sharing requirements (e.g., Subnet) and others are
