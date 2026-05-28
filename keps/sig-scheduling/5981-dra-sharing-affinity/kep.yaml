@@ -38,7 +38,6 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-scheduler
-      - kubelet
 disable-supported: true
 
 # Metrics required for beta release; can be placeholders for now.

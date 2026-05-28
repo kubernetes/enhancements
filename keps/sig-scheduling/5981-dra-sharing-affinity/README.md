@@ -13,6 +13,7 @@
     - [Story 2: FPGA Bitstream Sharing](#story-2-fpga-bitstream-sharing)
     - [Story 3: Single-subnet NIC Sharing](#story-3-single-subnet-nic-sharing)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [Composition with DRA Preemption (KEP-5690)](#composition-with-dra-preemption-kep-5690)
     - [Handling Legacy Claims with Unreconstructable Affinity](#handling-legacy-claims-with-unreconstructable-affinity)
     - [Compatibility Matrix](#compatibility-matrix)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -120,8 +121,7 @@ selected by the existing allocator. Alpha provides correctness only —
 affinity-aware preference (packing) is delivered in beta; see
 [Goals](#goals).
 
-Alpha intentionally does not provide lock-breaking
-preemption. In addition, if a device already has active allocations whose
+In addition, if a device already has active allocations whose
 affinity cannot be reconstructed (for example, legacy claims created before the
 feature was enabled), the scheduler treats that device conservatively and does
 not place new `sharingAffinity` allocations on it until the device becomes
@@ -195,13 +195,21 @@ Without this KEP, drivers must use a "placeholder pattern" today:
 - Managing the physical lifecycle of the device configuration (this remains
   the driver's responsibility)
 - Changing how capacity is tracked (that's KEP-5075)
-- Supporting affinity across different device types or pools
+- Supporting affinity across multiple devices. The lock is scoped to a
+  single `Device` object in `ResourceSlice.spec.devices[]` — affinity is
+  never shared across separate `Device` objects, even ones of the same
+  type within the same pool, and certainly not across device types or
+  pools.
 - Retrofitting affinity-aware sharing onto already-in-use devices when active
   claims do not expose reconstructable affinity values. In alpha, such devices
   are treated conservatively until they drain clean.
-- Guaranteeing **lock-breaking preemption** in alpha.
-  Alpha enforces compatibility, but does not guarantee packing or
-  lock-breaking preemption — both are planned for beta.
+- Guaranteeing **lock-breaking preemption**. This KEP does not
+  introduce any preemption logic. Baseline DRA preemption is being
+  introduced separately by
+  [KEP-5690](https://github.com/kubernetes/enhancements/issues/5690);
+  this KEP is designed to compose transparently with it (see
+  [Composition with DRA Preemption (KEP-5690)](#composition-with-dra-preemption-kep-5690))
+  but does not depend on or deliver it.
 
 ## Proposal
 
@@ -445,19 +453,20 @@ and correct lock enforcement on already-locked devices — but
 intentionally stops short of affinity-aware scoring (planned as a
 beta-scope contribution to `DynamicResources.computeScore`, see
 [Affinity-aware scoring (planned for
-Beta)](#affinity-aware-scoring-planned-for-beta)) and of lock-breaking
-preemption semantics.
+Beta)](#affinity-aware-scoring-planned-for-beta)).
 
 **Alpha limitations**
 
-Alpha provides correct lock enforcement, but it does
-not provide lock-breaking preemption. A lower-priority
-Pod may continue holding a device lock even when the device still has nominal
-capacity and a higher-priority Pod needs the same device with a different
-affinity value. In that case the higher-priority Pod may remain unschedulable
-until a compatible alternative appears or the lock-holder exits. This is an
-expected alpha limitation, not a correctness bug, and is addressed later under
-[Future Enhancements: Priority-based Lock Preemption](#priority-based-lock-preemption).
+Alpha enforces lock compatibility but does not preempt incompatible
+lock-holders. A higher-priority Pod requiring a different affinity
+value than the current lock will remain unschedulable on that device
+until the lock-holder exits or a compatible alternative appears. This
+is consistent with baseline DRA, which has no preemption support in
+the absence of
+[KEP-5690](https://github.com/kubernetes/enhancements/issues/5690).
+See [Composition with DRA Preemption (KEP-5690)](#composition-with-dra-preemption-kep-5690)
+for how this KEP is structured to benefit transparently when KEP-5690
+is present.
 
 Alpha also restricts CEL return values to `string`. List-valued
 return types (a claim accepting any of several values for one key)
@@ -559,6 +568,35 @@ expression on the slice that extracts the subnet from its opaque config
   device is treated as having unknown affinity state and is filtered out
   for new sharing-affinity scheduling until it becomes fully clean.
 
+#### Composition with DRA Preemption (KEP-5690)
+
+This KEP does not deliver preemption. Lock-breaking preemption is
+**not a KEP-5981 deliverable** in any milestone.
+
+The design is structured so lock-breaking falls out transparently
+when [KEP-5690 (DRA Preemption)](https://github.com/kubernetes/enhancements/issues/5690)
+is present in the cluster: affinity locks live in the same
+`dynamicresources.stateData` structure that KEP-5690 mutates via
+`AddPod`/`RemovePod`. The only implementation requirement on the
+KEP-5981 side is that `AddPod`/`RemovePod` correctly mutate
+affinity-lock state alongside capacity — which is already required
+for KEP-5690 compatibility.
+
+**Known limitation: affinity-blind reprieve ordering.**
+`SelectVictimsOnNode`'s reprieve order is `(priority, PDB, runtime)`
+and does not consider which `Device` a Pod's claim is allocated to.
+When a node has multiple candidate devices each holding a lock to a
+different value, with asymmetric lock-holder counts, the algorithm
+may converge on a victim set on the larger-lock-count device when
+sacrificing the smaller one would have sufficed. Always correct,
+sometimes over-evicts. A DRA-aware reprieve-ordering hook in
+`DefaultPreemption` would resolve this cleanly but is its own
+scheduler-framework enhancement, out of scope for this KEP.
+
+If KEP-5690 is not present or is disabled, this KEP provides no
+preemption capability — see
+[Preemption Cannot Break Affinity Locks](#preemption-cannot-break-affinity-locks).
+
 #### Handling Legacy Claims with Unreconstructable Affinity
 
 | Device State | New Claim | Result |
@@ -636,7 +674,7 @@ capacity against **peer claims** (any priority) that don't share the
 value. Pure capacity-stranding, not a priority problem — even claims
 of equal or lower priority cannot use the locked device. This section
 covers the peer-claim case only; the priority-aware case is
-[Preemption Cannot Break Affinity Locks](#preemption-cannot-break-affinity-locks-alpha).
+[Preemption Cannot Break Affinity Locks](#preemption-cannot-break-affinity-locks).
 
 **Mitigation (Alpha)**: None beyond Filter correctness. The DRA allocator
 currently uses a first-fit algorithm with no affinity-aware preference, so
@@ -657,23 +695,23 @@ scoring discussion continues in
 [kubernetes/enhancements#4970](https://github.com/kubernetes/enhancements/issues/4970),
 but KEP-5981's contribution does not block on a unified framework.
 
-#### Preemption Cannot Break Affinity Locks (Alpha)
+#### Preemption Cannot Break Affinity Locks
 
 **Risk**: Standard Kubernetes preemption triggers on resource shortage,
-not affinity mismatch, and selects victims by which Pods free up slots,
-not which Pods clear a lock. A lower-priority lock-holder therefore
-blocks a **higher-priority** incompatible Pod even on a device with
-nominal capacity available. This section covers the priority-aware
-case only; the same lock also strands capacity against peer claims —
-see [Fragmentation (Poisoning)](#fragmentation-poisoning) — but the
-mitigation there is scoring/packing, not preemption.
+not on affinity-lock mismatch. A higher-priority Pod requiring a
+different affinity value than the current lock cannot evict the
+lock-holder under standard preemption — capacity is technically free,
+so preemption is never triggered. This is the same gap that affects
+all of DRA today, not specific to this KEP.
 
-**Mitigation (Alpha)**: None — this is an accepted alpha limitation,
-not a correctness bug. Lock-aware preemption is the actual fix.
-
-**Mitigation (Beta)**: Lock-aware preemption (see [Beta graduation criteria](#beta))
-teaches the scheduler's PostFilter phase to detect affinity mismatch as
-a preemption-solvable problem and identify lock-holder Pods as victims.
+**Mitigation**: This KEP does not deliver preemption. The mitigation
+within this KEP's scope is scoring/packing — see
+[Fragmentation (Poisoning)](#fragmentation-poisoning) and the Beta
+scoring contribution in
+[Affinity-aware scoring (planned for Beta)](#affinity-aware-scoring-planned-for-beta).
+Lock-breaking is a property that emerges when DRA preemption is
+present in the cluster; see
+[Composition with DRA Preemption (KEP-5690)](#composition-with-dra-preemption-kep-5690).
 
 #### Packing Depends on DRA-Aware Scoring (Alpha Limitation)
 
@@ -1318,9 +1356,6 @@ Existing DRA scheduling tests should pass before adding sharing affinity tests.
 
 - Gather feedback from DRA driver developers
 - Address any issues found in alpha
-- **Lock-aware preemption**: PostFilter detects affinity mismatch as a
-  preemption-solvable problem; identifies lock-holder Pods as victims when a
-  higher-priority Pod needs a device locked to an incompatible value
 - **Affinity-aware scoring contribution**: Extend
   `DynamicResources.computeScore` with a sharing-affinity term — prefer
   nodes where the target device is already locked to a compatible value
@@ -2064,34 +2099,10 @@ limitation in [Risks and Mitigations](#packing-depends-on-dra-aware-scoring-alph
 
 ### Priority-based Lock Preemption
 
-This section addresses a deliberate alpha limitation: alpha enforces lock
-compatibility, but does not provide any mechanism for a
-higher-priority Pod to break an incompatible lock.
-
-Standard Kubernetes preemption is blind to affinity locks. It triggers on
-*resource shortage* (insufficient CPU, memory, or device slots), not on
-qualitative state mismatch. This creates a critical gap:
-
-1. **Invisible shortage**: A NIC has 15/16 slots available but is locked to
-   Subnet-X. A high-priority Pod needs Subnet-Y. The scheduler sees plenty of
-   capacity → preemption is never triggered. The Pod is simply unschedulable.
-
-2. **Wrong victim selection**: Even if preemption were triggered by an unrelated
-   shortage, victim selection asks "which Pods free up slots?" not "which Pods
-   clear the lock?" The scheduler might preempt an unrelated Pod, freeing a
-   slot on a device still locked to the wrong subnet.
-
-3. **Permanent poisoning**: Without lock-aware preemption, a single low-priority
-   Pod can hold a high-capacity device hostage indefinitely.
-
-**Lock-aware preemption** (targeted for Beta) extends the scheduler's PostFilter
-phase: when a Pod fails Filter due to `SharingAffinityMismatch`, PostFilter
-identifies the current lock-holder claims and, if the incoming Pod's priority
-exceeds the collective priority of the lock-holders, preempts them and clears
-the lock. This requires careful integration with the existing DRA preemption
-path — in particular, handling the asynchronous eviction window so that a
-compatible Pod arriving mid-preemption does not re-establish the old lock.
-Full design will be specified in the beta scope update.
+*Removed in PR review (2026-05): lock-breaking preemption is not a
+KEP-5981 deliverable. See [Composition with DRA Preemption
+(KEP-5690)](#composition-with-dra-preemption-kep-5690) under
+Notes/Constraints/Caveats.*
 
 ### SharingStrategy (`CanSetLock` / `NeverSetLock`)
 
