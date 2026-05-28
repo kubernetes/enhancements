@@ -488,95 +488,93 @@ following design principles:
 
 ### Standardized Building Blocks Definitions (`scheduling.k8s.io`)
 
-We introduce a set of standard, reusable structs in the `scheduling.k8s.io` API group. These
-building blocks represent the core capabilities of Workload-Aware Scheduling. They are designed to
-be embedded directly into higher-level, controller-specific wrapper API structs.
+Following the structure of the `PodGroup` and `CompositePodGroup` APIs under development, the shared
+building block primitives are categorized into distinct levels representing the layers of the
+workload tree:
+1. **Leaf Level (`PodGroup`):** Prefixed with `WorkloadPodGroup...`. These primitives group pods
+   directly and represent standard execution boundaries.
+2. **Composite Level (`CompositePodGroup`):** Prefixed with `WorkloadCompositePodGroup...`. These
+   primitives coordinate groups of workloads.
 
-Importantly, these structures are **hierarchy-agnostic**. The same primitives are used regardless
-of where they are embedded in a workload tree - whether at the `PodGroup` or `CompositePodGroup`
-level. TODO(mm4tt@): We should likely abandon this approach and have primities per
-PodGroup/CompositePodGroup level. We needed agnostic hierarchy when we thought we'd be modeling
-multi-level tree with PodSubGroup. In that case, depending on the context Job could be modeled
-either as PodGroup (standalone Job) or PodSubGroup (member of JobSet). With CompositePodGroup the
-problem disappears and Job will be always modeled as PodGroup.
+This level-specific categorization allows independent API evolution.
 
-To avoid name collisions with existing `PodGroup` field structs, we add the `Workload` prefix to
-all building block types.
+The only exception to this division is the `TopologyConstraint` struct (reused directly from
+KEP-5732), which operates under identical semantics at all levels.
+
+The `WorkloadPodGroup` and `WorkloadCompositePodGroup` prefixes are used to avoid name collisions
+with other scheduling field structures defined directly in the `scheduling.k8s.io` group
+(e.g., KEP-5732's `PodGroup` structures).
+
+To keep this specification concise and focused, we only define the detailed Go API structs for
+the leaf-level `PodGroup` specific types. An analogous set of types prefixed with
+`WorkloadCompositePodGroup...` is provided under the same API group.
 
 The Go definitions are structured as follows:
-
 
 ```go
 // API Group: scheduling.k8s.io/v1alpha3
 
-// WorkloadSchedulingConstraints defines group-level scheduling constraints, such as topology.
-type WorkloadSchedulingConstraints struct {
+// WorkloadPodGroupSchedulingConstraints defines leaf-level scheduling constraints, such as topology.
+type WorkloadPodGroupSchedulingConstraints struct {
     // Topology specifies desired topological placements for all pods
     // within the scheduling group.
     // +optional
     Topology []TopologyConstraint `json:"topologyConstraints,omitempty"`
 }
 
-// DisruptionMode defines how individual entities within a group can be disrupted.
+// WorkloadPodGroupDisruptionMode defines how individual pods within a group can be disrupted.
 // Exactly one mode can be set.
 //
 // +union
-type WorkloadDisruptionMode struct {
-  // Single specifies that children can be disrupted independently from each other.
-    //
+type WorkloadPodGroupDisruptionMode struct {
+    // Single specifies that pods can be disrupted independently from each other.
     // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-  Single *WorkloadSingleDisruptionMode `json:"single,omitempty" protobuf:"bytes,1,opt,name=single"`
-  
-  // All specifies that all children can only be disrupted together.
-    //
+    Single *WorkloadPodGroupSingleDisruptionMode `json:"single,omitempty"`
+
+    // All specifies that all pods in the group must be disrupted together.
     // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-  All *WorkloadSingleDisruptionMode `json:"all,omitempty" protobuf:"bytes,2,opt,name=all"`
+    All *WorkloadPodGroupAllDisruptionMode `json:"all,omitempty"`
 }
 
-// WorkloadSingleDisruptionMode indicates that individual entities can be disrupted independently.
-type WorkloadSingleDisruptionMode struct {
-  // Intentionally empty for now.
-}
-
-// WorkloadAllDisruptionMode indicates that all children can only be disrupted together.
-type WorkloadAllDisruptionMode struct {
-  // Intentionally empty for now.
-}
-
-// SchedulingMode defines the scheduling policy for a group of pods.
-// Exactly one policy must be set.
-// +union
-type WorkloadSchedulingPolicy struct {
-    // Basic specifies that standard, pod-by-pod Kubernetes scheduling behavior should be used.
-    // +optional
-    Basic *WorkloadBasicSchedulingPolicy `json:"basic,omitempty"`
-
-    // Gang specifies all-or-nothing scheduling semantics.
-    // +optional
-    Gang *WorkloadGangSchedulingPolicy `json:"gang,omitempty"`
-}
-
-// WorkloadBasicSchedulingPolicy indicates standard Kubernetes scheduling behavior.
-type WorkloadBasicSchedulingPolicy struct {
+// WorkloadPodGroupSingleDisruptionMode indicates that individual pods can be disrupted independently.
+type WorkloadPodGroupSingleDisruptionMode struct {
     // Intentionally empty for now.
 }
 
-// WorkloadGangSchedulingPolicy defines the parameters for gang (all-or-nothing) scheduling.
-type WorkloadGangSchedulingPolicy struct {
-    // MinCount is the minimum number of pods or groups that must be scheduled
+// WorkloadPodGroupAllDisruptionMode indicates that all pods in the group must be disrupted together.
+type WorkloadPodGroupAllDisruptionMode struct {
+    // Intentionally empty for now.
+}
+
+// WorkloadPodGroupSchedulingPolicy defines the scheduling policy for a group of pods.
+// Exactly one policy must be set.
+// +union
+type WorkloadPodGroupSchedulingPolicy struct {
+    // Basic specifies that standard, pod-by-pod Kubernetes scheduling behavior should be used.
+    // +optional
+    Basic *WorkloadPodGroupBasicSchedulingPolicy `json:"basic,omitempty"`
+
+    // Gang specifies all-or-nothing scheduling semantics.
+    // +optional
+    Gang *WorkloadPodGroupGangSchedulingPolicy `json:"gang,omitempty"`
+}
+
+// WorkloadPodGroupBasicSchedulingPolicy indicates standard Kubernetes scheduling behavior.
+type WorkloadPodGroupBasicSchedulingPolicy struct {
+    // Intentionally empty for now.
+}
+
+// WorkloadPodGroupGangSchedulingPolicy defines the parameters for gang (all-or-nothing) scheduling.
+type WorkloadPodGroupGangSchedulingPolicy struct {
+    // MinCount is the minimum number of pods that must be scheduled
     // at the same time for the scheduler to admit the entire group.
     // If omitted, the controller should inject a context-specific sane default.
     // +optional
     MinCount *int32 `json:"minCount,omitempty"`
 }
 
-// WorkloadResourceClaim references exactly one ResourceClaim, either directly
-// or by naming a ResourceClaimTemplate.
-type WorkloadResourceClaim struct {
+// WorkloadPodGroupResourceClaim references dynamic resource claims for the group.
+type WorkloadPodGroupResourceClaim struct {
     // Name uniquely identifies this resource claim inside the group.
     Name string `json:"name"`
 
@@ -617,19 +615,19 @@ type JobSpec struct {
 type JobSchedulingConfiguration struct {
     // SchedulingPolicy defines the gang or basic scheduling rules for this Job.
     // +optional
-	SchedulingPolicy *schedulingv1alpha3.WorkloadSchedulingPolicy `json:"schedulingPolicy,omitempty"`
+    SchedulingPolicy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy `json:"schedulingPolicy,omitempty"`
 
     // SchedulingConstraints defines topology co-location constraints for the Job's pods.
     // +optional
-	SchedulingConstraints *schedulingv1alpha3.WorkloadSchedulingConstraints `json:"schedulingConstraints,omitempty"`
+    SchedulingConstraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"schedulingConstraints,omitempty"`
 
     // DisruptionMode specifies how the pods in this Job should be disrupted (Single vs All).
     // +optional
-	DisruptionMode *schedulingv1alpha3.WorkloadDisruptionMode `json:"disruptionMode,omitempty"`
+    DisruptionMode *schedulingv1alpha3.WorkloadPodGroupDisruptionMode `json:"disruptionMode,omitempty"`
 
     // ResourceClaims specifies dynamic resource claims that are shared across the Job's pods.
     // +optional
-	ResourceClaims []schedulingv1alpha3.WorkloadResourceClaim `json:"resourceClaims,omitempty"`
+    ResourceClaims []schedulingv1alpha3.WorkloadPodGroupResourceClaim `json:"resourceClaims,omitempty"`
 }
 ```
 
@@ -653,10 +651,22 @@ and validation logic, we propose providing a shared Go library: `workloadbuilder
 
 #### 1. Design & Architecture
 
-This library utilizes an **Intermediate Representation (IR)** tree pattern. Controller authors
-build a logical tree representing their workload structure, attach context-aware `DefaultConfig`
-values, attach the user's populated `UserConfig` configurations (mapped to the library's IR
-`SchedulingConfig`), and invoke the builder.
+This library utilizes an **Intermediate Representation (IR)** tree pattern. The architecture adopts a
+**Polymorphic Bridge Pattern** to reconcile the level-specific K8s API structures (leaf-level
+`PodGroup` vs. composite-level `CompositePodGroup`) with a single, uniform tree definition inside
+the library:
+
+* **Hierarchy-Agnostic Library IR:** The library defines its own internal, polymorphic structures
+  (`workloadbuilder.SchedulingConfig`, `workloadbuilder.SchedulingPolicy`, etc.) that represent
+  scheduling configurations in a hierarchy-agnostic way.
+* **Standard Mapping Helpers:** To prevent controllers from writing custom translation boilerplate
+  to bridge K8s API types to the library IR, the library provides standard, built-in conversion
+  functions (`MapPodGroupConfig` and `MapCompositeGroupConfig`). These helper adapters cleanly
+  translate public, level-specific schemas into polymorphic IR models at runtime.
+
+Controller authors construct a logical tree using `WorkloadNode` representing their workload
+structure, populate `DefaultConfig` and the user's `UserConfig` (using the standard mapping
+helpers), and invoke the builder.
 
 The library encapsulates the following logic:
 1. **Policy Resolution:** Merges default configurations with user-provided overrides (e.g.,
@@ -678,28 +688,62 @@ import (
     schedulingv1alpha3 "k8s.io/api/scheduling/v1alpha3"
 )
 
-// SchedulingConfig is the canonical Intermediate Representation (IR) used by the library.
-// Workload controllers act as adapters, mapping their specific wrapper fields to this struct.
+// SchedulingConfig is the polymorphic, hierarchy-agnostic IR model of the PodGroup/CompositePodGroup.
 type SchedulingConfig struct {
-    Constraints    *schedulingv1alpha3.WorkloadSchedulingConstraints
-    DisruptionMode *schedulingv1alpha3.WorkloadDisruptionMode
-    Policy         *schedulingv1alpha3.WorkloadSchedulingPolicy
+    Constraints    *SchedulingConstraints
+    DisruptionMode *DisruptionMode
+    Policy         *SchedulingPolicy
+    ResourceClaims []ResourceClaim
+}
+
+type SchedulingConstraints struct {
+    Topology []schedulingv1alpha3.TopologyConstraint
+}
+
+type DisruptionMode struct {
+    Single *SingleDisruptionMode
+    All    *AllDisruptionMode
+}
+
+type SingleDisruptionMode struct {
+    // Intentionally empty for now.
+}
+
+type AllDisruptionMode struct {
+    // Intentionally empty for now.
+}
+
+type SchedulingPolicy struct {
+    Basic *BasicSchedulingPolicy
+    Gang  *GangSchedulingPolicy
+}
+
+type BasicSchedulingPolicy struct {
+    // Intentionally empty for now.
+}
+
+type GangSchedulingPolicy struct {
+    MinCount *int32
+}
+
+type ResourceClaim struct {
+    Name                      string
+    ResourceClaimName         *string
+    ResourceClaimTemplateName *string
 }
 
 // WorkloadNode represents a logical component of a workload (e.g., the whole JobSet,
 // a specific ReplicatedJob role, or a single standalone Job).
 type WorkloadNode struct {
-    // Name is the logical identifier of this component (e.g., "jobset-root", "driver", "workers").
+    // Name is the logical identifier of this component (e.g., "jobset-root", "driver").
     Name string
 
     // DefaultConfig defines the complete set of "sane defaults" assigned by the controller
     // based on its specific orchestration domain logic.
     DefaultConfig *SchedulingConfig
 
-    // DefaultGangPolicy defines the fallback Gang configuration if the user
-    // explicitly selects Gang scheduling but leaves individual parameters (like MinCount) empty.
-    // +optional
-    DefaultGangPolicy *schedulingv1alpha3.WorkloadGangSchedulingPolicy
+    // DefaultGangMinCount provides fallback gang size if user selects Gang but leaves MinCount nil.
+    DefaultGangMinCount *int32
 
     // UserConfig is the exact policy intent configured by the user at this specific level.
     // Can be nil if the user left the scheduling block unconfigured.
@@ -727,6 +771,21 @@ type WorkloadBuilder interface {
 func NewBuilder(root *WorkloadNode) WorkloadBuilder {
     return &builderImpl{root: root}
 }
+
+// MapPodGroupConfig translates standard leaf building blocks into the library's polymorphic IR.
+func MapPodGroupConfig(
+    policy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy,
+    constraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints,
+    disruption *schedulingv1alpha3.WorkloadPodGroupDisruptionMode,
+    claims []schedulingv1alpha3.WorkloadPodGroupResourceClaim,
+) *SchedulingConfig
+
+// MapCompositeGroupConfig translates standard composite building blocks into the library's polymorphic IR.
+func MapCompositeGroupConfig(
+    policy *schedulingv1alpha3.WorkloadCompositePodGroupSchedulingPolicy,
+    constraints *schedulingv1alpha3.WorkloadCompositePodGroupSchedulingConstraints,
+    disruption *schedulingv1alpha3.WorkloadCompositePodGroupDisruptionMode,
+) *SchedulingConfig
 ```
 
 #### 3. Library Usage Example (Job)
@@ -744,46 +803,47 @@ import (
 )
 
 func (r *JobReconciler) generateWorkload(
-	job *batchv1.Job,
+    job *batchv1.Job,
 ) (*schedulingv1alpha3.Workload, error) {
-	// A Job's context-aware sane default is Basic scheduling (standard Kubernetes pod-by-pod)
-	defaultConfig := &workloadbuilder.SchedulingConfig{
-		Policy: &schedulingv1alpha3.WorkloadSchedulingPolicy{
-			Basic: &schedulingv1alpha3.WorkloadBasicSchedulingPolicy{},
-		},
-	}
+    // A Job's context-aware sane default is Basic scheduling (standard Kubernetes pod-by-pod)
+    defaultConfig := &workloadbuilder.SchedulingConfig{
+        Policy: &workloadbuilder.SchedulingPolicy{
+            Basic: &workloadbuilder.BasicSchedulingPolicy{},
+        },
+    }
 
-	// Create the flat logical tree for the Job (root node with no children representing a
-	// single PodGroup). We pass DefaultGangPolicy to instruct the library to default MinCount
-	// to the Job's parallelism if the user explicitly selects Gang scheduling but leaves
-	// MinCount empty.
-	rootNode := &workloadbuilder.WorkloadNode{
-		Name:          "job-root",
-		DefaultConfig: defaultConfig,
-		DefaultGangPolicy: &schedulingv1alpha3.WorkloadGangSchedulingPolicy{
-			MinCount: ptr.To(job.Spec.Parallelism), // Defaults to parallelism if MinCount is unset
-		},
-		UserConfig: &workloadbuilder.SchedulingConfig{
-			Policy:         job.Spec.Scheduling.SchedulingPolicy,
-			Constraints:    job.Spec.Scheduling.SchedulingConstraints,
-			DisruptionMode: job.Spec.Scheduling.DisruptionMode,
-			ResourceClaims: job.Spec.Scheduling.ResourceClaims,
-		},
-	}
+    // 2. Map the public Job.Spec.Scheduling wrapper directly using the library helper
+    var userConfig *workloadbuilder.SchedulingConfig
+    if job.Spec.Scheduling != nil {
+        userConfig = workloadbuilder.MapPodGroupConfig(
+            job.Spec.Scheduling.SchedulingPolicy,
+            job.Spec.Scheduling.SchedulingConstraints,
+            job.Spec.Scheduling.DisruptionMode,
+            job.Spec.Scheduling.ResourceClaims,
+        )
+    }
 
-	// Let the workloadbuilder compile and generate the Workload object
-	builder := workloadbuilder.NewBuilder(rootNode)
-	workloadObj, err := builder.Build(
-		context.Background(),
-		job.Name,
-		job.Namespace,
-		metav1.NewControllerRef(job, jobKind),
-	)
-	if err != nil {
-		return nil, err
-	}
+    // 3. Create the flat logical tree for Job (root node representing a single PodGroup)
+    rootNode := &workloadbuilder.WorkloadNode{
+        Name:                "job-root",
+        DefaultConfig:       defaultConfig,
+        DefaultGangMinCount: ptr.To(job.Spec.Parallelism), // Defaults to parallelism if MinCount is nil
+        UserConfig:          userConfig,
+    }
 
-	return workloadObj, nil
+    // 4. Let the workloadbuilder compile and generate the Workload object
+    builder := workloadbuilder.NewBuilder(rootNode)
+    workloadObj, err := builder.Build(
+        context.Background(),
+        job.Name,
+        job.Namespace,
+        metav1.NewControllerRef(job, jobKind),
+    )
+    if err != nil {
+        return nil, err
+    }
+
+    return workloadObj, nil
 }
 ```
 
@@ -822,7 +882,7 @@ When `spec.parallelism` (with unset `minCount`) or explicit `minCount` is change
 Alternative update propagation semantics are possible. For example, for composite controllers (such as
 `JobSet`), scaling might not propagate down to existing `PodGroups` at all. Instead, it only applies
 to newly spawned children (e.g., new `Jobs` created in-flight) via `Workload` change, while active,
-running child `PodGroups` remain untouched to avoid unneccessary disruption.
+running child `PodGroups` remain untouched to avoid unnecessary disruption.
 
 // TODO(helayoty@)): Add a section about API validation using the workloadbuilder library. 
 // Describe changes in validation logic to allow mutability of parallism. 
@@ -927,6 +987,7 @@ automatically handles hierarchical composition:
 ```go
 import (
     "context"
+    "fmt"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     jobsetv1alpha2 "k8s.io/api/jobset/v1alpha2"
     schedulingv1alpha3 "k8s.io/api/scheduling/v1alpha3"
@@ -934,55 +995,75 @@ import (
 )
 
 func (r *JobSetReconciler) generateWorkload(
-	js *jobsetv1alpha2.JobSet,
+    js *jobsetv1alpha2.JobSet,
 ) (*schedulingv1alpha3.Workload, error) {
-    // Helper function to map JobSet's wrapper to the library's IR SchedulingConfig
-    mapConfig := func(
-        c *jobsetv1alpha2.JobSetSchedulingConfiguration,
-    ) *workloadbuilder.SchedulingConfig {
-        if c == nil {
-            return nil
-        }
-        return &workloadbuilder.SchedulingConfig{
-            Policy:         c.SchedulingPolicy,
-            Constraints:    c.SchedulingConstraints,
-            DisruptionMode: c.DisruptionMode,
-        }
+    // 1. Map composite JobSet-level user config to the library's IR
+    var rootUserConfig *workloadbuilder.SchedulingConfig
+    if js.Spec.Scheduling != nil {
+        rootUserConfig = workloadbuilder.MapCompositeGroupConfig(
+            js.Spec.Scheduling.SchedulingPolicy,
+            js.Spec.Scheduling.SchedulingConstraints,
+            js.Spec.Scheduling.DisruptionMode,
+        )
     }
 
-    // 1. Define the Root node representing the entire JobSet.
-    // The default configuration for a JobSet root is Gang scheduling of all replicatedJobs
-    // (i.e., all components must wait for each other to start).
-
+    // 2. Define the Root node representing the entire JobSet (CPG Level 1).
+    // The default configuration at the root is Gang scheduling, with size defaulted
+    // to the count of child ReplicatedJob roles.
     rootNode := &workloadbuilder.WorkloadNode{
-        Name: "jobset-root",
+        Name: js.Name,
         DefaultConfig: &workloadbuilder.SchedulingConfig{
-            Policy: &schedulingv1alpha3.WorkloadSchedulingPolicy{
-                Gang: &schedulingv1alpha3.WorkloadGangSchedulingPolicy{},
+            Policy: &workloadbuilder.SchedulingPolicy{
+                Gang: &workloadbuilder.GangSchedulingPolicy{},
             },
         },
-        UserConfig: mapConfig(js.Spec.Scheduling), // Map root user intent
+        DefaultGangMinCount: ptr.To(int32(len(js.Spec.ReplicatedJobs))),
+        UserConfig:          rootUserConfig,
     }
 
-    // 2. Iterate through ReplicatedJobs and attach them as leaf children
+    // 3. Build the intermediate (Level 2) and leaf (Level 3) nodes representing hierarchy
     for _, rJob := range js.Spec.ReplicatedJobs {
-        leafNode := &workloadbuilder.WorkloadNode{
+        // Create intermediate CompositePodGroup node representing the ReplicatedJob role
+        repJobNode := &workloadbuilder.WorkloadNode{
             Name: rJob.Name,
-            // Sane default for a ReplicatedJob leaf is Gang scheduling.
             DefaultConfig: &workloadbuilder.SchedulingConfig{
-                Policy: &schedulingv1alpha3.WorkloadSchedulingPolicy{
-                    Gang: &schedulingv1alpha3.WorkloadGangSchedulingPolicy{
-            MinCount: ptr.To(rJob.Template.Spec.Parallelism),
-          },
+                Policy: &workloadbuilder.SchedulingPolicy{
+                    Gang: &workloadbuilder.GangSchedulingPolicy{},
                 },
             },
-            // Map leaf-level user intent from the leaked nested Job template
-            UserConfig: mapConfig(rJob.Template.Spec.Scheduling),
+            DefaultGangMinCount: ptr.To(rJob.Replicas),
         }
-        rootNode.Children = append(rootNode.Children, leafNode)
+
+        // Under each ReplicatedJob role, create leaf nodes for each Job replica instance
+        for i := int32(0); i < rJob.Replicas; i++ {
+            var leafUserConfig *workloadbuilder.SchedulingConfig
+            if rJob.Template.Spec.Scheduling != nil {
+                leafUserConfig = workloadbuilder.MapPodGroupConfig(
+                    rJob.Template.Spec.Scheduling.SchedulingPolicy,
+                    rJob.Template.Spec.Scheduling.SchedulingConstraints,
+                    rJob.Template.Spec.Scheduling.DisruptionMode,
+                    rJob.Template.Spec.Scheduling.ResourceClaims,
+                )
+            }
+
+            leafNode := &workloadbuilder.WorkloadNode{
+                Name: fmt.Sprintf("%s-%s-%d", js.Name, rJob.Name, i),
+                DefaultConfig: &workloadbuilder.SchedulingConfig{
+                    Policy: &workloadbuilder.SchedulingPolicy{
+                        Basic: &workloadbuilder.BasicSchedulingPolicy{},
+                    },
+                },
+                // In this example, we assume a Sane default for a ReplicatedJob leaf is Gang scheduling.
+                DefaultGangMinCount: ptr.To(rJob.Template.Spec.Parallelism),
+                UserConfig:          leafUserConfig,
+            }
+            repJobNode.Children = append(repJobNode.Children, leafNode)
+        }
+
+        rootNode.Children = append(rootNode.Children, repJobNode)
     }
 
-    // 3. Let the workloadbuilder library compile and generate the n-level Workload
+    // 4. Let the workloadbuilder library compile and generate the n-level Workload
     builder := workloadbuilder.NewBuilder(rootNode)
     workloadObj, err := builder.Build(
         context.Background(),
