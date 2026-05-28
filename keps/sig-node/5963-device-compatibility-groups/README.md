@@ -124,7 +124,7 @@ constraints, not just GPUs.
   virtual devices consuming from the same counter set (which typically
   represents a single underlying physical device).
 - Providing a centralized or cluster-wide registry of compatibility group
-  names. Group names are opaque strings scoped to a single ResourceSlice pool
+  names. Group names are opaque strings scoped to a single resource pool
   and are meaningful only to the driver that publishes them.
 - Enabling the scheduler to *reconfigure* a physical device between
   partitioning schemes (e.g., MIG ↔ MPS) as part of scheduling. This KEP only
