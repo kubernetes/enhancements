@@ -129,6 +129,8 @@ constraints, not just GPUs.
   additional predicate; capacity math on `sharedCounters` continues to apply
   unchanged.
 
+## Proposal
+
 ### User Stories
 
 #### Story 1
@@ -143,17 +145,16 @@ allowing an allocation that will fail at device preparation time.
 ### Notes/Constraints/Caveats
 
 A candidate device is admitted only if its `compatibilityGroups` share at 
-least one entry with the **rolling intersection** of `compatibilityGroups` 
-maintained across all devices already allocated on the same counter set — i.e., the candidate must
+least one entry with all `compatibilityGroups` of already allocated devices
+on the same counter set — i.e., the candidate must
 declare at least one group that is present in every already-allocated
 device's list. Drivers that want a set of devices to be allocated at the 
 same time must therefore include a common shared group in every
-device's list (see Example 4 for the `foobar` pattern).
+device's list.
 
 ### Risks and Mitigations
 
 **Scheduler performance impact**
-
 Evaluating compatibility constraints during device selection adds work to each scheduling cycle that involves DRA devices.
 
 **Older schedulers ignoring devices with compatibilityGroups**
@@ -167,7 +168,7 @@ The feature flag can be enabled/disabled at runtime. This requires drivers to id
 
 In general, admins should avoid deploying DRA drivers with features enabled that aren't also enabled in the cluster.
 
-## Proposal
+## Design Details
 
 ### API
 
@@ -694,20 +695,19 @@ group).
 
 ### Scheduler Changes
 
-The DRA scheduler plugin is enhanced to:
+The DRA scheduler plugin enforces `compatibilityGroups` during candidate
+filtering. For each counter set `c` involved in an allocation decision,
+the scheduler calculates a **rolling intersection** `I_c` of
+`compatibilityGroups` across the devices currently allocated on `c`,
+sourced from the `DeviceRequestAllocationResult.compatibilityGroups`
+snapshot on each existing `ResourceClaim.status`.
 
-1. For each candidate device during allocation:
-2. Calculate the intersection between all counter sets' `compatibilityGroups` of already allocated devices from all previous allocation results in `ResourceClaim.Status`es
-3. If the intersection of *2* and the `compatibilityGroups` of the candidate device is empty, skip the device for this allocation, otherwise, continue with allocation attempt.   
-
-**Complexity.** Each candidate device triggers a number of set
-intersections on short `compatibilityGroups` lists.
-Already-allocated devices' groups come directly from the
-`DeviceRequestAllocationResult.compatibilityGroups` snapshot on their
-`ResourceClaim.status`, so the check introduces no additional
-`ResourceSlice` resolution beyond what the existing DRA allocation loop
-already performs. The impact on scheduling cycles is expected to be
-negligible against existing DRA scheduling cost.
+A candidate device `k` consuming from counter set `c` is admitted iff
+`I_c ∩ cg(k, c) ≠ ∅`, where `cg(k, c)` is the candidate's declared
+`compatibilityGroups` for counter set `c`. When `k` is admitted, the
+rolling intersection advances: `I_c ← I_c ∩ cg(k, c)`. A candidate
+consuming from multiple counter sets must be admitted on each one
+independently.
 
 ### Interaction with Multi-Request Claims and Device Constraints
 
@@ -716,7 +716,7 @@ evaluated between each candidate and the intersection of
 `compatibilityGroups` across all devices already allocated on the same
 counter set, regardless of whether an allocated device belongs to the same
 claim, a different claim on the same pod, or a different pod entirely. Two
-devices within a single `ResourceClaim` that land on the same counter set
+candidate devices for a single `ResourceClaim` that land on the same counter set
 are therefore subject to the same check: the second request sees the first
 folded into the rolling intersection.
 
@@ -786,7 +786,9 @@ unit and integration coverage; new tests are additive.
 - Same driver with devices who are compatible with each other (declare a shared group) — both pods schedule.
 
 ### Graduation Criteria
+
 #### Alpha
+
 - API defined and implemented
 - All relevant code is merged and placed behind a feature flag
 - Unit, integration and E2E tests implemented and passing reliably
@@ -795,19 +797,24 @@ unit and integration coverage; new tests are additive.
   MIG/MPS example.
 
 #### Beta
+
 - Validated with at least one production DRA driver (out-of-tree testing)
 
 #### GA
+
 - At least 2 releases as beta
 
 ### Upgrade / Downgrade Strategy
+
 #### Upgrade
+
 Upon upgrading, no `ResourceSlice` leverages the new optional fields yet because DRA drivers should be updated after the cluster upgrade is complete, so the current behavior remains as-is.
 In the unlikely case of a DRA driver trying to use the feature while it's still being rolled out (enabled in apiserver,
 disabled in scheduler), the scheduler >= 1.37 will ignore the devices instead of doing incorrect
 allocations. They will get used as soon as the feature gets enabled also in the scheduler.
 
 #### Downgrade
+
 If downgrading to a version that does not have this enhancement implemented, older schedulers and api-servers do not know 
 of the added optional fields, and revert to their defined behavior prior to this enhancement when the current version is the initial alpha.
 When downgrading to the alpha release in 1.37, the scheduler will refuse to allocate devices
@@ -815,7 +822,6 @@ which depend on the feature. Eventually, the downgraded DRA driver will remove t
 devices.
 
 Allocated devices that leveraged this new field will remain allocated, and future allocations will not take `compatibilityGroups` into consideration.
-
 
 ### Version Skew Strategy
 
@@ -878,20 +884,25 @@ allocations are invalidated.
 - No node downtime or reprovisioning is required.
 
 ###### Does enabling the feature change any default behavior?
+
 No, this KEP proposes additional optional fields to the `ResourceSlice` and `ResourceClaim.Status` APIs
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
 Yes, rolling back the enablement will revert the cluster to its pre-enablement behavior
 
 ###### What happens if we reenable the feature if it was previously rolled back?
+
 Existing `compatibilityGroup` configurations in `ResourceSlice`s will become effective again
 
 ###### Are there any tests for feature enablement/disablement?
+
 Yes, there will be integration tests to verify feature enablement/disablement
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
+
 Rollout risk is limited to the two components touched by the feature gate
 (kube-apiserver field handling and kube-scheduler filter logic).
 Already-running workloads are not affected: compatibility filtering only runs
@@ -899,80 +910,102 @@ during scheduling of *new* allocations, so disabling the gate or rolling back
 binaries does not disturb existing pod/device bindings.
 
 ###### What specific metrics should inform a rollback?
+
 This KEP does not include new metrics.
 An increase in scheduling failures for workloads requesting DRA devices is the metric cluster-operators should watch for.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
 Upgrade → downgrade → upgrade will be covered by the integration test
 described in Test Plan → Integration tests.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
 No
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
+
 This feature is not intended for use by workloads, it is intended for DRA Drivers.
 Workloads use it indirectly when they allocate devices which use the feature, which is visible in the allocation result.
 
 ###### How can someone using this feature know that it is working for their instance?
+
 After enabling the feature, and upgrading DRA drivers to versions that utilize it, cluster-operators
 should no longer see `FailedPrepareDynamicResources` on container startups.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
 N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
 N/A
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
 N/A
 
 ### Dependencies
+
 DRA Partitionable Devices enabled
 
 ###### Does this feature depend on any specific services running in the cluster?
+
 No
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
+
 No
 
 ###### Will enabling / using this feature result in introducing new API types?
+
 No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
+
 No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
 Yes, 2 additional fields to the `ResourceSlice` and `ResoureClaim` APIs
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
 Yes — scheduling cycles involving DRA devices incur an additional per-counter-set intersection check.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
 No
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
 No
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
 No new side effects
 
 ###### What are other known failure modes?
+
 N/A
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
 TBD
 
 ## Implementation History
+
 - 1.37 - initial alpha implementation
 
 
 ## Drawbacks
+
 Adding compatibility constraint support to the scheduler increases the  
 complexity of the DRA scheduling logic. The new fields must be evaluated for  
 every device candidate during every scheduling cycle that involves DRA  
@@ -981,6 +1014,7 @@ resources, which adds latency and memory overhead.
 ## Alternatives
 
 ### Current Workaround: Driver-level Preparation Failure
+
 The existing workaround is for DRA drivers to fail resource preparation when
 incompatible allocations are attempted. This approach is insufficient because:
 
