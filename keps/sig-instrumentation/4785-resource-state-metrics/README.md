@@ -742,10 +742,11 @@ in back-to-back releases.
 - Support all relevant metric types that Prometheus' OpenMetrics implementation
   allows. This would entail `Counter`s currently, and `Info` and `Stateset` in
   the future. See [expfmt.MetricFamilyToOpenMetrics] for more.
-- Complete API surface test coverage for all applicable and relevant test
-  types.
-- Support payload compression (through gzip, zstd, etc.).
+- Introduce benchmark tests (against the earlier [script-based `bench` target])
+  to ensure Resource State Metrics doesn't perform worse than Kube State
+  Metrics in the future, and to have a baseline in general.
 
+[script-based `bench` target]: https://github.com/kubernetes-sigs/resource-state-metrics/commit/9b6ea2dcb05185431190af91ae90f79d4397251e#diff-b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5R9-R20
 [expfmt.MetricFamilyToOpenMetrics]: https://pkg.go.dev/github.com/prometheus/common@v0.67.5/expfmt#MetricFamilyToOpenMetrics
 
 ### Upgrade / Downgrade Strategy
