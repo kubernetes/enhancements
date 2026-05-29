@@ -15,7 +15,7 @@
   - [Accept Parameter](#accept-parameter)
   - [Implementation Details](#implementation-details)
     - [In-tree Controller Migration](#in-tree-controller-migration)
-    - [Per-Client vs. Per-Request Configuration](#per-client-vs-per-request-configuration)
+    - [Client Configuration](#client-configuration)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit Tests](#unit-tests)
@@ -154,15 +154,14 @@ While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parame
 As part of this KEP, we will migrate `kube-controller-manager` and `kube-scheduler` to use server-side opt-out instead of their current client-side informer transforms:
 
 - Both components currently use `TransformFunc` on their informers to nil out `managedFields` after deserialization. This saves client memory but does not reduce serialization CPU or network transfer costs.
-- With this KEP, both components will be updated to set the `drop=metadata.managedFields` parameter via their `rest.Config`, moving the field stripping to the API server's serializer. This eliminates the serialization and network costs in addition to the existing client memory savings.
+- With this KEP, both components will be updated to send the `drop=metadata.managedFields` parameter in the `Accept` header, moving the field stripping to the API server's serializer. This eliminates the serialization and network costs in addition to the existing client memory savings.
 - The migration will be gated behind the `ManagedFieldsOptOutClient` feature gate. When enabled, the informer transforms for `managedFields` stripping become redundant and will be removed.
 
-#### Per-Client vs. Per-Request Configuration
+#### Client Configuration
 
-This KEP introduces per-client configuration via `rest.Config`. The rationale:
+`drop=metadata.managedFields` is an extension of the existing `Accept`-header content negotiation mechanism (the same family as `as=PartialObjectMetadata` and `as=Table`). The exact client-go surface for opting in (e.g., a client-level default vs. a per-informer option) will be decided during implementation.
 
-- **Per-client is sufficient for `managedFields`:** The primary use case is controllers and informers that never need `managedFields`. These are configured once at client creation time and all requests through that client share the same preference.
-- **Per-request is compatible as future work:** The `Accept` header is inherently per-request at the wire level, so adding per-request configuration in `client-go` (e.g., per-request options that override the client default) would not require any server-side or protocol changes. This KEP does not implement per-request configuration in `client-go`, but the design is forward-compatible with it if future use cases (e.g., dropping different fields for different list calls) require it.
+The broader question of per-client vs. per-request configuration is a general property of the `Accept` header in client-go (a single client uses one `Accept` header for all requests) and is **out of scope** for this KEP. Because the opt-out is carried in the `Accept` header, the design is forward-compatible with finer-grained configuration if it is added later.
 
 ### Test Plan
 
@@ -190,25 +189,23 @@ None.
 
 ### Graduation Criteria
 
+The feature uses two independent gates with their own maturities. The server-side serializer is inert unless a client opts in via the `Accept` header, so it carries little risk and is introduced directly at Beta maturity. The client-side gate controls whether in-tree controllers actually drop `managedFields`, which is the part that carries rollout risk, so it starts at Alpha maturity. The milestones below describe the KEP's overall progression.
+
 #### Alpha
 
-- Feature implemented. Two feature gates are introduced:
-  - `ManagedFieldsOptOut` (Server-side, in `kube-apiserver`): Introduced at **Alpha** and disabled by default, gating whether the API server recognizes the `drop=metadata.managedFields` parameter in the `Accept` header.
-  - `ManagedFieldsOptOutClient` (Client-side, in `client-go`): Introduced at **Alpha** and disabled by default. This gate controls whether internal Kubernetes clients (e.g., `kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`. Independent of the server-side gate so client and server rollouts can be staged separately.
-- Support for GET, LIST, WATCH, PUT, POST, and PATCH operations in the API server.
-- `Accept` parameter `drop=metadata.managedFields` recognized by the API server.
+- `ManagedFieldsOptOut` (server-side, in `kube-apiserver`): introduced at **Beta** feature-gate maturity, enabled by default. Recognizes the `drop=metadata.managedFields` `Accept` parameter for JSON and Protobuf across GET, LIST, WATCH, PUT, POST, and PATCH.
+- `ManagedFieldsOptOutClient` (client-side, in `client-go`): introduced at **Alpha** feature-gate maturity, disabled by default. Controls whether in-tree clients (`kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`.
 
 #### Beta
 
-- `ManagedFieldsOptOutClient` is promoted to Beta and enabled by default.
-- Integration with major clients/controllers (e.g., kube-scheduler, kube-controller-manager) to use the opt-out is enabled by default.
+- `ManagedFieldsOptOutClient` (client-side) promoted to Beta and enabled by default; in-tree controllers use the opt-out by default.
 - Performance benchmarks confirming savings in API server and clients.
+- User-facing documentation published in [kubernetes/website].
 
 #### GA
 
-- Both feature gates (`ManagedFieldsOptOut` and `ManagedFieldsOptOutClient`) removed.
-- Full documentation on usage and benefits.
-- The feature has been available in Beta for at least 2 releases to ensure sufficient soak time.
+- In-tree controllers have run with the opt-out enabled by default for at least 2 releases with no related regressions.
+- Both feature gates locked to their default values (removed 3 releases later).
 
 ### Upgrade / Downgrade Strategy
 
@@ -223,7 +220,7 @@ Supported. API servers that do not recognize the `drop` parameter will simply ig
 
 To ensure consistent behavior and support clients running against older API servers:
 
-- **client-go Modification:** `client-go` will be modified to support field dropping by adding a configuration option (e.g., in `rest.Config`) to request dropping specific fields. When enabled, it will automatically add the `drop=metadata.managedFields` parameter to the `Accept` header.
+- **client-go Modification:** `client-go` will be modified to support field dropping by adding a configuration option to request dropping specific fields. When enabled, it will automatically add the `drop=metadata.managedFields` parameter to the `Accept` header.
 - **Informer Configuration:** Informers will inherit this configuration from the client they use. If a client is configured to drop `managedFields`, the informer will receive objects without `managedFields`.
 - **Client-side Stripping (Defensive):** If a client requests `drop=metadata.managedFields` but talks to an older API server that does not support the feature, the server will return the full object with `managedFields`. To provide a consistent experience and avoid memory overhead in the client, `client-go` will be updated to strip `managedFields` from the response client-side if the client requested it but the server failed to drop it. This ensures that clients requesting the drop never see `managedFields` in the returned objects, regardless of server version.
 
@@ -334,11 +331,16 @@ If clients that have opted out suddenly start receiving `managedFields` despite 
 
 ## Implementation History
 
-- 2026-03-10: Enhancement issue created.
-- 2026-03-30: PoC implemented, validating the serializer-based approach with separate `Identifier` and benchmarking dual-serialization overhead.
-- 2026-04-14: KEP drafted.
-- 2026-04-23: KEP updated to address reviewer feedback: added concrete numbers, restructured goals, clarified implementation approach based on PoC validation, added in-tree controller migration plan, per-client vs per-request rationale.
-- 2026-05-27: Addressed additional feedback: Protobuf serializer support, CRDs in scope, OpenAPI discoverability, revised ExtractInto approach (no error changes needed), clarified write response handling.
+<!--
+Major milestones in the lifecycle of a KEP should be tracked in this section.
+Major milestones might include:
+- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
+- the `Proposal` section being merged, signaling agreement on a proposed design
+- the date implementation started
+- the first Kubernetes release where an initial version of the KEP was available
+- the version of Kubernetes where the KEP graduated to general availability
+- when the KEP was retired or superseded
+-->
 
 ## Drawbacks
 
