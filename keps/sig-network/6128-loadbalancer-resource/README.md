@@ -301,14 +301,6 @@ of cloud-specific annotations per environment.
 
 ### Risks and Mitigations
 
-**Risk: Cloud provider adoption.** If cloud providers do not adopt
-the new resource, users gain no benefit.
-
-*Mitigation:* The resource is designed to be optional and additive.
-Cloud providers can adopt it incrementally. The structured status
-reporting alone provides enough value to motivate adoption, as it
-solves the e2e testing problem identified in KEP-4631.
-
 **Risk: Configuration drift between Service and LoadBalancer.** Users
 may set conflicting values on the Service and LoadBalancer resource.
 
@@ -316,15 +308,6 @@ may set conflicting values on the Service and LoadBalancer resource.
 fields take precedence when set, with fallback to `Service.Spec`
 fields when unset. Cloud controller managers should set a condition or
 event when they detect conflicting configuration.
-
-**Risk: RBAC misconfiguration allows users to overwrite status.**
-The `LoadBalancer.Status` should only be written by the cloud
-controller manager, not by end users.
-
-*Mitigation:* RBAC policies must ensure that only the cloud
-controller manager's service account has `update` and `patch`
-permissions on the `loadbalancers/status` subresource. Default
-ClusterRoles should be configured accordingly.
 
 **Risk: Lateral configuration override via spec create permissions.**
 A user or controller with `create` permissions on `loadbalancers` in
