@@ -149,7 +149,12 @@ fields that automation can consume.
 - Define a small, machine-parseable error vocabulary
   (`Inaccessible`, `DataLoss`, `Degraded`, `StorageUnreachable`,
   `StorageDegraded`) that admits driver-specific elaboration via
-  `reason` and `message`.
+  `reason` and `message`. The vocabulary is intentionally
+  extensible: future CSI spec revisions MAY add values, drivers
+  that adopt a newer spec MAY report them alongside existing
+  ones, and COs MUST tolerate values they do not recognize. A
+  CO that does not recognize a value SHOULD surface it for
+  observability and MUST NOT misclassify it as healthy.
 - Make health reporting opt-in per driver (via CSI capabilities) and
   per cluster (via the `CSIVolumeHealth` feature gate). A driver
   that implements no health capability is not probed and incurs no
@@ -349,11 +354,12 @@ under this KEP.
 
 The shared types are `VolumeHealth` (per-volume) and
 `StorageBackendHealth` (per-backend). Each carries a status drawn
-from a small enum, an optional CamelCase `reason` for grouping,
-and an optional human-readable `message`. `VolumeHealth` carries a
-list of entries rather than a single status, because a volume can
-exhibit multiple concurrent conditions and forcing the driver to
-choose one would lose information.
+from a small enum, a required CamelCase `reason` that distinguishes
+distinct conditions sharing the same status, and an optional
+human-readable `message`. `VolumeHealth` carries a list of entries
+rather than a single status, because a volume can exhibit multiple
+concurrent conditions and forcing the driver to choose one would
+lose information.
 
 ```protobuf
 message VolumeHealth {
@@ -363,9 +369,11 @@ message VolumeHealth {
     // The health status category. REQUIRED.
     VolumeHealthErrorType status = 1;
 
-    // A brief CamelCase machine-parseable reason. OPTIONAL.
-    // Used for grouping volumes with similar conditions in
-    // dashboards and CLI displays.
+    // A brief CamelCase machine-parseable reason. REQUIRED.
+    // Together with status, reason forms the unique identity of
+    // an entry: the Plugin MUST NOT return multiple
+    // VolumeHealthEntry messages for the same volume with the
+    // same (status, reason) combination.
     string reason = 2;
 
     // A user-friendly description. OPTIONAL.
@@ -416,7 +424,10 @@ message StorageBackendHealth {
   // Health status. REQUIRED.
   StorageHealthErrorType status = 1;
 
-  // A brief CamelCase machine-parseable reason. OPTIONAL.
+  // A brief CamelCase machine-parseable reason. REQUIRED.
+  // The Plugin MUST NOT return multiple StorageBackendHealth
+  // messages with the same (status, reason, volume_capability)
+  // combination.
   string reason = 2;
 
   // A user-friendly description. OPTIONAL.
@@ -478,7 +489,11 @@ message ControllerListVolumeHealthResponse {
 ```
 
 For drivers whose backends cannot enumerate efficiently, the sidecar
-falls back to per-volume `ControllerGetVolumeHealth` calls.
+falls back to per-volume `ControllerGetVolumeHealth` calls. A driver
+that advertises neither `LIST_VOLUME_HEALTH` nor `GET_VOLUME_HEALTH`
+is not probed by the sidecar at all, and no controller-side health
+is recorded for its volumes; this is the default for drivers that
+have not opted in.
 
 ```protobuf
 message ControllerGetVolumeHealthRequest {
@@ -580,9 +595,13 @@ type VolumeHealthStatus struct {
     // conditions is the set of adverse conditions reported by
     // the CSI controller plugin. An empty list (or absence)
     // means the controller plugin reports no adverse condition.
+    // Conditions are uniquely identified by the (status, reason)
+    // tuple, matching the CSI spec's uniqueness rule for
+    // VolumeHealthEntry.
     // +optional
     // +listType=map
     // +listMapKey=status
+    // +listMapKey=reason
     Conditions []VolumeHealthCondition `json:"conditions,omitempty"`
 
     // lastProbeTime is the most recent time the CO obtained a
@@ -595,9 +614,9 @@ type VolumeHealthCondition struct {
     // "Inaccessible", "DataLoss", "Degraded".
     Status VolumeHealthStatusType `json:"status"`
     // reason is a brief CamelCase machine-parseable reason
-    // (e.g. "VolumeNotFound").
-    // +optional
-    Reason string `json:"reason,omitempty"`
+    // (e.g. "VolumeNotFound"). Required; together with status
+    // it forms the unique identity of a condition entry.
+    Reason string `json:"reason"`
     // message is a human-readable description.
     // +optional
     Message string `json:"message,omitempty"`
@@ -614,11 +633,15 @@ const (
 )
 ```
 
-`Conditions` is a `+listType=map` keyed by `status`, so each adverse
-category appears at most once per PVC. A driver reporting two
-distinct categories produces two entries; a driver re-reporting an
-existing category updates its `reason`, `message`, and
-`lastTransitionTime` (the last only when `reason` changes).
+`Conditions` is a `+listType=map` keyed by `(status, reason)`,
+matching the CSI spec's uniqueness rule for `VolumeHealthEntry`. A
+driver reporting two distinct categories produces two entries, and a
+driver reporting the same category with two different reasons (for
+example `Degraded`/`HighLatency` and `Degraded`/`MultipathLoss`) also
+produces two entries; both forms are first-class conditions, not
+collisions. A driver re-reporting an entry whose `(status, reason)`
+tuple is unchanged updates `message` and `lastProbeTime` only and
+preserves `lastTransitionTime`.
 
 The Pod field is owned by the kubelet on the pod's node. It mirrors
 the two-level shape of KEP-4680: an outer entry per `pod.spec.volumes`
@@ -644,10 +667,13 @@ type PodVolumeHealth struct {
     Name string `json:"name"`
 
     // conditions is the set of adverse conditions reported by
-    // the CSI node plugin for this volume on this node.
+    // the CSI node plugin for this volume on this node. Keyed by
+    // (status, reason) to match the CSI spec's uniqueness rule for
+    // VolumeHealthEntry.
     // +optional
     // +listType=map
     // +listMapKey=status
+    // +listMapKey=reason
     Conditions []VolumeHealthCondition `json:"conditions,omitempty"`
 
     LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
@@ -655,18 +681,27 @@ type PodVolumeHealth struct {
 ```
 
 The CSINode field is owned by the kubelet on the node, keyed by
-driver name. The Node Authorizer is extended to allow the kubelet
-to PATCH `csinodes/status.storageHealth` for its own node only,
-matching how it already PATCHes `csinodes/spec.drivers`.
+driver name. CSINode does not have a `/status` subresource today;
+this KEP adds one, and extends the Node Authorizer and the
+NodeRestriction admission plugin to allow the kubelet to PATCH it
+for its own node only. This matches the scoping pattern the kubelet
+already uses to PATCH `csinodes` (no subresource) for
+`spec.drivers` registration.
 
 ```go
 type CSINodeStatus struct {
     // storageHealth is the set of backend health reports for
     // each CSI driver registered on the node, as observed by
-    // the kubelet via NodeGetStorageHealth.
+    // the kubelet via NodeGetStorageHealth. A single driver may
+    // report multiple conditions; entries are uniquely identified
+    // by the (name, status, reason) tuple, matching the CSI
+    // spec's uniqueness rule for StorageBackendHealth scoped to
+    // the registered driver.
     // +optional
     // +listType=map
     // +listMapKey=name
+    // +listMapKey=status
+    // +listMapKey=reason
     // +featureGate=CSIVolumeHealth
     StorageHealth []StorageHealthCondition `json:"storageHealth,omitempty"`
 }
@@ -679,8 +714,9 @@ type StorageHealthCondition struct {
     Status StorageHealthStatusType `json:"status"`
 
     // reason is a brief CamelCase machine-parseable reason.
-    // +optional
-    Reason string `json:"reason,omitempty"`
+    // Required; together with name and status it forms the unique
+    // identity of a condition entry.
+    Reason string `json:"reason"`
 
     // message is a human-readable description.
     // +optional
@@ -721,22 +757,36 @@ follow the same rules. Each reads the current state from its
 configured CSI plugin, computes the desired status, compares it to
 what's stored on the API object, and PATCHes only on difference.
 
-The detection rule is direct. A probe that returns one or more
-adverse conditions writes those conditions to the corresponding
-status field. If the same conditions are already present, the
-write is a no-op and is suppressed.
+The desired-state rule is replacement, not union. The driver's
+current report is the authoritative set of conditions for the
+volume (or backend) it is reporting on; the writer replaces the
+stored `Conditions` list with the driver's list rather than merging
+the two. A condition entry that the driver no longer returns is
+dropped from the API object on the same PATCH. Without this rule,
+stale `(status, reason)` entries would accumulate on the object and
+never be cleared, because no single later report would name them
+again. Per-condition `LastTransitionTime` is preserved across
+replacement when the same `(status, reason)` tuple is still present.
 
-The recovery rule is more careful, because the spec does not let
-the CO trust an absence in a single list pass. A writer treats a
-volume as recovered, and clears its conditions, only on a positive
-healthy signal:
+The detection rule follows from replacement. A probe that returns
+one or more adverse conditions writes that exact set to the
+corresponding status field. If the set already matches what is
+stored (same `(status, reason)` tuples, same `message`, same
+ancillary fields), the write is a no-op and is suppressed.
 
-- an empty `health_statuses` from `ControllerGetVolumeHealth`,
-  which is per-volume and therefore consistent;
-- an empty `health_statuses` from `NodeGetVolumeHealth`, also
-  per-volume; or
+The recovery rule needs special handling only for
+`ControllerListVolumeHealth`, because the spec explicitly does not
+let the CO trust an absence in a single paged list pass. For the
+other RPCs, recovery is just a special case of replacement:
+
+- an empty `health_statuses` from `ControllerGetVolumeHealth`
+  replaces the stored conditions with the empty set, which is the
+  recovered state;
+- an empty `health_statuses` from `NodeGetVolumeHealth` does the
+  same on the node side; and
 - a `ControllerListVolumeHealth` result in which the volume has
-  been absent across two consecutive complete list cycles.
+  been absent across two consecutive complete list cycles is
+  treated as a recovery, and stored conditions are cleared.
 
 The two-cycle rule for List absorbs the paging inconsistency the
 spec warns about. Without it, a volume that
@@ -749,7 +799,7 @@ A driver that supports both `LIST_VOLUME_HEALTH` and
 into one: when a previously-unhealthy volume is absent from the
 current list, the sidecar issues a single `ControllerGetVolumeHealth`
 to confirm. An empty `health_statuses` from Get clears the
-condition; a non-empty result simply updates it.
+condition; a non-empty result replaces it.
 
 A failed RPC is never a recovery signal. The writer leaves existing
 conditions untouched and increments
@@ -758,13 +808,17 @@ conditions untouched and increments
 from the explicit-healthy case, and conflating them would have the
 cluster report transient driver failures as volume recoveries.
 
-`LastTransitionTime` is per-condition. When a condition is added,
-the writer sets it to the probe time. When an existing condition's
-`(status, reason)` tuple is unchanged, the writer preserves it. When
-`reason` changes for the same `status`, the writer updates it.
-Consumers reading `LastTransitionTime` get a stable answer to
-"how long has this condition been in this shape" rather than a
-moving timestamp that updates on every probe.
+`LastTransitionTime` is per-condition. When a new
+`(status, reason)` entry first appears, the writer sets it to the
+probe time. As long as that entry is present in subsequent reports,
+the writer preserves it on every replacement, even when `message`
+changes. When the entry is dropped from the report (the condition
+recovered, or the driver replaced it with a different
+`(status, reason)` tuple), the entry disappears from the API object,
+and a future re-report of the same tuple gets a fresh
+`LastTransitionTime`. Consumers reading `LastTransitionTime` get a
+stable answer to "how long has this exact condition been present"
+rather than a moving timestamp that updates on every probe.
 
 The sidecar's polling and the kubelet's polling are independent.
 Each has its own configurable interval, its own timeout, and its
@@ -781,22 +835,32 @@ health for volumes whose mount failed.
 
 ### Authorization
 
-Three new permissions are granted, each scoped as tightly as the
-existing model allows:
+The three writers each need permission scoped as tightly as the
+existing model allows. Two of the three already exist; one is new.
 
 - The external monitor sidecar's service account is granted PATCH
-  on `persistentvolumeclaims/status`. It already has the GET and
-  LIST permissions it needs on PVCs and PVs.
-- Kubelets are granted PATCH on `pods/status.volumeHealth` for pods
-  bound to their own node.
-- Kubelets are granted PATCH on `csinodes/status.storageHealth` for
-  their own node only.
+  on `persistentvolumeclaims/status`. The sidecar already has the
+  GET and LIST permissions it needs on PVCs and PVs in its
+  upstream RBAC manifest, so this is the only permission added.
+- Kubelet PATCH on `pods/status` is already authorized today by
+  the Node Authorizer, with the NodeRestriction admission plugin
+  scoping it to pods bound to the kubelet's own node. No new
+  authorization surface is needed for `Pod.Status.VolumeHealth`;
+  it is just another field reachable through the existing
+  `pods/status` subresource. NodeRestriction's existing
+  pod-binding check enforces own-pod scoping.
+- Kubelet PATCH on `csinodes/status` is new. CSINode has no
+  `/status` subresource today, and the Node Authorizer explicitly
+  rejects all `csinodes` subresources. This KEP adds the `/status`
+  subresource on the CSINode resource and extends both the Node
+  Authorizer and NodeRestriction admission so a kubelet can PATCH
+  the CSINode whose name matches its own node and no other. The
+  scoping is identical to the kubelet's existing PATCH of the main
+  `csinodes` resource for `spec.drivers`.
 
-Both kubelet extensions follow the same scoping pattern the Node
-Authorizer already applies to existing kubelet writes on those
-objects. Nodes are explicitly not granted any access to PVC status,
-which is the central security improvement over the
-originally-rejected "node writes per-PVC health" design.
+Nodes are explicitly not granted any access to PVC status, which
+is the central security improvement over the originally-rejected
+"node writes per-PVC health" design.
 
 ### Feature gate
 
@@ -832,9 +896,11 @@ implementation:
 ##### Unit tests
 
 - `k8s.io/kubernetes/pkg/apis/core/validation` and
-  `k8s.io/kubernetes/pkg/apis/storage/validation`: validation of the
-  new fields, including the `+listType=map +listMapKey=status`
-  constraint that rejects duplicate-status entries.
+  `k8s.io/kubernetes/pkg/apis/storage/validation`: validation of
+  the new fields, including the composite-key uniqueness rules
+  (`(status, reason)` for `VolumeHealthCondition` and
+  `(name, status, reason)` for `StorageHealthCondition`) and
+  rejection of empty `reason` values.
 - `pkg/registry/core/{persistentvolumeclaim,pod}` and
   `pkg/registry/storage/csinode`: feature-gate drop-on-save,
   including the case where the field is already set on the old
@@ -851,11 +917,16 @@ implementation:
 
 - The apiserver round-trips the new fields with the gate on and
   drops them with it off.
-- The Node Authorizer accepts kubelet writes only for own-node
-  entries.
+- The new `csinodes/status` subresource is registered, accepts
+  kubelet PATCHes, and is gated by `CSIVolumeHealth`.
+- The Node Authorizer and NodeRestriction admission accept kubelet
+  PATCH on `pods/status` and `csinodes/status` only for the
+  kubelet's own pods and own node, respectively, and reject all
+  cross-node attempts.
 - The external monitor sidecar runs end-to-end against the mock
   driver and exercises the unhealthy → updated → healthy → cleared
-  cycle.
+  cycle, including the replace-not-union semantics when a follow-up
+  report drops a previously-reported `(status, reason)` entry.
 
 ##### e2e tests
 
@@ -878,8 +949,9 @@ implementation:
   [container-storage-interface/spec][spec-pr].
 - The mock CSI driver implements the new RPCs.
 - The `CSIVolumeHealth` feature gate is plumbed through the apiserver
-  and kubelet, including field validation, drop-on-save, and the
-  Node Authorizer extensions.
+  and kubelet, including field validation, drop-on-save, the new
+  `csinodes/status` subresource, and the Node Authorizer and
+  NodeRestriction admission extensions.
 - The external monitor sidecar uses the new RPCs and writes to
   `pvc.status.healthStatus`.
 - Initial unit and integration tests are in place.
