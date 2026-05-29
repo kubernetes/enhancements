@@ -34,7 +34,11 @@
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -343,9 +347,73 @@ No. The attribute is additive. Existing claims and drivers are unaffected.
 
 Yes. Disabling `DRAListTypeAttributes` prevents new ResourceSlices with list attributes. Existing ResourceSlices retain their values but new ones must use scalar attributes. Claims with `matchAttribute: numaNode` fall back to equality matching.
 
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Drivers will resume publishing `resource.kubernetes.io/numaNode` as a list attribute in their ResourceSlices. The scheduler will resume using intersection matching for `matchAttribute` constraints referencing it. No state migration is needed — ResourceSlices are recreated on driver startup, and claims are re-evaluated by the scheduler. Previously allocated claims are unaffected since allocation results are stored in the claim status, not derived from ResourceSlice attributes at runtime.
+
 ###### Are there any tests for feature enablement/disablement?
 
 Tests will verify list attribute acceptance when `DRAListTypeAttributes` is enabled and rejection when disabled.
+
+### Rollout, Upgrade and Rollback Planning
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+TBD for beta.
+
+###### What specific metrics should inform a rollback?
+
+TBD for beta.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+TBD for beta.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No.
+
+### Monitoring Requirements
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How can an operator determine if the feature is in use by workloads?
+
+TBD for beta. At alpha: check if any ResourceSlice contains a device attribute named `resource.kubernetes.io/numaNode` with an `IntValues` field, and if any ResourceClaim uses `matchAttribute: resource.kubernetes.io/numaNode`.
+
+###### How can someone using this feature know that it is working for their instance?
+
+TBD for beta. At alpha: a ResourceClaim with `matchAttribute: resource.kubernetes.io/numaNode` across multiple driver requests is successfully allocated (claim status shows devices from the same NUMA domain).
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+TBD for beta.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+TBD for beta.
+
+###### Are there any missing metrics that would be useful to have in this category?
+
+TBD for beta.
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No cluster services. The helper functions are library code linked into DRA driver binaries.
+
+The list attribute type depends on KEP-5491 `DRAListTypeAttributes` feature gate being enabled on:
+- **kube-apiserver** — to accept `IntValues` fields in ResourceSlice device attributes
+- **kube-scheduler** — to use the experimental allocator that implements intersection matching for list attributes (requires kubernetes/kubernetes#139332)
+
+If `DRAListTypeAttributes` is not enabled, drivers cannot publish list attributes and must fall back to scalar `numaNode` with equality matching.
 
 ### Scalability
 
@@ -364,6 +432,24 @@ Minimal. Each device gains one additional attribute entry. The list is typically
 ###### Will enabling / using this feature result in increasing time taken by any operations?
 
 Negligible. The SLIT distance read is a single file read plus socket lookup (~microseconds), performed during driver startup device discovery.
+
+### Troubleshooting
+
+<!--
+This section must be completed when targeting beta to a release.
+-->
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+TBD for beta. At alpha: drivers cannot publish ResourceSlices if the API server is unavailable, but this is existing DRA behavior, not specific to this feature.
+
+###### What are other known failure modes?
+
+TBD for beta.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+TBD for beta.
 
 ## Implementation History
 
