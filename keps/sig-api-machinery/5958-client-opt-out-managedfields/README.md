@@ -85,7 +85,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This enhancement allows Kubernetes clients to opt-out of receiving `metadata.managedFields` in API responses (GET, LIST, WATCH, PUT, and POST) via an HTTP `Accept` parameter. This reduces network bandwidth, API Server CPU serialization costs, and client-side memory allocations and Garbage Collection overhead.
+This enhancement allows Kubernetes clients to opt-out of receiving `metadata.managedFields` in API responses (GET, LIST, WATCH, PUT, POST, and PATCH) via an HTTP `Accept` parameter. This reduces network bandwidth, API Server CPU serialization costs, and client-side memory allocations and Garbage Collection overhead.
 
 ## Motivation
 
@@ -108,7 +108,7 @@ Relying on client-side transforms still incurs significant system-wide costs:
 ### Non-Goals
 
 - **General-purpose field selection or opting out of other fields** (though the API design is intended to be extensible to support this in the future without a redesign).
-- **Opting out of fields in the request body of write operations** (this KEP only applies to dropping fields in API responses). `kube-controller-manager` and `kube-scheduler` already send objects without `managedFields` on PUT (due to informer transforms). This is safe because the field manager falls back to the stored object's `managedFields` when the request has none.
+- **Opting out of fields in the request body of write operations.** This KEP drops fields from API *responses* (including responses to write operations like PUT/POST/PATCH), not from request bodies. `kube-controller-manager` and `kube-scheduler` already send objects without `managedFields` on PUT (due to informer transforms). This is safe because the field manager falls back to the stored object's `managedFields` when the request has none.
 
 ## Proposal
 
@@ -124,8 +124,8 @@ As a developer using `client-go`, I want to be able to easily opt-out of `manage
 
 ### Risks and Mitigations
 
-- **Silent Data Loss in Clients:** If a client opts out but later attempts an operation that requires `managedFields` (e.g., using `managedfields.ExtractInto`), it might fail or behave unexpectedly.
-  - **Mitigation:** Update `managedfields.ExtractInto` and related utilities to return clear errors when `managedFields` is missing.
+- **Silent Data Loss in Clients:** If a client opts out but later attempts an operation that requires `managedFields` (e.g., using `managedfields.ExtractInto`), `ExtractInto` will silently return empty results (it already returns `nil` when no matching entry is found).
+  - **Mitigation:** Document clearly that clients using the extract-modify-apply workflow must not opt out of `managedFields`. This is an explicit opt-in by the client, so the responsibility lies with the client author.
 - **Watch Cache Memory Overhead:** Mixed opt-in and opt-out watchers will cause the API server to maintain two serialized versions of each object in the `cachingObject` transient cache.
   - **Mitigation:** The `cachingObject` is transient and created per dispatch event. The cost is limited to one additional serialization per unique format. If all watchers opt out, the single cached version is smaller and cheaper to produce.
 
@@ -144,10 +144,10 @@ While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parame
 
 ### Implementation Details
 
-1.  **API Server Serializer:** Add an `ExcludeManagedFields` option to the JSON and CBOR serializers. When this option is set, the serializer skips `metadata.managedFields` during encoding and exposes this variant as a distinct codec on `runtime.SerializerInfo` with its own `Identifier()`. The content type negotiation layer selects the appropriate serializer based on the `drop` parameter in the `Accept` header.
+1.  **API Server Serializer:** Add an `ExcludeManagedFields` option to the JSON and Protobuf serializers. When this option is set, the serializer strips `metadata.managedFields` from the Go object before encoding and exposes this variant as a distinct codec on `runtime.SerializerInfo` with its own `Identifier()`. The content type negotiation layer selects the appropriate serializer based on the `drop` parameter in the `Accept` header. Protobuf support is critical since `kube-controller-manager` and `kube-scheduler` use Protobuf by default. CRDs are also in scope — the `apiextensions-apiserver` constructs its own `SerializerInfo` for custom resources and will need to wire in the `ExcludeManagedFields` variant alongside its existing serializers.
 2.  **Watch Cache:** No changes are needed to the watch cache or `cachingObject`. The `cachingObject`'s `serializationsCache` is keyed by `runtime.Identifier`. Since the stripped serializer has a different `Identifier` than the full serializer, the cache naturally maintains both forms as separate entries. This means that until all watchers migrate to dropping `managedFields`, each watch event will be serialized twice (once with and once without `managedFields`). Benchmarking shows this dual-serialization adds roughly 62% more time and 83% more memory per event, but this overhead is constant regardless of watcher count and is offset by the smaller payload sizes.
-3.  **Discovery:** The capability should be discoverable via the supported media types in the API discovery.
-4.  **Client-side Mitigation:** Update `managedfields.ExtractInto` to return an explicit error if `managedFields` is missing or nil. This prevents clients that have opted out from accidentally performing operations that require `managedFields` (like certain "extract-modify-patch" workflows).
+3.  **Discoverability:** The capability should be discoverable via the supported media types in the OpenAPI schema.
+4.  **Client-side Mitigation:** `managedfields.ExtractInto` already returns `nil` (no error) when no matching managed fields entry is found, which is a safe no-op. No changes to `ExtractInto` error handling are needed. Clients that opt out should be aware that `ExtractInto` will silently return empty results.
 
 #### In-tree Controller Migration
 
@@ -175,9 +175,8 @@ None.
 
 #### Unit Tests
 
-- Test API server encoders with and without the `managedFields` exclusion flag.
+- Test API server encoders (JSON and Protobuf) with and without the `managedFields` exclusion flag.
 - Test `cachingObject` serialization cache hits and misses with the exclusion flag.
-- Test `managedfields.ExtractInto` behavior when `managedFields` is missing.
 
 #### Integration Tests
 
@@ -198,7 +197,6 @@ None.
   - `ManagedFieldsOptOutClient` (Client-side, in `client-go`): Introduced at **Alpha** and disabled by default. This gate controls whether internal Kubernetes clients (e.g., `kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`. Independent of the server-side gate so client and server rollouts can be staged separately.
 - Support for GET, LIST, WATCH, PUT, POST, and PATCH operations in the API server.
 - `Accept` parameter `drop=metadata.managedFields` recognized by the API server.
-- `managedfields.ExtractInto` updated with error handling.
 
 #### Beta
 
@@ -340,6 +338,7 @@ If clients that have opted out suddenly start receiving `managedFields` despite 
 - 2026-03-30: PoC implemented, validating the serializer-based approach with separate `Identifier` and benchmarking dual-serialization overhead.
 - 2026-04-14: KEP drafted.
 - 2026-04-23: KEP updated to address reviewer feedback: added concrete numbers, restructured goals, clarified implementation approach based on PoC validation, added in-tree controller migration plan, per-client vs per-request rationale.
+- 2026-05-27: Addressed additional feedback: Protobuf serializer support, CRDs in scope, OpenAPI discoverability, revised ExtractInto approach (no error changes needed), clarified write response handling.
 
 ## Drawbacks
 
