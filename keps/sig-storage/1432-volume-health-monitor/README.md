@@ -20,7 +20,13 @@
   - [Authorization](#authorization)
   - [Feature gate](#feature-gate)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -752,86 +758,39 @@ that don't care can ignore them.
 
 ### Reconciliation contract
 
-The two writers (the external monitor sidecar and the kubelet)
-follow the same rules. Each reads the current state from its
-configured CSI plugin, computes the desired status, compares it to
-what's stored on the API object, and PATCHes only on difference.
+Both writers (the sidecar and the kubelet) do the same thing on
+each polling cycle: call the driver, build the desired `Conditions`
+list from the response, and PATCH the API object only if the new
+list differs from what's stored.
 
-The desired-state rule is replacement, not union. The driver's
-current report is the authoritative set of conditions for the
-volume (or backend) it is reporting on; the writer replaces the
-stored `Conditions` list with the driver's list rather than merging
-the two. A condition entry that the driver no longer returns is
-dropped from the API object on the same PATCH. Without this rule,
-stale `(status, reason)` entries would accumulate on the object and
-never be cleared, because no single later report would name them
-again. Per-condition `LastTransitionTime` is preserved across
-replacement when the same `(status, reason)` tuple is still present.
+The driver's report is authoritative. The writer overwrites the
+stored list with the driver's; it does not merge. A condition the
+driver no longer reports is dropped on the next PATCH. The
+`+listType=map` keying on `(status, reason)` preserves
+`LastTransitionTime` for entries whose tuple is unchanged.
 
-The detection rule follows from replacement. A probe that returns
-one or more adverse conditions writes that exact set to the
-corresponding status field. If the set already matches what is
-stored (same `(status, reason)` tuples, same `message`, same
-ancillary fields), the write is a no-op and is suppressed.
+A failed RPC is not a recovery. The writer leaves the stored
+conditions in place and increments
+`csi_volume_health_probe_total{result="error"}`. Treating an RPC
+error as "healthy" would let any driver crash or network blip clear
+real conditions.
 
-The recovery rule needs special handling only for
-`ControllerListVolumeHealth`, because the spec explicitly does not
-let the CO trust an absence in a single paged list pass. For the
-other RPCs, recovery is just a special case of replacement:
+`ControllerListVolumeHealth` needs one extra rule. The spec lets
+paged list results be inconsistent: a volume can appear on cycle N
+and be absent from cycle N+1 just because paging shifted, not
+because it recovered. The sidecar therefore clears a previously-
+unhealthy volume only after two consecutive complete list cycles
+in which the volume is absent. A driver that also advertises
+`GET_VOLUME_HEALTH` lets the sidecar skip the second cycle and
+confirm with a single `ControllerGetVolumeHealth` call instead.
+For `ControllerGetVolumeHealth` and `NodeGetVolumeHealth`, an empty
+`health_statuses` is the explicit recovery signal and clears the
+stored conditions immediately.
 
-- an empty `health_statuses` from `ControllerGetVolumeHealth`
-  replaces the stored conditions with the empty set, which is the
-  recovered state;
-- an empty `health_statuses` from `NodeGetVolumeHealth` does the
-  same on the node side; and
-- a `ControllerListVolumeHealth` result in which the volume has
-  been absent across two consecutive complete list cycles is
-  treated as a recovery, and stored conditions are cleared.
-
-The two-cycle rule for List absorbs the paging inconsistency the
-spec warns about. Without it, a volume that
-was present on cycle N's first page and disappeared from cycle
-N+1's first page (because it now appears on a later page) would be
-spuriously cleared.
-
-A driver that supports both `LIST_VOLUME_HEALTH` and
-`GET_VOLUME_HEALTH` lets the sidecar collapse the two-cycle rule
-into one: when a previously-unhealthy volume is absent from the
-current list, the sidecar issues a single `ControllerGetVolumeHealth`
-to confirm. An empty `health_statuses` from Get clears the
-condition; a non-empty result replaces it.
-
-A failed RPC is never a recovery signal. The writer leaves existing
-conditions untouched and increments
-`csi_volume_health_probe_total{result="error"}`. The no-signal case
-(driver crash, network blip, RPC deadline) is observably different
-from the explicit-healthy case, and conflating them would have the
-cluster report transient driver failures as volume recoveries.
-
-`LastTransitionTime` is per-condition. When a new
-`(status, reason)` entry first appears, the writer sets it to the
-probe time. As long as that entry is present in subsequent reports,
-the writer preserves it on every replacement, even when `message`
-changes. When the entry is dropped from the report (the condition
-recovered, or the driver replaced it with a different
-`(status, reason)` tuple), the entry disappears from the API object,
-and a future re-report of the same tuple gets a fresh
-`LastTransitionTime`. Consumers reading `LastTransitionTime` get a
-stable answer to "how long has this exact condition been present"
-rather than a moving timestamp that updates on every probe.
-
-The sidecar's polling and the kubelet's polling are independent.
-Each has its own configurable interval, its own timeout, and its
-own metrics. The two writers do not coordinate, and they do not
-need to: they write to different objects and report from different
-perspectives.
-
-The kubelet adds one rule that doesn't apply to the sidecar.
-`NodeGetVolumeHealth` MUST NOT be called for a volume the kubelet
-has not at least once attempted to mount. This is a contract for
-drivers, which may legitimately gate health probing on internal
-state established at mount time, while still letting us report
-health for volumes whose mount failed.
+The kubelet does not call `NodeGetVolumeHealth` for a volume it has
+never attempted to mount. Drivers may gate health probing on
+internal state set up at mount time, and asking before that point
+isn't useful.
 
 ### Authorization
 
@@ -857,10 +816,6 @@ existing model allows. Two of the three already exist; one is new.
   the CSINode whose name matches its own node and no other. The
   scoping is identical to the kubelet's existing PATCH of the main
   `csinodes` resource for `spec.drivers`.
-
-Nodes are explicitly not granted any access to PVC status, which
-is the central security improvement over the originally-rejected
-"node writes per-PVC health" design.
 
 ### Feature gate
 
