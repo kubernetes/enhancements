@@ -779,8 +779,8 @@ unit and integration coverage; new tests are additive.
   treated as nil).
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: filter
   behavior with mixed compatible and incompatible candidates on the same
-  counter set; no-op behavior when the feature gate is disabled; no-op
-  behavior when no device in the slice declares the field.
+  counter set; when the feature gate is disabled, ignore devices which declare groups, but 
+  respect snapshotted counter set groups from claims.
 - `k8s.io/kubernetes/pkg/apis/resource/validation`: field validation —
   accepted shapes, max group-name length, max groups per counter consumption.
 
@@ -788,6 +788,7 @@ unit and integration coverage; new tests are additive.
 
 - Feature gate enablement/disablement round-trip: field is persisted when
   enabled, dropped on write when disabled (see https://github.com/kubernetes/kubernetes/blob/1f77090cd12d05c462e2e180b4f8becc12735728/test/integration/dra/core.go#L161).
+- Scheduler correctly records `compatibilityGroups` in claim status after binding it.
 - Scheduler rejects a claim when the only remaining candidate on a node
   belongs to an incompatible group; admits it when a compatible candidate
   exists on another node.
