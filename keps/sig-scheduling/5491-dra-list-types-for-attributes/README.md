@@ -673,6 +673,7 @@ in back-to-back releases.
 - Feature implemented behind a feature flag (`DRAListTypeAttributes`). The Feature gate is disabled by default.
 - Documentation provided
 - Initial unit, integration and e2e tests completed and enabled.
+- All the issues (https://github.com/kubernetes/kubernetes/issues/137905) which was identified in the initial implementation should be resolved.
 
 #### Beta
 
