@@ -265,17 +265,13 @@ spec:
   - name: typed-list-attributes
     attributes:
       list-of-string:
-        list:
-          string: ["pci0000:00", "pci000:01"]
+        strings: ["pci0000:00", "pci000:01"]
       list-of-int:
-        list:
-          int: [0, 1, 2]
+        ints: [0, 1, 2]
       list-of-bool:
-        list:
-          bool: [true, false, true]
+        bools: [true, false, true]
       list-of-version:
-        list:
-          version: ["1.0.0", "1.0.1"]
+        versions: ["1.0.0", "1.0.1"]
 ```
 #### Introduce `.include` function in CEL
 
@@ -326,17 +322,15 @@ spec:
   - name: "cpu-0"
     attributes:
       resource.kubernetes.io/pcieRoot:
-        list:
-          string:
-          - pci0000:01
-          - pci0000:02
+        strings:
+        - pci0000:01
+        - pci0000:02
   - name: "cpu-1"
     attributes:
       resource.kubernetes.io/pcieRoot:
-        list:
-          string:
-          - pci0000:03
-          - pci0000:04
+        strings:
+        - pci0000:03
+        - pci0000:04
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
@@ -445,58 +439,61 @@ proposal will be implemented, this is the place to discuss them.
 
 #### `DeviceAttribute`
 
+_Note_: The total number of individual attribute values per device (scalar fields plus all list elements combined) is limited to 48 (referring `ResourceSliceMaxAttributeValuesPerDevice`).
+When any device in a ResourceSlice uses this feature or other advanced features such as taints, the ResourceSlice will be limited to at most 64 devices (referring `ResourceSliceMaxDevicesWithAdvancedFeatures`).
+
 ```go
 type DeviceAttribute struct {
     ...
-    // ListValue is a typed-list.
-    //
-    // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-    ListValue *ListAttribute `json:"list,omitempty"`
-}
 
-// ListAttribute defines typed-list value for device attributes
-type ListAttribute struct {
-    // IntValue is a list of numbers.
-    //
-    // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-    // +k8s:listType=atomic
-    // +k8s:maxItems=64
-    IntValue []int64 `json:"int,omitempty"`
+	// IntValues is a non-empty list of numbers.
+	//
+	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	//
+	// +optional
+	// +listType=atomic
+	// +k8s:listType=atomic
+	// +k8s:alpha(since: "1.36")=+k8s:optional
+	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +featureGate=DRAListTypeAttributes
+	IntValues []int64 `json:"ints,omitempty" protobuf:"varint,6,opt,name=ints"`
 
-    // BoolValue is a list of true/false values.
-    //
-    // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-    // +k8s:listType=atomic
-    // +k8s:maxItems=64
-    BoolValue []bool `json:"bool,omitempty"`
+	// BoolValues is a non-empty list of true/false values.
+	//
+	// +optional
+	// +listType=atomic
+	// +k8s:listType=atomic
+	// +k8s:alpha(since: "1.36")=+k8s:optional
+	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +featureGate=DRAListTypeAttributes
+	BoolValues []bool `json:"bools,omitempty" protobuf:"varint,7,opt,name=bools"`
 
-    // StringValue is a list of strings.
-    // Each string must not be longer than 64 characters.
-    //
-    // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-    // +k8s:listType=atomic
-    // +k8s:maxItems=64
-    // +k8s:eachVal=+k8s:maxLength=64
-    StringValue []string `json:"string,omitempty"`
+	// StringValues is a non-empty list of strings.
+	// Each string must not be longer than 64 characters.
+	//
+	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	//
+	// +optional
+	// +listType=atomic
+	// +k8s:listType=atomic
+	// +k8s:alpha(since: "1.36")=+k8s:optional
+	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +k8s:alpha(since: "1.37")=+k8s:eachVal=+k8s:maxBytes=64
+	// +featureGate=DRAListTypeAttributes
+	StringValues []string `json:"strings,omitempty" protobuf:"bytes,8,opt,name=strings"`
 
-    // VersionValue is a list of semantic versions according to semver.org spec 2.0.0.
-    // Each version string must not be longer than 64 characters.
-    //
-    // +optional
-    // +k8s:optional
-    // +k8s:unionMember
-    // +k8s:listType=atomic
-    // +k8s:maxItems=64
-    // +k8s:eachVal=+k8s:maxLength=64
-    VersionValue []string `json:"version,omitempty"`
+	// VersionValues is a non-empty list of semantic versions according to semver.org spec 2.0.0.
+	// Each version string must not be longer than 64 characters.
+	//
+	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	//
+	// +optional
+	// +listType=atomic
+	// +k8s:listType=atomic
+	// +k8s:alpha(since: "1.36")=+k8s:optional
+	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +featureGate=DRAListTypeAttributes
+	VersionValues []string `json:"versions,omitempty" protobuf:"bytes,9,opt,name=versions"`
 }
 ```
 
