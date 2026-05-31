@@ -72,7 +72,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This KEP proposes an extension to the Dynamic Resource Allocation (DRA) ResourceSlice API to
 support mutually exclusive device allocation constraints between sets of devices. Hardware devices often
 support multiple partitioning or virtualization schemes (for example, GPU MIG
-slicing vs. MPS sharing) that provide different trade-offs in terms of isolation,
+slicing vs. vGPU profiles) that provide different trade-offs in terms of isolation,
 performance, and resource sharing. These schemes are frequently mutually exclusive
 at the hardware level: once a physical device is partitioned or configured using
 one scheme, it cannot be reconfigured to use a different scheme until all existing
@@ -98,8 +98,8 @@ arise:
   of clear scheduling feedback.
 
 The current workaround—having DRA drivers fail resource preparation when
-incompatible allocations are attempted—is insufficient because it provides no
-mechanism to inform the scheduler, and does not prevent repeated failed attempts when a replacement pod gets created for a failed one.
+incompatible allocations are attempted—is insufficient because does not prevent
+repeated failed attempts when a replacement pod gets created for a failed one.
 
 ### Goals
 
@@ -112,15 +112,11 @@ constraints, not just GPUs.
 
 ### Non-Goals
 
-- Allowing DRA drivers to specify compatibility between devices that do not
-  share a counter set. The scope of compatibility constraints is limited to
-  virtual devices consuming from the same counter set (which typically
-  represents a single underlying physical device).
 - Providing a centralized or cluster-wide registry of compatibility group
   names. Group names are opaque strings scoped to a single resource pool
   and are meaningful only to the driver that publishes them.
 - Enabling the scheduler to *reconfigure* a physical device between
-  partitioning schemes (e.g., MIG ↔ MPS) as part of scheduling. This KEP only
+  partitioning schemes (e.g., MIG ↔ vGPU) as part of scheduling. This KEP only
   addresses rejecting incompatible allocations; transitions between schemes
   remain a driver concern and typically require draining existing allocations.
 - Expressing compatibility constraints on `ResourceClaim` objects. The field
@@ -131,33 +127,40 @@ constraints, not just GPUs.
 
 ## Proposal
 
+This KEP extends the DRA `ResourceSlice` API with a driver-authored
+`compatibilityGroups` field on each `device.consumesCounters[]` entry,
+and `DeviceRequestAllocationResult` (in `ResourceClaim.status.allocation`) with a
+matching snapshot of the same groups. Drivers tag each virtual device
+with the named groups it agrees to be allocated alongside; the
+scheduler enforces, at candidate-filtering time, that all devices
+co-allocated on the same counter set share at least one group. This
+moves detection of incompatible co-allocation from preparation-time
+failure to scheduling-time rejection.
+
 ### User Stories
 
 #### Story 1
 
-As a GPU operator using NVIDIA GPUs, I want to express in my ResourceSlice
-that MIG-partitioned virtual devices and MPS-sharing virtual devices on the
-same physical GPU are mutually exclusive. When a pod requesting a MIG partition
-is already running on a GPU, I want the scheduler to automatically exclude all
-MPS devices on that same GPU from consideration for new allocations, rather than
-allowing an allocation that will fail at device preparation time.
+As a DRA driver for NVIDIA GPUs, I want to express in my ResourceSlice
+that MIG-partitioned devices and vGPU-partitioned devices are incompatible on the
+same physical GPU at the same time. When a pod requesting a MIG partition is already running on a GPU, I want the scheduler to exclude all
+vGPU-partitioned devices on that same GPU from consideration for new allocations, rather than allowing an allocation that will fail at device preparation time.
 
 ### Notes/Constraints/Caveats
 
-A candidate device is admitted only if its `compatibilityGroups` share at 
-least one entry with all `compatibilityGroups` of already allocated devices
-on the same counter set — i.e., the candidate must
-declare at least one group that is present in every already-allocated
-device's list. Drivers that want a set of devices to be allocated at the 
-same time must therefore include a common shared group in every
-device's list.
+This feature depends on the `DRAPartitionableDevices` feature gate being
+enabled. `compatibilityGroups` is declared on
+`device.consumesCounters[]` entries, which only exist when partitionable
+devices are in use; a cluster without `DRAPartitionableDevices` has
+nothing to attach the field to.
 
 ### Risks and Mitigations
 
 **Scheduler performance impact**
+
 Evaluating compatibility constraints during device selection adds work to each scheduling cycle that involves DRA devices.
 
-**Older schedulers ignoring devices with compatibilityGroups**
+**Gate-disabled schedulers ignoring devices with compatibilityGroups**
 
 At alpha, if the `DRADeviceCompatibilityGroups` feature-gate is disabled, devices which present the `compatibilityGroups` field will be ignored by `kube-scheduler`.
 This is in order to allow enablement of the feature without user intervention (pod deletion) when graduating to beta. 
@@ -174,14 +177,13 @@ In general, admins should avoid deploying DRA drivers with features enabled that
 
 #### CompatibilityGroups Assignment
 
-A new optional field `compatibilityGroups` is added inside each entry of
-`device.consumesCounters[]`. It contains a list of string group names.
-For two devices consuming counters from the same counter set to be allocated
-together, either both must leave the field unset, or both
-must declare the field and share at least one group name. A nil
-`compatibilityGroups` and an empty `compatibilityGroups: []` are treated
-identically. This means a device that declares the field is never allocated 
-on a shared counter at the same time with a sibling that omits it.
+The slice-side `compatibilityGroups` field has type `[]string` and lives on
+each `device.consumesCounters[]` entry for drivers to populate. For two devices consuming counters
+from the same counter set to be allocated together, either both must leave
+the field unset, or both must declare it and share at least one group name.
+A nil `compatibilityGroups` and an empty `compatibilityGroups: []` are
+treated identically. This means a device that declares the field is never
+allocated on a shared counter at the same time with a sibling that omits it.
 
 The field is placed on each `consumesCounters[]` entry rather than on the
 device itself because compatibility is a physical-hardware property scoped to
@@ -192,23 +194,8 @@ different pieces of underlying hardware. Two devices that do not share any
 counter set are never compared via this field, even if they live on the same
 node or in the same `ResourceSlice`.
 
-To enforce compatibility at scheduling time, the scheduler needs the
-`compatibilityGroups` of every already-allocated device on a counter set.
-Reading them back from the source `ResourceSlice` is unsafe: the slice may
-have been updated since allocation, or the device may have been
-re-published with different groups. The scheduler therefore records a
-snapshot of each allocated device's `compatibilityGroups` on its claim
-status entry, mirroring how `ConsumedCapacity` is recorded for the
-consumable-capacity feature.
-
-A new optional field `compatibilityGroups` is added to
-`DeviceRequestAllocationResult`. It is a map keyed by counter-set name
-(matching `consumesCounters[*].counterSet`); each value is the list of
-groups declared on the allocated device's `consumesCounters[]` entry for
-that counter set at the time of allocation. Counter sets the device does
-not consume from are omitted from the map.
-
 ```go
+// ResourceSlice API
 type DeviceCounterConsumption struct {
     CounterSet string             `json:"counterSet" protobuf:"bytes,1,opt,name=counterSet"`
     Counters   map[string]Counter `json:"counters,omitempty" protobuf:"bytes,2,opt,name=counters"`
@@ -219,7 +206,26 @@ type DeviceCounterConsumption struct {
     // +featureGate=DRADeviceCompatibilityGroups
     CompatibilityGroups []string `json:"compatibilityGroups,omitempty" protobuf:"bytes,3,rep,name=compatibilityGroups"`
 }
+```
 
+To enforce compatibility at scheduling time, the scheduler needs the
+`compatibilityGroups` of every already-allocated device on a counter set.
+Reading them back from the source `ResourceSlice` is unsafe: the slice may
+have been updated since allocation, or the device may have been
+re-published with different groups. The scheduler therefore records a
+snapshot of each allocated device's `compatibilityGroups` on its claim
+status entry, mirroring how `ConsumedCapacity` is recorded for the
+consumable-capacity feature.
+
+The snapshot on `DeviceRequestAllocationResult` has type
+`map[string][]string`, keyed by counter-set name (matching
+`consumesCounters[*].counterSet`). Each value is the list of groups
+declared on the allocated device's `consumesCounters[]` entry for that
+counter set at the time of allocation. Counter sets the device does not
+consume from are omitted from the map.
+
+```go
+// ResourceClaim API
 type DeviceRequestAllocationResult struct {
     // ... existing fields ...
 
@@ -234,7 +240,7 @@ type DeviceRequestAllocationResult struct {
 }
 ```
 
-Population and lifecycle:
+`DeviceRequestAllocationResult` population and lifecycle:
 
 - The scheduler populates this field as part of writing
   `ResourceClaim.status.allocation`. Drivers do not write it.
@@ -247,13 +253,25 @@ Population and lifecycle:
 **Naming convention used in examples.** A device's `compatibilityGroups`
 lists the groups it agrees to be allocated alongside other devices in.
 Group names in the examples are chosen for readability (e.g., `mig`,
-`mps`, `foobar`) and hint at which devices agree to be in the group;
+`vgpu`, `foobar`) and hint at which devices agree to be in the group;
 the scheduler does not parse them, so any opaque strings will do as
 long as compatible devices declare a common group.
 
 The following examples demonstrate the problem and the proposed solution using
 a GPU that supports two mutually exclusive partitioning schemes: MIG (hardware
-partitioning into isolated instances) and MPS (software-level time-sharing).
+partitioning into isolated instances) and vGPU (virtualized GPU profiles).
+All examples share the following `DeviceClass`:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: gpu.example.com
+spec:
+  selectors:
+    - cel:
+        expression: device.driver == 'gpu.example.com'
+```
 
 #### Example 1: What the existing API enables
 
@@ -334,11 +352,10 @@ spec:
   devices:
     requests:
       - name: gpu
+        deviceClassName: gpu.example.com
         selectors:
           - cel:
-              expression: >-
-                device.driver == 'gpu.example.com' &&
-                device.attributes['type'].string == 'mig-1g'
+              expression: device.attributes['type'].string == 'mig-1g'
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
@@ -349,16 +366,15 @@ spec:
   devices:
     requests:
       - name: gpu
+        deviceClassName: gpu.example.com
         selectors:
           - cel:
-              expression: >-
-                device.driver == 'gpu.example.com' &&
-                device.attributes['type'].string == 'mig-1g'
+              expression: device.attributes['type'].string == 'mig-1g'
 ```
 
 The scheduler allocates `gpu-0-mig-1g-0` to pod-a and `gpu-0-mig-1g-1` to
-pod-b. Both consume from `gpu-0-counters` (20 + 20 = 40 <= 100). Both pods
-start successfully because both devices use the same MIG partitioning mode.
+pod-b, and binds both to `node-1` because their consumptions from the `gpu-0-counters` counter set are valid (20 + 20 = 40 <= 100).
+Both pods start successfully because the devices allocated to them are compatible (Both MIG slices).
 
 #### Example 2: How the existing API does not solve the problem
 
@@ -366,7 +382,7 @@ When a driver advertises devices from multiple mutually exclusive partitioning
 schemes on the same GPU, all sharing the same counter set, the current API has
 no way to express that these schemes cannot coexist.
 
-ResourceSlices — the same GPU now advertising both MIG and MPS devices:
+ResourceSlices — the same GPU now advertising both MIG and vGPU devices:
 
 ```yaml
 apiVersion: resource.k8s.io/v1
@@ -416,20 +432,20 @@ spec:
           counters:
             multiprocessors:
               value: "20"
-    # MPS shares
-    - name: gpu-0-mps-0
+    # vGPU profiles
+    - name: gpu-0-vgpu-0
       attributes:
         type:
-          string: "mps"
+          string: "vgpu"
       consumesCounters:
         - counterSet: gpu-0-counters
           counters:
             multiprocessors:
               value: "50"
-    - name: gpu-0-mps-1
+    - name: gpu-0-vgpu-1
       attributes:
         type:
-          string: "mps"
+          string: "vgpu"
       consumesCounters:
         - counterSet: gpu-0-counters
           counters:
@@ -437,7 +453,7 @@ spec:
               value: "50"
 ```
 
-ResourceClaims — pod-a requests a MIG partition, pod-b requests an MPS share:
+ResourceClaims — pod-a requests a MIG partition, pod-b requests a vGPU profile:
 
 ```yaml
 apiVersion: resource.k8s.io/v1
@@ -449,11 +465,10 @@ spec:
   devices:
     requests:
       - name: gpu
+        deviceClassName: gpu.example.com
         selectors:
           - cel:
-              expression: >-
-                device.driver == 'gpu.example.com' &&
-                device.attributes['type'].string == 'mig-1g'
+              expression: device.attributes['type'].string == 'mig-1g'
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
@@ -464,23 +479,22 @@ spec:
   devices:
     requests:
       - name: gpu
+        deviceClassName: gpu.example.com
         selectors:
           - cel:
-              expression: >-
-                device.driver == 'gpu.example.com' &&
-                device.attributes['type'].string == 'mps'
+              expression: device.attributes['type'].string == 'vgpu'
 ```
 
-The scheduler sees `gpu-0-mig-1g-0` (20 SMs) and `gpu-0-mps-0` (50 SMs).
+The scheduler sees `gpu-0-mig-1g-0` (20 SMs) and `gpu-0-vgpu-0` (50 SMs).
 Total: 70 <= 100 — the counter capacity check passes. The scheduler allocates
-both. But at preparation time, the driver fails because MIG and MPS cannot be
+both. But at preparation time, the driver fails because MIG and vGPU cannot be
 active simultaneously on the same physical GPU. Pod-b gets a cryptic
 preparation error.
 
 #### Example 3: How the proposed API solves the problem
 
 With `compatibilityGroups`, the driver declares that MIG devices belong to the
-`mig` group and MPS devices belong to the `mps` group. The scheduler
+`mig` group and vGPU devices belong to the `vgpu` group. The scheduler
 enforces that devices sharing a counter set must share at least one
 compatibility group.
 
@@ -538,26 +552,26 @@ spec:
           counters:
             multiprocessors:
               value: "20"
-    # MPS shares
-    - name: gpu-0-mps-0
+    # vGPU profiles
+    - name: gpu-0-vgpu-0
       attributes:
         type:
-          string: "mps"
+          string: "vgpu"
       consumesCounters:
         - counterSet: gpu-0-counters
           compatibilityGroups:
-            - mps
+            - vgpu
           counters:
             multiprocessors:
               value: "50"
-    - name: gpu-0-mps-1
+    - name: gpu-0-vgpu-1
       attributes:
         type:
-          string: "mps"
+          string: "vgpu"
       consumesCounters:
         - counterSet: gpu-0-counters
           compatibilityGroups:
-            - mps
+            - vgpu
           counters:
             multiprocessors:
               value: "50"
@@ -575,11 +589,10 @@ spec:
   devices:
     requests:
       - name: gpu
+        deviceClassName: gpu.example.com
         selectors:
           - cel:
-              expression: >-
-                device.driver == 'gpu.example.com' &&
-                device.attributes['type'].string == 'mig-1g'
+              expression: device.attributes['type'].string == 'mig-1g'
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
@@ -590,22 +603,21 @@ spec:
   devices:
     requests:
       - name: gpu
+        deviceClassName: gpu.example.com
         selectors:
           - cel:
-              expression: >-
-                device.driver == 'gpu.example.com' &&
-                device.attributes['type'].string == 'mps'
+              expression: device.attributes['type'].string == 'vgpu'
 ```
 
 The scheduler allocates `gpu-0-mig-1g-0` (group: `mig`) to pod-a. When
-evaluating `gpu-0-mps-0` (group: `mps`) for pod-b, it checks
+evaluating `gpu-0-vgpu-0` (group: `vgpu`) for pod-b, it checks
 compatibility: both devices consume from `gpu-0-counters`, but they share no
-compatibility group (`mig` vs `mps`). The scheduler rejects the allocation and
+compatibility group (`mig` vs `vgpu`). The scheduler rejects the allocation and
 pod-b becomes Unschedulable with generic event: "could not allocate all claims".
-No cryptic preparation failure pos-scheduling, no resource thrashing.
+No cryptic preparation failure post-scheduling, no resource thrashing.
 
-Two MIG devices (both group: `mig`) or two MPS devices (both group: `mps`) can
-still be allocated at the same time, since they share a group.
+Two MIG devices (both group: `mig`) or two vGPU devices (both group: `vgpu`) can
+still be allocated at the same time, consuming from the same counter set, since they share a group.
 
 #### Example 4: Multiple compatible groups with an incompatible group
 
@@ -685,7 +697,7 @@ spec:
 
 `device-0-foo-0` (groups: `foo`, `foobar`) and `device-0-bar-0` (groups:
 `bar`, `foobar`) share the `foobar` group, so they can be allocated together.
-`device-0-baz-0` (groups: `baz`) shares no group with either, so it cannot be
+`device-0-baz-0` (groups: `baz`) as no common group with both, so it cannot be
 allocated with them.
 
 For instance, if pod-a is allocated `device-0-foo-0`, a subsequent pod
@@ -699,7 +711,7 @@ The DRA scheduler plugin enforces `compatibilityGroups` during candidate
 filtering. For each counter set `c` involved in an allocation decision,
 the scheduler calculates a **rolling intersection** `I_c` of
 `compatibilityGroups` across the devices currently allocated on `c`,
-sourced from the `DeviceRequestAllocationResult.compatibilityGroups`
+sourced from the `DeviceRequestAllocationResult.CompatibilityGroups`
 snapshot on each existing `ResourceClaim.status`.
 
 A candidate device `k` consuming from counter set `c` is admitted iff
@@ -711,8 +723,7 @@ independently.
 
 ### Interaction with Multi-Request Claims and Device Constraints
 
-**Multiple requests within one claim.** The compatibility predicate is
-evaluated between each candidate and the intersection of
+**Multiple requests within one claim.** The compatibility predicate is evaluated between each candidate and the intersection of
 `compatibilityGroups` across all devices already allocated on the same
 counter set, regardless of whether an allocated device belongs to the same
 claim, a different claim on the same pod, or a different pod entirely. Two
@@ -723,8 +734,8 @@ folded into the rolling intersection.
 **Allocation order.** The scheduler does not reorder requests within a claim
 to improve feasibility. If requests are ordered such that an early compatible
 pick later blocks a mandatory pick, the claim becomes Unschedulable and
-standard retry behavior applies. This matches how existing DRA constraints
-behave.
+standard retry behavior applies in the next scheduling cycle.
+This matches how existing DRA constraints behave.
 
 **Composition with `DeviceConstraints`.** `compatibilityGroups` is a
 driver-authored, ResourceSlice-side constraint. `DeviceConstraints` (e.g.,
@@ -738,9 +749,16 @@ conjunction.
 
 Resource drivers are responsible for:
 
-1. Populating `compatibilityGroups` for all devices with compatibility requirements.
-2. Continuing to validate allocations at resource preparation time for version-skew safety 
-    and to detect incorrect allocations made by a scheduler.
+1. Populating `compatibilityGroups` for all devices with compatibility
+   requirements.
+2. Detecting the `DRADeviceCompatibilityGroups` feature gate status and,
+   when the gate is disabled, omitting `compatibilityGroups` from
+   `ResourceSlice` entries. Devices declaring the field on
+   a gate-off cluster will be skipped by the scheduler and remain
+   unschedulable until either the gate is enabled or the field is removed.
+3. Continuing to validate allocations at resource preparation time for
+   version-skew safety and to detect incorrect allocations made by a
+   scheduler that does not (or no longer) enforces compatibility.
 
 ### Test Plan
 
@@ -779,10 +797,9 @@ unit and integration coverage; new tests are additive.
 
 ##### e2e tests
 
-- Fake DRA driver advertising two mutually exclusive groups (`mig`, `mps`) on
-  a single counter set. Scheduling a `mig` pod followed by an `mps` pod on
-  the same node leaves the second pod Unschedulable with the documented
-  event; reversing the order reproduces the behavior symmetrically.
+- Fake DRA driver advertising two mutually exclusive groups (`mig`, `vgpu`) on
+  a single counter set. Scheduling a `mig` pod followed by a `vgpu` pod on
+  the same node leaves the second pod Unschedulable; reversing the order reproduces the behavior symmetrically.
 - Same driver with devices who are compatible with each other (declare a shared group) — both pods schedule.
 
 ### Graduation Criteria
@@ -794,7 +811,7 @@ unit and integration coverage; new tests are additive.
 - Unit, integration and E2E tests implemented and passing reliably
 - Driver-author documentation published under `kubernetes/website` (DRA
   drivers section), including the strict nil-matching rule and a worked
-  MIG/MPS example.
+  MIG/vGPU example.
 
 #### Beta
 
@@ -802,7 +819,7 @@ unit and integration coverage; new tests are additive.
 
 #### GA
 
-- At least 2 releases as beta
+- At least 1 release as beta
 
 ### Upgrade / Downgrade Strategy
 
@@ -817,9 +834,10 @@ allocations. They will get used as soon as the feature gets enabled also in the 
 
 If downgrading to a version that does not have this enhancement implemented, older schedulers and api-servers do not know 
 of the added optional fields, and revert to their defined behavior prior to this enhancement when the current version is the initial alpha.
-When downgrading to the alpha release in 1.37, the scheduler will refuse to allocate devices
-which depend on the feature. Eventually, the downgraded DRA driver will remove those
-devices.
+When downgrading to the alpha release in 1.37, the scheduler will refuse both to allocating devices
+which depend on the feature, and allocating devices to counter sets which previously had allocations with `compatibilityGroups` declared.
+Eventually, the downgraded DRA driver will remove those devices from `ResourceSlices`, however, existing `ResourceClaim`s 
+with `compatibilityGroups` declared in their status must be deleted manually.
 
 Allocated devices that leveraged this new field will remain allocated, and future allocations will not take `compatibilityGroups` into consideration.
 
@@ -852,7 +870,7 @@ for every combination on a single cluster.
   a new scheduler with the gate off recognises them but is not
   permitted to enforce them. To avoid allocations it cannot validate, the
   scheduler excludes any device that declares `compatibilityGroups`
-  from consideration, along to preventing consumption of `counterSet`s that have 
+  from consideration, and also prevents consumption of `counterSet`s that have 
   `compatibilityGroups` assigned to them (known from claim statuses).
   Devices that do not declare the field are scheduled normally.
 - **Full feature.** The scheduler filters incompatible candidates
@@ -876,16 +894,16 @@ allocations are invalidated.
   - Components depending on the feature gate: kube-scheduler, kube-apiserver
 - Gate behavior per component:
   - **kube-apiserver**: When enabled, persists `compatibilityGroups` to devices in `ResourceSlice`s and `ResourceClaim.Status`es.
-    When disabled, strips `compatibilityGroups` on writes.
+    When disabled, strips `compatibilityGroups` from both on writes.
   - **kube-scheduler**: When enabled, respects `compatibilityGroups` declared by devices in `ResourceSlice`s
     and maintains and respects `compatibilityGroups` in `ResourceClaim.Status`es.
-    When disabled, skips devices and `counterSets` that declare `compatibilityGroups`.
+    When disabled, skips devices that declare `compatibilityGroups`, but respects `compatibilityGroups` in `ResourceClaim.Status`es.
 - Partial control-plane downtime is required to toggle the gate - `kube-apiserver` and `kube-scheduler` need to restart.
 - No node downtime or reprovisioning is required.
 
 ###### Does enabling the feature change any default behavior?
 
-No, this KEP proposes additional optional fields to the `ResourceSlice` and `ResourceClaim.Status` APIs
+No, this KEP proposes additional optional fields to the `ResourceSlice` and `ResourceClaim` APIs
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -893,7 +911,7 @@ Yes, rolling back the enablement will revert the cluster to its pre-enablement b
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-Existing `compatibilityGroup` configurations in `ResourceSlice`s will become effective again
+Existing `compatibilityGroups` configurations in `ResourceSlice`s will become effective again
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -971,7 +989,7 @@ No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes, 2 additional fields to the `ResourceSlice` and `ResoureClaim` APIs
+Yes, 2 additional fields to the `ResourceSlice` and `ResourceClaim` APIs
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -993,11 +1011,27 @@ No new side effects
 
 ###### What are other known failure modes?
 
-N/A
+**Driver publishes inconsistent `compatibilityGroups` across `ResourceSlice`
+updates.** A driver may, intentionally or by bug, change the
+`compatibilityGroups` declared on a device between slice generations —
+either flipping a device into or out of a group, or rewriting the group
+list entirely. Already-allocated devices are unaffected because the
+scheduler reads their groups from the `DeviceRequestAllocationResult`
+snapshot recorded at allocation time, not from the (possibly mutated)
+slice. New allocations on the same counter set, however, evaluate against
+the *current* slice for candidates and the *snapshotted* groups for
+already-allocated peers. Drivers that need consistent enforcement across
+slice rewrites must avoid changing the group declarations of devices in
+use.
+
+If an inconsistency does land — the driver still rejects at preparation time
+(the existing version-skew safety net), so the failure mode degrades to
+the pre-KEP behavior for that one pod rather than corrupting cluster
+state.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-TBD
+See [*What specific metrics should inform a rollback?*](#what-specific-metrics-should-inform-a-rollback). 
 
 ## Implementation History
 
@@ -1007,9 +1041,7 @@ TBD
 ## Drawbacks
 
 Adding compatibility constraint support to the scheduler increases the  
-complexity of the DRA scheduling logic. The new fields must be evaluated for  
-every device candidate during every scheduling cycle that involves DRA  
-resources, which adds latency and memory overhead.
+complexity of the DRA scheduling logic.
 
 ## Alternatives
 
@@ -1034,7 +1066,7 @@ be co-allocatable if and only if the intersection of their exclusion sets and
 their own group memberships is empty.
 
 The inverted model is arguably more intuitive for the motivating case — a MIG
-device "excludes MPS," full stop — and does not require drivers to list each
+device "excludes vGPU," full stop — and does not require drivers to list each
 peer group in their own entry (as Example 4 does, where `foo` devices must
 include `bar` in their group list). It was rejected because:
 
