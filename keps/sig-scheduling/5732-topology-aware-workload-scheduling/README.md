@@ -690,7 +690,7 @@ We'll perform manual testing of the upgrade -> downgrade -> upgrade path using t
 11. Create `test-pod-5` and `test-pod-6` Pods with `spec.schedulingGroup` pointing to `tas-test-C`
     and node affinities pointing to two different nodes. Note: We use a pod group created in step 5
     because creating new PodGroup objects with schedulingConstraints is disabled.
-13. The pods are scheduled succesfully (schedulingConstraints logic is ignored because the schedulingGroup
+13. The pods are scheduled successfully (schedulingConstraints logic is ignored because the schedulingGroup
     field is dropped by the v1.36 API server).
 15. Upgrade API Server and Scheduler back to v1.37 with feature gates enabled.
 16. Repeat steps 6 to 9 with `tas-test-D` and `tas-test-E`.
