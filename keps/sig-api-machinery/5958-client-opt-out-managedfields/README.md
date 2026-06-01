@@ -144,7 +144,7 @@ While this KEP is strictly scoped to `metadata.managedFields`, the `drop` parame
 
 ### Implementation Details
 
-1.  **API Server Serializer:** Add an `ExcludeManagedFields` option to the JSON and Protobuf serializers. When this option is set, the serializer strips `metadata.managedFields` from the Go object before encoding and exposes this variant as a distinct codec on `runtime.SerializerInfo` with its own `Identifier()`. The content type negotiation layer selects the appropriate serializer based on the `drop` parameter in the `Accept` header. Protobuf support is critical since `kube-controller-manager` and `kube-scheduler` use Protobuf by default. CRDs are also in scope — the `apiextensions-apiserver` constructs its own `SerializerInfo` for custom resources and will need to wire in the `ExcludeManagedFields` variant alongside its existing serializers.
+1.  **API Server Serializer:** Add an `ExcludeManagedFields` option to the JSON, Protobuf, and CBOR serializers. When this option is set, the serializer strips `metadata.managedFields` from the Go object before encoding and exposes this variant as a distinct codec on `runtime.SerializerInfo` with its own `Identifier()`. The content type negotiation layer selects the appropriate serializer based on the `drop` parameter in the `Accept` header. Stripping happens at the Go-object level before encoding, so it is serializer-agnostic and applies uniformly across all formats. Protobuf support is critical since `kube-controller-manager` and `kube-scheduler` use Protobuf by default. CRDs are also in scope — the `apiextensions-apiserver` constructs its own `SerializerInfo` for custom resources and will need to wire in the `ExcludeManagedFields` variant alongside its existing serializers.
 2.  **Watch Cache:** No changes are needed to the watch cache or `cachingObject`. The `cachingObject`'s `serializationsCache` is keyed by `runtime.Identifier`. Since the stripped serializer has a different `Identifier` than the full serializer, the cache naturally maintains both forms as separate entries. This means that until all watchers migrate to dropping `managedFields`, each watch event will be serialized twice (once with and once without `managedFields`). Benchmarking shows this dual-serialization adds roughly 62% more time and 83% more memory per event, but this overhead is constant regardless of watcher count and is offset by the smaller payload sizes.
 3.  **Discoverability:** The capability should be discoverable via the supported media types in the OpenAPI schema.
 4.  **Client-side Mitigation:** `managedfields.ExtractInto` already returns `nil` (no error) when no matching managed fields entry is found, which is a safe no-op. No changes to `ExtractInto` error handling are needed. Clients that opt out should be aware that `ExtractInto` will silently return empty results.
@@ -174,7 +174,7 @@ None.
 
 #### Unit Tests
 
-- Test API server encoders (JSON and Protobuf) with and without the `managedFields` exclusion flag.
+- Test API server encoders (JSON, Protobuf, and CBOR) with and without the `managedFields` exclusion flag.
 - Test `cachingObject` serialization cache hits and misses with the exclusion flag.
 
 #### Integration Tests
@@ -193,7 +193,7 @@ The feature uses two independent gates with their own maturities. The server-sid
 
 #### Alpha
 
-- `ManagedFieldsOptOut` (server-side, in `kube-apiserver`): introduced at **Beta** feature-gate maturity, enabled by default. Recognizes the `drop=metadata.managedFields` `Accept` parameter for JSON and Protobuf across GET, LIST, WATCH, PUT, POST, and PATCH.
+- `ManagedFieldsOptOut` (server-side, in `kube-apiserver`): introduced at **Beta** feature-gate maturity, enabled by default. Recognizes the `drop=metadata.managedFields` `Accept` parameter for JSON, Protobuf, and CBOR across GET, LIST, WATCH, PUT, POST, and PATCH.
 - `ManagedFieldsOptOutClient` (client-side, in `client-go`): introduced at **Alpha** feature-gate maturity, disabled by default. Controls whether in-tree clients (`kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`.
 
 #### Beta
