@@ -778,6 +778,7 @@ type GangGroupSchedulingPolicy struct {
 	// +optional
 	// +k8s:required
 	// +k8s:minimum=1
+	// +k8s:immutable
 	MinGroupCount int32
 }
 ```
@@ -840,12 +841,14 @@ type CompositeDisruptionMode struct {
 
 // SingleCompositeDisruptionMode means that individual children of a CompositePodGroup
 // can be disrupted or preempted independently.
+// FOR API REVIEW: Alternative Names: SingleGroupDisruptionMode
 type SingleCompositeDisruptionMode struct {
 	// This is intentionally empty.
 }
 
 // AllCompositeDisruptionMode means that children of a CompositePodGroup can only be
 // disrupted or preempted together.
+// FOR API REVIEW: Alternative Names: AllGroupDisruptionMode
 type AllCompositeDisruptionMode struct {
 	// This is intentionally empty.
 }
@@ -913,7 +916,7 @@ type CompositePodGroupStatus struct {
 	// - "DisruptionTarget": Indicates whether the CompositePodGroup is about to be terminated
 	//   due to disruption such as preemption.
 	//
-	// Known reasons for the CompositePodGroupScheduled condition:
+	// Known reasons for the CompositePodGroupInitiallyScheduled condition:
 	// - "Unschedulable": The CompositePodGroup's subtree could not be placed due to resource constraints,
 	//   affinity/anti-affinity, or topological constraints.
 	// - "SchedulerError": The CompositePodGroup cannot be scheduled due to some internal error
@@ -1017,13 +1020,30 @@ to scheduling it at all.
 
 ##### Runtime validation in Beta
 
-A complete implementation of runtime hierarchy validation—including verifying that the group tree matches the definition in the corresponding `Workload` object—will be tackled in the **Beta** release. While the high-level goals are established, the detailed design requires careful consideration to guarantee consistent decisions and prevent race conditions.
+A complete implementation of runtime hierarchy validation — including verifying that the group
+tree matches the definition in the corresponding `Workload` object — will be tackled in the
+**Beta** release. While the high-level goals are established, the detailed design requires
+careful consideration to guarantee consistent decisions and prevent race conditions.
 
 The initial outline and key challenges to address for the Beta design include:
 
-*   **Watching `Workload` objects:** To validate whether the runtime group tree matches the actual `Workload`-defined tree, the scheduler will potentially need to list and watch `Workload` objects. Since the number of distinct active workloads in a cluster is relatively small and their objects are lightweight, introducing this watch is expected to have a negligible impact on the scheduler's scalability.
-*   **Validation Loop in the Scheduling Queue:** Validating group hierarchies against `Workload` definitions can be computationally heavier than simple single-pod validations. To ensure this does not affect the scheduler's main loop performance, this validation will happen in the scheduling queue as a separate loop. It will target stalled or long-standing hierarchies (e.g., those residing in the queue for too long and failing to become schedulable) that have spent excessive time in the unschedulable cache.
-*   **Race Conditions & Atomic Transitions:** A central challenge is the thread-safe transition of group hierarchies. We must ensure that moving hierarchies between the queue's "unschedulable hierarchies" (represented in memory by `unschedulablePodGroups`) and the active queue (`activeQ`) is done atomically under a single lock to prevent race conditions during concurrent updates and scheduling attempts.
+*   **Watching `Workload` objects:** To validate whether the runtime group tree matches the
+    actual `Workload`-defined tree, the scheduler will potentially need to list and watch
+    `Workload` objects. Their total number is strictly bounded by the number of active pods
+    (and is typically much lower). Furthermore, because `Workload` objects are generally static,
+    their update churn is extremely low. Introducing this watch is therefore expected to have a
+    negligible impact on the scheduler's scalability.
+*   **Validation Loop in the Scheduling Queue:** Validating group hierarchies against
+    `Workload` definitions can be computationally heavier than simple single-pod validations.
+    To ensure this does not affect the scheduler's main loop performance, this validation will
+    happen in the scheduling queue as a separate loop. It will target stalled or long-standing
+    hierarchies (e.g., those residing in the queue for too long and failing to become
+    schedulable) that have spent excessive time in the unschedulable cache.
+*   **Race Conditions & Atomic Transitions:** A central challenge is the thread-safe
+    transition of group hierarchies. We must ensure that moving hierarchies between the
+    queue's "unschedulable hierarchies" (represented in memory by `unschedulablePodGroups`)
+    and the active queue (`activeQ`) is done atomically under a single lock to prevent race
+    conditions during concurrent updates and scheduling attempts.
 
 ### Changes in kube-scheduler
 
@@ -1474,7 +1494,7 @@ best resolved configuration:
    * Temporarily assumes the candidate parent domain in the `nodeInfoSnapshot`
      as the active scheduling context.
    * **Recursive Child Group Resolution:** Sequentially invokes the recursive
-     `podGroupSchedulingPlacementAlgorithm` cycle for each child group,
+     `groupRecursiveSchedulingPlacementAlgorithm` cycle for each child group,
      confining their placement candidates strictly to nodes within the assumed
      parent domain scope. Sibling child groups are evaluated in their
      pre-sorted order without sibling backtracking, taking into account the
