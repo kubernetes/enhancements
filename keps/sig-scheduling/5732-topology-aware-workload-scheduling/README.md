@@ -809,16 +809,16 @@ retried with standard exponential backoff once connectivity is restored.
 
 ###### What are other known failure modes?
 
-- Pods Pending Indefinitely - Gang cannot fit (Resource Constraints)
+- Pods Pending Indefinitely - PodGroup cannot fit in any Placement (Resource Constraints)
   - Detection: Check Pod Events/Status. Expected reason: a message indicating that minCount pods could not be
     scheduled.
   - Metrics: `scheduler_podgroup_schedule_attempts_total` with result unschedulable.
   - Mitigations:
     - Scale up the cluster (add nodes) or delete other real-workloads to free up space.
     - If intended, recreate the PodGroup object without `schedulingConstraints`
-      to disable TAS scheduling (fallback to best-effort scheduling) if acceptable.
+      to disable TAS scheduling (fallback to default workload scheduling) if acceptable.
   - Diagnostics:
-    - Scheduler logs at V=4 searching for "podgroup" to see detailed reasons why the placement failed.
+    - Scheduler logs at v=4 searching for "podgroup" to see detailed reasons why the placement failed.
   - Testing:
     - Covered by integration tests submitting unschedulable PodGroups.
 
@@ -830,7 +830,7 @@ retried with standard exponential backoff once connectivity is restored.
 3. Inspect Logs: Enable scheduler logging at `-v=6` (or `-v=10` for deep tracing) to trace the execution time of
    individual Workload Scheduling Cycles and identify if specific PodGroups which are blocking the queue. 
 4. Disable Feature: If the regression is critical and impacting cluster health, disable the
-   WorkloadTopologyAwareScheudling feature gate. This will revert the scheduler to the standard Workload Scheduling
+   TopologyAwareWorkloadScheudling feature gate. This will revert the scheduler to the standard Workload Scheduling
    logic, restoring baseline performance (at the cost of losing topology semantics).
 
 ## Implementation History
