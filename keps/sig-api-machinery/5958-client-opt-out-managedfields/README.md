@@ -176,11 +176,14 @@ None.
 
 - Test API server encoders (JSON, Protobuf, and CBOR) with and without the `managedFields` exclusion flag.
 - Test `cachingObject` serialization cache hits and misses with the exclusion flag.
+- Test that an unrecognized `drop` parameter value is ignored and the full object (including `managedFields`) is returned. This confirms the version-skew/downgrade behavior, where an older API server that does not understand the parameter returns the full object.
+- Test the client-side defensive stripping fallback: when the client requested the drop but the response still contains `managedFields`, the client strips it.
 
 #### Integration Tests
 
 - Verify that requests with the `Accept` parameter correctly return objects without `managedFields` across all logical verbs: GET, LIST, WATCH, CREATE (POST), UPDATE (PUT), PATCH, DELETE, and DELETECOLLECTION (the latter two are covered even though no behavior change is needed for them).
 - Verify that standard requests (without the parameter) still return `managedFields`.
+- Verify that a request with an unrecognized `drop` value returns the full object (forward/backward compatibility).
 - Verify mixed watch scenarios with both opt-in and opt-out clients.
 
 #### e2e Tests
@@ -189,15 +192,16 @@ None.
 
 ### Graduation Criteria
 
-The feature uses two independent gates with their own maturities. The server-side serializer is inert unless a client opts in via the `Accept` header, so it carries little risk and is introduced directly at Beta maturity. The client-side gate controls whether in-tree controllers actually drop `managedFields`, which is the part that carries rollout risk, so it starts at Alpha maturity. The milestones below describe the KEP's overall progression.
+Both gates start at Alpha (disabled by default) and are independent. The server-side gate exposes a new `kube-apiserver` code path that any client can trigger via the `Accept` header, so its risk can't be discounted just because in-tree clients don't use it — it bakes at Alpha before being enabled by default at Beta.
 
 #### Alpha
 
-- `ManagedFieldsOptOut` (server-side, in `kube-apiserver`): introduced at **Beta** feature-gate maturity, enabled by default. Recognizes the `drop=metadata.managedFields` `Accept` parameter for JSON, Protobuf, and CBOR across GET, LIST, WATCH, PUT, POST, and PATCH.
-- `ManagedFieldsOptOutClient` (client-side, in `client-go`): introduced at **Alpha** feature-gate maturity, disabled by default. Controls whether in-tree clients (`kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`.
+- `ManagedFieldsOptOut` (server-side, in `kube-apiserver`): introduced at Alpha, disabled by default. Recognizes the `drop=metadata.managedFields` `Accept` parameter for JSON, Protobuf, and CBOR across GET, LIST, WATCH, PUT, POST, and PATCH.
+- `ManagedFieldsOptOutClient` (client-side, in `client-go`): introduced at Alpha, disabled by default. Controls whether in-tree clients (`kube-scheduler`, `kube-controller-manager`) send the `Accept` header to drop `managedFields`.
 
 #### Beta
 
+- `ManagedFieldsOptOut` (server-side) promoted to Beta and enabled by default.
 - `ManagedFieldsOptOutClient` (client-side) promoted to Beta and enabled by default; in-tree controllers use the opt-out by default.
 - Performance benchmarks confirming savings in API server and clients.
 - User-facing documentation published in [kubernetes/website].
@@ -258,7 +262,7 @@ Yes, integration tests will cover behavior with the feature gate on and off.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-A rollout failure might lead to API server crashes if there's a bug in the encoder. However, this is unlikely given the targeted nature of the change. It shouldn't impact already running workloads that don't use the new feature.
+A bug in the new serializer path could cause errors or panics when serving a request that uses the `drop` parameter. The API server's `WithPanicRecovery` filter (plus Go's per-request panic recovery) converts such a panic into a 500 for that request only — it does not crash the process or affect other clients. Requests without the `drop` parameter take the unchanged path. Disabling the `ManagedFieldsOptOut` gate removes the new path entirely.
 
 ###### What specific metrics should inform a rollback?
 
@@ -295,7 +299,7 @@ The feature should not introduce any measurable latency increase for API request
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-A metric tracking the number of requests using the `drop=metadata.managedFields` parameter would be useful.
+A metric counting requests that use the `drop=metadata.managedFields` parameter would help measure adoption during Alpha/Beta graduation. Its long-term value is limited, so it may be a temporary adoption signal rather than a permanent metric.
 
 ### Dependencies
 
