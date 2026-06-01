@@ -103,6 +103,8 @@ lines.
 - Eliminate the need to hand-write strategy boilerplate for resources that
   follow standard conventions while preserving the customization that is
   available today.
+- All changes will be backwards compatible. External users of API frameworks
+  and code generators will need to opt-in to the new behaviors.
 
 ### Non-Goals
 
@@ -134,7 +136,7 @@ lists to cover:
 - Generation management (set to 1 on create and monotomically increased when spec is changed by an update)
 - Field dropping of feature gated fields
   - It should be impossible to add a new field to an existing API without a feature gate 
-  - Iff a field is feature gated, field dropping must be implemented
+  - If a field is feature gated, field dropping must be implemented. If it is not feature gated, the field must not be dropped.
   - Field dropping must be tested (can we offer any test conveniences/automation?)
 - Default behaviors:
   - `AllowCreateOnUpdate` is `false`
@@ -238,7 +240,7 @@ This requires [Spec/Status accessor interfaces](#specstatus-accessor-interfaces)
 ### Generation Management
 
 Default behavior will follow best practice: Generation is set to 1 on create
-and bumped on update when Spec changes.
+and bumped on update exactly when Spec changes.
 
 This requires [Spec/Status accessor interfaces](#specstatus-accessor-interfaces).
 
