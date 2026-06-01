@@ -157,7 +157,7 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 		return nil, errors.Wrap(err, "unmarshalling owners aliases")
 	}
 
-	var result []string
+	result := make([]string, 0, len(config.Data[f.PRRApproversAlias])+len(config.Data[f.PRRApproversEmeritusAlias]))
 	result = append(result, config.Data[f.PRRApproversAlias]...)
 	// TODO: Figre out if we want to treat emeritus approvers differently.
 	result = append(result, config.Data[f.PRRApproversEmeritusAlias]...)
