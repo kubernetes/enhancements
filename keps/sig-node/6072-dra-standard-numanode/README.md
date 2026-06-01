@@ -68,10 +68,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Standardize `resource.kubernetes.io/numaNode` as a well-known DRA device attribute alongside the existing `pcieRoot` and `pciBusID`. The value is an **integer list** (requires KEP-5491 `DRAListTypeAttributes` feature gate) where:
+Standardize `resource.kubernetes.io/numaNode` as a well-known DRA device attribute alongside the existing `pcieRoot` and `pciBusID`. The value can be:
 
-- The first element is the device's physical NUMA node (from the kernel's `numa_node` sysfs entry)
-- Additional elements are same-socket NUMA nodes at the minimum ACPI SLIT distance
+- A **scalar int** — the device's physical NUMA node (from the kernel's `numa_node` sysfs entry). Works without any feature gate.
+- An **integer list** (requires KEP-5491 `DRAListTypeAttributes` feature gate) — physical NUMA node first, followed by same-socket NUMA nodes at the minimum ACPI SLIT distance
 
 This enables cross-driver NUMA co-placement via `matchAttribute` with KEP-5491 non-empty intersection matching:
 
@@ -109,7 +109,11 @@ Add `resource.kubernetes.io/numaNode` to the set of well-known device attributes
 
 | Attribute | Type | Requires | Semantics |
 |-----------|------|----------|-----------|
-| `resource.kubernetes.io/numaNode` | int list | `DRAListTypeAttributes` | Physical NUMA node first, followed by same-socket NUMA nodes at minimum SLIT distance. For CPU/memory devices, single-element `[N]`. |
+| `resource.kubernetes.io/numaNode` | int or int list | int: none; list: `DRAListTypeAttributes` | Physical NUMA node (scalar) or physical NUMA node first, followed by same-socket NUMA nodes at minimum SLIT distance (list). |
+
+Drivers MAY publish `numaNode` as a **scalar int** (the physical NUMA node only). Drivers SHOULD publish it as an **integer list** when `DRAListTypeAttributes` (KEP-5491) is enabled. `matchAttribute` handles both — it can match a scalar from one driver against a list from another.
+
+This makes the attribute immediately useful for same-NUMA matching without requiring `DRAListTypeAttributes`, while enabling richer cross-quadrant co-placement when list attributes are available.
 
 This attribute measures **memory topology** — which memory controllers are closest to the device. It is orthogonal to `pcieRoot`, which measures **bus topology** — which PCIe switch tree the device sits behind.
 
@@ -122,27 +126,39 @@ The `numaNode` list is built from two filters applied to the ACPI SLIT distance 
 
 The physical NUMA node (from sysfs `numa_node`) is always the first element.
 
-**CPU and memory devices** publish `[N]` — a single-element list, since they ARE a NUMA node. They don't need SLIT expansion because CPU/memory is definitionally local to exactly one memory controller.
+**CPU and memory devices** typically publish their physical NUMA node as a scalar `N` or single-element list `[N]`. Under NPS/SNC configurations where multiple NUMA nodes share symmetric memory controller access (e.g., AMD EPYC with memory controllers on the I/O die), drivers MAY publish a multi-element list. What each driver publishes is up to the driver authors.
 
 **I/O devices** (GPUs, NICs, NVMe) publish `[physical, nodes at min SLIT distance on same socket...]`. On hardware where multiple NUMA nodes are equidistant to an I/O device (e.g., AMD EPYC chiplets under NPS4 where all same-socket NUMA nodes are at distance 12), the list includes all same-socket nodes. On future multi-IOD hardware with asymmetric intra-socket SLIT distances (e.g., Intel Granite Rapids with 2 IODs per socket), the minimum distance filter would naturally narrow the list to same-IOD nodes only.
 
 **Examples (AMD EPYC 9825, NPS4, 8 NUMA nodes):**
 
-| Device | Physical NUMA | SLIT distances | `numaNode` list |
-|--------|--------------|----------------|-----------------|
-| CPU on NUMA 4 | 4 | (is NUMA node) | `[4]` |
-| Memory on NUMA 4 | 4 | (is NUMA node) | `[4]` |
-| NVMe on NUMA 0 | 0 | 10, 12, 12, 12, 32, 32, 32, 32 | `[0, 1, 2, 3]` |
-| NIC VF on NUMA 6 | 6 | 32, 32, 32, 32, 12, 12, 10, 12 | `[6, 4, 5, 7]` |
+| Device | Physical NUMA | SLIT distances | `numaNode` value |
+|--------|--------------|----------------|------------------|
+| CPU on NUMA 4 | 4 | (is NUMA node) | `4` (scalar) or `[4]` (list) |
+| Memory on NUMA 4 | 4 | (is NUMA node) | `4` (scalar) or `[4]` (list) |
+| NVMe on NUMA 0 | 0 | 10, 12, 12, 12, 32, 32, 32, 32 | `0` (scalar) or `[0, 1, 2, 3]` (list) |
+| NIC VF on NUMA 6 | 6 | 32, 32, 32, 32, 12, 12, 10, 12 | `6` (scalar) or `[6, 4, 5, 7]` (list) |
 
-**matchAttribute intersection matching (KEP-5491):**
+**matchAttribute matching:**
 
-| Constraint | CPU `[4]` | NIC `[6, 4, 5, 7]` | Intersection | Result |
-|------------|-----------|---------------------|-------------|--------|
+Scalar-to-scalar (without `DRAListTypeAttributes`):
+
+| Constraint | CPU `4` | NIC `6` | Match | Result |
+|------------|---------|---------|-------|--------|
+| `matchAttribute: numaNode` | 4 | 6 | 4 ≠ 6 | no match ✓ |
+
+| Constraint | CPU `4` | NIC `4` | Match | Result |
+|------------|---------|---------|-------|--------|
+| `matchAttribute: numaNode` | 4 | 4 | 4 = 4 | match ✓ |
+
+Scalar-to-list and list-to-list (with `DRAListTypeAttributes` — intersection matching):
+
+| Constraint | CPU `4` (scalar) | NIC `[6, 4, 5, 7]` (list) | Intersection | Result |
+|------------|------------------|---------------------------|-------------|--------|
 | `matchAttribute: numaNode` | `{4}` | `{6, 4, 5, 7}` | `{4}` ≠ ∅ | match ✓ |
 
-| Constraint | CPU `[0]` | NIC `[6, 4, 5, 7]` | Intersection | Result |
-|------------|-----------|---------------------|-------------|--------|
+| Constraint | CPU `0` (scalar) | NIC `[6, 4, 5, 7]` (list) | Intersection | Result |
+|------------|------------------|---------------------------|-------------|--------|
 | `matchAttribute: numaNode` | `{0}` | `{6, 4, 5, 7}` | ∅ | no match ✓ |
 
 ### Helper Functions
@@ -150,13 +166,19 @@ The physical NUMA node (from sysfs `numa_node`) is always the first element.
 Add to `k8s.io/dynamic-resource-allocation/deviceattribute`:
 
 ```go
+// GetNUMANodeByPCIBusID returns the numaNode attribute for a PCI device
+// as a scalar int (physical NUMA node). Use when DRAListTypeAttributes
+// is not available.
+func GetNUMANodeByPCIBusID(pciBusID string, mods ...MachineModifier) (DeviceAttribute, error)
+
 // GetNUMANodeListByPCIBusID returns the numaNode list attribute for a PCI
 // device. First element is the physical NUMA node, additional elements are
-// same-socket nodes at minimum SLIT distance.
+// same-socket nodes at minimum SLIT distance. Requires DRAListTypeAttributes.
 func GetNUMANodeListByPCIBusID(pciBusID string, mods ...MachineModifier) (DeviceAttribute, error)
 
 // GetNUMANodeList returns the numaNode list attribute for a device that
 // already knows its NUMA node. Suitable for CPU and memory devices.
+// Returns scalar or list depending on DRAListTypeAttributes availability.
 func GetNUMANodeList(numaNode int, mods ...MachineModifier) DeviceAttribute
 
 // GetNUMANodeForCPU returns the NUMA node ID for a given CPU core.
@@ -262,15 +284,21 @@ All functions use the existing `machine` abstraction with `MachineModifier` for 
 Each DRA driver adds one call to publish the list attribute:
 
 ```go
-// I/O device (GPU, NIC, NVMe) — uses PCI BDF to read SLIT distances
+// I/O device (GPU, NIC, NVMe) — list when DRAListTypeAttributes is available
 numaAttr, err := deviceattribute.GetNUMANodeListByPCIBusID(pciBusID)
 if err == nil {
     device.Attributes[numaAttr.Name] = numaAttr.Value
 }
 
-// CPU/memory device — publishes single-element [N]
+// I/O device — scalar fallback when DRAListTypeAttributes is not available
+numaAttr, err := deviceattribute.GetNUMANodeByPCIBusID(pciBusID)
+if err == nil {
+    device.Attributes[numaAttr.Name] = numaAttr.Value
+}
+
+// CPU/memory device — scalar int
 device.Attributes[deviceattribute.StandardDeviceAttributeNUMANode] = resourceapi.DeviceAttribute{
-    IntValues: []int64{int64(numaID)},
+    IntValue: ptr.To(int64(numaID)),
 }
 ```
 
@@ -302,11 +330,11 @@ None — this adds a new attribute and helper functions, does not modify existin
 
 #### Alpha
 
-- Helper functions in `deviceattribute` library
-- Standard attribute name and list semantics documented
+- Helper functions in `deviceattribute` library (scalar and list variants)
+- Standard attribute name and semantics documented
 - Unit and integration tests passing
-- At least one upstream DRA driver publishes the attribute
-- Depends on `DRAListTypeAttributes` feature gate (KEP-5491)
+- At least one upstream DRA driver publishes the attribute (scalar or list)
+- List form depends on `DRAListTypeAttributes` feature gate (KEP-5491); scalar form has no dependency
 
 #### Beta
 
@@ -335,8 +363,9 @@ The attribute depends on KEP-5491 `DRAListTypeAttributes` for the list type. All
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- Depends on feature gate: `DRAListTypeAttributes` (KEP-5491)
-- Components: kube-apiserver (accepts `IntValues` in ResourceSlice), kube-scheduler (intersection matching in experimental allocator)
+- The standard attribute name and scalar int form require no feature gate.
+- The integer list form depends on feature gate: `DRAListTypeAttributes` (KEP-5491)
+- Components for list form: kube-apiserver (accepts `IntValues` in ResourceSlice), kube-scheduler (intersection matching in experimental allocator)
 - The helper functions are library code used by drivers at build time.
 
 ###### Does enabling the feature change any default behavior?
@@ -462,7 +491,7 @@ TBD for beta.
 
 ## Drawbacks
 
-- Depends on KEP-5491 `DRAListTypeAttributes` which is alpha in 1.36. If KEP-5491 doesn't graduate, this KEP is blocked.
+- The list form depends on KEP-5491 `DRAListTypeAttributes` which is alpha in 1.36. If KEP-5491 doesn't graduate, the attribute is still useful as a scalar int for same-NUMA matching, but cross-quadrant co-placement (NPS4, shared I/O die) requires the list form.
 - The SLIT-based list may include more NUMA nodes than strictly necessary on hardware where all intra-socket distances are equal. This is a safe over-approximation but may reduce scheduling precision.
 
 ## Alternatives
