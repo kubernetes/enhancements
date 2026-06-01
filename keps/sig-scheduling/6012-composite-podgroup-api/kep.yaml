@@ -29,7 +29,7 @@ latest-milestone: "v1.37"
 milestone:
   alpha: "v1.37"
   beta: "v1.38"
-  stable: "v1.39"
+  stable: "v1.40"
 
 feature-gates:
   - name: CompositePodGroup

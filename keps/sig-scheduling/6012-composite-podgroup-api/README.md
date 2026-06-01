@@ -1080,8 +1080,8 @@ points:
    * Member pods belonging to any nested child groups inside an unobserved
      hierarchy are placed and held inside the queue's `pendingPodGroupMembers`
      cache. These pods are blocked from active scheduling passes and only
-     promoted when their full hierarchy, including the root CPG, is successfully
-     observed and enqueued.
+     promoted when the root of their hierarchy (a PG or CPG without a parent
+     reference) is successfully observed and enqueued.
 3. **`PreEnqueue` Extension Point:** Currently, this extension point is
    defined strictly at the individual `Pod` level. Under KEP-6012, this
    prerequisite remains unchanged: `PreEnqueue` will operate strictly at the
@@ -1283,7 +1283,8 @@ intermediate levels.
 Consistent with flat gang scheduling ([KEP-4671]), binding and preemption
 never occur inside the same scheduling cycle. The preemption triggering
 rules under this KEP are identical to [KEP-4671]:
-* **If the root-level scheduling policy is satisfied:** If the recursive direct
+* **If the root-level scheduling policy is satisfied (i.e.,
+  `PlacementFeasible` on the root CPG returns `Success`):** If the recursive direct
   in-memory simulation successfully schedules at least `minGroupCount` child
   groups under a CPG tree, the scheduling cycle succeeds. The scheduler does
   not trigger preemption in this cycle. Instead, it commits pod bindings for
