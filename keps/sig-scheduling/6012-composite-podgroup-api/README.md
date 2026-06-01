@@ -346,7 +346,7 @@ policies and constraints in the following subsections.
 
 `Workload` API, which continues to represent the static policy configuration of
 a true workload, starts to contain the definition of templates for the
-`CompositePodGroup` objects, similar to how it already did so for the `Podgroup`
+`CompositePodGroup` objects, similar to how it already did so for the `PodGroup`
 objects. To clearly reflect the hierarchical nature of a workload, templates
 themselves are evolved into a tree-like structure.
 
@@ -369,7 +369,7 @@ flowchart TD
 
         subgraph Branch2 [" "]
             ChildCPG2["CompositePodGroup: replica-1"]
-            PG3["PodGroup: worker-1"]
+            PG3["PodGroup: workers-1"]
             PG4["PodGroup: driver-1"]
             ChildCPG2 <--> PG3
             ChildCPG2 <--> PG4
@@ -1455,7 +1455,7 @@ resolves placements **recursively** down the hierarchy tree:
 ##### CompositePodGroup Scheduling Algorithm
 
 The multi-level topology-aware scheduling (TAS) algorithm
-(`podGroupSchedulingPlacementAlgorithm`) is a direct extension of the recursive
+(`groupRecursiveSchedulingPlacementAlgorithm`) is a direct extension of the recursive
 `groupRecursiveSchedulingDefaultAlgorithm` execution cycle defined in
 [Multi-level gang scheduling](#multi-level-gang-scheduling), augmented to
 determine appropriate topology placements.
