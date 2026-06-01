@@ -179,7 +179,7 @@ None.
 
 #### Integration Tests
 
-- Verify that GET, LIST, and WATCH requests with the `Accept` parameter correctly return objects without `managedFields`.
+- Verify that requests with the `Accept` parameter correctly return objects without `managedFields` across all logical verbs: GET, LIST, WATCH, CREATE (POST), UPDATE (PUT), PATCH, DELETE, and DELETECOLLECTION (the latter two are covered even though no behavior change is needed for them).
 - Verify that standard requests (without the parameter) still return `managedFields`.
 - Verify mixed watch scenarios with both opt-in and opt-out clients.
 
