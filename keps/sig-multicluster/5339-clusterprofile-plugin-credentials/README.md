@@ -60,6 +60,10 @@ SIG Architecture for cross-cutting KEPs).
 -->
 # KEP-5339: Plugin for Credentials in ClusterProfile
 
+## Status
+
+This KEP has been replaced by [KEP-4322: ClusterProfile API](/keps/sig-multicluster/4322-cluster-inventory/). The credential provider plugin mechanism, `accessProviders` API field, and related design details have been merged into KEP-4322.
+
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
