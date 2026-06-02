@@ -552,25 +552,46 @@ admission chain.
 
 ##### Unit tests
 
-Coverage areas:
-- Manifest file loading, parsing, and validation
-- Error handling for missing/unreadable/malformed files
-- Composite accessor merging manifest and API-based configurations
+Manifest-based admission (alpha, already in tree; permalinks pinned at
+[`e136f393`](https://github.com/kubernetes/kubernetes/tree/e136f39334a72b7d35069a97d373ccaa0211dcae)):
+
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/loader/loader_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/loader/loader_test.go) — `TestLoadManifests`, `TestValidatingLoadResult_GetWebhookAccessors`, `TestMutatingLoadResult_GetWebhookAccessors` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestLoadManifests))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/source/source_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/manifest/source/source_test.go) — `TestValidatingSource_*` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestValidatingSource))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/loader/loader_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/loader/loader_test.go) — `TestLoadPolicyManifests` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestLoadPolicyManifests))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/source/source_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/policy/manifest/source/source_test.go) — `TestStaticPolicySource_*` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStaticPolicySource))
+- [`staging/src/k8s.io/apiserver/pkg/admission/plugin/manifest/validation_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/staging/src/k8s.io/apiserver/pkg/admission/plugin/manifest/validation_test.go) — `TestValidateStaticManifestsDir`, `TestValidateManifestName`, `TestValidateWebhookClientConfig`, `TestValidateBindingReferences` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestValidateStaticManifestsDir))
+
+`ExcludeAdmissionWebhookVirtualResources` (added at beta; links will be added when the
+implementation PR lands):
+
+- `k8s.io/apiserver/pkg/admission/plugin/webhook/validating`: unit tests covering `WantsExcludedAdmissionResources` initializer wiring and dispatcher skip behavior with the gate enabled and disabled.
+- `k8s.io/apiserver/pkg/admission/plugin/webhook/mutating`: same coverage as validating.
 
 ##### Integration tests
 
-Test scenarios:
-- Bootstrap enforcement: Manifest policy active immediately at startup
-- Hot reload: Adding/removing manifest files updates enforcement
-- Invalid config handling: Server continues with previous valid config on reload errors
-- Coexistence: Both manifest and API-based configurations invoked
-- Metrics: Existing metrics include manifest-based admission with `.static.k8s.io` names
+Manifest-based admission (alpha, already in tree; permalinks pinned at
+[`e136f393`](https://github.com/kubernetes/kubernetes/tree/e136f39334a72b7d35069a97d373ccaa0211dcae)):
+
+- [`test/integration/apiserver/admissionwebhook/static_manifest_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/test/integration/apiserver/admissionwebhook/static_manifest_test.go) — `TestStaticWebhookBlocksAPICreation`, `TestStaticWebhookComprehensive` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStaticWebhookComprehensive))
+- [`test/integration/apiserver/cel/static_policy_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/test/integration/apiserver/cel/static_policy_test.go) — `TestStaticPolicyBlocksAPICreation`, `TestStaticPolicyComprehensive` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestStaticPolicyComprehensive))
+
+VAP/MAP exclusion parity (existing, used as the reference for the new webhook tests):
+
+- [`test/integration/apiserver/cel/excludedresources_test.go`](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/test/integration/apiserver/cel/excludedresources_test.go) — `TestExcludedResources` ([triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestExcludedResources))
+
+`ExcludeAdmissionWebhookVirtualResources` (added at beta; links will be added when the
+implementation PR lands):
+
+- `test/integration/apiserver/admissionwebhook/`: new test mirroring `excludedresources_test.go`. Covers (a) gate enabled — webhook is not dispatched for any GroupResource in `exclusion.Excluded()`; (b) gate disabled — webhook is dispatched as before; (c) parity with the VAP/MAP exclusion list.
 
 ##### e2e tests
 
-Not possible. e2e tests run against a cluster configured outside of the test, so we cannot
-modify API server startup flags or place files on the control plane host. This feature is
-best tested via integration tests.
+Not applicable for either feature. The manifest-based path requires API server startup flags
+and on-disk files on the control plane host, which e2e tests (running against a cluster
+configured outside the test) cannot manipulate. The webhook virtual-resource exclusion is
+gate-toggled API-server-internal behavior with no user-visible API surface; the existing
+VAP/MAP exclusion (PR [kubernetes/kubernetes#123543](https://github.com/kubernetes/kubernetes/pull/123543))
+established the same integration-only precedent.
 
 ### Graduation Criteria
 
@@ -671,9 +692,13 @@ behavior can set the gate to `false`.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disable the `ManifestBasedAdmissionControlConfig` feature gate or remove the
+`ManifestBasedAdmissionControlConfig`: Yes. Disable the feature gate or remove the
 `staticManifestsDir` entries from `AdmissionConfiguration` and restart API server.
-Manifest-based admission controls will no longer be enforced.
+Manifest-based admission controls will no longer be enforced. No state is persisted.
+
+`ExcludeAdmissionWebhookVirtualResources`: Yes. Set the gate to `false` and restart API
+server. `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` will resume dispatching
+admission for resources in `exclusion.Excluded()`. No state is persisted.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -693,6 +718,12 @@ Rollout failures:
 - Invalid manifest files cause API server startup failure
 - Misconfigured webhooks (unreachable URLs) will reject requests if `failurePolicy: Fail`
 - In HA setups, inconsistent manifest files across API servers cause inconsistent behavior
+
+Rollback failures:
+- Downgrading to a release that predates `ExcludeAdmissionWebhookVirtualResources` (i.e.,
+  pre-1.37) with the gate still listed in `--feature-gates` will fail API server startup
+  with an "unrecognized feature gate" error. Operators must remove the gate from
+  `--feature-gates` before rolling back to such a release.
 
 Impact on running workloads:
 - Already running workloads are not affected (admission only applies to API requests)
@@ -716,7 +747,14 @@ Will be tested during alpha/beta, including upgrade→downgrade→upgrade path.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No.
+Yes. As of 1.37, webhook admission's ability to intercept resources in
+`exclusion.Excluded()` (`SubjectAccessReview`, `SelfSubjectAccessReview`,
+`LocalSubjectAccessReview`, `SelfSubjectRulesReview`, `SelfSubjectReview`, `TokenReview`)
+is deprecated. The `ExcludeAdmissionWebhookVirtualResources` gate is opt-out for 3 releases
+/ 12 months (consistent with the Kubernetes deprecation policy) before being locked to
+enabled at GA, after which webhook admission can no longer be used to intercept these
+virtual resources. This brings webhook admission into parity with `ValidatingAdmissionPolicy`
+and `MutatingAdmissionPolicy`, which have always excluded these resources.
 
 ### Monitoring Requirements
 
@@ -821,6 +859,7 @@ for details on other platforms.
 | File permission errors on startup | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Restart | API server logs show permission errors |
 | File permission errors on reload | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Wait for reload or restart | API server logs show permission errors |
 | Configuration drift across HA | Inconsistent admission decisions | Use configuration management | Compare manifest files across API servers |
+| Webhook silently stops receiving `*SubjectAccessReview` / `TokenReview` / `SelfSubjectReview` after 1.37 upgrade | Existing `ValidatingWebhookConfiguration` / `MutatingWebhookConfiguration` rules cover GroupResources in `exclusion.Excluded()` and the webhook reports no such admission requests after upgrade | Set `ExcludeAdmissionWebhookVirtualResources=false` as a temporary escape hatch; remove webhook rules for those GroupResources as the long-term fix before the gate is locked at GA | Cross-reference webhook configuration `rules` against `pkg/kubeapiserver/admission/exclusion/resources.go`; webhook side has no observed admission requests for those resources |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
