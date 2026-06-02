@@ -222,8 +222,6 @@ know that this has succeeded?
 - Support equality-based pod selection initially (`matchLabels`), matching the
   practical selector expressiveness of `Service.spec.selector` without carrying
   forward `Service`'s nil-selector opt-out semantics.
-- Provide a stable, importable controller implementation that Gateway API
-  implementations can use without re-implementing pod-watching logic.
 
 ### Non-Goals
 
