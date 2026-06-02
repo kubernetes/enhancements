@@ -233,7 +233,11 @@ empty string `""` (meaning "this extractor does not apply to this
 object"). A request satisfies an applicability group when every key
 in that group's `cel` map returns a non-empty value across the
 request's in-scope opaque configs. The non-empty returns from all
-fully-satisfied applicable groups form the request's effective affinity key map.
+fully-satisfied applicable groups form the request's effective
+affinity key map. If two opaque-config objects in the same request
+return different non-empty values for the same key, the claim is
+self-inconsistent and is treated as a user authoring error (see
+[Extraction failure modes](#extraction-failure-modes)).
 
 `sharingAffinity` is published in dedicated **metadata slices**
 that are mutually exclusive with `devices`. Device-bearing slices in
