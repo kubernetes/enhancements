@@ -21,6 +21,7 @@
   - [Pod Group priorities](#pod-group-priorities)
   - [Preemption algorithm](#preemption-algorithm)
     - [In place victim reprieval](#in-place-victim-reprieval)
+    - [CycleState retention](#cyclestate-retention)
   - [Pod Group Post Filter](#pod-group-post-filter)
   - [Potential future extensions](#potential-future-extensions)
   - [Test Plan](#test-plan)
@@ -593,14 +594,16 @@ with preemption:
           least ones). Tentatively, the function will sort first by their priority, and within a single
           priority prioritizing pod groups over individual pods.
 
-      1.  Perform best-effort reprieval of pod groups and pods violating PodDisruptionBudgets. We achieve
-          it by temporarily scheduling the preemptor (assuming that all potential victims are removed),
-          and then iterating over potential victims that would violate PodDisruptionBudget to check if these
-          can be placed in the exact same place they are running now.
-          If they can we simply leave them where they are running now and remove from the potential victims
-          list.
+      1.  Temprarily schedule the preemptor on the chosen placement (assuming that all potential victims are removed).
+ 
+      1.  Perform best-effort reprieval of pod groups and pods violating PodDisruptionBudgets. We achieve it by iterating 
+          over potential victims that would violate PodDisruptionBudget to check if these can be placed in the exact 
+          same place they are running now. If they can we simply leave them where they are running now and remove them 
+          from the potential victims list.
 
-          For domain D being a single node (current pod-based preemption), the above algorithm works
+      1.  Perform best-effort reprieval of remaining victims. We achieve it in the same manner as in the step above.
+
+          For the current pod-based preemption, the above algorithm works
           identically to the current algorithm. For larger domains, different placements of a preemptor
           are potentially possible and may result in potentially different sets of victims violating
           PodDisruptionBudgets to remain feasible. This means that the proposed algorithm is not necessarily
@@ -689,17 +692,40 @@ For currently implemented in-tree plugins that implement FilterPlugin interface 
 - TaintToleration: No-op. Scheduling constraint without inter pod constraints.
 - NodeResourceFit: The Reprieve method will check whether there is enough space for the victim pod given the current state of the node (with preemptor assumed).
 - NodeUnschedulable: No-op. Scheduling constraint without inter pod constraints. 
-- VolumeBinding:  The reprieve method will check whether reprieving victim will not cause exceed the CSI storage capacity limity for any storage class on a given node.
+- VolumeBinding:  No-op with the current implementation. No change in NodeInfoSnapshot can change the csiStorageCapacityLister output, thus allow preemptor to schedule in a way that breaks CSI storage capacity limity.
 - VolumeRestrictions: The Reprieve method will check whether the volume of victim does not conflict with the node local volumes of the preemptor pods. It will also check whether victim is not trying using `ReadWriteOncePod` PVC that is taken by any of the preemptor pod.
 - VolumeZone: No-op. Scheduling constraint between pod's PVs and node labels
 - PodTopologySpread: The reprieve method has to check whether reprieving a victim pod will not cause the skew of topologySpreadConstraint on the preemptor pod. This one can be potentially the hardest one to implement efficiently as it might require iterating over multiple nodes to calculate skew.
 - InterPodAffinity: We need to check whether preemptor does not have hard anti affinity to the victim pod. If so, reprieving victim would break the schedulability of the preemptor.  We also need to check whether reprieving back the victim pod won't violate any topology constraints (preemptor pod cannot be scheduled in a topology with specific pods running and victim is one of those specific pods). 
 - NodeDeclaredFeatures: No-op. Scheduling constraint.
-- NodeVolumeLimits: The Reprieve method will check whether the limits on the maximum volume attachment count per node won't be broken with assumed preemptor and reprieved victim. 
-- DynamicResources: No-op with current implementation. There is no way to simulate de allocation of the DRA devices  in the preemption, so the preemptor pods cannot take over the devices from victim pods.
+- NodeVolumeLimits: No-op with the current implementation. No change in NodeInfoSnapshot can change the csiManager output, thus allow preemptor to schedule in a way that breaks node volume limits.
+- DynamicResources: No-op with current implementation. There is no way to simulate de allocation of the DRA devices in the preemption, so the preemptor pods cannot take over the devices from victim pods.
+
+> **Note:**
+> DynamicResources, NodeVolumeLimits and VolumeBinding plugins do not work well with preemption right now.
+> They do not support PreFilterExtension interface and they work on a data provided by informer based
+> managers which does not reflect changes in NodeInfo snapshot. As a result they produce false negatives.
+> We do not expect to improve on this when introducing WAP and reprieval method.
 
 When trying to reprieve Pods belonging to the PodGroup with `DisruptionMode=All` the preemption logic will be responsible,
-for making sure that either all of Pods can be reprieved or none of them will be reprieved.
+for making sure that either all of Pods can be reprieved or none of them will be reprieved. This will be achieved 
+by reprieving all pods from PodGroup one by one. After each victim is reprieved, it will be added to the state
+of the cluster and kept in a list of pods to rollback. If any of the pods from PodGroup fails the Reprieve call
+all pods from rollback list will be removed from cluster representation.
+
+#### CycleState retention
+
+In the Alpha implementation of WAP the whole PodGroupScheduling function is executed for each victim "reprieval". It includes 
+building a new CycleState for each of the preemptor pods. This assumes that each of the plugin can create a valid
+CycleState based on the current NodeInfoSnapshot which is updated as victim pods are removed and added. This might not be true
+for plugins that use information from external informer and rely on the PreFilterExtension to keep a diff that is applied
+on top of the informer to simulate current state of the world (See [DRA Preemption Proposal](https://github.com/kubernetes/enhancements/issues/5690)). That's why for Beta promotion, we will refactor the PodGroupSchedulingAlgorithm to allow CycleState to be reused across the original scheduling atttempt and attempts in the WAP.
+
+In the current implementation of PodGroupSchedulingAlgorithm the CycleState for Nth Pod from PodGroup is created with previous (N-1) pods from the same PodGroup assumed. 
+To revert that from the CycleState of Nth Pod, we will need to run PreFilterExtension.RemovePod() for each of the (N-1) pods as part of clean up function that we currently run to remove Nth Pod from the NodeInfoSnapshot.
+
+This is akin to the current implementation of PostFilter, where the CycleState from original scheduling attempt is passed
+to Postfilter method.
 
 ### Pod Group Post Filter
 
@@ -767,6 +793,14 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    consider multiple different placements. This will have much bigger impact once kube-scheduler
    supports topology-aware scheduling. As a result, we're leaving it as a future extension -
    the algorithm can always be improved and will result in pretty local code changes.
+
+1. Binary search during preemption
+
+   One of the potential optimizations for the workload aware preemption algorithm presented in this 
+   KEP, is a special step that would use a binary search across victim priorities to try to fin
+   a minimal priority N for which, we can schedule a preemptor PodGroup without preempting
+   any victims with priority higher than N. This could limit the number of the potential victims
+   to check at the cost of additional scheduling feasibility checks.
 
 1. Non-uniform priority across CompositePodGroups.
 
@@ -1068,7 +1102,8 @@ behavior).
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No.
+During promotion to Beta, the `WorkloadAwarePreemption` feature gate will be removed and
+Workload Aware Preemption features will be moved behind the `GenericWorkload` feature gate.
 
 ### Monitoring Requirements
 
