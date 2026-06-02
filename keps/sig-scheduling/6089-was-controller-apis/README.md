@@ -236,12 +236,12 @@ spec:
   parallelism: 4
   completions: 4
   scheduling: # New API field - scheduling intent
-    schedulingPolicy:
+    policy:
       gang: {} # MinCount is omitted: Job defaults MinCount = parallelism (4)
-    schedulingConstraints:
-      topologyConstraints:
+    constraints:
+      topology:
         - level: "topology.kubernetes.io/zone"
-    disruptionMode:
+    disruption:
       all: {} # DisruptionMode resolves to All (entire group must be disrupted together)
   template:
     spec:
@@ -357,12 +357,15 @@ following design principles:
   * **Ownership & Skip Logic:** Child controllers (like standard `Job`) observe their
     `OwnerReference` pointing to a registered parent workload and explicitly **bypass** creating
     any `Workload` objects. This prevents duplicate resource creation and guarantees a single
-    source of truth.
+    source of truth. However, because `PodGroup` is the runtime representation of the `Workload`
+    blueprint, child controllers may still be responsible for instantiating the corresponding
+    `PodGroup` objects themselves (or delegating this to the root controller depending on the
+    integration design).
 * **Separation of Structure and Policy:** The integration strictly separates real-workload
   structure from scheduling policies:
-  * **The Controller owns the Structure:** The real-workload controller (e.g., `JobSet` or `LWS`)
-    fully understands its own shape, hierarchy, and replication mechanics. It does not need the
-    user to manually repeat this structure to the scheduler.
+  * **The Controller API owns the Structure:** The true workload API definition (e.g., `JobSet`
+    or `LWS` schemas) fully defines its own shape, hierarchy, and replication mechanics. The user
+    does not need to manually repeat this structure to the scheduler.
   * **The User owns the Policy:** The user knows *how* they want the workload to be scheduled
     based on their specific environment (e.g., "I want gang scheduling", "I need these workers
     colocated on the same network rack").
@@ -389,10 +392,12 @@ workload tree:
 2. **Composite Level (`CompositePodGroup`):** Prefixed with `WorkloadCompositePodGroup...`. These
    primitives coordinate groups of workloads.
 
-This level-specific categorization allows independent API evolution.
-
-The only exception to this division is the `TopologyConstraint` struct (reused directly from
-KEP-5732), which operates under identical semantics at all levels.
+This level-specific categorization allows independent API evolution. As a general design
+philosophy, when a structure represents a concrete, physical "real-world" scheduling concept used
+verbatim by the scheduling stack (such as `TopologyConstraint` from KEP-5732), we reuse it
+directly across all levels. For higher-level policy abstractions introduced by this WAS layer, we
+define distinct level-specific types (such as `WorkloadPodGroupSchedulingPolicy`) to ensure they
+can evolve independently at each hierarchy level.
 
 The `WorkloadPodGroup` and `WorkloadCompositePodGroup` prefixes are used to avoid name collisions
 with other scheduling field structures defined directly in the `scheduling.k8s.io` group
@@ -412,7 +417,7 @@ type WorkloadPodGroupSchedulingConstraints struct {
     // Topology specifies desired topological placements for all pods
     // within the scheduling group.
     // +optional
-    Topology []TopologyConstraint `json:"topologyConstraints,omitempty"`
+    Topology []TopologyConstraint `json:"topology,omitempty"`
 }
 
 // WorkloadPodGroupDisruptionMode defines how individual pods within a group can be disrupted.
@@ -506,13 +511,13 @@ type JobSpec struct {
 
 // JobSchedulingConfiguration composes the reusable WAS building blocks.
 type JobSchedulingConfiguration struct {
-    // SchedulingPolicy defines the gang or basic scheduling rules for this Job.
+    // Policy defines the gang or basic scheduling rules for this Job.
     // +optional
-    SchedulingPolicy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy `json:"schedulingPolicy,omitempty"`
+    Policy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy `json:"policy,omitempty"`
 
-    // SchedulingConstraints defines topology co-location constraints for the Job's pods.
+    // Constraints defines topology co-location constraints for the Job's pods.
     // +optional
-    SchedulingConstraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"schedulingConstraints,omitempty"`
+    Constraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"constraints,omitempty"`
 
     // DisruptionMode specifies how the pods in this Job should be disrupted (Single vs All).
     // +optional
@@ -526,9 +531,9 @@ type JobSchedulingConfiguration struct {
 
 #### 2. Defaulting Rules
 To ensure 100% backward compatibility and prevent breaking existing CI/CD pipelines:
-* If `Scheduling` is unset or `SchedulingPolicy` is nil, the Job controller defaults to the
+* If `Scheduling` is unset or `Policy` is nil, the Job controller defaults to the
   `Basic` scheduling policy (meaning standard Kubernetes pod-by-pod scheduling).
-* If a user configures `SchedulingPolicy` to use `Gang` scheduling, but leaves `MinCount` unset,
+* If a user configures `Policy` to use `Gang` scheduling, but leaves `MinCount` unset,
   the Job controller automatically injects a context-aware sane default: `MinCount = parallelism`
   (or `MinCount = completions` if parallelism is unset).
 * Users can explicitly configure an escape hatch (e.g., opting in only to topology constraints
@@ -709,8 +714,8 @@ func (r *JobReconciler) generateWorkload(
     var userConfig *workloadbuilder.SchedulingConfig
     if job.Spec.Scheduling != nil {
         userConfig = workloadbuilder.MapPodGroupConfig(
-            job.Spec.Scheduling.SchedulingPolicy,
-            job.Spec.Scheduling.SchedulingConstraints,
+            job.Spec.Scheduling.Policy,
+            job.Spec.Scheduling.Constraints,
             job.Spec.Scheduling.DisruptionMode,
             job.Spec.Scheduling.ResourceClaims,
         )
@@ -746,7 +751,7 @@ func (r *JobReconciler) generateWorkload(
 
 
 To support the dynamic scaling of gang-scheduled workloads (Elastic Jobs) in v1.37+, the Job API
-allows in-flight updates to `spec.scheduling.schedulingPolicy.gang.minCount`. All other scheduling
+allows in-flight updates to `spec.scheduling.policy.gang.minCount`. All other scheduling
 fields in `spec.scheduling` are strictly immutable upon Job creation.
 
 #### Gang MinCount Defaulting & Scaling Behavior
@@ -804,7 +809,7 @@ apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
 spec:
   scheduling: # Global policy: applies to the entire JobSet
-    schedulingPolicy:
+    policy:
       basic: {} # ESCAPE HATCH: Disable global "gang of gangs" so components start independently
   replicatedJobs:
     - name: driver
@@ -820,7 +825,7 @@ spec:
       template:
         spec:
           scheduling: # Leaf-level policy declared inside the nested Job template
-            schedulingConstraints:
+            constraints:
               topology:
                 - level: "topology.kubernetes.io/rack" # Co-locate workers on same rack
           containers:
@@ -843,12 +848,12 @@ apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
 spec:
   scheduling: # All scheduling policies are defined here at the root
-    schedulingPolicy:
+    policy:
       basic: {} # Global policy: components schedule independently
-    replicatedJobSchedulingPolicies:
+    replicatedJobPolicies:
       - targetReplicatedJob: "workers" # Policy target
-        schedulingConstraints:
-          topologyConstraints:
+        constraints:
+          topology:
             - level: "topology.kubernetes.io/rack" # Co-locate workers on same rack
   replicatedJobs:
     - name: driver
@@ -894,8 +899,8 @@ func (r *JobSetReconciler) generateWorkload(
     var rootUserConfig *workloadbuilder.SchedulingConfig
     if js.Spec.Scheduling != nil {
         rootUserConfig = workloadbuilder.MapCompositeGroupConfig(
-            js.Spec.Scheduling.SchedulingPolicy,
-            js.Spec.Scheduling.SchedulingConstraints,
+            js.Spec.Scheduling.Policy,
+            js.Spec.Scheduling.Constraints,
             js.Spec.Scheduling.DisruptionMode,
         )
     }
@@ -932,8 +937,8 @@ func (r *JobSetReconciler) generateWorkload(
             var leafUserConfig *workloadbuilder.SchedulingConfig
             if rJob.Template.Spec.Scheduling != nil {
                 leafUserConfig = workloadbuilder.MapPodGroupConfig(
-                    rJob.Template.Spec.Scheduling.SchedulingPolicy,
-                    rJob.Template.Spec.Scheduling.SchedulingConstraints,
+                    rJob.Template.Spec.Scheduling.Policy,
+                    rJob.Template.Spec.Scheduling.Constraints,
                     rJob.Template.Spec.Scheduling.DisruptionMode,
                     rJob.Template.Spec.Scheduling.ResourceClaims,
                 )
@@ -1019,8 +1024,9 @@ pieces of information to construct and place its runtime scheduling objects corr
 ##### The Solution: Downward Mapping Annotations
 
 To resolve this template and hierarchy mapping without structural API schema changes, the root and
-intermediate orchestrators must propagate these linkages downwards using two well-known metadata
-annotations on the child object templates:
+intermediate orchestrators must propagate these linkages downwards by injecting two well-known
+metadata annotations directly into the created child objects (for example, the `JobSet`
+controller sets these annotations on each standard `Job` resource it creates):
 
 * **Template Linkage Annotation:**
   * **Annotation Key:** `scheduling.k8s.io/podgroup-template`
