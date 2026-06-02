@@ -40,7 +40,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-controller-manager
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
