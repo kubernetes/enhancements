@@ -276,12 +276,22 @@ coordinated start and collective preemption fate-sharing.
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+To ensure cluster stability, control-plane reliability, and to prevent excessive scheduling
+complexity under nested hierarchies, we introduce explicit structural limits on the workload
+group-template hierarchy:
+* **Maximum Nesting Depth:** The group-template hierarchy supports a maximum depth of **4 levels**.
+* **List Cappings:** The new `CompositePodGroupTemplates` list is strictly capped at **8 items**
+  (aligning with the pre-existing cap on the `PodGroupTemplates` list).
+
+These constraints are introduced upfront starting from the **Alpha** phase for strategic API safety.
+While analyzing current and planned distributed use cases suggests that a depth of 4 levels and a
+branching factor of 8 are more than sufficient, these limits can be easily increased in future
+releases if new requirements emerge. 
+
+Conversely, shrinking a limit or introducing one retroactively is a breaking API change that can
+severely disrupt existing workloads. By establishing conservative limits from the very beginning,
+we safeguard the API and scheduler performance while preserving the flexibility to safely scale up
+limits in future iterations based on real-world profiling.
 
 ### Risks and Mitigations
 
@@ -896,8 +906,8 @@ The value of the `Priority` field is being used in the following two contexts:
   scheduling queue. Their priority is taken into account by the PrioritySort
   plugin when determining the importance of scheduling unit.
 - When running preemption to fit a `CompositePodGroup` in the cluster, only
-  lower priority preemption units could be selected as prospective victims. This
-  includes other `CompositePodGroup` victims with the `All` disruption mode.
+  preemption units (individual `Pods` or `PodGroups` or `CompositePodGroups`) with a
+  lower priority than the preemptor can be selected as prospective victims.
 
 #### Status
 
@@ -1041,7 +1051,7 @@ The initial outline and key challenges to address for the Beta design include:
     schedulable) that have spent excessive time in the unschedulable cache.
 *   **Race Conditions & Atomic Transitions:** A central challenge is the thread-safe
     transition of group hierarchies. We must ensure that moving hierarchies between the
-    queue's "unschedulable hierarchies" (represented in memory by `unschedulablePodGroups`)
+    queue's "unschedulable hierarchies" (represented in memory by `pendingPodGroups`)
     and the active queue (`activeQ`) is done atomically under a single lock to prevent race
     conditions during concurrent updates and scheduling attempts.
 
@@ -1073,7 +1083,7 @@ points:
    `PodGroupInfo`, or a nested parent `CompositePodGroup` hierarchy, allowing
    the queue to sort and pop them uniformly. To preserve this root-only
    queue property in the presence of unsynchronized object arrivals:
-   * Unobserved groups are tracked in a dedicated `unschedulablePodGroups`
+   * Unobserved groups are tracked in a dedicated `pendingPodGroups`
      structure and only moved into the active scheduling queue when the root of
      their hierarchy (having no parent reference) is successfully observed and
      cached.
@@ -1095,22 +1105,60 @@ points:
    the v1.37 milestone. We therefore select the Pod-level PreEnqueue as the
    preferred choice for Alpha, and will explore group-level abstractions in
    Beta).*
-4. **`PlacementFeasible` Extension Point:** Currently, this extension point
-   exists at the `PodGroup` level (introduced in [PR #138643](https://github.com/kubernetes/kubernetes/pull/138643)).
-   We extend this existing extension point under our polymorphic `PodGroupInfo`
+4. **`PlacementFeasible` Extension Point:** Currently, this extension point exists
+   at the `PodGroup` level (introduced in
+   [PR #138643](https://github.com/kubernetes/kubernetes/pull/138643)).
+   Under KEP-6012, we extend this extension point under our polymorphic `PodGroupInfo`
    representation to support the validation of hierarchical constraints at the
    `CompositePodGroup` level.
-5. **`Permit` Extension Point:** Currently, the `Permit` extension point is
-   defined strictly at the `Pod` level, where flat gang scheduling blocks member
-   pods until `minCount` pods are scheduled. Under this KEP, we do not introduce
-   a new group-level extension point. Instead, we extend the implementation of
-   the existing Pod-level `Permit` plugin: when an individual member pod is
-   evaluated, the plugin climbs its group hierarchy up to the root group and
-   traverses the entire tree structure to verify that all constraints are
-   satisfied before releasing waiting pods for binding. We will re-evaluate in
-   Beta whether this additional `Permit`-level verification pass is strictly
-   required long-term, but include it as a prerequisite under Alpha to maintain
-   consistency and correctness.
+
+   To support this cleanly, we refactor the return statuses of `PlacementFeasible` to be
+   more semantically precise and aligned with scheduling framework conventions.
+   This refactoring is highly beneficial for both flat `PodGroup` and hierarchical
+   `CompositePodGroup` workloads. In the existing flat gang scheduling design, the
+   `PlacementFeasible` check merges preemptable and unpreemptable scheduling failures
+   under a single `Unschedulable` status. As a result, the scheduler cannot distinguish
+   between a soft failure (e.g., a PodGroup or CompositePodGroup can be scheduled if
+   we preempt other workloads in the cluster) and a hard failure (e.g., the group is
+   mathematically impossible to schedule even if we preempt all other workloads).
+   This leads to unnecessary resource simulation and costly preemption sweeps that are
+   mathematically guaranteed to fail.
+
+   By introducing the refactored status space, the scheduler immediately aborts the
+   evaluation of a nested `PodGroupInfo` subtree as soon as its `PlacementFeasible`
+   check returns `Unschedulable` or `UnschedulableAndUnresolvable`. The parent CPG then
+   receives this status, which may or may not trigger a further cascading abort up the
+   hierarchy stack, potentially terminating the entire active scheduling cycle early and
+   saving significant CPU cycles.
+   
+   Additionally, these statuses explicitly dictate preemption behavior:
+   * **`Success`:** Constraints are fully satisfied (simulated scheduled count
+     $\ge MinCount$ or $MinGroupCount$).
+   * **`Wait`:** Currently unsatisfied, but possible to satisfy purely with free
+     capacity as remaining members are simulated.
+   * **`Unschedulable`:** Unsatisfied with free capacity, but resolvable via preemption.
+     This indicates that the group should be actively considered during the workload
+     preemption phase.
+   * **`UnschedulableAndUnresolvable`:** Irreversibly unsatisfied; preemption cannot
+     help. This indicates that the group should not be considered for preemption,
+     allowing the scheduler to completely skip preemption evaluation.
+
+   For the exact algorithm determining how these statuses are returned and evaluated
+   during recursive scheduling, see [GangScheduling Plugin Changes](#gangscheduling-plugin-changes).
+5. **`Permit` Extension Point:** Currently, the `Permit` extension point is defined
+   strictly at the `Pod` level. Under KEP-6012, this remains unchanged for Alpha: we
+   do not introduce any group-level Permit extension points at the framework level.
+   Instead, we reuse the existing Pod-level `Permit` extension point to implement
+   hierarchical checks within the `GangScheduling` plugin.
+   We recognize that this Pod-level approach is suboptimal for nested hierarchies
+   since it requires recursively validating the entire parent CPG tree structure
+   for every individual member pod. Furthermore, following the introduction of
+   the `PlacementFeasible` check, it is no longer clear whether a `Permit`-stage
+   verification is strictly necessary at all. During the Beta phase, we will
+   re-evaluate this requirement; if a `Permit`-stage check remains necessary, we
+   will explore introducing a dedicated, framework-level group/hierarchy
+   `Permit` extension point (operating at the `PodGroup` or `CompositePodGroup`
+   level) to optimize and deduplicate these validations.
 
 ##### GangScheduling Plugin Changes
 
@@ -1129,27 +1177,41 @@ points:
 2. **`PlacementFeasible`:**
    Executed for each `PodGroupInfo` node in the popped hierarchy tree as a part
    of the `groupRecursiveSchedulingDefaultAlgorithm` routine during in-memory
-   simulation to determine if a group satisfies active member constraints.
-   Under this KEP, we extend the existing `PlacementFeasible` checker
-   implementation to support `PodGroupInfo` representing `CompositePodGroups`:
-   * **For a leaf `PodGroup`:** We do not introduce any changes. The
-     implementation relies on the pre-existing behavior, evaluating in-memory
-     scheduled member pods and remaining pending member pods in the queue against
-     `minCount` to return `Success`, `Unschedulable`, or
-     `UnschedulableAndUnresolvable`.
-   * **For a `CompositePodGroup`:** We evaluate the in-memory scheduled
-     child groups and remaining admissible child groups against the parent's
-     `minGroupCount` threshold:
-     - **`Success`:** Returned if in-memory scheduled child groups $\ge$
-       `minGroupCount`.
-     - **`Unschedulable`:** Returned if in-memory scheduled child groups <
-       `minGroupCount`, but the sum of scheduled groups and remaining child
-       groups $\ge$ `minGroupCount` (indicating the CPG is currently
-       unschedulable but may become schedulable when more siblings are simulated).
-     - **`UnschedulableAndUnresolvable`:** Returned if the sum of scheduled
-       groups and remaining admissible child groups < `minGroupCount` (the
-       CPG is mathematically impossible to schedule), immediately
-       aborting the recursive cycle early for this CPG.
+   simulation. Under this KEP, we extend `PlacementFeasible` to support both flat
+   `PodGroups` and hierarchical `CompositePodGroups` using a unified status
+   evaluation model.
+
+   To define the status transition logic uniformly for both `PodGroup` and
+   `CompositePodGroup`, we introduce the following variables evaluated during the
+   in-memory scheduling iteration:
+   * **`M`**: The required minimum count. For a flat `PodGroup`, $M = $ `minCount`.
+     For a `CompositePodGroup`, $M = $ `minGroupCount`.
+   * **`S`**: The count of child elements successfully scheduled in memory with the
+     `Success` status.
+   * **`R`**: The count of remaining, untried child elements that are potentially
+     admissible.
+   * **`U`**: The count of child elements that returned an `Unschedulable` status.
+   * **`UU`**: The count of child elements that returned `UnschedulableAndUnresolvable`.
+
+   Using these variables, the `PlacementFeasible` status is resolved as follows:
+   * **`Success`**: $S \ge M$. The constraints are fully satisfied.
+   * **`Wait`**: $S < M$, but $S + R \ge M$. Currently unsatisfied, but satisfying the
+     constraints purely with free capacity remains possible.
+   * **`Unschedulable`**: $S + R < M$, but $S + R + U \ge M$. The constraints cannot
+     be satisfied purely with free capacity, but triggering preemption on behalf of
+     the `Unschedulable` child elements can resolve the constraints.
+   * **`UnschedulableAndUnresolvable`**: $S + R + U < M$. Even with maximum preemption
+     of all `Unschedulable` elements, it is mathematically impossible to satisfy the
+     minimum constraints because there is not enough child elements to schedule
+     or too many child elements failed with the `UnschedulableAndUnresolvable` status.
+
+   This status logic is applied identically at all levels of the tree:
+   * **For a leaf `PodGroup`:** The child elements are the individual member pods.
+     The status of each pod is checked (whether it successfully placed, failed due
+     to soft resource constraints, or failed due to hard selector/topology mismatches).
+   * **For a `CompositePodGroup`:** The child elements are its nested child groups,
+     and their status is checked recursively using the returned `PlacementFeasible`
+     values.
 
 3. **`Permit`:**
    Executed at the Permit stage of the scheduling cycle strictly at the
@@ -1193,29 +1255,30 @@ Throughout this recursive simulation phase, all pod-to-node assignments
 are tracked strictly **in memory** in the `nodeInfoSnapshot` as temporary state
 before final binding:
 
-1. **If the active node is a leaf `PodGroup`:** Runs the same logic as in the
-   flat, single-level `podGroupSchedulingDefaultAlgorithm` (simulating member
-   pod placements in memory) and returns the status.
-2. **If the active node is a `CompositePodGroup`:** Iterates through its nested
+1. **If the active node is a leaf `PodGroup`:** Runs the same logic as in the standard,
+   flat, single-level `podGroupSchedulingDefaultAlgorithm` routine to simulate member
+   pod placements in memory, but uses the refactored `PlacementFeasible` status interpretation
+   logic. The scheduling loop reacts to the `Wait`, `Success`, `Unschedulable`, and
+   `UnschedulableAndUnresolvable` statuses in an identical, analogical manner to
+   the recursive child-group simulation described below for `CompositePodGroups`.
+2. **If the active node is a `CompositePodGroup`:** It iterates through its nested
    child groups in their pre-sorted order, executing the recursive
    `groupRecursiveSchedulingDefaultAlgorithm` sequentially. After in-memory scheduling
-   each child group, the scheduler invokes the extended `PlacementFeasible`
-   checker under the parent `PodGroupInfo` to evaluate the CPG's current
-   status, triggering distinct branches based on the returned result:
-   * **`Unschedulable`:** The parent CPG constraints are not yet fully met (e.g.,
-     the minimum number of child groups, `minGroupCount`, has not been
-     in-memory scheduled yet), but it remains resolvable. The scheduler
-     continues processing the remaining sibling child groups in the sequence.
-   * **`UnschedulableAndUnresolvable`:** The parent CPG is mathematically
-     impossible to satisfy. The scheduler immediately aborts the loop, skips
-     evaluating all subsequent sibling groups under this CPG, and returns the
-     failure status up to its parent.
-   * **`Success`:** The parent CPG's nested minimum constraints have been
-     successfully satisfied. In the **Alpha** phase, the scheduling algorithm
-     operates greedily and does not stop upon meeting the minimum group count
-     requirements. Instead, it continues scheduling the remaining optional
-     child groups to maximize cluster utilization (see [Resource stealing
-     under greedy evaluation](#resource-stealing-under-greedy-evaluation)).
+   each child group, the scheduler invokes the extended `PlacementFeasible` checker
+   under the parent CPG's `PodGroupInfo` to evaluate its overall state:
+   * **`Success`:** The CPG's nested minimum constraints (`minGroupCount`) are met.
+     Under the greedy **Alpha** phase, the scheduler continues simulating subsequent
+     sibling groups to maximize cluster utilization.
+   * **`Wait`:** The `minGroupCount` is not yet satisfied, but satisfying the constraint
+     purely with free capacity remains possible. The scheduler continues processing.
+   * **`Unschedulable`:** The parent CPG constraints cannot be met with free capacity,
+     but are resolvable via preemption. The scheduler immediately aborts its child-group
+     evaluation loop, reverts all of its in-memory changes, and returns `Unschedulable`
+     up the stack.
+   * **`UnschedulableAndUnresolvable`:** The parent CPG is mathematically impossible
+     to satisfy. The scheduler immediately aborts its child-group evaluation loop,
+     reverts all of its in-memory changes, and returns `UnschedulableAndUnresolvable`
+     up the stack.
 3. **Commit Bindings:** If the root-level recursion resolves and returns
    `Success`, the scheduler commits and writes the entire tree's resolved pod
    bindings from memory to the API server.
@@ -1282,71 +1345,86 @@ intermediate levels.
 
 Consistent with flat gang scheduling ([KEP-4671]), binding and preemption
 never occur inside the same scheduling cycle. The preemption triggering
-rules under this KEP are identical to [KEP-4671]:
-* **If the root-level scheduling policy is satisfied (i.e.,
-  `PlacementFeasible` on the root CPG returns `Success`):** If the recursive direct
-  in-memory simulation successfully schedules at least `minGroupCount` child
-  groups under a CPG tree, the scheduling cycle succeeds. The scheduler does
-  not trigger preemption in this cycle. Instead, it commits pod bindings for
-  all successfully placed member pods (comprising the minimal gang and any
-  extra pods that placed under Alpha's greedy pass). Any remaining member
-  pods that failed scheduling are marked as `Unschedulable` and return to the
-  scheduling queue, which subsequently places the entire root CPG hierarchy
+rules under this KEP are updated to align with the refactored `PlacementFeasible`
+statuses:
+* **If the root-level `PlacementFeasible` returns `Success`:** If the recursive
+  in-memory simulation successfully satisfies the minimum scheduling requirements
+  (at least `minGroupCount` child groups under a CPG tree, or `minCount` pods under
+  a flat `PodGroup`), the scheduling cycle succeeds. The scheduler does not
+  trigger preemption. Instead, it commits bindings for all successfully placed
+  member pods (comprising the minimal gang and any extra pods that placed under
+  Alpha's greedy pass). Any remaining member pods that failed scheduling are
+  returned to the scheduling queue, which subsequently places the entire hierarchy
   back into the queue for re-evaluation.
-* **If the root-level scheduling policy is not satisfied:** If the recursive
-  in-memory simulation fails to schedule at least `minGroupCount` child groups
-  under a CPG tree, no pod bindings are committed in this pass.
-  The scheduler then triggers the workload preemption at the root CPG level.
-* **During subsequent cycles:** In subsequent scheduling cycles, when the CPG
-  with pending extra or newly scaled member pods pop from the queue, the
+* **If the root-level `PlacementFeasible` returns `Unschedulable`:** If the simulation
+  fails to satisfy the minimum requirements purely with free capacity, but the
+  failure is resolvable (i.e. `Unschedulable`), no pod bindings are committed.
+  The scheduler triggers the workload preemption engine at the root level of
+  the hierarchy to release cluster capacity for the failed member pods.
+* **If the root-level `PlacementFeasible` returns `UnschedulableAndUnresolvable`:** If
+  the simulation reveals that the constraints are mathematically impossible to
+  satisfy (even if maximum preemption is used, e.g. due to hard node selectors or
+  lack of admissible member pods), the scheduler does not commit any bindings
+  and does NOT trigger preemption. The scheduling cycle aborts early, saving
+  wasteful CPU processing, and the hierarchy is sent back to the queue.
+* **During subsequent cycles:** In subsequent scheduling cycles, when the root CPG
+  with pending extra or newly scaled member pods pops from the queue, the
   standard recursive scheduling algorithm is executed for the root CPG
-  hierarchy (where these pending pods are evaluated under greedy rules along
-  with the active tree). If the recursive algorithm fails to place any of
-  these pending member pods, the scheduler triggers the preemption engine at
-  the root CPG level to release capacity.
+  hierarchy. If the recursive algorithm fails to place one or more of these
+  pending member pods (i.e., there remain some unschedulable member pods), the
+  scheduler triggers the preemption engine at the root CPG level to release
+  capacity for the remaining unschedulable pods, even if some other pending pods
+  were successfully placed in the current cycle.
 
-In summary, workload preemption is triggered at the root CPG level if and only
-if: the CPG root scheduling policy is not satisfied, OR the policy is
-satisfied and the hierarchy is already scheduled, but there are unschedulable
-member pods and none of them successfully scheduled in the scheduling cycle.
+In summary, workload preemption is triggered at the root level if and only if:
+the root-level `PlacementFeasible` returns `Unschedulable` (i.e., the scheduling
+policy is not satisfied but is resolvable via preemption), OR the scheduling
+policy is satisfied, the hierarchy was already scheduled in a previous cycle,
+and there remain some pending member pods that the scheduler failed to place
+in the current cycle.
 
 ###### Inadmissible child groups
 A root `CompositePodGroup` might successfully pass the `PreEnqueue` queue filter,
-yet contain child groups that are currently inadmissible (e.g. they do not
+yet contain child groups that are currently inadmissible (e.g., they do not
 have enough active member pods in the cluster queue to reach their `minCount`).
-For example, consider a root CPG (`minGroupCount=3`) containing four nested child
-groups, where the first three child groups are admissible, but the fourth `PG-4`
-has only 2 pending pods out of its `minCount=5`.
 
-In this situation, evaluating the inadmissible child groups during the recursive
-scheduling cycle is futile: they cannot schedule, and if not handled correctly,
-they will trigger a costly evaluation which will not be effective anyway.
+For example, consider a root CPG (`minGroupCount=2`) containing three nested child
+groups: `CPG-1`, `PG-2`, and `PG-3`. Both `PG-2` and `PG-3` are fully admissible and
+schedulable. However, `CPG-1` has `minGroupCount=2` and contains only one active child
+group in the cluster: `PG-11` (`minCount=100`) with 100 pending member pods.
 
-To optimize performance, the scheduler will bypass evaluating futile child
-groups:
-* **Alpha:** Futile cycles are not skipped in the Alpha phase (admissibility
-  checks on nested children are not executed).
-* **Beta:** We will implement branch-skipping heuristics by extending the
-  `PlacementFeasible` checker to run checks *before* in-memory scheduling of
-  child placements (in addition to after each child group evaluation). If a
-  `PodGroupInfo` fails its minimum count requirements prior to evaluation
-  (e.g. a PG has only 2 member pods out of its `minCount=5`), the
-  pre-simulation `PlacementFeasible` checker returns
-  `UnschedulableAndUnresolvable` early, bypassing any child pod placements and
-  avoiding the costly preemption entirely.
+Without a pre-simulation check, the scheduling algorithm would execute as follows:
+1. The scheduler starts simulating the root CPG's children, starting with `CPG-1`.
+2. To simulate `CPG-1`, the scheduler sequentially places all 100 member pods of its
+   first child, `PG-11`, in memory.
+3. After `PG-11` finishes, the scheduler invokes `PlacementFeasible` on `CPG-1`. Since
+   `CPG-1` only scheduled 1 child group ($S=1$) but requires $M=2$, and has no more
+   remaining children ($R=0$), `PlacementFeasible` returns `UnschedulableAndUnresolvable`.
+4. The simulation of `CPG-1` aborts, and the status is returned up to the root CPG.
+5. The scheduler invokes `PlacementFeasible` on the root CPG. One child failed with
+   `UU=1`, but two remain untried ($R=2$). Since $S+R \ge M$ ($0+2 \ge 2$), the root
+   status is `Wait`. The scheduler continues processing sibling groups.
+6. The scheduler successfully simulates `PG-2` and `PG-3`. The root CPG satisfies its
+   `minGroupCount` and the cycle succeeds, committing bindings for `PG-2` and `PG-3`.
+   However, immense CPU cycles were completely wasted simulating the 100 pods of `PG-11`.
 
-  Additionally, for already active (scheduled) `CompositePodGroup` trees under
-  subsequent scale-up passes, the preemption triggering rules will be modified
-  in Beta to distinguish between resource starvation and child group
-  admissibility. Specifically, if a child group has satisfied its `minCount`
-  minimum constraint but has pending optional pods (e.g. has scheduled 10 out
-  of required 10 pods, but has 2 additional member pods unplaced due to cluster
-  capacity saturation), the scheduler **will** attempt preemption at the root
-  CPG level to release capacity. Conversely, if a child group failed placement
-  simply because it is inadmissible (e.g. has only 2 active member pods out of
-  its `minCount=5` in the cluster), the scheduler **will bypass** preemption
-  entirely, as evicting victim pods can never resolve the child group's
-  missing members.
+Under the refactored `PlacementFeasible` status model, preemption triggering is
+already handled correctly in these scenarios: the status evaluation will naturally
+resolve to `UnschedulableAndUnresolvable` once it determines that the minimum
+threshold cannot be satisfied, preventing futile preemption loops entirely.
+
+However, as a performance optimization, we can skip evaluating the simulation
+of inadmissible branches entirely:
+* **Alpha:** Pre-simulation feasibility is not executed in the Alpha phase.
+  The scheduler performs the sequential child group simulations, relying on the
+  post-evaluation `PlacementFeasible` check to trigger early aborts.
+* **Beta:** We will implement an optimized pre-simulation check. The scheduler
+  will invoke the `PlacementFeasible` checker *before* starting the recursive
+  in-memory simulation of child groups. If the pre-simulation check determines
+  that a subtree is inadmissible (e.g., a nested child group is missing too many
+  member pods to ever satisfy its `minCount`), it immediately returns
+  `UnschedulableAndUnresolvable` early, bypassing all child pod placements
+  entirely and saving costly CPU cycles.
 
 ###### Resource stealing under greedy evaluation
 When a CPG is evaluated, child groups are processed sequentially in their
@@ -1641,24 +1719,31 @@ The scheduling algorithm resolves this hierarchy recursively:
 
 ##### Preemption in topology-aware scheduling
 
-Workload preemption under topology constraints is the domain of [KEP-5710] (Workload-Aware Preemption) and [KEP-5732] (Topology-Aware Workload Scheduling).
+Workload preemption under topology constraints is the domain of [KEP-5710]
+(Workload-Aware Preemption) and [KEP-5732] (Topology-Aware Workload Scheduling).
 
-Under KEP-6012, this topology-aware preemption behavior works for `CompositePodGroups` out-of-the-box without major changes, based on the following architectural factors:
+Under KEP-6012, this topology-aware preemption behavior works for `CompositePodGroups`
+out-of-the-box without major changes, based on the following architectural factors:
 
 1. **Decoupled Simulation Framework:** The preemption algorithm evaluates victim selection
-by running in-memory simulations and invoking the workload's scheduling callback. The
-algorithm is completely decoupled from the scheduling internals: it does not care whether
-the callback is placing a single flat `PodGroup` or recursively resolving a
-`CompositePodGroup` hierarchy.
-2. **Pod-Bounded Performance Complexity:** The performance cost of scheduling (including
-preemption) simulations is dominated strictly by the total number of pods in the workload.
-For example, evaluating 100 `Pods` inside a single, flat `PodGroup` has the same
-computational complexity as 100 `Pods` distributed across multiple child `PodGroups` nested
-under parent `CompositePodGroups`.
+   by running in-memory simulations and invoking the workload's scheduling callback. The
+   algorithm is completely decoupled from the scheduling internals: it does not care whether
+   the callback is placing a single flat `PodGroup` or recursively resolving a
+   `CompositePodGroup` hierarchy.
+2. **Acceptable Complexity Trade-offs:** Resolving a multi-level hierarchical group
+   with nested topology constraints (e.g., parent and child groups requiring specific
+   physical placements) is inherently more computationally complex than scheduling a flat
+   `PodGroup` of the same size, as the scheduler must evaluate parent-child placement
+   combinations. Because preemption relies on the recursive scheduling callback, this
+   increased placement complexity could potentially impact preemption throughput at scale.
+   For Alpha, we believe that no preemption-specific architectural changes are required
+   as the simulation model is fully decoupled. However, if scale testing and performance
+   feedback during the Alpha phase reveal bottlenecks due to recursive CPG checks
+   during preemption, we will address necessary optimizations in the Beta phase.
 
 Consequently, since topology-aware preemption is designed and implemented to work for a flat
 `PodGroup` as a part of [KEP-5710], it should automatically work for a hierarchical
-`CompositePodGroup` with no significant overhead or architectural modifications.
+`CompositePodGroup` with no significant architectural modifications or new preemption algorithms.
 
 ### Test Plan
 
@@ -1691,12 +1776,13 @@ We will create new integration tests (and extend the existing `PodGroup` integra
 suite in `test/integration/scheduler/`) to cover the hierarchical and multi-level aspects of
 the CPG API and the recursive scheduling resolutions:
 
-- **Multi-level TAS:**
-  - Verify that the scheduler successfully schedules a hierarchical CPG workload's pods
-	strictly on nodes satisfying the nested combination of topology constraints when valid
-	placement paths exist.
-  - Verify that scheduling fails for the CPG workload when the cluster state cannot satisfy
-	the nested topology constraints.
+- **CPG Queueing and Requeueing:**
+  - Verify that CPG hierarchies with unobserved parents are buffered inside
+    `pendingPodGroups` and not promoted to the active scheduling queue until
+    the root CPG object is observed.
+  - Verify that the arrival of cluster events successfully triggers queueing
+    hints to move blocked CPG hierarchies from the unschedulable queue back
+    to the active queue (`activeQ`) or backoff queue (`backoffQ`).
 - **Multi-level Gang Scheduling:**
   - Verify that CPG hierarchies satisfying their nested child group `minCount` and
     `minGroupCount` requirements are enqueued, and those failing are rejected
@@ -1717,14 +1803,20 @@ the CPG API and the recursive scheduling resolutions:
     extra member pods require preemption (`NeedsPreemption = True`), the
     scheduler successfully commits and writes the minimal gang bindings even if
     preemption fails to clear space for the extra members.
+- **Multi-level TAS:**
+  - Verify that the scheduler successfully schedules a hierarchical CPG workload's pods
+    strictly on nodes satisfying the nested combination of topology constraints when valid
+    placement paths exist.
+  - Verify that scheduling fails for the CPG workload when the cluster state cannot satisfy
+    the nested topology constraints.
 
 We will also add and extend the existing scheduler performance benchmarks in `test
 integration/scheduler_perf/` to measure the scheduling throghput of multi-level workload
 scheduling, including:
 
 - Multi-level gang and basic policies
-- Multi-level TAS
 - Multi-level preemptions
+- Multi-level TAS
 
 
 
@@ -1775,9 +1867,9 @@ More tests will be added for beta release.
 - Support for differing group-level priorities across a single hierarchy tree
   under basic scheduling policies and separating queueing priority from
   preemption priority is re-evaluated.
-- Support for mutating the `minGroupCount` specification of active
-  `CompositePodGroup` objects and modifying group hierarchy linkages
-  at runtime is re-evaluated.
+- The `minGroupCount` field of the `CompositePodGroup` objects becomes
+  mutable at runtime (aligning with the pre-existing mutable `minCount` field
+  in `PodGroup` objects).
 
 #### GA
 
@@ -1785,20 +1877,29 @@ More tests will be added for beta release.
 
 ### Upgrade / Downgrade Strategy
 
-Standard procedures for features introducing new APIs and API fields should be used:
+Standard procedures for features introducing new APIs and API fields should be used.
+The components involved in this feature are:
+- **Alpha:** `kube-apiserver` and `kube-scheduler`.
+- **Beta:** `kube-controller-manager` (KCM) will also be involved (e.g., for adding
+  and deleting `CompositePodGroup` finalizers).
 
-- `kube-apiserver` is required to be upgraded first before any other components
-  that use the new API.
-- Since the `CompositePodGroup` has dependency on the `Workload` API, the
-  feature gate for it needs to be enabled.
-- Similarly, preemption- and topology-specific fields of the `CompositePodGroup`
-  API depend on relevant feature gates to be enabled.
-- On downgrade, `kube-scheduler` should be downgraded first (to stop processing
-  the new fields) before `kube-apiserver` is downgraded.
+For details about the required feature gates and their dependencies, see the
+[Feature Enablement and Rollback](#feature-enablement-and-rollback) section.
 
-Note that downgrade `kube-apiserver` will not result in clearing the new fields
-for objects that already have them set in etcd. Therefore, existing
-`CompositePodGroup` objects remain in etcd but are ignored.
+Upgrade sequence:
+- `kube-apiserver` must be upgraded first before any other components that use
+  the new API (such as `kube-scheduler` and, in Beta, `kube-controller-manager`).
+
+Downgrade sequence:
+- On downgrade, `kube-scheduler` (and in Beta, `kube-controller-manager`) must be
+  downgraded first (to stop processing the new fields and objects) before
+  `kube-apiserver` is downgraded.
+
+Upon downgrading `kube-apiserver` or disabling the `CompositePodGroup` feature gate:
+- Existing `CompositePodGroup` objects will remain in etcd but will be ignored by the
+  control plane components.
+- Newly introduced fields within `PodGroup` and `Workload` objects will remain in etcd
+  but will not be processed.
 
 ### Version Skew Strategy
 
@@ -1811,9 +1912,29 @@ components (in particular kube-apiserver) may not handle those. Thus, users
 should not set those fields before confirming all control plane instances were
 upgraded to the version supporting those.
 
-For the multi-level scheduling features themselves, they are purely in-memory
-features of `kube-scheduler`, so the skew doesn't really matter (as there is
-always only single kube-scheduler instance being a leader).
+For the multi-level scheduling features themselves, the version skew across
+multiple `kube-scheduler` instances (e.g., during a rolling upgrade where the active
+leader might run the old version while `kube-apiservers` are already upgraded and
+the feature is in use) behaves as follows:
+- The old version of `kube-scheduler` does not recognize the new `CompositePodGroup`
+  objects or fields. It will ignore the parent references and fall back to
+  scheduling member pods strictly at the flat, individual or standalone `PodGroup`
+  level.
+- While the old scheduler will continue to run safely and will not crash, it will
+  not satisfy the multi-level topology, gang, or preemption constraints. For
+  topology constraints specifically, this will likely lead to invalid, flat
+  placement decisions (e.g., placing member pods across different racks instead of
+  satisfying CPG-level topology constraints). Crucially, these invalid topology
+  placements are irreversible by the scheduler itself; once pods are bound to
+  nodes, the scheduler cannot reschedule them on its own, even after a new
+  scheduler leader is upgraded to the new version. Only newly scheduled pods (or
+  pods recreated after eviction) will be correctly resolved (if possible) under the
+  hierarchical constraints once the upgrade is complete.
+  Note that this is identical to the pre-existing version skew behavior for flat
+  `PodGroup` features (e.g., flat topology-aware scheduling) during control plane
+  rolling upgrades. Therefore, the standard recommendation applies:
+  users should not use the new APIs/fields until the rolling upgrade of
+  `kube-scheduler` is fully completed.
 
 ## Production Readiness Review Questionnaire
 
@@ -1826,11 +1947,20 @@ This section must be completed when targeting alpha to a release.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: CompositePodGroup
+  - Feature gate name: `CompositePodGroup`
   - Components depending on the feature gate:
-    - kube-apiserver
-    - kube-controller-manager
-    - kube-scheduler
+    - `kube-apiserver`
+    - `kube-controller-manager` (starting from Beta)
+    - `kube-scheduler`
+  - **Dependencies:**
+    - The `CompositePodGroup` API relies directly on both the `GenericWorkload` and
+      `TopologyAwareWorkloadScheduling` feature gates being enabled. All three feature
+      gates must be enabled in order for the API and multi-level scheduling features to be
+      fully functional.
+    - This dependency is programmatically verified during component initialization (the
+      components will log a configuration error and disable `CompositePodGroup` processing
+      if any required dependency gate is missing).
+    - We will re-evaluate this simplified feature gate dependency model in Beta if needed.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -2249,7 +2379,7 @@ SIG to get the process for these resources started right away.
 
 [^5]: [PodGroup as top-level object](https://docs.google.com/document/d/1zVdNyMGuSi861Uw16LAKXzKkBgZaICOWdPRQB9YAwTk/edit?tab=t.0).
 
-[^7]: [Proposed Workload API v2](https://docs.google.com/document/d/14XqPIdFhpgBW8hL8zTQ9KrqJAq_Hy1rOawITWqQ8T9c/edit?tab=t.0).
+[^6]: [Proposed Workload API v2](https://docs.google.com/document/d/14XqPIdFhpgBW8hL8zTQ9KrqJAq_Hy1rOawITWqQ8T9c/edit?tab=t.0).
 
 [^7]: See the "Part 2: Future Evolution & Compatibility Study" tab for the relevant discussion in [PodGroup as top-level object](https://docs.google.com/document/d/1B3kLWh_U1a2g-VQ6ExokMjmb7pA8lGkF9MafSSg3JmQ/edit?tab=t.0).
 
