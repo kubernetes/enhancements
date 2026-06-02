@@ -235,12 +235,28 @@ in that group's `cel` map returns a non-empty value across the
 request's in-scope opaque configs. The non-empty returns from all
 fully-satisfied applicable groups form the request's effective affinity key map.
 
-`sharingAffinity` is published in a dedicated **metadata slice**
-that is mutually exclusive with `devices`. Device-bearing slices in the
-same pool reference back to the metadata slice via the standard
-pool tuple `(driver, pool.name, pool.generation, nodeName)`. This
-keeps the driver-schema declaration in one place per pool even when
-the pool is chunked across many slices.
+`sharingAffinity` is published in dedicated **metadata slices**
+that are mutually exclusive with `devices`. Device-bearing slices in
+the same pool reference back to the metadata via the standard pool
+tuple `(driver, pool.name, pool.generation, nodeName)`. A pool may
+publish one or more metadata slices; the scheduler takes the union
+of `sharingAffinity` extractor entries across all metadata slices in
+the same complete pool (same generation, all `resourceSliceCount`
+members present, per the pool-completeness rule from
+[KEP-4815](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4815-dra-partitionable-devices#validation)).
+Before reading metadata, the scheduler invokes the existing
+pool-completeness check; devices in incomplete or invalid pools are
+treated as ineligible for sharing-affinity decisions until the pool
+becomes complete and clean. Conflict resolution rides on existing
+rules — incomplete or invalid pools are skipped entirely
+(KEP-4815's fail-closed gate), and the per-device collision rule
+below requires that any two applicable extractors which produce the
+same key for a candidate device agree on the value, so
+multi-metadata-slice publishing reduces to the same semantics as a
+single metadata slice.
+
+This keeps the driver-schema declaration scoped to the pool even
+when the pool is chunked across many slices.
 
 ```yaml
 # Metadata slice: carries sharingAffinity, no devices.
@@ -422,9 +438,12 @@ fields.
 **1. Placement of extraction: ResourceSlice (driver-side, pool-level metadata slice)**
 
 `sharingAffinity` lives on `ResourceSlice.spec` and is **mutually
-exclusive with `devices`**. A pool publishes one metadata slice that carries
-`sharingAffinity` and zero devices; the pool's device-bearing slices
-carry devices and no `sharingAffinity`.
+exclusive with `devices`**. A pool publishes one or more metadata
+slices that carry `sharingAffinity` and zero devices; the pool's
+device-bearing slices carry devices and no `sharingAffinity`. When
+multiple metadata slices exist in the same complete pool, the
+scheduler unions their extractor entries (per the multi-slice rule
+described above).
 
 The driver is the natural owner: the extraction logic describes the
 driver's own opaque config schema, which is uniform across all
@@ -823,7 +842,10 @@ devices. Where domain-specific validation is feasible, cluster
 administrators can use `DeviceClass` CEL selectors to restrict which
 affinity values are accepted (e.g., constraining subnet IDs to a known
 set) — this is an admin-side guardrail against rare or arbitrary values
-poisoning devices. Affinity-aware preference (within-node) and a Score
+poisoning devices. Drivers that ship a typed opaque-config CRD can
+additionally enforce the same constraints upstream via a validating
+admission webhook on the config object, rejecting claims carrying
+out-of-policy values before they ever reach the scheduler. Affinity-aware preference (within-node) and a Score
 contribution (cross-node) are planned as a beta-scope addition to
 `DynamicResources.computeScore`, following the same per-feature additive
 pattern that Prioritized List (KEP-4816, shipped in 1.35) and Extended
@@ -1809,8 +1831,19 @@ configurations.
 
 ###### Does enabling the feature change any default behavior?
 
-No. Slices without `sharingAffinity` behave exactly as before. The
-feature only affects slices that explicitly opt-in via the new field.
+Not on its own. The feature gate is a precondition; behavior only
+changes for slices that explicitly opt in via the new
+`sharingAffinity` field, and slices without it behave exactly as
+before. Once a driver publishes slices that opt in, however,
+`DeviceRequest`s evaluated against those slices will be subject to
+CEL extraction and affinity-lock matching at scheduling time without
+any change to the claim itself — that is the intended effect of the
+driver's opt-in, but it means a cluster can see scheduling outcomes
+shift purely from a slice-side change. With the gate enabled, the timing of that
+shift is controlled by when drivers begin advertising
+`sharingAffinity` on their slices; with the gate disabled, the
+apiserver strips the field on write so slices cannot advertise it at
+all (see the rollback question below).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1988,7 +2021,6 @@ Counters above give cluster-wide visibility; individual pods that fail to schedu
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-- DRA must be enabled (GA in 1.34)
 - KEP-5075 (Consumable Capacity) for multi-allocatable devices
 
 ### Scalability
@@ -2008,10 +2040,11 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-- ResourceSlice: One additional metadata slice per pool that uses
-  this feature (carrying `sharingAffinity` and zero devices); the
-  metadata slice holds up to 8 extractors, each with up to 8 CEL
-  expressions. Device-bearing slices are unchanged.
+- ResourceSlice: One or more additional metadata slices per pool
+  that uses this feature (each carrying `sharingAffinity` and zero
+  devices); the metadata slices in a pool jointly hold up to 8
+  extractors, each with up to 8 CEL expressions. Device-bearing
+  slices are unchanged.
 - ResourceClaim: **No change.** The claim side carries no new fields.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
