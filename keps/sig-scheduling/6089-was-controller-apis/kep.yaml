@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-apps
-status: provisional
+status: implementable
 creation-date: 2026-05-18
 reviewers:
   - "@dom4ha"
