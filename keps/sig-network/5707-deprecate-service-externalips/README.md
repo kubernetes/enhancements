@@ -119,7 +119,7 @@ Tentative version: 1.36
 
 - Switch the `AllowServiceExternalIPs` feature gate to false
 - Create e2e test ensuring that externalIPs is no longer used by kube-proxy
-- Notify the Security Response Committee to update CVE-2020-8554 indicating that it now has a fix available.
+- Update the CVE record to indicate that CVE-2020-8554 has been fixed
 
 Clusters administrators can enable the feature gate if needed to restore the externalIPs functionality
 
