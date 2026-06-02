@@ -325,8 +325,9 @@ machinery.
 `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` do not participate in this
 exclusion today. For beta, they will implement `WantsExcludedAdmissionResources` and skip
 dispatch for the same set, gated by a new `ExcludeAdmissionWebhookVirtualResources` feature
-gate that defaults to enabled in 1.37. The gate is opt-out for clusters that need the prior
-behavior temporarily.
+gate that defaults to enabled in 1.37. The gate is opt-out as a short-term escape hatch for
+clusters that need the prior behavior; it is not intended to remain disabled long-term and
+will be locked at GA per the graduation criteria below.
 
 Excluded resources (from `exclusion.Excluded()`, all API versions):
 
@@ -602,6 +603,13 @@ best tested via integration tests.
 - Stable usage in production environments for at least two releases
 - No regressions in API server startup time
 - All feedback from beta users addressed
+- `ExcludeAdmissionWebhookVirtualResources` gate handling:
+  - Consistent with Kubernetes behavior deprecation policies, the gate will remain unlocked
+    for 3 releases / 12 months before being locked to enabled at GA.
+  - If feedback prior to GA indicates webhook interception of `*SubjectAccessReview`
+    requests is being used and is still needed by the ecosystem, api-machinery will
+    consider adding admission configuration to allow cluster admins to opt back into
+    webhook interception of `*SubjectAccessReview` requests.
 
 ### Upgrade / Downgrade Strategy
 
