@@ -315,7 +315,6 @@ type DeviceRequest struct {
 	// DerivedAttributes defines a set of virtual attributes computed via CEL expressions
 	// for each candidate device.
 	// +featureGate=DRADerivedAttributes
-	// +optional
 	// +listType=map
 	// +listMapKey=name
 	// +k8s:optional
@@ -325,10 +324,17 @@ type DeviceRequest struct {
 
 type DerivedAttribute struct {
 	// Name is the identifier for this derived attribute, used in constraints.
-  //
-	// Format: https://github.com/kubernetes/kubernetes/blob/0f935974ee0e38fb77a09e3be1e8754b5720605e/pkg/apis/resource/types.go#L621-L637
 	//
-	// +required
+	// It has the same format as the name of attributes in a ResourceSlice.
+	//
+	// A domain prefix (e.g., "example.com/attribute-name") should be used if
+	// the derived attribute is intended to override or shadow a static attribute
+	// of the same name from a device driver. If the derived attribute is unique
+	// and used solely for inline matching in constraints within the claim, a simple
+	// bare name without a domain prefix (e.g., "my-derived-attribute") should
+	// be used to prevent accidental shadowing and make the intent clear.
+	//
+	// +k8s:required
 	Name QualifiedName `json:"name"`
 
 	// Expression is a CEL expression evaluated against each candidate device.
@@ -357,7 +363,7 @@ type DerivedAttribute struct {
 	// cost of evaluating it is also limited based on the estimated number
 	// of logical steps.
 	//
-	// +required
+	// +k8s:required
 	Expression string `json:"expression"`
 }
 ```
