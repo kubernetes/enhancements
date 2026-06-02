@@ -238,7 +238,7 @@ fully-satisfied applicable groups form the request's effective affinity key map.
 `sharingAffinity` is published in dedicated **metadata slices**
 that are mutually exclusive with `devices`. Device-bearing slices in
 the same pool reference back to the metadata via the standard pool
-tuple `(driver, pool.name, pool.generation, nodeName)`. A pool may
+tuple `(driver, pool.name, pool.generation)`. A pool may
 publish one or more metadata slices; the scheduler takes the union
 of `sharingAffinity` extractor entries across all metadata slices in
 the same complete pool (same generation, all `resourceSliceCount`
@@ -283,8 +283,7 @@ spec:
             ? object.ibPKey : ""
 ---
 # Device slice: carries devices, no sharingAffinity. Joined to the
-# metadata slice by the (driver, pool.name, generation, nodeName)
-# tuple.
+# metadata slice by the (driver, pool.name, generation) tuple.
 apiVersion: resource.k8s.io/v1
 kind: ResourceSlice
 metadata:
