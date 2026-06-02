@@ -244,8 +244,7 @@ users and controllers to obtain a managed set of `EndpointSlices` for a pod
 label selector without creating a `Service`. The `endpointslice-controller`
 watches `EndpointSelector` objects and manages their corresponding
 `EndpointSlices` using the same reconciliation logic it applies to
-`Service`-owned slices today — tracking pod readiness, topology, and slice
-packing.
+`Service`-owned slices today.
 
 The `EndpointSelector` spec exposes the `Service` fields that affect endpoint
 selection and EndpointSlice presentation: `selector`, endpoint `ports`,
@@ -264,8 +263,16 @@ A user or controller creates an `EndpointSelector` directly and manages its
 lifecycle. No `ownerReference` is set. The resource is referenced by name from
 higher-level objects (for example, a `Backend` resource in Gateway API). This
 is the right model when the `EndpointSelector` outlives any single parent, or
-when a user wants to track a set of pod endpoints without introducing a
-`Service`.
+when the user knows there will be multiple consumers of the same set of endpoints.
+The higher level resource(s) that reference the `EndpointSelector` will typically
+do so via a `selectorRef` field (or similar) that points to the `EndpointSelector`
+by name and namespace. Note that a cross-namespace reference does NOT inherently
+give the higher-level resource permission to read the `EndpointSelector`, the
+pods it selects, or the `EndpointSlices` it produces; appropriate RBAC rules
+must be in place to allow this access. Further guidance on cross-namespace
+references and consumption of `EndpointSelector` in general is delegated
+to the projects that govern those higher-level resources (most notably
+Gateway API).
 
 ### Controller-Managed Creation
 
@@ -578,6 +585,19 @@ spec:
       appProtocol: kubernetes.io/grpc
   hints:
     trafficDistribution: PreferClose
+---
+apiVersion: gateway.networking.x-k8s.io/v1alpha1
+kind: XBackend
+metadata:
+  name: my-backend
+  namespace: default
+spec:
+  type: EndpointSelector
+  port: 80
+  endpointSelector:
+    selectorRef:
+      name: my-inference-pool-endpoints
+      namespace: default
 ```
 
 A controller-managed `EndpointSelector` created by an `InferencePool`
@@ -750,7 +770,7 @@ pointer or a narrower Alpha-only type would change validation behavior.
 `spec.selector` is mutable for manually created `EndpointSelector` objects.
 Changing it retargets the managed `EndpointSlices`, matching the mutability of
 `Service.spec.selector`. For Service-owned `EndpointSelector` objects, direct
-user edits to the selector are not supported in Alpha; the
+user edits to the selector are not supported; the
 `service-endpointselector-controller` restores the selector derived from the
 owning `Service`.
 
@@ -787,6 +807,22 @@ semantics, is more useful for direct `EndpointSelector` consumers, and keeps
 named-port resolution where it belongs: in the controller that watches pods.
 Resolve before moving to implementable; changing this field type after Alpha
 would be a breaking API change.
+
+**Open question — ownerReferences with manual binding**
+When an `EndpointSelector` is created without a `ownerReferences[].controller`
+entry set to `true`, that indicates that the `EndpointSelector` is managed
+manually. However, when that `EndpointSelector` is referenced by a higher-level
+resource (for example, an `InferencePool` or a `Backend`), should there be an
+ownerRef pointing back to that resource for garbage collection? This would allow
+automatic cleanup of the `EndpointSelector` and its `EndpointSlices` when all
+owning resources are deleted, but it would require the controller that manages
+that higher level resource to set ownerRefs on the `EndpointSelector`. The
+alternative is to have no ownerRefs at all for manually managed `EndpointSelector`
+objects which could lead to the higher-level resources having invalid references
+to deleted `EndpointSelectors`. This may not be a problem in practice if the
+higher-level resources have robust status conditions. Finalizers on the
+`EndpointSelector` is also a potential option for controllers of higher-level
+resources.
 
 ### Controller-Managed Conventions
 
