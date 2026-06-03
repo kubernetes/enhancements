@@ -80,7 +80,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP describes the architectural design and implementation details for
-integrating a Topology-Aware and DRA-Aware workload scheduling algorithm into
+integrating a Topology-Aware workload scheduling algorithm into
 the Kubernetes kube-scheduler to address the complex placement requirements of
 modern, high-performance distributed applications.
 
@@ -344,7 +344,7 @@ type PlacementScorePlugin interface {
     // The PodGroupAssignments indicates the node assigned to each pod within this Placement.
     // The returned score is a int64 with higher scores generally indicating more preferable Placements.
     // Plugins can implement various scoring strategies, such as bin packing to minimize resource fragmentation.
-    ScorePlacement(ctx context.Context, state PodGroupCycleState, podGroup PodGroupInfo, placement *PodGroupAssignments) (int64, *Status)
+    ScorePlacement(ctx context.Context, state PlacementCycleState, podGroup PodGroupInfo, placement *PodGroupAssignments) (int64, *Status)
 
     // PlacementScoreExtensions returns a PlacementScoreExtensions interface if it implements one, or nil if does not.
     PlacementScoreExtensions() PlacementScoreExtensions
