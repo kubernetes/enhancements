@@ -22,6 +22,8 @@
   - [Preemption algorithm](#preemption-algorithm)
     - [In place victim reprieval](#in-place-victim-reprieval)
     - [CycleState retention](#cyclestate-retention)
+      - [TopologyAwareScheduling](#topologyawarescheduling)
+    - [CompositePodGroup](#compositepodgroup)
   - [Pod Group Post Filter](#pod-group-post-filter)
   - [Potential future extensions](#potential-future-extensions)
   - [Test Plan](#test-plan)
@@ -154,6 +156,8 @@ and many others) and bring the true value for every Kubernetes user.
   If we decide to change that it will be addressed in a dedicated KEP.
 - Propose any tradeoff between preemption and cluster scale-up.
 - Design workload-level preemption triggered by external schedulers
+- Handling non-uniform priorities across PodGroups/CompositePodGroups
+- Full support for Topology Aware Scheduling. This will be provided in TAS KEP.
 
 ## Proposal
 
@@ -326,7 +330,12 @@ type PodGroupSpec struct {
 ```
 
 Given that preemption unit shouldn't be larger then the scheduling unit, additional validation
-will be added to prevent `All` disruption mode for PodGroups with BasicSchedulingPolicy. 
+will be added to prevent `All` disruption mode for PodGroups with BasicSchedulingPolicy.
+
+The DisruptionMode is modeled as a struct to allow future extensibility, especially with the 
+upcoming CompositePodGroup. This KEP approval does not mean that these plans are approved
+but we are seeing potential future use cases, like custom DisruptionMode with "preempt 
+single units until X, then preempt all" semantics, which require DisrtupionMode to be expandable.
 
 While the `PreemptionMode` might seem the more natural name here, we envision that the same
 concept can be later used in `Eviction` API and other usecases, so we already start with a more
@@ -415,6 +424,7 @@ the possible divergence in the documentation.
 For Beta and GA, we will disallow the divergence between the priority of the `Pod` and the `PodGroup`. 
 This will be done by the scheduler, which will fail scheduling of the `PodGroup`, once it observes such divergence.
 This mechanism will follow a similar mechanism already implemented in scheduler that disallows `PodGroup` with pods having different `spec.schedulerName`.
+We will check only the numerical value of the priority, not the priority class from which the value was derived.
 This information will be visible to the user in the description of the `PodScheduled` `Conditions` in the `Pod.Status` and `PodGroup.Status`:
 
 ```yaml
@@ -650,6 +660,13 @@ However, one can note that actually do not need a full Filter check. Instead of 
 We propose to tenantively call it `Reprieve` with following semantics:
 
 ```go 
+
+type PreemptorPlacement struct {
+  Pod        *v1.Pod
+  Node       NodeInfo
+  CycleState CycleState
+}
+
 // ...
 // FilterPlugin also needs to implement Reprieve method
 // for effective preemption for pod groups.
@@ -677,7 +694,7 @@ type FilterPlugin interface {
     // Once canceled, they should return as soon as possible with
     // an Unschedulable status that includes the
     // `context.Cause(ctx)` error explanation.
-    Reprieve(ctx context.Context, victimPod *v1.Pod, nodeInfo NodeInfo, preemptorPods []*v1.Pod, clusterNodes []NodeInfo) *Status
+    Reprieve(ctx context.Context, victimPod *v1.Pod, nodeInfo NodeInfo, preemptorPods []PreemptorPlacement, clusterNodes []NodeInfo) *Status
 }
 ```
 
@@ -719,13 +736,43 @@ In the Alpha implementation of WAP the whole PodGroupScheduling function is exec
 building a new CycleState for each of the preemptor pods. This assumes that each of the plugin can create a valid
 CycleState based on the current NodeInfoSnapshot which is updated as victim pods are removed and added. This might not be true
 for plugins that use information from external informer and rely on the PreFilterExtension to keep a diff that is applied
-on top of the informer to simulate current state of the world (See [DRA Preemption Proposal](https://github.com/kubernetes/enhancements/issues/5690)). That's why for Beta promotion, we will refactor the PodGroupSchedulingAlgorithm to allow CycleState to be reused across the original scheduling atttempt and attempts in the WAP.
+on top of the informer to simulate current state of the world. See [DRA Preemption Proposal](https://github.com/kubernetes/enhancements/issues/5690)
+and VolumeRestrictionsPlugin.
+
+That's why for Beta promotion, we will refactor the PodGroupSchedulingAlgorithm to allow CycleState to be reused across the original scheduling atttempt and attempts in the WAP.
 
 In the current implementation of PodGroupSchedulingAlgorithm the CycleState for Nth Pod from PodGroup is created with previous (N-1) pods from the same PodGroup assumed. 
 To revert that from the CycleState of Nth Pod, we will need to run PreFilterExtension.RemovePod() for each of the (N-1) pods as part of clean up function that we currently run to remove Nth Pod from the NodeInfoSnapshot.
 
-This is akin to the current implementation of PostFilter, where the CycleState from original scheduling attempt is passed
-to Postfilter method.
+This is akin to the current implementation of PostFilter, where the CycleState from original scheduling attempt is passed to Postfilter method.
+
+For the Reprieve method to work it will require that after an successful attempt of PodGroupScheduling in WAP, for a Nth Pod in PodGroup we will need to add all 
+pods from N+1 till the end of the PodGroup to this pod CycleState. This is to make sure that CycleState of Nth Pod is aware of the assumed presence of the rest 
+of the pods from PodGroup.
+
+This also means that we will not rerun PreFilter plguins in the PodGroupScheduling during WAP. It's also akin to the current implementation of default
+preemption where we only rerun Filter plugins. This information is not exposed right now, so to make thing explicit we will expand the PreFilter plugin
+description to clearly describe how it works with preemption:
+- if any Prefilter returns UnschedulableAndUnresolvable the default preemption / workload aware preemption will not be run. Other PodGroupPostFilter plugins may still run.
+- if any PreFilter returns Unschedulable we run default preemption / workload aware preemption with cycleStates from the initial attempt. PreFilters are NOT rerun in the preemption.
+  Only the PreFilteExtension interface is called to adjust internal state of prefilters based on the victim removal/addition.
+- if a PreFilter returns Skip, the plugin will also be skipped during WAP scheduling simulation and in the Reprieve phase
+- if a PreFilter returns a subset of nodes, this subset of nodes will also be used during preemption scheduling simulation, meaning that even after victim removal we will not search 
+  additional nodes. This is in line with the behavior of not reruning PreFilters in the preemption. 
+
+##### TopologyAwareScheduling
+
+Even though we do not aim to have a full support for TAS as a part of this KEP, it's worth to consider whether this approach will not block or make it hard
+to implement support for WAP in TAS in the future. As the PlacementGeneratePlugins do not depend on the pod cycle states, there is no concern here.
+For the scheduling attempts inside TAS, the PreFilter plugins do not depend on the selected placement (they always use whole cluster nodes), so we should be able to reuse
+the CycleState from the original scheduling attempt.
+
+#### CompositePodGroup
+
+As in TopologyAwareScheduling case we do not aim to have a support for CPG as part of this KEP, but it's alo worth to consider whether this approach will not block WAP for 
+CPGs in the future. This case is very similar to the TopologyAwareScheduling, where in Multi Level Topology Scheduling topolgies will not depend on the pod cycle states and 
+cycle states of pods from all pod groups can be stored and passed to the preemption. 
+
 
 ### Pod Group Post Filter
 
@@ -789,10 +836,12 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
 
 1. Improved preemption algorithm.
 
-   Instead of considering a single placement of a preemptor for a given set of victims, we may
-   consider multiple different placements. This will have much bigger impact once kube-scheduler
-   supports topology-aware scheduling. As a result, we're leaving it as a future extension -
-   the algorithm can always be improved and will result in pretty local code changes.
+   We expect that in the future the algorithm proposed in this KEP can be improved to limit
+   the disruptions it causes. For example, instead of considering a single placement of a
+   preemptor for a given set of victims, we may consider multiple different placements.
+   This will have much bigger impact once kube-scheduler supports topology-aware scheduling.
+   As a result, we're leaving it as a future extension -the algorithm can always be improved
+  and will result in pretty local code changes.
 
 1. Binary search during preemption
 
