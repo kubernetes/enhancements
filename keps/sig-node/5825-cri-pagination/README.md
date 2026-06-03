@@ -369,7 +369,8 @@ kubelet does not have integration tests.
 - Feature gate enabled by default
 - Both containerd and CRI-O implement streaming RPCs
 - E2E tests passing
-- Metrics for streaming usage added
+- Existing kubelet CRI metrics (`kubelet_runtime_operations_errors_total`,
+  `kubelet_runtime_operations_duration_seconds`) cover streaming transparently
 - Documentation updated
 
 #### GA
@@ -423,10 +424,18 @@ Streaming resumes if the runtime supports it. No state is persisted.
 ###### Are there any tests for feature enablement/disablement?
 
 No dedicated enablement/disablement tests are planned.
-The feature is stateless and toggling requires a kubelet restart, so the e2e tests that cover the [behavior matrix](#behavior-matrix)
+The only internal state is the cached fallback flag, which is reset on
+kubelet restart. Toggling the feature gate requires a kubelet restart,
+so the e2e tests that cover the [behavior matrix](#behavior-matrix)
 (including the fallback to unary RPCs) provide sufficient coverage.
 
-To be discussed further before beta graduation.
+Specifically, the following tests verify enablement/disablement behavior:
+- Unit tests confirm that when `CRIListStreaming` is disabled, kubelet uses
+  only unary RPCs and never attempts streaming calls.
+- CRI-proxy e2e tests confirm that when the feature gate is enabled, kubelet
+  calls the streaming RPCs.
+- CRI-proxy e2e tests confirm that when the runtime returns `UNIMPLEMENTED`,
+  kubelet falls back to unary RPCs automatically.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -436,17 +445,25 @@ Rollout/rollback cannot impact running workloads. Streaming only affects how con
 
 ###### What specific metrics should inform a rollback?
 
-`kubelet_cri_list_streaming_failure_total`, Type: `Counter`, Label: `operation`
+`kubelet_runtime_operations_errors_total{operation_type="list_containers"}` (and equivalent
+`list_podsandbox`, `list_images`, etc.)
 
-This counter increments when a streaming RPC encounters an error during `Recv()`, causing kubelet to discard any items received so far. A sustained increase may indicate runtime instability.
+A sustained increase in CRI list operation errors may indicate runtime
+instability with streaming RPCs. This existing metric already captures
+mid-stream failures because the error propagates through the CRI client
+to the instrumented service layer.
 
-`kubelet_cri_list_streaming_fallback_total`, Type: `Counter`, Label: `operation`
+`kubelet_runtime_operations_duration_seconds{operation_type="list_containers"}` (and equivalent)
 
-This counter increments when kubelet falls back to the unary RPC because the runtime returned `UNIMPLEMENTED` for the streaming RPC.
+An unexpected increase in list operation latency after enabling the feature
+gate may indicate streaming overhead.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-To be tested during Alpha phase.
+Upgrade and downgrade do not require a specific path. Kubelet must be
+restarted to toggle the feature gate, which resets its internal state.
+When enabled, kubelet attempts streaming RPCs first and falls back to
+unary RPCs if the runtime returns `UNIMPLEMENTED`.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -460,8 +477,11 @@ Not applicable. It's not a workload-level feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-- `kubelet_cri_list_streaming_fallback_total` is **not** incrementing: the runtime supports streaming and kubelet is using the streaming RPCs.
-- `kubelet_cri_list_streaming_failure_total` is **not** incrementing: streams are completing successfully without errors.
+- `kubelet_runtime_operations_errors_total` for list operations (`list_containers`,
+  `list_podsandbox`, etc.) is **not** incrementing: CRI list calls are completing
+  successfully, whether via streaming or unary RPCs.
+- `kubelet_runtime_operations_duration_seconds` for list operations is **not**
+  increasing: streaming is not adding latency overhead.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -469,25 +489,44 @@ None of the existing SLOs are applicable to this enhancement.
 Runtime-side metrics can be used as SLIs for latency.
 - `crio_operations_latency_seconds_total` (CRI-O)
 
-To be discussed further before beta graduation.
+Operators can use the existing kubelet-side metrics to monitor streaming health:
+- `kubelet_runtime_operations_errors_total` for list operations near zero: CRI list
+  calls completing successfully.
+- `kubelet_runtime_operations_duration_seconds` for list operations stable: no
+  latency regression from streaming.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `kubelet_cri_list_streaming_failure_total`
-  - Tracks how often streaming RPCs fail mid-stream.
+  - Metric name: `kubelet_runtime_operations_errors_total`
+  - Tracks CRI operation errors by operation type. Mid-stream failures
+    propagate as errors and are captured by this existing metric.
 - [x] Metrics
-  - Metric name: `kubelet_cri_list_streaming_fallback_total`
-  - Tracks how often kubelet falls back to unary RPCs.
+  - Metric name: `kubelet_runtime_operations_duration_seconds`
+  - Tracks CRI operation duration by operation type. Covers both streaming
+    and unary paths transparently.
 - [x] Runtime Metrics
   - Metric name: `crio_operations_latency_seconds_total` (CRI-O)
   - Tracks CRI RPC latency.
 
-To be discussed further before beta graduation.
-
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No. The metrics described above will be added as part of this enhancement.
+Streaming-specific metrics (`kubelet_cri_list_streaming_failure_total`,
+`kubelet_cri_list_streaming_fallback_total`) were considered but not
+required. The streaming/fallback decision happens inside the CRI client,
+below the instrumented service layer where kubelet metrics are recorded.
+Adding them would require either introducing metrics registration into
+the `cri-client` staging package (which currently has no metrics
+dependency) or injecting a callback interface from kubelet into the CRI
+client. Neither is justified because:
+
+- Mid-stream failures already propagate as errors to the instrumented
+  layer and are captured by `kubelet_runtime_operations_errors_total`.
+- Fallback to unary is cached after the first occurrence (via
+  `atomic.Bool`) and only happens a few times at startup. Kubelet logs
+  the fallback at Info level, which is sufficient for detection.
+- `kubelet_runtime_operations_duration_seconds` captures the total
+  latency of list operations regardless of which code path was taken.
 
 ### Dependencies
 
@@ -536,19 +575,26 @@ Not applicable. This feature is kubelet-to-runtime communication only.
 | Failure Mode                       | Detection                                             | Mitigation                                                                 |
 |------------------------------------|-------------------------------------------------------|----------------------------------------------------------------------------|
 | Runtime does not support streaming | gRPC `UNIMPLEMENTED` status code                      | Kubelet caches the result and falls back to unary RPC for subsequent calls |
-| Runtime crashes mid-stream         | `kubelet_cri_list_streaming_failure_total` increments | Kubelet discards partial results and retries the entire streaming call     |
+| Runtime crashes mid-stream         | `kubelet_runtime_operations_errors_total` increments  | Kubelet discards partial results and retries the entire streaming call     |
 
 ###### What steps should be taken if SLOs are not being met?
 
-If `kubelet_cri_list_streaming_fallback_total` is incrementing, the runtime does not implement the streaming RPCs. Upgrade the runtime to a version that supports streaming.
-
-If `kubelet_cri_list_streaming_failure_total` is incrementing, the runtime is failing mid-stream. Operators should investigate the runtime logs for errors and consider upgrading the runtime.
+If `kubelet_runtime_operations_errors_total` for list operations is incrementing,
+the runtime may be failing mid-stream. Operators should investigate the runtime
+logs for errors and consider upgrading the runtime. Kubelet also logs at Info
+level when it falls back to unary RPCs due to the runtime returning
+`UNIMPLEMENTED`.
 
 Disabling the feature gate will cause kubelet to fall back to unary RPCs. Note that if the node has enough resources to exceed the 16 MB gRPC message limit, the unary RPCs will also fail.
 
 ## Implementation History
 
 - 2026-01-21: KEP created
+- 2026-02-11: KEP refactored from pagination to server-side streaming
+- 2026-03-19: Alpha implementation merged (kubernetes/kubernetes#136987)
+- 2026-03-21: Data race fix merged (kubernetes/kubernetes#137949)
+- 2026-04-13: CRI-O streaming implementation merged (cri-o/cri-o#9761)
+- 2026-06-03: KEP updated for beta graduation in v1.37
 
 ## Drawbacks
 
