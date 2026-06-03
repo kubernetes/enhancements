@@ -46,6 +46,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - scheduler_placement_count
-  - scheduler_placement_schedule_attempts_total
-  - scheduler_placement_scheduling_attempt_duration_seconds
+  - scheduler_placement_total
+  - scheduler_placement_evaluations_total
+  - scheduler_placement_evaluation_duration_seconds
