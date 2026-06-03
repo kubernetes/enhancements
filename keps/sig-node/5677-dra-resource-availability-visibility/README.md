@@ -380,8 +380,9 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
    uses the CSR pattern where user must wait for controller processing.
 
 2. **One-time calculation**: Each request is processed once. Once `status`
-   is set the entire object (metadata included) becomes immutable. To get
-   updated data, delete and recreate the request.
+   is set it becomes immutable; metadata (labels, annotations) follows
+   the standard object-meta update rules. To get updated data, delete and
+   recreate the request.
 
 3. **Automatic TTL cleanup**: Completed or failed requests are deleted by the
    controller 1 hour after their `Complete`/`Failed` condition is set.
@@ -411,15 +412,15 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
      capacity (the `max(0, …)` floor in the controller hides the
      overcount as "0 available" rather than as a negative number).
 
-   Alpha 1.37 adds an optional `partitionSummary[]` sub-object
+   Alpha 1.37 adds an optional `partitionSummary` sub-object
    (a typed "devices-by-partition-type" view that nets out shared
    counter consumption) and a `shareableSummary` aggregate to each
    `PoolStatus`, caps the per-device contribution to
    `allocatedDevices` at 1, and skips AdminAccess allocations in all
-   accounting. `partitionSummary[]` is emitted when the driver
+   accounting. `partitionSummary` is emitted when the driver
    declares a per-pool grouping attribute on the slice
    (`ResourceSlice.Spec.PartitionTypeAttribute`, new in 1.37); pools
-   without that declaration fall back to a raw `counterSets[]` dump.
+   without that declaration fall back to a raw `counterSets` dump.
    See
    [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting)
    under Controller Implementation.
@@ -668,32 +669,32 @@ non-nil status indicates the request has been processed.
 | Field | Type | Description |
 |-------|------|-------------|
 | `poolCount` | `*int32` (required) | Total pools matching filter (regardless of truncation). |
-| `pools[]` | atomic list, max 1000 | First `spec.limit` matching pools, sorted by driver then pool name. Truncation is inferred from `len(pools) < poolCount`. |
-| `pools[].driver` | string (required) | DRA driver name. |
-| `pools[].poolName` | string (required) | Pool name from ResourceSlice. |
-| `pools[].generation` | int64 (required) | Latest pool generation observed. |
-| `pools[].nodeName` | `*string` (optional) | Node name for node-local pools. Omitted when the pool spans multiple nodes or has mixed/no node assignment. |
-| `pools[].resourceSliceCount` | `*int32` (optional) | Number of slices observed at the latest generation. Unset when `validationError` is set. |
-| `pools[].totalDevices` | `*int32` (optional) | Total devices across all slices. Unset when `validationError` is set. |
-| `pools[].allocatedDevices` | `*int32` (optional) | Devices allocated to claims. Unset when `validationError` is set. |
-| `pools[].availableDevices` | `*int32` (optional) | `totalDevices - allocatedDevices - unavailableDevices`. Unset when `validationError` is set. |
-| `pools[].unavailableDevices` | `*int32` (optional) | Count of physical devices with at least one `NoSchedule` or `NoExecute` taint. **0 in Alpha 1.36** (hard-coded); **computed from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s in Alpha 1.37**. Unset when `validationError` is set. |
-| `pools[].validationError` | `*string` (optional, max 256 bytes) | Set when the pool's data could not be fully validated (e.g., incomplete slice publication). When set, count fields above may be unset. |
-| `pools[].partitionSummary[]` | atomic list of `PartitionTypeStatus`, max 32 (Alpha 1.37, **provisional** — revisit at Beta) | Per-partition-type aggregate, emitted when the pool's slices declare `ResourceSlice.Spec.PartitionTypeAttribute` (new in 1.37). Each entry reports `type` (the value of the declared attribute on devices in this group), `total` (count of devices in the pool with this value), and `allocatable` (how many more devices of this type can still be allocated given current shared-counter state). Devices in the pool whose `ConsumesCounters` cost differs from peers of the same type produce a per-pool `validationError` rather than silent skew. Cap of 32 is a provisional starting point that fits MIG-class pools (3–7 partition types typical); over-cap pools produce a per-pool `validationError` instead of silent truncation. **Mutually exclusive with `counterSets[]`** — a pool emits one view or the other depending on whether the driver declared a grouping attribute. |
-| `pools[].partitionSummary[].type` | string (required) | Value of the device attribute named by `ResourceSlice.Spec.PartitionTypeAttribute` for devices in this group. |
-| `pools[].partitionSummary[].total` | int32 (required) | Number of devices in the pool whose declared attribute carries this value. |
-| `pools[].partitionSummary[].allocatable` | int32 (required) | Number of additional devices of this partition type that can still be allocated under current shared-counter constraints, capped by the number of unallocated devices of this type in the pool. Computed by a greedy per-device fit check against `counterAvailable[s][c] = SharedCounters[s].Counters[c].Value − sum_{in-use d in s} d.ConsumesCounters[s][c]` (each in-use device debited once, per-device not per-claim — matches scheduler counter accounting). For the common single-counter-set case this reduces to `min(freshDevices[type], min over counters c of floor(counterAvailable[s_type][c] / consumesCounters[type][c]))`, where `freshDevices[type]` is the count of devices of this type currently unallocated. See [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting) for the multi-counter-set algorithm. On shareable partitions (`allowMultipleAllocations=true`) this counts only fresh device slots, not capacity headroom on already-in-use devices; operators reading the same pool should consult `shareableSummary.capacity[].available` for per-key headroom on shared devices. |
-| `pools[].counterSets[]` | atomic list of `CounterSetStatus`, max 32 (Alpha 1.37, **provisional** — revisit at Beta) | **Fallback view**, emitted only when the pool has `sharedCounters` but the slices do not declare `ResourceSlice.Spec.PartitionTypeAttribute`. Per-`CounterSet` capacity / consumed / available, derived from `ResourceSlice.Spec.SharedCounters` and the `consumesCounters` of each **unique in-use** non-AdminAccess device (counter cost is debited per device, not per claim, matching scheduler behaviour for shareable partitions). Omitted on pools with no shared counters and on pools where the driver opted into the typed `partitionSummary[]` view (drivers are encouraged to declare a grouping attribute so this verbose fallback is not used). The spec-side per-slice cap is `ResourceSliceMaxCounterSets = 8`; pools can contain many slices with no per-pool cap upstream, so the status cap of 32 is a deliberate starting point rather than a mirror of any spec constant. Over-cap pools produce a per-pool `validationError` instead of silent truncation. **Note:** `CounterSetStatus` is a new type, not a reuse of the spec-side `CounterSet`. The spec's `Counter` only carries `Value` (inventory); a status-side type is needed to add the `consumed` and `available` fields without overloading the spec type. |
-| `pools[].counterSets[].name` | string (required) | Counter-set name as declared in `ResourceSlice.Spec.SharedCounters[].Name`. |
-| `pools[].counterSets[].counters` | `map[string]CounterStatus` (required) | Per-counter status. `CounterStatus` is a new type with three required `resource.Quantity` fields: `capacity` (mirrors the spec-side `Counter.Value`), `consumed` (sum of consumption from **unique in-use** non-AdminAccess devices), and `available` (`capacity − consumed`, never negative). |
-| `pools[].shareableSummary` | `*ShareableSummaryStatus` (optional) | Pool-level aggregate for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. Per-device detail was intentionally not included: a per-device list would scale to hundreds of entries on large pools, so the aggregate gives the operator-relevant signal in three small numbers plus a per-capacity-key breakdown. |
-| `pools[].shareableSummary.fullyAvailableDevices` | int32 (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
-| `pools[].shareableSummary.partiallyAvailableDevices` | int32 (required) | Count of shareable devices with **at least one** non-AdminAccess claim. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. |
-| `pools[].shareableSummary.capacity[]` | atomic list of `ShareableCapacityStatus`, max 32 (Alpha 1.37) | Per-capacity-key aggregate across all shareable devices in the pool. Cap of 32 matches the per-device combined `Attributes + Capacity` cap (no single device can carry more than 32 capacity keys); aggregation across devices may introduce additional keys but homogeneous-schema pools rarely exceed this. |
-| `pools[].shareableSummary.capacity[].name` | string (`QualifiedName`, required) | Capacity key as it appears in `ResourceSlice.Spec.Devices[].Capacity`. |
-| `pools[].shareableSummary.capacity[].total` | `resource.Quantity` (required) | Sum of `Device.Capacity[name].Value` across all shareable devices in the pool that carry this key. Devices that do not carry the key contribute nothing (rather than zero), which is the correct behaviour for heterogeneous-schema pools. |
-| `pools[].shareableSummary.capacity[].consumed` | `resource.Quantity` (required) | Sum of `DeviceRequestAllocationResult.ConsumedCapacity[name]` across non-AdminAccess allocations on shareable devices that carry this key. |
-| `pools[].shareableSummary.capacity[].available` | `resource.Quantity` (required) | `total − consumed`, clamped at zero (never negative). |
+| `pools` | atomic list, max 1000 | First `spec.limit` matching pools, sorted by driver then pool name. Truncation is inferred from `len(pools) < poolCount`. |
+| `pools.driver` | string (required) | DRA driver name. |
+| `pools.poolName` | string (required) | Pool name from ResourceSlice. |
+| `pools.generation` | int64 (required) | Latest pool generation observed. |
+| `pools.nodeName` | `*string` (optional) | Node name for node-local pools. Omitted when the pool spans multiple nodes or has mixed/no node assignment. |
+| `pools.resourceSliceCount` | `*int32` (optional) | Number of slices observed at the latest generation. Unset when `validationError` is set. |
+| `pools.totalDevices` | `*int32` (optional) | Total devices across all slices. Unset when `validationError` is set. |
+| `pools.allocatedDevices` | `*int32` (optional) | Devices allocated to claims. Unset when `validationError` is set. |
+| `pools.availableDevices` | `*int32` (optional) | `totalDevices - allocatedDevices - unavailableDevices`. Unset when `validationError` is set. |
+| `pools.unavailableDevices` | `*int32` (optional) | Count of physical devices with at least one `NoSchedule` or `NoExecute` taint. **0 in Alpha 1.36** (hard-coded); **computed from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s in Alpha 1.37**. Unset when `validationError` is set. |
+| `pools.validationError` | `*string` (optional, max 256 bytes) | Set when the pool's data could not be fully validated (e.g., incomplete slice publication). When set, count fields above may be unset. |
+| `pools.partitionSummary` | atomic list of `PartitionTypeStatus`, max 32 (Alpha 1.37, **provisional** — revisit at Beta) | Per-partition-type aggregate, emitted when the pool's slices declare `ResourceSlice.Spec.PartitionTypeAttribute` (new in 1.37). Each entry reports `type` (the value of the declared attribute on devices in this group), `total` (count of devices in the pool with this value), and `allocatable` (how many more devices of this type can still be allocated given current shared-counter state). A device in the pool that is missing the declared `PartitionTypeAttribute` produces a per-pool `validationError`, as does a device whose `ConsumesCounters` cost differs from peers of the same type — both prevent silent bucketing. Cap of 32 is a provisional starting point that fits MIG-class pools (3–7 partition types typical); over-cap pools produce a per-pool `validationError` instead of silent truncation. **Mutually exclusive with `counterSets`** — a pool emits one view or the other depending on whether the driver declared a grouping attribute. |
+| `pools.partitionSummary.type` | string (required) | Value of the device attribute named by `ResourceSlice.Spec.PartitionTypeAttribute` for devices in this group. |
+| `pools.partitionSummary.total` | int32 (required) | Number of devices in the pool whose declared attribute carries this value. |
+| `pools.partitionSummary.allocatable` | int32 (required) | Number of additional devices of this partition type that can still be allocated under current shared-counter constraints, capped by the number of unallocated devices of this type in the pool. Computed by a greedy per-device fit check against `counterAvailable[s][c] = SharedCounters[s].Counters[c].Value − sum_{in-use d in s} d.ConsumesCounters[s][c]` (each in-use device debited once, per-device not per-claim — matches scheduler counter accounting). For the common single-counter-set case this reduces to `min(freshDevices[type], min over counters c of floor(counterAvailable[s_type][c] / consumesCounters[type][c]))`, where `freshDevices[type]` is the count of devices of this type currently unallocated. See [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting) for the multi-counter-set algorithm. On shareable partitions (`allowMultipleAllocations=true`) this counts only fresh device slots, not capacity headroom on already-in-use devices; operators reading the same pool should consult `shareableSummary.capacity.available` for per-key headroom on shared devices. |
+| `pools.counterSets` | atomic list of `CounterSetStatus`, max 32 (Alpha 1.37, **provisional** — revisit at Beta) | **Fallback view**, emitted only when the pool has `sharedCounters` but the slices do not declare `ResourceSlice.Spec.PartitionTypeAttribute`. Per-`CounterSet` capacity / consumed / available, derived from `ResourceSlice.Spec.SharedCounters` and the `consumesCounters` of each **unique in-use** non-AdminAccess device (counter cost is debited per device, not per claim, matching scheduler behaviour for shareable partitions). Omitted on pools with no shared counters and on pools where the driver opted into the typed `partitionSummary` view (drivers are encouraged to declare a grouping attribute so this verbose fallback is not used). The spec-side per-slice cap is `ResourceSliceMaxCounterSets = 8`; pools can contain many slices with no per-pool cap upstream, so the status cap of 32 is a deliberate starting point rather than a mirror of any spec constant. Over-cap pools produce a per-pool `validationError` instead of silent truncation. **Note:** `CounterSetStatus` is a new type, not a reuse of the spec-side `CounterSet`. The spec's `Counter` only carries `Value` (inventory); a status-side type is needed to add the `consumed` and `available` fields without overloading the spec type. |
+| `pools.counterSets.name` | string (required) | Counter-set name as declared in `ResourceSlice.Spec.SharedCounters[].Name`. |
+| `pools.counterSets.counters` | `map[string]CounterStatus` (required) | Per-counter status. `CounterStatus` is a new type with three required `resource.Quantity` fields: `capacity` (mirrors the spec-side `Counter.Value`), `consumed` (sum of consumption from **unique in-use** non-AdminAccess devices), and `available` (`capacity − consumed`, never negative). |
+| `pools.shareableSummary` | `*ShareableSummaryStatus` (optional) | Pool-level aggregate for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. Per-device detail was intentionally not included: a per-device list would scale to hundreds of entries on large pools, so the aggregate gives the operator-relevant signal in three small numbers plus a per-capacity-key breakdown. |
+| `pools.shareableSummary.fullyAvailableDevices` | int32 (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
+| `pools.shareableSummary.partiallyAvailableDevices` | int32 (required) | Count of shareable devices with **at least one** non-AdminAccess claim. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. |
+| `pools.shareableSummary.capacity` | atomic list of `ShareableCapacityStatus`, max 32 (Alpha 1.37) | Per-capacity-key aggregate across all shareable devices in the pool. Cap of 32 matches the per-device combined `Attributes + Capacity` cap (no single device can carry more than 32 capacity keys); aggregation across devices may introduce additional keys but homogeneous-schema pools rarely exceed this. |
+| `pools.shareableSummary.capacity.name` | string (`QualifiedName`, required) | Capacity key as it appears in `ResourceSlice.Spec.Devices[].Capacity`. |
+| `pools.shareableSummary.capacity.total` | `resource.Quantity` (required) | Sum of `Device.Capacity[name].Value` across all shareable devices in the pool that carry this key. Devices that do not carry the key contribute nothing (rather than zero), which is the correct behaviour for heterogeneous-schema pools. |
+| `pools.shareableSummary.capacity.consumed` | `resource.Quantity` (required) | Sum of `DeviceRequestAllocationResult.ConsumedCapacity[name]` across non-AdminAccess allocations on shareable devices that carry this key. |
+| `pools.shareableSummary.capacity.available` | `resource.Quantity` (required) | `total − consumed`, clamped at zero (never negative). |
 | `conditions[]` | map list by `type`, max 10 | `Complete` (True when processed) or `Failed` (True on error). |
 
 #### Companion API Change: `ResourceSlice.Spec.PartitionTypeAttribute`
@@ -703,27 +704,70 @@ Alpha 1.37 adds one optional field to `ResourceSliceSpec`
 
 ```go
 // PartitionTypeAttribute names a device attribute whose value
-// groups devices in this pool by partition type. When declared on
-// every slice in a pool (all with the same value), the resource
-// pool status controller emits a typed partitionSummary[] view
-// instead of the verbose counterSets[] dump. Leaving the field
-// unset on every slice in a pool keeps the counterSets[] fallback;
-// a mix of set and unset across slices in the same pool, or
-// different values, produces a per-pool validationError.
+// labels each device with its partition type — the externally
+// visible shape a driver offers for a partitionable device, such
+// as "Full", "Half", or "Quarter" for a MIG-style GPU. The
+// attribute is referenced by its fully qualified name (for
+// example, "gpu.example.com/profile") in the same shape used by
+// DeviceSelector.MatchAttribute / DistinctAttribute. The value of
+// the attribute on each device must be a string.
 //
-// Only meaningful when SharedCounters is set somewhere in the
-// pool. Declarative validation rejects this field only when the
-// slice carries neither Devices nor any reference to a counter
-// set; all pool-level consistency checks are controller-side.
+// When this field is set, every device in the pool must carry
+// the named attribute and devices that share a value must share
+// the same ConsumesCounters cost. Setting the field opts the
+// pool into the typed partitionSummary view in
+// ResourcePoolStatusRequest; leaving it unset keeps the
+// CounterSet-based fallback view. The field is only meaningful
+// for pools that also publish SharedCounters.
 //
-// The value must be a domain-qualified attribute key in the same
-// shape used by DeviceSelector.MatchAttribute /
-// DistinctAttribute.
+// Validation rejects this field only when the slice carries
+// neither Devices nor any reference to a counter set. All
+// cross-slice and per-device consistency rules
+// (same value across all slices in the pool; every device
+// carries the attribute; homogeneous ConsumesCounters per
+// value) are checked by the resource pool status controller
+// and surfaced as per-pool validationErrors.
 //
 // +optional
 // +featureGate=DRAResourcePoolStatus
 PartitionTypeAttribute *FullyQualifiedName `json:"partitionTypeAttribute,omitempty" protobuf:"bytes,9,opt,name=partitionTypeAttribute"`
 ```
+
+Example. A driver that publishes one MIG-style GPU per node as three
+mutually exclusive partition shapes — Full, Half, Quarter — declares
+`PartitionTypeAttribute: gpu.example.com/profile` on each slice in the
+pool, and each device sets that attribute to its shape:
+
+```yaml
+spec:
+  driver: gpu.example.com
+  pool:
+    name: node-1
+    generation: 1
+    resourceSliceCount: 1
+  partitionTypeAttribute: gpu.example.com/profile
+  sharedCounters:
+  - name: gpu-0
+    counters:
+      memory: { value: 80Gi }
+  devices:
+  - name: gpu-0-full
+    attributes:
+      gpu.example.com/profile: { string: "Full" }
+    consumesCounters:
+    - counterSet: gpu-0
+      counters: { memory: { value: 80Gi } }
+  - name: gpu-0-half-1
+    attributes:
+      gpu.example.com/profile: { string: "Half" }
+    consumesCounters:
+    - counterSet: gpu-0
+      counters: { memory: { value: 40Gi } }
+```
+
+With this declared, the status controller emits a typed
+`partitionSummary` entry per profile value (`Full`, `Half`, …) reporting
+total and currently-allocatable device counts.
 
 Feature-gate interaction: the field is gated behind
 `DRAResourcePoolStatus`, but it is only effective when
@@ -733,41 +777,18 @@ meaningful for pools with `SharedCounters`, which is itself gated by
 is silently dropped at write time (gate off) or accepted but ignored
 by the status controller (`DRAResourcePoolStatus` off).
 
-Validation rules (declarative on the slice, plus controller-side
-per-pool checks; the slice-level rule is intentionally permissive
-because a counter-consuming slice need not declare its own
-`SharedCounters`):
+The slice-level rule is intentionally permissive: a counter-consuming
+slice in a multi-slice pool can carry only `Devices` and a reference
+to a counter set declared elsewhere in the pool, so requiring
+`SharedCounters` on every slice that declares this field would reject
+legitimate setups. The strict cross-slice and per-device consistency
+rules summarised in the field's doc-comment above (and surfaced as
+per-pool `validationError`s in the status response) are therefore
+enforced by the controller instead.
 
-- **Declarative slice-level check (loose):** the field may be set on
-  any `ResourceSlice` and is rejected only when the slice carries
-  neither `Devices` nor any reference to a counter set — i.e. the
-  slice has no way to participate in counter-typed accounting. All
-  cross-slice / pool-level enforcement is controller-side.
-- **Pool-level: SharedCounters must exist.** The status controller
-  emits a per-pool `validationError` when `PartitionTypeAttribute`
-  is declared on any slice in a pool that has no `SharedCounters`
-  anywhere.
-- **Pool-level: cross-slice consistency.** All slices in a pool that
-  has shared counters must declare the same `PartitionTypeAttribute`
-  value (or all leave it unset). A mismatch — different values, or
-  a mix of set and unset — is a per-pool `validationError`.
-- **Pool-level: every device carries the attribute.** For the
-  controller to compute `partitionSummary[].type`, every device in a
-  pool that opts into the typed view must carry the attribute named
-  by `PartitionTypeAttribute`. Devices missing the attribute produce
-  a per-pool `validationError` rather than being silently bucketed.
-- **Pool-level: homogeneous `ConsumesCounters` per partition type.**
-  Devices in the same partition-type group must share the same
-  `ConsumesCounters` cost; mixed costs in one group produce a
-  per-pool `validationError` since the `allocatable[T]` math
-  assumes a single canonical cost per type.
-
-Cross-KEP relationship: the field lives on the `ResourceSlice` shape
-owned by [KEP-4815](/keps/sig-scheduling/4815-dra-partitionable-devices),
-but it is consumed only by this KEP's controller and is gated behind
-`DRAResourcePoolStatus`. The slice schema change must be reviewed
-together with KEP-4815 so the field shape stays coherent with the
-rest of `ResourceSliceSpec`.
+See also: [KEP-4815 (Partitionable
+Devices)](/keps/sig-scheduling/4815-dra-partitionable-devices) for the
+`SharedCounters` / `ConsumesCounters` machinery this field builds on.
 
 ### Controller Implementation
 
@@ -875,7 +896,7 @@ consistently:
    `DeviceTaintRule` matching is skipped silently. Embedded taints
    alone are sufficient on most clusters because `DRADeviceTaints` is
    Beta default-on.
-4. **`partitionSummary[]`** is emitted when the pool's slices declare
+4. **`partitionSummary`** is emitted when the pool's slices declare
    `ResourceSlice.Spec.PartitionTypeAttribute` (and the pool has any
    `sharedCounters`). The controller groups devices by the value of
    that attribute and, per group T, computes:
@@ -912,9 +933,9 @@ consistently:
    On shareable partitions (`allowMultipleAllocations=true`),
    `allocatable[T]` counts only fresh device slots; capacity headroom
    remaining on already-in-use devices is published separately under
-   `shareableSummary.capacity[]`. Operators on hybrid pools should
+   `shareableSummary.capacity`. Operators on hybrid pools should
    read both fields.
-5. **`counterSets[]` (fallback)** is emitted when the pool has any
+5. **`counterSets` (fallback)** is emitted when the pool has any
    `sharedCounters` and the slices do **not** declare
    `PartitionTypeAttribute`. The controller initialises each entry
    from the pool's `ResourceSlice.Spec.SharedCounters`, then for each
@@ -958,14 +979,14 @@ not.** Two cases the operator must understand:
   `PartitionTypeAttribute`, this is the canonical signal: how many
   more devices of partition type `T` still fit under current counter
   state) or, on pools that fall back to the raw view,
-  `counterSets[].counters[].available`.
+  `counterSets.counters.available`.
 - **Consumable / shareable pools.** With the cap-at-1 rule, every
   device with at least one claim is counted once in
   `allocatedDevices`. A pool of N shareable devices each holding
   one tiny claim will report `allocatedDevices=N` and
   `availableDevices=0`, even though most of each device's capacity
   is free. Operators must consult
-  `shareableSummary.capacity[].available` vs `.total` for the
+  `shareableSummary.capacity.available` vs `.total` for the
   remaining-capacity signal, and the
   `fullyAvailableDevices`/`partiallyAvailableDevices` counts for the
   share-pattern signal.
@@ -977,12 +998,12 @@ sub-objects carry the precise truth. The KEP does not redefine
 change its meaning for existing 1.36 consumers.
 
 All three sub-objects are omitted when empty so plain pools stay
-compact. `partitionSummary[]` and the fallback `counterSets[]` both
+compact. `partitionSummary` and the fallback `counterSets` both
 carry `+k8s:maxItems=32` (provisional — revisit at Beta; pools larger
 than this produce a per-pool `validationError` rather than silent
-truncation). `shareableSummary.capacity[]` carries `+k8s:maxItems=32`
+truncation). `shareableSummary.capacity` carries `+k8s:maxItems=32`
 to match the per-device combined `Attributes + Capacity` cap.
-`partitionSummary[]` and `counterSets[]` are mutually exclusive per
+`partitionSummary` and `counterSets` are mutually exclusive per
 pool — the controller emits one or the other, never both.
 
 ##### Devices That Are Both Partitionable and Consumable
@@ -994,7 +1015,7 @@ partition can make sibling partitions unallocatable through the shared
 counter, even though those siblings still appear as unconsumed
 devices.
 
-The typed `partitionSummary[]` view addresses this directly: because
+The typed `partitionSummary` view addresses this directly: because
 `allocatable[T] = min(freshDevices[T], min over c of floor(counterAvailable[c] / cost[T][c]))`
 reads the *current* `counterAvailable` after each in-use device's
 static `ConsumesCounters` has been subtracted, sibling partitions
@@ -1009,12 +1030,12 @@ exactly the bound operators need.
 
 Two residual cases worth calling out:
 
-- **Pools using the `counterSets[]` fallback (no
+- **Pools using the `counterSets` fallback (no
   `PartitionTypeAttribute` declared).** `availableDevices` is not
   netted out against shared counters and `shareableSummary` reports
   raw device-capacity aggregates that do not subtract counter-blocked
   siblings; operators must read
-  `counterSets[].counters[].available` for the authoritative bound.
+  `counterSets.counters.available` for the authoritative bound.
   This is the same caveat as the original sunya-ch example.
 - **Capacity headroom on shareable in-use partitions
   (`allowMultipleAllocations=true`).** The scheduler debits
@@ -1025,14 +1046,14 @@ Two residual cases worth calling out:
   can be allocated). What it does **not** capture is how much
   per-claim capacity is still available on devices that are already
   in use. For that, operators on hybrid pools must read
-  `shareableSummary.capacity[]`, which reports the remaining free
+  `shareableSummary.capacity`, which reports the remaining free
   capacity per key across all shareable devices in the pool.
 
 The 1.37 contract is: when a typed view is emitted, `allocatable` is
 the precise bound on fresh-device allocations; `shareableSummary` is
 the precise bound on remaining capacity on already-shared devices.
 When only the fallback view is emitted,
-`counterSets[].counters[].available` is the authoritative counter
+`counterSets.counters.available` is the authoritative counter
 signal. Either way the operator has a precise signal — they do not
 have to reconstruct it from `availableDevices`.
 
@@ -1138,9 +1159,9 @@ Additional cases (Alpha 1.37):
 - **AdminAccess skipped**: an AdminAccess allocation against a
   device does not increment `allocatedDevices`, does not move
   `shareableSummary.partiallyAvailableDevices`, does not contribute to
-  `shareableSummary.capacity[].consumed`, does not subtract from any
-  `counterSets[].counters[].available` (fallback view), and does not
-  reduce any `partitionSummary[].allocatable` (typed view).
+  `shareableSummary.capacity.consumed`, does not subtract from any
+  `counterSets.counters[].available` (fallback view), and does not
+  reduce any `partitionSummary.allocatable` (typed view).
 - **`unavailableDevices` from taints**: a pool with `M` devices,
   `K` of which carry a `NoSchedule` or `NoExecute` taint (via
   `Spec.Devices[].Taints` or matching `DeviceTaintRule`), reports
@@ -1148,7 +1169,7 @@ Additional cases (Alpha 1.37):
   must explicitly enable the `DRADeviceTaintRules` gate (Beta
   default-off as of 1.36); the embedded-taint branch only needs
   `DRADeviceTaints` (Beta default-on).
-- **`partitionSummary[]` aggregation (typed view)**: a pool whose
+- **`partitionSummary` aggregation (typed view)**: a pool whose
   slice declares
   `sharedCounters: [{name: gpu-0, counters: {memory: {value: 80Gi}}}]`,
   `spec.partitionTypeAttribute: example.com/partitionType`, and three
@@ -1173,7 +1194,7 @@ Additional cases (Alpha 1.37):
   accounting. The same pool with the typed view reports
   `partitionSummary[half].allocatable` computed against
   `counterAvailable = capacity − 40Gi`, not `capacity − 120Gi`.
-- **`partitionSummary[]` validation**: a pool whose grouping
+- **`partitionSummary` validation**: a pool whose grouping
   attribute resolves to two devices of partition type `full` with
   different `ConsumesCounters` costs (one declares 80Gi, the other
   60Gi) produces a per-pool `validationError` instead of an
@@ -1182,7 +1203,7 @@ Additional cases (Alpha 1.37):
   `validationError`. A pool where slices declare different
   `PartitionTypeAttribute` values produces a per-pool
   `validationError`.
-- **`counterSets[]` aggregation (fallback view)**: a pool whose
+- **`counterSets` aggregation (fallback view)**: a pool whose
   slice declares
   `sharedCounters: [{name: memory, counters: {memory: {value: 80Gi}}}]`
   but no `PartitionTypeAttribute`, with **two distinct devices** each
@@ -1190,12 +1211,12 @@ Additional cases (Alpha 1.37):
   reserved by exactly one non-AdminAccess claim, reports
   `counterSets[0].counters[memory] = {capacity: 80Gi, consumed: 60Gi, available: 20Gi}`
   (two in-use devices × 30Gi per-device cost) and no
-  `partitionSummary[]`.
-- **`partitionSummary[]` and `counterSets[]` mutual exclusion**: on
+  `partitionSummary`.
+- **`partitionSummary` and `counterSets` mutual exclusion**: on
   a pool with `sharedCounters` and a declared
-  `PartitionTypeAttribute`, only `partitionSummary[]` is populated;
-  `counterSets[]` is absent. On a pool with `sharedCounters` and no
-  attribute, only `counterSets[]` is populated.
+  `PartitionTypeAttribute`, only `partitionSummary` is populated;
+  `counterSets` is absent. On a pool with `sharedCounters` and no
+  attribute, only `counterSets` is populated.
 - **`shareableSummary` aggregation**: a pool with three devices
   (`nic-0`, `nic-1`, `nic-2`, all `allowMultipleAllocations=true`,
   each with `bandwidth=10Gi`), where `nic-0` has two claims totalling
@@ -1214,7 +1235,7 @@ Additional cases (Alpha 1.37):
   and `shareableSummary` all absent (confirms `omitempty` behaviour
   on two slice fields and one pointer field).
 - **`+k8s:maxItems` truncation**: a pool with >32 counter sets or
-  >32 distinct capacity keys in `shareableSummary.capacity[]` yields
+  >32 distinct capacity keys in `shareableSummary.capacity` yields
   a `validationError` rather than silent truncation. The controller
   measures size before populating the field and writes
   `validationError` directly when over-cap, avoiding a rejected
@@ -1240,13 +1261,13 @@ Additional cases (Alpha 1.37):
 8. **Partitionable end-to-end (typed view)**: seed a pool whose
    slice declares `sharedCounters`, `partitionTypeAttribute`, and
    devices that `consumesCounters` from them grouped by attribute
-   value; create allocations; assert `partitionSummary[]` is
+   value; create allocations; assert `partitionSummary` is
    populated with the expected per-type `allocatable` and no
-   `counterSets[]` is emitted.
+   `counterSets` is emitted.
 9. **Partitionable end-to-end (fallback view)**: seed the same
-   pool without `partitionTypeAttribute`; assert `counterSets[]` is
+   pool without `partitionTypeAttribute`; assert `counterSets` is
    populated with the expected `consumed`/`available` and no
-   `partitionSummary[]` is emitted.
+   `partitionSummary` is emitted.
 10. **Pool-level `partitionTypeAttribute` validation**: a pool with
     two slices that declare different `partitionTypeAttribute`
     values (and a separate case where some slices set it and others
@@ -1294,10 +1315,10 @@ Added in Alpha 1.37:
 4. "should report partition-type availability on a partitionable
    pool": seed the test driver to publish a pool with
    `sharedCounters`, `partitionTypeAttribute`, and devices that
-   `consumesCounters`; schedule a pod; assert `partitionSummary[]`
+   `consumesCounters`; schedule a pod; assert `partitionSummary`
    shows the expected `total` / `allocatable` per type. A parallel
    case seeds the same pool without `partitionTypeAttribute` and
-   asserts the `counterSets[]` fallback view.
+   asserts the `counterSets` fallback view.
 5. "should report shareable-device aggregate on a consumable pool":
    seed the test driver with two `allowMultipleAllocations=true`
    devices; schedule two pods that each consume a slice of capacity
@@ -1346,7 +1367,7 @@ graduation. The reasoning, strongest first:
    (b) does not reflect shared-counter consumption on partitionable
    devices. The visible symptom is `availableDevices=0` reported on
    pools that actually have free capacity. Fixing this requires new
-   API fields (`partitionSummary[]` / `counterSets[]`,
+   API fields (`partitionSummary` / `counterSets`,
    `shareableSummary`) plus a new optional field on `ResourceSlice`
    (`PartitionTypeAttribute`) to drive the typed view — not just a
    controller patch — and adding new API surface in Beta is exactly
@@ -1379,13 +1400,13 @@ Scope of the 1.37 Alpha:
   grouping attribute for partition types. The slice schema change
   requires sign-off from KEP-4815 since the field lives on the
   `ResourceSlice` type owned by that KEP.
-- **Add `partitionSummary[]` to `PoolStatus`** (`type`, `total`,
+- **Add `partitionSummary` to `PoolStatus`** (`type`, `total`,
   `allocatable` per partition type) for partitionable pools whose
   slices declare `PartitionTypeAttribute`. `allocatable` nets out
   shared-counter consumption directly via
   `min(freshDevices[type], min over c of floor(counterAvailable[c] / cost[type][c]))`,
   so this view replaces the raw counter dump in the common case.
-- **Add `counterSets[]` to `PoolStatus`** as a fallback view, used
+- **Add `counterSets` to `PoolStatus`** as a fallback view, used
   only on pools that have `sharedCounters` but no declared
   `PartitionTypeAttribute`. The two are mutually exclusive per pool.
 - **Add `shareableSummary` to `PoolStatus`** (`fullyAvailableDevices`,
@@ -1417,7 +1438,7 @@ Scope of the 1.37 Alpha:
 #### Beta
 
 Beta criteria will be revisited after the Alpha 1.37 work lands
-(`partitionSummary[]` / `counterSets[]` / `shareableSummary`,
+(`partitionSummary` / `counterSets` / `shareableSummary`,
 `ResourceSlice.Spec.PartitionTypeAttribute`, `unavailableDevices`,
 cap-at-1, AdminAccess skip) and the feature has soaked across the
 1.36 + 1.37 cycles. The target milestone and API-version graduation
@@ -1437,13 +1458,13 @@ plan are intentionally left open at this point.
   clusters that do not opt in.
 - API stays at `resource.k8s.io/v1alpha3` for the status object.
   Stored objects from 1.36 remain readable; the new optional fields
-  (`partitionSummary[]` / `counterSets[]`, `shareableSummary`) are
+  (`partitionSummary` / `counterSets`, `shareableSummary`) are
   populated by the 1.37 controller when the source data warrants it.
   Older clients ignore the unknown fields.
 - `ResourceSlice.Spec.PartitionTypeAttribute` (new in `resource.k8s.io/v1`,
   gated behind `DRAResourcePoolStatus`) is an additive optional
   field. Slices written by 1.36 leave it unset, so the 1.37
-  controller emits the `counterSets[]` fallback view for those
+  controller emits the `counterSets` fallback view for those
   pools. Drivers that adopt the convention opt in slice by slice;
   partial adoption per pool is rejected with a per-pool
   `validationError` to avoid mixed-view confusion.
@@ -1467,7 +1488,7 @@ plan are intentionally left open at this point.
   both 1.36 and 1.37, so both components must opt in explicitly.
 - **1.36 ↔ 1.37 skew:** Status API is `resource.k8s.io/v1alpha3` in
   both releases. A 1.37 KCM serving a 1.36 apiserver may emit
-  `partitionSummary[]` / `counterSets[]` / `shareableSummary` on
+  `partitionSummary` / `counterSets` / `shareableSummary` on
   objects whose 1.36 apiserver storage understands them as opaque
   optional fields — no compatibility issue. A 1.36 KCM serving a
   1.37 apiserver simply does not populate the new fields.
@@ -1636,16 +1657,16 @@ One existing type changes: `ResourceSlice.Spec` gains an optional
 and is omitted unless the driver opts in, so per-slice size is
 effectively unchanged on existing clusters.
 
-Alpha 1.37 also adds optional `partitionSummary[]` (`+k8s:maxItems=32`,
-provisional), `counterSets[]` (`+k8s:maxItems=32`, provisional —
+Alpha 1.37 also adds optional `partitionSummary` (`+k8s:maxItems=32`,
+provisional), `counterSets` (`+k8s:maxItems=32`, provisional —
 emitted as fallback only), and `shareableSummary` (a fixed-shape
 sub-object with an inner `capacity[]` capped at `+k8s:maxItems=32`)
 to each `PoolStatus`. All three are omitted on plain pools, so the
 typical response size is unchanged; on partitionable or consumable
 pools the response grows by a bounded, small amount
-(`partitionSummary[]` and `shareableSummary` are much smaller than
-the per-device list they replace, and `partitionSummary[]` is in
-turn typically smaller than the fallback `counterSets[]` dump it
+(`partitionSummary` and `shareableSummary` are much smaller than
+the per-device list they replace, and `partitionSummary` is in
+turn typically smaller than the fallback `counterSets` dump it
 supersedes).
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -1658,7 +1679,7 @@ Minimal:
 - etcd: Small objects, bounded by built-in TTL cleanup (Alpha: 1h completed / 24h pending)
 - KCM: Reuses existing `resource.k8s.io/v1` informers for ResourceSlice and ResourceClaim, adds a small controller with its own work queue
 - API server: Standard API operations
-- Response size: Bounded by the required `driver` field (one driver's pools), the `limit` field (default 100, max 1000), the `+k8s:maxItems=1000` constraint on `status.pools`, and (for Alpha 1.37) `+k8s:maxItems=32` on each of `partitionSummary[]`, `counterSets[]`, and `shareableSummary.capacity[]` per pool
+- Response size: Bounded by the required `driver` field (one driver's pools), the `limit` field (default 100, max 1000), the `+k8s:maxItems=1000` constraint on `status.pools`, and (for Alpha 1.37) `+k8s:maxItems=32` on each of `partitionSummary`, `counterSets`, and `shareableSummary.capacity` per pool
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -1680,7 +1701,7 @@ Requests cannot be created or read. No workload impact.
 |--------------|-------------|-----------|-------------|-------------|---------|
 | Controller not running | ResourcePoolStatusRequest controller in KCM is not running or crashed | Requests stay with `status` unset (no `Complete`/`Failed` condition); `resourcepoolstatusrequest_controller_requests_processed_total` stays at 0 | Restart KCM, check KCM logs | Check KCM logs for controller startup errors, verify feature gate enabled | Covered by integration tests |
 | Informers not synced | ResourceSlice or ResourceClaim informers have not completed initial sync | Controller logs warning, requests delayed | Wait for informer sync, check API server connectivity | Check KCM logs for informer sync status | Covered by integration tests |
-| Incomplete pool data | Fewer slices published than `ResourceSliceCount` declared by the driver | `pools[].validationError` set; count fields unset; controller requeues up to 5 times | Ensure driver fully publishes slices; retry by recreating request | Inspect `status.pools[].validationError`; check driver logs | Covered by unit and integration tests |
+| Incomplete pool data | Fewer slices published than `ResourceSliceCount` declared by the driver | `pools.validationError` set; count fields unset; controller requeues up to 5 times | Ensure driver fully publishes slices; retry by recreating request | Inspect `status.pools[].validationError`; check driver logs | Covered by unit and integration tests |
 | Request accumulation | Users create many requests | etcd storage grows, `kubectl get resourcepoolstatusrequests` shows many objects | Built-in TTL cleanup deletes completed requests after 1h, pending after 24h | List requests, check etcd metrics; check KCM cleanup logs | Covered by integration tests |
 
 ###### What steps should be taken if SLOs are not being met?
