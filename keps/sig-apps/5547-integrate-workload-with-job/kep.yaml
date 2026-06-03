@@ -17,19 +17,22 @@ approvers:
   - "@dom4ha"
 
 see-also:
+  - "/keps/sig-scheduling/6089-was-controller-apis"
   - "/keps/sig-scheduling/4671-gang-scheduling"
   - "/keps/sig-scheduling/5832-decouple-podgroup-api"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
   - "/keps/sig-apps/2232-suspend-jobs"
   - "/keps/sig-scheduling/2926-job-mutable-scheduling-directives"
 
 stage: alpha
 
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 milestone:
-  alpha: "v1.36"
-  beta: "v1.37"
-  stable: "v1.39"
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
 
 feature-gates:
   - name: WorkloadWithJob
