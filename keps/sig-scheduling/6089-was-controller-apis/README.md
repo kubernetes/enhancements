@@ -71,9 +71,9 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -89,8 +89,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes a standardized set of reusable API building blocks (`scheduling.k8s.io`),
-integration guidelines, and shared libraries to simplify how workload controllers (e.g., JobSet,
-TrainJob, RayJob, LWS, as well as core workloads like Job) integrate with Workload-Aware
+integration guidelines, and shared libraries to simplify how workload controllers (e.g., `JobSet`,
+`TrainJob`, `RayJob`, `LWS`, as well as core workloads like `Job`) integrate with Workload-aware
 Scheduling (WAS).
 
 By providing common API primitives (such as topology constraints and disruption policies) and a
@@ -102,16 +102,16 @@ ensuring a consistent user experience across the Kubernetes ecosystem.
 
 The Kubernetes ecosystem has steadily evolved its scheduling capabilities from a strictly
 pod-centric model towards a more robust, workload-centric approach. This transition successfully
-established foundational features in the recent 1.36 release, such as Gang Scheduling,
-Topology-Aware Scheduling (TAS), and Workload-Aware Preemption (WAP).
+established foundational features in the recent v1.36 release, such as Gang Scheduling,
+Topology-aware Scheduling (TAS), and Workload-aware Preemption (WAP).
 
-However, the Workload and PodGroup resources backing these features were designed primarily as
+However, the `Workload` and `PodGroup` resources backing these features were designed primarily as
 intermediate, scheduler-facing APIs. We have not yet addressed how end-users of higher-level
-workload controllers (such as Job, LWS, JobSet, or RayJob) should express their scheduling
+workload controllers (such as `Job`, `LWS`, `JobSet`, or `RayJob`) should express their scheduling
 requirements to utilize these features.
 
 For example, in the recent [KEP-5547] (Job Integration), we intentionally bypassed the user-facing
-API design challenge. Instead, the integration automatically creates a PodGroup with a hardcoded
+API design challenge. Instead, the integration automatically creates a `PodGroup` with a hardcoded
 Gang policy under specific conditions (e.g., for fully parallel static indexed Jobs). While this
 unblocked initial adoption, it is fundamentally insufficient. Users have diverse use cases and
 require the ability to express explicit intent—such as opting in or out of gang scheduling,
@@ -133,10 +133,10 @@ APIs natively.
 ### Goals
 
 - Define reusable API primitives (e.g., Scheduling Policies, Topology Constraints, Disruption
-  Modes) under scheduling.k8s.io to be consumed by real-workload controllers.
+  Modes) under `scheduling.k8s.io` to be consumed by real-workload controllers.
 
 - Provide a shared library (workloadbuilder) to handle the boilerplate of constructing underlying
-  scheduling objects (Workload, PodGroup, or CompositePodGroup) from controller-specific intents.
+  scheduling objects (`Workload`, `PodGroup`, or `CompositePodGroup`) from controller-specific intents.
 
 - Establish architectural guidelines for workload controllers to expose WAS features consistently.
 
@@ -176,15 +176,12 @@ scheduling space. We assume that the reader is already acquainted with the follo
 - [KEP-6012: CompositePodGroup API](https://kep.k8s.io/6012)
 - [KEP-5547: Integrate Workload APIs with Job Controller](https://kep.k8s.io/5547)
 
-
-
-
 ### Reusable API Building Blocks
 
 We propose introducing a set of standard, reusable structs in the `scheduling.k8s.io` API group.
 Controller developers can embed these structs directly into their native APIs. This ensures that
 when a user configures a `TopologyConstraint` on a `RayJob`, it uses the exact same schema and
-semantics as a TopologyConstraint on a TrainJob.
+semantics as a `TopologyConstraint` on a `TrainJob`.
 
 ### Shared workloadbuilder Library
 
@@ -192,9 +189,9 @@ To prevent every controller from writing custom logic to translate these API blo
 underlying scheduling resources, we will provide a shared Go library. Controller developers will
 map their custom API surface to an intermediate representation, and the library will handle:
 
-- Generating the correct Workload, PodGroup, or CompositePodGroup hierarchies.
+- Generating the correct `Workload`, `PodGroup`, or `CompositePodGroup` hierarchies.
 - Applying sane scheduling defaults based on the controller's semantic purpose (e.g., defaulting
-  to standard pod-by-pod scheduling for a core Job to explicitly prevent breaking existing CI/CD
+  to standard pod-by-pod scheduling for a core `Job` to explicitly prevent breaking existing CI/CD
   pipelines).
 - Handling standard validation logic.
 
@@ -209,20 +206,19 @@ controller's API remains idiomatic and intuitive for its specific users.
 
 This autonomy is particularly crucial for complex, multi-level controllers that rely on resource
 composition. If we mandated a strict, unified API shape that relied on downward API propagation,
-we would introduce severe upstream dependency bottlenecks. For example, TrainJob relies on JobSet,
-which in turn relies on the core Job API. Requiring bottom-up integration would block TrainJob
+we would introduce severe upstream dependency bottlenecks. For example, `TrainJob` relies on `JobSet`,
+which in turn relies on the core `Job` API. Requiring bottom-up integration would block `TrainJob`
 users for months while waiting for the underlying components to adopt the standard. By granting
-controllers autonomy, they can implement workarounds native to their architecture—such as JobSet
+controllers autonomy, they can implement workarounds native to their architecture—such as `JobSet`
 using its established targetReplicatedJobs pattern to apply scheduling constraints to underlying
 Jobs—delivering value to users immediately without waiting for the entire dependency chain to
 resolve.
-
 
 ### Job Integration - API Usage Examples
 
 This KEP proposes enriching the core `Job` API to allow users to express their scheduling intents
 through a composed scheduling configuration. The following examples show how this API represents
-different Workload-Aware Scheduling intents:
+different Workload-aware Scheduling intents:
 
 #### Example 1: Job with Gang Scheduling, Zone Topology, and Atomic Disruption
 A batch ML training `Job` where all 4 pods must schedule together atomically (All-or-Nothing),
@@ -271,42 +267,40 @@ spec:
           image: processor-image:v1
 ```
 
-
-
 ### User Stories
 
 #### Story 1: The End-User
 
-As an ML engineer submitting distributed training workloads to a cluster, I want to explicitly
+As a ML engineer submitting distributed training workloads to a cluster, I want to explicitly
 define my scheduling requirements — such as requesting that all worker Pods are scheduled together
 (gang scheduling) and placed within the same network rack (topology constraint) — directly within
 my workload's YAML manifest. I expect these scheduling configurations to be intuitive,
-well-documented, and to use a similar structure and vocabulary whether I am submitting a JobSet,
-an LWS resource, or a company-internal batch job.
+well-documented, and to use a similar structure and vocabulary whether I am submitting a `JobSet`,
+a `LWS` resource, or a company-internal batch job.
 
 #### Story 2: The Controller Maintainer
 
-As a maintainer of a single-level workload controller, such as the core Job API, I want to add
-Workload-Aware Scheduling capabilities to my API without having to design custom struct fields
-from scratch or write reconciliation logic to manage scheduler-specific objects like PodGroup. By
-importing standard API primitives from scheduling.k8s.io into my API schema and using a shared
+As a maintainer of a single-level workload controller, such as the core `Job` API, I want to add
+Workload-aware Scheduling capabilities to my API without having to design custom struct fields
+from scratch or write reconciliation logic to manage scheduler-specific objects like `PodGroup`. By
+importing standard API primitives from `scheduling.k8s.io` into my API schema and using a shared
 builder library in my controller's reconcile loop, I can easily expose features like gang
 scheduling to my users while ensuring consistency with the rest of the ecosystem.
 
 #### Story 3: The Multi-Level Controller Maintainer
 
-As a maintainer of a multi-level composite controller (e.g., JobSet which creates Jobs, or a
-custom training operator composing LWS), I want to integrate WAS features using the same standard
+As a maintainer of a multi-level composite controller (e.g., `JobSet` which creates Jobs, or a
+custom training operator composing `LWS`), I want to integrate WAS features using the same standard
 API primitives. Furthermore, because my controller relies on composing other Kubernetes resources,
 I expect this KEP to provide clear architectural guidelines on how to handle nested scheduling
 intent. For example, I need recommendations on whether my parent controller should generate the
-PodGroup directly, or if it should delegate that creation to the underlying child controllers.
+`PodGroup` directly, or if it should delegate that creation to the underlying child controllers.
 
 ### Risks and Mitigations
 
 * **API Fragmentation and Inconsistent UX:** Because this proposal grants controller owners the
   autonomy to design and integrate their own API schemas to avoid upstream dependency bottlenecks,
-  there is a risk that different controllers expose Workload-Aware Scheduling (WAS) features
+  there is a risk that different controllers expose Workload-aware Scheduling (WAS) features
   differently, leading to a fragmented user experience across the ecosystem.
   * *Mitigation:* This is a conscious and deliberate trade-off: we prioritize rapid out-of-tree
     ecosystem adoption and native local consistency over delayed global uniformity (`local
@@ -339,12 +333,11 @@ PodGroup directly, or if it should delegate that creation to the underlying chil
        where a user attempts to populate *both* wrapper-level and child-template-level scheduling
        fields for the same workload, preventing ambiguous configurations.
 
-
 ## Design Details
 
 ### Core Principles & Assumptions
 
-Integration of Workload-Aware Scheduling (WAS) into workload controllers is guided by the
+Integration of Workload-aware Scheduling (WAS) into workload controllers is guided by the
 following design principles:
 
 * **The Root Controller as the Compiler:** Regardless of whether a workload is a simple,
@@ -381,7 +374,6 @@ following design principles:
   escape hatches allowing users to override these default templates (e.g., opting out of LWS's
   default local gang back to `Basic`).
 
-
 ### Standardized Building Blocks Definitions (`scheduling.k8s.io`)
 
 Following the structure of the `PodGroup` and `CompositePodGroup` APIs under development, the shared
@@ -394,14 +386,14 @@ workload tree:
 
 This level-specific categorization allows independent API evolution. As a general design
 philosophy, when a structure represents a concrete, physical "real-world" scheduling concept used
-verbatim by the scheduling stack (such as `TopologyConstraint` from KEP-5732), we reuse it
+verbatim by the scheduling stack (such as `TopologyConstraint` from [KEP-5732]), we reuse it
 directly across all levels. For higher-level policy abstractions introduced by this WAS layer, we
 define distinct level-specific types (such as `WorkloadPodGroupSchedulingPolicy`) to ensure they
 can evolve independently at each hierarchy level.
 
 The `WorkloadPodGroup` and `WorkloadCompositePodGroup` prefixes are used to avoid name collisions
 with other scheduling field structures defined directly in the `scheduling.k8s.io` group
-(e.g., KEP-5732's `PodGroup` structures).
+(e.g., [KEP-5732]'s `PodGroup` structures).
 
 To keep this specification concise and focused, we only define the detailed Go API structs for
 the leaf-level `PodGroup` specific types. An analogous set of types prefixed with
@@ -487,7 +479,7 @@ type WorkloadPodGroupResourceClaim struct {
 ```
 ### Job Integration (batch/v1)
 
-To deliver native, typed Workload-Aware Scheduling support in core Kubernetes, we propose
+To deliver native, typed Workload-aware Scheduling support in core Kubernetes, we propose
 integrating the standardized building blocks directly into the core `Job` API (`batch/v1`).
 
 This integration serves as the foundational implementation ("blazing the path") that demonstrates
@@ -504,7 +496,7 @@ structure consisting of the standardized building blocks:
 type JobSpec struct {
     // ... existing fields ...
 
-    // Scheduling defines the Workload-Aware Scheduling configuration for this Job.
+    // Scheduling defines the Workload-aware Scheduling configuration for this Job.
     // +optional
     Scheduling *JobSchedulingConfiguration `json:"scheduling,omitempty"`
 }
@@ -788,7 +780,7 @@ running child `PodGroups` remain untouched to avoid unnecessary disruption.
 ### Reference Integration Examples: JobSet (Multi-Level)
 
 This section provides **non-normative reference examples** demonstrating how a complex,
-multi-level composite controller (such as `JobSet`) can integrate with the Workload-Aware
+multi-level composite controller (such as `JobSet`) can integrate with the Workload-aware
 Scheduling (WAS) building blocks and the `workloadbuilder` library.
 
 These examples prove the viability and flexibility of the library for hierarchical workloads. The
@@ -980,7 +972,7 @@ func (r *JobSetReconciler) generateWorkload(
 
 ### Recommendations for Multi-Level Composite Controllers
 
-Integrating Workload-Aware Scheduling (WAS) into multi-level composite controllers (where
+Integrating Workload-aware Scheduling (WAS) into multi-level composite controllers (where
 controllers orchestrate other controllers, such as `JobSet` creating core `Jobs`, or a Kubeflow
 `TrainJob` composing a `JobSet`) introduces unique coordination challenges. Composite controllers
 should adhere to the following guidelines:
@@ -1089,7 +1081,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
@@ -1296,28 +1288,6 @@ enhancement:
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
 
 <!--
@@ -1326,19 +1296,11 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: "WorkloadWithJob"
   - Components depending on the feature gate:
+    - kube-apiserver
+    - kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -1348,40 +1310,31 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No. Enabling the feature only exposes the new opt-in `scheduling` API fields. When
+the `scheduling` block is omitted, the controller defaults to `Basic` scheduling policy (pod-by-pod), 
+so existing workloads behave exactly as before. Behavior changes only when a 
+user explicitly sets a scheduling policy (e.g. Gang or a topology constraint).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes. Disabling the `WorkloadWithJob` feature gate stops the controller from
+honoring the new `scheduling` fields, so workloads fall back to the `Basic`
+scheduling policy (pod-by-pod). The fields are ignored while the gate is off. 
+However, the content of the `scheduling` fields in objects will not be cleared,
+and existing `Workload` objects will not be deleted.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+The feature starts working again, and the controller resumes honoring the
+`scheduling` fields. Since these fields are stored in etcd while the gate is off,
+objects that already had them set will have their scheduling policies applied again
+on the next reconciliation.
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Yes. For the newly introduced API fields, dedicated
+enablement/disablement tests at the kube-apiserver registry layer will be added in
+Alpha, including tests exercising the feature-gate `switch`
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1520,142 +1473,76 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
+Only when a user opts in by setting the `scheduling` fields. In that case the
+integrating controller (e.g. the Job controller) creates the corresponding
+scheduling objects.
+
+Workloads that omit the `scheduling` block generate no new API calls.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+Yes,the building-block field types under `scheduling.k8s.io/v1alpha3`. No new top-level/standalone API resource kinds are
+introduced by this KEP.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+Yes, but only when a user opts in. Setting the `scheduling` fields adds a small
+field to the workload object and causes the controller to create the corresponding `Workload` and
+`PodGroup` (or `CompositePodGroup`) objects (~500 bytes each), typically one per
+workload that opts in. Workloads that omit the `scheduling` block are unaffected.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+Only for workloads that opt in. For those, there may be an increase in workload sync
+duration due to creating the `Workload`/`PodGroup` objects, plus a potential
+increase in scheduling latency / Pod Startup SLO. This KEP itself only adds API translation in the
+controller. Workloads that omit the `scheduling` block are unaffected.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+Only for workloads that opt in, and the increase comes from the `Workload`/`PodGroup` objects:
+  * kube-controller-manager: additional memory for `Workload`/`PodGroup` informers and
+  the (negligible) CPU for translating the `scheduling` fields.
+  * kube-scheduler: additional memory for `Workload`/`PodGroup` caches.
+  * etcd: additional storage for the `Workload`/`PodGroup` objects.
+  * kube-apiserver: additional watches for `Workload`/`PodGroup` resources, with minimal CPU impact.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No. This feature operates entirely at the control-plane/API level and does not consume any node-level resources.
 
 ### Troubleshooting
-
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
-
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- 2026-06-03: KEP Created for alpha release
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+  * **Reduced global uniformity / API fragmentation:** Because each controller composes
+    its own user-facing scheduling API from the shared building blocks rather than a
+    single unified schema, the exact shape and vocabulary of the `scheduling`
+    configuration can differ between controllers.
+  * **Shared-library coupling and version skew:** Out-of-tree controllers that adopt the
+    `workloadbuilder` library take on a dependency whose translation/defaulting logic
+    must stay compatible across controller and library versions. Skew between a
+    controller's vendored library version and the cluster's `scheduling.k8s.io` API
+    version can lead to subtle behavioral differences.
+  * **Additional API surface to maintain:** The standardized building blocks add new
+    types under `scheduling.k8s.io` that must evolve carefully to remain
+    backward-compatible across the many controllers that embed them.
 
 ## Alternatives
 
@@ -1683,10 +1570,9 @@ The most critical issue with the original unified API design is the strict **Con
 Integration Dependency chain**. Under a monolithic, cascading rollout, integrating a new
 scheduling feature into a top-level out-of-tree controller (such as `TrainJob` or `RayJob`) was
 strictly blocked by the successful integration of all intermediate child controllers (waiting
-first for core `Job` and then `JobSet`). This dependency chain would delay crucial Workload-Aware
+first for core `Job` and then `JobSet`). This dependency chain would delay crucial Workload-aware
 Scheduling features for quarters or years, which is completely unacceptable when the user demand
 in the AI/ML space is immediate.
-
 
 ### The Chosen Solution: Autonomous Composed Configurations & Conscious Trade-offs
 
@@ -1706,14 +1592,8 @@ This represents a conscious and deliberate architectural trade-off:
   acceptable justification for blocking immediate ecosystem adoption.
 
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
-
 [KEP-5547]: https://kep.k8s.io/5547
+[KEP-5732]: https://kep.k8s.io/5732
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/website]: https://git.k8s.io/website
