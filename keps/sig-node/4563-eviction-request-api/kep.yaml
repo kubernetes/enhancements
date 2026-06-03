@@ -17,7 +17,7 @@ reviewers:
   - "@barkbay"
   - "@dchen1107"
   - "@fabiand"
-  - "@haircommander"
+  - "@haircommander" # sig-node-assigned-reviewer
   - "@intUnderflow"
   - "@JoelSpeed"
   - "@mmerkes"
@@ -36,7 +36,7 @@ reviewers:
   - "@viktoriaas"
   - "@wojtek-t"
 approvers:
-  - "@dchen1107"
+  - "@dchen1107" # sig-node-tl
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha

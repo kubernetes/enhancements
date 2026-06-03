@@ -12,8 +12,10 @@ reviewers:
   - "@ndixita" # sig-node-assigned-reviewer
   - "@ffromani"
   - "@tallclair" # sig-node-assigned-reviewer
+  - "@kad" # sig-node-assigned-reviewer
 approvers:
   - "@dchen1107" # sig-node-tl
+  - "@ffromani" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/2837-pod-level-resource-spec"
