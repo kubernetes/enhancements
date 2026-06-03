@@ -1,0 +1,19 @@
+title: Pod-level Image Pull Duration Metric
+kep-number: 6151
+authors:
+  - "@yuekui2"
+approvers:
+  - "@dchen1107"
+owning-sig: sig-node
+participating-sigs:
+  - sig-instrumentation
+  - sig-architecture
+status: implementable
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+feature-gates:
+  - name: PodImagePullDurationField
+    components:
+      - kubelet
