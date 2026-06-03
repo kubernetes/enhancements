@@ -10,7 +10,9 @@ creation-date: 2025-05-08
 reviewers:
   - "@elmiko"
   - "@JoelSpeed"
-approvers: []
+approvers:
+  - "@elmiko"
+  - "@JoelSpeed"
 
 see-also: []
 replaces: []
