@@ -37,7 +37,6 @@ EXCLUDED_PATTERNS=(
 
   # TODO(verify): Enable these checks once their errors have been resolved
   "verify-boilerplate.sh"
-  "verify-golangci-lint.sh"
   "verify-shellcheck.sh"
 )
 

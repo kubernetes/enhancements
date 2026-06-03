@@ -171,7 +171,7 @@ func (o *CSVOutput) PrintProposals(proposals []*api.Proposal) {
 	}
 
 	for _, p := range proposals {
-		var row []string
+		row := make([]string, 0, len(o.Configs))
 		for _, c := range o.Configs {
 			row = append(row, c.Value(p))
 		}
