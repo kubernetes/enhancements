@@ -450,7 +450,6 @@ type PodGroupTemplate struct {
 	// +k8s:listType=map
 	// +k8s:listMapKey=name
 	// +k8s:maxItems=4
-	// +k8s:alpha(since:"1.36")=+k8s:immutable
 	// +featureGate=DRAWorkloadResourceClaims
 	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name"`
 }
@@ -538,7 +537,7 @@ type PodGroupSpec struct {
 	// +k8s:listType=map
 	// +k8s:listMapKey=name
 	// +k8s:maxItems=4
-	// +k8s:alpha(since:"1.36")=+k8s:immutable
+	// +k8s:immutable
 	// +featureGate=DRAWorkloadResourceClaims
 	ResourceClaims []PodGroupResourceClaim `json:"resourceClaims,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name"`
 }
