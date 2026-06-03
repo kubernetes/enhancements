@@ -609,7 +609,7 @@ PodGroup is also recorded in the PodGroup's `status.resourceClaimStatuses`.
 The following example demonstrates the matching semantics:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: podgroup
@@ -691,7 +691,7 @@ The true workload controller then creates the following Workload API resources
 based on the true workload's definition:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: Workload
 metadata:
   name: my-workload
@@ -705,7 +705,7 @@ spec:
     - name: pg-claim
       resourceClaimTemplateName: pg-claim-template
 ---
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: my-podgroup-1
@@ -721,7 +721,7 @@ spec:
   - name: pg-claim
     resourceClaimTemplateName: pg-claim-template
 ---
-apiVersion: scheduling.k8s.io/v1alpha2
+apiVersion: scheduling.k8s.io/v1beta1
 kind: PodGroup
 metadata:
   name: my-podgroup-2
