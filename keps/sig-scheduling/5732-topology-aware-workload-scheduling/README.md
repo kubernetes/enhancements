@@ -247,7 +247,7 @@ type PodGroupSpec struct {
 type PodGroupSchedulingConstraints struct {
     // Topology defines the topology constraints for the pod group.
     // Currently only a single topology constraint can be specified. This may change in the future.
-    TopologyConstraints []TopologyConstraint
+    Topology []TopologyConstraint
 }
 
 // TopologyConstraint defines a topology constraint for a PodGroup.
@@ -377,7 +377,9 @@ The algorithm proceeds in three main phases for a given PodGroup.
 
   1. Run default workload scheduling algorithm with the given set of nodes.
 
-  2. If all required pods fit, the Placement is marked Feasible.
+  2. If all required pods (at least `minCount` pods for Gang scheudling policy
+     and at least one pod for Basic scheduling policy) fit, the Placement
+     is marked Feasible.
 
 - **Basic Scheduling Policy Handling:** The current algorithm may exhibit
   inconsistent behavior when used with the PodGroup Basic Scheduling Policy.
@@ -433,6 +435,8 @@ Scheduling:
   all pods were evaluated, which missed an opportunity for optimization. This capability
   is implemented via a new "pseudo extension point" called PlacementFeasiblePlugin
   (similar to PodGroupPostFilter) to break out of the pod group scheduling cycle.
+  
+  More details on this optimization can be found in [KEP-4671: Workload API](https://kep.k8s.io/4671).
 
 3. Limit on the Number of Checked Placements
 
