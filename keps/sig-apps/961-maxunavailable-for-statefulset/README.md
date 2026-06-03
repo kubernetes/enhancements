@@ -228,11 +228,11 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-This document proposes to add new field to StatefulSet's RollingUpdate configuration 
-settings (`.spec.updateStrategy.rollingUpdate`) called `maxUnavailable`, which will 
+This document proposes to add new field to StatefulSet's RollingUpdate configuration
+settings (`.spec.updateStrategy.rollingUpdate`) called `maxUnavailable`, which will
 allow setting the maximum number of pods that can be unavailable during the update.
-This new field can be an absolute, positive number (eg. `5`) or a percentage of desired 
-pods (ex: `10%`). When the field is not specified, it will default to 1 to maintain 
+This new field can be an absolute, positive number (eg. `5`) or a percentage of desired
+pods (ex: `10%`). When the field is not specified, it will default to 1 to maintain
 previous behavior of rolling one pod at a time.
 
 ### User Stories
@@ -543,9 +543,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- `test/e2e/apps/statefulset.go`: 
-  - test that rolling updates are working correctly for both PodManagementPolicy types when the MaxUnavailable is used. 
-  - include a test that fails currently but passes when https://github.com/kubernetes/kubernetes/issues/112307 is fixed, with a 
+- `test/e2e/apps/statefulset.go`:
+  - test that rolling updates are working correctly for both PodManagementPolicy types when the MaxUnavailable is used.
+  - include a test that fails currently but passes when https://github.com/kubernetes/kubernetes/issues/112307 is fixed, with a
     StatefulSet setting `minReadySeconds` and `updateStrategy.rollingUpdate.maxUnavailable` and checking for a correct rollout specially when scaling down during a rollout.
   - https://github.com/kubernetes/kubernetes/pull/133717
 
@@ -708,7 +708,7 @@ No, the default behavior remains the same.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes, you can disable the feature-gate manually once it's in Beta, this will affect StatefulSets that are in the middle of a rollout when the feature gets disabled.
-If the feature is disabled in the middle of the rollout, the rollout will continue as if maxUnavailable is 1. If there is more than one pod 
+If the feature is disabled in the middle of the rollout, the rollout will continue as if maxUnavailable is 1. If there is more than one pod
 undergoing an update, it will wait for them to complete their update, and continue as if maxUnavailable is 1.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -837,9 +837,9 @@ kubectl get statefulsets -o yaml | grep maxUnavailable
 ###### How can someone using this feature know that it is working for their instance?
 
 - [ ] Events
-  - Event Reason: 
+  - Event Reason:
 - [x] API .spec
-  - Condition name: 
+  - Condition name:
   - Other field: .spec.updateStrategy.rollingUpdate.maxUnavailable
 - [X] Other (treat as last resort)
   - Details: Users can view the `statefulset_unavailable_replicas` or `statefulset_max_unavailable` metrics to see if there have been instances
@@ -981,6 +981,8 @@ For each of them, fill in the following information by copying the below templat
   - 2025-07-07: https://github.com/kubernetes/kubernetes/pull/130909
   - 2025-09-01: https://github.com/kubernetes/kubernetes/pull/130951
 - 2025-09-30: Bump to Beta.
+- 2026-03-19: Disable MaxUnavailableStatefulSet feature gate to off by default, due to https://github.com/kubernetes/kubernetes/issues/137409.
+- 2026-06-03: Update KEP, updating the MaxUnavailableStatefulSet feature gate to on by default after landing fix in https://github.com/kubernetes/kubernetes/pull/137666.
 
 ## Drawbacks
 
