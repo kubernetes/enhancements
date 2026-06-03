@@ -19,6 +19,7 @@
     - [Periodic reconcile](#periodic-reconcile)
     - [Workqueue singleton](#workqueue-singleton)
     - [Node update filters](#node-update-filters)
+    - [Metrics](#metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
