@@ -21,7 +21,7 @@ replaces: []
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
 # and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
@@ -44,4 +44,9 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TBD
+  - dra_metadata_feature_enabled
+  - dra_metadata_write_errors_total
+  - dra_metadata_update_errors_total
+  - dra_metadata_write_duration_seconds
+  - dra_metadata_writes_total
+  - dra_metadata_files_active
