@@ -836,6 +836,7 @@ N/A
   - Progress deadline seconds in Deployments do not terminate pods, but podProgressTimeoutSeconds proposal would terminate pods
   - Deleting/terminating pods based on readiness signals is problematic and disruptive  
   - Group consensus favored Recreate for simplicity and consistency with existing Kubernetes APIs
+- 2025-04-06: Updated KEP to change the milestone to 1.37
 
 ## Drawbacks
 
