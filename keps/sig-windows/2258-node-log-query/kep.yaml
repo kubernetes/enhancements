@@ -8,7 +8,7 @@ participating-sigs:
   - sig-node
   - sig-cli
   - sig-auth
-status: implementable
+status: implemented
 reviewers:
   - "@marosset"
   - "@liggit"
@@ -16,7 +16,7 @@ reviewers:
 approvers:
   - "@marosset"
 creation-date: 2021-01-14
-last-updated: 2023-05-02
+last-updated: 2026-05-19
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
 
@@ -37,7 +37,7 @@ feature-gates:
   - name: NodeLogQuery
     components:
       - kubelet
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
