@@ -1,60 +1,87 @@
 # KEP-6116: EndpointSelector
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [Manual Creation](#manual-creation)
-  - [Controller-Managed Creation](#controller-managed-creation)
-  - [User Stories](#user-stories)
-    - [Story 1: InferencePool Implementation Simplification](#story-1-inferencepool-implementation-simplification)
-    - [Story 2: Controller-Managed Endpoints Without Redundant Pod Watching](#story-2-controller-managed-endpoints-without-redundant-pod-watching)
-    - [Story 3: Client Settings Configuration for an Existing Service](#story-3-client-settings-configuration-for-an-existing-service)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-  - [Risks and Mitigations](#risks-and-mitigations)
-    - [Security](#security)
-    - [Control Plane Load](#control-plane-load)
-    - [Orphaned Resources](#orphaned-resources)
-    - [API Confusion](#api-confusion)
-- [Design Details](#design-details)
-  - [Current State](#current-state)
-  - [Proposed Implementation](#proposed-implementation)
-  - [API Definition](#api-definition)
-  - [EndpointSlice-Controller Changes](#endpointslice-controller-changes)
-  - [New Service EndpointSelector Controller](#new-service-endpointselector-controller)
-  - [Metadata Propagation](#metadata-propagation)
-  - [Service Compatibility Matrix](#service-compatibility-matrix)
-  - [Edge Cases and Deferred Design Decisions](#edge-cases-and-deferred-design-decisions)
-  - [Controller-Managed Conventions](#controller-managed-conventions)
-  - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
-  - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
-    - [GA](#ga)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring Requirements](#monitoring-requirements)
-  - [Dependencies](#dependencies)
-  - [Scalability](#scalability)
-  - [Troubleshooting](#troubleshooting)
-- [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
-  - [Extend Service.spec.selector to Support matchExpressions](#extend-servicespecselector-to-support-matchexpressions)
-  - [Manual EndpointSlice Management](#manual-endpointslice-management)
-  - [Shadow Service (Headless Service to Generate EndpointSlices)](#shadow-service-headless-service-to-generate-endpointslices)
-  - [Broader Service Decomposition](#broader-service-decomposition)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [KEP-6116: EndpointSelector](#kep-6116-endpointselector)
+  - [Release Signoff Checklist](#release-signoff-checklist)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [Service Compatibility Path](#service-compatibility-path)
+    - [Controller-Managed Creation](#controller-managed-creation)
+    - [User-Managed Creation](#user-managed-creation)
+    - [User Stories](#user-stories)
+      - [Story 1: InferencePool Implementation Simplification](#story-1-inferencepool-implementation-simplification)
+      - [Story 2: Controller-Managed Endpoints Without Redundant Pod Watching](#story-2-controller-managed-endpoints-without-redundant-pod-watching)
+      - [Story 3: Client Settings Configuration for an Existing Service](#story-3-client-settings-configuration-for-an-existing-service)
+    - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Risks and Mitigations](#risks-and-mitigations)
+      - [Security](#security)
+      - [Control Plane Load](#control-plane-load)
+      - [Orphaned Resources](#orphaned-resources)
+      - [API Confusion](#api-confusion)
+  - [Design Details](#design-details)
+    - [Current State](#current-state)
+    - [Proposed Implementation](#proposed-implementation)
+    - [API Definition](#api-definition)
+    - [EndpointSlice-Controller Changes](#endpointslice-controller-changes)
+    - [New Service EndpointSelector Controller](#new-service-endpointselector-controller)
+    - [Metadata Propagation](#metadata-propagation)
+    - [Service Compatibility Matrix](#service-compatibility-matrix)
+    - [Edge Cases and Deferred Design Decisions](#edge-cases-and-deferred-design-decisions)
+    - [Controller-Managed Conventions](#controller-managed-conventions)
+    - [Test Plan](#test-plan)
+        - [Prerequisite testing updates](#prerequisite-testing-updates)
+        - [Unit tests](#unit-tests)
+        - [Integration tests](#integration-tests)
+        - [e2e tests](#e2e-tests)
+    - [Graduation Criteria](#graduation-criteria)
+      - [Alpha](#alpha)
+      - [Beta](#beta)
+      - [GA](#ga)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
+  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+          - [How can this feature be enabled / disabled in a live cluster?](#how-can-this-feature-be-enabled--disabled-in-a-live-cluster)
+          - [Does enabling the feature change any default behavior?](#does-enabling-the-feature-change-any-default-behavior)
+          - [Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement)
+          - [What happens if we reenable the feature if it was previously rolled back?](#what-happens-if-we-reenable-the-feature-if-it-was-previously-rolled-back)
+          - [Are there any tests for feature enablement/disablement?](#are-there-any-tests-for-feature-enablementdisablement)
+    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+          - [How can a rollout or rollback fail? Can it impact already running workloads?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
+          - [What specific metrics should inform a rollback?](#what-specific-metrics-should-inform-a-rollback)
+          - [Were upgrade and rollback tested? Was the upgrade-\>downgrade-\>upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)
+          - [Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis-fields-of-api-types-flags-etc)
+    - [Monitoring Requirements](#monitoring-requirements)
+          - [How can an operator determine if the feature is in use by workloads?](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads)
+          - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
+          - [What are the reasonable SLOs (Service Level Objectives) for the enhancement?](#what-are-the-reasonable-slos-service-level-objectives-for-the-enhancement)
+          - [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
+          - [Are there any missing metrics that would be useful to have to improve observability of this feature?](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
+    - [Dependencies](#dependencies)
+          - [Does this feature depend on any specific services running in the cluster?](#does-this-feature-depend-on-any-specific-services-running-in-the-cluster)
+    - [Scalability](#scalability)
+          - [Will enabling / using this feature result in any new API calls?](#will-enabling--using-this-feature-result-in-any-new-api-calls)
+          - [Will enabling / using this feature result in introducing new API types?](#will-enabling--using-this-feature-result-in-introducing-new-api-types)
+          - [Will enabling / using this feature result in any new calls to the cloud provider?](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud-provider)
+          - [Will enabling / using this feature result in increasing size or count of the existing API objects?](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects)
+          - [Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any-operations-covered-by-existing-slisslos)
+          - [Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?](#will-enabling--using-this-feature-result-in-non-negligible-increase-of-resource-usage-cpu-ram-disk-io--in-any-components)
+          - [Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?](#can-enabling--using-this-feature-result-in-resource-exhaustion-of-some-node-resources-pids-sockets-inodes-etc)
+    - [Troubleshooting](#troubleshooting)
+          - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
+          - [What are other known failure modes?](#what-are-other-known-failure-modes)
+          - [What steps should be taken if SLOs are not being met to determine the problem?](#what-steps-should-be-taken-if-slos-are-not-being-met-to-determine-the-problem)
+  - [Implementation History](#implementation-history)
+  - [Drawbacks](#drawbacks)
+  - [Alternatives](#alternatives)
+    - [Extend Service.spec.selector to Support matchExpressions](#extend-servicespecselector-to-support-matchexpressions)
+    - [Manual EndpointSlice Management](#manual-endpointslice-management)
+    - [Shadow Service (Headless Service to Generate EndpointSlices)](#shadow-service-headless-service-to-generate-endpointslices)
+    - [Broader Service Decomposition](#broader-service-decomposition)
+  - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -178,44 +205,39 @@ balancing policy, etc.) are not part of `EndpointSelector`.
 
 [^1]: Alternative names considered: `EndpointGroup`, `EndpointPool`
 
-`EndpointSelector` objects are created in one of two ways:
+`EndpointSelector` objects are created in one of three ways:
 
-### Manual Creation
+### Service Compatibility Path
 
-A user or controller creates an `EndpointSelector` directly and manages its
-lifecycle. No `ownerReference` is set. The resource is referenced by name from
-higher-level objects (for example, a `Backend` resource in Gateway API). This
-is the right model when the `EndpointSelector` outlives any single parent, or
-when the user knows there will be multiple consumers of the same set of
-endpoints. The higher level resource(s) that reference the `EndpointSelector`
-will typically do so via a `selectorRef` field (or similar) that points to the
-`EndpointSelector` by name and namespace. Note that a cross-namespace reference
-does NOT inherently give the higher-level resource permission to read the
-`EndpointSelector`, the pods it selects, or the `EndpointSlices` it produces;
-appropriate RBAC rules must be in place to allow this access. Further guidance
-on cross-namespace references and consumption of `EndpointSelector` in general
-is delegated to the projects that govern those higher-level resources (most
-notably Gateway API).
+To maintain backwards compatibility, the `service-endpointselector-controller`
+creates an `EndpointSelector` for each `Service` with a pod selector. The
+`Service` remains the source of truth; the `EndpointSelector` is a derived
+object managed entirely by this controller and is not intended for direct user
+interaction. The `endpointslice-controller` reconciles the `EndpointSelector`
+instead of the `Service`, but ownership of the resulting `EndpointSlices` is
+unchanged — they still point to the `Service` — to avoid breaking tooling that
+filters by owner kind.
 
 ### Controller-Managed Creation
 
-A controller creates an `EndpointSelector` in response to a higher-level
-resource (for example, an `InferencePool`). The controller sets
-`ownerReferences` for garbage collection, uses `generateName` instead of
-`name` to avoid naming conflicts when multiple controllers target the same
-workload, and adds an `app.kubernetes.io/managed-by` label. Users do not
-interact with the `EndpointSelector` directly; it is an implementation detail
-of the parent resource's lifecycle.
+A third-party controller creates an `EndpointSelector` in response to a
+higher-level resource (for example, an `InferencePool`). The controller is
+responsible for its own lifecycle management. Setting `ownerReferences` to the
+parent resource enables automatic garbage collection when the parent is
+deleted. Using `generateName` instead of `name` avoids naming conflicts when
+multiple controllers target the same workload.
 
-To maintain backwards compatibility, a new controller will be added to
-`pkg/controller` that creates an `EndpointSelector` for each `Service` with a
-pod selector. This controller is enabled by the same feature gate as the
-`endpointslice-controller` changes and ensures that existing `Service` objects
-get a corresponding `EndpointSelector` without user action. The
-`endpointslice-controller` reconciles the `EndpointSelector` instead of the
-`Service`, but ownership of the resulting `EndpointSlices` is unchanged — they
-still point to the `Service` — to avoid breaking any tooling that filters by
-owner kind.
+### User-Managed Creation
+
+A user creates an `EndpointSelector` directly (for example, via `kubectl`) and
+manages its lifecycle explicitly. No `ownerReference` is required. The
+resource is referenced by name from higher-level objects (for example, a
+`Backend` resource in Gateway API). This model suits cases where the
+`EndpointSelector` outlives any single parent or where multiple consumers share
+the same set of endpoints. A cross-namespace reference does not inherently
+grant the referencing resource permission to read the `EndpointSelector`, the
+pods it selects, or the `EndpointSlices` it produces; appropriate RBAC rules
+must be in place.
 
 ### User Stories
 
@@ -274,10 +296,8 @@ itself.
 The Gateway API [GEP-4731] introduces `XEndpointSelector` in the experimental
 channel (`gateway.networking.x-k8s.io/v1alpha1`) as a stopgap while this KEP
 matures. The Gateway API community has stated that `XEndpointSelector` will not
-progress to the standard channel. All Gateway API object reference fields that
-point to an `XEndpointSelector` MUST accept pluggable groups — not hardcoded to
-`gateway.networking.k8s.io` — to allow a clean migration to the core API once
-this KEP reaches GA.
+progress to the standard channel; Gateway API implementations are encouraged to
+plan a migration to the core API once this KEP reaches GA.
 
 [GEP-4731]: https://github.com/kubernetes-sigs/gateway-api/pull/4731
 
@@ -293,7 +313,7 @@ admins can create them; cluster-level restrictions apply through standard
 mechanisms. `NetworkPolicy` continues to apply to the selected pods regardless
 of whether their `EndpointSlices` originated from a `Service` or an
 `EndpointSelector`.
-One last thing, let's take Ricardo's suggestion and
+
 #### Control Plane Load
 
 The per-object reconciliation cost of an `EndpointSelector` is equivalent to a
@@ -308,8 +328,9 @@ writes to create the `EndpointSelector` objects for `Services`.
 
 Controller-managed `EndpointSelectors` that lack `ownerReferences` will persist
 after the owning resource is deleted, along with the `EndpointSlices` they
-produced. The `app.kubernetes.io/managed-by` label allows operators to identify
-and audit controller-managed `EndpointSelectors` in a cluster.
+produced. Operators can identify orphaned resources by inspecting
+`ownerReferences` or by using controller-specific labels applied by the
+managing controller.
 
 #### API Confusion
 
@@ -349,10 +370,7 @@ watches `Service` objects and creates an `EndpointSelector` for each `Service`
 with a pod selector, ensuring backwards compatibility. The `Service` remains
 the source of truth; the `EndpointSelector` is a derived resource managed by
 the `Service` controller. Users and tooling that interact with `Services` and
-their `EndpointSlices` observe the same functional behavior. The
-`service-endpointselector-controller` is an implementation detail of the
-`Service` → `EndpointSelector` compatibility path with no guarantees of
-stability between releases.
+their `EndpointSlices` observe the same functional behavior.
 
 ### API Definition
 
@@ -380,7 +398,7 @@ type EndpointSelectorSpec struct {
   // produced. Defaults to all address families present in matching pod
   // addresses, producing one EndpointSlice addressType per family found (IPv4,
   // IPv6, or both in a dual-stack cluster). Set this field to restrict output
-  // to a specific family. Mirrors Service.spec.ipFamilies.
+  // to a specific family.
   // +optional
   IPFamilies []corev1.IPFamily `json:"ipFamilies,omitempty"`
 
@@ -391,8 +409,10 @@ type EndpointSelectorSpec struct {
   // +optional
   Ports []EndpointSelectorPort `json:"ports,omitempty"`
 
-  // PublishNotReadyAddresses controls how the ready condition is set for pods
-  // that are not yet ready. Mirrors the identically-named field on Service.spec.
+  // PublishNotReadyAddresses controls whether not-yet-ready pods appear in
+  // generated EndpointSlices. When true, not-ready pods are included with
+  // ready=true in their endpoint conditions, making them reachable before
+  // they pass readiness probes.
   // +optional
   PublishNotReadyAddresses bool `json:"publishNotReadyAddresses,omitempty"`
 
@@ -431,11 +451,11 @@ type EndpointSelectorPort struct {
 }
 
 // EndpointSelectorTrafficSettings carries producer-side routing configuration
-// that the endpointslice-controller propagates to generated EndpointSlices.
+// that the endpointslice-controller uses when generating `EndpointSlices`.
 type EndpointSelectorTrafficSettings struct {
   // TrafficDistribution expresses a preference for how traffic is routed to
-  // endpoints (for example, "PreferClose"). Mirrors the identically-named
-  // field on Service.spec.
+  // endpoints (for example, "PreferClose"). The endpointslice-controller
+  // uses this value to calculate the topology hints on generated EndpointSlices.
   // +optional
   TrafficDistribution *string `json:"trafficDistribution,omitempty"`
 }
@@ -485,8 +505,6 @@ kind: EndpointSelector
 metadata:
   generateName: my-inference-pool-
   namespace: default
-  labels:
-    app.kubernetes.io/managed-by: inferencepool-controller
   ownerReferences:
     - apiVersion: inference.networking.k8s.io/v1
       kind: InferencePool
@@ -668,36 +686,19 @@ named port strings per-pod when generating `EndpointSlices` by matching against
 copies `Service.spec.ports[].targetPort` verbatim without resolving it, keeping
 named-port resolution in the controller that already watches pods.
 
-**Open question — ownerReferences with manual binding**
-When an `EndpointSelector` is created without a `ownerReferences[].controller`
-entry set to `true`, that indicates that the `EndpointSelector` is managed
-manually. However, when that `EndpointSelector` is referenced by a
-higher-level resource (for example, an `InferencePool` or a `Backend`), should
-there be an ownerRef pointing back to that resource for garbage collection?
-This would allow automatic cleanup of the `EndpointSelector` and its
-`EndpointSlices` when all owning resources are deleted, but it would require
-the controller that manages that higher level resource to set ownerRefs on the
-`EndpointSelector`. The alternative is to have no ownerRefs at all for manually
-managed `EndpointSelector` objects which could lead to the higher-level
-resources having invalid references to deleted `EndpointSelectors`. This may
-not be a problem in practice if the higher-level resources have robust status
-conditions. Finalizers on the `EndpointSelector` is also a potential option for
-controllers of higher-level resources.
-
 ### Controller-Managed Conventions
 
-Third-party controllers that create `EndpointSelectors` programmatically MUST:
-
-- Set `ownerReferences` pointing to the managing resource for garbage
-  collection. Without `ownerReferences`, the `EndpointSelector` is treated as
-  user-managed, and the `endpointslice-controller` will not garbage collect it
-  or its `EndpointSlices` when the owning resource is deleted.
-- Use `generateName` instead of `name` to avoid naming conflicts when multiple
-  controllers target the same workload.
-- Set `app.kubernetes.io/managed-by` to identify the managing controller.
-
 The `service-endpointselector-controller` uses a deterministic name derived
-from the `Service` name to allow lookup by service name.
+from the `Service` name so that it can find and update the derived object on
+subsequent reconciliations.
+
+For third-party controllers that create `EndpointSelector` objects, suggested
+practices include:
+
+- Setting `ownerReferences` to the parent resource so that Kubernetes garbage
+  collection removes the `EndpointSelector` when the parent is deleted.
+- Using `generateName` rather than `name` to avoid naming conflicts when
+  multiple controllers may target the same workload.
 
 ### Test Plan
 
@@ -1085,11 +1086,9 @@ benchmarked before Beta.
 
 Yes: `EndpointSelector` (`discovery.k8s.io/v1alpha1`), namespace-scoped.
 
-For the `Service` compatibility path, the number of `EndpointSelector` objects
-scales with the number of `Services` that have a pod selector. Clusters that
-run O(10^3–10^4) `Services` today will have a roughly equivalent number of
-`EndpointSelector` objects. Third-party controllers (for example,
-`InferencePool`) add additional objects beyond this baseline.
+For the `Service` compatibility path, one `EndpointSelector` object is created
+per `Service` with a pod selector. Explicit testing targets will be defined and
+validated as part of Beta.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1145,10 +1144,6 @@ are no additional failure modes introduced by this feature.
 
 Full documentation required at Beta. Candidates:
 
-- **Controller-managed `EndpointSelector` not garbage collected**: the owning
-  resource is deleted but the `EndpointSelector` persists. `ownerReference`
-  garbage collection handles this automatically; the
-  `app.kubernetes.io/managed-by` label enables manual audit.
 - **`EndpointSlices` not updated after pod readiness change**: detectable via
   `endpointslice-controller` sync error metrics. Mitigation: verify feature
   gate status; restart `kube-controller-manager`.
