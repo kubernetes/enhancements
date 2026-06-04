@@ -108,6 +108,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Scheduler Plugin (at kubernetes-sigs/scheduler-plugins repo)](#scheduler-plugin-at-kubernetes-sigsscheduler-plugins-repo)
     - [Why a scheduler plugin is necessary](#why-a-scheduler-plugin-is-necessary)
     - [High Level Plugin design (<a href="https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/">Based on Scheduling Framework</a>)](#high-level-plugin-design-based-on-scheduling-framework)
+  - [External-Provisioner Changes (Immediate Volume Binding)](#external-provisioner-changes-immediate-volume-binding)
   - [What happens with statically provisioned snapshots?](#what-happens-with-statically-provisioned-snapshots)
   - [Error Handling](#error-handling)
   - [Test Plan](#test-plan)
@@ -192,9 +193,13 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-This KEP proposes adding topology support to volume snapshots in Kubernetes by extending the `VolumeSnapshotContentSpec` object with an immutable `AccessibleTopology` field and enforcing topology compatibility when restoring volumes from snapshots. Currently, volume snapshots lack any topology information, creating a gap that prevents topology-aware scheduling and features.
+This KEP proposes adding topology support to volume snapshots in Kubernetes by extending the `VolumeSnapshotContentSpec` object with an immutable `NodeAffinity` field and enforcing topology compatibility when restoring volumes from snapshots. Currently, volume snapshots lack any topology information, creating a gap that prevents topology-aware scheduling and features.
 
-The enhancement has two parts. First, topology information will be added to volume snapshot contents by returning the topology in the CSI `CreateSnapshotResponse` and stored in the resulting `VolumeSnapshotContent`. Second, an out-of-tree scheduler plugin (in `kubernetes-sigs/scheduler-plugins`) will enforce that when a PVC references a snapshot as its data source with `WaitForFirstConsumer` volume binding, the scheduler only selects nodes whose topology is compatible with the snapshot's `AccessibleTopology`. This ensures that the resulting volume is provisioned in a topology where the snapshot data is accessible, preventing provisioning failures or silent data inaccessibility. 
+The enhancement has two parts. First, topology information will be added to volume snapshot contents by returning the topology in the CSI `CreateSnapshotResponse` and stored in the resulting `VolumeSnapshotContent`. Second, topology enforcement ensures that volumes restored from snapshots are provisioned in compatible topologies:
+- For `WaitForFirstConsumer` volume binding: an out-of-tree scheduler plugin (in `kubernetes-sigs/scheduler-plugins`) will filter nodes whose topology is incompatible with the snapshot's `NodeAffinity`, ensuring the selected node leads to provisioning in a compatible topology.
+- For `Immediate` volume binding: the external-provisioner will intersect the snapshot's `NodeAffinity` with the StorageClass's `AllowedTopologies` to select a compatible topology for provisioning.
+
+This prevents provisioning failures or silent data inaccessibility regardless of volume binding mode.
 
 ## Motivation
 
@@ -206,16 +211,16 @@ While CSI volumes have comprehensive topology support, snapshots operate without
 
 ### Goals
 
-- Add topology information to `VolumeSnapshotContent` objects via an immutable `AccessibleTopology` field.
+- Add topology information to `VolumeSnapshotContent` objects via an immutable `NodeAffinity` field.
 - Extend CSI spec to support optional topology fields in `CreateSnapshotRequest` and `CreateSnapshotResponse`.
-- Provide an out-of-tree scheduler plugin (in `kubernetes-sigs/scheduler-plugins`) that enforces topology compatibility when scheduling pods with PVCs that reference a snapshot as their data source, ensuring the scheduler only selects nodes whose topology is compatible with the snapshot's `AccessibleTopology`.
+- Provide an out-of-tree scheduler plugin (in `kubernetes-sigs/scheduler-plugins`) that enforces topology compatibility when scheduling pods with PVCs that reference a snapshot as their data source with `WaitForFirstConsumer` volume binding, ensuring the scheduler only selects nodes whose topology is compatible with the snapshot's `NodeAffinity`.
+- Ensure the external-provisioner intersects the snapshot's `NodeAffinity` with `StorageClass.AllowedTopologies` when provisioning volumes from snapshot data sources with `Immediate` volume binding mode.
 
 ### Non-Goals
 
 - Implementing cross region/AZ snapshot cloning functionality.
 - Add ability to modify any existing volume snapshot fields.
 - Modifying the in-tree kube-scheduler or adding snapshot CRD dependencies to core Kubernetes components.
-- Topology enforcement when restoring a snapshot to a PVC whose StorageClass uses `Immediate` volume binding mode (topology enforcement only applies to `WaitForFirstConsumer`).
 - Update existing snapshot objects with Topology information once feature is enabled.
 
 ## Proposal
@@ -246,7 +251,7 @@ N/A
 
 ### Feature Gate
 
-A new feature gate,`VolumeSnapshotTopology`, will be introduced to control the functionality implemented by this KEP. When the feature gate is disabled the `AccessibleTopology` field in the `VolumeSnapshotContent.spec` will not be filled. 
+A new feature gate,`VolumeSnapshotTopology`, will be introduced to control the functionality implemented by this KEP. When the feature gate is disabled the `NodeAffinity` field in the `VolumeSnapshotContent.spec` will not be filled.
 
 ### CSI Spec Changes
 
@@ -315,17 +320,17 @@ Add topology field to `VolumeSnapshotContentSpec` object:
 type VolumeSnapshotContentSpec struct {
 	// ... existing fields ...
 
-	// accessibleTopology represents the node topologies from which a volume can
+	// nodeAffinity defines the node topologies from which a volume can
 	// be provisioned using this snapshot as a source. This is derived from the
-	// CSI driver's CreateSnapshotResponse. The scheduler compares these terms
-	// against node labels to filter candidate nodes for PVCs that reference
-	// this snapshot as a data source with WaitForFirstConsumer volume binding.
-	// The shape mirrors StorageClass.allowedTopologies so the scheduler can
-	// use the same label-expression matching against node topology.
+	// CSI driver's CreateSnapshotResponse. For WaitForFirstConsumer volume
+	// binding, the scheduler compares these terms against node labels to filter
+	// candidate nodes. For Immediate volume binding, the external-provisioner
+	// intersects these terms with StorageClass.AllowedTopologies to select a
+	// compatible provisioning topology.
 	// This field is immutable.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="accessibleTopology is immutable"
-	AccessibleTopology []v1.TopologySelectorTerm `json:"accessibleTopology,omitempty" protobuf:"bytes,7,rep,name=accessibleTopology"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="nodeAffinity is immutable"
+	NodeAffinity []v1.TopologySelectorTerm `json:"nodeAffinity,omitempty" protobuf:"bytes,7,rep,name=nodeAffinity"`
 }
 ```
 
@@ -359,7 +364,7 @@ Spec:
     Resource Version:  111691
     UID:               123-456-789
   # Topology field - snapshot accessible from two zones
-  Accessible Topology:
+  Node Affinity:
     - matchLabelExpressions:
         - key: topology.kubernetes.io/region
           values:
@@ -496,7 +501,7 @@ func (ctrl *csiSnapshotSideCarController) createSnapshotWrapper(content *crdv1.V
 			patches := []utils.PatchOp{
 				{
 					Op:    "add",
-					Path:  "/spec/accessibleTopology",
+					Path:  "/spec/nodeAffinity",
 					Value: terms,
 				},
 			}
@@ -511,7 +516,7 @@ func (ctrl *csiSnapshotSideCarController) createSnapshotWrapper(content *crdv1.V
 }
 
 // convertCSITopologyToTerms converts CSI Topology segments into the
-// []v1.TopologySelectorTerm shape used by VolumeSnapshotContentSpec.AccessibleTopology.
+// []v1.TopologySelectorTerm shape used by VolumeSnapshotContentSpec.NodeAffinity.
 func convertCSITopologyToTerms(csiTopology []*csi.Topology) []v1.TopologySelectorTerm {
 	var terms []v1.TopologySelectorTerm
   // ... any conversion necessary
@@ -523,7 +528,7 @@ func convertCSITopologyToTerms(csiTopology []*csi.Topology) []v1.TopologySelecto
 
 #### Why a scheduler plugin is necessary
 
-Storing topology on `VolumeSnapshotContent` alone is not sufficient to prevent provisioning failures. When a PVC references a snapshot as its data source and uses `WaitForFirstConsumer` volume binding, the scheduler selects a node before provisioning begins. The external-provisioner then provisions the volume in a topology derived from the selected node. If that topology is incompatible with the snapshot's `AccessibleTopology`, the CSI `CreateVolume` call will fail because that source snapshot may not be accessible.
+Storing topology on `VolumeSnapshotContent` alone is not sufficient to prevent provisioning failures. When a PVC references a snapshot as its data source and uses `WaitForFirstConsumer` volume binding, the scheduler selects a node before provisioning begins. The external-provisioner then provisions the volume in a topology derived from the selected node. If that topology is incompatible with the snapshot's `NodeAffinity`, the CSI `CreateVolume` call will fail because that source snapshot may not be accessible.
 
 The scheduler's built-in `volumebinding` plugin has no awareness of snapshot topology today. It only considers the StorageClass's `allowedTopologies` and the node's own constraints. This means it can select a node in `foo-bar-1` even though the snapshot source is only accessible from `foo-bar-2`.
 
@@ -535,11 +540,11 @@ The proposed solution with this scheduler plugin is to filter out incompatible n
 
 The plugin implements two extension points: `PreFilter` and `Filter`. 
 
-`PreFilter` runs once per scheduling cycle. It inspects the pod's PVC volumes, resolves any snapshot data sources to their `VolumeSnapshotContent`, and caches the `AccessibleTopology` in the `CycleState`. This avoids repeating the lookup for every candidate node.
+`PreFilter` runs once per scheduling cycle. It inspects the pod's PVC volumes, resolves any snapshot data sources to their `VolumeSnapshotContent`, and caches the `NodeAffinity` in the `CycleState`. This avoids repeating the lookup for every candidate node.
 
-`Filter` runs once per candidate node. It retrieves the cached snapshot topology from `CycleState` and checks whether the node's labels satisfy any of the snapshot's `AccessibleTopology` terms (the same label-expression matching used for `StorageClass.AllowedTopologies`). If no term matches, the node is marked `Unschedulable`.
+`Filter` runs once per candidate node. It retrieves the cached snapshot topology from `CycleState` and checks whether the node's labels satisfy any of the snapshot's `NodeAffinity` terms (the same label-expression matching used for `StorageClass.AllowedTopologies`). If no term matches, the node is marked `Unschedulable`.
 
-If a `VolumeSnapshotContent` has no `AccessibleTopology` set (e.g., the CSI driver does not support topology, or the feature gate was disabled when the snapshot was created), the plugin does not filter any nodes and the core scheduler behaves as usual.
+If a `VolumeSnapshotContent` has no `NodeAffinity` set (e.g., the CSI driver does not support topology, or the feature gate was disabled when the snapshot was created), the plugin does not filter any nodes and the core scheduler behaves as usual.
 
 ```go
 // SnapshotTopology is an out-of-tree scheduler plugin that filters nodes
@@ -548,15 +553,57 @@ If a `VolumeSnapshotContent` has no `AccessibleTopology` set (e.g., the CSI driv
 type SnapshotTopology struct { ... }
 
 // PreFilter resolves PVC -> VolumeSnapshot -> VolumeSnapshotContent for all
-// snapshot-sourced PVCs in the pod, reads AccessibleTopology, and caches the
+// snapshot-sourced PVCs in the pod, reads NodeAffinity, and caches the
 // result in CycleState.
 func (pl *SnapshotTopology) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) { ... }
 
 // Filter checks whether the candidate node's labels satisfy any of the
-// cached snapshot AccessibleTopology terms (via TopologySelectorTerm
+// cached snapshot NodeAffinity terms (via TopologySelectorTerm
 // match expressions). Returns Unschedulable if no term matches.
 func (pl *SnapshotTopology) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status { ... }
 ```
+### External-Provisioner Changes (Immediate Volume Binding)
+
+For PVCs with `Immediate` volume binding mode that reference a snapshot as their data source, the scheduler is not involved in topology selection. Provisioning happens immediately without waiting for a pod. In this case, the external-provisioner is responsible for selecting a compatible topology.
+
+This behavior is gated behind the same `VolumeSnapshotTopology` feature gate in the external-provisioner. When the gate is disabled, the provisioner ignores the `NodeAffinity` field and uses existing behavior regardless of whether topology data is present on the `VolumeSnapshotContent`.
+
+When the feature gate is enabled and the external-provisioner handles a PVC with a snapshot data source and `Immediate` binding, it will:
+
+1. Resolve the PVC's `dataSource` to the `VolumeSnapshotContent` (it already does this to get the snapshot handle).
+2. Read the `VolumeSnapshotContent.Spec.NodeAffinity` field.
+3. Intersect the snapshot's `NodeAffinity` with the `StorageClass.AllowedTopologies` to determine a set of compatible topologies for provisioning.
+4. Pass the intersected topology as `AccessibilityRequirements` in the CSI `CreateVolumeRequest`.
+
+If the intersection is empty (no topology satisfies both constraints), the provisioner will fail the provision with an event indicating topology incompatibility between the snapshot and the StorageClass. This fails with a clear actionable error rather than deferring to a CSI driver failure.
+
+If the `VolumeSnapshotContent` has no `NodeAffinity` set, the provisioner falls back to existing behavior (using only `StorageClass.AllowedTopologies`).
+
+```go
+// In the external-provisioner's Provision() flow for Immediate + snapshot dataSource:
+func (p *csiProvisioner) buildTopologyRequirements(sc *storagev1.StorageClass, vsc *snapshotv1.VolumeSnapshotContent) (*csi.TopologyRequirement, error) {
+	scTopology := sc.AllowedTopologies
+	snapTopology := vsc.Spec.NodeAffinity
+
+	if len(snapTopology) == 0 {
+		// No snapshot topology then fall back to existing behavior
+		return buildFromAllowedTopologies(scTopology), nil
+	}
+
+	if len(scTopology) == 0 {
+		// No StorageClass restriction then use snapshot topology directly
+		return buildFromAllowedTopologies(snapTopology), nil
+	}
+
+	// Intersect: only topologies that satisfy both constraints
+	intersected := intersectTopologySelectorTerms(scTopology, snapTopology)
+	if len(intersected) == 0 {
+		return nil, fmt.Errorf("no compatible topology: StorageClass.AllowedTopologies and snapshot NodeAffinity have no intersection")
+	}
+	return buildFromAllowedTopologies(intersected), nil
+}
+```
+
 ### What happens with statically provisioned snapshots? 
 
 Since there is no `CreateSnapshot` call for snapshots that are statically provisioned, operators must manually set their desired topology specifications on the VolumeSnapshotContent. 
@@ -570,10 +617,13 @@ The CSI driver returns a gRPC error (`ResourceExhausted`) from `CreateSnapshot`.
 The SP may return a transient gRPC error. The sidecar controller's existing retry logic handles this. The `CreateSnapshot` call will be retried.
 
 **CSI driver does not return topology in the response:**
-If the driver does not populate `AccessibleTopology` in the `CreateSnapshotResponse`, the sidecar controller simply skips the topology patch. The `VolumeSnapshotContent` is created successfully without topology information. This ensures backward compatibility with drivers that do not support topology.
+If the driver does not populate `accessible_topology` in the `CreateSnapshotResponse`, the sidecar controller simply skips the topology patch. The `VolumeSnapshotContent` is created successfully without topology information. This ensures backward compatibility with drivers that do not support topology.
 
-**No nodes match the snapshot's `AccessibleTopology` (scheduler plugin):**
-All candidate nodes are filtered out by the plugin because no node's labels satisfy any of the snapshot's `AccessibleTopology` terms. The pod remains unschedulable with an event indicating the topology mismatch. This is a permanent failure unless new nodes are added in a compatible topology.
+**No nodes match the snapshot's `NodeAffinity` (scheduler plugin):**
+All candidate nodes are filtered out by the plugin because no node's labels satisfy any of the snapshot's `NodeAffinity` terms. The pod remains unschedulable with an event indicating the topology mismatch. This is a permanent failure unless new nodes are added in a compatible topology.
+
+**Snapshot `NodeAffinity` incompatible with `StorageClass.AllowedTopologies` (Immediate binding):**
+The external-provisioner detects that the intersection of `StorageClass.AllowedTopologies` and the snapshot's `NodeAffinity` is empty. Provisioning fails immediately with an event indicating the topology incompatibility. The user must either use a StorageClass with compatible `AllowedTopologies` or use a snapshot accessible from the desired topology.
 
 **VolumeSnapshotContent has topology field empty:**
 In this case, default scheduler behavior will run, so no snapshot topology will be taken into account when filtering out nodes.
@@ -628,11 +678,11 @@ extending the production code to implement this enhancement.
 Since the e2e framework does not currently support enabling or disabling feature gates, there will be various unit tests that are exercising the `switch` of feature gate itself and handling of relevant data.
 
 Additionally, unit tests for the scheduler plugin will cover:
-- PreFilter correctly resolves PVC → VolumeSnapshot → VolumeSnapshotContent and caches `AccessibleTopology`.
+- PreFilter correctly resolves PVC → VolumeSnapshot → VolumeSnapshotContent and caches `NodeAffinity`.
 - PreFilter is a no-op when the pod has no snapshot-sourced PVCs.
-- Filter rejects nodes whose labels do not satisfy any term in the snapshot's `AccessibleTopology`.
-- Filter passes nodes whose labels satisfy at least one `AccessibleTopology` term.
-- Filter is a no-op when `AccessibleTopology` is empty (backward compatibility).
+- Filter rejects nodes whose labels do not satisfy any term in the snapshot's `NodeAffinity`.
+- Filter passes nodes whose labels satisfy at least one `NodeAffinity` term.
+- Filter is a no-op when `NodeAffinity` is empty (backward compatibility).
 
 ##### Integration tests
 
@@ -677,9 +727,10 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- Test e2e workflow of having the feature flag enabled and having VolumeSnapshotContents AccessibleTopology fields be populated.
-- Test that a pod with a PVC referencing a snapshot as its data source is scheduled to a node whose topology is compatible with the snapshot's `AccessibleTopology`.
-- Test that a pod remains unschedulable when no nodes match the snapshot's `AccessibleTopology`.
+- Test e2e workflow of having the feature flag enabled and having VolumeSnapshotContents `NodeAffinity` fields be populated.
+- Test that a pod with a PVC referencing a snapshot as its data source is scheduled to a node whose topology is compatible with the snapshot's `NodeAffinity`.
+- Test that a pod remains unschedulable when no nodes match the snapshot's `NodeAffinity`.
+- Test that Immediate binding mode with a snapshot data source provisions in a topology compatible with the snapshot's `NodeAffinity`.
 
 ### Graduation Criteria
 
@@ -692,7 +743,7 @@ If e2e tests are not necessary or useful, explain why.
 #### Beta
 - Allowing time for feedback (at least 2 releases between beta and GA).
 - All unit tests/integration/e2e tests completed and enabled.
-- Validate that the `AccessibleTopology` field is being accurately populated.
+- Validate that the `NodeAffinity` field is being accurately populated.
 - Validate snapshot-controller behavior with and without volume snapshot topology enabled.
 - Validate scheduler plugin correctly filters nodes based on snapshot topology.
 
@@ -731,8 +782,8 @@ enhancement:
   - Deploy the scheduler with the `SnapshotTopology` plugin enabled (from `kubernetes-sigs/scheduler-plugins`) to enforce topology-aware scheduling.
 
 - Downgrade Strategy: 
-  - Disable `VolumeSnapshotTopology` feature gate and restart snapshot-controller. New snapshots will no longer have `AccessibleTopology` populated.
-  - Remove the `SnapshotTopology` scheduler plugin from the scheduler configuration. Scheduling will revert to the default behavior with no snapshot topology filtering. Existing `VolumeSnapshotContent` objects that already have `AccessibleTopology` set will retain the field but it will not be enforced.
+  - Disable `VolumeSnapshotTopology` feature gate and restart snapshot-controller. New snapshots will no longer have `NodeAffinity` populated.
+  - Remove the `SnapshotTopology` scheduler plugin from the scheduler configuration. Scheduling will revert to the default behavior with no snapshot topology filtering. Existing `VolumeSnapshotContent` objects that already have `NodeAffinity` set will retain the field but it will not be enforced.
 
 ### Version Skew Strategy
 
@@ -751,9 +802,9 @@ enhancement:
 
 Since the changes of this enhancement span two independent components (the external-snapshotter sidecar and the out-of-tree scheduler plugin), the following version skew scenarios apply:
 
-- **Scheduler plugin deployed without updated external-snapshotter:** The `AccessibleTopology` field will not be populated on `VolumeSnapshotContent` objects. The scheduler plugin will see no topology data and will not filter any nodes. Scheduling behavior is unchanged, this is safe.
+- **Scheduler plugin deployed without updated external-snapshotter:** The `NodeAffinity` field will not be populated on `VolumeSnapshotContent` objects. The scheduler plugin will see no topology data and will not filter any nodes. Scheduling behavior is unchanged, this is safe.
 
-- **Updated external-snapshotter deployed without scheduler plugin:** The `AccessibleTopology` field will be populated on new `VolumeSnapshotContent` objects, but no scheduling enforcement occurs. The topology data is informational only. Provisioning may still fail if the selected node's topology is incompatible with the snapshot which is what the behavior is today.
+- **Updated external-snapshotter deployed without scheduler plugin:** The `NodeAffinity` field will be populated on new `VolumeSnapshotContent` objects, but no scheduling enforcement occurs. The topology data is informational only. Provisioning may still fail if the selected node's topology is incompatible with the snapshot which is what the behavior is today.
 
 - **Both components deployed:** Full functionality, topology is populated and enforced during scheduling.
 
@@ -803,7 +854,7 @@ well as the [existing list] of feature gates.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: VolumeSnapshotTopology
-  - Components depending on the feature gate: snapshot-controller and csi-snapshotter.
+  - Components depending on the feature gate: snapshot-controller, csi-snapshotter, and external-provisioner.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -812,7 +863,7 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-It does not change any default behavior for the external-snapshotter components. All existing fields in the VSC will still be there, and users will see the topology information being added to the VSC. However, if the scheduler plugin is deployed, scheduling behavior changes: pods with PVCs referencing snapshot data sources may be filtered to only schedule on nodes whose topology is compatible with the snapshot's `AccessibleTopology`. Pods that previously scheduled on any node may now be restricted to a subset of nodes.
+It does not change any default behavior for the external-snapshotter components. All existing fields in the VSC will still be there, and users will see the topology information being added to the VSC. However, if the scheduler plugin is deployed, scheduling behavior changes: pods with PVCs referencing snapshot data sources may be filtered to only schedule on nodes whose topology is compatible with the snapshot's `NodeAffinity`. Pods that previously scheduled on any node may now be restricted to a subset of nodes. Additionally, for Immediate binding mode with snapshot data sources, the external-provisioner will now enforce topology compatibility, which may cause provisioning to fail if the StorageClass's `AllowedTopologies` are incompatible with the snapshot, and previously this would have resulted in a less clear CSI driver error.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -827,7 +878,7 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-- Yes the feature can be disabled by turning off the feature gate and restarting the snapshot-controller. New snapshots will no longer have `AccessibleTopology` populated. The scheduler plugin can be independently removed from the scheduler configuration to disable topology enforcement. Existing `VolumeSnapshotContent` objects will retain their `AccessibleTopology` field.
+- Yes the feature can be disabled by turning off the feature gate and restarting the snapshot-controller. New snapshots will no longer have `NodeAffinity` populated. The scheduler plugin can be independently removed from the scheduler configuration to disable topology enforcement. The external-provisioner will also stop enforcing topology intersection for Immediate binding. Existing `VolumeSnapshotContent` objects will retain their `NodeAffinity` field.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -910,7 +961,7 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-An operator can determine if the feature is in use by workloads if they see topology in `VolumeSnapshotContent` objects spec. For the scheduler plugin, operators can verify it is working by noticing that pods with PVCs referencing snapshots are assigned to nodes that match the snapshot's `AccessibleTopology`.
+An operator can determine if the feature is in use by workloads if they see topology in `VolumeSnapshotContent` objects spec. For the scheduler plugin, operators can verify it is working by noticing that pods with PVCs referencing snapshots are assigned to nodes that match the snapshot's `NodeAffinity`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -926,7 +977,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] Events
   - Event Reason: 
 - [X] API .spec
-  - Field name: AccessibleTopology
+  - Field name: NodeAffinity
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -1020,7 +1071,7 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-Yes, one additional PATCH call to VolumeSnapshotContent per snapshot creation to set the `AccessibleTopology` field on the Spec. This is a one-time call per snapshot, originating from the CSI snapshotter sidecar controller.
+Yes, one additional PATCH call to VolumeSnapshotContent per snapshot creation to set the `NodeAffinity` field on the Spec. This is a one-time call per snapshot, originating from the CSI snapshotter sidecar controller.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1031,7 +1082,7 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-No, this feature adds a new field (`AccessibleTopology`) to the existing `VolumeSnapshotContentSpec` type.
+No, this feature adds a new field (`NodeAffinity`) to the existing `VolumeSnapshotContentSpec` type.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1052,7 +1103,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Yes, VolumeSnapshotContent objects will have an additional `accessibleTopology` map field. Estimated increase is small depending on the number of topology key-value pairs (e.g., region and zone).
+Yes, VolumeSnapshotContent objects will have an additional `nodeAffinity` field. Estimated increase is small depending on the number of topology key-value pairs (e.g., region and zone).
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
