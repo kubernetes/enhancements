@@ -23,13 +23,15 @@
   - [Job Integration (batch/v1)](#job-integration-batchv1)
     - [1. API Changes](#1-api-changes)
     - [2. Defaulting Rules](#2-defaulting-rules)
-  - [Shared <code>workloadbuilder</code> Go Translation Library](#shared-workloadbuilder-go-translation-library)
+  - [Shared workloadbuilder Go Translation Library](#shared-workloadbuilder-go-translation-library)
     - [1. Design &amp; Architecture](#1-design--architecture)
     - [2. Library API Definition](#2-library-api-definition)
     - [3. Library Usage Example (Job)](#3-library-usage-example-job)
   - [Job Integration - Handling Updates and Mutability](#job-integration---handling-updates-and-mutability)
     - [Gang MinCount Defaulting &amp; Scaling Behavior](#gang-mincount-defaulting--scaling-behavior)
     - [Reconciliation Flow upon Updates](#reconciliation-flow-upon-updates)
+    - [API Validation via the workloadbuilder Library](#api-validation-via-the-workloadbuilder-library)
+      - [Allowing Mutability of spec.parallelism](#allowing-mutability-of-specparallelism)
   - [Reference Integration Examples: JobSet (Multi-Level)](#reference-integration-examples-jobset-multi-level)
     - [1. Option A: Template Delegation Model (Nested Configuration)](#1-option-a-template-delegation-model-nested-configuration)
       - [Example YAML Manifest](#example-yaml-manifest)
@@ -110,7 +112,7 @@ intermediate, scheduler-facing APIs. We have not yet addressed how end-users of 
 workload controllers (such as `Job`, `LWS`, `JobSet`, or `RayJob`) should express their scheduling
 requirements to utilize these features.
 
-For example, in the recent [KEP-5547] (Job Integration), we intentionally bypassed the user-facing
+For example, in the first alpha release of [KEP-5547] (Job Integration), we intentionally bypassed the user-facing
 API design challenge. Instead, the integration automatically creates a `PodGroup` with a hardcoded
 Gang policy under specific conditions (e.g., for fully parallel static indexed Jobs). While this
 unblocked initial adoption, it is fundamentally insufficient. Users have diverse use cases and
@@ -483,7 +485,8 @@ To deliver native, typed Workload-aware Scheduling support in core Kubernetes, w
 integrating the standardized building blocks directly into the core `Job` API (`batch/v1`).
 
 This integration serves as the foundational implementation ("blazing the path") that demonstrates
-the viability of these building blocks before out-of-tree controllers adopt them.
+the viability of these building blocks before out-of-tree controllers adopt them. More design 
+details are covered in [KEP-5547].
 
 #### 1. API Changes
 We will introduce a new `Scheduling` field inside `JobSpec`. This field embeds a curated, composed
@@ -531,10 +534,7 @@ To ensure 100% backward compatibility and prevent breaking existing CI/CD pipeli
 * Users can explicitly configure an escape hatch (e.g., opting in only to topology constraints
   while maintaining standard `Basic` pod-by-pod scheduling).
 
-
-
-### Shared `workloadbuilder` Go Translation Library
-
+### Shared workloadbuilder Go Translation Library
 
 To prevent every workload controller (both core and out-of-tree) from writing custom, translation
 and validation logic, we propose providing a shared Go library: `workloadbuilder`.
@@ -739,20 +739,18 @@ func (r *JobReconciler) generateWorkload(
 
 ### Job Integration - Handling Updates and Mutability
 
-// TODO(helayoty@)): Review this section and update.
-
-
 To support the dynamic scaling of gang-scheduled workloads (Elastic Jobs) in v1.37+, the Job API
 allows in-flight updates to `spec.scheduling.policy.gang.minCount`. All other scheduling
-fields in `spec.scheduling` are strictly immutable upon Job creation.
+fields in `spec.scheduling` are strictly immutable upon Job creation. API
+validation reuses the `workloadbuilder` library where possible so the accepted configurations stay
+consistent with what the controller actually compiles.
 
 #### Gang MinCount Defaulting & Scaling Behavior
 
-If `minCount` is set, it has full precedence and defines the target gang size,
-meaning any changes to `spec.parallelism` are ignored for gang size calculations.
-If `minCount` is omitted (nil), the gang size dynamically defaults to
-and follows `spec.parallelism`. In this case, changing `spec.parallelism` automatically
-changes the target gang size.
+If `minCount` is set explicitly, it has full precedence and defines the target gang size; changes 
+to `spec.parallelism` are then ignored for gang-size calculations. If `minCount` is omitted 
+(nil), the gang size dynamically defaults to and follows `spec.parallelism`, so changing 
+`spec.parallelism` automatically changes the target gang size.
 
 #### Reconciliation Flow upon Updates
 
@@ -774,8 +772,24 @@ Alternative update propagation semantics are possible. For example, for composit
 to newly spawned children (e.g., new `Jobs` created in-flight) via `Workload` change, while active,
 running child `PodGroups` remain untouched to avoid unnecessary disruption.
 
-// TODO(helayoty@)): Add a section about API validation using the workloadbuilder library. 
-// Describe changes in validation logic to allow mutability of parallism. 
+#### API Validation via the workloadbuilder Library
+
+Validation of `spec.scheduling` is layered. The integrating controller owns the *structural* and
+*mutability* checks (e.g. exactly one policy is set, and every `spec.scheduling` field is immutable
+except `gang.minCount`), since these are specific to its API types. The `workloadbuilder` library
+owns the *semantic* checks: the api-server calls the library's `Validate` entrypoint, which runs the
+same resolution and policy validation as `Build`, so the server only accepts configurations the
+controller can compile into a valid `Workload`. Because this resolution reads only the incoming
+object and never cluster state, it is safe to call from the api-server.
+
+##### Allowing Mutability of spec.parallelism
+
+The v1.36 integration hardcoded the gang size to `spec.parallelism` and therefore had to reject
+`spec.parallelism` updates on gang Jobs, which disabled [Elastic Indexed
+Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs). Because
+the gang size is now driven by the mutable `spec.scheduling.policy.gang.minCount` ([KEP-4671]), 
+while all other `spec.scheduling` fields stay immutable. The concrete `Job` validation rules 
+are specified in [KEP-5547].
 
 ### Reference Integration Examples: JobSet (Multi-Level)
 
@@ -796,6 +810,7 @@ In this model, `JobSet` defines scheduling directives globally at the root
 inside the embedded `JobTemplateSpec` (e.g., `spec.replicatedJobs[*].template.spec.scheduling`).
 
 ##### Example YAML Manifest
+
 ```yaml
 apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
@@ -825,7 +840,6 @@ spec:
               image: worker-image
 ```
 
-
 #### 2. Option B: Centralized 'Targeted Policies' Model (Root-only Configuration)
 In this model, `JobSet` does not expose or use the nested child template fields. Instead, all
 scheduling configurations—both global and local—are declared centrally inside a single root-level
@@ -833,8 +847,8 @@ scheduling configurations—both global and local—are declared centrally insid
 `ReplicatedJobs` by name (which directly follows the established `targetReplicatedJob` convention
 already used in `JobSet` features like `FailurePolicyRule`).
 
-
 ##### Example YAML Manifest
+
 ```yaml
 apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
@@ -868,6 +882,7 @@ spec:
 ---
 
 #### 3. Controller Integration and workloadbuilder Mapping Go Code
+
 Regardless of which API model `JobSet` adopts, the controller can easily map its structural spec
 into the `workloadbuilder` logical tree.
 
@@ -969,7 +984,6 @@ func (r *JobSetReconciler) generateWorkload(
 }
 ```
 
-
 ### Recommendations for Multi-Level Composite Controllers
 
 Integrating Workload-aware Scheduling (WAS) into multi-level composite controllers (where
@@ -978,6 +992,7 @@ controllers orchestrate other controllers, such as `JobSet` creating core `Jobs`
 should adhere to the following guidelines:
 
 #### 1. Runtime PodGroup and CompositePodGroup Lifecycle Management
+
 For single-level controllers (e.g., standard `Job`), the ownership boundaries are straightforward:
 the Job controller manages both the static `Workload` resource and the corresponding runtime
 `PodGroup` objects.
@@ -996,7 +1011,6 @@ maintainers and ecosystem integrators are encouraged to experiment with both cen
 delegated management patterns. The authors of this KEP will observe these patterns in the wild,
 gather user and operator feedback, and generalize these best practices into a standardized,
 unified lifecycle convention in a subsequent phase.
-
 
 #### 2. Downward Template and Parent Mapping via Well-Known Annotations
 
@@ -1062,24 +1076,7 @@ transition pattern:
   external codebases to compile seamlessly while gradually transitioning their imports over
   multiple releases.
 
-
-TODO(helayoty@): Given the implementation for this KEP will be the actual integration with Job
-API, the sections below can be pretty much copied from KEP-5547 (and extended appropriately).
-
 ### Test Plan
-
-
-
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
 
 [x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
@@ -1087,76 +1084,41 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+Job-specific test plans are tracked in [KEP-5547].
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+- Add tests that verify:
+  - `workloadbuilder` compiles a `Basic` policy into the expected `Workload`/`PodGroup`
+  - `workloadbuilder` compiles a `Gang` policy into the expected `Workload`/`PodGroup`
+  - `workloadbuilder` correctly maps topology constraints, disruption mode, and resourceClaims
+  - `workloadbuilder` merges controller defaults with user overrides (e.g. user `Gang` overrides
+    controller default `Basic`)
+  - `workloadbuilder` defaults `gang.minCount` from `DefaultGangMinCount` when omitted
+  - `workloadbuilder` `Validate` rejects semantically invalid configurations
+  - Single-level `WorkloadNode` (flat, no children) produces a leaf `PodGroup` only
+  - Multi-level `WorkloadNode` tree (with children) produces a `CompositePodGroup` with correct
+    parent–child structure
+  - `MapPodGroupConfig` and `MapCompositeGroupConfig` correctly translate API types into the
+    library IR
+- Reference integration tests for multi-level controllers (e.g. `JobSet`) verify that the
+  `workloadbuilder` produces the expected `CompositePodGroup` and child `PodGroup` objects from
+  a composite `WorkloadNode` tree.
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
-
-If integration tests are not necessary or useful, explain why.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
+- Verify that a single-level controller (Job) can create the correct `Workload`/`PodGroup` via
+  `workloadbuilder` — covered in [KEP-5547]
+- Verify that a multi-level controller (e.g. `JobSet`) can produce a `CompositePodGroup` with
+  multiple child `PodGroups` via the `workloadbuilder` library
+- Verify that updating `gang.minCount` triggers recompilation of the `Workload` and re-sync of
+  the `PodGroup`
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- Gang scheduling end-to-end: all pods scheduled together or none via `workloadbuilder`-compiled
+  `Workload`/`PodGroup`
+- Mixed workloads: gang and basic Jobs coexist without interference
 
 ### Graduation Criteria
 
@@ -1184,120 +1146,18 @@ If e2e tests are not necessary or useful, explain why.
 
 - TBD once the KEP promoted to beta
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- All functionality completed
-- All security enforcement completed
-- All monitoring requirements completed
-- All testing requirements completed
-- All known pre-release issues and gaps resolved
-
-**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
-
-**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-<!--
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-
 ### Version Skew Strategy
-
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
 
 ## Production Readiness Review Questionnaire
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
-
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: "WorkloadWithJob"
+  - Feature gate name: "WorkloadAwareIntegration"
   - Components depending on the feature gate:
     - kube-apiserver
     - kube-controller-manager
@@ -1317,7 +1177,7 @@ user explicitly sets a scheduling policy (e.g. Gang or a topology constraint).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling the `WorkloadWithJob` feature gate stops the controller from
+Yes. Disabling the `WorkloadAwareIntegration` feature gate stops the controller from
 honoring the new `scheduling` fields, so workloads fall back to the `Basic`
 scheduling policy (pod-by-pod). The fields are ignored while the gate is off. 
 However, the content of the `scheduling` fields in objects will not be cleared,
