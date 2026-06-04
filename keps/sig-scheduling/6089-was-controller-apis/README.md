@@ -25,8 +25,9 @@
     - [2. Defaulting Rules](#2-defaulting-rules)
   - [Shared workloadbuilder Go Translation Library](#shared-workloadbuilder-go-translation-library)
     - [1. Design &amp; Architecture](#1-design--architecture)
-    - [2. Library API Definition](#2-library-api-definition)
-    - [3. Library Usage Example (Job)](#3-library-usage-example-job)
+    - [2. Controller Opt-In for New Scheduling Capabilities](#2-controller-opt-in-for-new-scheduling-capabilities)
+    - [3. Library API Definition](#3-library-api-definition)
+    - [4. Library Usage Example (Job)](#4-library-usage-example-job)
   - [Job Integration - Handling Updates and Mutability](#job-integration---handling-updates-and-mutability)
     - [Gang MinCount Defaulting &amp; Scaling Behavior](#gang-mincount-defaulting--scaling-behavior)
     - [Reconciliation Flow upon Updates](#reconciliation-flow-upon-updates)
@@ -567,7 +568,54 @@ The library encapsulates the following logic:
 3. **Centralized Validation:** Rejects invalid configurations early (e.g. ensuring a nested leaf
    group does not declare a conflicting disruption mode not supported by its parent).
 
-#### 2. Library API Definition
+#### 2. Controller Opt-In for New Scheduling Capabilities
+
+Because the building-block types under `scheduling.k8s.io` are shared across all controllers, new
+scheduling options may be added in future releases (e.g. a new scheduling policy or disruption mode)
+that do not make sense for every controller. For example, a new policy added in v1.3x might
+be valid for `JobSet` but not for `Job`.
+
+To prevent new options from silently leaking into controllers that have not been updated to support
+them, the `workloadbuilder` library adopts an **allow-list** (opt-in) validation approach rather
+than a deny-list (opt-out). Controllers declare the specific set of policies and modes they support,
+and the library's validation helpers reject anything not explicitly allowed. This means new
+additions to the building-block API are **denied by default** until a controller explicitly updates
+its allow-list.
+
+The library provides per-field validation helpers that accept the supported options as arguments:
+
+```go
+// In Job's API validation (pkg/apis/batch/validation):
+allErrs = append(allErrs,
+    workloadbuilder.ValidateSchedulingPolicy(
+        spec.Scheduling.Policy, fldPath.Child("policy"),
+        workloadbuilder.BasicPolicy, workloadbuilder.GangPolicy))
+allErrs = append(allErrs,
+    workloadbuilder.ValidateDisruptionMode(
+        spec.Scheduling.DisruptionMode, fldPath.Child("disruptionMode"),
+        workloadbuilder.SingleMode, workloadbuilder.AllMode))
+```
+
+This gives controllers opt-in semantics: when a new policy is introduced in a future release,
+existing controllers (including `Job`) will reject it until their validation is explicitly updated
+to include the new option. Out-of-tree controllers get the same guarantee by updating their vendored
+library version and extending their allow-list.
+
+Long-term, this pattern can migrate to Declarative Validation (DV) using `+k8s:subfield` markers,
+eliminating the need for hand-written allow-list calls while preserving the same opt-in semantics:
+
+```go
+type JobSpec struct {
+    // ...
+    // +k8s:subfield(disruptionMode)=+k8s:allowed=single,all
+    Scheduling *JobSchedulingConfiguration
+}
+```
+
+Until DV support is available, the library-provided validation helpers serve as a lightweight,
+defensive bridge that keeps the overhead minimal for controller integrators.
+
+#### 3. Library API Definition
 
 ```go
 package workloadbuilder
@@ -678,7 +726,7 @@ func MapCompositeGroupConfig(
 ) *SchedulingConfig
 ```
 
-#### 3. Library Usage Example (Job)
+#### 4. Library Usage Example (Job)
 
 This example demonstrates how the core `Job` controller integrates with the `workloadbuilder`
 library to compile its flat `Workload` structure:
