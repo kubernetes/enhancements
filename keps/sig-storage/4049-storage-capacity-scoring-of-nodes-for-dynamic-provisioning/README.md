@@ -591,7 +591,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-The following e2e tests are planned:
+The following e2e tests are under review in [kubernetes/kubernetes#138497](https://github.com/kubernetes/kubernetes/pull/138497):
 
 - When only static provisioning is available, or a mixture of static provisioning and dynamic provisioning is available:
   - Does it pass traditional tests?
