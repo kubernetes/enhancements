@@ -895,7 +895,7 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Pods that use only dynamically provisioned PVCs will be scheduled to nodes with more available capacity.
+Pods that use only dynamically provisioned PVCs will be scheduled to nodes that has the most or least free space.
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
