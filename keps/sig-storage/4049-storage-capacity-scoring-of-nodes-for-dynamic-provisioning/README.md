@@ -867,7 +867,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No, it isn't.
+Yes, the `VolumeCapacityPriority` feature gate is deprecated in favor of the new `StorageCapacityScoring` feature gate.
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
