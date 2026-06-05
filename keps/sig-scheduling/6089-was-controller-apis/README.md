@@ -167,6 +167,7 @@ APIs natively.
   implementation PRs for these out-of-tree controllers will be pursued independently in their
   respective repositories.
 
+- Create or manage the lifecycle of `Workload`, `PodGroup`, or `CompositePodGroup`.
 
 ## Proposal
 
