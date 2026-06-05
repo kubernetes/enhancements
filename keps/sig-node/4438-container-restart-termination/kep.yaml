@@ -8,7 +8,7 @@ participating-sigs:
   - sig-scheduler
 status: implementable
 creation-date: 2024-01-25
-last-updated: 2025-01-28
+last-updated: "2026-05-29"
 reviewers:
   - "@mrunalp"      # overall
   - "@ahg-g"        # SIG Scheduling
@@ -27,18 +27,18 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.33"
+latest-milestone: "v1.37"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.33"
-  beta: "v1.34"
-  stable: "v1.35"
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: RestartContainerDuringTermination
+  - name: SidecarsRestartableDuringPodTermination
     components:
       - kubelet
 disable-supported: true
