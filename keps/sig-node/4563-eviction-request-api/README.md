@@ -43,13 +43,11 @@
     - [Remarks on Responders](#remarks-on-responders)
     - [EvictionRequest Validation on Admission](#evictionrequest-validation-on-admission)
       - [CREATE](#create)
-      - [CREATE, UPDATE,](#create-update)
     - [Immutability of EvictionRequest Fields](#immutability-of-evictionrequest-fields)
   - [EvictionRequest Process](#evictionrequest-process)
     - [Eviction Validation on Admission](#eviction-validation-on-admission)
       - [CREATE](#create-1)
       - [UPDATE](#update)
-      - [CREATE, UPDATE,](#create-update-1)
     - [Immutability of Eviction Fields](#immutability-of-eviction-fields)
   - [EvictionRequest Process](#evictionrequest-process-1)
     - [EvictionRequest and Eviction Completion and Deletion](#evictionrequest-and-eviction-completion-and-deletion)
@@ -326,8 +324,8 @@ same pod, and they can register and withdraw their eviction intent over time.
   and cancelling the eviction. 
 - It would also be difficult to agree on who should perform garbage collection on old or canceled
   EvictionRequests.
-- We would also need to introduce a one-to-one mapping to ensure that there is at most one
-  EvictionRequest per pod. The identity and lookup raise additional concerns.
+- We would also need to introduce a one-to-one mapping to ensure that there is at most one active
+  Eviction per pod. The identity and lookup raise additional concerns.
 
 With two types, the management becomes simple: each requester creates their own EvictionRequest.
 If they no longer require the eviction, they can either cancel the eviction intent or just delete
@@ -345,8 +343,13 @@ controller. This controller will translate EvictionRequests into an Eviction.
 - No naming constraints are needed. Labels should be used to look up both EvictionRequests and
   Evictions.
 
-Other controllers or actors should not be able to create Evictions. EvictionRequests should be used
-to ensure seamless operation.
+Other controllers or actors are discouraged to create Eviction Objects. EvictionRequests should be
+used to ensure seamless operation.
+evictionrequest-controller will ensure that there is at most one active Eviction per target. It will
+not start, and it will immediately cancel duplicate Evictions. This enables the responders to
+observe and send updates to a single Eviction object at a time. This helps with scalability and
+state duplication. Please refer to [Cancellation and default GC](#cancellation-and-default-gc)
+for more details.
 
 Responders do not need to handle the requester side; they can simply observe Evictions and interact
 with them as explained below.
@@ -527,6 +530,14 @@ recommended to check `creationTimestamp` of the EvictionRequests and observe
 `evictionrequest_controller_responder_state` metric to see how much it takes for a responder
 to complete the eviction. This metric can be also used to implement additional alerts.
 
+RBAC permissions for an EvictionRequest resource imply delete permissions for pods and eventually
+PodGroups and other resources. This could result in higher privileges being assigned to users that
+do not need them; allowing them to evict any supported target. Following discussions with SIG Auth,
+it was concluded that this escalation of privileges should not currently pose a risk wrt the Pods
+and PodGroups and that a namespace boundary for assigning RBAC privileges should be sufficient to
+secure the system. If any new targets emerge in the future that require tighter control, we can
+consider adding a new authorization check for these resources. 
+
 #### Disruptive Eviction
 
 When using kubectl drain, pods without owning controller and pods with local storage
@@ -706,6 +717,9 @@ The controller will watch all EvictionRequests and transform the active and vali
 - An active Eviction is an EvictionRequest with `Eviction` value in the `.spec.intent`.
 - The validation phase happens first and can block Eviction creation. The advantage of this is that
   it limits the Eviction traffic to responders.
+- The creation of Evictions by other users than the evictionrequest-controller is discouraged. If an
+  Eviction appears from another user that complies with the controller requirements, it will be
+  adopted, otherwise it is garbage collected, as described in [Cancellation and default GC](#cancellation-and-default-gc).
 
 If a single pod target is shared across multiple EvictionRequests, this should result in a single
 Eviction object.
@@ -736,12 +750,15 @@ eviction chain again and drop back to pod-1-nginx.
 #### Cancellation and default GC
 
 The controller will cancel an Eviction if all EvictionRequests matching the target have been
-canceled (`Withdrawn` value in `.spec.intent`). Cancellation is done by setting a `Failed` condition
-with the `CanceledDueToNoRequesters` reason to the Eviction and all EvictionRequests.
+canceled (`Withdrawn` value in `.spec.intent`) or ceased to exist. Cancellation is done by setting
+a `Failed` condition with the `CanceledDueToNoRequesters` reason to the Eviction and all
+EvictionRequests. This applies also to Evictions that have not been created by the
+evictionrequest-controller and implicit creation of such Evictions is discouraged
 
 The controller will also add EvictionRequest ownerReferences to an Eviction.
 Once all EvictionRequests matching the target have been deleted, the Eviction object should be
-garbage collected.
+garbage collected. This applies also to Evictions that have not been created by the
+evictionrequest-controller and implicit creation of such Evictions is discouraged
 
 An EvictionRequest with an Eviction intent and a blocking finalizer is also considered canceled or
 `Withdrawn`.
@@ -1383,12 +1400,6 @@ additional references in the future.
 
 Additional validation will be done on the controller side. For more details, see: [Validation](#validation).
 
-##### CREATE, UPDATE,
-
-Principal behind the `Eviction` intent that makes the request should be authorized for deleting pods
-that match the EvictionRequest's `.spec.target.pod`. This is done in order not to escalate the
-privileges and to limit the scope.
-
 #### Immutability of EvictionRequest Fields
 
 `.spec.target` and `.spec.target.pod` does not make sense to make mutable, the EvictionRequest is
@@ -1421,20 +1432,6 @@ to the other fields. `.status.responders[].completionTime` is set or
 
 `.status.responders` should conform to the validation described in `.status.responders` and in the
 `ResponderStatus` struct.
-
-##### CREATE, UPDATE,
-
-We would like to prevent the creation of multiple Evictions for the same pod because we do
-not expect the responders to support interaction with multiple Evictions for a pod.
-
-There can also be a multiple EvictionRequests, the controller has to observe these and check their
-intent. If the intent is `Eviction`, it should ensure that a single `Eviction` exists.
-
-Only the `eviction-request-controller` should be authorized to create and update the spec of
-`Evictions`.
-
-See [EvictionRequest and Eviction API](#evictionrequest-and-eviction-api) for additional explanation.
-
 
 #### Immutability of Eviction Fields
 
