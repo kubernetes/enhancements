@@ -264,6 +264,11 @@ This introduces severe latency, high CPU overhead, and dangerous race conditions
    
    **Mitigation**: Updating external plugins is explicitly listed as a Non-Goal. Plugin maintainers will be responsible for subscribing to the Kubelet's Node API updates or utilizing future NRI specification enhancements to react to host-level capacity changes.
 
+7. #### Capacity Detection Latency (Downscale Risk)
+
+   **Risk**: `cAdvisor` caches and refreshes `MachineInfo` every 5 minutes by default. During a memory hot-unplug (downscale) event, there is up to a 5-minute latency window where physical memory is removed, but the Kubelet remains unaware. If workloads spike during this window, the Linux kernel OOM killer may violently terminate processes before the Kubelet's capacity reconciliation loop detects the hardware drop and triggers a graceful `NodeCapacityExceeded` eviction.
+
+   **Mitigation**: For the Alpha phase, this detection latency is an accepted operational constraint, with the kernel OOM killer serving as the ultimate safety net to protect the node. For future phases (Beta/GA), the detection mechanism will transition to an event-driven architecture to eliminate this polling lag (see Future Work).
 
 ## Design Details
 
@@ -539,7 +544,9 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-Not relevant, As this kubelet specific feature and does not impact other components.
+The interaction between the Kubelet and the control plane (specifically the Scheduler) relies entirely on standard Node API update events. When the Kubelet patches the Node.Status.Capacity and Allocatable fields, the scheduler's existing node update event handler seamlessly processes the altered capacity.
+
+Because this leverages pre-existing API contracts, no special coordination or version skew mitigation is required between the Kubelet and the control plane. Similarly, no updates are required for CRI, CNI, or CSI plugins prior to enabling this Kubelet feature.
 
 ## Production Readiness Review Questionnaire
 
@@ -810,7 +817,11 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-No
+Yes.
+
+- API type(s): `Node`
+- Estimated increase in size: ~200-500 bytes per Node object. This is due to the addition of the `resize.node.kubernetes.io/initial-capacity` annotation, which stores a JSON representation of the node's baseline hardware capacity to assist the Cluster Autoscaler.
+- Estimated amount of new objects: 0 (No new objects are created; only the existing Node object is annotated).
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -958,3 +969,7 @@ However, for provider-specific end-to-end integration testing in the future, und
 * **NRI (Node Resource Interface) Integration**
 
   * Extending the internal Kubelet resize event broadcaster so that external NRI plugins can natively subscribe to hardware capacity changes. This would allow third-party runtime wrappers and advanced topology managers to react to node upscales and downscales simultaneously with the Kubelet.
+
+* **Event-Driven Hardware Detection ([Node Resource Discovery](https://github.com/kubernetes/enhancements/pull/5319))**
+
+    * Currently, this KEP relies on `cAdvisor` and lightweight host polling to detect physical hardware changes. In the future, as **KEP-5224** matures, the responsibility of hardware discovery will shift toward the Container Runtime Interface (CRI) and external resource plugins. Once the CRI is capable of natively broadcasting dynamic hardware capacity events to the Kubelet, this KEP's capacity reconciliation loop will be updated to subscribe directly to those CRI events.
