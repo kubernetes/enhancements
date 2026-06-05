@@ -645,15 +645,19 @@ status:
     lastTransitionTime: "2026-02-07T10:30:00Z"
 ```
 
-Once `status` is populated the entire object (including `metadata` and `spec`)
-is immutable; update requests are rejected by the API server. Users must
-delete and recreate to re-run a query.
+Once `status` is populated it becomes write-once (frozen via
+`ValidateImmutableField`). `spec` is independently immutable from creation
+(`+k8s:immutable`). `metadata` (labels, annotations) follows the standard
+object-meta update rules through the main endpoint; the status subresource
+strips metadata changes per the usual `ResetObjectMetaForStatus` convention.
+To re-run a query, delete and recreate the request.
 
 #### Spec Fields
 
-The spec is **immutable after creation** (enforced via `+k8s:immutable`), and
-the entire object becomes immutable once `status` is set. Updates to the spec
-are rejected by API validation.
+The spec is **immutable after creation** (enforced via `+k8s:immutable`).
+Updates to the spec are rejected by API validation regardless of whether
+`status` has been written. Status write-once semantics are described in
+the next section.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -816,8 +820,11 @@ Following the CSR pattern, the controller processes each request exactly once:
 2. Controller checks if `status` is already non-nil.
 3. If non-nil, the request was already processed — controller skips it.
 4. If nil, controller computes pool status and writes to `status`.
-5. Once `status` is written, the entire object is immutable (spec, metadata,
-   and status all rejected for update by the registry strategy / validation).
+5. Once `status` is written, the request is complete: `status` is frozen
+   write-once (validated via `ValidateImmutableField`), and `spec` is
+   already immutable from creation (`+k8s:immutable`). Metadata (labels,
+   annotations) remains mutable via the main endpoint per standard
+   object-meta update rules.
 
 To get fresh data, users delete and recreate the request. (See the TTL
 cleanup section below for automatic deletion of old requests.)
