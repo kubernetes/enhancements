@@ -727,7 +727,13 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-Nothing in particular.
+This enhancement is confined to the `kube-scheduler` component.
+A `kube-scheduler` at n-1 (without the `StorageCapacityScoring`
+feature gate) reverts to the current scoring behavior — scoring for
+VolumeBinding based on static provisioning only. This is acceptable
+and identical to the previous behavior. No changes are made to
+`kubelet`, `kube-proxy`, `kube-controller-manager`, or any
+node-level components (CSI, CRI, or CNI).
 
 ## Production Readiness Review Questionnaire
 
