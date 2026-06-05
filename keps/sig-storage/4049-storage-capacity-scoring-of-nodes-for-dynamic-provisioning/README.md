@@ -1093,7 +1093,47 @@ The behavior in such cases does not change. This proposal only modifies one of t
 
 ###### What are other known failure modes?
 
-Not applicable, yet.
+- [Pods are placed on suboptimal nodes due to stale CSIStorageCapacity data]
+  - Detection: Pods end up on nodes that do not match the intended scoring
+    strategy configured via the `Shape` setting of `VolumeBindingArgs` — for
+    example, placed on a node with less remaining capacity than expected when
+    preferring the maximum allocatable. PVC provisioning may also fail after
+    scheduling if the actual capacity on the chosen node is insufficient. Run
+    `kubectl get csistoragecapacities -A` and inspect the `creationTimestamp`
+    to check whether the data is fresh.
+  - Mitigations: CSIStorageCapacity objects are created and updated by the
+    CSI driver's external-provisioner sidecar, not by the scheduler. If
+    the objects do not reflect current node storage state, the root cause
+    lies in the external-provisioner. Delete the stale CSIStorageCapacity
+    objects so that the external-provisioner recreates them, or restart
+    the external-provisioner Pod to trigger a forced resync. As an
+    immediate workaround, disable the `StorageCapacityScoring` feature
+    gate; scoring for VolumeBinding will revert to the previous method
+    and will not be affected by stale capacity information.
+  - Diagnostics: Check kube-scheduler logs at verbosity level 5 or higher
+    for messages related to CSIStorageCapacity lookups. Verify that
+    CSIStorageCapacity objects (`kubectl get csistoragecapacities -A`)
+    reflect current node storage state. If objects are stale, also check
+    the external-provisioner logs for sync errors or update failures.
+  - Testing: Unit and integration tests verify that scoring correctly
+    reflects the capacity values reported in CSIStorageCapacity objects.
+    Note that detecting staleness is outside the scheduler's responsibility;
+    stale capacity data is not covered by tests.
+
+- [Fallback to scoring only with static provisioning when both static
+  and dynamic provisioning exist]
+  - Detection: When both static and dynamic provisioning are involved,
+    the scoring is done only with static provisioning. This is by design
+    but may be unexpected for users who expect storage capacity for
+    dynamic provisioning to always be scored.
+  - Mitigations: This is expected behavior documented in the KEP. Users
+    who need scoring for dynamic provisioning should use only dynamically
+    provisioned PVCs for a given pod.
+  - Diagnostics: Inspect the pod's PVC list. If any PVC has already been
+    bound to an existing PV (`kubectl get pvc`), that pod will use scoring
+    only with static provisioning.
+  - Testing: Unit tests verify that static provisioning takes precedence
+    when both exist.
 
 <!--
 For each of them, fill in the following information by copying the below template:
