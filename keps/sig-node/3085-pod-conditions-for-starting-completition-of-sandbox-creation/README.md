@@ -885,7 +885,15 @@ functions: `GeneratePodReadyCondition` and `GeneratePodInitializedCondition`. If
 updates through `generateAPIPodStatus()` is found to be inaccurate (for example
 if Kubelet is very busy), invocation of `GeneratePodReadyToStartContainers`
 could also be added right after `createSandbox` in `kubeGenericRuntimeManager`
-returns successfully.
+returns successfully. This was implemented in 1.36 by adding a new
+[`OnPodSandboxReady()`](https://github.com/kubernetes/kubernetes/blob/ab73613f42fc23299608eec161e8b586234ac9ab/pkg/kubelet/kubelet.go#L3509)
+method to the [`RuntimeHelper`](https://github.com/kubernetes/kubernetes/blob/ab73613f42fc23299608eec161e8b586234ac9ab/pkg/kubelet/container/helpers.go#L81)
+interface, invoked directly inside `SyncPod` after sandbox creation, network
+configuration, volume mounts, and any dynamic resource (DRA) allocations are
+complete, ensuring `PodReadyToStartContainers` is set immediately and accurately
+rather than after image pulls
+(see [kubernetes/kubernetes#134660](https://github.com/kubernetes/kubernetes/pull/134660),
+fixing [kubernetes/kubernetes#134460](https://github.com/kubernetes/kubernetes/issues/134460)).
 
 `updateStatusInternal()` in the Kubelet Status Manager will be enhanced to mark
 `updateLastTransitionTime` for the new `PodReadyToStartContainers` condition
@@ -1014,12 +1022,14 @@ Tests List
 - [x] GracefulNodeShutdown test
   - Add test to check status of pod ready to start condition are set to false after terminating
     (added as part of [k/k PR#121044](https://github.com/kubernetes/kubernetes/pull/121044))
-- [] Volume Mounting Issues
+- [x] Volume Mounting Issues
   - [x] Add test to verify sandbox condition for missing configmap.
     (added as part of [k/k PR#121321](https://github.com/kubernetes/kubernetes/pull/121321))
-  - [ ] Add test to verify sandbox condition for missing secret.
-- [] Dynamic Resource Allocation (DRA) Allocation Ordering
-  - [ ] Add test to verify the order between the `PodReadyToStartContainers` condition and devicemanager `Allocate()` gRPC calls to the device plugin, ensuring the condition is set at the expected point relative to resource allocation.
+  - [x] Add test to verify sandbox condition for missing secret.
+    (added as part of [k/k PR#134179](https://github.com/kubernetes/kubernetes/pull/134179))
+- [x] Dynamic Resource Allocation (DRA) Allocation Ordering
+  - [x] Add test to verify the order between the `PodReadyToStartContainers` condition and devicemanager `Allocate()` gRPC calls to the device plugin, ensuring the condition is set at the expected point relative to resource allocation.
+    (added as part of [k/k PR#134660](https://github.com/kubernetes/kubernetes/commit/d7abab886e970d7d2031256ef914ae234eb528ce)
 
 E2E tests will be introduced to cover the user scenarios mentioned above. Tests
 will involve launching pods with characteristics mentioned below and
@@ -1691,6 +1701,18 @@ may leverage this feature.
     - [test - PodReadyToStartContainerCondition when config map is created](https://github.com/kubernetes/kubernetes/pull/121321)
   - Updated pod-lifecyle documentation to reflect beta promotion, and feature-gate enabled by default.
   - Published blog: [PodReadyToStartContainers Condition Moves to Beta](https://kubernetes.io/blog/2023/12/19/pod-ready-to-start-containers-condition-now-in-beta/)
+
+- Work done in 1.36 towards GA:
+  - Fixed bug where `PodReadyToStartContainers` was being set too late (after image
+    pulls instead of after sandbox creation) by implementing
+    [`OnPodSandboxReady()`](https://github.com/kubernetes/kubernetes/blob/ab73613f42fc23299608eec161e8b586234ac9ab/pkg/kubelet/kubelet.go#L3509)
+    callback on the `RuntimeHelper` interface, invoked directly in `SyncPod`
+    (see [kubernetes/kubernetes#134660](https://github.com/kubernetes/kubernetes/pull/134660),
+    fixing [kubernetes/kubernetes#134460](https://github.com/kubernetes/kubernetes/issues/134460)).
+  - Added e2e test to verify sandbox condition for missing secret
+    (see [kubernetes/kubernetes#134179](https://github.com/kubernetes/kubernetes/pull/134179)).
+  - Updated pod-lifecyle documentation to reflect to reflect volume and DRA readiness.
+    (see [kubernetes/website#54404](https://github.com/kubernetes/website/pull/54404)
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
