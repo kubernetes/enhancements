@@ -958,7 +958,6 @@ An increase in scheduling failures for workloads requesting DRA devices is the
 metric cluster-operators should watch for, along with the scheduler latency
 histograms listed in [*What are the SLIs an operator can use to determine the
 health of the service?*](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
-— a regression in those after enabling the feature is also a rollback signal.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
