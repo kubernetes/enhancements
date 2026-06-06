@@ -982,7 +982,10 @@ should no longer see `FailedPrepareDynamicResources` on container startups.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+This enhancement introduces no new SLOs and is not expected to change any
+existing SLOs. The added compatibility check runs within the scheduler's
+existing Filter phase and is expected to stay within the current pod
+scheduling latency objectives.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
