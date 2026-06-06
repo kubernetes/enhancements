@@ -795,6 +795,13 @@ unit and integration coverage; new tests are additive.
 - Upgrade → downgrade → upgrade: allocations made during the "upgrade" phase
   remain valid after downgrade; re-enabling enforcement does not re-evaluate
   existing allocations (see https://github.com/kubernetes/kubernetes/blob/1f77090cd12d05c462e2e180b4f8becc12735728/test/e2e_dra/upgradedowngrade_test.go#L234-L287).
+- Snapshot is authoritative over a mutated slice: after a device is allocated,
+  update the originating `ResourceSlice` to change (or remove) that device's
+  `compatibilityGroups`, then schedule a second pod against the same counter
+  set. The scheduler must evaluate the second candidate against the
+  `compatibilityGroups` snapshot recorded on the existing claim status, not
+  the mutated slice, producing the same decision as if the slice were
+  unchanged.
 
 ##### e2e tests
 
@@ -857,7 +864,8 @@ for every combination on a single cluster.
 | **new, gate off** | Pre-KEP      | Pre-KEP          | Pre-KEP          |
 | **new, gate on**  | Driver-only  | Devices skipped  | **Full feature** |
 
-- **Pre-KEP.** The apiserver does not serve either `compatibilityGroups` field (it
+- **Pre-KEP.** The apiserver does not serve the `compatibilityGroups` fields
+  on either `ResourceSlice`s or `ResourceClaim`s (it
   either doesn't know them, or has the gate off, in which case it
   strips on writes). The scheduler sees no
   constraints and allocates as before this KEP. Drivers reject
@@ -960,7 +968,13 @@ N/A
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A
+The scheduler's existing latency histograms, scoped to the DRA plugin:
+
+- `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources", extension_point="Filter"}`
+- `scheduler_framework_extension_point_duration_seconds{extension_point="Filter"}`
+
+A rise in these after enabling the feature indicates the compatibility
+check is adding measurable scheduling latency.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -994,7 +1008,8 @@ Yes, 2 additional fields to the `ResourceSlice` and `ResourceClaim` APIs
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Yes — scheduling cycles involving DRA devices incur an additional per-counter-set intersection check.
+Yes — scheduling cycles involving DRA devices incur an additional per-counter-set intersection check,
+which IMO is negligible compared to existing DRA implementation.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
