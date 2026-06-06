@@ -2,13 +2,16 @@ title: DRA Device Compatibility Groups
 kep-number: 5963
 authors:
   - "@omeryahud"
-owning-sig: sig-node
+owning-sig: sig-scheduling
 participating-sigs:
-  - sig-scheduling
+  - sig-node
 status: implementable
 creation-date: 2026-03-17
 reviewers:
-  - TBD
+  - "@ania-borowiec"
+  - "@pholy"
+  - "@troychiu"
+  - "@johnbelamaric"
 approvers:
   - TBD
 
