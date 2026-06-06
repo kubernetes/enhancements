@@ -143,8 +143,10 @@ failure to scheduling-time rejection.
 
 As a DRA driver for NVIDIA GPUs, I want to express in my ResourceSlice
 that MIG-partitioned devices and vGPU-partitioned devices are incompatible on the
-same physical GPU at the same time. When a pod requesting a MIG partition is already running on a GPU, I want the scheduler to exclude all
-vGPU-partitioned devices on that same GPU from consideration for new allocations, rather than allowing an allocation that will fail at device preparation time.
+same physical GPU at the same time. When a pod requesting a MIG partition is already
+running on a GPU, I want the scheduler to exclude all vGPU-partitioned devices on 
+that same GPU from consideration for new allocations, rather than allowing an 
+allocation that will fail at device preparation time.
 
 ### Notes/Constraints/Caveats
 
@@ -158,18 +160,23 @@ nothing to attach the field to.
 
 **Scheduler performance impact**
 
-Evaluating compatibility constraints during device selection adds work to each scheduling cycle that involves DRA devices.
+Evaluating compatibility constraints during device selection adds work to each 
+scheduling cycle that involves DRA devices.
 
 **Gate-disabled schedulers ignoring devices with compatibilityGroups**
 
-At alpha, if the `DRADeviceCompatibilityGroups` feature-gate is disabled, devices which present the `compatibilityGroups` field will be ignored by `kube-scheduler`.
-This is in order to allow enablement of the feature without user intervention (pod deletion) when graduating to beta. 
+At alpha, if the `DRADeviceCompatibilityGroups` feature-gate is disabled, 
+devices which present the `compatibilityGroups` field will be ignored by `kube-scheduler`.
+This is in order to allow enablement of the feature without user intervention (pod deletion) 
+when graduating to beta. 
 
 **Drivers must be aware of the enablement status of the `DRADeviceCompatibilityGroups` flag**
 
-The feature flag can be enabled/disabled at runtime. This requires drivers to identify the flag status and update the `ResourceSlice`s they manage accordingly.
+The feature flag can be enabled/disabled at runtime. This requires drivers to identify
+the flag status and update the `ResourceSlice`s they manage accordingly.
 
-In general, admins should avoid deploying DRA drivers with features enabled that aren't also enabled in the cluster.
+In general, admins should avoid deploying DRA drivers with features enabled 
+that aren't also enabled in the cluster.
 
 ## Design Details
 
@@ -178,11 +185,11 @@ In general, admins should avoid deploying DRA drivers with features enabled that
 #### CompatibilityGroups Assignment
 
 The slice-side `compatibilityGroups` field has type `[]string` and lives on
-each `device.consumesCounters[]` entry for drivers to populate. For two devices consuming counters
-from the same counter set to be allocated together, either both must leave
-the field unset, or both must declare it and share at least one group name.
-A nil `compatibilityGroups` and an empty `compatibilityGroups: []` are
-treated identically. This means a device that declares the field is never
+each `device.consumesCounters[]` entry for drivers to populate. For two 
+devices consuming counters from the same counter set to be allocated together,
+either both must leave the field unset, or both must declare it and share at 
+least one group name. A nil `compatibilityGroups` and an empty `compatibilityGroups: []` 
+are treated identically. This means a device that declares the field is never
 allocated on a shared counter at the same time with a sibling that omits it.
 
 The field is placed on each `consumesCounters[]` entry rather than on the
@@ -373,8 +380,9 @@ spec:
 ```
 
 The scheduler allocates `gpu-0-mig-1g-0` to pod-a and `gpu-0-mig-1g-1` to
-pod-b, and binds both to `node-1` because their consumptions from the `gpu-0-counters` counter set are valid (20 + 20 = 40 <= 100).
-Both pods start successfully because the devices allocated to them are compatible (Both MIG slices).
+pod-b, and binds both to `node-1` because their consumptions from the `gpu-0-counters` 
+counter set are valid (20 + 20 = 40 <= 100). Both pods start successfully because the 
+devices allocated to them are compatible (Both MIG slices).
 
 #### Example 2: How the existing API does not solve the problem
 
@@ -723,13 +731,13 @@ independently.
 
 ### Interaction with Multi-Request Claims and Device Constraints
 
-**Multiple requests within one claim.** The compatibility predicate is evaluated between each candidate and the intersection of
-`compatibilityGroups` across all devices already allocated on the same
-counter set, regardless of whether an allocated device belongs to the same
-claim, a different claim on the same pod, or a different pod entirely. Two
-candidate devices for a single `ResourceClaim` that land on the same counter set
-are therefore subject to the same check: the second request sees the first
-folded into the rolling intersection.
+**Multiple requests within one claim.** The compatibility predicate is evaluated 
+between each candidate and the intersection of `compatibilityGroups` across 
+all devices already allocated on the same counter set, regardless of whether 
+an allocated device belongs to the same claim, a different claim on the same pod,
+or a different pod entirely. Two candidate devices for a single `ResourceClaim` 
+that land on the same counter set are therefore subject to the same check: 
+the second request sees the first folded into the rolling intersection.
 
 **Allocation order.** The scheduler does not reorder requests within a claim
 to improve feasibility. If requests are ordered such that an early compatible
@@ -833,21 +841,28 @@ unit and integration coverage; new tests are additive.
 
 #### Upgrade
 
-Upon upgrading, no `ResourceSlice` leverages the new optional fields yet because DRA drivers should be updated after the cluster upgrade is complete, so the current behavior remains as-is.
-In the unlikely case of a DRA driver trying to use the feature while it's still being rolled out (enabled in apiserver,
-disabled in scheduler), the scheduler >= 1.37 will ignore the devices instead of doing incorrect
+Upon upgrading, no `ResourceSlice` leverages the new optional fields 
+yet because DRA drivers should be updated after the cluster upgrade 
+is complete, so the current behavior remains as-is.
+In the unlikely case of a DRA driver trying to use the feature while 
+it's still being rolled out (enabled in apiserver, disabled in scheduler), 
+the scheduler >= 1.37 will ignore the devices instead of doing incorrect
 allocations. They will get used as soon as the feature gets enabled also in the scheduler.
 
 #### Downgrade
 
-If downgrading to a version that does not have this enhancement implemented, older schedulers and api-servers do not know 
-of the added optional fields, and revert to their defined behavior prior to this enhancement when the current version is the initial alpha.
-When downgrading to the alpha release in 1.37, the scheduler will refuse both to allocating devices
-which depend on the feature, and allocating devices to counter sets which previously had allocations with `compatibilityGroups` declared.
-Eventually, the downgraded DRA driver will remove those devices from `ResourceSlices`, however, existing `ResourceClaim`s 
+If downgrading to a version that does not have this enhancement implemented, 
+older schedulers and api-servers do not know of the added optional fields, 
+and revert to their defined behavior prior to this enhancement when the current 
+version is the initial alpha. When downgrading to the alpha release in 1.37, 
+the scheduler will refuse both to allocating devices which depend on the feature, 
+and allocating devices to counter sets which previously had allocations with 
+`compatibilityGroups` declared. Eventually, the downgraded DRA driver will remove 
+those devices from `ResourceSlices`, however, existing `ResourceClaim`s 
 with `compatibilityGroups` declared in their status must be deleted manually.
 
-Allocated devices that leveraged this new field will remain allocated, and future allocations will not take `compatibilityGroups` into consideration.
+Allocated devices that leveraged this new field will remain allocated, and future
+allocations will not take `compatibilityGroups` into consideration.
 
 ### Version Skew Strategy
 
@@ -939,7 +954,11 @@ binaries does not disturb existing pod/device bindings.
 ###### What specific metrics should inform a rollback?
 
 This KEP does not include new metrics.
-An increase in scheduling failures for workloads requesting DRA devices is the metric cluster-operators should watch for.
+An increase in scheduling failures for workloads requesting DRA devices is the
+metric cluster-operators should watch for, along with the scheduler latency
+histograms listed in [*What are the SLIs an operator can use to determine the
+health of the service?*](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
+— a regression in those after enabling the feature is also a rollback signal.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
