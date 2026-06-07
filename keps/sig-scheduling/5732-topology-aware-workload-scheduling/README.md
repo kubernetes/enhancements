@@ -368,6 +368,11 @@ The algorithm proceeds in three main phases for a given PodGroup.
   a chance to get the list of nodes which should be considered when
   generating placements.
 
+- If some pods belonging to the PodGroup have already been scheduled,
+  the placement generation process should filter its output to strictly
+  return only those Placements that include all the nodes where
+  the already scheduled pods are currently running.
+
 - Example: If the label is rack, placements are generated for rack-1, rack-2,
   etc.
 
