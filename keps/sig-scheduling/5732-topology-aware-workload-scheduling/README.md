@@ -377,7 +377,7 @@ The algorithm proceeds in three main phases for a given PodGroup.
 
   1. Run default workload scheduling algorithm with the given set of nodes.
 
-  2. If all required pods (at least `minCount` pods for Gang scheudling policy
+  2. If all required pods (at least `minCount` pods for Gang scheduling policy
      and at least one pod for Basic scheduling policy) fit, the Placement
      is marked Feasible.
 
@@ -625,7 +625,7 @@ kube-scheduler instance being a leader).
 ###### Does enabling the feature change any default behavior?
 
 No - even with a feature enabled scheduler by default will use existing scheduling
-algorithm to scheudle worklaods. Only when workload will have an explicit topology
+algorithm to schedule workloads. Only when workload will have an explicit topology
 constraint set an alternative algorithm will be used.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
@@ -778,7 +778,7 @@ latency / Pod Startup SLO may potentially increase especially for large clusters
 fine grained topology constraints.
 
 We will measure the exact impact using performance benchmarks and scalability tests and
-update the section based on the results. The complexity of scheuduling of a single worklaod
+update the section based on the results. The complexity of scheduling of a single worklaod
 is O(#pods * #nodes), which is comparable to the algorithm not using topology constraints,
 so the benchmarks are primarily to validate the potential inefficiencies of the implementation.
 
@@ -834,7 +834,7 @@ retried with standard exponential backoff once connectivity is restored.
 3. Inspect Logs: Enable scheduler logging at `-v=6` (or `-v=10` for deep tracing) to trace the execution time of
    individual Workload Scheduling Cycles and identify if specific PodGroups which are blocking the queue. 
 4. Disable Feature: If the regression is critical and impacting cluster health, disable the
-   TopologyAwareWorkloadScheudling feature gate. This will revert the scheduler to the standard Workload Scheduling
+   TopologyAwareWorkloadScheduling feature gate. This will revert the scheduler to the standard Workload Scheduling
    logic, restoring baseline performance (at the cost of losing topology semantics).
 
 ## Implementation History
