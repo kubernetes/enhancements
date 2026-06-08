@@ -74,8 +74,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -836,6 +836,7 @@ N/A
   - Progress deadline seconds in Deployments do not terminate pods, but podProgressTimeoutSeconds proposal would terminate pods
   - Deleting/terminating pods based on readiness signals is problematic and disruptive  
   - Group consensus favored Recreate for simplicity and consistency with existing Kubernetes APIs
+- 2025-04-06: Updated KEP to change the milestone to 1.37
 
 ## Drawbacks
 
