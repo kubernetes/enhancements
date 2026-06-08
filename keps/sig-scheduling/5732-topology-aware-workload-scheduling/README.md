@@ -557,7 +557,9 @@ Topology Aware Scheduling With Basic Policy:
 Those tests are located at [tas_test.go‎](https://github.com/kubernetes/kubernetes/blob/eb01d62d2676cfe009382cadd5d65c2ad654998d/test/integration/scheduler/podgroup/topology_aware_scheduling/tas_test.go‎).
 
 Apart from those integration tests with promoting to beta performance tests
-for basic scenario of Topology Aware Scheduling With Gang Policy will be added.
+for basic scenario of Topology Aware Scheduling With Gang Policy have been
+added. Those tests are located at [tas_test.go]
+(https://github.com/kubernetes/kubernetes/tree/42d9ed9c47706cb04457410e387e07889203b888/test/integration/scheduler_perf/tas).
 
 #### e2e tests
 
