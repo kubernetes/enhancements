@@ -156,7 +156,7 @@ and many others) and bring the true value for every Kubernetes user.
   If we decide to change that it will be addressed in a dedicated KEP.
 - Propose any tradeoff between preemption and cluster scale-up.
 - Design workload-level preemption triggered by external schedulers
-- Handling non-uniform priorities across PodGroups/CompositePodGroups
+- Handling non-uniform priorities across PodGroups
 - Full support for Topology Aware Scheduling. This will be provided in TAS KEP.
 
 ## Proposal
@@ -286,7 +286,7 @@ a single pod}. With that definition both scheduling unit and preemption units ca
 In the future, we may want to support usecases when a single scheduling unit consists of multiple
 preemption groups, but we leave that usecase as a future extension (it can be addressed when we
 decide to extend Workload API with CompositePodGroup concept - for more details see
-[API Design For Gang and Workload-Aware Scheduling](https://tiny.cc/hvhs001)). However, we never expect preemption unit to
+[CompositePodGroup API](https://github.com/kubernetes/enhancements/issues/6012)). However, we never expect preemption unit to
 be larger than scheduling unit.
 
 Based on that, we will extend the the existing `GangSchedulingPolicy` as following:
@@ -364,9 +364,12 @@ that should be used for preemption. So in the ideal world a workload owner shoul
 - mutate preemption priority during the whole lifecycle of the workload to reflect the importance
   of that workload at a given moment
 
-However, while we believe that all of these are eventually needed, we start simpler by:
-- starting with just a single priority for scheduling and preemption.
-- starting with static preemption priority (mutability brings additional complexity that is
+However, while we expect the need for separate mutable priorities, we leave it as a possible further 
+extension out of the scope of this KEP.
+
+In this KEP we introduce:
+- a single priority for scheduling and preemption.
+- static preemption priority (mutability brings additional complexity that is
   purely additive and thus should be added in a follow-up KEP)
 
 In [KEP-4671: Gang Scheduling using Workload Object] we already decided that PodGroup is the scheduling
@@ -1232,6 +1235,7 @@ feature primarily in terms of non-regression to ensure the workload aware preemp
     - scheduler_podgroup_preemption_attempts_total
     - scheduler_podgroup_preemption_attempt_duration_seconds
     - scheduler_podgroup_preemption_victims
+    - scheduler_podgroup_preemption_reprieved_total
     - plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="Reprieval"}
     - plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}
   - Components exposing the metric: kube-scheduler
