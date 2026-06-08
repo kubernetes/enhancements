@@ -857,7 +857,11 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not applicable, yet.
+This was tested manually before the transition to beta using a cluster with the
+TopoLVM CSI driver. The test covered enabling `StorageCapacityScoring` (with the
+corresponding CSI driver configuration), disabling it (reverting the CSI driver
+configuration), and re-enabling it. In all three steps, Pod scheduling completed
+successfully with no unexpected behavior.
 
 <!--
 Describe manual testing that was done and the outcomes.
