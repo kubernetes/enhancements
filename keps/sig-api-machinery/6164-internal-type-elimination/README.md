@@ -74,7 +74,7 @@ the project.
 
 Today many APIs have progressed to a stable `v1` version and the alpha and beta types are no
 longer served by the API. For such APIs the internal type, the versioned type and the preferred
-storage type are alls the same type. 
+storage type are identical. 
 
 As a first step, a type alias (`type Pod = corev1.Pod`) can be used to tell
 go that the internal type is the *same* Go type, so conversion collapses to a no-op.
@@ -89,10 +89,11 @@ of the kube-apiserver is heavily influenced by the allocations performed
 by conversion.
 
 https://github.com/kubernetes/kubernetes/issues/139026 showed that if conversion
-operations are streamed we reduce peak memory by up to 46%. By
-eliminating conversion entirely we expect to do even better.
+operations are streamed we reduce peak memory by up to 46% plus eliminate the GC
+churn caused by the allocations performed during conversion. By eliminating
+conversion entirely we expect to do even better.
 
-The internal type exists for three historical reasons (see [kubernetes/kubernetes#138097][kk-138097]):
+The internal type exists for a few historical reasons (see [kubernetes/kubernetes#138097][#138097]):
 
 1. **A single conversion hub.** N versioned types convert to/from one internal
    type (2N conversion functions) instead of pairwise (N^2).
@@ -109,7 +110,8 @@ All three have weakened:
    onto **versioned** types via `validation-gen`, further weakening the
    rationale for an internal type.
 3. No known built-in API actually requires a server-only type; in practice the
-   internal type is maintained to mirror the newest/preferred versioned type.
+   internal type is best maintained as a exact copy or near copy of the
+   newest/preferred versioned type.
 
 Meanwhile the internal type imposes ongoing costs:
 
@@ -302,11 +304,11 @@ This feature will stay in beta for the migration of all high-traffic APIs.
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+None. This is an internal-only change.
 
 ### Version Skew Strategy
 
-N/A
+None. This is an internal-only change.
 
 ## Production Readiness Review Questionnaire
 
@@ -320,7 +322,7 @@ N/A
 
 ###### Does enabling the feature change any default behavior?
 
-No.
+No. This is an internal-only change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -328,39 +330,40 @@ No. But it is an internal-only code change with rigiorious correctness and perfo
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-N/A
+No change. This is an internal-only change.
 
 ###### Are there any tests for feature enablement/disablement?
 
-N/A
+No, but the feature is internal-only and not feature-gatable.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-N/A
+No. This is an internal-only change.
 
 ###### What specific metrics should inform a rollback?
 
-N/A
+None. This is an internal-only change.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-N/A
+No. 
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-N/A
+No.
 
 ### Monitoring Requirements
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-N/A
+It will always be in effect Kubernetes 1.37+ for migrated APIs.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-N/A
+There is no user-facing changes. The performance improvements may be observable by performance
+sensitive workloads.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 

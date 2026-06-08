@@ -3,6 +3,7 @@ kep-number: 6164
 authors:
   - "@jpbetz"
   - "@michaelasp"
+  - "@yedou37"
 owning-sig: sig-api-machinery
 status: provisional
 creation-date: 2026-06-05
