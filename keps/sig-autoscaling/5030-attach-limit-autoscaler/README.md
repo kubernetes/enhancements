@@ -27,6 +27,7 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -251,7 +252,7 @@ type CSIDriverSpec struct {
     // if set to true, it will cause scheduler to prevent pod placement
     // to nodes where no CSI driver is installed.
     //   Defaults: false
-    PreventPodPlacementWithoutDriver *bool
+    PreventPodSchedulingIfMissing *bool
 }
 ```
 
@@ -379,12 +380,15 @@ Please note other conditions are already tested via - https://github.com/kuberne
 - Initial e2e tests completed and enabled.
 - All of the changes in CAS and kube-scheduler will be behind `VolumeLimitScaling` featuregate.
 
-<!---
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+Cluster autoscaler is mainly tested via integration style tests that test the whole autoscaler at a higher level. For beta we are going to:
+
+- Further enhance existing tests to cover scale-down behaviours as surfaced during first phase of implementation.
+- We should already have e2es that validate behavior of scheduler with/without CSI driver. 
+- Update metrics for `failed_scale_ups_total` and `scaled_up_nodes_total` to include information about CSI drivers.
+
+<!---
 
 #### GA
 
@@ -416,18 +420,6 @@ In general Upgrade and Downgrade of `cluster-autoscaler` should be fine, it just
 change.
 
 If customers have opted-in to prevent pod placement via aforementioned `CSIDriver` change, it is not recommended to disable `enable-csi-node-aware-scheduling` flag.
-
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
 
 ### Version Skew Strategy
 
@@ -507,10 +499,10 @@ No, the scheduler and autoscaler defaul behavior is the same. A CSI driver must 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 For CAS:
-- Yes. This will simply cause old behaviour to be restored, but `PreventPodPlacementWithoutDriver` should be disabled (if enabled manually) in `CSIDriver` object before disabling this feature in CAS.
+- Yes. This will simply cause old behaviour to be restored, but `PreventPodSchedulingIfMissing` should be disabled (if enabled manually) in `CSIDriver` object before disabling this feature in CAS.
 
 For kube-scheduler:
-- The feature gate in kube-scheduler can be disabled without problems.
+- The feature gate in kube-scheduler can be disabled without problems, because disabling it simply restores the old behaviour of unlimited pod placement on nodes without `CSINode` objects.
 
 <!--
 Describe the consequences on existing workloads (e.g., if this is a runtime
@@ -531,22 +523,13 @@ For CAS:
 
 For kube-scheduler:
 
-- It should be work fine
+- It should work fine (again because it requires explicit opt-in for each CSI driver).
 
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
 
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+No, but we will validate and test the enablement and disablement of the `VolumeLimitScaling` featuregate
+in kube-scheduler.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -578,10 +561,7 @@ In CAS if `unschedulable_pods_count` metric consistently reports a number of pod
 a good indication that something is broken in CAS. In general, this in itself doesn't mean those pending pods use CSI volumes
 but we are considering enhancing existing metrics with that information.
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+We will also update `failed_scale_ups_total` if scale-up failed because of CSI driver related errors.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -599,22 +579,27 @@ Even if applying deprecation policies, they may still surprise some users.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Not Applicable
 
 ###### How can someone using this feature know that it is working for their instance?
+
+Since the feature provides two different but related behaviours in cluster-autoscaler and scheduler:
+
+**In Autoscaler:**
+
+The autoscaler should now accurately count number of nodes required when scaling from zero or when 
+new nodes are created to fit pending pods. For example:
+- If there are 10 pending pods that require each 3 volumes each, assuming a cluster where each node
+only supports 10 volumes attachment, then CAS should accurately spin 3 nodes. Before, assuming those 
+10 pods can fit on one or two nodes from cpu/memory perspective, CAS would have spun only 1 or 2 nodes.
+
+**In kube-scheduler:**
+
+Scheduler should no longer schedule pods to nodes without CSI driver if `PreventPodSchedulingIfMissing` is opted-in
+for the `CSIDriver` object.
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
@@ -625,8 +610,8 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason:
+- [x] Events
+  - Event Reason: "<driverName> CSI driver is not installed on the node"
 - [ ] API .status
   - Condition name:
   - Other field:
@@ -635,20 +620,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+After this feature is rolled out, there should not be an increase in rate of change in `failed_scale_ups_total` metric. Please note,
+we are asking to observe rate of change in `failed_scale_ups_total`, because since metric is a counter (or cumulative counter to be precise)
+it will ever be increasing, but rate of change should generally remain the same even after this feature is released.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -657,9 +631,12 @@ Pick one more of these and delete the rest.
 -->
 
 - [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+  - `failed_scale_ups_total`
+	- [Optional] Aggregation method: Cumulative Counter
+	- Components exposing the metric: Cluster-Autoscaler
+  -	`unschedulable_pods_count`
+	- Component exposing the metric: Cluster-Autoscaler
+  
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -717,7 +694,7 @@ Focusing mostly on:
 
 In the v1.35 alpha release, we are not considering introducing new API types yet.
 
-In v1.36 we are making changes into `CSIDriver` object by adding the field `PreventPodPlacementWithoutDriver`.
+In v1.36 we are making changes into `CSIDriver` object by adding the field `PreventPodSchedulingIfMissing`.
 
 <!--
 Describe them, providing:
@@ -741,47 +718,28 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+Enabling this feature results in no increase in count of existing API objects.
+
+It does result in increase of `38 bytes` of JSON object for `CSIDriver`, but there should not be
+too many `CSIDriver` objects in first place.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
+No
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
+No, it should not result in non-negligible increase of CPU/Memory resources. 
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
+If anything this feature is designed to prevent over-committing of nodes that happens when no corresponding
+`CSINode` object exists for a Node object and too many pods that consume volume gets scheduled on same node.
+
+https://github.com/kubernetes/kubernetes/issues/95911
+
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
+No
 
 ### Troubleshooting
 
@@ -798,7 +756,21 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+This feature has no special interaction with respect to API server and/or etcd availability. 
+If API server is unavailable typical limitations that apply to kube-scheduler and 
+cluster-autoscaler should apply.
+
 ###### What are other known failure modes?
+
+
+Following are some of the failure modes for this feature:
+
+- Detection: kube-scheduler is unable to schedule pods to nodes that don't have CSI driver and for some reason scheduling such pods is expected behaviour.
+  Mitigation: Cluster-Admin should not set `PreventPodSchedulingIfMissing` to `true` for such drivers.
+- Detection: After the feature is enabled in both kube-scheduler and cluster-autoscaler(CAS) and assuming `PreventPodSchedulingIfMissing` is enabled, if bunch of pods that require volume are forever in pending state without triggering automatic scale-up in CAS. 
+  Mitigation: Generally this means something in CAS is broken when it is trying to scale-up and fit pending pods on new templated nodes it creates. Cluster-Admin should
+  gather logs and disable `PreventPodSchedulingIfMissing` temporarily, because this will at least let the pods get scheduled albeit without counting number of required
+  nodes accurately.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -814,6 +786,10 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Cluster-Admin should gather logs from both kube-scheduler and cluster-autoscaler(CAS) and verify if CAS
+is able to find `CSINode` from existing nodes in nodegroups with valid nodes and from cluster-apis/cloudprovider
+implementation when scaling from zero cases.
 
 ## Implementation History
 
