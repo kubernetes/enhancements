@@ -19,9 +19,9 @@ see-also:
 
 # This is an internal code refactor what is immediately production impacting and
 # not feature gate-able.
-stage: beta
+stage: stable
 latest-milestone: "v1.37"
 milestone:
-  alpha: "v1.37"
-  beta: "v1.37"
+  stable: "v1.37"
+
 

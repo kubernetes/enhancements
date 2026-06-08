@@ -10,6 +10,7 @@
 - [Proposal](#proposal)
   - [Migration steps](#migration-steps)
   - [Migration order](#migration-order)
+    - [Commitment](#commitment)
   - [User Stories](#user-stories)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -153,13 +154,17 @@ measured an internal↔v1 round-trip conversion of a representative `ClusterRole
 - Preserve the idea of a hub type.
 - Eliminate the internal-to-versioned conversion cost for migrated resources.
 - Define a simple, incremental, per-resource migration.
-- Focus on the migration of high-traffic APIs to harvest the performance and scale benefits.
+- Sequence by traffic to harvest the performance and scale benefits early.
+- Converge on a *single* conversion pattern (a versioned hub) across all
+  built-in APIs, rather than carrying two patterns indefinitely.
 
 
 ### Non-Goals
 
-- It is not a goal to migrate all APIs. Low-traffic groups may keep their
-  internal type indefinitely. This does not make such types any worse than they are today.
+- It is not a goal to migrate all APIs in a single release. The migration is
+  sequenced over several releases (see [Migration order](#migration-order)), but
+  the end state is a single conversion pattern across *all* built-in APIs, not a
+  permanent split between migrated and unmigrated groups.
 - Changing the conversion-gen, deepcopy-gen, or defaulter-gen tooling contracts
   (they already handle aliases correctly; see Design Details).
 
@@ -172,26 +177,53 @@ measured an internal↔v1 round-trip conversion of a representative `ClusterRole
    deepcopy/conversion.
 1. **Switch to a Versioned hub:** Drop the `__internal` registration for the
    resource and set its in-memory/hub version to the storage version.
-1. **Cleanup (can long after the main migration).** Migrate all call sites from the internal
-   types to the versioned types and delete the internal package.
+1. **Update call sites:** Migrate call sites (admission, registry, controllers)
+   from the internal type to the versioned type. This follows each resource's
+   hub switch promptly; it is not deferred indefinitely.
+1. **Delete the internal package (can be later):** Once no call sites remain,
+   delete the internal type and its generated code. This final removal can land
+   well after the hub switch.
 
 ### Migration order
 
-We will **prioritize the highest-traffic APIs**:
+We sequence by traffic to harvest performance benefits early, while converging
+on a single pattern for *all* built-in APIs:
 
-1. **Demonstrate mechanism** Prove the mechanism on a small,
-   single-version, structurally-identical group. `rbac.authorization.k8s.io` is
-   the reference PoC; `coordination` (`Lease`) and `storage` are similar.
+Group 1:
+
+1. **Demonstrate mechanism** Prove the mechanism on a small set of APIs, e.g.
+   group `pod` (difficult in terms of scale), CRD (difficult because the internal API complex)
+   and an easy group like `rbac.authorization.k8s.io` to demonstrate the
+   migration mechanism.
+
+Group 2:
+
 1. **High-traffic easy APIs** These carry most
    apiserver traffic and alias cleanly today: `coordination/Lease` (kubelet
    heartbeats), `discovery/EndpointSlice`, `events.k8s.io/Event`,
    `core/ConfigMap`, `core/Endpoints`, `core/Node`, `core/ServiceAccount`.
+1. **Structurally-identical APIs.** All other groups whose internal
+   and versioned types are already identical are aliased and switched to a
+   versioned hub. These are low-risk and are part of the committed migration,
+   not just the high-traffic subset.
+
+Group 3:
+
 1. **High-traffic complex APIs** `core/Pod`,
    `core/Secret` have hand-written conversions and/or internal-only
-   fields and cannot be aliased as-is. In such cases, internal type will first need
-   to modified to match the hub type.
-   and are sequenced after the clean cases.
-1. **The long tail.** Remaining groups migrate opportunistically and so may never migrate.
+   fields and cannot be aliased as-is. In such cases, the internal type will
+   first need to be modified to match the hub type, and so these are sequenced
+   after the clean cases.
+1. **The long tail.** Groups that are not yet structurally identical have their
+   internal type reshaped to match the hub and are then migrated.
+
+#### Commitment
+
+Our criteria success is the successful migration of the `pod` (most impactful)
+and `CRD` (most difficult) APIs. If we fail to migate these within 2 releases we
+will add back the internal APIs for all migrated APIs. If these are successful, we
+ commit to completing the remaining migrations over a 3-release
+(~1 year) window**.
 
 ### User Stories
 
@@ -213,8 +245,14 @@ kube-apiserver runs with reduced peak load and GC churn.
 ### Risks and Mitigations
 
 
-- **Regressions:** *The existing round-trip
-  fuzz harness will be a huge help in preventing this.
+- **Regressions:** The existing round-trip fuzz and serialization-compatibility
+  harnesses (see [Test Plan](#test-plan)) are the main defense. A migration that
+  silently changed serialized output would fail the compatibility fixtures, and a
+  conversion that dropped data would fail the round-trip fuzz tests.
+- **Defaulting drift:** A few groups (e.g. `autoscaling/v1`) defer some defaulting
+  into the internal-conversion step. Collapsing that conversion could skip such
+  defaulting; these groups are identified and handled in the long-tail reshaping
+  step rather than aliased blindly.
 - **Reviewability:** Touching many groups risks large,
   hard-to-review PRs. We will limit PRs to a single migration each.
 
@@ -278,37 +316,66 @@ functions off of the internal type.
 
 ### Test Plan
 
-- **Round-trip fuzz:** This migration depends heavily on the existing roundtrip fuzz tests
-  to ensure the changes are safe.
-- **Conversion benchmarks:** A per-resource conversion benchmark will be included
-  in each migration PR.
+The best tests to ensure correctness are tests we already have today:
+
+- **Serialization compatibility fixtures.** Because a migration is
+  invisible on the wire and in storage, we require the migration to incur
+  zero fixture changes. These test are critical to manage upgrade/rollback risk.
+- **Round-trip fuzz tests.** Harness:
+  `staging/src/k8s.io/apimachinery/pkg/api/apitesting/roundtrip`. This offers some
+  assurances that migration does not drop or corrupt data. It complements the
+  compatibility fixture tests which offer the strongest accurance that the
+  internal type removal has not changed normal codepaths.
+- **Conversion benchmarks.** A per-resource conversion benchmark (see
+  [Benchmarks](#benchmarks)) is included in each migration PR to confirm the
+  expected allocation/latency reduction and guard against regressions.
 
 ### Graduation Criteria
 
-Because there is no single runtime feature gate (see PRR), graduation is defined
-by mechanism maturity and migration coverage rather than alpha/beta/GA of a
-toggle.
+This enhancement has no runtime feature gate (see PRR) so each resource
+migration is unconditionally in effect the moment it merges, and there is no
+higher maturity than "unconditionally on". This is unavoidable due to the nature
+of the code change.
 
 #### Alpha
 
-Alpha is not meaningful for this as all changes are production impacting.
+Not possible for this change. SIG Leads agreed that we should communicate the nature of this
+change by marking it as sable on the first release. This matches how we've handled
+other internal changes.
 
 #### Beta
 
-This feature will stay in beta for the migration of all high-traffic APIs.
+Same retionale as Alpha.
 
 #### Stable
 
-- Migration of all high-traffic APIs is complete.
-- All new APIs use a versioned hub type.
+Phase 1:
+
+- The migration mechanism is proven when a few low risk APIs and then `pod` (most impactful) and
+  `CRD` (most difficult) are migrated.
+- Because the change cannot be gated, these migrations are production-impacting
+  on merge.
+
+Phase 2:
+
+- We're committed to the migration, and the remaining structurally-identical and
+  will complete all remaining migration work over a 3-release window.
+
+Phase 3:
+
+- All built-in APIs use a versioned hub type.
+- Internal packages for migrated groups are deleted.
+- All new APIs use a versioned hub type by default.
 
 ### Upgrade / Downgrade Strategy
 
-None. This is an internal-only change.
+None required. The change is purely in-memory and stored and wire encodings are
+unchanged.
 
 ### Version Skew Strategy
 
-None. This is an internal-only change.
+None. The internal/hub type is server-local and never appears on the wire or in
+storage, so mixed-version control planes are unaffected.
 
 ## Production Readiness Review Questionnaire
 
@@ -317,8 +384,11 @@ None. This is an internal-only change.
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Other
-  - **Describe the mechanism:** This is non-user-facing source code change that cannot be gated.
-  - **Will enabling / disabling require downtime of the control plane?** No.
+  - **Describe the mechanism:** This is a non-user-facing source-code change that
+    cannot be gated and cannot be disabled at runtime. It takes effect when an
+    apiserver built with the migration runs.
+  - **Will enabling / disabling require downtime of the control plane?** N/A. It
+    cannot be enabled or disabled and in effect for any apiserver with the merged code.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -326,25 +396,38 @@ No. This is an internal-only change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-No. But it is an internal-only code change with rigiorious correctness and performance testing planned.
+No, this change cannot be disabled. There is no feature gate and the migration is
+a source-code change. Correctness and performance are validated by round-trip
+fuzz tests and conversion benchmarks. To reverse a specific migration, the
+migration PR must be reverted (and the revert would then be cherry-picked to release
+branches).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No change. This is an internal-only change.
+Not applicable as there is no enablement toggle to reconcile. Re-landing a
+reverted migration (with any needed fixes) would be how we re-enable the feature.
 
 ###### Are there any tests for feature enablement/disablement?
 
-No, but the feature is internal-only and not feature-gatable.
+Compaibility fixture tests do ensure cross-version compatibility, providing insurance that the
+API behavior is the same both before and after the change. This is the closest
+we can hope to get to enablement/disablement testing.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-No. This is an internal-only change.
+A error in the migration could in theory lead to incorrect conversions that could result
+data that is incorrectly served or stored. Mistakes around defaulting are risk (@deads2k
+pointed this out). Since defaults are populated in the read path, a rollback could resolve
+some of the potential errors this migration could cause.
 
 ###### What specific metrics should inform a rollback?
 
-None. This is an internal-only change.
+A regression in `apiserver_request_duration_seconds` or in the apiserver memory
+profile for the migrated resource, or any round-trip / conformance test failure
+attributable to a migration. There is no flag to flip; a rollback means
+reverting the migration PR.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
