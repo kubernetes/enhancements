@@ -256,7 +256,7 @@ type TopologyConstraint struct {
     // All pods within the PodGroup must be colocated within the same domain instance.
     // Different PodGroups can land on different domain instances even if they derive from the same PodGroupTemplate.
     // Examples: "topology.kubernetes.io/rack"
-    Level string
+    Key string
 }
 ```
 
@@ -413,7 +413,7 @@ The algorithm proceeds in three main phases for a given PodGroup.
 **TopologyPlacementGenerator (New)** Implements `PlacementGeneratePlugin`. Generates
 Placements based on distinct values of the designated node label (TAS).
 
-**NodeResourcesFit (Existsing)** Implements `PlacementScorePlugin`. Scores
+**NodeResourcesFit (Existing)** Implements `PlacementScorePlugin`. Scores
 Placements to maximize utilization (tightest fit) and minimize fragmentation.
 
 **PodGroupPodsCount (New)** Implements `PlacementScorePlugin`. Scores
@@ -565,7 +565,7 @@ Those tests are located at [tas_test.go‎](https://github.com/kubernetes/kubern
 
 - Scalability tests on large clusters with high placement counts.
 - Comprehensive e2e testing.
-- Cluster autoscaling compomnents are aware of workload topology constraints.
+- Cluster autoscaling components are aware of workload topology constraints.
 
 #### GA
 
@@ -723,7 +723,7 @@ are actively using the feature.
 
 - [X] API .status
   - Object: PodGroup
-  - Condition Name: `PodGroupScheduled`
+  - Condition Name: `PodGroupInitiallyScheduled`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
