@@ -689,7 +689,7 @@ still scheduled, but PodGroup-level toplogy scheduling constraints won't be appl
 We'll perform manual testing of the upgrade -> downgrade -> upgrade path using the following sequence:
 
 1. Start a local Kubernetes v1.36 cluster with `TopologyAwareWorkloadScheduling` feature
-   gate disabled and `GenericWorkload` feature gate enabled (default behavior).
+   gate disabled and `GenericWorkload` feature gate enabled.
 2. Attempt to create a PodGroup object with `spec.schedulingConstraints.topologyConstraints[0].level`
    set to `kubernetes.io/hostname`.
 3. The `spec.schedulingConstraints` field is dropped by the API server. The PodGroup is created
