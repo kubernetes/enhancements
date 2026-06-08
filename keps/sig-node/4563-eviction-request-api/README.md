@@ -44,12 +44,11 @@
     - [EvictionRequest Validation on Admission](#evictionrequest-validation-on-admission)
       - [CREATE](#create)
     - [Immutability of EvictionRequest Fields](#immutability-of-evictionrequest-fields)
-  - [EvictionRequest Process](#evictionrequest-process)
     - [Eviction Validation on Admission](#eviction-validation-on-admission)
       - [CREATE](#create-1)
       - [UPDATE](#update)
     - [Immutability of Eviction Fields](#immutability-of-eviction-fields)
-  - [EvictionRequest Process](#evictionrequest-process-1)
+  - [EvictionRequest Process](#evictionrequest-process)
     - [EvictionRequest and Eviction Completion and Deletion](#evictionrequest-and-eviction-completion-and-deletion)
   - [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples)
     - [Multiple Dynamic Requesters and No EvictionRequest Cancellation](#multiple-dynamic-requesters-and-no-evictionrequest-cancellation)
@@ -520,10 +519,12 @@ purposes after it has reached the terminal phase (`Succeeded` or `Failed`).
 
 ### Risks and Mitigations
 
-If there is no responder, and the application has insufficient availability and a blocking PDB or
-blocking validating admission webhook, then the imperative eviction responder controller will enter
-into an API-initiated eviction cold loop with a backoff. To mitigate this we will increment the
-`imperative_eviction_responder_controller_failed_evictions` metric.
+If there is no custom responder, and the application has insufficient availability and a blocking
+PDB or blocking validating admission webhook, then the imperative eviction responder controller will
+enter into an API-initiated eviction cold loop with a backoff. To help with observability we will
+increment the `imperative_eviction_responder_controller_failed_evictions` metric. The mitigation
+depends on the application and the consequences of disruption. This metric should help users
+identify these applications.
 
 A responder could reconcile the status properly without making any progress. It is thus
 recommended to check `creationTimestamp` of the EvictionRequests and observe
@@ -601,6 +602,10 @@ First, the responder should register itself with all the pods it is interested i
 evicting/processing (either partially or fully) by adding itself to the
 `.spec.evictionResponders` field of the pod. This list is then added to the
 [Eviction](#pod-and-evictionrequest-api) after creation by the eviction request controller.
+
+Responders registered in pod's `.spec.evictionResponders` are executed sequentially, starting with
+the lowest index ([Responder Selection](#responder-selection)). Each responder should assess its
+role and priority, and either preempt other responders or run at a later time.
 
 The Responder type should set the `name` field. For more
 details see [Pod and EvictionRequest API](#pod-and-evictionrequest-api) and
@@ -703,9 +708,9 @@ reason (`EvictionInvalid`) and a message (`Target Pod xyz was not found.`).
 
 The new Workload API groups a set of pods that may not handle individual pod evictions well. It may
 be preferable to target the Workload resource. In the alpha version of the EvictionRequest API,
-pods referencing PodGroups will be ignored. Therefore, we will reject any EvictionRequest that has a
-`.spec.schedulingGroup`. We will consider [Workload API Support](#workload-api-support) later.
-The rejection will be done again by setting a `Failed` condition with an appropriate
+pods referencing PodGroups will be ignored. Therefore, we will reject any EvictionRequest that
+references a pod that has `.spec.schedulingGroup`. We will consider [Workload API Support](#workload-api-support)
+later. The rejection will be done again by setting a `Failed` condition with an appropriate
 reason (`EvictionInvalid`) and a message
 (`Target Pod xyz is part of a Workload/PodGroup. Eviction of such pods is currently not supported.`). 
 
@@ -1409,8 +1414,6 @@ same name, but a different UID, a new EvictionRequest object should be created
 `spec.requesterName`: the identity of the requester should not change during the lifecycle of the
 EvictionRequest.
 
-### EvictionRequest Process
-
 #### Eviction Validation on Admission
 
 ##### CREATE
@@ -1462,20 +1465,24 @@ The EvictionRequest and Eviction is considered evicted if:
   eviction.
 
 The Eviction is considered canceled if:
-- All requesters' intents are set to `Withdrawn`.
+- All requesters' intents (.spec.intent) are set to `Withdrawn`.
 
 The EvictionRequest is considered canceled if:
 - Validation fails after eviction request is created, for example the target pod is not found. This
   additional validation is enforced by the eviction request controller. 
-- All requesters' intents are set to `Withdrawn`. This has been taken over from the Eviction
-  cancellation reasons above.
+- All requesters' intents (.spec.intent) are set to `Withdrawn`. This has been taken over from the
+  Eviction cancellation reasons above.
 
 Eviction controller will signal each of these by setting  `Canceled` or `Evicted` conditions to
 `True` in the EvictionRequest and Eviction objects. See
 [Condition synchronization](#condition-synchronization) for more details.
 
-Requesters should be able to delete the EvictionRequest when the `Canceled` or `Evicted` condition
-is `True`.
+Requesters are expected to delete the EvictionRequest when the `Canceled` or `Evicted` condition
+is `True`, after they have processed the EvictionRequest and Eviction status. Although early
+deletion instead of cancellation is supported, it should generally be avoided in order to give
+responders time to react to such an abrupt cancellation. Setting .spec.intent to `Withdrawn` and
+delete with a delay is preferred. Eviction objects have an ownerReference set to all matching
+EvictionRequests and are subject to garbage collection. 
 
 ### EvictionRequest Cancellation Examples
 
