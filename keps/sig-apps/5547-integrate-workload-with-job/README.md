@@ -10,6 +10,7 @@
   - [Job Integration - API Usage Examples](#job-integration---api-usage-examples)
     - [Example 1: Gang scheduling with zone topology and atomic disruption](#example-1-gang-scheduling-with-zone-topology-and-atomic-disruption)
     - [Example 2: Backward Compatibility and Sane Defaulting (Implicit Opt-Out)](#example-2-backward-compatibility-and-sane-defaulting-implicit-opt-out)
+    - [Example 3: CronJob with Gang Scheduling](#example-3-cronjob-with-gang-scheduling)
   - [User Stories](#user-stories)
     - [ML Training Job with Gang Scheduling](#ml-training-job-with-gang-scheduling)
     - [Standard Batch Job with Workload Tracking](#standard-batch-job-with-workload-tracking)
@@ -77,7 +78,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -343,7 +344,44 @@ spec:
     basic: {}
 ```
 
-In both cases, the Job controller then creates the pods and sets the `schedulingGroup` field so the
+#### Example 3: CronJob with Gang Scheduling
+
+A `CronJob` that periodically runs a gang-scheduled training Job. Each `Job` created by the
+`CronJob` is treated as standalone. `CronJob` is *not* a registered parent workload, so the Job
+controller creates a separate `Workload` and `PodGroup` per `Job`. These objects are
+garbage-collected when each `Job` completes or is deleted.
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: periodic-training
+  namespace: training
+spec:
+  schedule: "0 */6 * * *"
+  jobTemplate:
+    spec:
+      parallelism: 4
+      completions: 4
+      completionMode: Indexed
+      scheduling:
+        policy:
+          gang: {}            # minCount defaults to parallelism (4) per Job
+      template:
+        spec:
+          containers:
+          - name: trainer
+            image: training-image:latest
+            resources:
+              limits:
+                nvidia.com/gpu: 1
+```
+
+Each `Job` created by this `CronJob` produces its own `Workload` and `PodGroup`, compiled from
+the Job's `spec.scheduling`.
+If the `CronJob`'s `jobTemplate` omits the `scheduling` block, each `Job` defaults to `Basic`.
+
+In all cases, the Job controller then creates the pods and sets the `schedulingGroup` field so the
 scheduler can associate each pod with its `PodGroup`:
 
 ```yaml
@@ -970,6 +1008,8 @@ We will add the following integration tests to the Job controller (`test/integra
 - Elastic gang resize via `minCount` update.
 - Mixed workloads: gang and basic Jobs coexist.
 - Failure scenarios, e.g., insufficient resources for a gang, partial failures.
+- CronJob with gang scheduling: each Job created by the CronJob gets its own `Workload`/`PodGroup`,
+  and completed Jobs clean up their scheduling objects via GC.
 
 ### Graduation Criteria
 
@@ -1004,7 +1044,9 @@ This second alpha replaces the automatic model with the user-facing API:
 
 - Promote the `WorkloadWithJob` feature gate to enabled by default.
 - Evaluate whether the Job controller's [current batch-create](https://github.com/kubernetes/kubernetes/blob/2023f445eca52e6baa72139e56c6e4e01be0ee97/pkg/controller/job/job_controller.go#L1780-L1838) of pods should change when gang scheduling is active (it slows pod creation), and document the decision.
-- The controller needs a mechanism to delete `PodGroup`/`Workload` for suspended Jobs and recreate on resume.
+- The controller must delete `PodGroup`/`Workload` when a Job is suspended and recreate them on
+  resume, so that resources (including DRA claims) are properly released and the scheduler can
+  make fresh placement decisions.
 - Address feedback from alpha and confirm the `spec.scheduling` API shape and defaulting are stable.
 - E2e tests covering gang, topology, disruption, and elastic-scaling scenarios.
 - Metrics for monitoring `Workload`/`PodGroup` creation and scheduling outcomes.
