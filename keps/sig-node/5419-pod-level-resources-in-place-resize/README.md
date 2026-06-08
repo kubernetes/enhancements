@@ -26,8 +26,8 @@
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Phase 1: Alpha (target 1.35) [DONE]](#phase-1-alpha-target-135-done)
-    - [Phase 2:  Beta (target 1.36)](#phase-2--beta-target-136)
-    - [GA (stable)](#ga-stable)
+    - [Phase 2:  Beta (target 1.36) [DONE]](#phase-2--beta-target-136-done)
+    - [GA (stable) [DONE]](#ga-stable-done)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -58,10 +58,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -508,8 +508,7 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
 * Unit test coverage.
 * E2E tests.
 
-#### Phase 2:  Beta (target 1.36)
-
+#### Phase 2:  Beta (target 1.36) [DONE]
 * Pod Level Resources Feature moved to beta.
 * The semantic of `UpdatePodSandboxResources` is clarified. And there is a way for container runtime to reject the resize of Pod resources via this method or by other means
 * Actual pod resource data may be cached in memory, which will be refreshed after
@@ -520,7 +519,7 @@ Support the basic functionality for kubelet to translate pod-level requests/limi
   for Pod-level resource resize.
 * Revisit the decision of which component sets the defaults for PodStatus.Resources.
 
-#### GA (stable)
+#### GA (stable) [DONE]
 
 * VPA Integration of In-Place Resize moved to beta.
 * No major bugs reported for 3 months.
@@ -762,7 +761,26 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name:
+  - Metric name: `apiserver_request_total{resource="pods",subresource="resize"}`
+    - [X] apiserver
+  - Metric name: `kubelet_container_requested_resizes_total`
+    - [X] kubelet
+    - Labels: `resource`, `requirement`, `operation`, `target_type`
+  - Metric name: `kubelet_pod_resize_duration_seconds`
+    - [X] kubelet
+    - Labels: `target_type`
+  - Metric name: `kubelet_pod_infeasible_resizes_total`
+    - [X] kubelet
+    - Labels: `reason_detail`, `target_type`
+  - Metric name: `kubelet_pod_pending_resizes`
+    - [X] kubelet
+    - Labels: `reason`, `target_type`
+  - Metric name: `kubelet_pod_in_progress_resizes`
+    - [X] kubelet
+    - Labels: `target_type`
+  - Metric name: `kubelet_pod_deferred_resize_accepted_total`
+    - [X] kubelet
+    - Labels: `retry_trigger`, `target_type`
   - `apiserver_rejected_requests` will indicate any failures (`Bad Request` code=400) related to translation of new `resources` field in PodSpec. 
   - `schedule_attempts_total{result="error|unschedulable"}`
   - `node_collector_evictions_total`: to check if a pod level resource setting is causing to evict more pods than normal
@@ -772,11 +790,17 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
-No 
+The metrics inherited from KEP-1287 will be enhanced with a `target_type` label to account for the atomic nature of Pod-level resource updates. This instrumentation strategy shifts from a simple binary scope to an encompassing one that captures unified transactions.
+
+`target_type` values:
+- `container`: Only container resources are changing.
+- `pod`: Only pod-level resources are changing.
+- `mixed`: Both container-level and pod-level resources are changing in the same request.
+
+**Why this is better than a binary "either/or" scope:**
+- **Atomicity Visibility:** Because the KEP treats the entire request as an atomic operation, using a `mixed` value allows operators to see the aggregate success rate of complex, combined resize requests.
+- **Lower Cardinality:** We are not adding redundant metrics; we are simply adding a dimension to existing ones. This keeps monitoring overhead low and dashboards clean.
+- **Troubleshooting Path:** If a spike in infeasible resizes occurs, an operator can immediately filter by `target_type=mixed` to see if the contention is specifically caused by the interaction between pod-level and container-level resource requirements.
 
 ### Dependencies
 
@@ -954,13 +978,13 @@ For each of them, fill in the following information by copying the below templat
 
 - **CRI Runtime doesn't support Pod Sandbox Resize**:
   - Detection: `PodStatus.Resize` will be stuck in `InProgress` and Kubelet logs will
-    show errors calling `UpdatePodSandboxResources`.
+    show errors calling `UpdatePodSandboxResources`. Additionally, `kubelet_pod_in_progress_resizes` will remain elevated for the affected pods, and `kubelet_pod_resize_duration_seconds` may show high latency or timeouts.
   - Mitigations: Disable the feature gate or upgrade the container runtime to a
     compatible version (e.g., latest containerd/CRI-O).
   - Diagnostics: Kubelet logs (search for `UpdatePodSandboxResources` errors) and
     `kubectl get pod <name> -o yaml` to check `resizeStatus`.
 - **Cgroup update failure (OS level)**:
-  - Detection: Kubelet will emit an event indicating failure to update cgroups.
+  - Detection: Kubelet will emit an event indicating failure to update cgroups. The metric `kubelet_pod_in_progress_resizes` will fail to decrement for the target pod, potentially revealing a spike in actuation duration.
   - Mitigations: Revert the resize request in the Pod spec to a known-good value.
   - Diagnostics: Kubelet logs and `dmesg` on the node for potential OOM or cgroup
     permission issues.
@@ -972,15 +996,17 @@ For each of them, fill in the following information by copying the below templat
    on all components (apiserver, scheduler, kubelet).
 2. Check `apiserver_request_total{resource="pods", subresource="resize"}` to see
    if resize requests are being rejected at the API level.
-3. Inspect Kubelet logs for errors related to `UpdatePodSandboxResources` or
+3. Use `kubelet_pod_infeasible_resizes_total` and `kubelet_pod_pending_resizes` with the `target_type` label to identify if resizes are failing or pending due to container, pod, or mixed-scope limitations.
+4. Inspect Kubelet logs for errors related to `UpdatePodSandboxResources` or
   `ResourceCalculation`.
-4. Monitor `node_collector_evictions_total` to ensure pod-level limits aren't
+5. Monitor `node_collector_evictions_total` to ensure pod-level limits aren't
   causing unexpected evictions.
 
 ## Implementation History
 
 - **2025-06-18:** KEP draft split from (KEP#2387)[https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2837-pod-level-resource-spec/README.md]
 - **2026-01-28:** KEP moved to beta for 1.36 release
+- **2026-06-10:** KEP moved to stable for 1.37 release
 
 ## Drawbacks
 
