@@ -26,6 +26,7 @@
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
+    - [Performance tests](#performance-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -817,6 +818,12 @@ unit and integration coverage; new tests are additive.
   a single counter set. Scheduling a `mig` pod followed by a `vgpu` pod on
   the same node leaves the second pod Unschedulable; reversing the order reproduces the behavior symmetrically.
 - Same driver with devices who are compatible with each other (declare a shared group) — both pods schedule.
+
+##### Performance tests
+
+A scheduler_perf workload under
+[`test/integration/scheduler_perf/dra`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf/dra)
+will measure the scheduling-throughput impact of the compatibility check.
 
 ### Graduation Criteria
 
