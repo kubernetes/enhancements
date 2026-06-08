@@ -86,10 +86,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP integrates the Workload-aware Scheduling (WAS) APIs (`Workload` and `PodGroup`) into the
-core `batch/v1` Job by adding a user-facing `spec.scheduling` field, letting users express explicit
+batch/v1` Job by adding a user-facing `spec.scheduling` field, allowing users to express explicit
 scheduling intent such as gang scheduling[^1], topology co-location, and disruption policies.
 
-The first alpha was introduced in v1.36 intentionally bypassed this user-facing API: the controller inferred a
+The first alpha, introduced in v1.36, intentionally bypassed this user-facing API: the controller inferred a
 hardcoded `Gang` policy from the Job's type (parallel Jobs with indexed completion mode), with `minCount`
 fixed to `parallelism`. This revision replaces that automatic, controller-inferred model with an
 explicit, user-driven design that separates scheduling *policy* (expressed by the user) from
@@ -123,7 +123,7 @@ gaps of the initial alpha.
 
 - Add a user-facing `spec.scheduling` (`JobSchedulingConfiguration`) field to the `batch/v1` Job,
   embedding the `scheduling.k8s.io/v1alpha3` building blocks (`policy`, `constraints`,
-  `disruptionMode`, `resourceClaims`) so users express explicit scheduling intent.
+  `disruptionMode`, `resourceClaims`) so users can express explicit scheduling intent.
 - Default to `Basic` (standard pod-by-pod) scheduling when `spec.scheduling` is omitted, so the
   runtime scheduling behavior of existing Jobs is unchanged (implicit opt-out from gang). Following
   the [KEP-6089] "Universal Representation" principle, the controller still materializes a `Basic`
@@ -136,8 +136,8 @@ gaps of the initial alpha.
   other `spec.scheduling` fields immutable after creation. This relies on [KEP-4671] that makes 
   `minCount` in `PodGroup`/`PodGroupTemplate` mutable in v1.37 to support workload scaling.
 - Skip `Workload`/`PodGroup` creation when a higher-level controller owns the workload (the Job
-  carries an `OwnerReference` to a registered parent workload), preserving the
-  root-controller-as-compiler principle.
+  carries an `OwnerReference` to a parent controller that itself creates and manages the
+  `Workload`), preserving the root-controller-as-compiler principle.
 - Ensure proper ordering of `Workload` → `PodGroup` → `Pod` creation.
 
 ### Non-Goals
@@ -176,8 +176,8 @@ The key design principles for this alpha are:
   parallelism is unset). `minCount` is mutable to support elastic scaling; all other
   `spec.scheduling` fields are immutable after creation.
 - The Job controller does not create `Workload`/`PodGroup` when the Job carries an `OwnerReference`
-  to a registered parent workload. Higher-level controllers (e.g., `JobSet`) that own the
-  `Workload` set this when they create the Job.
+  to a parent controller that manages the `Workload` (e.g., `JobSet`). Such controllers set this
+  `OwnerReference` when they create the Job.
 - Jobs created by `CronJob` are standalone (no parent-workload `OwnerReference`); the Job controller
   creates one `Workload` and one `PodGroup` per Job for them based on each Job's `spec.scheduling`.
 
@@ -347,8 +347,8 @@ spec:
 #### Example 3: CronJob with Gang Scheduling
 
 A `CronJob` that periodically runs a gang-scheduled training Job. Each `Job` created by the
-`CronJob` is treated as standalone. `CronJob` is *not* a registered parent workload, so the Job
-controller creates a separate `Workload` and `PodGroup` per `Job`. These objects are
+`CronJob` is treated as standalone.`CronJob` does not create or manage `Workload` objects,
+the Job controller creates a separate `Workload` and `PodGroup` per `Job`. These objects are
 garbage-collected when each `Job` completes or is deleted.
 
 ```yaml
@@ -435,8 +435,8 @@ changing how the pods are scheduled.
 - `spec.scheduling.policy.gang.minCount` is mutable to support elastic scaling ([KEP-4671]); all 
   other `spec.scheduling` fields are immutable after creation.
 - Opting out of WAS object creation happens implicitly in two ways: omitting `spec.scheduling`
-  yields `Basic` (the controller still owns the objects), and a Job that carries an `OwnerReference`
-  to a registered parent workload is skipped entirely (the parent owns the `Workload`).
+  yields `Basic` (the controller still owns the objects), and a Job whose parent controller manages
+  the `Workload` is skipped entirely.
 
 ### Risks and Mitigations
 
@@ -474,9 +474,9 @@ single-level `Job`:
 - **The Root Controller is the Compiler.** For a standalone `Job`, the Job controller is the
   root-most controller and is responsible for compiling, creating, and managing the
   scheduler-facing `Workload` and its runtime `PodGroup`. When a `Job` instead carries an
-  `OwnerReference` to a registered parent workload (e.g., a `JobSet`-owned Job), the Job controller
-  observes that linkage and **bypasses** creating any `Workload`, so the parent remains the single
-  source of truth.
+  `OwnerReference` to a parent controller that manages the `Workload` (e.g., a `JobSet` owns the Job),
+  the Job controller observes that linkage and *bypasses* creating any `Workload`, so the parent
+  remains the single source of truth.
 - **Separation of Structure and Policy.** The `Job` spec owns the workload *structure*
   (`parallelism`, `completions`, the pod template); the user owns the scheduling *policy* via
   `spec.scheduling`. The Job controller acts as the translator that combines the two and compiles
@@ -569,8 +569,8 @@ The boundary between the library and the Job controller is explicit.
 
 The `workloadbuilder` library is responsible for:
 
-  * Defining the polymorphic, hierarchy-agnostic IR (`SchedulingConfig`, `WorkloadNode`) that 
-  the Job controller populates.
+  * Defining the polymorphic, hierarchy-agnostic intermediate representation (IR)
+  (`SchedulingConfig`, `WorkloadNode`) that the Job controller populates.
   * Merging the controller-supplied defaults (`DefaultConfig`, `DefaultGangMinCount`) with the user's
   `UserConfig`, including escape-hatch resolution.
   * Validating the resolved configuration via a `Validate` entrypoint, which runs the same resolution
@@ -598,64 +598,32 @@ never uses `MapCompositeGroupConfig`, which is reserved for multi-level controll
 #### Building the Logical Tree and Compiling the `Workload`
 
 The controller's `generateWorkload` helper performs four steps: 
-  1. Set the Job's domain default to `Basic`.
+  1. Set the Job's default configuration to `Basic`.
   2. Map the user-facing `spec.scheduling` block into the library IR via `MapPodGroupConfig`.
   3. Assemble a single-node `WorkloadNode`, supplying `DefaultGangMinCount` from `spec.parallelism` 
     as the fallback gang size.
   4. Invoke `Build`, passing the Job's identity and a controller `OwnerReference` so the emitted
     `Workload` is owned by the Job and garbage-collected with it.
 
-```go
-import (
-    "context"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    batchv1 "k8s.io/api/batch/v1"
-    schedulingv1alpha3 "k8s.io/api/scheduling/v1alpha3"
-    "k8s.io/utils/ptr"
-)
-
+```
 func (r *JobReconciler) generateWorkload(
     job *batchv1.Job,
-) (*schedulingv1alpha3.Workload, error) {
-    // 1. A Job's context-aware sane default is Basic scheduling (standard pod-by-pod).
-    defaultConfig := &workloadbuilder.SchedulingConfig{
-        Policy: &workloadbuilder.SchedulingPolicy{
-            Basic: &workloadbuilder.BasicSchedulingPolicy{},
-        },
-    }
+) (*Workload, error) {
+    // Default to Basic (standard pod-by-pod) scheduling.
+    defaultConfig = SchedulingConfig{Policy: Basic}
 
-    // 2. Map the public Job.Spec.Scheduling wrapper into the library's IR via the leaf helper.
-    var userConfig *workloadbuilder.SchedulingConfig
-    if job.Spec.Scheduling != nil {
-        userConfig = workloadbuilder.MapPodGroupConfig(
-            job.Spec.Scheduling.Policy,
-            job.Spec.Scheduling.Constraints,
-            job.Spec.Scheduling.DisruptionMode,
-            job.Spec.Scheduling.ResourceClaims,
-        )
-    }
+    // Map the user's spec.scheduling into the workloadbuilder library IR.
+    userConfig = MapPodGroupConfig(job.Spec.Scheduling)
 
-    // 3. Create the flat, single-node logical tree for the Job (one PodGroup).
-    rootNode := &workloadbuilder.WorkloadNode{
-        Name:                "job-root",
+    // Build a single-node logical tree (one PodGroup per Job).
+    rootNode = WorkloadNode{
         DefaultConfig:       defaultConfig,
-        DefaultGangMinCount: ptr.To(job.Spec.Parallelism), // defaults to parallelism if MinCount is nil
+        DefaultGangMinCount: job.Spec.Parallelism, // defaults to parallelism if MinCount is nil
         UserConfig:          userConfig,
     }
 
-    // 4. Let the workloadbuilder compile and generate the Workload object.
-    builder := workloadbuilder.NewBuilder(rootNode)
-    workloadObj, err := builder.Build(
-        context.Background(),
-        job.Name,
-        job.Namespace,
-        metav1.NewControllerRef(job, jobKind),
-    )
-    if err != nil {
-        return nil, err
-    }
-
-    return workloadObj, nil
+    // Compile and emit the Workload object, owned by this Job.
+    return NewBuilder(rootNode).Build(job.Name, job.Namespace, ownerRef=job)
 }
 ```
 
@@ -780,10 +748,10 @@ via informers/listers and continue.
 
 The controller discovers or creates `Workload` and `PodGroup` as follows:
 
-1. If the Job carries an `OwnerReference` to a registered parent workload (i.e., it is owned by a
-   higher-level controller such as `JobSet`), skip `Workload`/`PodGroup` creation entirely since the
-   parent owns them. The controller still discovers any existing objects and uses them when 
-   creating pods.
+1. If the Job carries an `OwnerReference` to a parent controller that manages the `Workload`
+   (i.e., a higher-level controller such as `JobSet` that compiles and owns the workload tree),
+   skip `Workload`/`PodGroup` creation entirely since the parent owns them. The controller still
+   discovers any existing objects and uses them when creating pods.
 2. If the Job already has pods (active or terminal pods owned by this Job), skip creation and only
    discover existing objects.
 3. Look up existing `Workload`(s) in the Job's namespace whose `spec.controllerRef` points to this
