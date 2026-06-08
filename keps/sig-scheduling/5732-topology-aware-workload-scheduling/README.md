@@ -456,6 +456,15 @@ Scheduling:
   
   This strategy ensures predictable, robust throughput of topology-aware scheduling.
 
+4. Respecting NominatedNodeName in Placement Selection
+
+  To align with standard pod-by-pod scheduling behavior, the TAS algorithm now
+  supports a pod's NominatedNodeName (NNN). When selecting placements, the scheduler
+  prioritizes evaluating placements containing the previously nominated nodes first.
+  This ensures that a workload whose pods were nominated to specific nodes does not
+  arbitrarily land elsewhere, preventing the scheduler from undoing work performed
+  in previous nominating cycles.
+
 ### Future Extensions
 
 [KEP-5729: DRA: ResourceClaim Support for Workloads](https://kep.k8s.io/5729)
