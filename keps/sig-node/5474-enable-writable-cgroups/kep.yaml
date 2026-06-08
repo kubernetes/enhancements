@@ -1,0 +1,37 @@
+title: Enable Writable Cgroups
+kep-number: 5474
+authors:
+  - "@divya063"
+  - "@chrishenzie"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-auth
+status: implementable
+creation-date: 2025-08-25
+approvers:
+  - "@dchen1107"
+replaces: []
+
+# Features and stages
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+
+# Feature gate
+feature-gates:
+  - name: CgroupOptions
+    components:
+      - kube-apiserver
+      - kubelet
+
+# Metrics
