@@ -268,8 +268,8 @@ fate of the core execution engines.
 
 As an infrastructure operator running complex training pipelines, I want to schedule
 a multi-stage `TrainJob` under `JobSet` containing replicated sub-jobs with varied
-scheduling requirements. For instance, the pre-training data initialization stage
-can use a basic scheduling policy (starting as soon as some data-downloaders are
+scheduling requirements. For instance, the pre-training data and model initialization
+stage can use a basic scheduling policy (starting as soon as some data-downloaders are
 ready), while the subsequent core Trainer stage (MPI Launcher and workers) requires
 strict gang scheduling. Both stages belong to the same parent CPG to coordinate
 coordinated start and collective preemption fate-sharing.
@@ -1870,6 +1870,8 @@ More tests will be added for beta release.
 - The `minGroupCount` field of the `CompositePodGroup` objects becomes
   mutable at runtime (aligning with the pre-existing mutable `minCount` field
   in `PodGroup` objects).
+- Scheduler diagnostics and recommendations with regards to the scheduling order
+  are re-evaluated to improve troubleshooting and scheduling success rates.
 
 #### GA
 
