@@ -99,7 +99,8 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-  - [Beta](#beta)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -139,17 +140,18 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+      - https://prow.k8s.io/job-history/gs/kubernetes-ci-logs/logs/ci-kubernetes-e2e-kind-beta-features
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -736,13 +738,19 @@ ClusterTrustBundleProjection feature gates.
 
 The feature will be covered by unit, integration, and E2E tests as described above.
 
-### Beta
+#### Beta
 
 For Beta, the ClusterTrustBundle type is moved to the certificates.k8s.io/v1beta1 API group.
 
 The feature is still guarded by the ClusterTrustBundle and ClusterTrustBundleProjection feature gates.
 
 The feature is covered by unit, integration, and E2E tests.  E2E test coverage is expanded from the current "happy path" test.
+
+#### GA
+
+For GA, the ClusterTrustBundle type is moved to the certificates.k8s.io/v1 API group.
+
+Feature gates ClusterTrustBundle and ClusterTrustBundleProjection get locked to enabled-by-default state.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -887,7 +895,11 @@ Enabling the feature does not change any default behavior.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, if the ClusterTrustBundle feature gate is disabled, the cluster will
+In Alpha and Beta, it was possible to disable the feature. At GA, the feature
+gets locked to enabled-by-default state. The following text is therefore only relevant
+for Alpha and Beta.
+
+If the ClusterTrustBundle feature gate is disabled, the cluster will
 largely continue to function properly.
 
 Any pods that specify a ClusterTrustBundle projected volume source will
@@ -949,7 +961,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Use of existing metrics to track operations against certificates.k8s.io/v1alpha1
+Use of existing metrics to track operations against certificates.k8s.io/{v1alpha1,v1beta1,v1}
 ClusterTrustBundle objects will provide a good proxy for the amount of active
 use of the feature.
 
@@ -1054,7 +1066,7 @@ additional pod fields that the user sets to make use of the feature.
 Use of the ClusterTrustBundle projected volume type will impact the [existing
 SLOs](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md)
 that cover startup latency for stateless schedulable pods (similar to the
-existing effect from).
+existing effect from serviceAccountToken projected volumes).
 
 The definition of "stateless" will also need to be updated to include pods that
 use ClusterTrustBundle volumes, unless it is intentional that those SLOs exclude
@@ -1129,7 +1141,10 @@ projected volume source operations can use the
 
 * 1.27 --- ClusterTrustBundle objects went to alpha behind a feature gate.
 * 1.29 --- ClusterTrustBundle projected volume sources went to alpha behind a feature gate.
-* 1.30 --- ClusterTrustBundles and ClusterTrustBundle projected volumes sources targeting beta behind a feature gate.
+* 1.32 --- Added a new signer for the kube-apiserver serving certificates and its
+           ClusterTrustBundle, gated by the ClusterTrustBundles feature gate.
+* 1.33 --- ClusterTrustBundles and ClusterTrustBundle projected volumes sources moved to beta behind a feature gate.
+* 1.37 --- ClusterTrustBundles and ClusterTrustBundle projected volumes sources targeting GA, locked to be enabled by default.
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
