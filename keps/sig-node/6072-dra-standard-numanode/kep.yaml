@@ -6,12 +6,12 @@ owning-sig: sig-node
 participating-sigs:
   - sig-scheduling
   - wg-device-management
-status: provisional
+status: implementable
 creation-date: 2026-05-12
 reviewers:
-  - TBD
+  - "@ffromani"
 approvers:
-  - TBD
+  - "@mrunalp"
 see-also:
   - "/keps/sig-scheduling/5491-dra-list-types-for-attributes"
 stage: alpha
@@ -20,9 +20,6 @@ milestone:
   alpha: "v1.37"
   beta: "v1.38"
   stable: "v1.39"
-feature-gates:
-  - name: DRAStandardNUMANode
-    components:
-      - kube-apiserver
+feature-gates: []
 disable-supported: true
 metrics: []

@@ -20,6 +20,7 @@
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
   - [Helper Implementation](#helper-implementation)
+    - [Platform scope](#platform-scope)
   - [Driver Changes](#driver-changes)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -32,6 +33,7 @@
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [Decoupling from KEP-5491 graduation](#decoupling-from-kep-5491-graduation)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -279,6 +281,12 @@ func GetNUMANodeList(numaNode int, mods ...MachineModifier) DeviceAttribute
 
 All functions use the existing `machine` abstraction with `MachineModifier` for testability via mock sysfs.
 
+#### Platform scope
+
+The derivation helpers (`GetNUMANodeListByPCIBusID`, `GetNUMANodeList`) read Linux sysfs (`/sys/bus/pci/devices/<BDF>/numa_node`) and ACPI SLIT distances, so the automatic SLIT-based list construction is **Linux-only**. This matches the current state of DRA drivers, which are Linux-only in practice.
+
+The standard attribute name and its semantics, however, are platform-neutral. The attribute is a plain integer (or integer list) value with no Linux-specific encoding, so a Windows DRA driver MAY publish `resource.kubernetes.io/numaNode` directly if it obtains NUMA topology through a Windows-native mechanism — the helper functions are a convenience for Linux drivers, not a requirement of the attribute. Windows NUMA topology discovery for DRA is out of scope for this KEP; if it is pursued, it would supply the value through a separate Windows-specific code path (see related Windows affinity work in KEP-4885) and reuse this same attribute name and matching semantics. No part of the scheduler-side `matchAttribute` intersection logic is platform-dependent.
+
 ### Driver Changes
 
 Each DRA driver adds one call to publish the list attribute:
@@ -328,6 +336,14 @@ None — this adds a new attribute and helper functions, does not modify existin
 
 ### Graduation Criteria
 
+This KEP standardizes a device attribute and ships helper library code rather than a gated API or controller, so the stages track **adoption and validation maturity** rather than the enablement lifecycle of a feature gate:
+
+- **Alpha** — the attribute name, semantics, and helper functions exist and are tested, with at least one driver publishing the value. The name is documented as "can also be a list," so drivers adopting it early is forward-compatible and not an API break.
+- **Beta** — enough independent drivers have adopted it (target: three) to confirm the name and SLIT-based semantics work across real hardware, with feedback from topology-aware workloads.
+- **GA** — real-world cross-driver co-placement deployments demonstrate the standard is stable and sufficient.
+
+Because the scalar form carries no feature gate (see [Decoupling from KEP-5491 graduation](#decoupling-from-kep-5491-graduation)), these stages gate confidence in the *convention*, not the availability of a gated code path.
+
 #### Alpha
 
 - Helper functions in `deviceattribute` library (scalar and list variants)
@@ -356,6 +372,15 @@ None — this adds a new attribute and helper functions, does not modify existin
 ### Version Skew Strategy
 
 The attribute depends on KEP-5491 `DRAListTypeAttributes` for the list type. All components (API server, scheduler) must have this feature gate enabled. The scheduler must also have the allocator wiring fix (kubernetes/kubernetes#139332) to select the experimental allocator that implements intersection matching.
+
+#### Decoupling from KEP-5491 graduation
+
+This KEP does not graduate in lockstep with `DRAListTypeAttributes`. There is no requirement that the two reach the same stage at the same time:
+
+- The **scalar form** carries no dependency on KEP-5491 and is usable at any stage, including before `DRAListTypeAttributes` exists in a cluster. This is the baseline that makes the standard attribute name useful on its own.
+- The **list form** simply consumes whatever `DRAListTypeAttributes` provides at its current stage. If KEP-5491 is at beta while this KEP is at alpha (or vice versa), drivers and the scheduler use the list type at the stage KEP-5491 happens to be in; this KEP adds no additional gating on top of it.
+
+Consequently, KEP-5491 graduating, stalling, or being rolled back does not block or regress the scalar behavior of this attribute — it only changes whether the richer list form is available. The two KEPs are layered, not bound to a shared graduation schedule.
 
 ## Production Readiness Review Questionnaire
 
