@@ -1,5 +1,6 @@
 # KEP-5963: DRA Device Compatibility Groups
 
+<!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -22,11 +23,11 @@
   - [Interaction with Multi-Request Claims and Device Constraints](#interaction-with-multi-request-claims-and-device-constraints)
   - [Driver Responsibilities](#driver-responsibilities)
   - [Test Plan](#test-plan)
-    - [Prerequisite testing updates](#prerequisite-testing-updates)
-    - [Unit tests](#unit-tests)
-    - [Integration tests](#integration-tests)
-    - [e2e tests](#e2e-tests)
-    - [Performance tests](#performance-tests)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
+      - [Performance tests](#performance-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -46,8 +47,9 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Current Workaround: Driver-level Preparation Failure](#current-workaround-driver-level-preparation-failure)
-  - [Inverted naming: `mutualExclusionGroups`](#inverted-naming-mutualexclusiongroups)
+  - [Inverted naming: <code>mutualExclusionGroups</code>](#inverted-naming-mutualexclusiongroups)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
