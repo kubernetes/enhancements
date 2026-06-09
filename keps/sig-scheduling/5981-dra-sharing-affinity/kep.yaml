@@ -14,7 +14,7 @@ reviewers:
   - "@ritazh"
   - "@LionelJouin"
 approvers:
-  - TBD
+  - "@dom4ha"
 
 see-also:
   - "/keps/sig-scheduling/5075-dra-consumable-capacity"
