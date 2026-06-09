@@ -68,6 +68,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
+    - [Stable](#stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade](#upgrade)
     - [Downgrade](#downgrade)
@@ -106,15 +107,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -339,7 +340,13 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-N/A, the feature is tested using unit tests and e2e tests.
+A test will be added to the [podautoscaler integration tests] to ensure HPA
+configurable tolerances are correctly taken into account both when scaling up
+and down.
+
+- [Test HPA with tolerance](https://github.com/kubernetes/kubernetes/tree/master/test/integration/podautoscaler) ([Testgrid](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&width=20&include-filter-by-regex=sig-autoscaling) [triage search](https://storage.googleapis.com/k8s-triage/index.html?job=ci-kubernetes-integration&test=sig-autoscaling))
+
+[podautoscaler integration tests]: https://github.com/kubernetes/kubernetes/tree/master/test/integration/podautoscaler
 
 ##### e2e tests
 
@@ -358,10 +365,8 @@ configurable tolerance is specified.
 
 The new [e2e autoscaling tests] covering this feature are:
 
-- [Test with large configurable tolerance](https://github.com/kubernetes/kubernetes/blob/07142400ecd02126602ffaa6f91712cd3f1e170c/test/e2e/autoscaling/horizontal_pod_autoscaling_behavior.go#L509): [SIG autoscaling](https://testgrid.k8s.io/sig-autoscaling-hpa#gci-gce-autoscaling-hpa-cpu-alpha-beta-pull&include-filter-by-regex=HPAConfigurableTolerance.*large%20configurable%20tolerance), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=HPAConfigurableTolerance.*large%20configurable%20tolerance)
-
-Before the graduation to beta, we will add an integration test verifying the autoscaling
-behavior when smaller and larger than default tolerances are set on an HPA.
+- [Test with large configurable tolerance](https://github.com/kubernetes/kubernetes/blob/07142400ecd02126602ffaa6f91712cd3f1e170c/test/e2e/autoscaling/horizontal_pod_autoscaling_behavior.go#L509): [SIG autoscaling](https://testgrid.k8s.io/sig-autoscaling-hpa-presubmits#gci-gce-autoscaling-hpa-cpu-alpha-beta-pull&include-filter-by-regex=HPAConfigurableTolerance.*large%20configurable%20tolerance), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=HPAConfigurableTolerance.*large%20configurable%20tolerance)
+- [Test with both larger and smaller than default tolerances](https://github.com/kubernetes/kubernetes/blob/96914184bc3fe6d3c0195b5828c07a821ca6e093/test/e2e/autoscaling/horizontal_pod_autoscaling_behavior.go#L549): [SIG autoscaling](https://testgrid.k8s.io/sig-autoscaling-hpa-presubmits#gci-gce-autoscaling-hpa-cpu-alpha-beta-pull&include-filter-by-regex=HPAConfigurableTolerance.*small.*tolerance), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=HPAConfigurableTolerance.*small.*tolerance)
 
 [e2e autoscaling tests]: https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling
 
@@ -438,6 +443,11 @@ in back-to-back releases.
 
 - All tests described in the [`e2e tests` section](#e2e-tests) are implemented
   and linked in this KEP.
+- We have monitored for negative user feedback and addressed relevant concerns.
+
+#### Stable
+
+- Observe real-world usage.
 - We have monitored for negative user feedback and addressed relevant concerns.
 
 ### Upgrade / Downgrade Strategy
@@ -529,10 +539,10 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-The feature can be disabled by restarting the `kube-controller-manager` with the feature gate set to `false`.
+The feature cannot be disabled: `tolerance` values set on HPAs are taken into
+account.
 
-Any `tolerance` values set on existing HPAs will be ignored by the
-`kube-controller-manager` and `kube-apiserver` when the feature gate is off.
+Users can remove `tolerance` fields to ensure the feature is not used.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -978,6 +988,7 @@ Major milestones might include:
 2025-03-24: [Implementation PR](https://github.com/kubernetes/kubernetes/pull/130797) merged.
 2025-05-15: Kubernetes v1.33 released (includes this feature).
 2025-05-16: This KEP updated for beta graduation.
+2026-05-21: This KEP updated for stable graduation.
 
 ## Drawbacks
 
