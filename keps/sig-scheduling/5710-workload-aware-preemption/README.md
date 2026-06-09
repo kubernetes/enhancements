@@ -21,7 +21,6 @@
   - [Pod Group priorities](#pod-group-priorities)
   - [Preemption algorithm](#preemption-algorithm)
     - [In place victim reprieval](#in-place-victim-reprieval)
-    - [CycleState retention](#cyclestate-retention)
       - [TopologyAwareScheduling](#topologyawarescheduling)
     - [CompositePodGroup](#compositepodgroup)
   - [Pod Group Post Filter](#pod-group-post-filter)
@@ -657,75 +656,17 @@ we will be able to achieve in-place replacement with relatively localized change
 
 #### In place victim reprieval
 
-The algorithm described above assumes that we can cheaply check if a potential victim pod can be placed back where they are currently running after preemptor has been `assumed` on the target node. However there is no extension point like this implemented in the scheduler as of right now. During scheduling, the scheduler uses Filter plugins to check whether a pod can run on a given node. This process is heavy and requires to build a `cycleState` object, particularly for plugins that have inter pod constraints such as pod affinity (pod running on node A can fail "Filter" on node B). Running `Filter()` and building a `cycleState` for all of the victims does not seem like a feasible option from performance perspective.
+The algorithm described above states that at one point we need to check whether a victim can be placed back in the place
+they are currently running with preemptor assumed to run on selected nodes. This check will be achieved by running Filter 
+plugins for each of the schedulable preemptor pods on selected nodes with the preemptor pod `CycleState`. We will keep the `CycleState` objects of each of the schedulable preemptor pods from the scheduling algorithm run within WAP and update them as we reprieve victims.
 
-However, one can note that actually do not need a full Filter check. Instead of checking if the victim pod can be scheduled back on its node, we need to check whether keeping the victim pod on a node will break the schedulability of the preemptor that we assumed. Mainly, this means that we do not have to meet the scheduling constraints for victim pod, and we only care about scheduling constraints of the preemptor pod that could be broken. Such check can be implemented by extending Filter plugins with a new method.
-We propose to tenantively call it `Reprieve` with following semantics:
-
-```go 
-
-type PreemptorPlacement struct {
-  Pod        *v1.Pod
-  Node       NodeInfo
-  CycleState CycleState
-}
-
-// ...
-// FilterPlugin also needs to implement Reprieve method
-// for effective preemption for pod groups.
-type FilterPlugin interface {
-    Plugin
-
-    Filter(ctx context.Context, state CycleState, pod *v1.Pod, nodeInfo NodeInfo) *Status
-
-    // Reprieve is called by the preemption.
-    // All FilterPlugins should return "Success" to declare that
-    // the given victim pod can be placed back on the given node
-    // without breaking schedulability of the preemtor pod on this node.
-    // If Reprieve does not return "Success", it will return "Unschedulable"
-    // or "Error".
-    //
-    // "Error" aborts preemption.
-    //
-    // For the node being evaluated Filter plugins should look at the passed
-    // nodeInfo reference for this particular node's information instead of
-    // looking it up in the NodeInfoSnapshot because during preemption
-    // the state of the node can be mutated to evaluate the possibility of  preempting 
-    // them to schedule preemptor pods.
-
-    // Plugins are encouraged to check the context for cancellation.
-    // Once canceled, they should return as soon as possible with
-    // an Unschedulable status that includes the
-    // `context.Cause(ctx)` error explanation.
-    Reprieve(ctx context.Context, victimPod *v1.Pod, nodeInfo NodeInfo, preemptorPods []PreemptorPlacement, clusterNodes []NodeInfo) *Status
-}
-```
-
-We expect that for Filter plugins that do not enforce inter pod constraints the implementation should be trivial. We will
-provide an implementation for all the in-tree Filter plugins. We expect that the owners of out-of-tree plugins will
-follow with the implementation of `Reprieve` for their plugins.
-
-For currently implemented in-tree plugins that implement FilterPlugin interface the Reprieve method will work as follows:
-- NodeName: No-op. Scheduling constraint without inter pod constraints.
-- NodePorts: The Reprieve method will check whether the preemptor pods do not use the same `hostPort` as victim pod. If they do, reprieving victim pod breaks schedulability of the preemptor.
-- NodeAffinity: No-op. Scheduling constraint without inter pod constraints.
-- TaintToleration: No-op. Scheduling constraint without inter pod constraints.
-- NodeResourceFit: The Reprieve method will check whether there is enough space for the victim pod given the current state of the node (with preemptor assumed).
-- NodeUnschedulable: No-op. Scheduling constraint without inter pod constraints. 
-- VolumeBinding:  No-op with the current implementation. No change in NodeInfoSnapshot can change the csiStorageCapacityLister output, thus allow preemptor to schedule in a way that breaks CSI storage capacity limity.
-- VolumeRestrictions: The Reprieve method will check whether the volume of victim does not conflict with the node local volumes of the preemptor pods. It will also check whether victim is not trying using `ReadWriteOncePod` PVC that is taken by any of the preemptor pod.
-- VolumeZone: No-op. Scheduling constraint between pod's PVs and node labels
-- PodTopologySpread: The reprieve method has to check whether reprieving a victim pod will not cause the skew of topologySpreadConstraint on the preemptor pod. This one can be potentially the hardest one to implement efficiently as it might require iterating over multiple nodes to calculate skew.
-- InterPodAffinity: We need to check whether preemptor does not have hard anti affinity to the victim pod. If so, reprieving victim would break the schedulability of the preemptor.  We also need to check whether reprieving back the victim pod won't violate any topology constraints (preemptor pod cannot be scheduled in a topology with specific pods running and victim is one of those specific pods). 
-- NodeDeclaredFeatures: No-op. Scheduling constraint.
-- NodeVolumeLimits: No-op with the current implementation. No change in NodeInfoSnapshot can change the csiManager output, thus allow preemptor to schedule in a way that breaks node volume limits.
-- DynamicResources: No-op with current implementation. There is no way to simulate de allocation of the DRA devices in the preemption, so the preemptor pods cannot take over the devices from victim pods.
+The `CycleState` object for Nth pod does not contain information about pods that were scheduled in the pod group cycle after this pod. That's why before running reprieval we will need to update CycleState of preemptor pods with the information about all other pods that were scheduled in pod group cycle after this pod.
 
 > **Note:**
 > DynamicResources, NodeVolumeLimits and VolumeBinding plugins do not work well with preemption right now.
 > They do not support PreFilterExtension interface and they work on a data provided by informer based
 > managers which does not reflect changes in NodeInfo snapshot. As a result they produce false negatives.
-> We do not expect to improve on this when introducing WAP and reprieval method.
+> We do not expect to improve on this when introducing WAP.
 
 When trying to reprieve Pods belonging to the PodGroup with `DisruptionMode=All` the preemption logic will be responsible,
 for making sure that either all of Pods can be reprieved or none of them will be reprieved. This will be achieved 
@@ -733,49 +674,16 @@ by reprieving all pods from PodGroup one by one. After each victim is reprieved,
 of the cluster and kept in a list of pods to rollback. If any of the pods from PodGroup fails the Reprieve call
 all pods from rollback list will be removed from cluster representation.
 
-#### CycleState retention
-
-In the Alpha implementation of WAP the whole PodGroupScheduling function is executed for each victim "reprieval". It includes 
-building a new CycleState for each of the preemptor pods. This assumes that each of the plugin can create a valid
-CycleState based on the current NodeInfoSnapshot which is updated as victim pods are removed and added. This might not be true
-for plugins that use information from external informer and rely on the PreFilterExtension to keep a diff that is applied
-on top of the informer to simulate current state of the world. See [DRA Preemption Proposal](https://github.com/kubernetes/enhancements/issues/5690)
-and VolumeRestrictionsPlugin.
-
-That's why for Beta promotion, we will refactor the PodGroupSchedulingAlgorithm to allow CycleState to be reused across the original scheduling atttempt and attempts in the WAP.
-
-In the current implementation of PodGroupSchedulingAlgorithm the CycleState for Nth Pod from PodGroup is created with previous (N-1) pods from the same PodGroup assumed. 
-To revert that from the CycleState of Nth Pod, we will need to run PreFilterExtension.RemovePod() for each of the (N-1) pods as part of clean up function that we currently run to remove Nth Pod from the NodeInfoSnapshot.
-
-This is akin to the current implementation of PostFilter, where the CycleState from original scheduling attempt is passed to Postfilter method.
-
-For the Reprieve method to work it will require that after an successful attempt of PodGroupScheduling in WAP, for a Nth Pod in PodGroup we will need to add all 
-pods from N+1 till the end of the PodGroup to this pod CycleState. This is to make sure that CycleState of Nth Pod is aware of the assumed presence of the rest 
-of the pods from PodGroup.
-
-This also means that we will not rerun PreFilter plguins in the PodGroupScheduling during WAP. It's also akin to the current implementation of default
-preemption where we only rerun Filter plugins. This information is not exposed right now, so to make thing explicit we will expand the PreFilter plugin
-description to clearly describe how it works with preemption:
-- if any Prefilter returns UnschedulableAndUnresolvable the default preemption / workload aware preemption will not be run. Other PodGroupPostFilter plugins may still run.
-- if any PreFilter returns Unschedulable we run default preemption / workload aware preemption with cycleStates from the initial attempt. PreFilters are NOT rerun in the preemption.
-  Only the PreFilteExtension interface is called to adjust internal state of prefilters based on the victim removal/addition.
-- if a PreFilter returns Skip, the plugin will also be skipped during WAP scheduling simulation and in the Reprieve phase
-- if a PreFilter returns a subset of nodes, this subset of nodes will also be used during preemption scheduling simulation, meaning that even after victim removal we will not search 
-  additional nodes. This is in line with the behavior of not reruning PreFilters in the preemption. 
-
 ##### TopologyAwareScheduling
 
 Even though we do not aim to have a full support for TAS as a part of this KEP, it's worth to consider whether this approach will not block or make it hard
-to implement support for WAP in TAS in the future. As the PlacementGeneratePlugins do not depend on the pod cycle states, there is no concern here.
-For the scheduling attempts inside TAS, the PreFilter plugins do not depend on the selected placement (they always use whole cluster nodes), so we should be able to reuse
-the CycleState from the original scheduling attempt.
+to implement support for WAP in TAS in the future. As we will rerun whole podGroupSchedulingAlgorithm in the WAP, we will as an output get the best placement
+with proposed pods assignments. If we also get the CycleStates from those Pod, we will be able to perform an in-place reprieve as described above.
 
 #### CompositePodGroup
 
 As in TopologyAwareScheduling case we do not aim to have a support for CPG as part of this KEP, but it's alo worth to consider whether this approach will not block WAP for 
-CPGs in the future. This case is very similar to the TopologyAwareScheduling, where in Multi Level Topology Scheduling topolgies will not depend on the pod cycle states and 
-cycle states of pods from all pod groups can be stored and passed to the preemption. 
-
+CPGs in the future. This case is analogous to TopologyAwareScheduling, where whole CPG logic will be hidden within the podGroupSchedulingAlgorithm rerun in the WAP.
 
 ### Pod Group Post Filter
 
@@ -827,7 +735,7 @@ type PodGroupPostFilterPlugin interface {
     // Optionally, a non-nil PodGroupPostFilterResult may be returned along with a Success status. For example,
     // a preemption plugin may choose to return nominatedNodeName, so that framework can reuse that to update the
     // preemptor pod's status.nominatedNodeName field.
-    PodGroupPostFilter(ctx context.Context, pg *v1alpha2.PodGroup, pods []*v1.Pod, pgSchedulingFunc PodGroupSchedulingFunc) (*PodGroupPostFilterResult, *fwk.Status)
+    PodGroupPostFilter(ctx context.Context, pg *v1alpha2.PodGroup, pods []*v1.Pod, podGroupCycleState *framework.CycleState, pgSchedulingFunc PodGroupSchedulingFunc) (*PodGroupPostFilterResult, *fwk.Status)
 }
 ```
 
@@ -910,6 +818,21 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    that we try to reprieve the victims. With a custom scoring functions we could change influence the 
    placement of the preemptor in order to optimize for the reducing the preemption cost. Such change
    can be designed and implemented as a dedicated, follow up KEP. 
+
+1. Specific in place reprieval method
+
+   The in place reprieval proposed in this KEP works by reusing the Filter plugins on preemptor pods.
+   However, this can lead to superflous checks especially for scheduling constraints of preemptor pods
+   that cannot be influenced by "reprieval" of victim. We can see a future, where for the improved performance
+   we will introduce a new method that will allow us to perform a more focused in place reprieval check.
+   
+1. Other in place reprieval improvements
+
+   We can also improve the in place reprieval proposed in this KEP by adding a special check that would allow
+   plugins to decide whether a given pod contains any inter pod constraints. If the Pod does not have any
+   such constraints, we would know that it's safe to reprieve all victims on the nodes that were not selected
+   for the preemptor pods. This can provide a significant performance gain in large scale clusters for 
+   workloads without inter pod constraints.
 
 
 ### Test Plan
