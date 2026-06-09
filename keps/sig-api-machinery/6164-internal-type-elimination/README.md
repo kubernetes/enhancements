@@ -77,7 +77,7 @@ Today many APIs have progressed to a stable `v1` version and the alpha and beta 
 longer served by the API. For such APIs the internal type, the versioned type and the preferred
 storage type are identical. 
 
-As a first step, a type alias (`type Pod = corev1.Pod`) can be used to tell
+As a first step, type aliases (`type Pod = corev1.Pod`) can be used to tell
 go that the internal type is the *same* Go type, so conversion collapses to a no-op.
 
 Longer term we can remove the internal types from the code entirely.
@@ -148,6 +148,8 @@ measured an internal↔v1 round-trip conversion of a representative `ClusterRole
 | Before (distinct internal type) | 470.1 | 736 | 7 |
 | After (internal type is an alias of v1) | 80.5 | 32 | 1 |
 | **Improvement** | **5.8×** | **23×** | **7->1** |
+
+Note that this is comparing aliasing with unsafe conversion.
 
 ### Goals
 
@@ -244,6 +246,20 @@ kube-apiserver runs with reduced peak load and GC churn.
 
 ### Risks and Mitigations
 
+- **Maintaining the hub type increases maintenance burden.** Today the hub type
+  is the internal type. With this change, the hub type will be one of the
+  versioned typed and will change type as the feature stabilizes and the storage
+  version changes. This is a risk that the extra work of switching the hub type
+  each time an API is changed will result in increased maintenance burden and/or
+  will discourage API changes. Handw-ritten validation and admission controllers
+  are the most likely to be affected.
+    - Migiations:
+      - The rollout of declarative validation significantly weakens the
+        hand-written alidation case.
+      - Removal of the internal type reduces the number of API types that must
+        be kept in sync and reduces some of the maintenance burden.
+
+Eliminating the cost of maintaining the internal API definitions reduces development burden for all APIs.
 
 - **Regressions:** The existing round-trip fuzz and serialization-compatibility
   harnesses (see [Test Plan](#test-plan)) are the main defense. A migration that
@@ -274,9 +290,21 @@ conversion-gen already emits `unsafe.Pointer` casts for memory-identical
 fields, so the *field copy* is cheap; the residual cost is the destination
 allocation plus the dispatch and per-call scratch allocations.
 
+## Migration Step 0
+
+Make the internal types memory-identical to the storage version. This drops allocations for
+list requests from O(n) to O(1) and early benchmarks suggest the memory reduction may be
+up to 60% for large pod lists, better than our target of 46%.
+
+The work here involves making the internal type field-for-field identical, the main complexity is:
+
+- `core.PodSpec -> v1.PodSpec` (this is also the was we get the biggest scale impact by optimizing)
+- `runtime.Object -> RawExtension`
+- A few fields that are round-tripped through annotations
+
 ### Migration Step 1
 
-For a structurally-identical resource, the internal type definitions are
+Once we have structurally-identical resource, the internal type definitions can be
 replaced by aliases to the storage version:
 
 ```go
@@ -292,6 +320,13 @@ type (
 	// …
 )
 ```
+
+Object ownership is a bit tricky. We will review all impacted conversion calls, specificaly:
+
+- `ConvertToVersion` / `Convert`: Already perform a deep-copy for self-conversion. This is safe. We're going to need to explicitly opt-out of deep-copy even after switching to a versioned hub.
+- `UnsafeConvertToVersion`: Already shares data, the existing expectation is that owner of the converted object is the new owner, so this is low risk.
+- Unsafe convert in the PATCH handler.
+- Unsafe encode does a hack where is GVK stamps and then removes the stamp in a defer and will need careful review.
 
 Also:
 
