@@ -1786,11 +1786,17 @@ at admission).
 
 **Downgrade**: If the feature gate is disabled:
 
-- Disabling `DRASharingAffinity` causes the API server to strip the
-  `sharingAffinity` field from new or updated ResourceSlices, and
-  the scheduler ignores the field on any persisted ResourceSlices that
-  still carry it (e.g., objects created while the gate was on) —
-  slices return to unconditional sharing (pre-KEP-5981 behavior).
+- The apiserver strips the `sharingAffinity` field from writes that
+  CREATE new ResourceSlices, so a slice freshly created with the gate
+  off has no `sharingAffinity`.
+- The apiserver PRESERVES the `sharingAffinity` field on writes that
+  UPDATE existing ResourceSlices where the field was already set on
+  the prior object (ratcheting drop-on-disable). This prevents silent
+  data loss across gate flips. Users may explicitly clear the field by
+  setting it to null.
+- The scheduler ignores `sharingAffinity` for placement decisions on
+  any persisted ResourceSlices that still carry it — slices return to
+  unconditional sharing (pre-KEP-5981 behavior).
 - The DRA driver becomes the sole authority for enforcing hardware
   compatibility at `NodePrepareResources`.
 
@@ -1845,17 +1851,21 @@ driver's opt-in, but it means a cluster can see scheduling outcomes
 shift purely from a slice-side change. With the gate enabled, the timing of that
 shift is controlled by when drivers begin advertising
 `sharingAffinity` on their slices; with the gate disabled, the
-apiserver strips the field on write so slices cannot advertise it at
-all (see the rollback question below).
+apiserver strips the field on writes that create new slices. Slices
+that already have `sharingAffinity` set when the gate flips off keep
+their data (ratcheting drop-on-disable — see the rollback question below).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Disabling `DRASharingAffinity` causes:
-- API server to strip the `sharingAffinity` field from new or
-  updated ResourceSlices before persisting (writes succeed, field is
-  not stored)
+- API server to strip the `sharingAffinity` field on writes that
+  CREATE new ResourceSlices (writes succeed, field is not stored).
+- API server to PRESERVE the `sharingAffinity` field on writes that
+  UPDATE slices where the field was already set on the prior object
+  (ratcheting drop-on-disable; prevents silent data loss across gate
+  flips). Users may explicitly clear the field by setting it to null.
 - Scheduler to ignore existing `sharingAffinity` fields for future
-  placement decisions
+  placement decisions.
 
 Existing allocations continue to work. New allocations may become more
 permissive, so the driver must continue validating compatibility at
@@ -1864,11 +1874,14 @@ prepare time.
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The scheduler resumes enforcing `sharingAffinity` for future placement
-decisions. Existing allocations are not evicted. However, ResourceSlices
-that were created or updated while the gate was disabled will not have
-the `sharingAffinity` field (it was stripped by the API server); drivers
-must republish their slices with `sharingAffinity` for the feature to
-take effect.
+decisions. Existing allocations are not evicted.
+
+ResourceSlices that ALREADY HAD `sharingAffinity` set when the gate was
+disabled retain the field (ratcheting drop-on-disable preserved the
+data across the gate flip). The scheduler picks up enforcement on those
+slices immediately. ResourceSlices that were newly CREATED while the
+gate was off will not have the field; drivers may republish those
+specific slices with `sharingAffinity` to opt them in.
 
 Because Filter was not enforcing affinity while the gate was disabled,
 the scheduler may have allowed multiple bound claims onto the same
