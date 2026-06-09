@@ -873,6 +873,12 @@ are scheduled, the scheduler removes the PodGroup from the claim's
 `status.reservedFor`. A future invocation of `PostFilter` will deallocate the
 ResourceClaim if its `status.reservedFor` list is still empty.
 
+The DynamicResources plugin will also implement the `PostFilter` phase of the
+PodGroup scheduling cycle which will perform a similar function to the Pod-level
+implementation. When a PodGroup fails to schedule, `PostFilter` will deallocate
+and unreserve the PodGroup's ResourceClaims which are reserved only for that
+PodGroup or for nobody.
+
 ### Determining Allowed Pods for a ResourceClaim
 
 Currently, any Pod allowed to utilize a ResourceClaim is listed explicitly in
