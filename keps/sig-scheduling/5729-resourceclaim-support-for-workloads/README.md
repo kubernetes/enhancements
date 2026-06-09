@@ -865,6 +865,14 @@ of its Pods are done using the ResourceClaim. When no more Pods in the group are
 expected to run, the creator of the PodGroup is responsible for deleting it to
 free up the devices allocated by its ResourceClaims.
 
+Claims reserved for a PodGroup can also be deallocated by the scheduler in the
+DynamicResource plugin's `PostFilter` phase. In `PostFilter`, the
+DynamicResources plugin uses the scheduler's internal view of PodGroups to
+determine if any of the group's Pods are scheduled. When no Pods in the group
+are scheduled, the scheduler removes the PodGroup from the claim's
+`status.reservedFor`. A future invocation of `PostFilter` will deallocate the
+ResourceClaim if its `status.reservedFor` list is still empty.
+
 ### Determining Allowed Pods for a ResourceClaim
 
 Currently, any Pod allowed to utilize a ResourceClaim is listed explicitly in
@@ -893,18 +901,6 @@ are scheduled to use the ResourceClaim. It is possible to have Pods that
 reference a PodGroup that has been allocated a claim, but haven't
 yet been scheduled. This distinction is important for some of the usages of the
 `status.reservedFor` list described above:
-
-1. If the DRA scheduler plugin is trying to find candidates for deallocation in
-   the `PostFilter` function and sees a ResourceClaim with a non-Pod reference,
-   it will not attempt to deallocate. The plugin has no way to know how many
-   Pods are actually consuming the ResourceClaim without the explicit list in
-   `status.reservedFor` list and therefore it will not be safe to deallocate.
-
-     - Now the DRA plugin reuses the scheduler's internal view of PodGroups to
-       determine if none of the group's Pods are scheduled during `PostFilter`
-       and removes the PodGroup from `status.reservedFor` when no Pods in the
-       group have been scheduled. A future invocation of `PostFilter` may
-       deallocate a PodGroup's claim if its `status.reservedFor` is still empty.
 
 1. The device_taint_eviction controller will use the list of Pods referencing
    the PodGroup to determine the list of pods that needs to be
