@@ -465,6 +465,15 @@ Scheduling:
   arbitrarily land elsewhere, preventing the scheduler from undoing work performed
   in previous nominating cycles.
 
+5. Integration with Workload Aware Preemption
+
+  To ensure parity with a default pod group scheduling cycle, the TAS is now integrated
+  with [Workload Aware Preemption](https://kep.k8s.io/5710). In the WAP, after potential
+  victims are removed, the scheduler will run a podGroupSchedulingAlgorithm with TAS which
+  might potentially generate new placements. The best placement will be selected and the WAP
+  logic will try to reprieve as many victims as possible while assuming that preemptors pods
+  are assigned to the selected placement.
+
 ### Future Extensions
 
 [KEP-5729: DRA: ResourceClaim Support for Workloads](https://kep.k8s.io/5729)
