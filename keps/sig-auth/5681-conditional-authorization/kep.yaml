@@ -17,10 +17,10 @@ approvers:
 
 stage: alpha
 
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 milestone:
-  alpha: "v1.36"
+  alpha: "v1.37"
 
 feature-gates:
   - name: ConditionalAuthorization
