@@ -8,17 +8,19 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Migration steps](#migration-steps)
-  - [Migration order](#migration-order)
+  - [Phasing](#phasing)
     - [Commitment](#commitment)
   - [User Stories](#user-stories)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Background](#background)
-  - [Migration Step 1](#migration-step-1)
-  - [Migration Step 2](#migration-step-2)
-  - [Migration Step 3](#migration-step-3)
+  - [Phase 1: Make the internal types memory-identical to the stable served version](#phase-1-make-the-internal-types-memory-identical-to-the-stable-served-version)
+    - [Step 1:](#step-1)
+    - [Step 2:](#step-2)
+  - [Phease 2: Remove internal types](#phease-2-remove-internal-types)
+    - [Step 1](#step-1-1)
+    - [Step 2](#step-2-1)
+    - [Step 3](#step-3)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -65,22 +67,22 @@ representation of its types in addition to the versioned types (`v1`,
 `v1beta1`, …). The internal type is the conversion "hub" and also serves as the
 type that handwritten validation evaluates against.
 
-This KEP proposes to **incrementally migrate built-in APIs off the internal
-type**, using **Go type aliases as the first and lowest-risk step**, and
-**prioritizing high-traffic APIs**.
+Today many APIs have progressed to a stable `v1` version and the alpha and beta
+types are no longer served by the API. For such APIs the internal type, there is
+no benefit to having an internal type that differs from the preferred served type.
 
-Eliminating needless conversions offers up to 46% reduction on peak memory for list
-operations served by the kube-apiserver and has long term maintenance benefits to
-the project.
+This KEP proposes a two phrase project:
 
-Today many APIs have progressed to a stable `v1` version and the alpha and beta types are no
-longer served by the API. For such APIs the internal type, the versioned type and the preferred
-storage type are identical. 
+Phase 1: **make the internal types memory-identical to the preferred served
+type**, resulting in O(n) -> O(1) allocation cost for conversions which
+reduces peak memory utilization by up to 5x faster and 3x less memory
+utilization for the conversions performed by large list operations.
 
-As a first step, type aliases (`type Pod = corev1.Pod`) can be used to tell
-go that the internal type is the *same* Go type, so conversion collapses to a no-op.
+Phase 2: **incrementally migrate built-in APIs off the internal type**, using
+**Go type aliases as the first and lowest-risk step**. Longer term we can remove
+the internal types from the code entirely. This long term maintenance benefits
+to the project.
 
-Longer term we can remove the internal types from the code entirely.
 
 ## Motivation
 
@@ -91,8 +93,18 @@ by conversion.
 
 https://github.com/kubernetes/kubernetes/issues/139026 showed that if conversion
 operations are streamed we reduce peak memory by up to 46% plus eliminate the GC
-churn caused by the allocations performed during conversion. By eliminating
-conversion entirely we expect to do even better.
+churn caused by the allocations performed during conversion. By optimizing away
+conversion costs we expect to do even better.
+
+While many internal types are already memory-identical to the preferred served
+type, some older types are not. Critically, the internal PodSpec type is
+needless different for the v1 type, and since Go optimizes for copying data
+between identical structs, these differences makes conversion expensive and
+slow.
+
+A large portion of this KEP will focus on making types memory-identical and
+putting guard rails in place to keep them memory-identical to prevent needless
+differences, like those in PodSpec, from creeping into the code.
 
 The internal type exists for a few historical reasons (see [kubernetes/kubernetes#138097][#138097]):
 
@@ -135,30 +147,22 @@ no-op).
 
 ### Benchmarks
 
-https://github.com/kubernetes/kubernetes/issues/139026 shows that even without
-eliminating conversion, that streaming the operation can reduce peak memory by
-by up to 46%.
+internal <-> v1 pod conversion allocs go from O(n) -> O(1)  if the internal type is memory-identical with the versioned type.  This shows the cost of converting `PodList` of various sizes from internal to v1:
 
-To validate that eliminating conversion performs as expected, we aliased the
-`rbac.authorization.k8s.io` internal types to their `v1` counterparts and
-measured an internal↔v1 round-trip conversion of a representative `ClusterRole`:
-
-| | ns/op | B/op | allocs/op |
-|---|---:|---:|---:|
-| Before (distinct internal type) | 470.1 | 736 | 7 |
-| After (internal type is an alias of v1) | 80.5 | 32 | 1 |
-| **Improvement** | **5.8×** | **23×** | **7->1** |
-
-Note that this is comparing aliasing with unsafe conversion.
+| pods | master | this PR | improvement |
+|---|---|---|---|
+| 1 | 1,435 ns · 4,280 B · **26** allocs | 485 ns · 1,472 B · **5** allocs | 3.0× faster · 2.9× mem |
+| 100 | 109,851 ns · 403,879 B · **2,105** allocs | 19,314 ns · 123,072 B · **5** allocs | 5.7× faster · 3.3× mem |
+| 1000 | 859,427 ns · 4.00 MB · **21,005** allocs | 148,795 ns · 1.20 MB · **5** allocs | **5.8× faster · 3.3× mem** |
 
 ### Goals
 
+- Optimize away internal-to-versioned conversion costs.
+- Ensure that the internal types stay memory-identical to the stable served type
+  unless there is a good reason for the difference.
 - Preserve the idea of a hub type.
-- Eliminate the internal-to-versioned conversion cost for migrated resources.
-- Define a simple, incremental, per-resource migration.
-- Sequence by traffic to harvest the performance and scale benefits early.
-- Converge on a *single* conversion pattern (a versioned hub) across all
-  built-in APIs, rather than carrying two patterns indefinitely.
+- Reduce the use of the internal type in the code base (validation, admission, ...)
+  and eventually remove internal types entirely.
 
 
 ### Non-Goals
@@ -172,60 +176,18 @@ Note that this is comparing aliasing with unsafe conversion.
 
 ## Proposal
 
-### Migration steps
+### Phasing
 
-1. **Alias:** Replace the internal struct definitions with aliases to
-   the storage version, reconcile any internal-only methods, and regenerate
-   deepcopy/conversion.
-1. **Switch to a Versioned hub:** Drop the `__internal` registration for the
-   resource and set its in-memory/hub version to the storage version.
-1. **Update call sites:** Migrate call sites (admission, registry, controllers)
-   from the internal type to the versioned type. This follows each resource's
-   hub switch promptly; it is not deferred indefinitely.
-1. **Delete the internal package (can be later):** Once no call sites remain,
-   delete the internal type and its generated code. This final removal can land
-   well after the hub switch.
-
-### Migration order
-
-We sequence by traffic to harvest performance benefits early, while converging
-on a single pattern for *all* built-in APIs:
-
-Group 1:
-
-1. **Demonstrate mechanism** Prove the mechanism on a small set of APIs, e.g.
-   group `pod` (difficult in terms of scale), CRD (difficult because the internal API complex)
-   and an easy group like `rbac.authorization.k8s.io` to demonstrate the
-   migration mechanism.
-
-Group 2:
-
-1. **High-traffic easy APIs** These carry most
-   apiserver traffic and alias cleanly today: `coordination/Lease` (kubelet
-   heartbeats), `discovery/EndpointSlice`, `events.k8s.io/Event`,
-   `core/ConfigMap`, `core/Endpoints`, `core/Node`, `core/ServiceAccount`.
-1. **Structurally-identical APIs.** All other groups whose internal
-   and versioned types are already identical are aliased and switched to a
-   versioned hub. These are low-risk and are part of the committed migration,
-   not just the high-traffic subset.
-
-Group 3:
-
-1. **High-traffic complex APIs** `core/Pod`,
-   `core/Secret` have hand-written conversions and/or internal-only
-   fields and cannot be aliased as-is. In such cases, the internal type will
-   first need to be modified to match the hub type, and so these are sequenced
-   after the clean cases.
-1. **The long tail.** Groups that are not yet structurally identical have their
-   internal type reshaped to match the hub and are then migrated.
+- Phase 1: Make the internal types memory-identical to the stable served version.
+- Phase 2: Remove the internal types.
 
 #### Commitment
 
-Our criteria success is the successful migration of the `pod` (most impactful)
-and `CRD` (most difficult) APIs. If we fail to migate these within 2 releases we
-will add back the internal APIs for all migrated APIs. If these are successful, we
- commit to completing the remaining migrations over a 3-release
-(~1 year) window**.
+Our Phase 1 goal is to optimize away the conversion costs via memory-identical types.
+
+If Phase 1 is successful, we will expore Phase 2, starting with type aliasing.
+We commit to either completing Phase 2 or reverting all code to retain the
+internal types within a 3-release (~1 year) window**.
 
 ### User Stories
 
@@ -274,35 +236,41 @@ Eliminating the cost of maintaining the internal API definitions reduces develop
 
 ## Design Details
 
-### Background
+### Phase 1: Make the internal types memory-identical to the stable served version
 
-`runtime.Scheme` maps Go types to GVKs and back:
-`gvkToType map[GVK]reflect.Type` (many GVKs → one type is allowed) and
-`typeToGVK map[reflect.Type][]GVK` (one type → many GVKs is *also* allowed and
-already used, e.g. by unversioned `metav1` types registered across every
-version). Conversion is dispatched in `Scheme.convertToVersion`
-(`staging/src/k8s.io/apimachinery/pkg/runtime/scheme.go`), which looks up the
-candidate kinds for the source type, asks the target `GroupVersioner` which kind
-is wanted, allocates a destination via `s.New(gvk)`, and runs the registered
-conversion function.
+This is our v1.37 goal
 
-conversion-gen already emits `unsafe.Pointer` casts for memory-identical
-fields, so the *field copy* is cheap; the residual cost is the destination
-allocation plus the dispatch and per-call scratch allocations.
+This drops allocations for list requests from O(n) to O(1) and early benchmarks
+suggest the memory reduction may be up to 60% for large pod lists and is where
+we expect the vast majority of the performance and scale benefits will be.
 
-## Migration Step 0
+#### Step 1:
 
-Make the internal types memory-identical to the storage version. This drops allocations for
-list requests from O(n) to O(1) and early benchmarks suggest the memory reduction may be
-up to 60% for large pod lists, better than our target of 46%.
-
-The work here involves making the internal type field-for-field identical, the main complexity is:
+Make the internal type field-for-field identical, the main complexity is:
 
 - `core.PodSpec -> v1.PodSpec` (this is also the was we get the biggest scale impact by optimizing)
 - `runtime.Object -> RawExtension`
 - A few fields that are round-tripped through annotations
 
-### Migration Step 1
+
+#### Step 2:
+
+Introduce guardrails to prevent internal types from becoming needlessly differen
+than the stable served version.
+
+We plan to modify conversion-gen to track differences between the types and
+require exemptions for differences.
+
+This is important to prevent accidental performance regressions. Today we
+already have many memory-identical types and are planning to make pod and other
+high traffic APIs memory-identical. If any of those types become different than
+the performance will regress.
+
+### Phease 2: Remove internal types
+
+This is our goal for v.1.38+
+
+#### Step 1
 
 Once we have structurally-identical resource, the internal type definitions can be
 replaced by aliases to the storage version:
@@ -321,7 +289,7 @@ type (
 )
 ```
 
-Object ownership is a bit tricky. We will review all impacted conversion calls, specificaly:
+Object ownership is a bit tricky. We will review all impacted conversion calls, specifically:
 
 - `ConvertToVersion` / `Convert`: Already perform a deep-copy for self-conversion. This is safe. We're going to need to explicitly opt-out of deep-copy even after switching to a versioned hub.
 - `UnsafeConvertToVersion`: Already shares data, the existing expectation is that owner of the converted object is the new owner, so this is low risk.
@@ -333,7 +301,7 @@ Also:
 1. Get rid of any internal-only methods
 2. Disable deepcopy gen on the internal type
 
-### Migration Step 2
+#### Step 2
 
 Phase 2 retires the `__internal` registration for the resource and make the
 storage version the hub.
@@ -344,7 +312,7 @@ storage version the hub.
   versioned type.
 - Adjust the round-trip fuzz harness to work primarily off the new hub version
 
-### Migration Step 3
+#### Step 3
 
 Delete the internal type after moving all handwritten validation and any custom
 functions off of the internal type.
@@ -557,3 +525,19 @@ Review load of the migration.
 - Add streaming converion for list. We'd prefer avoid this approach
   since it adds complexity to the system. Better to eliminate conversion
   and reduce complexity from the system.
+
+https://github.com/kubernetes/kubernetes/issues/139026 shows that even without
+eliminating conversion, that streaming the operation can reduce peak memory by
+by up to 46%.
+
+To validate that eliminating conversion performs as expected, we aliased the
+`rbac.authorization.k8s.io` internal types to their `v1` counterparts and
+measured an internal↔v1 round-trip conversion of a representative `ClusterRole`:
+
+| | ns/op | B/op | allocs/op |
+|---|---:|---:|---:|
+| Before (distinct internal type) | 470.1 | 736 | 7 |
+| After (internal type is an alias of v1) | 80.5 | 32 | 1 |
+| **Improvement** | **5.8×** | **23×** | **7->1** |
+
+Note that this is comparing aliasing with unsafe conversion.
