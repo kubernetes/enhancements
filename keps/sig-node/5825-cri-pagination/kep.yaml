@@ -9,8 +9,10 @@ creation-date: 2026-01-21
 reviewers:
   - "@haircommander"
   - "@samuelkarp"
+  - "@mikebrow" # sig-node-assigned-reviewer
 approvers:
   - "@dchen1107"
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature

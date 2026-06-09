@@ -12,6 +12,7 @@ last-updated: "2026-05-29"
 reviewers:
   - "@mrunalp"      # overall
   - "@ahg-g"        # SIG Scheduling
+  - "@SergeyKanzhelev" # sig-node-assigned-reviewer
 approvers:
   - "@mrunalp"
   - "@thockin"

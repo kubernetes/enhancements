@@ -9,7 +9,7 @@ status: implementable
 creation-date: 2025-09-21
 reviewers:
   - "@pravk03"
-  - "@ffromani"
+  - "@ffromani" # sig-node-assigned-reviewer
   - "@tallclair"
   - "@natasha41575"
   - "@dchen1107"
@@ -19,6 +19,7 @@ approvers:
   - "@dawnchen" # SIG Node approval
   - "@ffromani"
   - "@tallclair"
+  - "@dchen1107" # sig-node-tl
 
 see-also:
   - "keps/sig-node/1287-in-place-update-pod-resources"

@@ -10,6 +10,7 @@ reviewers:
   - "@SergeyKanzhelev"
   - "@rata"
   - "@haircommander" # sig-node-assigned-reviewer
+  - "@mikebrow" # sig-node-assigned-reviewer
 approvers:
   - "@mrunalp" # sig-node-tl
 

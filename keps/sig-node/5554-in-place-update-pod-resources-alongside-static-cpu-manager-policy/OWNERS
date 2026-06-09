@@ -3,9 +3,7 @@
 # Scaling up SIG Node KEP approvers: https://github.com/kubernetes/community/blob/master/sig-node/CONTRIBUTING.md#scaling-up-kep-approvers
 
 reviewers:
-  - swatisehgal # sig-node-assigned-reviewer
-  - SergeyKanzhelev # sig-node-assigned-reviewer
-  - haircommander # sig-node-assigned-reviewer
+  - ffromani # sig-node-assigned-reviewer
 
 approvers:
-  - tallclair # sig-node-assigned-approver
+  - dchen1107 # sig-node-tl

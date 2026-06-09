@@ -10,6 +10,8 @@ creation-date: 2023-09-05
 reviewers:
   - "@ffromani"
   - "@SergeyKanzhelev" # sig-node-assigned-reviewer
+  - "@tallclair" # sig-node-assigned-reviewer
+  - "@swatisehgal" # sig-node-assigned-reviewer
 approvers:
   - "@dchen1107" # sig-node-tl
   - "@mrunalp"

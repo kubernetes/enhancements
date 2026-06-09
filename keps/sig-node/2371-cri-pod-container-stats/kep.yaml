@@ -10,8 +10,9 @@ creation-date: 2021-01-27
 reviewers:
   - "@mrunalp"
   - "@marosset"
-  - "@mikebrow"
+  - "@mikebrow" # sig-node-assigned-reviewer
   - "@SergeyKanzhelev"
+  - "@haircommander" # sig-node-assigned-reviewer
 approvers:
   - "@dchen1107"
 see-also:

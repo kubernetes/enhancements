@@ -10,6 +10,8 @@ reviewers:
   - "@mrunalp"
   - "@giuseppe"
   - "@pacoxu"
+  - "@ndixita" # sig-node-assigned-reviewer
+  - "@ajaysundark" # sig-node-assigned-reviewer
 approvers:
   - "@derekwaynecarr"
 owning-sig: sig-node
