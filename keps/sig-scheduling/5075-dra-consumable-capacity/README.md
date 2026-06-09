@@ -71,8 +71,8 @@ SIG Architecture for cross-cutting KEPs).
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-  - [Beta](#beta)
-  - [GA](#ga)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -154,6 +154,9 @@ Relations to other KEPs:
 - [KEP 5007](https://github.com/kubernetes/enhancements/issues/5007): The allocated share can be provisioned at the pre-bind step.
 - [KEP 4817](https://github.com/kubernetes/enhancements/issues/4817): A single network device can be shared across multiple pods, with each allocated share's `NetworkData` identified by a unique Share ID.
 - [KEP 4816](https://github.com/kubernetes/enhancements/issues/4816): The enhancement must be able to handle subrequests when the DRAPrioritizedList feature is enabled.
+- [KEP 5677](https://github.com/kubernetes/enhancements/pull/6068): This enhancement reports aggregated allocated, available devices and their resources.
+- [KEP 5941](https://github.com/kubernetes/enhancements/issues/5941): The enhancement introduce a generic DRA model for parent-scoped shared capacities (`sharedCapacities`) consumed by related child devices.
+- [KEP 5981](https://github.com/kubernetes/enhancements/issues/5981): The extractors of `sharingAffinity` acts as a structural gatekeeper before capacity subtraction occurs. It guarantees that multi-allocation devices do not accidentally mingle workloads from distinct administrative configurations.
 
 A motivating use case is to allocate a multi-allocatable network device in the [CNI DRA driver](https://github.com/kubernetes-sigs/cni-dra-driver)
 which can be selected by more than one pod on demand during scheduling.
@@ -823,7 +826,7 @@ The following functionalities should be covered in E2E tests:
 - Documentation provided
 - Initial unit, integration and e2e tests completed and enabled.
 
-### Beta
+#### Beta
 
 - Feature Gates are enabled by default.
 - No major outstanding bugs.
@@ -832,12 +835,14 @@ The following functionalities should be covered in E2E tests:
   - DRA Driver for CPU (kubernetes-sigs/dra-driver-cpu) can use this feature to manage and limit CPU resources.
 - Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
 
-### GA
+#### GA
 
+- Available for general testing via the DRA Example Driver (kubernetes-sigs/dra-example-driver)
 - 2 examples of real-world use cases.
-  - CNI DRA driver (kubernetes-sigs/cni-dra-driver) can use this feature to manage and limit bandwidth quota.
+  - DRA driver for multi-network can use this feature to manage and limit bandwidth quota.
   - Acelerator DRA driver can use this feature for on-demand virtual memory allocation.
 - Allowing time for feedback from developers and users.
+- Concrete evaluation of scheduling performance metrics, addressing: https://github.com/kubernetes/kubernetes/pull/138618
 
 <!--
 **Note:** *Not required until targeted at a release.*
