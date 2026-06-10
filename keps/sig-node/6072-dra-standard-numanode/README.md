@@ -34,6 +34,7 @@
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [Component skew during a rolling upgrade](#component-skew-during-a-rolling-upgrade)
     - [Decoupling from KEP-5491 graduation](#decoupling-from-kep-5491-graduation)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
@@ -390,6 +391,18 @@ Because the scalar form carries no feature gate (see [Decoupling from KEP-5491 g
 ### Version Skew Strategy
 
 The attribute depends on KEP-5491 `DRAListTypeAttributes` for the list type. All components (API server, scheduler) must have this feature gate enabled. The scheduler must also have the allocator wiring fix (kubernetes/kubernetes#139332) to select the experimental allocator that implements intersection matching.
+
+#### Component skew during a rolling upgrade
+
+Intersection matching over list attributes is implemented only in the scheduler's **experimental** allocator, and that allocator is selected automatically when `DRAListTypeAttributes` is enabled in the scheduler (it is the only allocator variant whose supported-feature set includes list-type attributes). The "stable" and "incubating" allocators have no handling for list-valued attributes at all — a `matchAttribute` constraint that encounters one treats it as an unknown value type and fails the match.
+
+The relevant gate is therefore the **scheduler's**, not the API server's. During a rolling upgrade where the API server has `DRAListTypeAttributes` enabled (so ResourceSlices store `IntValues`) but the scheduler does not yet have it enabled (old binary, or gate off):
+
+- The scheduler runs the stable/incubating allocator, which does not understand list attributes, so a ResourceClaim using `matchAttribute: resource.kubernetes.io/numaNode` against list-valued attributes cannot satisfy the constraint.
+- The claim is **not allocated** and the pod stays `Pending`. The match **fails closed** — there is no fallback to a looser comparison, and the device is never placed on a wrong/non-matching NUMA domain.
+- Once the scheduler is upgraded and has the gate enabled, it switches to the experimental allocator, the pending claim is re-evaluated, and it allocates normally via intersection matching.
+
+This is fail-safe and self-healing: the only effect during the skew window is delayed scheduling of claims that use list-valued `numaNode` matching, with no incorrect placement and no state to reconcile afterward. (Drivers that only publish the scalar form are unaffected, since scalar `matchAttribute` works on all allocator variants.)
 
 #### Decoupling from KEP-5491 graduation
 
