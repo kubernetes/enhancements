@@ -130,7 +130,7 @@ The physical NUMA node (from sysfs `numa_node`) is always the first element.
 
 **CPU and memory devices** typically publish their physical NUMA node as a scalar `N` or single-element list `[N]`. Under NPS/SNC configurations where multiple NUMA nodes share symmetric memory controller access (e.g., AMD EPYC with memory controllers on the I/O die), drivers MAY publish a multi-element list. What each driver publishes is up to the driver authors.
 
-**I/O devices** (GPUs, NICs, NVMe) publish `[physical, nodes at min SLIT distance on same socket...]`. On hardware where multiple NUMA nodes are equidistant to an I/O device (e.g., AMD EPYC chiplets under NPS4 where all same-socket NUMA nodes are at distance 12), the list includes all same-socket nodes. On future multi-IOD hardware with asymmetric intra-socket SLIT distances (e.g., Intel Granite Rapids with 2 IODs per socket), the minimum distance filter would naturally narrow the list to same-IOD nodes only.
+**I/O devices** (GPUs, NICs, NVMe) publish `[physical, nodes at min SLIT distance on same socket...]`. On hardware where multiple NUMA nodes are equidistant to an I/O device (e.g., AMD EPYC chiplets under NPS4 where all same-socket NUMA nodes are at distance 12), the list includes all same-socket nodes. On future multi-IOD hardware with asymmetric intra-socket SLIT distances (e.g., Intel Xeon 6 with 2 IODs per socket), the minimum distance filter would naturally narrow the list to same-IOD nodes only.
 
 **Examples (AMD EPYC 9825, NPS4, 8 NUMA nodes):**
 
@@ -537,7 +537,7 @@ Four of six drivers already publish or alias `dra.net/numaNode`. Make it the con
 
 Publish `numaNode` as a plain integer (the kernel's `numa_node` value). Use equality matching via `matchAttribute`.
 
-**Rejected because:** On modern hardware with shared I/O dies (AMD EPYC chiplets, Intel Granite Rapids multi-IOD), a device is equidistant to multiple memory controllers. A scalar value captures only the kernel's reported node, not the full topology. Under NPS4, devices on different IOD quadrants within the same socket have different scalar `numaNode` values but are equidistant — equality matching fails for cross-quadrant co-placement that should succeed. This was the original KEP proposal and was updated based on @kad's feedback and testing.
+**Rejected because:** On modern hardware with shared I/O dies (AMD EPYC chiplets, Intel Xeon 6 multi-IOD), a device is equidistant to multiple memory controllers. A scalar value captures only the kernel's reported node, not the full topology. Under NPS4, devices on different IOD quadrants within the same socket have different scalar `numaNode` values but are equidistant — equality matching fails for cross-quadrant co-placement that should succeed. This was the original KEP proposal and was updated based on @kad's feedback and testing.
 
 ### Separate numaNode (int) and localNUMANodes (list)
 
