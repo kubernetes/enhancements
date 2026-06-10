@@ -429,15 +429,27 @@ For Beta and GA, we will disallow the divergence between the priority of the `Po
 This will be done by the scheduler, which will fail scheduling of the `PodGroup`, once it observes such divergence.
 This mechanism will follow a similar mechanism already implemented in scheduler that disallows `PodGroup` with pods having different `spec.schedulerName`.
 We will check only the numerical value of the priority, not the priority class from which the value was derived.
-This information will be visible to the user in the description of the `PodScheduled` `Conditions` in the `Pod.Status` and `PodGroup.Status`:
+This information will be visible to the user in the description of the `PodScheduled` `Conditions` in the `Pod.Status` and 
+`PodGroupInitiallyScheduled` in `PodGroup.Status`:
 
 ```yaml
-status:
-  conditions:
-  - type: PodScheduled
-    status: "False"
-    reason: SchedulerError
+Pod:
+  status:
+    conditions:
+    - type: PodScheduled
+      status: "False"
+      reason: SchedulerError
     message: 'all pods in a single pod group should match the priority of the pod group, got: 1 and 2'
+```
+
+```yaml
+PodGroup:
+  status:
+    conditions:
+    - type: PodGroupInitiallyScheduled
+      status: "False"
+      reason: SchedulerError
+      message: 'all pods in a single pod group should match the priority of the pod group, got: 1 and 2'
 ```
 
 and via `FailedScheduling` event:
@@ -597,7 +609,9 @@ with preemption:
       of potential placements. For the alpha support of TAS, we will only assume the best placement (based on
       TAS Placement Scoring plugins). With the progression of TAS to Beta, we might change the algorithm to 
       consider top N placements and adjust their scores based on the amount of preemption victims each placement yields,
-      and only after that selecting the best one.
+      and only after that selecting the best one. For cases where TAS is rerun with some of the 
+      PodGroup pods already scheduled, the current placement of those pods will be selected by
+      TAS as the only placement.
       We can also see a future where if the algorithm is performant enough, even for the non TAS case,
       we will generate multiple potential placements and consider them, to select a placement that yields 
       the lowest amount of disruptions. 
@@ -712,9 +726,10 @@ extension point. As part of the beta promotion we will provide the implementatio
 tree plugin that implements the PostFilter interface (namely the DRA Plugin). We expect owners
 of out of tree PostFilters to follow with their own implementations.
 
-We will introduce additional safety check during the initialization, that will output a warning
+We will introduce additional safety check during the initialization, that will output an error
 log line when we detect plugins that implement PostFilter interface without implementing
-PodGroupPostFilter interface.
+PodGroupPostFilter interface. This check will be only enabled when `GenericWorkload` feature gate
+is enabled.
 
 The evaluation of PodGroupPostFilter plugins will reuse the same logic as the PostFilter one. Mainly,
 the plugins will be executed in the same order as they appear in the scheduler configuration,
