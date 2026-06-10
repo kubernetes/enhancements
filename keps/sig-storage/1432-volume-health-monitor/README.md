@@ -783,7 +783,7 @@ const (
 ```
 
 `AccessModes` and `VolumeMode` exist because backends can degrade
-asymmetrically: a multipath fault may affect RWX multi-attach while
+asymmetrically: a NFS connectivity problem may affect NFS RWX volumes while
 RWO works fine, and a block-mode regression on a backend that serves
 both block and filesystem volumes may not affect filesystem volumes
 at all. These fields let drivers express that asymmetry; consumers
@@ -1158,7 +1158,7 @@ The feature has two dependencies, both of which are opt-in:
 In steady state with no unhealthy volumes, no-op suppression brings
 sustained PATCH rate to zero. Under sustained all-unhealthy load,
 the rate is bounded by the writer's polling interval, which is
-operator-configurable.
+configured via kubelet's `VolumeStatsAggPeriod` command line parameter.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1335,7 +1335,10 @@ is opaque to k8s. But We could in future add `backend_id` as a first class field
 specify it in health responses. This will allow drivers to report volume health at more granular 
 level from different backends.
 
-3. Report entire storage backend health from control-plane as well.
+3. Report entire storage backend health from control-plane as well.We will have to find out the use case
+of such reporting more thoroughly - such as, what would be recovery if entire backend is down etc. We will also
+have to figure out which k8s object will reflect this cluster health from control-plane.
+
 
 ## Infrastructure Needed
 
