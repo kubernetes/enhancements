@@ -2,11 +2,12 @@ title: In-place Node Resource Resize
 kep-number: 3953
 authors:
   - "@mkumatag"
-  - "@Karthik-K-N"
+  - "@karthik-k-n"
   - "@kishen-v"
 owning-sig: sig-node
 participating-sigs:
   - sig-node
+  - sig-scheduling
 status: implementable
 creation-date: 2023-10-04
 reviewers:
@@ -15,6 +16,7 @@ reviewers:
   - "@SergeyKanzhelev"
   - "@haircommander"
   - "@tallclair"
+  - ""
 approvers:
   - "@haircommander"
   - "@SergeyKanzhelev"

@@ -30,7 +30,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Risks and Mitigations](#risks-and-mitigations)
     - [OOMScoreAdjust Drift for Existing Pods](#oomscoreadjust-drift-for-existing-pods)
     - [Container Swap Limit Re-calculation Overhead](#container-swap-limit-re-calculation-overhead)
-    - [Kubelet Sub-Manager Synchronization Failure](#kubelet-sub-manager-synchronization-failure)
     - [API Status Clamping](#api-status-clamping)
     - [Application-Level Hardware Assumptions](#application-level-hardware-assumptions)
     - [Coordination with External NRI/Runtime Plugins](#coordination-with-external-nriruntime-plugins)
@@ -236,15 +235,15 @@ This introduces severe latency, high CPU overhead, and dangerous race conditions
 
 2. #### Container Swap Limit Re-calculation Overhead
 
-    **Risk**: The proportional swap limit for a container relies on the node's total memory capacity. Upon a resize, ignoring this math leads to stranded swap space (during upscaling) or immediate host kernel panics (during downscaling). However, recalculating and applying this to all active pods introduces CRI overhead.
+   **Risk**: The proportional swap limit for a container relies on the node's total memory capacity. Upon a resize, ignoring this math leads to stranded swap space (during upscaling) or immediate host kernel panics (during downscaling). However, recalculating and applying this to all active pods introduces overhead to the Container Runtime Interface (CRI).
 
-    **Mitigation**: The Kubelet implements a highly targeted CRI method (ResizeContainersOnNodeCapacityChange). The Kubelet safely iterates over the active pod cache in memory and only pushes updates to the CRI for containers currently in a Running state. Furthermore, if the node operates with Swap disabled, this entire loop short-circuits instantly, resulting in zero overhead.
+   **Mitigation**: The Kubelet will leverage the existing, generic `UpdateContainerResources` CRI RPC to push these changes. The Kubelet safely iterates over the active pod cache in memory, recalculates the swap boundary, and issues the update solely for containers currently in a `Running` state. Furthermore, if the node operates with Swap disabled, this entire loop short-circuits instantly, resulting in zero CRI overhead.
 
 3. #### Kubelet Sub-Manager Synchronization Failure
-    
-    **Risk**: During an upscale, if the internal Kubelet sub-managers (CPU Manager, Memory Manager) fail to synchronize the new capacity, the Kubelet might reject new pod allocations, leading to underutilized hardware and scheduling deadlocks.
-    
-    **Mitigation**: The reconciliation loop is built to be self-healing. If a sub-manager fails to sync, it emits an error but does not crash the Kubelet. The system emits a Prometheus metric (kubelet_node_resize_errors_total) to immediately alert cluster operators. Furthermore, because cAdvisor continues to report the new capacity, the ContainerManager will re-attempt the reconciliation on the next evaluation cycle.
+
+   **Risk**: During an upscale, if the internal Kubelet sub-managers (CPU Manager, Memory Manager) fail to synchronize the new capacity, the Kubelet might reject new pod allocations, leading to underutilized hardware and scheduling deadlocks.
+
+   **Mitigation**: The reconciliation loop is self-healing and naturally guarded against Denial of Service (DoS) tight-looping. If a sub-manager fails to sync, the Kubelet aborts the cache update, emits an error, and increments the `kubelet_node_resize_errors_total` metric. Because the internal capacity cache was not updated, the system will naturally re-attempt the reconciliation on the next `cAdvisor` polling cycle (defaulting to every 5 minutes) when the hardware drift is detected again. This strict 5-minute interval acts as a natural rate-limit, protecting the Kubelet's CPU.
 
 4. #### API Status Clamping
 
@@ -269,6 +268,12 @@ This introduces severe latency, high CPU overhead, and dangerous race conditions
    **Risk**: `cAdvisor` caches and refreshes `MachineInfo` every 5 minutes by default. During a memory hot-unplug (downscale) event, there is up to a 5-minute latency window where physical memory is removed, but the Kubelet remains unaware. If workloads spike during this window, the Linux kernel OOM killer may violently terminate processes before the Kubelet's capacity reconciliation loop detects the hardware drop and triggers a graceful `NodeCapacityExceeded` eviction.
 
    **Mitigation**: For the Alpha phase, this detection latency is an accepted operational constraint, with the kernel OOM killer serving as the ultimate safety net to protect the node. For future phases (Beta/GA), the detection mechanism will transition to an event-driven architecture to eliminate this polling lag (see Future Work).
+
+8. #### Hardware Metric Jitter and Malformed Signals
+
+   **Risk**: The Kubelet relies on `cAdvisor` to read raw hardware metrics from the host operating system. The OS can occasionally report minor memory capacity jitter (micro-fluctuations in bytes) due to internal kernel allocations, or bugs could result in malformed data (e.g., negative capacities, or `0`). Blindly reacting to these would cause an endless loop of API patches, CRI overhead, and potential mass-evictions.
+
+   **Mitigation**: Before accepting a capacity change, the ContainerManager implements a strict Validation and Jitter Tolerance Filter. Micro-drifts (e.g., changes under 100Mi) are silently dropped. Nonsense values (e.g., 0, negative values, or values that fall below the static Kubelet reservations) are explicitly rejected, an error is logged, and the reconciliation pipeline short-circuits.
 
 ## Design Details
 
@@ -299,7 +304,7 @@ sequenceDiagram
     cm->>kubelet: Non-blocking Signal (nodeCapacityUpdateCh)
     kubelet->>kubelet: Refresh internal MachineInfo cache
     kubelet->>kubelet: Synchronize Eviction Thresholds
-    kubelet->>cri: ResizeContainersOnNodeCapacityChange (Swap)
+    kubelet->>cri: UpdateContainerResources (Swap)
     kubelet->>api: Patch Node.Status (Capacity & Allocatable)
 ```
 
@@ -309,26 +314,25 @@ The reconciliation sequence executes in two distinct phases to guarantee host st
 
 * The ContainerManager periodically checks cAdvisor's machine info.
 
-* If a capacity drift is detected between the physical hardware and the internal cm.capacity cache, the ContainerManager locks its state and updates the internal cache.
-
+* If a capacity drift is detected between the physical hardware and the internal `cm.capacity` cache, the ContainerManager intercepts the event and applies a **Validation and Jitter Tolerance Filter**:
+    * **Sanity Bounds:** The new capacity is checked against impossible values. Negative values, `0`, or capacities mathematically smaller than the node's static `--kube-reserved`/`--system-reserved` limits are rejected and logged as errors.
+    * **Jitter Threshold:** To prevent infinite reconciliation storms from harmless kernel memory fluctuations, the delta must exceed a sensible threshold (e.g., memory differences `< 100Mi` are ignored, CPU differences must be full integer cores).
+* If the capacity drift passes the validation filter, the ContainerManager locks its state and updates the internal cache.
 * Sub-managers (CPU Manager, Memory Manager) are re-initialized with the new capacity via a new ResourceResizer interface.
 
 * Top-level host boundaries (/kubepods cgroup) and QoS cgroups are immediately rewritten to physically enforce the new limits on the Linux kernel.
 
 * A signal is emitted via nodeCapacityUpdateCh.
 
-
 #### Phase 2: Cluster & Runtime Enforcement (Kubelet)
 
-* A dedicated Goroutine in the main Kubelet loop catches the capacity update signal.
+* A dedicated Goroutine in the main Kubelet loop catches the capacity update signal and executes a strictly ordered sequence to prevent scheduling race conditions and thrash:
 
-* The Kubelet's global MachineInfo cache is refreshed to prevent the Status Manager from clamping the new Allocatable values down to the stale boot-time baseline.
-
-* Eviction Synchronization: The Eviction Manager's absolute memory and disk thresholds are recalculated. This is critical during a hot-unplug to ensure the Kubelet evicts pods before the host kernel invokes an Out-Of-Memory (OOM) panic.
-
-* CRI Swap Update: Proportional Swap limits are recalculated for all active pods and pushed to the CRI.
-
-* The Node API object is patched, alerting the Kubernetes Scheduler to the new capacity.
+    1. **Cache Refresh:** The Kubelet's global `MachineInfo` cache is refreshed to reflect the physical reality of the new hardware.
+    2. **API Dissemination:** The Kubelet immediately patches the `Node` API object (`syncNodeStatus`). Updating the API *before* evictions ensures the Scheduler is aware of the reduced capacity and will not attempt to backfill pods that are about to be evicted.
+    3. **Capacity Starvation Evictions:** The Kubelet evaluates active workloads against the new capacity. If a strict request contract can no longer be met, the pod is gracefully evicted with `Reason: NodeCapacityExceeded`.
+    4. **Eviction Synchronization:** The Eviction Manager's absolute memory and disk thresholds are recalculated to protect the node from future usage-based exhaustion.
+    5. **CRI Swap Update:** Proportional Swap limits are recalculated and pushed via the standard `UpdateContainerResources` CRI RPC.
 
 #### Flow Control: Container Swap Limit Recalculation
 
@@ -384,22 +388,26 @@ To ensure the Cluster Autoscaler remains stable, we will Capture the Node's Init
 if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
     go wait.Until(func() {
         for range kl.containerManager.NodeCapacityUpdates() {
-            // 1. Refresh internal cache to prevent Status Manager clamping
+			// 1. Refresh internal cache to prevent Status Manager clamping
             if info, err := kl.cadvisor.MachineInfo(); err == nil {
                 info.Timestamp = time.Time{}
                 kl.setCachedMachineInfo(info)
             }
-
             currentCapacity := kl.containerManager.GetCapacity(kl.supportLocalStorageCapacityIsolation())
 
-            // 2. Sync Eviction Thresholds for safe downscaling
-            kl.evictionManager.SynchronizeThresholds(currentCapacity)
-
-            // 3. Update active container Swap boundaries via CRI
-            kl.containerRuntime.ResizeContainersOnNodeCapacityChange(ctx, kl.GetActivePods(), currentCapacity, totalSwap)
-
-            // 4. Disseminate updates to the API Server
+            // 2. Disseminate updates to the API Server FIRST to prevent scheduling thrash
             kl.syncNodeStatus(ctx)
+            
+            // 3. Evict pods that are starved by the downscale
+            kl.evictStarvedPods(ctx, currentCapacity)
+            
+            // 4. Sync Eviction Thresholds for safe downscaling
+            kl.evictionManager.SynchronizeThresholds(currentCapacity)
+            
+            // 5. Update active container Swap boundaries via standard CRI RPC
+            for _, pod := range kl.GetActivePods() {
+                kl.syncContainerSwapLimits(ctx, pod, currentCapacity, totalSwap)
+            }
         }
     }, 0, wait.NeverStop)
 }
@@ -426,9 +434,8 @@ When the `ContainerManager` detects a capacity drift, it invokes the `SyncCapaci
   Newly added CPUs are instantly detected and added to the "shared pool" (the default cpuset). They immediately become available for pods in the Burstable and BestEffort QoS classes, or for new Guaranteed pods requesting exclusive cores.
 
   * **Downscale (Hot-unplug):** 
-  
-  If CPUs are removed, the CPU Manager removes them from the shared pool. If a removed CPU was actively pinned to a Guaranteed pod, the Kubelet relies on the Eviction Manager to terminate the pod before the hardware is physically removed.
 
+  Downscale (Hot-unplug):  If CPUs are removed, the CPU Manager removes them from the shared pool. If the new total CPU core count falls below what is required to fulfill the strict, exclusive core allocations of existing Guaranteed pods, the Kubelet's capacity reconciliation loop intercepts this scheduling contract violation. It proactively instructs the PodWorker to gracefully terminate the starved pod with a Failed status (Reason: NodeCapacityExceeded) to force the workload to reschedule onto a capable node.
 
 - **Memory Manager:**
 
@@ -462,8 +469,7 @@ to implement this enhancement.
 
 4. **Eviction Threshold Sync** (`eviction_manager_test.go`): Verify that `SynchronizeThresholds` correctly recalculates absolute byte values (e.g., < `100Mi` vs `10%`) when the underlying capacity increases or decreases.
 
-5. **CRI Swap Limit Recalculation** (`kubelet_test.go`): Verify the math for proportional swap limits. Ensure `ResizeContainersOnNodeCapacityChange` correctly iterates over active pods and invokes the mock CRI interface with the newly calculated boundaries (explicitly validating that `oom_score_adj` is not touched).
-
+5. **CRI Swap Limit Recalculation** (`kubelet_test.go`): Verify the math for proportional swap limits. Ensure the capacity reconciliation loop correctly iterates over active pods and invokes the mock CRI `UpdateContainerResources` interface with the newly calculated boundaries.
 ##### e2e tests
 
 These tests will utilize a mock `cAdvisor` interface to inject dynamic hardware capacity changes into a running test Kubelet to validate the end-to-end reconciliation pipeline.
