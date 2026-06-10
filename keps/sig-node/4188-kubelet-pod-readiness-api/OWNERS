@@ -6,6 +6,3 @@ reviewers:
   - swatisehgal # sig-node-assigned-reviewer
   - tallclair # sig-node-assigned-reviewer
   - SergeyKanzhelev # sig-node-assigned-reviewer
-
-approvers:
-  - dchen1107 # sig-node-tl

@@ -5,7 +5,3 @@
 reviewers:
   - haircommander # sig-node-assigned-reviewer
   - ndixita # sig-node-assigned-reviewer
-
-approvers:
-  - mrunalp # sig-node-tl
-  - dchen1107 # sig-node-tl

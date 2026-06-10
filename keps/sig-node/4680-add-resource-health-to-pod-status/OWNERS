@@ -6,5 +6,4 @@ reviewers:
   - ffromani # sig-node-assigned-reviewer
 
 approvers:
-  - mrunalp # sig-node-tl
   - SergeyKanzhelev # sig-node-assigned-approver

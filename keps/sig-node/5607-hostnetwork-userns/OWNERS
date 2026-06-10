@@ -5,6 +5,3 @@
 reviewers:
   - mikebrow # sig-node-assigned-reviewer
   - haircommander # sig-node-assigned-reviewer
-
-approvers:
-  - mrunalp # sig-node-tl

@@ -16,6 +16,7 @@ reviewers:
   - '@dom4ha'
   - '@macsko'
   - '@haircommander' # sig-node-assigned-reviewer
+  - '@swatisehgal' # sig-node-assigned-reviewer
 approvers:
 - "@tallclair" # sig-node-assigned-approver
 - '@dchen1107' # sig-node-tl

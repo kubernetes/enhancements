@@ -10,7 +10,7 @@ status: implementable
 creation-date: 2025-09-10
 reviewers:
   - "@ndixita" # sig-node-assigned-reviewer
-  - "@ffromani"
+  - "@ffromani" # sig-node-assigned-reviewer
   - "@tallclair" # sig-node-assigned-reviewer
   - "@kad" # sig-node-assigned-reviewer
 approvers:
