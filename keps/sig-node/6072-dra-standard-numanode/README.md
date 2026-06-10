@@ -293,41 +293,41 @@ The standard attribute name and its semantics, however, are platform-neutral. Th
 
 ### Driver Changes
 
-Each DRA driver adds one call to publish the list attribute:
+Each DRA driver adds one call to publish the attribute:
 
 ```go
-// I/O device (GPU, NIC, NVMe) — list when DRAListTypeAttributes is available
+// I/O device (GPU, NIC, NVMe): list built from sysfs numa_node + SLIT distances
 numaAttr, err := deviceattribute.GetNUMANodeListByPCIBusID(pciBusID)
 if err == nil {
     device.Attributes[numaAttr.Name] = numaAttr.Value
 }
 
-// I/O device — scalar fallback when DRAListTypeAttributes is not available
-numaAttr, err := deviceattribute.GetNUMANodeByPCIBusID(pciBusID)
-if err == nil {
-    device.Attributes[numaAttr.Name] = numaAttr.Value
-}
-
-// CPU/memory device — scalar int
-device.Attributes[deviceattribute.StandardDeviceAttributeNUMANode] = resourceapi.DeviceAttribute{
-    IntValue: ptr.To(int64(numaID)),
-}
+// CPU/memory device that already knows its NUMA node
+numaAttr := deviceattribute.GetNUMANodeList(numaID)
+device.Attributes[numaAttr.Name] = numaAttr.Value
 ```
+
+These helpers produce the list form (`IntValues`). See [Feature gate detection](#feature-gate-detection) for how a driver is expected to behave when `DRAListTypeAttributes` is not enabled.
 
 #### Feature gate detection
 
-A DRA driver is a separate binary and cannot read the kube-apiserver's feature-gate configuration directly (`utilfeature.DefaultFeatureGate` is only the in-process registry of the apiserver/scheduler/kubelet). It therefore cannot know up front whether `DRAListTypeAttributes` is enabled, and it must account for how the apiserver treats list-valued attributes when the gate is off.
+A DRA driver is a separate binary and cannot read the kube-apiserver's feature-gate configuration directly (`utilfeature.DefaultFeatureGate` is only the in-process registry of the apiserver/scheduler/kubelet). It therefore cannot know up front whether `DRAListTypeAttributes` is enabled, and the attribute's behavior has to account for how the apiserver treats list-valued attributes when the gate is off.
 
-When the gate is disabled, the apiserver does **not** reject a ResourceSlice that carries list-valued attributes — it **silently drops** the list fields. This is the standard `dropDisabledFields` behavior in the ResourceSlice registry strategy (`dropDisableDRAListTypeAttributesFields`), which nils out `IntValues`/`BoolValues`/`StringValues`/`VersionValues` during `PrepareForCreate`/`PrepareForUpdate`, with the usual ratcheting exception that a field already set on the existing object is preserved.
+When the gate is disabled, the apiserver does **not** reject a ResourceSlice that carries list-valued attributes. It **silently drops** the list fields. This is the standard `dropDisabledFields` behavior in the ResourceSlice registry strategy (`dropDisableDRAListTypeAttributesFields`), which nils out `IntValues`/`BoolValues`/`StringValues`/`VersionValues` during `PrepareForCreate`/`PrepareForUpdate`, with the usual ratcheting exception that a field already set on the existing object is preserved.
 
-This interacts with a hard constraint: `DeviceAttribute` is a strict union — exactly one value field may be set. So a driver that publishes a `numaNode` attribute with **only** `IntValues` set will, when the gate is off, have that field dropped and be left with a value-less attribute, which then fails validation (`exactly one value must be specified`) and causes the whole ResourceSlice to be rejected. Optimistically publishing the list and reacting to a rejection is therefore unsafe and is **not** the model this KEP adopts.
+This interacts with a hard constraint: `DeviceAttribute` is a strict union, so exactly one value field may be set. A driver that publishes a `numaNode` attribute with only `IntValues` set will, when the gate is off, have that field dropped and be left with a value-less attribute, which then fails validation (`exactly one value must be specified`) and causes the whole ResourceSlice to be rejected.
 
-The intended driver model is **scalar baseline, list when confirmed supported**:
+The agreed direction (per review discussion with @pohly) is a **scalar baseline with a list when the gate is on**, so the attribute is usable even before `DRAListTypeAttributes` is enabled:
 
-- Always able to publish the scalar `IntValue` (physical NUMA node), which carries no gate dependency and is always valid.
-- Publish the `IntValues` list form only when `DRAListTypeAttributes` support has been positively confirmed — e.g. via round-trip detection (write a ResourceSlice and read it back to see whether the list field survived, since disabled fields are silently dropped) or an explicit driver configuration flag. The `deviceattribute` helpers expose both a scalar (`GetNUMANodeByPCIBusID`) and a list (`GetNUMANodeListByPCIBusID`) form so a driver can select per its detected capability.
+- When `DRAListTypeAttributes` is off, a driver publishes a scalar `IntValue` (the physical NUMA node). This carries no gate dependency and is always valid. `matchAttribute` falls back to equality on the scalar.
+- When `DRAListTypeAttributes` is on, a driver publishes the `IntValues` list, enabling intersection matching.
 
-This dual path is **transitional**. It exists only while `DRAListTypeAttributes` is gated. Once that feature gate goes GA — locked on, then removed from the codebase — the list form is unconditionally available, detection is unnecessary, and drivers can publish the list directly. The scalar form remains a valid value (semantically a single-element set), so collapsing the two paths is a code simplification, not an API change.
+This is the design intent; the implementation does not provide the scalar path yet. Two pieces are still open:
+
+1. **A scalar helper** in the `deviceattribute` library, alongside the existing list helpers (`GetNUMANodeListByPCIBusID`, `GetNUMANodeList`), so a driver can emit the scalar form.
+2. **The detection mechanism**: how a driver decides which form to publish. Candidates include round-trip detection (write a ResourceSlice and read it back to see whether the list field survived, since disabled fields are silently dropped) or an explicit driver configuration flag. This is an open question to be resolved with the community before the implementation is finalized.
+
+The dual path is **transitional**. It exists only while `DRAListTypeAttributes` is gated. Once that feature gate goes GA (locked on, then removed from the codebase), the list form is unconditionally available, detection is unnecessary, and drivers can publish the list directly. The scalar form remains a valid value (semantically a single-element set), so collapsing the two paths later is a code simplification, not an API break.
 
 ### Test Plan
 
