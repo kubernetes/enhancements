@@ -313,9 +313,18 @@ device.Attributes[deviceattribute.StandardDeviceAttributeNUMANode] = resourceapi
 
 #### Feature gate detection
 
-A DRA driver does not read the kube-apiserver's feature-gate configuration directly, so it cannot know up front whether `DRAListTypeAttributes` is enabled. The intended model is **try-the-list, fall back on rejection**: the driver attempts to publish the `IntValues` (list) form, and if the API server rejects the ResourceSlice because the list field is gated off, the driver retries with the scalar `IntValue` form. This keeps the driver correct without coupling it to cluster-level gate state, and matches the behavior described under [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+A DRA driver is a separate binary and cannot read the kube-apiserver's feature-gate configuration directly (`utilfeature.DefaultFeatureGate` is only the in-process registry of the apiserver/scheduler/kubelet). It therefore cannot know up front whether `DRAListTypeAttributes` is enabled, and it must account for how the apiserver treats list-valued attributes when the gate is off.
 
-This fallback path is **transitional**. It exists only while `DRAListTypeAttributes` is gated. Once that feature gate goes GA — at which point it is locked on and subsequently removed from the codebase — the list form is unconditionally available, the rejection case can no longer occur, and the scalar fallback branch can be retired. The scalar form itself remains a valid value (semantically a single-element set), so retiring the fallback is a code simplification, not an API change.
+When the gate is disabled, the apiserver does **not** reject a ResourceSlice that carries list-valued attributes — it **silently drops** the list fields. This is the standard `dropDisabledFields` behavior in the ResourceSlice registry strategy (`dropDisableDRAListTypeAttributesFields`), which nils out `IntValues`/`BoolValues`/`StringValues`/`VersionValues` during `PrepareForCreate`/`PrepareForUpdate`, with the usual ratcheting exception that a field already set on the existing object is preserved.
+
+This interacts with a hard constraint: `DeviceAttribute` is a strict union — exactly one value field may be set. So a driver that publishes a `numaNode` attribute with **only** `IntValues` set will, when the gate is off, have that field dropped and be left with a value-less attribute, which then fails validation (`exactly one value must be specified`) and causes the whole ResourceSlice to be rejected. Optimistically publishing the list and reacting to a rejection is therefore unsafe and is **not** the model this KEP adopts.
+
+The intended driver model is **scalar baseline, list when confirmed supported**:
+
+- Always able to publish the scalar `IntValue` (physical NUMA node), which carries no gate dependency and is always valid.
+- Publish the `IntValues` list form only when `DRAListTypeAttributes` support has been positively confirmed — e.g. via round-trip detection (write a ResourceSlice and read it back to see whether the list field survived, since disabled fields are silently dropped) or an explicit driver configuration flag. The `deviceattribute` helpers expose both a scalar (`GetNUMANodeByPCIBusID`) and a list (`GetNUMANodeListByPCIBusID`) form so a driver can select per its detected capability.
+
+This dual path is **transitional**. It exists only while `DRAListTypeAttributes` is gated. Once that feature gate goes GA — locked on, then removed from the codebase — the list form is unconditionally available, detection is unnecessary, and drivers can publish the list directly. The scalar form remains a valid value (semantically a single-element set), so collapsing the two paths is a code simplification, not an API change.
 
 ### Test Plan
 
@@ -374,7 +383,7 @@ Because the scalar form carries no feature gate (see [Decoupling from KEP-5491 g
 
 **Upgrade:** Existing claims are unaffected. Drivers can start publishing `resource.kubernetes.io/numaNode` at any time — it's just a new attribute value.
 
-**Downgrade:** If `DRAListTypeAttributes` is disabled, the API server will reject ResourceSlices with `IntValues` fields. Drivers would need to fall back to publishing `numaNode` as a scalar int (losing the SLIT-based list). Claims using `matchAttribute: numaNode` would revert to equality matching.
+**Downgrade:** If `DRAListTypeAttributes` is disabled, the API server **silently drops** the `IntValues` field from device attributes on write (the standard `dropDisabledFields` behavior), rather than rejecting the ResourceSlice. Existing ResourceSlices that already carry list values are preserved by ratcheting. Because `DeviceAttribute` is a strict union, a driver must not publish a `numaNode` attribute with only `IntValues` set in this state — the dropped field would leave a value-less attribute that fails validation. Drivers fall back to publishing `numaNode` as a scalar int (losing the SLIT-based list), as described under [Feature gate detection](#feature-gate-detection). Claims using `matchAttribute: numaNode` then revert to equality matching on the scalar.
 
 ### Version Skew Strategy
 
@@ -414,7 +423,7 @@ Drivers will resume publishing `resource.kubernetes.io/numaNode` as a list attri
 
 ###### Are there any tests for feature enablement/disablement?
 
-Tests will verify list attribute acceptance when `DRAListTypeAttributes` is enabled and rejection when disabled.
+Tests will verify list attribute acceptance when `DRAListTypeAttributes` is enabled and that the `IntValues` field is silently dropped (not the whole object rejected) when disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
