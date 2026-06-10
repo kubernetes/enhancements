@@ -16,11 +16,11 @@ approvers:
   - '@mrunalp'
 
 status: implementable
-stage: alpha
-latest-milestone: "v1.36"
+stage: beta
+latest-milestone: "v1.37"
 milestone:
     alpha: "v1.33"
-    beta: ""
+    beta: "v1.37"
     stable: ""
 
 feature-gates:
