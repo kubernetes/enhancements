@@ -742,11 +742,12 @@ or a different pod entirely. Two candidate devices for a single `ResourceClaim`
 that land on the same counter set are therefore subject to the same check: 
 the second request sees the first folded into the rolling intersection.
 
-**Allocation order.** The scheduler does not reorder requests within a claim
-to improve feasibility. If requests are ordered such that an early compatible
-pick later blocks a mandatory pick, the claim becomes Unschedulable and
-standard retry behavior applies in the next scheduling cycle.
-This matches how existing DRA constraints behave.
+**Allocation order and backtracking.** The `compatibilityGroups` predicate
+is just another filter inside the DRA structured allocator's existing
+backtracking search. If a candidate is rejected for compatibility, the
+allocator backtracks and tries other device combinations. A claim is only
+Unschedulable when no combination satisfies all requests and the compatibility
+predicate.
 
 **Composition with `DeviceConstraints`.** `compatibilityGroups` is a
 driver-authored, ResourceSlice-side constraint. `DeviceConstraints` (e.g.,
