@@ -785,7 +785,11 @@ stream serializer will not. In practice, the watch decoder assumes that the non-
 can directly decode the Raw bytes of a `metav1.WatchEvent` decoded by the stream serializer.
 
 There will be a migration period during which it will remain possible to disable automatic
-transcoding of RawExtension via feature gate.
+transcoding of RawExtension by clients via client-go feature gate. API servers based on the generic
+API server module (`k8s.io/apiserver`) must remove hardcoded assumptions about the format of
+RawExtension bytes decoded from request bodies. It will remain possible to disable the
+CBORServingAndStorage feature gate for at least 3 releases at beta in order to provide sufficient
+time to update API servers without blocking `k8s.io/apiserver` dependency updates.
 
 ##### Migration
 
