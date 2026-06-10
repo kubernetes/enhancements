@@ -1,87 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-Follow the guidelines of the [documentation style guide].
-In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-6060: API Server Authentication to Admission Webhooks
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -90,18 +7,32 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1 (Optional)](#story-1-optional)
-    - [Story 2 (Optional)](#story-2-optional)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Webhook Authentication Tokens](#webhook-authentication-tokens)
+  - [Token Acquisition](#token-acquisition)
+    - [Kube-apiserver](#kube-apiserver)
+    - [Aggregated API Servers](#aggregated-api-servers)
+  - [Authorization Checks](#authorization-checks)
+  - [Audience](#audience)
+  - [Token Caching and Rotation](#token-caching-and-rotation)
+  - [Webhook Verification](#webhook-verification)
+  - [User Stories](#user-stories)
+    - [Story 1: Kube-apiserver authenticates to an admission webhook](#story-1-kube-apiserver-authenticates-to-an-admission-webhook)
+    - [Story 2: Aggregated API server authenticates to an admission webhook](#story-2-aggregated-api-server-authenticates-to-an-admission-webhook)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [New Private Claims](#new-private-claims)
+  - [BoundObjectRef for APIService](#boundobjectref-for-apiservice)
+  - [RBAC Configuration](#rbac-configuration)
+  - [Kube-apiserver Service Account Lifecycle](#kube-apiserver-service-account-lifecycle)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -114,24 +45,9 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
-
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
@@ -148,11 +64,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
+- [ ] Supporting documentation---e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -161,294 +73,397 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+Today, the kube-apiserver does not authenticate itself to admission webhooks
+by default. Any entity with pod network access can send requests to a webhook
+endpoint and impersonate the kube-apiserver.
+[CVE-2025-1974](https://nvd.nist.gov/vuln/detail/CVE-2025-1974) demonstrated
+real-world consequences of this class of vulnerability.
 
-A good summary is probably at least a paragraph in length.
--->
+This KEP introduces Webhook Authentication Tokens (WATs): short-lived,
+audience-scoped JWTs that API servers present to admission webhooks as bearer
+tokens. WATs are service account tokens with additional private claims
+identifying the APIService whose resources are being admitted. Both the
+kube-apiserver and aggregated API servers use the same mechanism to obtain
+and present WATs. Webhooks verify the token signature via the existing OIDC
+discovery endpoint and confirm that the token's claims match the resource
+being admitted.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+Any entity with pod network access can send requests to an admission webhook
+endpoint. If the webhook does not authenticate the caller, an attacker can
+probe for policy information, trigger unintended side effects, or exploit
+the webhook's own privileges within the cluster.
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+Opt-in mechanisms for authenticating the kube-apiserver to webhooks exist
+(client certs, bearer tokens, or basic auth via a kubeconfig file configured
+through `--admission-control-config-file`), but they require manual credential
+management and an API server restart to change. As a result, most deployments
+do not use them, leaving webhook endpoints effectively open to any caller on
+the pod network.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
+* The kube-apiserver authenticates itself to admission webhooks by default,
+  without requiring manual credential configuration.
+* Aggregated API servers can authenticate themselves to admission webhooks
+  using the same mechanism.
+* Tokens are scoped per-webhook (by audience) and per-API-group/version
+  (by bound APIService), preventing misuse of a token obtained for one webhook
+  or one set of resources against another.
+* The design is backward compatible: existing kubeconfig-based webhook
+  authentication setups continue to work without modification.
+* Webhook authors can verify the kube-apiserver's identity with minimal code
+  changes, using existing OIDC token verification libraries.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+* Authentication to non-admission webhooks (authentication webhooks,
+  authorization webhooks). These use a different configuration mechanism
+  (CLI flags with kubeconfig files) and are out of scope for this KEP.
+* Defining the exact webhook-side verification library. Follow-up work is
+  planned to contribute authentication support to existing open-source
+  webhooks, but the library itself is out of scope.
+* Changes to the APIService API. No new fields are added to the APIService
+  spec.
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
+### Webhook Authentication Tokens
 
-### User Stories (Optional)
+A Webhook Authentication Token (WAT) is a service account token (JWT) with
+additional private claims. It is produced by the existing `TokenRequest` API
+(`create serviceaccounts/token`) with a new type of bound object reference:
+an `APIService`. The token's `kubernetes.io` private claims include the name
+and UID of the bound APIService, which encodes the API group and version of
+the resources the caller is authorized to consult the webhook about.
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+### Token Acquisition
 
-#### Story 1 (Optional)
+#### Kube-apiserver
 
-#### Story 2 (Optional)
+When the kube-apiserver needs to call an admission webhook for a resource it
+serves directly (e.g., a Pod, which belongs to APIService `v1.`), it issues
+a `TokenRequest` to itself for a dedicated service account. The request
+includes:
 
-### Notes/Constraints/Caveats (Optional)
+1. A `BoundObjectRef` pointing to the APIService corresponding to the resource
+   being admitted (e.g., `v1.` for core API resources).
+2. An audience derived from the webhook's URL.
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+A controller running in the kube-apiserver process ensures the dedicated
+service account is recreated if deleted.
+
+<<[UNRESOLVED]>>
+The kube-apiserver needs `attest` permission on the APIService for the SA
+it uses. Since the kube-apiserver is both the requester and the authorizer,
+the self-authorization mechanism for this check needs further discussion
+with SIG Auth leads.
+<<[/UNRESOLVED]>>
+
+#### Aggregated API Servers
+
+When an aggregated API server needs to call an admission webhook, it requests
+a WAT from the kube-apiserver. Each aggregated API server should have a
+dedicated service account for this purpose. The request flow is:
+
+1. The aggregated API server authenticates to the kube-apiserver using
+   whatever credential it is configured with (typically its own service
+   account token).
+2. It sends a `TokenRequest` for its dedicated service account, with a
+   `BoundObjectRef` pointing to the APIService it serves (e.g.,
+   `v1.engelbert.dev`) and the appropriate audience.
+3. The kube-apiserver performs authorization checks (see below) and issues
+   the WAT.
+4. The aggregated API server presents the WAT to the webhook as
+   `Authorization: Bearer <token>`.
+
+We expect each aggregated API server to have its own dedicated service
+account for obtaining WATs. Reuse of these service accounts across
+aggregated API servers is discouraged.
+
+### Authorization Checks
+
+When the kube-apiserver receives a `TokenRequest` with an APIService as the
+`BoundObjectRef`, it performs the following checks:
+
+1. **Standard RBAC check:** Does the caller have `create` on
+   `serviceaccounts/token` for the service account named in the request?
+2. **APIService existence check:** Does the referenced APIService object
+   actually exist?
+3. **Attest check:** Does the service account named in the request have
+   `attest` permission on the referenced APIService? This is verified via a
+   SubjectAccessReview-style check (an in-process `authorizer.Authorize()`
+   call) against the service account's identity.
+
+The `attest` verb is already used in Kubernetes for ClusterTrustBundle
+signer attestation. The RBAC rule for the attest check looks like:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: webhook-auth-attest
+rules:
+- apiGroups:
+  - apiregistration.k8s.io
+  resources:
+  - apiservices
+  resourceNames:
+  - v1.engelbert.dev
+  verbs:
+  - attest
+```
+
+### Audience
+
+The token's audience is derived from the webhook's URL with a fixed prefix.
+For a webhook at `https://my-webhook.my-namespace.svc:443/validate`, the
+audience would be:
+
+```
+k8s.io:admission:https://my-webhook.my-namespace.svc:443/validate
+```
+
+The webhook verifies that the token's `aud` claim matches its own identity
+before accepting the request.
+
+### Token Caching and Rotation
+
+WATs are cached per combination of webhook and APIService. When a cached
+token has expired, the next webhook call for that combination triggers a
+new `TokenRequest`. Tokens should be short-lived; users can set
+`expirationSeconds` according to their needs.
+
+### Webhook Verification
+
+A webhook receiving a request with a WAT performs the following checks:
+
+1. **Verify the JWT signature** using the kube-apiserver's OIDC discovery
+   endpoint (`/.well-known/openid-configuration` and `/openid/v1/jwks`).
+2. **Verify the audience** matches the webhook's own identity.
+3. **Verify the APIService claim** in the token's private claims. The API
+   group and version encoded in the APIService name must match the group
+   and version of the resource described in the AdmissionReview request body.
+   If they do not match, the webhook should reject the request, because the
+   token only authorizes the caller to consult the webhook about resources in
+   the API group and version named in the token.
+
+### User Stories
+
+#### Story 1: Kube-apiserver authenticates to an admission webhook
+
+A user creates a Pod. The kube-apiserver needs to consult a validating
+admission webhook. It requests a WAT from itself for its dedicated service
+account, bound to APIService `v1.` with an audience derived from the
+webhook's URL. The webhook verifies the token and confirms that the API
+group and version in the claims match those of the Pod resource in the
+AdmissionReview body.
+
+#### Story 2: Aggregated API server authenticates to an admission webhook
+
+A user creates a Widget resource (`engelbert.dev/v1`). The aggregated API
+server serving `engelbert.dev/v1` needs to consult a mutating admission
+webhook. It requests a WAT from the kube-apiserver for its dedicated
+service account, bound to APIService `v1.engelbert.dev` with the
+webhook-derived audience. The kube-apiserver verifies that the caller can
+create tokens for the SA, that the APIService exists, and that the SA
+has `attest` permission on `v1.engelbert.dev`. The aggregated API server
+presents the WAT to the webhook. The webhook verifies the token signature,
+audience, and confirms the claims match the Widget resource.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
+#### Token replay across webhooks
 
-How will security be reviewed, and by whom?
+A WAT obtained for one webhook could be presented to another webhook if
+they serve overlapping resources. The per-webhook audience scoping prevents
+this: each token is only valid for the specific webhook audience it was
+minted for.
 
-How will UX be reviewed, and by whom?
+#### Token replay across API groups
 
-Consider including folks who also work outside the SIG or subproject.
--->
+A WAT bound to one APIService could be presented when admitting a resource
+from a different API group. The webhook's verification of the APIService
+claims against the AdmissionReview body prevents this: the group and version
+must match.
+
+#### Service account compromise
+
+If a WAT service account is compromised, an attacker could request WATs and
+impersonate the API server to webhooks. The dedicated-SA-per-server model
+limits the blast radius. The `attest` check ensures that even with token
+creation permission, the SA must be explicitly authorized for the specific
+APIService.
+
+#### Increased authorization load
+
+Each WAT request triggers an additional authorization check (the `attest`
+verification). This is mitigated by caching: WATs are cached for their
+lifetime, so the authorization check is amortized over many webhook calls.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+### New Private Claims
+
+WATs include the following new fields in the `kubernetes.io` private claims
+of the JWT:
+
+```json
+{
+  "kubernetes.io": {
+    "webhookAuthentication": {
+      "apiService": {
+        "name": "v1.engelbert.dev",
+        "uid": "44e818f2-2ad0-4432-9816-3a649ca9945c"
+      }
+    }
+  }
+}
+```
+
+The `name` field encodes the API version and group in the standard
+`<version>.<group>` format. The `uid` field is the UID of the APIService
+object at the time the token was issued.
+
+### BoundObjectRef for APIService
+
+The `TokenRequest` API's `BoundObjectRef` is extended to accept `APIService`
+as a valid object reference kind. This follows the existing pattern for
+binding tokens to Pods, Nodes, and Secrets. The token becomes invalid if
+the referenced APIService is deleted.
+
+### RBAC Configuration
+
+For an aggregated API server serving `engelbert.dev/v1`, the following
+RBAC configuration is needed:
+
+1. A dedicated service account (e.g., `webhook-auth` in the aggregated
+   API server's namespace).
+
+2. The aggregated API server's principal needs `create` on
+   `serviceaccounts/token` for the dedicated SA:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: engelbert-webhook-token-creator
+rules:
+- apiGroups: [""]
+  resources: ["serviceaccounts/token"]
+  resourceNames: ["webhook-auth"]
+  verbs: ["create"]
+```
+
+3. The dedicated SA needs `attest` on the APIService:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: engelbert-webhook-attest
+rules:
+- apiGroups: ["apiregistration.k8s.io"]
+  resources: ["apiservices"]
+  resourceNames: ["v1.engelbert.dev"]
+  verbs: ["attest"]
+```
+
+### Kube-apiserver Service Account Lifecycle
+
+The kube-apiserver uses a dedicated service account for requesting its own
+WATs. A controller running in the kube-apiserver process (following the
+`ClusterAuthenticationTrustController` pattern) ensures this service account
+is recreated if deleted.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[ ] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+[x] I/we understand the owners of the involved components may require updates
+to existing tests to make this code solid enough prior to committing the
+changes necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+None identified at this time.
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
+- `k8s.io/apiserver/pkg/admission/plugin/webhook`: `<date>` - `<coverage>`
+- `k8s.io/apiserver/pkg/util/webhook`: `<date>` - `<coverage>`
+- `k8s.io/apiserver/pkg/registry/serviceaccount/token`: `<date>` - `<coverage>`
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
+Unit tests will cover:
+- TokenRequest with APIService BoundObjectRef issues correct private claims.
+- The `attest` authorization check is performed and enforced.
+- The webhook dispatch path attaches the WAT as a bearer token when the
+  feature gate is enabled.
+- The webhook dispatch path does not attach a token when the feature gate
+  is disabled.
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
-
-If integration tests are not necessary or useful, explain why.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- WAT issuance and webhook dispatch end-to-end with a test webhook that
+  verifies token claims.
+- Rejection when the SA lacks `attest` permission.
+- Rejection when the referenced APIService does not exist.
+- Cache behavior: verify that a cached token is reused and that a new token
+  is requested on expiry.
+- Feature gate toggling: verify behavior with the gate on and off.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- An aggregated API server authenticates to an admission webhook using a
+  WAT.
+- A webhook rejects a request where the APIService claims do not match the
+  resource in the AdmissionReview body.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Feature implemented behind feature gates.
+- Initial unit and integration tests completed and enabled.
+- WAT issuance and webhook presentation functional for kube-apiserver.
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- All functionality completed
-- All security enforcement completed
-- All monitoring requirements completed
-- All testing requirements completed
-- All known pre-release issues and gaps resolved
-
-**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+- WAT issuance and webhook presentation functional for aggregated API
+  servers.
+- All unit, integration, and e2e tests passing and stable.
+- Feedback from early adopters incorporated.
+- All known issues and gaps resolved.
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
-
-**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-<!--
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- At least two releases since beta with no regressions.
+- Conformance tests added.
+- Webhook verification library or documentation available.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+On upgrade to a version that enables the feature:
+- The kube-apiserver begins presenting WATs to admission webhooks. Webhooks
+  that do not verify bearer tokens are unaffected, since the token is
+  presented as an `Authorization` header that the webhook can ignore.
+- Existing kubeconfig-based authentication setups continue to function.
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+On downgrade or feature disablement:
+- The kube-apiserver stops presenting WATs. Webhooks that have been
+  configured to require WAT verification will reject requests. Operators
+  must either re-enable the feature or reconfigure their webhooks.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+This feature does not involve coordination between the control plane and
+nodes. It is contained entirely within the kube-apiserver and aggregated
+API servers.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+In a multi-replica HA cluster during rolling upgrade, some kube-apiserver
+replicas may present WATs while others do not. Webhooks that require WAT
+verification may see intermittent failures during the rollout window.
+Webhooks should be configured to require WATs only after all replicas have
+been upgraded.
 
 ## Production Readiness Review Questionnaire
 
@@ -457,306 +472,270 @@ enhancement:
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `APIServerWebhookAuthenticationTokenVerification`
+  - Feature gate name: `APIServerWebhookAuthenticationTokenIssuance`
   - Components depending on the feature gate:
     - kube-apiserver
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `APIServerWebhookAuthenticationTokenIssuance`
+  - Feature gate name: `APIServerWebhookAuthenticationTokenVerification`
   - Components depending on the feature gate:
     - kube-apiserver
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. When attempting to communicate with webhooks, the kube API Server will
-request (from itself) a service account token bound to the appropriate
-APIService for the resource in question (e.g. `v1.` for pods). It will
-provide that token to the Webhook as a bearer token. If the webhook is not
-configured to accept bearer tokens, then it will likely ignore it. If the
-receiving webhook is configured to accept bearer tokens of a different format,
-it may error upon receipt of this token.
+Yes. When the issuance feature gate is enabled, the kube-apiserver will
+request a service account token (from itself) bound to the appropriate
+APIService for the resource in question and present it to the webhook as a
+bearer token. Webhooks that do not inspect the `Authorization` header will
+be unaffected. Webhooks configured to accept bearer tokens of a different
+format may error upon receipt of this token.
 
-Webhooks making use of the existing method of authenticating the kube-apiserver
-will remain unaffected.
-
-This KEP is scoped to admission webhooks only. Other webhooks are out of
-scope of this KEP (see KEP body for reasoning).
+This KEP is scoped to admission webhooks only. Other webhook types are out
+of scope.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling the `APIServerWebhookAuthenticationTokenIssuance` feature
-gate and restarting the kube-apiserver will revert to the previous behavior,
-but there will be complications. Webhooks that have been configured to
-require bearer tokens from the kube-apiserver will reject requests when
-the feature is disabled, since the API Server (and aggregated api servers)
-will no longer try to authenticate itself to those webhooks.
+Yes. Disabling `APIServerWebhookAuthenticationTokenIssuance` and restarting
+the kube-apiserver will revert to the previous behavior. Webhooks that have
+been configured to require the WAT will begin rejecting requests, since the
+API server will no longer present a token.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The feature will turn back on and work as expected.
+The feature will resume working as expected. No data migration or cleanup
+is required.
 
 ###### Are there any tests for feature enablement/disablement?
 
-We will include unit tests to verify that when the feature gates are enabled,
-kube-apiserver will present its token in the specified format. When the feature
-gate is disabled, the HTTP client will not present a token (preserving the
-existing anonymous behavior).
-
-In addition, integration tests will test the full webhook call path, verifying
-expected behavior with feature gate both on and off.
+Unit tests will verify that when the feature gate is enabled, the webhook
+dispatch path presents a WAT. When the feature gate is disabled, no token
+is presented. Integration tests will exercise the full webhook call path
+with the feature gate toggled on and off.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+During rollout in a multi-replica HA cluster, some replicas may present WATs
+while others do not. Webhooks that require WATs may see intermittent failures
+from replicas that have not yet been upgraded. This does not affect already
+running workloads directly, but it affects admission of new or modified objects
+during the rollout window.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+On rollback, webhooks that were configured to require WATs will reject all
+requests. Operators should reconfigure webhooks before or immediately after
+rollback.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+An increase in `apiserver_admission_webhook_rejection_count` with rejection
+codes indicating authentication failure (401, 403) after enabling the feature
+would indicate a problem. An increase in
+`apiserver_admission_webhook_fail_open_count` would indicate that webhooks are
+failing and the fail-open policy is being invoked more frequently than
+expected.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Integration tests will cover feature gate enablement and disablement. Manual
+testing of the upgrade->downgrade->upgrade path will be performed before
+beta promotion.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No. The existing kubeconfig-based webhook authentication mechanism is not
+deprecated.
 
 ### Monitoring Requirements
 
-<!-- This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+The feature is not workload-facing. It is a control plane behavior. An
+operator can determine the feature is active by checking the kube-apiserver
+feature gate configuration and by observing WAT-related metrics (see below).
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: A webhook operator can verify the feature is working by checking
+    the `Authorization` header on incoming requests for a valid JWT with the
+    expected audience and APIService claims. The kube-apiserver metrics below
+    confirm that tokens are being issued and presented.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+Use of this feature should not change existing API SLOs. The additional
+latency from WAT issuance is amortized by caching.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `apiserver_admission_webhook_latency_seconds` (existing)
+  - Aggregation method: 99th percentile
+  - Components exposing the metric: kube-apiserver
+- [x] Metrics
+  - Metric name: `apiserver_admission_webhook_rejection_count` (existing)
+  - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+New metrics to add:
+- `apiserver_webhook_authentication_token_request_total`: counter of WAT
+  requests, labeled by success/failure.
+- `apiserver_webhook_authentication_token_request_duration_seconds`:
+  histogram of WAT request latency.
+- `apiserver_webhook_authentication_token_cache_hit_total`: counter of
+  cache hits when looking up cached WATs.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No new dependencies. The feature uses the existing `TokenRequest` API and
+OIDC discovery endpoint, both of which are part of the kube-apiserver.
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Yes, kube-apiserver will make a serviceaccount/token API call prior to
-communicating with webhooks. Using an APIService as the BoundObjectRef in a
-token request will trigger an additional authorization check (verifying that
-the principal requesting the webhook authentication token is authorized to
-do so). In addition, a GET call will be used to fetch the APIService object.
+Yes. The kube-apiserver will make a `TokenRequest` API call
+(`create serviceaccounts/token`) prior to calling a webhook, when no valid
+cached token exists. Each request with an APIService `BoundObjectRef`
+triggers an additional authorization check (the `attest` verification). The
+APIService object is also fetched to verify it exists.
 
-Aggregated API Servers, when updated, will make these calls.
+Aggregated API servers will make the same calls to the kube-apiserver.
 
-This additional load will be offset by caching the webhook authentication
-tokens for the duration of the token's lifetime.
-
-The rationale is that webhooks can reasonably expect the bearer token in
-the future when this feature is stable.
+This additional load is mitigated by caching WATs for their lifetime. Once
+a token is cached for a given webhook+APIService combination, no new API
+calls are needed until the token expires.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-No, however we will be introducing a new RBAC verb, `attest`.
+No. However, the `attest` verb is introduced for use on `apiservices`
+resources.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-If the signing of service account tokens has been offloaded to an external
-signer, then there will be an increase in the number of calls to that
-signing service.
+If service account token signing has been offloaded to an external signer,
+there will be an increase in signing requests proportional to the number
+of unique webhook+APIService combinations.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes. Each Aggregated API Server will have a serviceaccount dedicated to the
-request for a token to authenticate to webhooks. kube-apiserver will have
-an additional service account to request tokens (from itself) for its own
-authentication to webhooks.
+Yes. Each aggregated API server will have a dedicated service account for
+WAT requests. The kube-apiserver will have an additional service account
+for the same purpose. Additional RBAC roles and bindings will be needed.
 
-While not stored in etcd, there will be a new field added to the JWT's
-private claims, under the `"kubernetes.io"` map key.
-
-Additional RBAC roles and bindings will need to be augmented with rules
-permitting the use of webhook authentication tokens.
+The JWT itself gains a new field in its private claims (`webhookAuthentication`)
+but this is not stored in etcd.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Admission webhooks that validate or mutate pods would technically have a
-small impact from this, since the API Server will need to provide tokens
-for this. However, that cost is amortized over the duration of the webhook
-authentication token's lifetime.
+On the first webhook call for a given webhook+APIService combination, there
+will be additional latency from the `TokenRequest` and authorization check.
+Subsequent calls use the cached token and incur no additional latency. The
+cost is amortized over the token's lifetime.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No.
+Minimal increase in memory for the WAT cache (one JWT per
+webhook+APIService combination). CPU impact from token signing is negligible
+and amortized by caching.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No.
+No. This feature does not affect nodes.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+If the kube-apiserver is unavailable, no webhook calls are made and the
+feature is moot. If etcd is unavailable, the dedicated service account and
+APIService objects cannot be read, and WAT issuance will fail. Webhook
+calls will proceed without a WAT (or fail, depending on the webhook's
+configuration).
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- WAT service account is deleted
+  - Detection: `apiserver_webhook_authentication_token_request_total` with
+    failure label increases.
+  - Mitigations: The in-process controller will recreate the service account
+    (for the kube-apiserver's own SA). For aggregated API servers, the
+    operator must recreate the SA.
+  - Diagnostics: kube-apiserver logs will show token request failures.
+  - Testing: Integration tests cover SA deletion and recreation.
+
+- WAT SA lacks `attest` permission
+  - Detection: `apiserver_webhook_authentication_token_request_total` with
+    failure label increases. Webhook calls proceed without authentication
+    or fail, depending on webhook configuration.
+  - Mitigations: Grant the `attest` permission via RBAC.
+  - Diagnostics: kube-apiserver logs will show authorization denial for
+    the `attest` check.
+  - Testing: Integration tests cover missing `attest` permission.
+
+- Webhook rejects WAT due to claims mismatch
+  - Detection: `apiserver_admission_webhook_rejection_count` increases.
+  - Mitigations: Verify that the webhook is correctly matching the
+    APIService claims against the resource in the AdmissionReview body.
+  - Diagnostics: Webhook server logs will show the specific claim mismatch.
+  - Testing: e2e tests cover claims mismatch rejection.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-## Implementation History
+1. Check `apiserver_webhook_authentication_token_request_total` for WAT
+   request failures.
+2. Check `apiserver_admission_webhook_rejection_count` for webhook
+   rejections.
+3. Check `apiserver_admission_webhook_latency_seconds` for increased
+   latency.
+4. Verify the dedicated SA exists and has the correct RBAC permissions.
+5. If the problem cannot be resolved, disable the
+   `APIServerWebhookAuthenticationTokenIssuance` feature gate and restart
+   the kube-apiserver.
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+## Implementation History
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+- Additional authorization checks on each WAT request add some overhead,
+  though this is mitigated by caching.
+- Webhook authors need to implement token verification to benefit from the
+  feature, though a verification library will be provided.
+- The feature introduces a new use of the `attest` verb and extends the
+  `BoundObjectRef` to support APIService, adding surface area to the
+  TokenRequest API.
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+### Client Certificates (mTLS)
 
-## Infrastructure Needed (Optional)
+The kube-apiserver could authenticate to webhooks using client certificates
+(e.g., the existing front-proxy cert). This was considered but has drawbacks:
+L7 proxies terminate TLS and strip client certs, making this unreliable in
+common deployment topologies (service meshes, cloud load balancers, ingress
+controllers). Bearer tokens survive L7 proxies because they are HTTP headers.
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+### Designated ServiceAccount ("Magic SA")
+
+A well-known service account name could represent the API server's identity.
+This was considered but rejected because it expands the semantic meaning of
+ServiceAccount from "workload identity" to "control-plane identity" and
+relies on a magic name convention rather than explicit authorization.
+
+### ServiceAccount Token with Identity in Private Claims
+
+Any service account token could carry a special claim indicating API server
+identity, gated by a synthetic subresource authorization check. This was
+considered but rejected in favor of binding to the APIService object, which
+provides a more semantically precise identity (the caller is authorized for
+a specific API group/version, not just "is an API server").
+
+### AdmissionReview Delegation
+
+Aggregated API servers could delegate admission to the kube-apiserver via a
+new AdmissionReview REST API. This was considered but rejected due to its
+large scope (requiring its own KEP and significant API surface) and because
+it would not address the kube-apiserver's own authentication to webhooks.
