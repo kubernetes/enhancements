@@ -1187,7 +1187,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: CBORSerializer
+  - Feature gate name: CBORServingAndStorage
   - Components depending on the feature gate:
     - kube-apiserver
 
@@ -1244,10 +1244,9 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-There will be integration tests that ensure custom resources that have been
-stored with a mixture of CBOR and JSON encodings continue to be accessible with
-the feature gate disabled, and integration tests for client
-enablement/disablement.
+There is an [integration test that ensures custom resources that have been stored with a mixture of
+CBOR and JSON encodings continue to be accessible with the feature gate
+disabled](https://github.com/kubernetes/kubernetes/blob/e1d80088da7453801a8a8d1de3e81720982e2ac6/staging/src/k8s.io/apiextensions-apiserver/test/integration/cbor_test.go#L47-L177).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1267,12 +1266,25 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Existing releases are capable of decoding CBOR-encoded custom resources from storage whether or not
+the feature gate is enabled. During a rollout or rollback where only a subset of API servers have
+the CBOR storage encoding enabled, all API servers will be able to decode all custom resources.
+
+A client program that attempts to send a CBOR-encoded request body and receives an HTTP 415 response
+from an API server with CBOR disabled will fall back to the JSON request body encoding until the
+client program in question is restarted.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+Failure to decode custom resource objects from storage is reported directly through
+`storage_decode_errors_total` and should not occur. Extensive serialization roundtrip testing exists
+to mitigate the risk of bugs that prevent persisted CBOR from being decoded. The established API
+server request latency and error metrics are not expected to regress.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1282,11 +1294,77 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Upgrade and rollback were simulated manually by enabling and disabling the CBORServingAndStorage feature gate on a local kube-apiserver.
+
+1. Start with feature disabled.
+2. Create a CRD.
+```
+$ curl -X POST "$API/apis/apiextensions.k8s.io/v1/customresourcedefinitions" \
+    -H "Content-Type: application/json" -d '{
+    "apiVersion": "apiextensions.k8s.io/v1",
+    "kind": "CustomResourceDefinition",
+    "metadata": {"name": "bars.mygroup.example.com"},
+    "spec": {
+      "group": "mygroup.example.com",
+      "versions": [{"name": "v1beta1", "served": true, "storage": true,
+        "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": true}}}],
+      "names": {"plural": "bars", "singular": "bar", "kind": "Bar", "listKind": "BarList"},
+      "scope": "Cluster"
+    }
+  }'
+```
+3. Create the CR `test-storage-json`.
+```
+$ curl -X POST "$API/apis/mygroup.example.com/v1beta1/bars" \
+    -H "Content-Type: application/json" -d '{
+    "apiVersion": "mygroup.example.com/v1beta1",
+    "kind": "Bar",
+    "metadata": {"name": "test-storage-json"}
+  }'
+```
+4. Verify that `test-storage-json` is JSON-encoded in storage.
+```
+$ ETCDCTL_API=3 etcdctl get /registry/mygroup.example.com/bars/test-storage-json --print-value-only
+{"apiVersion":"mygroup.example.com/v1beta1","kind":"Bar",...}
+```
+5. Restart kube-apiserver with the feature enabled.
+6. Create another CR `test-storage-cbor`.
+```
+$ curl -X POST "$API/apis/mygroup.example.com/v1beta1/bars" \
+    -H "Content-Type: application/json" -d '{
+    "apiVersion": "mygroup.example.com/v1beta1",
+    "kind": "Bar",
+    "metadata": {"name": "test-storage-cbor"}
+  }'
+```
+7. Verify that `test-storage-cbor` is CBOR-encoded in storage.
+```
+$ ETCDCTL_API=3 etcdctl get /registry/mygroup.example.com/bars/test-storage-cbor --print-value-only | od -A n -t x1
+d9 d9 f7 .. .. ..
+```
+8. Verify that both resources can be read from the API (existing JSON can be decoded after upgrade).
+```
+$ curl "$API/apis/mygroup.example.com/v1beta1/bars/test-storage-json"
+{...}
+$ curl "$API/apis/mygroup.example.com/v1beta1/bars/test-storage-cbor"
+{...}
+```
+9. Restart kube-apiserver with the feature again disabled.
+10. Verify that both resources can be read from the API (persisted CBOR can be decoded after rollback).
+```
+$ curl "$API/apis/mygroup.example.com/v1beta1/bars/test-storage-json"
+{...}
+$ curl "$API/apis/mygroup.example.com/v1beta1/bars/test-storage-cbor"
+{...}
+```
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -1305,6 +1383,15 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Any workload interacting with custom resources is implicitly exercising CBOR as a storage encoding.
+
+Since the request encoding and response encoding are both primarily determined by client behavior
+(through proactive negotiation), and the existing request metrics don't provide the ability to
+distinguish between JSON, YAML, and Protobuf, an operator can't determine from apiserver metrics
+that CBOR is being actively used for serving. Programs built with client-go that have the
+ClientsAllowCBOR and ClientsPreferCBOR client-go feature gates enabled will use CBOR request and
+response encodings when interacting with custom resources.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1316,13 +1403,11 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Serving is verifiable by making a request to any API resource with the appropriate
+    content negotiation headers (i.e. "Accept: application/cbor") and inspecting the first three
+    bytes of the response. They will be the encoding of the Self-Described CBOR tag, 0xd9d9f7. The
+    storage encoding used for custom resources is transparent to end users.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1341,18 +1426,19 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Enabling the feature gate shouldn't regress established SLOs for request latency and error rate.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `apiserver_request_total`
+  - Components exposing the metric: kube-apiserver
+  - Metric name: `apiserver_request_duration_seconds`
+  - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1360,6 +1446,11 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+Additional labels on `apiserver_request_total` to indicate request and response encoding would allow
+segmenting error rates by serializer and would show adoption by clients. This increases time series
+cardinality (16 pairs of request and response serializations) and the capability hasn't been
+considered necessary for existing serializers.
 
 ### Dependencies
 
@@ -1383,6 +1474,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+No.
 
 ### Scalability
 
@@ -1514,6 +1607,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+N/A. The serialization itself doesn't depend on communication between API servers or between an API
+server and etcd.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1528,6 +1624,21 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+
+Essentially any failure mode is a bug, whether it results in corruption, pathological resource
+consumption or request latency, or serialization roundtrip failures (inability of a kube-apiserver
+to decode custom resources from storage, failure of a client to decode a response body, or failure
+of an API server to decode a valid CBOR-encoded request body).
+
+Client operators can prevent further CBOR usage in API requests by disabling the client-go feature
+gate ClientsAllowCBOR and restarting the client program.
+
+API server operators can stop the use of CBOR in requests and storage encoding by disabling
+CBORServingAndStorage and restarting the API server. Clients attempting to send CBOR request bodies
+to an API server with the feature gate disabled will trip a circuit breaker and fall back to
+JSON. After restarting the API server, any custom resources that are CBOR-encoded in storage can be
+migrated back to the JSON storage encoding by performing a no-change get/put on each custom
+resource.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
