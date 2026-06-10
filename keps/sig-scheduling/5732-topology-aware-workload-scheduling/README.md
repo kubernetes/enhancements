@@ -532,9 +532,6 @@ N/A
 
 #### Integration tests
 
-For Alpha we implemented integration tests to ensure basic functionalities of
-to
-
 Topology Aware Scheduling With Gang Policy:
 
 - Resource Availability: Schedules successfully if space permits, or remains
@@ -628,6 +625,13 @@ kube-apiserver) may not handle those. Thus, users should not set those fields
 before confirming all control-plane instances were upgraded to the version
 supporting those.
 
+If SchedulingConstraints are set on a PodGroup that is scheduled before the
+TopologyAwareWorkloadScheduling feature gate is enabled on kube-scheduler,
+the pods within that group might be scheduled across different topology domains.
+If the feature gate is subsequently enabled, existing pods belonging to this
+PodGroup will continue to run, but the scheduler may be unable to place any
+new pods within the same PodGroup due to the newly enforced topology constraints.
+
 For the topology-aware workload scheduling itself, this is purely kube-scheduler
 in-memory feature, so the skew doesn't matter (as there is always only a single
 kube-scheduler instance being a leader).
@@ -674,8 +678,10 @@ The feature starts working again.
 The scheduler algorithm changes are purely in-memory and doesn't require any dedicated
 enablement/disablement tests - the logic will be covered by regular feature tests.
 
-For the newly introduced API fields, dedicated enablement/disablement tests at the
-kube-apiserver registry layer will be added.
+The feature has unit tests that verifies enablement and disablement of the
+`schedulingConstraints` field at the kube-apiserver registry layer:
+- Workload API: https://github.com/kubernetes/kubernetes/blob/de391ca4a4dfe6288287088a8f8ea8bc2352d5b8/pkg/registry/scheduling/workload/strategy_test.go#L83
+- PodGroup API: https://github.com/kubernetes/kubernetes/blob/de391ca4a4dfe6288287088a8f8ea8bc2352d5b8/pkg/registry/scheduling/podgroup/strategy_test.go#L125.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -702,13 +708,13 @@ still scheduled, but PodGroup-level toplogy scheduling constraints won't be appl
 
 We'll perform manual testing of the upgrade -> downgrade -> upgrade path using the following sequence:
 
-1. Start a local Kubernetes v1.36 cluster with `TopologyAwareWorkloadScheduling` feature
+1. Start a local Kubernetes v1.37 cluster with `TopologyAwareWorkloadScheduling` feature
    gate disabled and `GenericWorkload` feature gate enabled.
 2. Attempt to create a PodGroup object with `spec.schedulingConstraints.topologyConstraints[0].level`
    set to `kubernetes.io/hostname`.
 3. The `spec.schedulingConstraints` field is dropped by the API server. The PodGroup is created
    successfully but without the `spec.schedulingConstraints` reference.
-4. Restart/Upgrade API Server and Scheduler to v1.37 with feature gates enabled.
+4. Restart API Server and Scheduler with `TopologyAwareWorkloadScheduling` feature gate enabled.
 5. Create five PodGroup objects: `tas-test-A` to `tas-test-E` all with `minCount`
    set to 2 and `spec.schedulingConstraints.topologyConstraints[0].level` set to `kubernetes.io/hostname`.
 6. Create `test-pod-1` and `test-pod-2` Pods with `spec.schedulingGroup` pointing to `tas-test-A`
@@ -718,13 +724,13 @@ We'll perform manual testing of the upgrade -> downgrade -> upgrade path using t
 8. Create `test-pod-3` and `test-pod-4` Pods with `spec.schedulingGroup` pointing to `tas-test-B`
    and node affinities pointing to the same node.
 9. Both pods are scheduled successfully (TAS works). 
-10. Downgrade API Server and Scheduler to v1.36 with feature gates disabled.
+10. Restart API Server and Scheduler with `TopologyAwareWorkloadScheduling` feature gate disabled.
 11. Create `test-pod-5` and `test-pod-6` Pods with `spec.schedulingGroup` pointing to `tas-test-C`
     and node affinities pointing to two different nodes. Note: We use a pod group created in step 5
     because creating new PodGroup objects with schedulingConstraints is disabled.
 13. The pods are scheduled successfully (schedulingConstraints logic is ignored because the schedulingGroup
     field is dropped by the v1.36 API server).
-15. Upgrade API Server and Scheduler back to v1.37 with feature gates enabled.
+15. Restart API Server and Scheduler with `TopologyAwareWorkloadScheduling` feature gate enabled.
 16. Repeat steps 6 to 9 with `tas-test-D` and `tas-test-E`.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -739,14 +745,18 @@ Operators can check the new `plugin_execution_duration_seconds{plugin="TopologyP
 metric. A value greater than zero indicates that the scheduler is using TAS .
 
 Alternatively, checking for the existence of `PodGroup` via `kubectl get podgroups`,
-and checking the `PodGroup.spec.spec.schedulingConstraints` field confirms that users
+and checking the `PodGroup.spec.schedulingConstraints` field confirms that users
 are actively using the feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [X] API .status
   - Object: PodGroup
+  - `spec.schedulingConstrains` field is not empty.
   - Condition Name: `PodGroupInitiallyScheduled`
+- [X] Metrics
+  - Metric: `scheduler_placement_total`
+  - Value is greater then 0.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -767,7 +777,16 @@ of the standard scheduling loop.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No.
+The beta version of this feature introduces three new metrics to track pod group scheduling behavior:
+
+- `scheduler_placement_total` — counter tracking the total number of candidate placements generated
+  during pod group scheduling.
+- `scheduler_placement_evaluations_total` — counter tracking the total number of evaluated candidate
+  placements, partitioned by the result label (`feasible`/`infeasible`).
+- `scheduler_placement_evaluation_duration_seconds` — histogram measuring the latency (in seconds) of
+  evaluating an individual candidate placement, partitioned by the result label (`feasible`/`infeasible`).
+
+No additional metrics have been identified as necessary for this phase.
 
 ### Dependencies
 
