@@ -84,7 +84,7 @@ constraints:
   requests: [gpu, nic, cpu, mem]
 ```
 
-CPU device `[4]` ∩ NIC `[6, 4, 5, 7]` = `{4}` ≠ ∅ → match.
+CPU device `4` (scalar) ∩ NIC `[6, 4, 5, 7]` = `{4}` ≠ ∅ → match. (`matchAttribute` compares a scalar from one driver against a list from another, so the CPU driver can publish a plain `4` rather than a single-element list.)
 
 Today, six DRA drivers publish NUMA node information under five different vendor-specific attribute names. `matchAttribute` requires a common name. Users cannot write a cross-driver NUMA co-placement constraint without middleware. This proposal standardizes the name and semantics so that one constraint works across all drivers.
 
@@ -437,7 +437,7 @@ TBD for beta.
 
 ###### What specific metrics should inform a rollback?
 
-TBD for beta.
+None specific to this feature. A rollback would be prompted by qualitative signals rather than a dedicated metric: ResourceClaims using `matchAttribute: resource.kubernetes.io/numaNode` failing to allocate, or DRA drivers reporting errors when publishing the attribute. Operators can watch existing DRA scheduling-failure signals and driver logs.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -463,15 +463,15 @@ TBD for beta. At alpha: a ResourceClaim with `matchAttribute: resource.kubernete
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-TBD for beta.
+None specific to this feature. It introduces no dedicated SLI, so there is no separate SLO; the relevant objective is simply that DRA allocation continues to meet its existing scheduling-latency and success expectations.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-TBD for beta.
+None specific to this feature. Health is observed indirectly through existing DRA behavior: ResourceClaims using `matchAttribute: resource.kubernetes.io/numaNode` either allocate successfully or remain pending, and the scheduler/driver logs surface allocation failures. No dedicated SLI is introduced.
 
 ###### Are there any missing metrics that would be useful to have in this category?
 
-TBD for beta.
+None. Nothing in core Kubernetes tracks which device-attribute names are used in match constraints, so there is no natural metric for this feature, and adding one would require new, potentially performance-sensitive instrumentation in the scheduler allocator for little operator value. This feature only standardizes a device-attribute name and ships helper library code; it adds no control loop or API surface whose health a metric would meaningfully report. (Per discussion with @pohly and @Champbreed.)
 
 ### Dependencies
 
