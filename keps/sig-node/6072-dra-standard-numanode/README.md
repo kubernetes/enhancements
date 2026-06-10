@@ -22,6 +22,7 @@
   - [Helper Implementation](#helper-implementation)
     - [Platform scope](#platform-scope)
   - [Driver Changes](#driver-changes)
+    - [Feature gate detection](#feature-gate-detection)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -309,6 +310,12 @@ device.Attributes[deviceattribute.StandardDeviceAttributeNUMANode] = resourceapi
     IntValue: ptr.To(int64(numaID)),
 }
 ```
+
+#### Feature gate detection
+
+A DRA driver does not read the kube-apiserver's feature-gate configuration directly, so it cannot know up front whether `DRAListTypeAttributes` is enabled. The intended model is **try-the-list, fall back on rejection**: the driver attempts to publish the `IntValues` (list) form, and if the API server rejects the ResourceSlice because the list field is gated off, the driver retries with the scalar `IntValue` form. This keeps the driver correct without coupling it to cluster-level gate state, and matches the behavior described under [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+
+This fallback path is **transitional**. It exists only while `DRAListTypeAttributes` is gated. Once that feature gate goes GA — at which point it is locked on and subsequently removed from the codebase — the list form is unconditionally available, the rejection case can no longer occur, and the scalar fallback branch can be retired. The scalar form itself remains a valid value (semantically a single-element set), so retiring the fallback is a code simplification, not an API change.
 
 ### Test Plan
 
