@@ -129,6 +129,8 @@ The `numaNode` list is built from two filters applied to the ACPI SLIT distance 
 
 The physical NUMA node (from sysfs `numa_node`) is always the first element.
 
+Entries in the list are **unordered and equal-weight**: every node in the list is at the same minimum SLIT distance on the same socket, so there is no basis to rank them. Nodes that are *not* equally local are excluded by the minimum-distance filter rather than down-ranked within the list.
+
 **CPU and memory devices** typically publish their physical NUMA node as a scalar `N` or single-element list `[N]`. Under NPS/SNC configurations where multiple NUMA nodes share symmetric memory controller access (e.g., AMD EPYC with memory controllers on the I/O die), drivers MAY publish a multi-element list. What each driver publishes is up to the driver authors.
 
 **I/O devices** (GPUs, NICs, NVMe) publish `[physical, nodes at min SLIT distance on same socket...]`. On hardware where multiple NUMA nodes are equidistant to an I/O device (e.g., AMD EPYC chiplets under NPS4 where all same-socket NUMA nodes are at distance 12), the list includes all same-socket nodes. On future multi-IOD hardware with asymmetric intra-socket SLIT distances (e.g., Intel Xeon 6 with 2 IODs per socket), the minimum distance filter would naturally narrow the list to same-IOD nodes only.
