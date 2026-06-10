@@ -255,7 +255,7 @@ Make the internal type field-for-field identical, the main complexity is:
 
 #### Step 2:
 
-Introduce guardrails to prevent internal types from becoming needlessly differen
+Introduce guardrails to prevent internal types from becoming needlessly different
 than the stable served version.
 
 We plan to modify conversion-gen to track differences between the types and
