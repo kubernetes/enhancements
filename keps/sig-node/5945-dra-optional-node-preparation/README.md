@@ -274,7 +274,7 @@ allocated devices' status:
 2. **Checkpointing**: Kubelet caches these aggregated properties inside its
    checkpointed, claim-specific state (`ClaimInfo`) so they are safely preserved
    across Kubelet restarts.
-3. **Bypassing**: During Pod admission and teardown, Kubelet's DRA manager
+3. **Bypassing**: During `PrepareResources` and `UnprepareResources`, the DRA manager
    checks the claim's cached properties. If skipping is enabled for the driver
    under that claim (meaning all allocated devices have the respective skip field
    explicitly set to `true` in the allocation result), it bypasses driver registry
@@ -283,15 +283,15 @@ allocated devices' status:
    has a `nil` or `false` value, it defaults to `false` (do not skip).
 4. **Disabled Feature Gate Behavior**: If the `DRAOptionalNodePreparation`
    feature gate is disabled on the kubelet:
-   - For **Admission**: If a claim's allocation result specifies
-     `SkipNodePrepare: true` or `SkipNodeUnprepare: true`, the kubelet fails pod
-     admission immediately with a clear error (e.g.,
+   - For **`PrepareResources`**: If a claim's allocation result specifies
+     `SkipNodePrepare: true` or `SkipNodeUnprepare: true`, the DRA manager fails `PrepareResources`
+     immediately with a clear error (e.g.,
      `DRAOptionalNodePreparationDisabled`), preventing the pod from running with
      uninitialized hardware.
-   - For **Teardown**: Since we already validate and fail during pod admission,
-     we do not need any additional checks or errors during teardown if the
+   - For **`UnprepareResources`**: Since we already validate and fail during `PrepareResources`,
+     we do not need any additional checks or errors during `UnprepareResources` if the
      feature gate is disabled. Specifically, if a pod with `SkipNodeUnprepare:
-     true` was already admitted (e.g., when the feature gate was enabled) but
+     true` was already processed (e.g., when the feature gate was enabled) but
      the feature gate is subsequently disabled, the kubelet will still skip the
      unprepare call and allow the pod to terminate cleanly. This honors the
      original intent and prevents the pod from getting permanently stuck in the
@@ -441,7 +441,7 @@ driver based on the individual skip flags, allowing mixed-mode execution.
     running an older kubelet, the older kubelet will ignore these fields and
     look for a node-local driver to be registered.
   - If no node-local driver is running on that node, resource preparation will
-    fail, blocking pod admission.
+    fail, blocking DRA manager's `PrepareResources` and preventing the pod from running.
   - *Mitigation*: Cluster administrators have several options during the upgrade
     transition window:
     - Restrict the workloads requesting these devices to only schedule onto
@@ -476,11 +476,11 @@ driver based on the individual skip flags, allowing mixed-mode execution.
     or `SkipNodeUnprepare: true`, but the upgraded kubelet has the gate
     disabled:
     - Pods requesting `SkipNodePrepare: true` or `SkipNodeUnprepare: true` will
-      fail pod admission with a clear `DRAOptionalNodePreparationDisabled`
+      fail `PrepareResources` with a clear `DRAOptionalNodePreparationDisabled`
       error.
     - For already running pods (in case the feature gate was disabled after
-      admission), the kubelet will honor `SkipNodeUnprepare: true` and skip the
-      unprepare call during teardown, allowing the pod to terminate cleanly.
+      successful `PrepareResources`), the kubelet will honor `SkipNodeUnprepare: true` and skip the
+      unprepare call during `UnprepareResources`, allowing the pod to terminate cleanly.
 
 - **Scheduler Feature Gate Disabled / SkipNodePrepare or SkipNodeUnprepare set to true**:
   - If the `DRAOptionalNodePreparation` feature gate is disabled in the
@@ -538,9 +538,9 @@ Yes. Unit tests in the allocator will verify that when the feature gate is
 disabled, if any `ResourceSlice` has `SkipNodePrepare: true` or
 `SkipNodeUnprepare: true`, the allocator returns an error and fails allocation.
 Kubelet unit tests will verify that when the feature gate is disabled on the node:
-- It fails pod admission if any active claim has `SkipNodePrepare: true` or
+- It fails `PrepareResources` if any active claim has `SkipNodePrepare: true` or
   `SkipNodeUnprepare: true`.
-- During teardown of an already running pod, it still skips cleanup if the claim
+- During `UnprepareResources` of an already running pod, it still skips cleanup if the claim
   has `SkipNodeUnprepare: true`, allowing the pod to terminate cleanly.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -700,7 +700,7 @@ to container application crashes.
 4. If allocation itself is failing for the pod's claims with errors indicating that
    the optional node preparation feature is disabled in the scheduler, verify that the
    `DRAOptionalNodePreparation` feature gate is enabled in the scheduler/allocator components.
-5. If pod admission fails with a `DRAOptionalNodePreparationDisabled` error,
+5. If `PrepareResources` fails with a `DRAOptionalNodePreparationDisabled` error,
    verify that the `DRAOptionalNodePreparation` feature gate is enabled on the
    target kubelet.
 6. If a terminating pod was deleted and skipped cleanup, verify if it had
