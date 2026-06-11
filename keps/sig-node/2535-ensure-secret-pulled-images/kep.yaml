@@ -20,7 +20,7 @@ approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 stage: beta
-latest-milestone: "v1.35"
+latest-milestone: "v1.37"
 milestone:
   alpha: "v1.33"
   beta: "v1.35"
