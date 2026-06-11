@@ -694,6 +694,9 @@ standard non-TAS method, falling back to a default workload scheduling algorithm
 
 This results in a fallback to the status quo behavior, meaning that pods will be
 still scheduled, but PodGroup-level toplogy scheduling constraints won't be applied.
+If the feature gate is subsequently enabled, existing pods belonging to this
+PodGroup will continue to run, but the scheduler may be unable to place any
+new pods within the same PodGroup due to the newly enforced topology constraints.
 
 ###### What specific metrics should inform a rollback?
 
