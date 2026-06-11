@@ -136,6 +136,7 @@ The scope of this KEP is deliberately minimized for more effective execution. I 
   - Enabling dynamic volume management (aside from mounting preallocated volumes).
   - Enabling "dynamic DRA" (i.e. mutable resource claims on running pods).
   - Introducing an alternative request path to mutate pods that bypasses the cluster API server.
+  - Changes impacting pod creation: this KEP is purely scoped to behavior on pod update.
 
 ## Proposal
 
@@ -197,7 +198,8 @@ unexpectedly be blocked by resource allocations.
 
 **Mitigation:** This change corrects a race condition/atomicity violation, ensuring Pod updates are
 treated as proper transactions (we shouldn't run a new image if we can't secure the resources for
-its accompanying spec). We will explicitly document this behavioral shift.
+its accompanying spec). We will explicitly document this behavioral shift. Image updates blocked by
+a deferred resize will be recorded in a Kubelet log line.
 
 ## Design Details
 
