@@ -22,7 +22,8 @@
   - [Helper Implementation](#helper-implementation)
     - [Platform scope](#platform-scope)
   - [Driver Changes](#driver-changes)
-    - [Feature gate detection](#feature-gate-detection)
+    - [Choosing the list or scalar form](#choosing-the-list-or-scalar-form)
+  - [Consumer Expectations](#consumer-expectations)
   - [Test Plan](#test-plan)
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -95,7 +96,7 @@ Today, six DRA drivers publish NUMA node information under five different vendor
 
 - Standardize `resource.kubernetes.io/numaNode` (integer list) as a well-known device attribute in the `deviceattribute` library
 - Use ACPI SLIT distances with a socket boundary filter to determine which NUMA nodes are local to each device
-- Provide `GetNUMANodeListByPCIBusID()` and `GetNUMANodeList()` helper functions for driver authors
+- Provide `GetNUMANodeAttributeByPCIBusID()` and `GetNUMANodeAttribute()` helper functions for driver authors
 - Enable cross-driver NUMA co-placement via `matchAttribute` with KEP-5491 intersection matching
 - Restore the NUMA coordination capability that was lost when devices moved from device plugins to DRA
 
@@ -173,20 +174,16 @@ Scalar-to-list and list-to-list (with `DRAListTypeAttributes` — intersection m
 Add to `k8s.io/dynamic-resource-allocation/deviceattribute`:
 
 ```go
-// GetNUMANodeByPCIBusID returns the numaNode attribute for a PCI device
-// as a scalar int (physical NUMA node). Use when DRAListTypeAttributes
-// is not available.
-func GetNUMANodeByPCIBusID(pciBusID string, mods ...MachineModifier) (DeviceAttribute, error)
+// GetNUMANodeAttributeByPCIBusID returns the numaNode attribute for a PCI
+// device. With listEnabled it returns the SLIT-based list (physical node
+// first, then same-socket nodes at the minimum SLIT distance); otherwise it
+// returns the scalar physical node. Returns an error for a device with no
+// NUMA affinity.
+func GetNUMANodeAttributeByPCIBusID(pciBusID string, listEnabled bool, mods ...MachineModifier) (DeviceAttribute, error)
 
-// GetNUMANodeListByPCIBusID returns the numaNode list attribute for a PCI
-// device. First element is the physical NUMA node, additional elements are
-// same-socket nodes at minimum SLIT distance. Requires DRAListTypeAttributes.
-func GetNUMANodeListByPCIBusID(pciBusID string, mods ...MachineModifier) (DeviceAttribute, error)
-
-// GetNUMANodeList returns the numaNode list attribute for a device that
-// already knows its NUMA node. Suitable for CPU and memory devices.
-// Returns scalar or list depending on DRAListTypeAttributes availability.
-func GetNUMANodeList(numaNode int, mods ...MachineModifier) DeviceAttribute
+// GetNUMANodeAttribute returns the numaNode attribute for a device that
+// already knows its NUMA node (CPU/memory). listEnabled selects list or scalar.
+func GetNUMANodeAttribute(numaNode int, listEnabled bool, mods ...MachineModifier) (DeviceAttribute, error)
 
 // GetNUMANodeForCPU returns the NUMA node ID for a given CPU core.
 func GetNUMANodeForCPU(cpuID int, mods ...MachineModifier) (int, error)
@@ -268,67 +265,85 @@ No new API types. The standard attribute name `resource.kubernetes.io/numaNode` 
 
 const StandardDeviceAttributeNUMANode = StandardDeviceAttributePrefix + "numaNode"
 
-// GetNUMANodeListByPCIBusID reads numa_node from sysfs, then applies
-// SLIT distance + socket boundary filters.
-func GetNUMANodeListByPCIBusID(pciBusID string, mods ...MachineModifier) (DeviceAttribute, error) {
-    physicalNode := readNUMANode(pciBusID)     // /sys/bus/pci/devices/<BDF>/numa_node
-    equidistant := getEquidistantNUMANodes(physicalNode)  // SLIT min distance + socket filter
-    return DeviceAttribute{
-        Name:  StandardDeviceAttributeNUMANode,
-        Value: resourceapi.DeviceAttribute{IntValues: [physicalNode, equidistant...]},
-    }
-}
+// GetNUMANodeAttributeByPCIBusID reads numa_node from sysfs and returns the
+// numaNode attribute. With listEnabled it applies the SLIT distance + socket
+// boundary filters and returns the list form ([physicalNode, equidistant...]);
+// otherwise it returns the scalar physical node. It returns an error for a
+// device with no NUMA affinity (sysfs numa_node = -1).
+func GetNUMANodeAttributeByPCIBusID(pciBusID string, listEnabled bool, mods ...MachineModifier) (DeviceAttribute, error)
 
-// GetNUMANodeList for devices that already know their NUMA node.
-// Returns [N] for CPU/memory, or [N, equidistant...] for I/O devices.
-func GetNUMANodeList(numaNode int, mods ...MachineModifier) DeviceAttribute
+// GetNUMANodeAttribute returns the numaNode attribute for a device that already
+// knows its NUMA node (CPU/memory). listEnabled selects the list or scalar form.
+func GetNUMANodeAttribute(numaNode int, listEnabled bool, mods ...MachineModifier) (DeviceAttribute, error)
 ```
 
 All functions use the existing `machine` abstraction with `MachineModifier` for testability via mock sysfs.
 
 #### Platform scope
 
-The derivation helpers (`GetNUMANodeListByPCIBusID`, `GetNUMANodeList`) read Linux sysfs (`/sys/bus/pci/devices/<BDF>/numa_node`) and ACPI SLIT distances, so the automatic SLIT-based list construction is **Linux-only**. This matches the current state of DRA drivers, which are Linux-only in practice.
+The derivation helpers (`GetNUMANodeAttributeByPCIBusID`, `GetNUMANodeAttribute`) read Linux sysfs (`/sys/bus/pci/devices/<BDF>/numa_node`) and ACPI SLIT distances, so the automatic SLIT-based list construction is **Linux-only**. This matches the current state of DRA drivers, which are Linux-only in practice.
 
 The standard attribute name and its semantics, however, are platform-neutral. The attribute is a plain integer (or integer list) value with no Linux-specific encoding, so a Windows DRA driver MAY publish `resource.kubernetes.io/numaNode` directly if it obtains NUMA topology through a Windows-native mechanism — the helper functions are a convenience for Linux drivers, not a requirement of the attribute. Windows NUMA topology discovery for DRA is out of scope for this KEP; if it is pursued, it would supply the value through a separate Windows-specific code path (see related Windows affinity work in KEP-4885) and reuse this same attribute name and matching semantics. No part of the scheduler-side `matchAttribute` intersection logic is platform-dependent.
 
 ### Driver Changes
 
-Each DRA driver adds one call to publish the attribute:
+Each DRA driver adds one call to publish the attribute. `listEnabled` comes from the driver's configuration (see [Choosing the list or scalar form](#choosing-the-list-or-scalar-form)):
 
 ```go
-// I/O device (GPU, NIC, NVMe): list built from sysfs numa_node + SLIT distances
-numaAttr, err := deviceattribute.GetNUMANodeListByPCIBusID(pciBusID)
+// I/O device (GPU, NIC, NVMe): list (when listEnabled) built from sysfs numa_node + SLIT distances
+numaAttr, err := deviceattribute.GetNUMANodeAttributeByPCIBusID(pciBusID, listEnabled)
 if err == nil {
     device.Attributes[numaAttr.Name] = numaAttr.Value
 }
 
 // CPU/memory device that already knows its NUMA node
-numaAttr := deviceattribute.GetNUMANodeList(numaID)
-device.Attributes[numaAttr.Name] = numaAttr.Value
+numaAttr, err = deviceattribute.GetNUMANodeAttribute(numaID, listEnabled)
+if err == nil {
+    device.Attributes[numaAttr.Name] = numaAttr.Value
+}
 ```
 
-These helpers produce the list form (`IntValues`). See [Feature gate detection](#feature-gate-detection) for how a driver is expected to behave when `DRAListTypeAttributes` is not enabled.
+A device with no NUMA affinity returns an error from both helpers; the driver omits the attribute for it rather than publishing a meaningless value.
 
-#### Feature gate detection
+#### Choosing the list or scalar form
 
-A DRA driver is a separate binary and cannot read the kube-apiserver's feature-gate configuration directly (`utilfeature.DefaultFeatureGate` is only the in-process registry of the apiserver/scheduler/kubelet). It therefore cannot know up front whether `DRAListTypeAttributes` is enabled, and the attribute's behavior has to account for how the apiserver treats list-valued attributes when the gate is off.
+A DRA driver decides which form to publish; it does not detect the cluster's feature state at runtime. A driver cannot read the apiserver's feature gates directly (feature gates are per-process), and feature support is not atomic across components during an upgrade, so runtime discovery would be unreliable. Following the standard "components only use features the operator enabled" model, the form is an operator-supplied input:
 
-When the gate is disabled, the apiserver does **not** reject a ResourceSlice that carries list-valued attributes. It **silently drops** the list fields. This is the standard `dropDisabledFields` behavior in the ResourceSlice registry strategy (`dropDisableDRAListTypeAttributesFields`), which nils out `IntValues`/`BoolValues`/`StringValues`/`VersionValues` during `PrepareForCreate`/`PrepareForUpdate`, with the usual ratcheting exception that a field already set on the existing object is preserved.
+- The `deviceattribute` helpers take a `listEnabled` argument. When true they return the list form; when false they return the scalar physical node. When unset it defaults to false (scalar), which is always valid regardless of the gate.
+- The operator sets `listEnabled` on the driver, through whatever configuration the driver author exposes (a flag or config field), to match what the cluster has enabled. The operator enables `DRAListTypeAttributes` across the apiserver and scheduler first, then configures the driver to publish lists; on downgrade the driver is reconfigured first, then the cluster.
+- If a driver is configured to publish the list while `DRAListTypeAttributes` is off in the cluster, the apiserver drops the list value, the resulting value-less attribute fails validation, and the publish is rejected. The driver should treat this as a fatal configuration error rather than adapting.
 
-This interacts with a hard constraint: `DeviceAttribute` is a strict union, so exactly one value field may be set. A driver that publishes a `numaNode` attribute with only `IntValues` set will, when the gate is off, have that field dropped and be left with a value-less attribute, which then fails validation (`exactly one value must be specified`) and causes the whole ResourceSlice to be rejected.
+This selection is **transitional**. Once `DRAListTypeAttributes` is GA and unconditionally available, the list form is always valid, drivers can publish it unconditionally, and the `listEnabled` selection (and the scalar form) can be retired. The scalar value remains semantically a single-element set, so that retirement is a code simplification, not an API break for consumers.
 
-The agreed direction (per review discussion with @pohly) is a **scalar baseline with a list when the gate is on**, so the attribute is usable even before `DRAListTypeAttributes` is enabled:
+### Consumer Expectations
 
-- When `DRAListTypeAttributes` is off, a driver publishes a scalar `IntValue` (the physical NUMA node). This carries no gate dependency and is always valid. `matchAttribute` falls back to equality on the scalar.
-- When `DRAListTypeAttributes` is on, a driver publishes the `IntValues` list, enabling intersection matching.
+Because a driver may publish either the scalar or the list form, consumers of `resource.kubernetes.io/numaNode` must account for both. How much this matters depends on how a consumer reads the attribute.
 
-This is the design intent; the implementation does not provide the scalar path yet. Two pieces are still open:
+**Matching via `matchAttribute` (the recommended case).** A ResourceClaim that constrains `matchAttribute: resource.kubernetes.io/numaNode` is unaffected by the form. The constraint is evaluated as non-empty set intersection (KEP-5491), and a scalar is treated as a single-element set, so a scalar `4` matches a list `[4, 5, 6, 7]` because `{4}` intersects `{4, 5, 6, 7}`. Mixed forms across drivers work with no special handling. This is the recommended way to consume the attribute and requires nothing of the consumer.
 
-1. **A scalar helper** in the `deviceattribute` library, alongside the existing list helpers (`GetNUMANodeListByPCIBusID`, `GetNUMANodeList`), so a driver can emit the scalar form.
-2. **The detection mechanism**: how a driver decides which form to publish. The proposed approach reuses the existing round-trip detection already in the resourceslice publisher (`k8s.io/dynamic-resource-allocation/resourceslice`). That controller compares the desired slice against the stored slice it reads back, and when fields were dropped it reports a `DroppedFieldsError` to the driver's `ErrorHandler`, with `DisabledFeatures()` naming the responsible feature gate. Four DRA features already use this path (`DRADeviceTaints`, `DRAPartitionableDevices`, `DRADeviceBindingConditions`, `DRAConsumableCapacity`). For `numaNode`, the work is to extend `DisabledFeatures()` to recognize a dropped list-valued attribute and return `DRAListTypeAttributes`, and to have the driver republish the attribute in scalar form when it sees that. This reuses existing infrastructure instead of adding a separate probe or a configuration flag. The approach is still to be confirmed with the community before the implementation is finalized.
+**Reading the value directly.** A consumer that inspects the value itself (for example a controller aligning a workload to a device's NUMA node) must handle both the scalar field and the list field:
 
-The dual path is **transitional**. It exists only while `DRAListTypeAttributes` is gated. Once that feature gate goes GA (locked on, then removed from the codebase), the list form is unconditionally available, detection is unnecessary, and drivers can publish the list directly. The scalar form remains a valid value (semantically a single-element set), so collapsing the two paths later is a code simplification, not an API break.
+- The **physical NUMA node is always recoverable the same way**: it is the scalar value when the scalar field is set, or the first element of the list when the list field is set.
+- By construction the first list element is the physical node. The full list is treated as an unordered, equal-weight set for matching; the first-element convention exists only so a direct reader can recover the physical node. The order of the remaining elements is not a priority.
+
+```go
+// physicalNUMANode recovers the device's physical NUMA node from either form.
+func physicalNUMANode(attr resourceapi.DeviceAttribute) (int64, bool) {
+    if attr.IntValue != nil {
+        return *attr.IntValue, true
+    }
+    if len(attr.IntValues) > 0 {
+        return attr.IntValues[0], true
+    }
+    return 0, false
+}
+```
+
+**CEL selectors.** A CEL expression referencing the attribute must accommodate both forms: use `includes()` against the list and equality against the scalar, or write the expression for whichever form the target cluster produces.
+
+**Absent attribute.** A device with no NUMA affinity does not publish `numaNode` at all. A consumer must treat the absence of the attribute as "NUMA node unknown", never as node 0, and must not require the attribute to be present.
+
+As with the publishing side, this dual-form handling is **transitional**: once `DRAListTypeAttributes` is GA and unconditionally available, only the list form is published and consumers may assume the list representation.
 
 ### Test Plan
 
@@ -340,7 +355,7 @@ None — this adds a new attribute and helper functions, does not modify existin
 
 #### Unit tests
 
-- `deviceattribute` package: tests for `GetNUMANodeListByPCIBusID()`, `GetNUMANodeList()`, and `GetNUMANodeForCPU()` with mock sysfs
+- `deviceattribute` package: tests for `GetNUMANodeAttributeByPCIBusID()`, `GetNUMANodeAttribute()`, and `GetNUMANodeForCPU()` with mock sysfs
 - Tests with varying SLIT distance matrices (symmetric, asymmetric, single-node)
 - Socket boundary filter tests (2-socket, NPS1 vs NPS4)
 
@@ -387,7 +402,7 @@ Because the scalar form carries no feature gate (see [Decoupling from KEP-5491 g
 
 **Upgrade:** Existing claims are unaffected. Drivers can start publishing `resource.kubernetes.io/numaNode` at any time — it's just a new attribute value.
 
-**Downgrade:** If `DRAListTypeAttributes` is disabled, the API server **silently drops** the `IntValues` field from device attributes on write (the standard `dropDisabledFields` behavior), rather than rejecting the ResourceSlice. Existing ResourceSlices that already carry list values are preserved by ratcheting. Because `DeviceAttribute` is a strict union, a driver must not publish a `numaNode` attribute with only `IntValues` set in this state — the dropped field would leave a value-less attribute that fails validation. Drivers fall back to publishing `numaNode` as a scalar int (losing the SLIT-based list), as described under [Feature gate detection](#feature-gate-detection). Claims using `matchAttribute: numaNode` then revert to equality matching on the scalar.
+**Downgrade:** If `DRAListTypeAttributes` is disabled, the API server **silently drops** the `IntValues` field from device attributes on write (the standard `dropDisabledFields` behavior), rather than rejecting the ResourceSlice. Existing ResourceSlices that already carry list values are preserved by ratcheting. Because `DeviceAttribute` is a strict union, a driver must not publish a `numaNode` attribute with only `IntValues` set in this state — the dropped field would leave a value-less attribute that fails validation. A driver configured for such a cluster publishes `numaNode` as a scalar int instead (`listEnabled=false`, losing the SLIT-based list), as described under [Choosing the list or scalar form](#choosing-the-list-or-scalar-form). Claims using `matchAttribute: numaNode` then revert to equality matching on the scalar.
 
 ### Version Skew Strategy
 
