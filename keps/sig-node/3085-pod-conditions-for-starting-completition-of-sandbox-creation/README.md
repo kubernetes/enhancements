@@ -154,7 +154,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
@@ -886,8 +886,8 @@ updates through `generateAPIPodStatus()` is found to be inaccurate (for example
 if Kubelet is very busy), invocation of `GeneratePodReadyToStartContainers`
 could also be added right after `createSandbox` in `kubeGenericRuntimeManager`
 returns successfully. This was implemented in 1.36 by adding a new
-[`OnPodSandboxReady()`](https://github.com/kubernetes/kubernetes/blob/ab73613f42fc23299608eec161e8b586234ac9ab/pkg/kubelet/kubelet.go#L3509)
-method to the [`RuntimeHelper`](https://github.com/kubernetes/kubernetes/blob/ab73613f42fc23299608eec161e8b586234ac9ab/pkg/kubelet/container/helpers.go#L81)
+[`OnPodSandboxReady()`](https://github.com/kubernetes/kubernetes/blob/624af3f634e4162d352d2af35c246fdb02ff385b/pkg/kubelet/kubelet.go#L3509)
+method to the [`RuntimeHelper`](https://github.com/kubernetes/kubernetes/blob/624af3f634e4162d352d2af35c246fdb02ff385b/pkg/kubelet/container/helpers.go#L81)
 interface, invoked directly inside `SyncPod` after sandbox creation, network
 configuration, volume mounts, and any dynamic resource (DRA) allocations are
 complete, ensuring `PodReadyToStartContainers` is set immediately and accurately
@@ -994,6 +994,14 @@ changes in the context of this KEP is scoped to the `generateAPIPodStatus`
 method which is a tiny portion of the overall `Kubelet` package in the
 kubelet_pods.go file.
 
+Updated coverage as of GA (source: [ci-kubernetes-coverage-unit](https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit)):
+
+- `k8s.io/kubernetes/pkg/kubelet/status`: `June 11, 2026` - `87.0`
+- `k8s.io/kubernetes/pkg/kubelet`: `June 11, 2026` - `73.3`
+- `k8s.io/kubernetes/pkg/kubelet/container`: `June 11, 2026` - `83.6`
+- `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: `June 11, 2026` - `71.0`
+- `k8s.io/kubernetes/pkg/kubelet/types`: `June 11, 2026` - `98.6`
+
 ##### Integration tests
 
 <!--
@@ -1029,7 +1037,7 @@ Tests List
     (added as part of [k/k PR#134179](https://github.com/kubernetes/kubernetes/pull/134179))
 - [x] Dynamic Resource Allocation (DRA) Allocation Ordering
   - [x] Add test to verify the order between the `PodReadyToStartContainers` condition and devicemanager `Allocate()` gRPC calls to the device plugin, ensuring the condition is set at the expected point relative to resource allocation.
-    (added as part of [k/k PR#134660](https://github.com/kubernetes/kubernetes/commit/d7abab886e970d7d2031256ef914ae234eb528ce)
+    (added as part of [k/k PR#134660](https://github.com/kubernetes/kubernetes/commit/d7abab886e970d7d2031256ef914ae234eb528ce))
 
 E2E tests will be introduced to cover the user scenarios mentioned above. Tests
 will involve launching pods with characteristics mentioned below and
@@ -1234,12 +1242,18 @@ feature, can it break the existing applications?).
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes, the feature can be disabled once it has been enabled. However the new pod
-sandbox condition will get persisted in pods and would continue to be reported after the feature is disabled until those pods are deleted.
+No. At GA, the feature gate `PodReadyToStartContainersCondition` will
+be locked to `true` and the feature can no longer be disabled via the flag.
+Within the supported version skew (1.34, 1.35, 1.36), the condition has been
+enabled by default since 1.29, so all kubelets in a supported cluster already
+set it. Rolling back within the supported window is effectively a no-op in
+terms of condition availability. Rolling back beyond the supported skew
+(downgrading kubelet below 1.29) is outside the Kubernetes support boundary.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-New pods created since re-enablement will report the new pod sandbox condition.
+Not applicable. Since the feature gate will be locked to `true` at GA, the
+feature cannot be disabled and therefore re-enablement does not apply.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1566,9 +1580,20 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-Yes, the new pod condition will result in the Kubelet Status Manager making additional PATCH calls on the pod status fields.
+Yes, the new pod condition results in the Kubelet Status Manager making an
+additional PATCH call on the pod status per pod sandbox creation. This is
+triggered by the `OnPodSandboxReady()` callback (see
+[`kubelet.go`](https://github.com/kubernetes/kubernetes/blob/624af3f634e4162d352d2af35c246fdb02ff385b/pkg/kubelet/kubelet.go#L3509)),
+which runs **asynchronously** and calls `statusManager.SetPodStatus()`.
 
-The Kubelet Status Manager already has infrastructure to cache pod status updates (including pod conditions) and issue the PATCH in a batch.
+The status manager deduplicates updates before issuing a PATCH: if the
+incoming status is identical to what is already cached, the update is
+silently dropped (see
+[`updateStatusInternal()`](https://github.com/kubernetes/kubernetes/blob/624af3f634e4162d352d2af35c246fdb02ff385b/pkg/kubelet/status/status_manager.go#L884)).
+In practice this means one extra PATCH per pod in its lifetime (when the
+sandbox first becomes ready), and the async dispatch means it does not
+block the main `SyncPod` flow. No increase in PATCH overhead beyond this
+single call has been reported during beta.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1683,7 +1708,17 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-None so far
+- `PodReadyToStartContainers` condition being set too late (after image pulls
+  instead of immediately after sandbox creation).
+  - Detection: Observe the timestamp of `PodReadyToStartContainers=True`
+    relative to when image pulls begin on the node.
+    ref: [kubernetes/kubernetes#134460](https://github.com/kubernetes/kubernetes/issues/134460)
+  - Mitigations: Fixed in 1.36 via
+    [kubernetes/kubernetes#134660](https://github.com/kubernetes/kubernetes/pull/134660)
+  - Diagnostics: Kubelet logs at verbosity 3 will show `OnPodSandboxReady
+    callback invoked` immediately after sandbox creation.
+  - Testing: Unit and e2e tests added as part of
+    [kubernetes/kubernetes#134660](https://github.com/kubernetes/kubernetes/pull/134660).
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -1699,20 +1734,20 @@ may leverage this feature.
   - Added e2e tests:
     - [check PodReadyToStartContainers condition after gracefulshutdown](https://github.com/kubernetes/kubernetes/pull/121044)
     - [test - PodReadyToStartContainerCondition when config map is created](https://github.com/kubernetes/kubernetes/pull/121321)
-  - Updated pod-lifecyle documentation to reflect beta promotion, and feature-gate enabled by default.
+  - Updated pod-lifecycle documentation to reflect beta promotion, and feature-gate enabled by default.
   - Published blog: [PodReadyToStartContainers Condition Moves to Beta](https://kubernetes.io/blog/2023/12/19/pod-ready-to-start-containers-condition-now-in-beta/)
 
 - Work done in 1.36 towards GA:
   - Fixed bug where `PodReadyToStartContainers` was being set too late (after image
     pulls instead of after sandbox creation) by implementing
-    [`OnPodSandboxReady()`](https://github.com/kubernetes/kubernetes/blob/ab73613f42fc23299608eec161e8b586234ac9ab/pkg/kubelet/kubelet.go#L3509)
+    [`OnPodSandboxReady()`](https://github.com/kubernetes/kubernetes/blob/624af3f634e4162d352d2af35c246fdb02ff385b/pkg/kubelet/kubelet.go#L3509)
     callback on the `RuntimeHelper` interface, invoked directly in `SyncPod`
     (see [kubernetes/kubernetes#134660](https://github.com/kubernetes/kubernetes/pull/134660),
     fixing [kubernetes/kubernetes#134460](https://github.com/kubernetes/kubernetes/issues/134460)).
   - Added e2e test to verify sandbox condition for missing secret
     (see [kubernetes/kubernetes#134179](https://github.com/kubernetes/kubernetes/pull/134179)).
-  - Updated pod-lifecyle documentation to reflect to reflect volume and DRA readiness.
-    (see [kubernetes/website#54404](https://github.com/kubernetes/website/pull/54404)
+  - Updated pod-lifecycle documentation to reflect volume and DRA readiness.
+    (see [kubernetes/website#54404](https://github.com/kubernetes/website/pull/54404))
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
