@@ -258,7 +258,8 @@ No regression in existing list and watch latency SLOs.
 
 ###### Are there any missing metrics that would be useful to improve observability of this feature?
 
-No.
+`apiserver_watch_decode_inflight`, a gauge of watch objects currently being
+decoded concurrently, to track how much of the per-stream decode budget is in use.
 
 ### Dependencies
 
