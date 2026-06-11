@@ -8,9 +8,11 @@ participating-sigs:
 status: provisional
 creation-date: 2026-05-14
 reviewers:
-  - TBD
+  - "@aojea"
 approvers:
-  - TBD
+  - "@dom4ha"
+  - "@johnbelamaric"
+  - "@pohly"
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"
