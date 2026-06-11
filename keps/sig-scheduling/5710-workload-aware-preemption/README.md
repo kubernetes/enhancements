@@ -668,12 +668,9 @@ plugins for each of the schedulable preemptor pods on selected nodes with the pr
 We will keep the `CycleState` objects of each of the schedulable preemptor pods from the scheduling algorithm run within
 WAP and update them as we reprieve victims.
 
-The `CycleState` object for Nth pod does not contain information about pods that were scheduled in the pod group cycle after this pod.
-That's why before running reprieval we will need to update CycleState of preemptor pods with the information about all other pods that
-were scheduled in pod group cycle after this pod. We acknowledge that this operation has $O(N^2)$ complexity where N is the number of pods
-in the pod group, but we believe that the cost of PreFilterExtension.AddPod is small enough to not account for most of the additional time
-complexity introduced by WAP. Reducing this complexity might be one of performance optimization along other described in 
-[Potential future extensions](#potential-future-extensions) section.
+We will make sure that the Filter plugins in the WAP will mimic the behavior of Filter plugins from the scheduling cycle.
+Mainly it means that when running Filter plugins for Nth Pod in the PodGroup, the CycleState/NodeInfo should not contain
+information about further pods from the Pod Group.
 
 > **Note:**
 > DynamicResources, NodeVolumeLimits and VolumeBinding plugins do not work well with preemption right now.
