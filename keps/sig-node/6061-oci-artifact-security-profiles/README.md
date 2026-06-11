@@ -16,6 +16,7 @@
   - [Kubernetes API Changes](#kubernetes-api-changes)
   - [CRI API Changes](#cri-api-changes)
   - [Kubelet Behavior](#kubelet-behavior)
+  - [Kubelet Allowlist for OCI Profile Sources](#kubelet-allowlist-for-oci-profile-sources)
   - [OCI Artifact Format](#oci-artifact-format)
   - [Profile Verification](#profile-verification)
   - [Test Plan](#test-plan)
@@ -150,7 +151,14 @@ profiles alongside the agent images they protect.
   (runtime-spec [PR #1241][landlock-pr]). The architecture proposed here is
   designed to accommodate landlock once the OCI runtime spec and runc add
   support, but this KEP does not define the landlock profile format or API
-  fields.
+  fields. The kubelet allowlist (see
+  [Kubelet Allowlist for OCI Profile Sources](#kubelet-allowlist-for-oci-profile-sources))
+  and the `PullSecurityProfileArtifact` RPC are profile-type-agnostic and
+  extend to landlock by adding a new `SecurityProfileKind` enum value and a
+  new OCI config media type. Landlock profiles are always additive (they can
+  only narrow access, never widen it), so the safety argument for PSA is even
+  simpler than for seccomp or AppArmor. The kubelet allowlist still applies
+  for node-admin control regardless.
 - **SELinux profile distribution**: SELinux uses a fundamentally different
   model from seccomp and AppArmor. Policy modules are compiled and installed
   system-wide via `semodule`, not applied per-container. The Kubernetes API
@@ -340,17 +348,19 @@ profile content before applying it (e.g., valid JSON for seccomp).
 
 **Risk**: Pods pulling arbitrary security profiles from the internet bypasses
 node admin control. With `Localhost` profiles, node admins control which
-profiles are available on disk. OCI profiles shift that control to pod authors,
-who can reference any artifact from any registry.
-**Mitigation**: The CRI runtime's existing signature verification
-infrastructure applies to profile artifact pulls, the same way it applies to
-container images and image volumes. Node admins configure trusted registries
-and signature requirements through runtime configuration (e.g., CRI-O's
-`/etc/containers/policy.json`). Profiles from untrusted registries or without
-valid signatures are rejected at pull time. Additionally, admission controllers
-can enforce allowlists of permitted OCI references at the cluster level. The
-alpha feature gate makes this opt-in, giving time to collect feedback on
-whether additional kubelet-level controls are needed.
+profiles are available on disk. OCI profiles could shift that control to pod
+authors, who can reference any artifact from any registry.
+**Mitigation**: The kubelet enforces an allowlist of permitted OCI profile
+sources (`securityProfileOCIArtifact.allowedRegistries` in
+`KubeletConfiguration`). The allowlist is deny-by-default: when empty or
+unset, no OCI profiles are allowed. The node admin configures which registry
+namespace prefixes are permitted, restoring the same gatekeeper role they
+have with `Localhost` file presence. See
+[Kubelet Allowlist for OCI Profile Sources](#kubelet-allowlist-for-oci-profile-sources)
+for details. On top of the kubelet allowlist, the CRI runtime's existing
+signature verification infrastructure (e.g., CRI-O's
+`/etc/containers/policy.json`) provides an additional layer of control, and
+admission controllers can enforce reference patterns at the cluster level.
 
 **Risk**: Garbage collection of cached profile artifacts could force
 unnecessary re-pulls.
@@ -554,43 +564,42 @@ update, pods using `type: OCI` would be rejected in namespaces enforcing
 `restricted` Pod Security. This update is part of the kube-apiserver component
 of the `SecurityProfileOCIArtifact` feature gate.
 
-This means `OCI` profiles have the same trust model as `Localhost`: neither PSA
-nor the runtime validates whether a user-selected profile is stricter than the
-runtime default. Both seccomp and AppArmor profiles can be written to be
-effectively unconfined (a seccomp profile can allow all syscalls; an AppArmor
-profile can grant unrestricted access). A `Localhost` profile can already be
-more permissive than the default, and the same applies to `OCI` profiles.
+The trust model for `OCI` profiles is equivalent to `Localhost`. With
+`Localhost`, the node admin controls which profiles are available by placing
+files on disk. With `OCI`, the node admin controls which profile sources are
+permitted by configuring the kubelet's `securityProfileOCIArtifact.allowedRegistries`
+allowlist (see
+[Kubelet Allowlist for OCI Profile Sources](#kubelet-allowlist-for-oci-profile-sources)).
+The allowlist is deny-by-default: when empty or unset, no OCI profiles are
+allowed, the same as a node with no profile files on disk. Different nodes
+can permit different sources via per-node kubelet configuration, the same
+way different nodes can have different files on disk. The kubelet rejects
+references that do not match the allowlist before calling the CRI runtime.
 
-However, there is an important difference in the trust model. With `Localhost`
-profiles, the node admin controls which profiles are available: seccomp
-profiles must exist in the kubelet's configured seccomp directory, and
-AppArmor profiles must be loaded onto the node. The node admin is the
-gatekeeper. With `OCI` profiles, pods can reference arbitrary artifacts from
-any registry, potentially pulling and loading policies that the node admin
-has never reviewed. This shifts control from the node admin to the pod author.
+PSA allows `Localhost` for `restricted` and `baseline` based on the
+assumption that the node admin controls which profiles are available. PSA
+does not verify file presence at admission time. The same trust model
+applies to `OCI`: PSA allows it based on the assumption that the node admin
+controls the kubelet allowlist. The kubelet enforces the allowlist at pull
+time. No coordination between PSA and the CRI runtime is needed.
 
-To preserve node admin control, OCI profile artifacts are subject to the
-same CRI runtime verification as container images and image volumes. The
-runtime's signature verification infrastructure (for example, CRI-O's
-system-wide `/etc/containers/policy.json` with optional namespace-specific
-overrides via `SignaturePolicyDir`) applies to profile pulls. Node admins
-configure which registries are trusted and whether artifacts must be signed,
-providing the same gatekeeper role they have today for container images. A
-runtime configured to reject unsigned artifacts or artifacts from untrusted
-registries will reject unauthorized profile pulls before they reach the
-kernel.
+Neither PSA nor the runtime validates whether a user-selected profile is
+stricter than the runtime default. Both seccomp and AppArmor profiles can
+be written to be effectively unconfined (a seccomp profile can allow all
+syscalls; an AppArmor profile can grant unrestricted access). A `Localhost`
+profile can already be more permissive than the default, and the same
+applies to `OCI` profiles. In both cases, the node admin is trusted to make
+appropriate decisions about which profiles are available on their nodes.
 
-In addition to runtime-level controls, cluster administrators can use
-admission webhooks (Kyverno, OPA/Gatekeeper) to restrict which OCI references
-are allowed. The `oci.reference` field is part of the pod spec, making it visible
-to all admission controllers. This allows policies such as "only allow
-profiles from `registry.internal.example.com/approved-profiles/`" or "require
-digest-pinned references." These controls parallel what administrators can
-already do to restrict `Localhost` profile paths or container image references.
-
-For beta graduation, the KEP will evaluate whether additional kubelet-level
-controls (such as an allowlist of permitted profile registries or reference
-patterns) are needed based on alpha feedback.
+In addition to the kubelet allowlist, the CRI runtime's signature
+verification infrastructure (for example, CRI-O's system-wide
+`/etc/containers/policy.json`) provides an additional layer of control over
+profile artifact pulls. Cluster administrators can also use admission
+webhooks (Kyverno, OPA/Gatekeeper) to restrict which OCI references are
+allowed. The `oci.reference` field is part of the pod spec, making it
+visible to all admission controllers. This allows policies such as "only
+allow profiles from `registry.internal.example.com/approved-profiles/`" or
+"require digest-pinned references."
 
 ### CRI API Changes
 
@@ -728,28 +737,37 @@ When the kubelet encounters a pod with an `OCI` type security profile:
    service account image pull secrets, and any configured credential provider
    plugins. The credential resolution logic in `pkg/kubelet/images` and
    `pkg/kubelet/kubelet_pods.go` is reused directly.
-2. **Pull the profile**: The kubelet calls `PullSecurityProfileArtifact` with
+2. **Check allowlist**: The kubelet validates the OCI reference against
+   `securityProfileOCIArtifact.allowedRegistries` in `KubeletConfiguration`.
+   If the reference does not match any allowed registry namespace prefix, the
+   kubelet rejects the pod with a terminal failure and emits a
+   `SecurityProfilePullNotAllowed` event. The pod is not retried because the
+   allowlist is static configuration; retrying cannot change the outcome.
+   This follows the same pod admission failure pattern used for CSI errors
+   during sandbox creation. The kubelet does not call the CRI runtime.
+   See [Kubelet Allowlist for OCI Profile Sources](#kubelet-allowlist-for-oci-profile-sources).
+3. **Pull the profile**: The kubelet calls `PullSecurityProfileArtifact` with
    the OCI reference and resolved credentials. This happens before preparing
    DRA resources, so a pull failure does not require
    cleaning up already-prepared resources. The CRI runtime pulls the artifact
    (if not cached), validates its media type and content, and returns the
    resolved digest. The kubelet records the resolved digest in the container
    status and pins it for the pod's lifetime.
-3. **Prepare resources**: After all profile pulls succeed, the kubelet proceeds
+4. **Prepare resources**: After all profile pulls succeed, the kubelet proceeds
    with DRA resource preparation and other pod setup.
-4. **Pass to CRI**: The kubelet constructs the `SecurityProfile` message with
+5. **Pass to CRI**: The kubelet constructs the `SecurityProfile` message with
    `profile_type = OCI` and `oci_ref` set to the pinned digest. For
    `RunPodSandbox`, the sandbox-level profile digest is included. For
    `CreateContainer`, the container-level profile digest is included.
-5. **CRI runtime applies the cached profile**: The runtime looks up the cached
+6. **CRI runtime applies the cached profile**: The runtime looks up the cached
    profile by digest and applies it. No pull occurs at this stage.
-6. **Container restarts**: On kubelet directed container restarts, the kubelet calls
+7. **Container restarts**: On kubelet directed container restarts, the kubelet calls
    `PullSecurityProfileArtifact` again with the pinned digest (not the
    original tag). The runtime returns quickly from cache in the common case.
    If the cached artifact was garbage-collected, the runtime re-pulls by
    digest. This ensures the cache is warm before `CreateContainer` and
    maintains consistent profile content throughout the pod's lifetime.
-7. **Kubelet restart**: On kubelet restart, the kubelet reads the previously
+8. **Kubelet restart**: On kubelet restart, the kubelet reads the previously
    pinned digest from the container status
    (`seccompProfileArtifactDigest` / `appArmorProfileArtifactDigest`). If a
    pinned digest exists, the kubelet uses it directly for subsequent
@@ -808,6 +826,78 @@ hosting the profile artifacts must be covered by the same pull secrets used for
 container images. If profiles are stored in a different registry than the pod's
 images, that registry's credentials must be added to the pod's
 `imagePullSecrets`. This is the same model used for image volumes.
+
+### Kubelet Allowlist for OCI Profile Sources
+
+To preserve the node-admin gatekeeper role that `Localhost` profiles provide
+(where the node admin controls which profiles exist on disk), OCI profile
+pulls are subject to a kubelet-level allowlist. The allowlist is configured
+in `KubeletConfiguration`:
+
+```yaml
+apiVersion: kubelet.config.k8s.io/v1
+kind: KubeletConfiguration
+securityProfileOCIArtifact:
+  allowedRegistries:
+    - "registry.internal.example.com/approved-profiles"
+    - "vendor-registry.io/database"
+```
+
+**Deny by default**: When `allowedRegistries` is empty or unset, no OCI
+profiles are allowed. This is the same as a node with no `Localhost` profile
+files on disk. The node admin must explicitly configure which sources are
+permitted before any pod can use OCI profiles.
+
+**Trust policy, not content distribution**: The allowlist controls which
+profile sources are trusted, not the profiles themselves. It is a small,
+stable configuration that is set once per node or node group and rarely
+changes. With `Localhost`, the node admin must distribute the actual profile
+content to every node and keep it in sync across the fleet. That
+distribution problem is what this KEP solves. Once the allowlist establishes
+which registries are permitted, profile updates flow through standard
+registry infrastructure (versioned, pulled on demand, consistent across
+nodes) without further node-level changes.
+
+**Prefix matching**: The kubelet matches OCI references against the
+allowlist using prefix matching on the repository portion of the reference
+(the tag or digest suffix is stripped before matching). Each allowlist entry
+must contain at least one `/` character (i.e., a hostname and at least one
+path component). Bare hostnames without a path are rejected at kubelet
+configuration validation. Matching is on path-segment boundaries: the entry
+must match the full repository or be followed by `/` in the reference. For
+example, an allowlist entry `registry.example.com/profiles` matches
+`registry.example.com/profiles/seccomp:v1`,
+`registry.example.com/profiles/team-a/apparmor@sha256:abc...`, and any
+other reference under that namespace. It does not match
+`registry.example.com/other/seccomp:v1` or
+`registry.example.com/profiles-evil/seccomp:v1` (the latter fails the
+segment-boundary check). Because matching operates on the repository path
+after the hostname, subdomain variations such as
+`registry.example.com.evil.io/profiles/seccomp:v1` also do not match.
+
+**Per-node control**: Each kubelet has its own configuration. Different
+nodes can permit different profile sources, the same way different nodes
+can have different `Localhost` profile files on disk. A pod force-assigned
+to a node whose allowlist does not include the referenced registry will
+fail with a `SecurityProfilePullNotAllowed` event.
+
+**No profile content validation**: The kubelet does not inspect or validate
+the content of OCI profiles. This is equivalent to `Localhost`, where the
+kubelet does not validate that a profile file on disk is sufficiently
+restrictive. In both cases, the node admin is trusted to make appropriate
+decisions about which profiles are available on their nodes.
+
+**Profile-type-agnostic**: The allowlist applies uniformly to seccomp,
+AppArmor, and any future profile types (such as landlock). The allowlist
+controls which sources are trusted, independent of the profile type.
+
+**Relationship to CRI runtime policy**: The kubelet allowlist and the CRI
+runtime's own policy mechanisms (such as CRI-O's `/etc/containers/policy.json`
+for signature verification) are complementary. The kubelet allowlist is the
+Kubernetes-native control that makes the trust model equivalent to
+`Localhost` for PSA purposes. The CRI runtime policy provides additional
+controls such as signature requirements. Both are configured by the node
+admin.
 
 ### OCI Artifact Format
 
@@ -932,6 +1022,9 @@ updates are required.
   seccomp. AppArmor API changes are included but runtime implementation may
   follow in beta.
 - PodSecurity admission controller updated to accept the `OCI` profile type
+- Kubelet allowlist for OCI profile sources implemented
+  (`securityProfileOCIArtifact.allowedRegistries` in `KubeletConfiguration`,
+  deny by default)
 - Initial e2e tests for seccomp OCI artifacts
 
 #### Beta
@@ -940,13 +1033,13 @@ updates are required.
   graduation pattern. Promotion to beta requires production support in at
   least one of CRI-O and containerd, and a release candidate available in the
   other.
-- Seccomp fallthrough fix (reject unknown profile types) backported to and
-  released in all supported kubelet minor versions. This is a hard
-  prerequisite for enabling the feature gate by default.
+- Seccomp fallthrough fix (reject unknown profile types) present in the `.0`
+  release of the oldest supported kubelet minor version. This is a hard
+  prerequisite for enabling the feature gate by default (see
+  [Version Skew Strategy](#version-skew-strategy)).
 - AppArmor OCI artifact support implemented and tested in at least one runtime
 - Profile caching and garbage collection implemented
-- Evaluate whether additional kubelet-level controls for restricting allowed
-  profile sources are needed based on alpha feedback
+- Kubelet allowlist validated in production feedback from alpha adopters
 - Gather feedback from early adopters
 
 #### GA
@@ -994,9 +1087,14 @@ This feature involves coordination between the API server and the kubelet.
   falling through to `Unconfined`. This fix will be included in the same
   release as the alpha feature gate and backported to all supported kubelet
   minor versions. **Beta promotion (feature gate on by default) requires that
-  the seccomp fallthrough fix has been backported to and released in all
-  supported kubelet versions**, so that no supported kubelet silently falls
-  through to Unconfined for an unrecognized profile type. This is a hard
+  the seccomp fallthrough fix is present in the `.0` release of the oldest
+  supported kubelet minor version.** Since Kubernetes does not require
+  kubelet upgrades before API server upgrades, a cluster could be running
+  kubelet `1.y-3.0` (the very first patch of the oldest supported minor
+  version). A backport released in a later patch (e.g., `1.y-3.9`) does not
+  help because that kubelet was never required to be updated. Practically,
+  if the fix lands in `1.X.0`, beta can happen earliest when `1.X` is the
+  oldest supported kubelet version (API server at `1.X+3`). This is a hard
   prerequisite, not a best-effort backport. The scheduler should avoid
   placing pods with OCI profiles on nodes with old kubelets;
   [Node Declared Features (KEP-5328)][ndf] can be used for this. If a pod
@@ -1020,6 +1118,13 @@ reported via the CRI `StatusRequest` can also signal OCI profile support,
 complementing node declared features. Defining a standard declared feature for
 this capability is out of scope for this KEP but is a natural follow-up.
 
+Scheduler awareness of a node's `allowedRegistries` configuration is another
+potential optimization: the scheduler could avoid placing pods on nodes whose
+allowlist does not include the referenced registry, preventing predictable
+terminal failures. This could be expressed via node declared features or node
+labels derived from the kubelet configuration. This is out of scope for alpha
+but is a natural extension of the node declared features integration.
+
 [ndf]: https://github.com/kubernetes/enhancements/issues/5328
 
 ## Production Readiness Review Questionnaire
@@ -1034,9 +1139,12 @@ this capability is out of scope for this KEP but is a natural follow-up.
 
 ###### Does enabling the feature change any default behavior?
 
-No. The feature adds a new profile type (`OCI`). Existing profile types and
-their behavior are unchanged. Pods that do not use OCI profile references are
-unaffected.
+No. The feature adds a new profile type (`OCI`) and a kubelet allowlist
+(`securityProfileOCIArtifact.allowedRegistries`). Existing profile types and
+their behavior are unchanged. The allowlist is deny-by-default: enabling the
+feature gate alone does not change any behavior. The node admin must also
+configure `allowedRegistries` before any OCI profiles can be pulled. Pods
+that do not use OCI profile references are unaffected.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
