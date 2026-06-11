@@ -104,6 +104,7 @@ Today, six DRA drivers publish NUMA node information under five different vendor
 - Standardize `cpuSocketID` — this is correlated with `numaNode` (coarser grouping), not orthogonal. Can be proposed separately if needed.
 - Add `enforcement: preferred` to `matchAttribute` — independently useful but separable. Can be proposed as a separate KEP.
 - Require drivers to publish `numaNode` — drivers MAY publish it. The standardization defines the name and semantics for those that do.
+- Discover NUMA topology on Windows. The SLIT-based helper functions are Linux-only (they read sysfs and the ACPI SLIT). The attribute name and matching semantics are platform-neutral, so a Windows DRA driver could publish `numaNode` through a Windows-native mechanism in the future, but that is out of scope for this KEP. See [Platform scope](#platform-scope).
 
 ## Proposal
 
