@@ -22,6 +22,7 @@
   - [API Changes](#api-changes)
     - [Pod Updates](#pod-updates)
     - [Limitations](#limitations)
+    - [No SecurityContext escalations](#no-securitycontext-escalations)
     - [Container Status](#container-status)
     - [Allocated Pods Subresource](#allocated-pods-subresource)
   - [Allocation](#allocation)
