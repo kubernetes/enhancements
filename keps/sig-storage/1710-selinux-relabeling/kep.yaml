@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-node
-status: implementable
+status: implemented
 creation-date: 2020-02-18
 reviewers:
   - "@msau42"
@@ -18,8 +18,8 @@ approvers:
   - "@saad-ali"
 see-also:
   - /keps/sig-storage/695-skip-permission-change/README.md
-stage: beta  # SELinuxMount feature gate, all the others will be stable.
-latest-milestone: "v1.36"
+stage: stable
+latest-milestone: "v1.37"
 milestone:
   alpha: "v1.24"  # SELinuxMountReadWriteOncePod
   beta: "v1.27"   # SELinuxMountReadWriteOncePod
@@ -31,7 +31,7 @@ milestone:
   # stable: "v1.36"   # SELinuxChangePolicy
   #
   # beta: "v1.33"   # SELinuxMount (disabled by default)
-  # plan: stable: "v1.37"   # SELinuxMount (enabled by default)
+  # stable: "v1.37"   # SELinuxMount
 feature-gates:
   - name: SELinuxMountReadWriteOncePod
     components:
