@@ -695,3 +695,25 @@ is not needed and starts the pod.
   pod startups, silent failures, and potential security/consistency issues where
   containers launch before their local devices are fully prepared. Explicit
   declaration via the API is highly deterministic and secure.
+
+### Alternative 4: Centralized "catch-all" no-op plugin
+Deploy a generic, "no-op" DRA driver (such as
+[dra-driver-noop](https://github.com/gke-labs/dra-drivers/tree/main/dra-driver-noop))
+configured centrally to register under specific DRA driver names and handle the
+node preparation calls by immediately returning success without doing any actual
+work.
+- *Reason for Rejection*: While this allows running without modifying the DRA
+  API, it has several drawbacks:
+  - **Operational Overhead**: It requires deploying and managing an additional
+    daemon/driver on nodes just to satisfy the Kubelet's handshake, increasing
+    operational complexity.
+  - **Mixed-mode coordination**: It is difficult to coordinate in environments
+    with "mixed-mode" resources, where some devices of a particular driver name
+    require actual node-local preparation (and thus need a real driver) while
+    others do not. A static "catch-all" driver cannot easily co-exist or
+    coordinate with a real driver registering under the same driver name on the
+    same node to selectively handle or bypass preparation.
+  - **Lack of Explicit Intent**: It hides the logical nature of the resource
+    behind a dummy driver, making debugging and cluster observation more
+    difficult compared to an explicit `SkipNodePrepare` field in the
+    `ResourceSlice`.
