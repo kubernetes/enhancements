@@ -24,6 +24,7 @@
   - [Metrics and Audit Annotations](#metrics-and-audit-annotations)
   - [Implementation](#implementation)
   - [Webhook Virtual Resource Exclusion Implementation](#webhook-virtual-resource-exclusion-implementation)
+    - [Deprecation Warnings for Affected Webhook Configurations](#deprecation-warnings-for-affected-webhook-configurations)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -537,6 +538,14 @@ webhook and CEL admission to behave consistently before manifest-based admission
 beta, and it shares review surface and rollout messaging with the broader manifest-based
 admission work.
 
+#### Deprecation Warnings for Affected Webhook Configurations
+
+To give cluster admins a pre-upgrade signal, the admission registration validator emits a
+deprecation warning on `CREATE`/`UPDATE` of `ValidatingWebhookConfiguration` /
+`MutatingWebhookConfiguration` whose rule explicitly names an excluded virtual resource in
+`apiGroups`, `apiVersions`, and `resources` (wildcards are not flagged because intent is
+ambiguous). At startup, pre-existing affected configurations are logged by name.
+
 ### Test Plan
 
 [x] I/we understand the owners of the involved components may require updates to
@@ -614,6 +623,9 @@ established the same integration-only precedent.
 - `ValidatingAdmissionWebhook` and `MutatingAdmissionWebhook` implement
   `WantsExcludedAdmissionResources` and skip dispatch for the resources in
   `exclusion.Excluded()` when the gate is enabled
+- Deprecation warning on `CREATE`/`UPDATE` of webhook configurations whose rules
+  explicitly name an excluded virtual resource, plus a startup log for pre-existing
+  affected configurations
 - Integration tests covering webhook dispatch behavior with the gate enabled and disabled, and
   parity with the `ValidatingAdmissionPolicy` / `MutatingAdmissionPolicy` exclusion list
 - All known alpha issues resolved
@@ -740,6 +752,10 @@ Mitigation:
 - `apiserver_admission_webhook_rejection_count{name=~".*\\.static\\.k8s\\.io"}` unexpectedly high
 - API server crash loops (check container restart count)
 - Increased API request latency (webhook timeouts)
+- For `ExcludeAdmissionWebhookVirtualResources`: any deprecation warning on webhook
+  configuration writes (or startup log line) names a config that will lose traffic after
+  upgrade. No runtime counter is exposed because the signal is statically derivable from
+  configuration.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -755,6 +771,10 @@ is deprecated. The `ExcludeAdmissionWebhookVirtualResources` gate is opt-out for
 enabled at GA, after which webhook admission can no longer be used to intercept these
 virtual resources. This brings webhook admission into parity with `ValidatingAdmissionPolicy`
 and `MutatingAdmissionPolicy`, which have always excluded these resources.
+
+A deprecation warning is emitted on `CREATE`/`UPDATE` of webhook configurations whose
+rules explicitly name an excluded virtual resource, and pre-existing affected
+configurations are logged at startup.
 
 ### Monitoring Requirements
 
@@ -859,7 +879,7 @@ for details on other platforms.
 | File permission errors on startup | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Restart | API server logs show permission errors |
 | File permission errors on reload | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Wait for reload or restart | API server logs show permission errors |
 | Configuration drift across HA | Inconsistent admission decisions | Use configuration management | Compare manifest files across API servers |
-| Webhook silently stops receiving `*SubjectAccessReview` / `TokenReview` / `SelfSubjectReview` after 1.37 upgrade | Existing `ValidatingWebhookConfiguration` / `MutatingWebhookConfiguration` rules cover GroupResources in `exclusion.Excluded()` and the webhook reports no such admission requests after upgrade | Set `ExcludeAdmissionWebhookVirtualResources=false` as a temporary escape hatch; remove webhook rules for those GroupResources as the long-term fix before the gate is locked at GA | Cross-reference webhook configuration `rules` against `pkg/kubeapiserver/admission/exclusion/resources.go`; webhook side has no observed admission requests for those resources |
+| Webhook silently stops receiving `*SubjectAccessReview` / `TokenReview` / `SelfSubjectReview` after 1.37 upgrade | Pre-upgrade deprecation warning on webhook config writes (and startup log) names affected configurations; webhook reports no such admission requests after upgrade | Set `ExcludeAdmissionWebhookVirtualResources=false` as a temporary escape hatch; remove webhook rules for those GroupResources as the long-term fix before the gate is locked at GA | Cross-reference webhook configuration `rules` against `pkg/kubeapiserver/admission/exclusion/resources.go`; webhook side has no observed admission requests for those resources |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
