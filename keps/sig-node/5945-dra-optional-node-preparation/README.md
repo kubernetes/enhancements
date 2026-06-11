@@ -315,12 +315,17 @@ None.
     are correctly propagated to `AllocationResult` (covering combinations of
     true, false, and omitted cases).
 - **Kubelet DRA Manager Unit Tests**: In `pkg/kubelet/cm/dra/manager_test.go`:
-  - Mock a claim requiring allocation with `SkipNodePrepare: true` and
-    `SkipNodeUnprepare: true`.
-  - Assert that `prepareResources` and `unprepareResources` complete
-    successfully without querying the plugin manager or invoking gRPC calls.
-  - Verify that if a claim with skip fields set to `false` is passed, the
-    kubelet behaves normally and attempts to call the local driver.
+  - Mock claims with all combinations of `SkipNodePrepare` and
+    `SkipNodeUnprepare` (true/true, true/false, false/true, false/false).
+  - Assert that `prepareResources` and `unprepareResources` behave accordingly:
+    - If `SkipNodePrepare` is `true`, `prepareResources` bypasses the plugin
+      manager and succeeds immediately.
+    - If `SkipNodePrepare` is `false`, `prepareResources` attempts to call the
+      local driver.
+    - If `SkipNodeUnprepare` is `true`, `unprepareResources` bypasses the plugin
+      manager and succeeds immediately.
+    - If `SkipNodeUnprepare` is `false`, `unprepareResources` attempts to call
+      the local driver.
 
 ##### Integration tests
 
@@ -328,20 +333,67 @@ None.
 
 ##### e2e tests
 
-We will add a new End-to-End test case inside `test/e2e/dra/dra.go` using a
-driver without node-local components:
+We will add new End-to-End test cases inside `test/e2e/dra/dra.go` to validate
+all combinations of `SkipNodePrepare` and `SkipNodeUnprepare` using different
+driver configurations.
+
+###### Scenario 1: Driver without node-local components (Pure Control-Plane)
+This scenario validates that we can run workloads using drivers that do not
+deploy any node-local components.
+
 - **Setup**: Deploy a DRA test driver without node gRPC components running on
   worker nodes (`WithKubelet = false`).
-- **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare: true`
-  and `SkipNodeUnprepare: true`.
-- **Workload**: Deploy a Pod referencing this template.
-- **Assertions**:
-  - The Pod reaches the `Running` phase successfully.
-  - No `FailedPrepareDynamicResources` warnings are posted to the Pod events.
-  - Bypassing the driver lookup does not crash the kubelet or produce resource
-    leaks.
-  - Pod deletion completes cleanly and immediately (no hanging in `Terminating`
-    status waiting for unprepare calls).
+- Test Case 1.1: Fully skipped preparation (`SkipNodePrepare: true`,
+  `SkipNodeUnprepare: true`)
+  - **API Configuration**: Publish `ResourceSlices` with both fields set to
+    `true`.
+  - **Workload**: Deploy a Pod referencing this resource.
+  - **Assertions**:
+    - The Pod reaches the `Running` phase successfully.
+    - No `FailedPrepareDynamicResources` warnings are posted to the Pod events.
+    - Pod deletion completes cleanly and immediately (does not hang in
+      `Terminating` waiting for unprepare).
+- Test Case 1.2: Missing node component failure (`SkipNodePrepare: false` or
+  `SkipNodeUnprepare: false`)
+  - **API Configuration**: Publish `ResourceSlices` with at least one skip field
+    set to `false` (or omitted).
+  - **Workload**: Deploy a Pod referencing this resource.
+  - **Assertions**:
+    - If `SkipNodePrepare` is `false`: The Pod gets stuck in `ContainerCreating`
+      with `FailedPrepareDynamicResources` errors because the kubelet tries to
+      contact the non-existent node driver.
+    - If `SkipNodePrepare` is `true` but `SkipNodeUnprepare` is `false`: The Pod
+      runs successfully, but upon deletion, it gets stuck in `Terminating` phase
+      as the kubelet fails to call the non-existent node driver for
+      unpreparation.
+
+###### Scenario 2: Driver with node-local components (Standard Driver)
+This scenario validates that the kubelet selectively invokes the node-local
+driver based on the individual skip flags, allowing mixed-mode execution.
+
+- **Setup**: Deploy a standard DRA test driver that includes node-local gRPC
+  components.
+- Test Case 2.1: Skip Prepare Only (`SkipNodePrepare: true`,
+  `SkipNodeUnprepare: false`)
+  - **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare: true`
+    and `SkipNodeUnprepare: false`.
+  - **Workload**: Deploy a Pod.
+  - **Assertions**:
+    - The Pod reaches the `Running` phase.
+    - Assert that the driver's
+      `NodePrepareResources` was **not** called.
+    - Delete the Pod.
+    - Assert that the driver's `NodeUnprepareResources` **was** called.
+- Test Case 2.2: Skip Unprepare Only (`SkipNodePrepare: false`,
+  `SkipNodeUnprepare: true`)
+  - **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare:
+    false` and `SkipNodeUnprepare: true`.
+  - **Workload**: Deploy a Pod.
+  - **Assertions**:
+    - The Pod reaches the `Running` phase.
+    - Assert that the driver's `NodePrepareResources` **was** called.
+    - Delete the Pod.
+    - Assert that the driver's `NodeUnprepareResources` was **not** called.
 
 ### Graduation Criteria
 
