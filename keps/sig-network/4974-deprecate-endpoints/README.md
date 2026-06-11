@@ -60,17 +60,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [X] (R) Graduation criteria is in place
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -184,6 +184,12 @@ controllers via kube-controller-manager's `--controllers` option, and
 we believe that this will have no ill effects in a vanilla Kubernetes
 cluster (though, currently, it will cause the e2e tests to fail).
 
+(UPDATE: This turned out to be wrong: While kube-proxy had stopped
+using Endpoints years ago, kube-apiserver still used Endpoints rather
+than EndpointSlices for webhooks, aggregated API servers, and `kubectl
+port-forward` to services. As of Kubernetes 1.37, these cases have all
+been fixed to use EndpointSlices.)
+
 ### Formal Deprecation of `v1.Endpoints`
 
 We will add comments to `v1.Endpoints` and `v1.EndpointsList`
@@ -262,31 +268,18 @@ Or perhaps the EndpointSlice controller could delete Endpoints objects
 that were more than 24 hours out of date with respect to their
 EndpointSlices?
 
-In all cases, we should probably not automatically delete Endpoints
-that don't looke like they were originally created by the Endpoints
-controller. (That is, we should not delete Endpoints unless they
-correspond to a Service with a selector.)
+In all cases, we should only automatically delete Endpoints that were
+originally created by the Endpoints controller. To facilitate this, we
+will update the Endpoints controller to add the label
+`endpoints.kubernetes.io/managed-by: endpoint-controller` to all
+Endpoints it creates, like the existing label used by the
+EndpointSlice controller.
 
 ```
 <<[UNRESOLVED endpoints-cleanup ]>>
 
 Decide what to do here. (In the earlier stages we can just recommend
 manual deletion.)
-
-<<[/UNRESOLVED]>>
-```
-
-To facilitate reliable Endpoints cleanup, we will update the Endpoints
-controller to mark all of the Endpoints it owns. It is currently
-unclear whether the best approach is to use a label, or to make use of
-`ManagedFields`.
-
-```
-<<[UNRESOLVED endpoints-marking ]>>
-
-Decide whether to use a "managed-by" label or ManagedFields. We can
-probably just hash this out in the k/k PR and then update the KEP
-after the fact.
 
 <<[/UNRESOLVED]>>
 ```
@@ -406,18 +399,6 @@ There are quite a few places in the e2e tests that currently use
     EndpointSlice controller instead, since the latency of the
     Endpoints controller has no impact on the functioning of a
     cluster.
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- <test>: <link to test coverage>
 
 ### Graduation Criteria
 
@@ -655,7 +636,64 @@ N/A
 
 ## Implementation History
 
-- Initial proposal: 2024-11-21
+- Initial proposal: 2024-11-21, merged 2025-02-10
+
+- Kubernetes 1.33: 2025-04-23
+
+    - v1.Endpoints is marked deprecated in the API.
+
+    - The Endpoints controller labels Endpoints with
+      `endpoints.kubernetes.io/managed-by`.
+
+    - All non-SIG-Network e2e tests now only look at EndpointSlices,
+      not Endpoints.
+
+    - e2e tests for dual-stack belatedly updated to test
+      EndpointSlices (in addition to Endpoints).
+
+- Kubernetes 1.34: 2025-08-27
+
+    - Aggregated API server discovery now uses EndpointSlices rather
+      than Endpoints.
+
+    - Updated all remaining non-conformance non-Endpoints-specific e2e
+      tests to only test EndpointSlices, not Endpoints.
+
+    - Changed the conformance test "Service endpoints latency should
+      not be very high" to test the latency of the EndpointSlice
+      controller rather than the Endpoints controller.
+
+    - Promoted the e2e tests `"EndpointSlice should support a Service
+      with multiple ports specified in multiple EndpointSlices"` and
+      `"EndpointSlice should support a Service with multiple endpoint
+      IPs specified in multiple EndpointSlices"` to conformance, to
+      formally require that service proxy implementations actually use
+      EndpointSlices, not Endpoints.
+
+- Kubernetes 1.35: 2025-12-17
+
+    - Split the remaining combined Endpoints/EndpointSlice conformance
+      tests into separate Endpoints conformance tests and
+      EndpointSlice conformance tests.
+
+    - Added the string `EndpointsController` to all e2e tests that
+      depend on a running Endpoints controller, so they can be
+      recognized and skipped.
+
+- Kubernetes 1.37: 2026-??-??
+
+    - Added an e2e test requiring that Service DNS implementations use
+      EndpointSlices.
+
+    - Updated service/proxy subresource (`kubectl port-forward` to a
+      Service) to use EndpointSlices rather than Endpoints.
+
+    - Added periodic e2e job
+      `ci-kubernetes-kind-network-deprecate-endpoints`, testing that
+      the non-Endpoints-specific e2e tests all pass with the Endpoints
+      and EndpointSliceMirroring controllers disabled. (This was
+      originally attempted during the 1.35 cycle, but it didn't pass
+      then, because of the service/proxy code.)
 
 ## Drawbacks
 
