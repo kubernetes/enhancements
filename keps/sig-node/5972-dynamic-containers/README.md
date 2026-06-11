@@ -135,6 +135,7 @@ The scope of this KEP is deliberately minimized for more effective execution. I 
   - Introducing new pod states or phases.
   - Enabling dynamic volume management (aside from mounting preallocated volumes).
   - Enabling "dynamic DRA" (i.e. mutable resource claims on running pods).
+  - Introducing an alternative request path to mutate pods that bypasses the cluster API server.
 
 ## Proposal
 
@@ -229,6 +230,7 @@ These are not inherent requirements for the feature, and can be reevaluated as n
 in the future.
 
   - Only main containers can be added or removed (not init containers).
+  - Container `SecurityContext` cannot escalate permissions. See below.
   - The pod must be in an initialized state (i.e. all init containers have completed) before any dynamic container changes can be made.
   - This proposal does not allow for general container mutation. A corollary is that a container
     with the same name can only be added after the previous container with that name is *completely*
@@ -240,6 +242,22 @@ in the future.
   - A pod must have at least one main container.
   - Privileged containers cannot be added.
   - HostPorts cannot be used by newly added containers.
+
+#### No SecurityContext escalations
+
+Dynamically added containers are forbidden from escalating the SecurityContext permissions of the
+pod. In other words, they can only add or allow permissions already granted to other containers in
+the pod. More specifically:
+
+- `Capabilities`:
+  - Cannot add a capability that isn't already added by an existing container.
+  - Must drop any capabilities that are dropped by ALL existing containers.
+- `Privileged`: Never allowed.
+- `SELinuxOptions`, `RunAsUSer`, `RunAsGroup`, `SeccompProfile`, `AppArmorProfile`: Can only use values already used by an existing container (or the PodSecurityContext)
+- `WindowsOptions`: N/A (windows not supported)
+- `RunAsNonRoot`, `ReadOnlyRootFilestystem`: Must be set if ALL containers set these.
+- `AllowPrivilegeEscalation`: Must be set to `false` if ALL containers explicitly disable (the implicit default is `true`).
+- `ProcMount`: Can only be set to `Unmasked` if another container already has an unmasked proc mount.
 
 #### Container Status
 
@@ -312,8 +330,9 @@ Logs from removed containers will be managed by the [existing container garbage 
 ### Security Considerations
 
 **Admission Configuration:** If custom admission webhooks are configured to intercept only `CREATE`
-operations for Pods, they can be bypassed by adding a violating container via update. This risk will
-be managed with user communications, but there won't be technical safeguards preventing it.
+operations for Pods, they can be bypassed by adding a violating container via update. Container image is already mutable,
+so the only new risk introduced is granting new permissions. This is mitigated by explicitly forbidding new containers from escalating permissions.
+See [No SecurityContext escalations](#no-securitycontext-escalations).
 
 ### Implementation Details
 
@@ -522,7 +541,8 @@ Evaluate CRI operation latency metrics.
 
 ## Implementation History
 
-- **YYYY-MM-DD:** Initial KEP drafted.
+- **2026-04-30:** Initial proposal shared with SIG-Node: https://docs.google.com/document/d/1LUttwty4xIU9gcLGSvnu1qVqAztxT3kl53ZdpM8q7o0/edit
+- **2026-06-08:** Initial KEP drafted.
 
 ## Drawbacks
 
