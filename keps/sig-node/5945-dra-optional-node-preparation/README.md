@@ -246,6 +246,28 @@ this architectural difference.
    }
    ```
 
+#### API Server Handling & Ratcheting Validation
+
+To ensure fail-fast feedback and prevent workloads from entering a broken state,
+the `kube-apiserver` validates the new fields against the state of the
+`DRAOptionalNodePreparation` feature gate.
+
+To support safe cluster rollbacks and downgrades, the API server implements
+**Ratcheting Validation** (in accordance with the [Kubernetes API Changes
+Guide](https://github.com/kubernetes/community/blob/main/contributors/devel/sig-architecture/api_changes.md#ratcheting-validation)):
+
+* **When the feature gate is disabled**:
+  * **New Resources (POST)**: Any attempt to create a `ResourceSlice` or
+    allocate a `ResourceClaim` (via its status) with `SkipNodePrepare` or
+    `SkipNodeUnprepare` set to `true` is **rejected** with a validation error.
+  * **Existing Resources (PUT)**: The API server allows updates to existing
+    resources that already have these fields set to `true` (e.g., persisted
+    while the feature gate was enabled before a downgrade), provided the update
+    does not attempt to newly enable or modify these fields. Any transition of
+    these fields from `nil`/`false` to `true` is **rejected**.
+* **When the feature gate is enabled**:
+  * The fields are validated and persisted normally.
+
 ### Allocator Changes
 
 During scheduling, the structured parameters allocator resolves `ResourceSlices`
@@ -309,6 +331,12 @@ None.
 
 ##### Unit tests
 
+- **API Server Validation Unit Tests**: In `pkg/apis/resource/validation/validation_test.go`:
+  - Verify the four ratcheting validation cases when the feature gate is disabled:
+    - New valid (fields `nil`/`false`) -> Succeeds.
+    - New invalid (fields `true`) -> Fails.
+    - Old valid (fields `nil`/`false`) -> Succeeds.
+    - Old invalid (fields `true` in old object, unchanged in new) -> Succeeds.
 - **Allocator Unit Tests**: In
   `staging/src/k8s.io/dynamic-resource-allocation/structured/allocator_test.go`:
   - Verify that `SkipNodePrepare` and `SkipNodeUnprepare` in `ResourceSliceSpec`
