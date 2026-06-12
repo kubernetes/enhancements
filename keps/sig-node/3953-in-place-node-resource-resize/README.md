@@ -34,15 +34,24 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Application-Level Hardware Assumptions](#application-level-hardware-assumptions)
     - [Coordination with External NRI/Runtime Plugins](#coordination-with-external-nriruntime-plugins)
 - [Design Details](#design-details)
+  - [Baseline Assumptions and Pre-requisite Validation](#baseline-assumptions-and-pre-requisite-validation)
+  - [Impact on Existing Behaviors](#impact-on-existing-behaviors)
+  - [Pre-requisite Tests to be Added](#pre-requisite-tests-to-be-added)
   - [Architecture Flow](#architecture-flow)
-    - [Phase 1:Host-Level Enforcement (ContainerManager)](#phase-1host-level-enforcement-containermanager)
-    - [Phase 2: Cluster &amp; Runtime Enforcement (Kubelet)](#phase-2-cluster--runtime-enforcement-kubelet)
+  - [Architecture Flow](#architecture-flow-1)
+    - [Hardware Trigger and Validation](#hardware-trigger-and-validation)
+    - [Path A: Declarative HotPlug / External Trigger](#path-a-declarative-hotplug--external-trigger)
+    - [Path B: Emergency Hardware Hot-UnPlug](#path-b-emergency-hardware-hot-unplug)
     - [Flow Control: Container Swap Limit Recalculation](#flow-control-container-swap-limit-recalculation)
     - [Flow Control: Hardware Degradation and Capacity Starvation](#flow-control-hardware-degradation-and-capacity-starvation)
     - [Compatibility with Cluster Autoscaler](#compatibility-with-cluster-autoscaler)
+  - [Step 1: Baseline Assumptions and Pre-requisite Validation](#step-1-baseline-assumptions-and-pre-requisite-validation)
+    - [Behaviors We Are Breaking](#behaviors-we-are-breaking)
+    - [Step 1 Pre-requisite Tests to be Added](#step-1-pre-requisite-tests-to-be-added)
     - [Proposed Core Code Changes](#proposed-core-code-changes)
   - [Observability and Metrics](#observability-and-metrics)
   - [Test Plan](#test-plan)
+      - [Step 1: Baseline API &amp; Scheduler Validation (Pre-requisite Tests)](#step-1-baseline-api--scheduler-validation-pre-requisite-tests)
       - [Unit tests](#unit-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
@@ -97,6 +106,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 * **In-Place Resource Resize:** Dynamically increasing or decreasing compute resources (CPU, Memory, Swap Capacity, and HugePages) on a node without requiring a node reboot or kubelet restart.
 * **Node Compute Resource:** CPU, Memory, Swap Capacity, and HugePages.
+
 ## Summary
 
 This proposal facilitates dynamic native resource resizing (increases and decreases in capacity) on a node to streamline cluster capacity updates, offering a seamless alternative to adding or removing nodes from an existing cluster. The revised node configurations automatically propagate at both the node and cluster levels.
@@ -174,21 +184,15 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 ## Proposal
 
-This KEP introduces an event-driven reconciliation architecture to handle native resource reconfiguration safely and dynamically. Instead of relying on a static boot-time cache or periodic polling, the Kubelet's ContainerManager is updated to react to capacity change events from the underlying system hardware (via cAdvisor).
+This KEP introduces a declarative, event-driven reconciliation architecture to handle native resource reconfiguration safely. To align with Kubernetes core principles, the reconciliation is decoupled into three distinct phases:
 
-When a hardware capacity change event is triggered, the Kubelet executes a two-phase, non-blocking reconciliation pipeline:
+    Baseline API Validation: Establishing formal support and upstream testing for mutating a Node object's capacity dynamically.
 
- - Host-Level Reconciliation: The ContainerManager immediately intercepts the event and updates its internal capacity state. It dynamically re-synchronizes its native sub-managers (CPU Manager, Memory Manager) and rewrites the top-level /kubepods and Quality of Service (QoS) cgroups to physically enforce the new host boundaries. Once the host filesystem is secure, it emits an internal Go channel signal.
+    Declarative Reconciliation: Updating the Kubelet to gracefully handle discrepancies between its internal hardware cache and the API Server's Node.Status.
 
- - Cluster & Runtime Reconciliation: A dedicated listener in the main Kubelet loop catches this signal and executes the final integration steps:
+    Metrics-Based Trigger: Implementing an automated cAdvisor trigger that updates the Node.Status when hardware changes, kicking off the declarative reconciliation loop.
 
-   - Cache Refresh: Refreshes the Kubelet's internal hardware cache to prevent the node status updater from incorrectly clamping the new Allocatable values down to stale boot-time metrics.
-
-   - Eviction Sync: Adjusts absolute thresholds in the Eviction Manager to protect the node from disk or memory exhaustion during a hardware downscale.
-
-   - Runtime Update: Recalculates proportional swap limits for actively running pods and safely propagates them down to the Container Runtime Interface (CRI).
-
-   - API Dissemination: Triggers an immediate node status sync, publishing the newly updated Capacity and Allocatable values to the Kubernetes API server so the control plane can utilize them.
+By reacting to the difference between what the API states and what the Kubelet knows, the system natively supports webhook admission control, external declarative triggers, and graceful Kubelet restarts across resized hardware.
 
 ### User Stories
 
@@ -277,62 +281,84 @@ This introduces severe latency, high CPU overhead, and dangerous race conditions
 
 ## Design Details
 
-To handle hardware capacity safely, the Kubelet splits responsibilities into two distinct layers:
+### Baseline Assumptions and Pre-requisite Validation
 
-- **The ContainerManager**: Enforces physical boundaries directly on the Linux host (e.g., cgroups).
+Currently, Kubernetes operates under the unspoken assumption that a Node object's capacity is immutable. Before implementing dynamic metric-based triggers, the impacted behaviors must be formally documented, and upstream test coverage must be added to prove the core control plane can gracefully survive a Node capacity mutation.
 
-- **The Main Kubelet Loop**: Manages cluster-level operations, including API updates, Pod Eviction, and the Container Runtime (CRI).
+### Impact on Existing Behaviors
 
-This KEP replaces the static boot-time hardware evaluation with an event-driven reconciliation pipeline.
+1. Static Capacity Assumption: Node.Status.Capacity and Allocatable will transition from static, boot-time fields to dynamically mutable fields.
+
+2. Kubelet Restart Admission: Currently, if a Kubelet is restarted on a machine whose hardware was reduced while offline, the Kubelet may blindly fail pod admission. This behavior will shift to a graceful reconciliation and eviction model.
+
+3. Autoscaler Homogeneity: Nodes within a single NodeGroup will no longer be guaranteed to have identical capacities, meaning the Autoscaler cannot blindly select any node as a provisioning template.
+
+4. External Controller Caches: Third-party operators that cache node sizes indefinitely will become stale. (This is an accepted operational constraint).
+
+
+### Pre-requisite Tests to be Added
+
+To validate that the API and Control Plane can handle these broken assumptions natively, the following tests will be added
+
+* **Test 1: API Server Mutation Acceptance**
+
+    **Action**: Manually patch .status.capacity and .status.allocatable on a Ready Node object.
+
+    **Validation**: Verify the API Server accepts the patch without systemic webhook rejections or validation failures.
+
+
+* **Test 2: Scheduler Cache Invalidation (HotPlug)**
+
+    **Action**: Create a pending Pod that requires 8Gi of memory on a cluster where the only node has 4Gi. Manually patch the Node object's capacity to 10Gi.
+
+    **Validation**: Verify the Scheduler detects the mutated Node object, updates its internal cache, and successfully schedules the pending Pod.
+
+
+* **Test 3: Scheduler Cache Invalidation (Hot-Unplug)**
+
+    **Action**: Manually patch an empty Node's capacity from 10Gi down to 4Gi. Attempt to schedule a Pod requiring 8Gi.
+
+    **Validation**: Verify the Scheduler respects the mutated smaller capacity and rejects the Pod (leaves it Pending).
+
+
+* **Test 4: Kubelet Restart on Resized Hardware (Unified Reconciliation)**
+
+    **Action**: Schedule a Pod. Stop the Kubelet. Mock the underlying machine info to reflect a smaller capacity. Start the Kubelet.
+
+    **Validation**: Verify the Kubelet boots successfully, recognizes the discrepancy between the API and physical hardware, and handles the change gracefully (e.g., evicting the pod if starved) rather than crashing or permanently locking pod admission.
 
 ### Architecture Flow
 
-The diagram below illustrates the interaction between cAdvisor, the Container Manager, the Host filesystem, and the API Server during a resize event.
+### Architecture Flow
 
-```mermaid
-sequenceDiagram
-    participant cAdvisor as cAdvisor Cache
-    participant cm as ContainerManager
-    participant host as Linux Host (cgroups)
-    participant kubelet as Main Kubelet Loop
-    participant cri as CRI (Container Runtime)
-    participant api as API Server
+To safely support both external declarative triggers and physical hardware constraints, the Kubelet utilizes a dual-path reconciliation architecture based on the direction of the capacity change.
 
-    cAdvisor->>cm: Polled MachineInfo (Drift Detected)
-    cm->>cm: Sync CPU/Memory Sub-managers
-    cm->>host: Enforce Node Allocatable & QoS Cgroups
-    cm->>kubelet: Non-blocking Signal (nodeCapacityUpdateCh)
-    kubelet->>kubelet: Refresh internal MachineInfo cache
-    kubelet->>kubelet: Synchronize Eviction Thresholds
-    kubelet->>cri: UpdateContainerResources (Swap)
-    kubelet->>api: Patch Node.Status (Capacity & Allocatable)
-```
+#### Hardware Trigger and Validation
+The Kubelet monitors both the API (`Node.Status.Capacity`) and local hardware (`cAdvisor`). When `cAdvisor` detects a capacity drift, the `ContainerManager` intercepts the event and applies a **Validation and Jitter Tolerance Filter** before acting:
+* **Sanity Bounds:** The new capacity is checked against impossible values. Negative values, `0`, or capacities mathematically smaller than the node's static `--kube-reserved`/`--system-reserved` limits are rejected and logged as errors.
+* **Jitter Threshold:** To prevent infinite reconciliation storms from harmless kernel memory fluctuations, the delta must exceed a sensible threshold (e.g., memory differences `< 100Mi` are ignored, CPU differences must be full integer cores).
 
-The reconciliation sequence executes in two distinct phases to guarantee host stability before the control plane is notified:
+If the capacity drift passes the validation filter, the execution path diverges based on whether it is an upscale or a downscale.
 
-#### Phase 1:Host-Level Enforcement (ContainerManager)
+#### Path A: Declarative HotPlug / External Trigger
+When capacity is added, the Kubelet utilizes a declarative, API-driven approach to respect control plane admission (e.g., Webhooks) and allow for external triggers.
+1. **Trigger:** `cAdvisor` detects new hardware metrics (passing the validation filter), OR an external controller manually patches the Node API.
+2. **API Update:** If triggered locally by hardware, the Kubelet attempts to patch `Node.Status.Capacity` and `Node.Status.Allocatable`.
+3. **Admission / Webhooks:** If an API webhook declines the patch, the Kubelet aborts. The physical hardware remains larger than the Kubelet's logical view, which is completely safe.
+4. **Host & Runtime Reconciliation:** Once the API is successfully updated (or if the Kubelet detects an approved external patch), a dedicated Goroutine executes the host integration sequence:
+    * **Cache Refresh:** The Kubelet's global `MachineInfo` cache is refreshed to reflect the new boundaries.
+    * **Sub-Manager Sync:** Sub-managers (CPU Manager, Memory Manager) are re-initialized with the new capacity via a new `ResourceResizer` interface.
+    * **Cgroup Expansion:** Top-level host boundaries (`/kubepods`) and QoS cgroups are rewritten to expose the new limits to the system.
+    * **CRI Swap Update:** Proportional Swap limits are recalculated and pushed to running pods via the standard `UpdateContainerResources` CRI RPC.
 
-* The ContainerManager periodically checks cAdvisor's machine info.
-
-* If a capacity drift is detected between the physical hardware and the internal `cm.capacity` cache, the ContainerManager intercepts the event and applies a **Validation and Jitter Tolerance Filter**:
-    * **Sanity Bounds:** The new capacity is checked against impossible values. Negative values, `0`, or capacities mathematically smaller than the node's static `--kube-reserved`/`--system-reserved` limits are rejected and logged as errors.
-    * **Jitter Threshold:** To prevent infinite reconciliation storms from harmless kernel memory fluctuations, the delta must exceed a sensible threshold (e.g., memory differences `< 100Mi` are ignored, CPU differences must be full integer cores).
-* If the capacity drift passes the validation filter, the ContainerManager locks its state and updates the internal cache.
-* Sub-managers (CPU Manager, Memory Manager) are re-initialized with the new capacity via a new ResourceResizer interface.
-
-* Top-level host boundaries (/kubepods cgroup) and QoS cgroups are immediately rewritten to physically enforce the new limits on the Linux kernel.
-
-* A signal is emitted via nodeCapacityUpdateCh.
-
-#### Phase 2: Cluster & Runtime Enforcement (Kubelet)
-
-* A dedicated Goroutine in the main Kubelet loop catches the capacity update signal and executes a strictly ordered sequence to prevent scheduling race conditions and thrash:
-
-    1. **Cache Refresh:** The Kubelet's global `MachineInfo` cache is refreshed to reflect the physical reality of the new hardware.
-    2. **API Dissemination:** The Kubelet immediately patches the `Node` API object (`syncNodeStatus`). Updating the API *before* evictions ensures the Scheduler is aware of the reduced capacity and will not attempt to backfill pods that are about to be evicted.
-    3. **Capacity Starvation Evictions:** The Kubelet evaluates active workloads against the new capacity. If a strict request contract can no longer be met, the pod is gracefully evicted with `Reason: NodeCapacityExceeded`.
-    4. **Eviction Synchronization:** The Eviction Manager's absolute memory and disk thresholds are recalculated to protect the node from future usage-based exhaustion.
-    5. **CRI Swap Update:** Proportional Swap limits are recalculated and pushed via the standard `UpdateContainerResources` CRI RPC.
+#### Path B: Emergency Hardware Hot-UnPlug
+When physical hardware (e.g., Memory) is dynamically removed, physics dictates the timeline. The Kubelet acts immediately to secure the host, treating the API update as a mandatory notification rather than a request for permission.
+1. **Trigger:** `cAdvisor` detects a critical drop in physical hardware metrics (passing the validation filter).
+2. **API Dissemination (Anti-Thrash):** The Kubelet immediately patches `Node.Status` to reflect the reduced capacity. Updating the API *before* evictions ensures the Scheduler knows the node has shrunk and will not attempt to backfill pods.
+3. **Immediate Host Enforcement:** The `ContainerManager` locks its state, updates its internal cache, and instantly shrinks the `/kubepods` cgroups to physically secure the Linux kernel.
+4. **Eviction Synchronization:** The Eviction Manager's absolute memory and disk thresholds are recalculated based on the new total capacity.
+5. **Graceful Degradation:** The Kubelet evaluates active workloads against the newly reduced capacity. If a strict request contract can no longer be met, starved pods are gracefully evicted with `Reason: NodeCapacityExceeded`.
+6. **Sub-manager & CRI Sync:** Sub-managers are re-initialized to reflect the smaller boundaries, and container swap limits are proportionally reduced.
 
 #### Flow Control: Container Swap Limit Recalculation
 
@@ -378,6 +404,35 @@ To ensure the Cluster Autoscaler remains stable, we will Capture the Node's Init
 
 * The Cluster Autoscaler will be updated to read this annotation (if present) to construct reliable templates for new node provisioning, ignoring the dynamically shifting Node.Status.Capacity fields for template generation.
 
+### Step 1: Baseline Assumptions and Pre-requisite Validation
+
+Currently, Kubernetes operates under the unspoken assumption that a `Node` object's capacity is immutable. Before implementing dynamic metric-based triggers (Step 3), we must formally document the behaviors we are breaking and add upstream test coverage to prove the core control plane can survive a Node capacity mutation (Step 1 & 2).
+
+#### Behaviors We Are Breaking
+1. **Static Capacity Assumption:** `Node.Status.Capacity` and `Allocatable` will transition from static, boot-time fields to dynamically mutable fields.
+2. **Kubelet Restart Admission:** Currently, if a Kubelet is restarted on a machine whose hardware was reduced while offline, the Kubelet may blindly fail pod admission. We are shifting this to a graceful reconciliation and eviction model.
+3. **Autoscaler Homogeneity:** Nodes within a single NodeGroup will no longer be guaranteed to have identical capacities, meaning the Autoscaler cannot blindly select any node as a provisioning template.
+4. **External Controller Caches:** Third-party operators that cache node sizes indefinitely will become stale. (This is an accepted operational constraint).
+
+#### Step 1 Pre-requisite Tests to be Added
+To validate that the API and Control Plane can handle these broken assumptions natively, the following tests will be added before any dynamic cAdvisor triggers are built:
+
+* **Test 1: API Server Mutation Acceptance**
+    * *Action:* Manually patch `.status.capacity` and `.status.allocatable` on a `Ready` Node object.
+    * *Validation:* Verify the API Server accepts the patch without systemic webhook rejections or validation failures.
+
+* **Test 2: Scheduler Cache Invalidation (Upscale)**
+    * *Action:* Create a pending Pod that requires 8Gi of memory on a cluster where the only node has 4Gi. Manually patch the Node object's capacity to 10Gi.
+    * *Validation:* Verify the Scheduler detects the mutated Node object, updates its internal cache, and successfully schedules the pending Pod.
+
+* **Test 3: Scheduler Cache Invalidation (Downscale)**
+    * *Action:* Manually patch an empty Node's capacity from 10Gi down to 4Gi. Attempt to schedule a Pod requiring 8Gi.
+    * *Validation:* Verify the Scheduler respects the mutated smaller capacity and rejects the Pod (leaves it Pending), proving it does not rely on a stale boot-time cache.
+
+* **Test 4: Kubelet Restart on Resized Hardware (Unified Reconciliation)**
+    * *Action:* Schedule a Pod. Stop the Kubelet. Mock the underlying machine info to reflect a smaller capacity (simulate offline hot-unplug). Start the Kubelet.
+    * *Validation:* Verify the Kubelet boots successfully, recognizes the discrepancy between the API and physical hardware, and handles the change gracefully (e.g., evicting the pod if starved) rather than crashing or permanently locking pod admission.
+    * 
 #### Proposed Core Code Changes
 
 1. **The Dedicated Kubelet Listener** (`pkg/kubelet/kubelet.go`)
@@ -459,6 +514,12 @@ To ensure cluster operators can monitor resize events and failures, this KEP int
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
+##### Step 1: Baseline API & Scheduler Validation (Pre-requisite Tests)
+Before dynamic hardware triggers are implemented, upstream test coverage must be added to validate the foundational assumption that Kubernetes natively supports Node object capacity mutation:
+1. **API Validation:** Verify that modifying `Node.Status.Capacity` and `Node.Status.Allocatable` on an existing Node object is explicitly permitted by the API server and does not trigger unintended systemic webhook rejections.
+2. **Scheduler Validation:** Verify that if a Node's capacity is mutated (simulating an offline/restarted Kubelet resize), the Scheduler correctly recognizes the new capacity and successfully schedules/rejects pending Pods accordingly without requiring the Node object to be deleted and recreated.
+3. **Autoscaler Integration:** Verify how the Cluster Autoscaler reacts to a dynamically mutated Node object capacity.
+
 ##### Unit tests
 
 1. **cAdvisor Cache Refresh** (`kubelet_node_status_test.go`): Verify that injecting a new `MachineInfo` struct successfully updates the Kubelet's internal cache, and that the subsequent node status sync does not incorrectly clamp the new `Allocatable` values to the old boot-time capacity.
@@ -470,6 +531,7 @@ to implement this enhancement.
 4. **Eviction Threshold Sync** (`eviction_manager_test.go`): Verify that `SynchronizeThresholds` correctly recalculates absolute byte values (e.g., < `100Mi` vs `10%`) when the underlying capacity increases or decreases.
 
 5. **CRI Swap Limit Recalculation** (`kubelet_test.go`): Verify the math for proportional swap limits. Ensure the capacity reconciliation loop correctly iterates over active pods and invokes the mock CRI `UpdateContainerResources` interface with the newly calculated boundaries.
+
 ##### e2e tests
 
 These tests will utilize a mock `cAdvisor` interface to inject dynamic hardware capacity changes into a running test Kubelet to validate the end-to-end reconciliation pipeline.
@@ -503,15 +565,12 @@ These tests will utilize a mock `cAdvisor` interface to inject dynamic hardware 
 
 ### Graduation Criteria
 
-
 #### Phase 1: Alpha (target 1.37)
 
-* Feature is disabled by default. It is an opt-in feature which can be enabled by enabling the `InPlaceNodeResourceResize`
-  feature gate.
-* Comprehensive Unit Test coverage for the `ContainerManager` reconciliation loop, cache bypass, and Eviction Manager synchronization.
-* E2E Node tests (`e2e_node`) validating the end-to-end flow using a mocked `cAdvisor` machine-info injector.
-* Documentation mentioning high level design.
-
+* Feature is disabled by default via the `InPlaceNodeResourceResize` feature gate.
+* **Step 1 (Baseline Validation):** API, Scheduler, and Autoscaler e2e tests are merged to officially support and document the behavior of mutating an existing Node object's capacity.
+* **Step 2 (Unified Reconciliation):** The Kubelet's internal logic is updated to gracefully handle capacity mismatches declaratively. If the Kubelet's internal state differs from the API (for hotplug) or physical hardware (for hot-unplug), it safely reconciles cgroups and evicts starved pods rather than failing admission blindly.
+* **Step 3 (Dynamic Trigger):** The `cAdvisor` metrics-based trigger is implemented to automate the reconciliation loop dynamically on running nodes.
 
 ### Upgrade / Downgrade Strategy
 
