@@ -364,7 +364,7 @@ None — this adds a new attribute and helper functions, does not modify existin
 
 #### e2e tests
 
-- End-to-end test with at least two DRA drivers publishing `resource.kubernetes.io/numaNode` as a list and a ResourceClaim with `matchAttribute` across them
+- End-to-end test using the in-tree DRA test driver (`test/e2e/dra/test-driver`) configured to publish `resource.kubernetes.io/numaNode` across multiple devices, with a ResourceClaim that uses `matchAttribute: resource.kubernetes.io/numaNode` across them. CI cannot run real vendor DRA drivers, so the in-tree test driver provides the automated coverage; adoption by real out-of-tree drivers is the complementary real-world validation, tracked separately rather than in CI.
 
 ### Graduation Criteria
 
@@ -428,13 +428,11 @@ No. The attribute is additive. Existing claims and drivers are unaffected.
 
 Yes. Disabling `DRAListTypeAttributes` prevents new ResourceSlices with list attributes. Existing ResourceSlices retain their values but new ones must use scalar attributes. Claims with `matchAttribute: numaNode` fall back to equality matching.
 
-###### What happens if we reenable the feature if it was previously rolled back?
-
-Drivers will resume publishing `resource.kubernetes.io/numaNode` as a list attribute in their ResourceSlices. The scheduler will resume using intersection matching for `matchAttribute` constraints referencing it. No state migration is needed — ResourceSlices are recreated on driver startup, and claims are re-evaluated by the scheduler. Previously allocated claims are unaffected since allocation results are stored in the claim status, not derived from ResourceSlice attributes at runtime.
+N/A. This feature has no feature gate of its own, so there is nothing to roll back or re-enable. Availability of the list form follows KEP-5491 `DRAListTypeAttributes`; if that gate is toggled, drivers simply resume publishing the list form on their next ResourceSlice update, with no state migration (ResourceSlices are recreated on driver startup and claims are re-evaluated by the scheduler).
 
 ###### Are there any tests for feature enablement/disablement?
 
-Tests verify that a `numaNode` list attribute is accepted when `DRAListTypeAttributes` is enabled, and that publishing it when the gate is disabled is rejected by the apiserver (the dropped list value leaves a value-less attribute that fails validation), so a driver must publish the scalar form on such clusters.
+This KEP has no feature gate of its own, so there is no enablement/disablement to test for it directly. The relevant gate is KEP-5491 `DRAListTypeAttributes`. Tests there (and in the apiserver ResourceSlice strategy) verify that a `numaNode` list attribute is accepted when `DRAListTypeAttributes` is enabled and rejected when it is disabled (the dropped list value leaves a value-less attribute that fails validation). On a cluster without that gate, a driver publishes the scalar form.
 
 ### Rollout, Upgrade and Rollback Planning
 
