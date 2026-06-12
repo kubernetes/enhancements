@@ -103,34 +103,33 @@ single feature gate, `CSIVolumeHealth`, gates the kubelet and the
 apiserver.
 
 This is not the first attempt. An alpha for KEP-1432 shipped in
-Kubernetes v1.21 that overloaded `ListVolumes`, `ControllerGetVolume`,
+Kubernetes v1.21 that embedded `ListVolumes`, `ControllerGetVolume`,
 and `NodeGetVolumeStats` with an embedded `VolumeCondition` field and
 surfaced findings only as Kubernetes events. The original API never
 graduated, and the CSI spec is now removing it
 ([container-storage-interface/spec#604][spec-pr]). This KEP
 documents the replacement and resets graduation to alpha.
 
+The original feature used only events and metrics because we didn't want to 
+add first-class fields to PVCs and Pods that Kubernetes built-in controllers 
+couldn't react to. However, experience showed this conservative approach was 
+insufficient - events are ephemeral and metrics lack the structured, durable 
+state that operators and automation need. This enhanced design represents our 
+learning that well-designed status fields, following established Kubernetes patterns, 
+provide essential value even when not directly consumed by core controllers.
+
 [spec-pr]: https://github.com/container-storage-interface/spec/pull/604
 
 ## Motivation
 
-Storage backends fail in ways that Kubernetes cannot see today.
-A disk can develop bad sectors or a thin pool can run out of space. An LVM volume group can lose a
-physical volume. A network partition can sever a node's data
-path to the storage backend while the control plane keeps
-working. In every case the CSI driver on the node or the
-storage controller knows something is wrong, but Kubernetes has
-no API through which drivers can report that knowledge and no
-status field where operators or automation can read it.
+Storage backends fail in ways that Kubernetes cannot see today — bad sectors, 
+exhausted thin pools, lost physical volumes, network partitions severing the data path. 
+The CSI driver knows something is wrong, but Kubernetes has no API for drivers to 
+report that knowledge and no status field where operators or automation can read it.
 
-Without a health signal, the only indication of a storage
-problem is a pod that hangs on I/O, a mount that fails
-repeatedly, or an alert from outside the cluster. Operators
-must cross-reference storage-vendor dashboards with Kubernetes
-objects by hand, and remediation controllers have nothing
-machine-readable to act on. The gap widens with scale: a
-cluster running thousands of PVCs across hundreds of nodes
-cannot rely on manual correlation.
+Without a health signal, storage problems surface only as hung I/O or failed mounts, 
+forcing operators to cross-reference vendor dashboards with Kubernetes objects by hand. 
+Remediation controllers have nothing machine-readable to act on, and the gap widens with scale.
 
 An alpha for KEP-1432 shipped in Kubernetes v1.21 that
 attempted to fill this gap by embedding a `VolumeCondition`
@@ -293,6 +292,20 @@ volumes regardless of which driver they live on, because every
 driver writes through the same status fields with the same enum
 values.
 
+#### Story 5. Database operator with local PV resilience
+
+A database operator manages stateful workloads using local persistent volumes for performance. 
+It periodically checks `pvc.status.healthStatus` for storage accessibility. When a local disk fails, 
+the CSI driver reports `{status: Inaccessible, reason: DiskFailure}`. If the volume remains inaccessible 
+beyond a configured threshold (e.g., 5 minutes), the operator automatically:
+
+1. Shuts down the database pod
+2. Deletes the failed local PV to trigger provisioning of a new volume
+3. Restores from backup and brings the database online
+
+This structured health reporting enables precise, automated recovery that reduces downtime compared to 
+relying on pod restart patterns or external monitoring alone.
+
 ### Risks and Mitigations
 
 The most-debated risk is write churn. Every node updates pods it
@@ -302,9 +315,10 @@ into a substantial PATCH rate against the apiserver. The design
 addresses this in two ways: both writers compute the desired
 `Conditions` list, compare it element-by-element to the on-disk
 value, and PATCH only on difference; in steady state, with no
-unhealthy volumes, the sustained PATCH rate is zero. Probe intervals
-are tunable on both writers, and operators of large clusters can
-relax them without changing the contract this KEP defines.
+unhealthy volumes, the sustained PATCH rate is zero. If 
+a CSI driver reports same adverse condition for a volume 
+repeatedly no updates are written to API server because 
+we only store `lastTransitionTime`.
 
 A second risk is compromised or malicious nodes lying about a
 volume's health to influence operator behavior. This was the
@@ -643,9 +657,9 @@ type VolumeHealthStatus struct {
     // +listMapKey=reason
     Conditions []VolumeHealthCondition `json:"conditions,omitempty"`
 
-    // lastProbeTime is the most recent time the CO obtained a
-    // response from the controller plugin.
-    LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
+    // lastTransitionTime is when this unique set of condition entry first
+    // appeared at its current (status, reason) tuple.
+    LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 }
 
 type VolumeHealthCondition struct {
@@ -659,9 +673,6 @@ type VolumeHealthCondition struct {
     // message is a human-readable description.
     // +optional
     Message string `json:"message,omitempty"`
-    // lastTransitionTime is when this condition entry first
-    // appeared at its current (status, reason) tuple.
-    LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 }
 
 type VolumeHealthStatusType string
@@ -679,8 +690,11 @@ driver reporting the same category with two different reasons (for
 example `Degraded`/`HighLatency` and `Degraded`/`MultipathLoss`) also
 produces two entries; both forms are first-class conditions, not
 collisions. A driver re-reporting an entry whose `(status, reason)`
-tuple is unchanged updates `message` and `lastProbeTime` only and
-preserves `lastTransitionTime`.
+tuple is unchanged will result in no updates unless `message` field has
+changed.
+
+We expect some of these details to be further nailed down during implementation
+and API PRs.
 
 The Pod field is owned by the kubelet on the pod's node. It mirrors
 the two-level shape of KEP-4680: an outer entry per `pod.spec.volumes`
@@ -715,7 +729,9 @@ type PodVolumeHealth struct {
     // +listMapKey=reason
     Conditions []VolumeHealthCondition `json:"conditions,omitempty"`
 
-    LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
+    // lastTransitionTime is when this unique set of condition entry first
+    // appeared at its current (status, reason) tuple.
+    LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 }
 ```
 
@@ -770,8 +786,6 @@ type StorageHealthCondition struct {
     // affected. Nil means both are affected.
     // +optional
     VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
-
-    LastProbeTime      metav1.Time `json:"lastProbeTime,omitempty"`
     LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 }
 
@@ -1160,6 +1174,10 @@ sustained PATCH rate to zero. Under sustained all-unhealthy load,
 the rate is bounded by the writer's polling interval, which is
 configured via kubelet's `VolumeStatsAggPeriod` command line parameter.
 
+But even with all unhealthy load, once first update is written to api-server
+as long as volumes remain unhealthy with same `(status,reason)` - no further
+writes will be made to the API server.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 No new API types. Three new optional status fields on existing
@@ -1212,9 +1230,8 @@ polling cycle resumes writing.
   `ControllerGetVolumeHealth` if the driver advertises that
   capability; otherwise it logs and skips the cycle.
 - A driver reporting stale `Inaccessible` after a transient outage
-  has resolved shows up as `LastTransitionTime` not advancing
-  despite `LastProbeTime` advancing. The mitigation is to file a
-  driver bug; operators can clear
+  has resolved but volume still shows up as `LastTransitionTime` not advancing.
+  The cluster-admin may have to look into driver logs and set
   `pvc.status.healthStatus.conditions` by hand, and the sidecar
   will overwrite on the next cycle.
 - A sidecar uninstalled while unhealthy entries are present leaves
