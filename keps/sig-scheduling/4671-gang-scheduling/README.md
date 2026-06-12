@@ -1220,6 +1220,15 @@ The list and configuration of plugins used by this algorithm will be the same as
        remaining pods as possible is preferable to binding only a schedulable subset of pods,
        if soon after that we will schedule another set of pods unblocked by preemption.
 
+       To preserve standard pod-by-pod behavior under the `Basic` policy, the scheduler will always prioritize
+       binding over preemption for that policy. As long as any incoming pod is schedulable,
+       it will proceed directly to binding - any necessary preemption will be deferred to a subsequent cycle.
+       Attempting preemption immediately would delay the binding of schedulable pods,
+       making the `Basic` policy less compatible with the pod-by-pod behavior.
+       The scheduling cycle code will directly inspect the `PodGroup` object for the `Basic` policy
+       to trigger this behavior. This coupling is deemed acceptable for now, though a new extension point
+       could be introduced in the future to pass this information to the framework more cleanly.
+
    * If `schedulableCount < minCount`, the cycle fails. The scheduler attempts
      [Workload-aware Preemption](#workload-aware-preemption) to free sufficient space for the `PodGroup` through disruption.
 
