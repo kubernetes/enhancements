@@ -1193,6 +1193,14 @@ points:
    * **`U`**: The count of child elements that returned an `Unschedulable` status.
    * **`UU`**: The count of child elements that returned `UnschedulableAndUnresolvable`.
 
+   > [!NOTE]
+   > Historically, pod-level `UnschedulableAndUnresolvable` may have been used to denote
+   > pods that cannot be scheduled even if other pods in the cluster are deleted (preempted).
+   > In the context of pod groups, preemption may also cause some pods to be assigned to different
+   > nodes, which may break plugin assumptions. Until that contract is explicitly defined,
+   > at the leaf level, `U` will be the count of pods that returned `Unschedulable`
+   > **or `UnschedulableAndUnresolvable`**, and `UU` will be 0.
+
    Using these variables, the `PlacementFeasible` status is resolved as follows:
    * **`Success`**: $S \ge M$. The constraints are fully satisfied.
    * **`Wait`**: $S < M$, but $S + R \ge M$. Currently unsatisfied, but satisfying the
@@ -1202,8 +1210,9 @@ points:
      the `Unschedulable` child elements can resolve the constraints.
    * **`UnschedulableAndUnresolvable`**: $S + R + U < M$. Even with maximum preemption
      of all `Unschedulable` elements, it is mathematically impossible to satisfy the
-     minimum constraints because there is not enough child elements to schedule
+     minimum constraints because there are not enough child elements to schedule
      or too many child elements failed with the `UnschedulableAndUnresolvable` status.
+
 
    This status logic is applied identically at all levels of the tree:
    * **For a leaf `PodGroup`:** The child elements are the individual member pods.
@@ -1872,6 +1881,11 @@ More tests will be added for beta release.
   in `PodGroup` objects).
 - Scheduler diagnostics and recommendations with regards to the scheduling order
   are re-evaluated to improve troubleshooting and scheduling success rates.
+- GangScheduling's `PlacementFeasible` extension point is changed to propagate
+  pod-level `UnschedulableAndUnresolvable`, making the logic identical across all levels.
+- The logic for triggering preemption for subsequent scheduling is re-evaluated in case
+  the scheduling policy is not initially satisfied (e.g., PG has been disrupted or `minCount`
+  has changed).
 
 #### GA
 
