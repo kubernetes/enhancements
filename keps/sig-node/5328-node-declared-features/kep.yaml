@@ -18,7 +18,6 @@ reviewers:
   - '@haircommander' # sig-node-assigned-reviewer
   - '@swatisehgal' # sig-node-assigned-reviewer
 approvers:
-- "@tallclair" # sig-node-assigned-approver
 - '@dchen1107' # sig-node-tl
 - '@tallclair' # sig-node-assigned-approver
 - '@dom4ha' # SIG-Scheduling
