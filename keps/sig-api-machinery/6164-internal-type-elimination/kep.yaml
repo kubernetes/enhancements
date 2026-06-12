@@ -1,0 +1,27 @@
+title: Eliminating Internal API Types
+kep-number: 6164
+authors:
+  - "@jpbetz"
+  - "@michaelasp"
+  - "@yedou37"
+owning-sig: sig-api-machinery
+status: provisional
+creation-date: 2026-06-05
+reviewers:
+  - "@deads2k"
+  - "@thockin"
+  - "@liggitt"
+approvers:
+  - "@deads2k"
+
+see-also:
+  - "/keps/sig-api-machinery/5073-declarative-validation-with-validation-gen"
+
+# This is an internal code refactor what is immediately production impacting and
+# not feature gate-able.
+stage: stable
+latest-milestone: "v1.37"
+milestone:
+  stable: "v1.37"
+
+
