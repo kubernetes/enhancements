@@ -13,6 +13,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
+    - [API Server Handling and Ratcheting Validation](#api-server-handling-and-ratcheting-validation)
   - [Allocator Changes](#allocator-changes)
   - [Kubelet Changes](#kubelet-changes)
   - [Test Plan](#test-plan)
@@ -39,6 +40,7 @@
   - [Alternative 1: DeviceClass-level configuration](#alternative-1-deviceclass-level-configuration)
   - [Alternative 2: Claim-level declaration](#alternative-2-claim-level-declaration)
   - [Alternative 3: Kubelet Auto-Discovery / gRPC probe with timeout](#alternative-3-kubelet-auto-discovery--grpc-probe-with-timeout)
+  - [Alternative 4: Centralized catch-all no-op plugin](#alternative-4-centralized-catch-all-no-op-plugin)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -138,11 +140,18 @@ We propose adding boolean fields `SkipNodePrepare` and `SkipNodeUnprepare` to
 1. **API Definition**: The driver/controller publisher sets `SkipNodePrepare:
    true` and/or `SkipNodeUnprepare: true` in `ResourceSlice` resources if the
    published devices do not require node-local setup or cleanup.
-2. **Control Plane Resolution**: The allocator/scheduler resolves the referenced
+2. **API Validation**: To prevent pods from getting stuck during termination, we enforce a
+   validation rule: **If `SkipNodeUnprepare` is `false/nil`, `SkipNodePrepare` must
+   not be `true`**. The combination of skipping preparation but requiring
+   unpreparation (`SkipNodePrepare: true` and `SkipNodeUnprepare: false/nil`) is
+   invalid and will be rejected. This configuration is fragile because the kubelet
+   wouldn't verify the driver's presence at startup, leading to pods getting stuck
+   in `Terminating` if the driver is missing during deletion.
+3. **Control Plane Resolution**: The allocator/scheduler resolves the referenced
    `ResourceSlice` during allocation, and copies this configuration into
    `ResourceClaim.Status.Allocation.Devices.Results[i].SkipNodePrepare` and
    `SkipNodeUnprepare`.
-3. **Node Execution**: The kubelet reads these fields from the `ResourceClaim`'s
+4. **Node Execution**: The kubelet reads these fields from the `ResourceClaim`'s
    allocation results. If all allocated devices for a given driver within a
    claim set `SkipNodePrepare: true` (or `SkipNodeUnprepare: true`), the kubelet
    bypasses the corresponding gRPC call to the node-local resource driver.
@@ -246,7 +255,18 @@ this architectural difference.
    }
    ```
 
-#### API Server Handling & Ratcheting Validation
+#### API Server Handling and Ratcheting Validation
+
+The API server enforces the following co-dependency validation rule on both
+`ResourceSlice` and `ResourceClaim` (via its status):
+*   **Co-dependency Validation**: If `SkipNodePrepare` is `true`,
+    `SkipNodeUnprepare` **must** be `true`.
+    *   If `SkipNodePrepare` is `true` and `SkipNodeUnprepare` is `false` (or
+        `nil`/omitted), the resource is **rejected** with a validation error
+        (e.g., `forbidden: skipNodePrepare cannot be true when skipNodeUnprepare
+        is false`).
+    *   This ensures we fail early and prevent workloads from entering a state
+        where they cannot terminate.
 
 To ensure fail-fast feedback and prevent workloads from entering a broken state,
 the `kube-apiserver` validates the new fields against the state of the
@@ -337,6 +357,9 @@ None.
     - New invalid (fields `true`) -> Fails.
     - Old valid (fields `nil`/`false`) -> Succeeds.
     - Old invalid (fields `true` in old object, unchanged in new) -> Succeeds.
+  - Verify co-dependency validation:
+    - `SkipNodePrepare: true` and `SkipNodeUnprepare: false/nil` -> Fails.
+    - `SkipNodePrepare: true` and `SkipNodeUnprepare: true` -> Succeeds.
 - **Allocator Unit Tests**: In
   `staging/src/k8s.io/dynamic-resource-allocation/structured/allocator_test.go`:
   - Verify that `SkipNodePrepare` and `SkipNodeUnprepare` in `ResourceSliceSpec`
@@ -381,19 +404,17 @@ deploy any node-local components.
     - No `FailedPrepareDynamicResources` warnings are posted to the Pod events.
     - Pod deletion completes cleanly and immediately (does not hang in
       `Terminating` waiting for unprepare).
-- Test Case 1.2: Missing node component failure (`SkipNodePrepare: false` or
-  `SkipNodeUnprepare: false`)
-  - **API Configuration**: Publish `ResourceSlices` with at least one skip field
-    set to `false` (or omitted).
+- Test Case 1.2: Missing node component failure (`SkipNodePrepare: false`)
+  - **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare` set
+    to `false` (or omitted).
   - **Workload**: Deploy a Pod referencing this resource.
   - **Assertions**:
-    - If `SkipNodePrepare` is `false`: The Pod gets stuck in `ContainerCreating`
+    - The Pod gets stuck in `ContainerCreating`
       with `FailedPrepareDynamicResources` errors because the kubelet tries to
       contact the non-existent node driver.
-    - If `SkipNodePrepare` is `true` but `SkipNodeUnprepare` is `false`: The Pod
-      runs successfully, but upon deletion, it gets stuck in `Terminating` phase
-      as the kubelet fails to call the non-existent node driver for
-      unpreparation.
+    - Note: The configuration `SkipNodePrepare: true` and `SkipNodeUnprepare:
+      false` is rejected at the API level and cannot be tested with a running
+      Pod.
 
 ###### Scenario 2: Driver with node-local components (Standard Driver)
 This scenario validates that the kubelet selectively invokes the node-local
@@ -401,18 +422,7 @@ driver based on the individual skip flags, allowing mixed-mode execution.
 
 - **Setup**: Deploy a standard DRA test driver that includes node-local gRPC
   components.
-- Test Case 2.1: Skip Prepare Only (`SkipNodePrepare: true`,
-  `SkipNodeUnprepare: false`)
-  - **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare: true`
-    and `SkipNodeUnprepare: false`.
-  - **Workload**: Deploy a Pod.
-  - **Assertions**:
-    - The Pod reaches the `Running` phase.
-    - Assert that the driver's
-      `NodePrepareResources` was **not** called.
-    - Delete the Pod.
-    - Assert that the driver's `NodeUnprepareResources` **was** called.
-- Test Case 2.2: Skip Unprepare Only (`SkipNodePrepare: false`,
+- Test Case 2.1: Skip Unprepare Only (`SkipNodePrepare: false`,
   `SkipNodeUnprepare: true`)
   - **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare:
     false` and `SkipNodeUnprepare: true`.
@@ -843,7 +853,7 @@ is not needed and starts the pod.
   containers launch before their local devices are fully prepared. Explicit
   declaration via the API is highly deterministic and secure.
 
-### Alternative 4: Centralized "catch-all" no-op plugin
+### Alternative 4: Centralized catch-all no-op plugin
 Deploy a generic, "no-op" DRA driver (such as
 [dra-driver-noop](https://github.com/gke-labs/dra-drivers/tree/main/dra-driver-noop))
 configured centrally to register under specific DRA driver names and handle the
