@@ -20,5 +20,5 @@ milestone:
   beta: "v1.38"
   stable: "v1.39"
 feature-gates: []
-disable-supported: true
+disable-supported: false
 metrics: []
