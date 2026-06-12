@@ -541,10 +541,25 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-The following unit tests are planned:
+The following unit tests have been written. Most are already merged
+into the master branch; a minor fix is under review in
+[kubernetes/kubernetes#138497](https://github.com/kubernetes/kubernetes/pull/138497).
 
-- Are the scores assigned to nodes for dynamic provisioning appropriate for the amount of free space?
-- Are the amount of free space score of nodes for dynamic provisioning and the Static Bindings score both functional?
+- [`TestVolumeBinding/storage_capacity_score`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L738):
+  Are the scores assigned to nodes for dynamic provisioning appropriate
+  for the amount of free space?
+- [`TestVolumeBinding/storage_capacity_score_with_static_binds`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L779):
+  Are the amount of free space score of nodes for dynamic provisioning
+  and the Static Bindings score both functional?
+- [`TestVolumeBinding/dynamic_provisioning_with_multiple_PVCs_of_the_same_StorageClass`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L852):
+  Are multiple PVCs of the same StorageClass correctly handled in
+  scoring, with their total requested storage accounted for?
+- [`TestVolumeBinding/prefer_node_with_least_allocatable`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L887):
+  When configured to prefer the node with the least available storage,
+  is the pod placed on the node with the least available capacity?
+- [`TestVolumeBinding/prefer_node_with_maximum_allocatable`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L941):
+  Does the default `Shape` setting configure scoring to prefer the node
+  with the most available storage?
 
 ##### Integration tests
 
