@@ -979,7 +979,9 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: `plugin_execution_duration_seconds`
+  - Metric name: `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}`
+  - [Optional] Aggregation method:
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
