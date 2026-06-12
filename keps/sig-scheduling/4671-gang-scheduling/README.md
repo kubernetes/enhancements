@@ -1208,7 +1208,9 @@ The list and configuration of plugins used by this algorithm will be the same as
 
      * If this is a subsequent scheduling attempt (i.e., some pod group members were already scheduled
        when the cycle started), but some pods were unschedulable, the scheduler will attempt
-       [Workload-aware Preemption](#workload-aware-preemption).
+       [Workload-aware Preemption](#workload-aware-preemption). In such cases, `PlacementFeasible`
+       in the `GangScheduling` plugin will return a new `PartialSuccess` status, which informs the framework
+       that the scheduler should prioritize preemption over binding for that group.
 
        * If the preemption can accommodate more pods, it will be actuated (as described below)
          and all considered pods, including the schedulable ones, will be moved back to the scheduling queue.
@@ -1219,6 +1221,14 @@ The list and configuration of plugins used by this algorithm will be the same as
        This aligns with real applications, where attempting preemption to secure capacity for as many additional,
        remaining pods as possible is preferable to binding only a schedulable subset of pods,
        if soon after that we will schedule another set of pods unblocked by preemption.
+
+       To preserve standard pod-by-pod behavior under the `Basic` policy, the scheduler will always prioritize
+       binding over preemption for that policy. As long as any incoming pod is schedulable,
+       it will proceed directly to binding - any necessary preemption will be deferred to a subsequent cycle.
+       Attempting preemption immediately would delay the binding of schedulable pods,
+       making the `Basic` policy less compatible with the pod-by-pod behavior.
+       The scheduling cycle code will interpret a `Success` status returned by the `PlacementFeasible`
+       extension point (default behavior for `Basic` policy) as an indication that binding is prioritized over preemption.
 
    * If `schedulableCount < minCount`, the cycle fails. The scheduler attempts
      [Workload-aware Preemption](#workload-aware-preemption) to free sufficient space for the `PodGroup` through disruption.
