@@ -11,6 +11,7 @@ last-updated: 2024-09-30
 reviewers:
   - "@harche"
 approvers:
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
   - "@mrunalp"
 
 # The target maturity stage in the current dev cycle for this KEP.
