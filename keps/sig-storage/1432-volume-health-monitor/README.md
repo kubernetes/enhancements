@@ -12,6 +12,7 @@
     - [Story 2: Backend unreachable from a subset of nodes](#story-2-backend-unreachable-from-a-subset-of-nodes)
     - [Story 3: Local-storage volume with degraded LVM backend](#story-3-local-storage-volume-with-degraded-lvm-backend)
     - [Story 4: Cross-driver dashboards](#story-4-cross-driver-dashboards)
+    - [Story 5. Database operator with local PV resilience](#story-5-database-operator-with-local-pv-resilience)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Where reports live, and why](#where-reports-live-and-why)
@@ -49,6 +50,9 @@
   - [Push-based health ingest](#push-based-health-ingest)
   - [A richer error enum](#a-richer-error-enum)
 - [Future enhancement](#future-enhancement)
+  - [Remediation](#remediation)
+    - [Scheduler-integrated backend health filtering](#scheduler-integrated-backend-health-filtering)
+    - [External operator remediation](#external-operator-remediation)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -1355,6 +1359,91 @@ level from different backends.
 3. Report entire storage backend health from control-plane as well.We will have to find out the use case
 of such reporting more thoroughly - such as, what would be recovery if entire backend is down etc. We will also
 have to figure out which k8s object will reflect this cluster health from control-plane.
+
+### Remediation
+
+This section describes how reported health conditions can be consumed
+by core Kubernetes components and external operators.
+
+#### Scheduler-integrated backend health filtering
+
+A CSI driver can opt in to scheduler-level filtering by declaring a
+`HealthSchedulingPolicy` on its `CSIDriverSpec`. When set, the
+kube-scheduler evaluates each rule against `StorageHealthCondition`
+entries on the candidate node's `CSINode.Status.StorageHealth`. If
+any rule matches, the node is filtered out for pods that use this
+driver with a matching volume capability.
+
+```go
+type CSIDriverSpec struct {
+    // ... existing fields ...
+
+    HealthSchedulingPolicy *HealthSchedulingPolicy `json:"healthSchedulingPolicy,omitempty"`
+}
+
+type HealthSchedulingPolicy struct {
+    Rules []HealthSchedulingRule `json:"rules"`
+}
+
+type HealthSchedulingRule struct {
+    // status is the StorageHealthCondition status that triggers
+    // this rule (e.g. "StorageUnreachable", "StorageDegraded").
+    Status StorageHealthStatusType `json:"status"`
+
+    // +optional
+    AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+
+    // +optional
+    VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
+}
+```
+
+**Matching logic.** The scheduler's `CSIStorageHealth` filter plugin
+iterates over a pod's PVCs. For each PVC bound to a PV backed by
+this driver, it reads the PV's access modes and volume mode. It then
+checks the candidate node's `StorageHealthCondition` entries for this
+driver. A node is filtered out when a reported condition's `status`
+matches a rule's `status`, the rule's `accessModes` (if set) overlap
+with the PVC's access modes, the rule's `volumeMode` (if set) equals
+the PVC's volume mode, and the condition's own `accessModes` /
+`volumeMode` scoping also covers the PVC.
+
+**Example — block all pods when unreachable:**
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: rbd.csi.ceph.com
+spec:
+  healthSchedulingPolicy:
+    rules:
+      - status: StorageUnreachable
+```
+
+**Example — block only RWO on degraded, block all on unreachable:**
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: topolvm.io
+spec:
+  healthSchedulingPolicy:
+    rules:
+      - status: StorageUnreachable
+      - status: StorageDegraded
+        accessModes: [ReadWriteOnce]
+```
+
+#### External operator remediation
+
+Operators outside the scheduler can also watch `StorageHealthCondition`
+entries and take action — for example, cordoning a node, migrating
+workloads, or notifying on-call. The structured, durable status fields
+give these controllers a machine-readable signal that was previously
+only available through vendor-specific monitoring.
 
 
 ## Infrastructure Needed
