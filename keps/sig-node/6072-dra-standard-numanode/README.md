@@ -30,9 +30,6 @@
     - [Integration tests](#integration-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
-    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
     - [Component skew during a rolling upgrade](#component-skew-during-a-rolling-upgrade)
@@ -371,32 +368,15 @@ None — this adds a new attribute and helper functions, does not modify existin
 
 ### Graduation Criteria
 
-This KEP standardizes a device attribute and ships helper library code rather than a gated API or controller, so the stages track **adoption and validation maturity** rather than the enablement lifecycle of a feature gate:
+This KEP standardizes a device attribute name and ships helper library code. It introduces no feature gate of its own, no API type, and no control loop, so there is no enablement switch to stage through alpha and beta. There is nothing to graduate: the moment the code merges, the standardized attribute and the helper functions are available to any driver that chooses to use them. The KEP therefore targets **stable** directly.
 
-- **Alpha** — the attribute name, semantics, and helper functions exist and are tested, with at least one driver publishing the value. The name is documented as "can also be a list," so drivers adopting it early is forward-compatible and not an API break.
-- **Beta** — enough independent drivers have adopted it (target: three) to confirm the name and SLIT-based semantics work across real hardware, with feedback from topology-aware workloads.
-- **GA** — real-world cross-driver co-placement deployments demonstrate the standard is stable and sufficient.
+What "stable" means here is that the following are in place at merge:
 
-Because the scalar form carries no feature gate (see [Decoupling from KEP-5491 graduation](#decoupling-from-kep-5491-graduation)), these stages gate confidence in the *convention*, not the availability of a gated code path.
+- Helper functions in the `deviceattribute` library, with unit tests.
+- The standardized attribute name (`resource.kubernetes.io/numaNode`) and its scalar and list semantics documented.
+- At least one upstream DRA driver able to publish the attribute.
 
-#### Alpha
-
-- Helper functions in `deviceattribute` library (scalar and list variants)
-- Standard attribute name and semantics documented
-- Unit and integration tests passing
-- At least one upstream DRA driver publishes the attribute (scalar or list)
-- List form depends on `DRAListTypeAttributes` feature gate (KEP-5491); scalar form has no dependency
-
-#### Beta
-
-- At least three DRA drivers publish the attribute
-- Real-world feedback from topology-aware workloads
-- No major outstanding bugs
-
-#### GA
-
-- At least two real-world deployments demonstrating cross-driver NUMA co-placement
-- Allowing time for feedback from driver authors and workload operators
+The list form's usefulness (richer cross-socket matching via `matchAttribute` set intersection) depends on KEP-5491 `DRAListTypeAttributes`, which has its own graduation. That dependency does not gate this KEP: the scalar form works without it, and the list form simply consumes whatever stage KEP-5491 is at (see [Decoupling from KEP-5491 graduation](#decoupling-from-kep-5491-graduation)).
 
 ### Upgrade / Downgrade Strategy
 
@@ -425,7 +405,7 @@ This is fail-safe and self-healing: the only effect during the skew window is de
 This KEP does not graduate in lockstep with `DRAListTypeAttributes`. There is no requirement that the two reach the same stage at the same time:
 
 - The **scalar form** carries no dependency on KEP-5491 and is usable at any stage, including before `DRAListTypeAttributes` exists in a cluster. This is the baseline that makes the standard attribute name useful on its own.
-- The **list form** simply consumes whatever `DRAListTypeAttributes` provides at its current stage. If KEP-5491 is at beta while this KEP is at alpha (or vice versa), drivers and the scheduler use the list type at the stage KEP-5491 happens to be in; this KEP adds no additional gating on top of it.
+- The **list form** simply consumes whatever `DRAListTypeAttributes` provides at its current stage. This KEP is stable and has no gate of its own, while KEP-5491 may still be at alpha or beta; drivers and the scheduler use the list type at whatever stage KEP-5491 happens to be in, and this KEP adds no additional gating on top of it.
 
 Consequently, KEP-5491 graduating, stalling, or being rolled back does not block or regress the scalar behavior of this attribute — it only changes whether the richer list form is available. The two KEPs are layered, not bound to a shared graduation schedule.
 
@@ -454,7 +434,7 @@ Drivers will resume publishing `resource.kubernetes.io/numaNode` as a list attri
 
 ###### Are there any tests for feature enablement/disablement?
 
-Tests will verify list attribute acceptance when `DRAListTypeAttributes` is enabled and that the `IntValues` field is silently dropped (not the whole object rejected) when disabled.
+Tests verify that a `numaNode` list attribute is accepted when `DRAListTypeAttributes` is enabled, and that publishing it when the gate is disabled is rejected by the apiserver (the dropped list value leaves a value-less attribute that fails validation), so a driver must publish the scalar form on such clusters.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -464,7 +444,7 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-TBD for beta.
+N/A. This KEP adds no control loop, no API type, and no feature gate, so there is no rollout to fail. Drivers opt in by publishing the standardized attribute; a misconfigured driver's publish is rejected by the apiserver without affecting other workloads or already-allocated claims.
 
 ###### What specific metrics should inform a rollback?
 
@@ -472,7 +452,7 @@ None specific to this feature. A rollback would be prompted by qualitative signa
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-TBD for beta.
+N/A. There is no gated feature or stored control-plane state to upgrade or roll back. The attribute is data that drivers recreate in their ResourceSlices on startup.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -486,11 +466,11 @@ This section must be completed when targeting beta to a release.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-TBD for beta. At alpha: check if any ResourceSlice contains a device attribute named `resource.kubernetes.io/numaNode` with an `IntValues` field, and if any ResourceClaim uses `matchAttribute: resource.kubernetes.io/numaNode`.
+Check whether any ResourceSlice contains a device attribute named `resource.kubernetes.io/numaNode`, and whether any ResourceClaim uses `matchAttribute: resource.kubernetes.io/numaNode`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-TBD for beta. At alpha: a ResourceClaim with `matchAttribute: resource.kubernetes.io/numaNode` across multiple driver requests is successfully allocated (claim status shows devices from the same NUMA domain).
+A ResourceClaim with `matchAttribute: resource.kubernetes.io/numaNode` across multiple driver requests is successfully allocated (the claim status shows devices from the same NUMA domain).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -542,15 +522,15 @@ This section must be completed when targeting beta to a release.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-TBD for beta. At alpha: drivers cannot publish ResourceSlices if the API server is unavailable, but this is existing DRA behavior, not specific to this feature.
+Drivers cannot publish ResourceSlices if the API server is unavailable, but this is existing DRA behavior, not specific to this feature.
 
 ###### What are other known failure modes?
 
-TBD for beta.
+A driver configured to publish the list form against a cluster where `DRAListTypeAttributes` is disabled has its ResourceSlice rejected by the apiserver (the dropped list value leaves a value-less attribute). This surfaces as a driver publish error and is a configuration mistake to correct, not a runtime hazard for other workloads. If SLIT distance data is unavailable, the helper returns a single-element value (the physical node) rather than failing.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-TBD for beta.
+N/A. This feature defines no SLOs of its own. Allocation problems involving `numaNode` are diagnosed through existing DRA scheduling diagnostics (claim events, scheduler logs) and the driver's logs.
 
 ## Implementation History
 
