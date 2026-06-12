@@ -118,7 +118,7 @@ All three have weakened:
 
 1. The hub does not have to be a *separate* type. The hub type can be one of the
    versioned types CustomResourceDefinitions already operate handle CRD versions this
-   way. For CRD conversion, the storage version *is* the hub.
+   way. For CRD conversion, the request version *is* the hub.
 2. [KEP-5073: Declarative Validation][kep-5073] (GA in v1.36) move validation
    onto **versioned** types via `validation-gen`, further weakening the
    rationale for an internal type.
@@ -210,10 +210,10 @@ kube-apiserver runs with reduced peak load and GC churn.
 
 - **Maintaining the hub type increases maintenance burden.** Today the hub type
   is the internal type. With this change, the hub type will be one of the
-  versioned typed and will change type as the feature stabilizes and the storage
+  versioned types and will change type as the feature stabilizes and the storage
   version changes. This is a risk that the extra work of switching the hub type
   each time an API is changed will result in increased maintenance burden and/or
-  will discourage API changes. Handw-ritten validation and admission controllers
+  will discourage API changes. Hand-written validation and admission controllers
   are the most likely to be affected.
     - Migiations:
       - The rollout of declarative validation significantly weakens the
@@ -266,9 +266,9 @@ already have many memory-identical types and are planning to make pod and other
 high traffic APIs memory-identical. If any of those types become different than
 the performance will regress.
 
-### Phease 2: Remove internal types
+### Phase 2: Remove internal types
 
-This is our goal for v.1.38+
+This is our goal for v1.38+
 
 #### Step 1
 
