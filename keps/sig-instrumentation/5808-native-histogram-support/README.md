@@ -47,8 +47,8 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -59,8 +59,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -103,7 +103,7 @@ Prometheus Native Histograms, introduced in Prometheus 2.40, address these limit
 Add native histogram support to the `component-base/metrics` package with:
 
 1. **Feature Gate**: A new `NativeHistograms` feature gate controlling whether K8s components expose metrics with native histogram format
-2. **Global Defaults**: Use sensible global defaults for native histogram configuration (alpha phase)
+2. **Global Defaults**: Use sensible global defaults for native histogram configuration
 3. **Dual Exposition**: When enabled, expose both classic and native histogram formats
 
 The control model is intentionally simple:
@@ -198,7 +198,7 @@ This ensures:
 
 ### Implementation Phases
 
-For the alpha phase, we will use sensible global defaults for all native histograms without exposing configuration options to developers. This keeps the initial implementation simple while we gather feedback. The `HistogramOpts` struct in `component-base/metrics` will remain unchanged - no new fields will be added (configuration options may be added in future phases if a need arises based on user feedback and real-world usage patterns).
+We will use sensible global defaults for all native histograms without exposing configuration options to developers. This keeps the implementation simple while we gather feedback. The `HistogramOpts` struct in `component-base/metrics` remains unchanged - no new fields have been added (configuration options may be added in future phases if a need arises based on user feedback and real-world usage patterns).
 
 We will update the conversion function to pass native histogram options to the underlying Prometheus library when the feature gate is enabled:
 
@@ -214,7 +214,7 @@ func (o *HistogramOpts) toPromHistogramOpts() prometheus.HistogramOpts {
     }
     
     if utilfeature.DefaultFeatureGate.Enabled(features.NativeHistograms) {
-        // Use fixed global defaults for alpha phase
+        // Use fixed global defaults
         opts.NativeHistogramBucketFactor = 1.1   // Default bucket growth factor
         opts.NativeHistogramMaxBucketNumber = 160 // Default max buckets (based on OTel SDK recommendation: https://opentelemetry.io/docs/specs/otel/metrics/sdk/#base2-exponential-bucket-histogram-aggregation)
     }
@@ -323,23 +323,25 @@ to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-Existing histogram metric tests should be extended to verify dual exposition behavior when the feature gate is enabled.
+Existing histogram metric tests have been extended to verify dual exposition behavior when the feature gate is enabled.
 
 ##### Unit tests
 
-- `staging/src/k8s.io/component-base/metrics`: Test `toPromHistogramOpts()` with feature gate enabled/disabled
-- Test that global native histogram defaults are applied when feature gate is enabled
-- Test that classic buckets are always present
+- Test coverage before Beta graduation
+  - `k8s.io/component-base/metrics`: 2026-06-10 - 73.6%
+  - `k8s.io/component-base/metrics/features`: 2026-06-10 - 0.0% (contains only feature gate definitions; exercised by other packages' tests)
+  - `k8s.io/component-base/metrics/internal`: 2026-06-10 - 0.0% (holds internal enabling state; tested via the main metrics package tests)
 
 ##### Integration tests
 
-- Verify metrics endpoint serves both formats when enabled
-- Verify classic buckets are always present regardless of feature state
+
+- TestAPIServerNativeHistogramMetrics: [integration master](https://testgrid.k8s.io/sig-release-master-blocking?include-filter-by-regex=NativeHistogram#integration-master), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=NativeHistograms)
+- TestSchedulerNativeHistogramMetrics: [integration master](https://testgrid.k8s.io/sig-release-master-blocking?include-filter-by-regex=NativeHistogram#integration-master), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=NativeHistograms)
+- TestControllerManagerNativeHistogramMetrics: [integration master](https://testgrid.k8s.io/sig-release-master-blocking?include-filter-by-regex=NativeHistogram#integration-master), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=NativeHistograms)
 
 ##### e2e tests
 
-- Scrape metrics with Prometheus (native histogram support enabled)
-- Verify both formats are queryable
+- [\[sig-instrumentation\] NativeHistograms should export both classic and native histograms (in protobuf format) from apiserver /metrics](https://github.com/kubernetes/kubernetes/pull/139529): [SIG Instrumentation](https://testgrid.k8s.io/sig-instrumentation#gce&include-filter-by-regex=NativeHistograms), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=NativeHistograms)
 
 ### Graduation Criteria
 
@@ -441,7 +443,7 @@ Native histogram exposition resumes. No special handling required. Prometheus wi
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes, unit tests will verify:
+Yes, unit tests verify:
 - `toPromHistogramOpts()` returns correct configuration based on feature gate state
 - Toggling feature gate changes histogram configuration appropriately
 - Classic buckets are always present regardless of feature gate state
@@ -466,7 +468,7 @@ Yes, unit tests will verify:
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be tested as part of beta graduation.
+Because all metrics are stored strictly in memory, the upgrade/rollback path was verified at the API/Scrape layer by simulating the transition of the feature gate via [benchmarking](https://github.com/kubernetes/enhancements/issues/5808#issuecomment-4675197880). With the feature gate enabled, native histograms are exposed alongside classic histograms and ingested by Prometheus (if scrape settings are configured). With the feature gate disabled, only classic histograms are exposed, and Prometheus successfully falls back to classic scraping (or stops scraping native histograms without errors, continuing to scrape classic if `always_scrape_classic_histograms` is true).
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -532,15 +534,17 @@ No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-The `/metrics` endpoint may take slightly longer to serialize when exposing both formats. This will be benchmarked during alpha/beta.
+The `/metrics` endpoint may take slightly longer to serialize when exposing both formats. [Benchmarks](https://github.com/kubernetes/enhancements/issues/5808#issuecomment-4627959515) show that under a high-cardinality load (~80,000 active series), serving both formats in Protobuf only increases the binary payload by 200 KB (+11.7%), representing a negligible, sub-millisecond serialization latency increase. For legacy text format scrapes, native histograms are skipped entirely, resulting in 0% serialization overhead.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-**Memory:** Small increase for native histogram bucket storage. Bounded by `--native-histogram-max-buckets` (default: 160).
+**Memory:** Small increase for native histogram bucket storage. Bounded by `--native-histogram-max-buckets` (default: 160). [Heap profiling](https://github.com/kubernetes/enhancements/issues/5808#issuecomment-4627959515) shows a tiny overhead of ~142 bytes per active timeseries of memory allocated during observation operations (totaling +7.34 MB for 54,000 active timeseries). In a large production cluster with 500k active timeseries, this represents ~70 MB, which is <1% of typical APIServer memory.
 
-**CPU:** Negligible increase for histogram operations.
+**CPU:** Negligible increase for histogram operations. 
 
-**Network:** Slight increase in `/metrics` response size when exposing both formats.
+**Network:** Slight increase in `/metrics` response size when exposing both formats. According to [benchmarks](https://github.com/kubernetes/enhancements/issues/5808#issuecomment-4627959515) exposing native histograms in Protobuf format only adds 200 KB (+11.7%) to the binary payload compared to classic protobuf.
+
+**Collector (Prometheus) Memory:** Under a live 80k active series load, ingesting both formats simultaneously only increased Prometheus heap memory usage by 13.38 MB (+9.9%) [benchmarks](https://github.com/kubernetes/enhancements/issues/5808#issuecomment-4627959515)
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -574,7 +578,8 @@ No impact. Metrics exposition is independent of API server and etcd availability
 
 ## Implementation History
 
-- 2026-01-16: Initial KEP created
+- v1.36: Initial KEP created (Alpha)
+- v1.36: Enabled native-histograms in [apiserver](https://github.com/kubernetes/kubernetes/pull/136763), [scheduler](https://github.com/kubernetes/kubernetes/pull/137466), [kubelet](https://github.com/kubernetes/kubernetes/pull/137780), [kube-controller-manager](https://github.com/kubernetes/kubernetes/pull/137779) and [kube-proxy](https://github.com/kubernetes/kubernetes/pull/137781)
 
 ## Drawbacks
 
