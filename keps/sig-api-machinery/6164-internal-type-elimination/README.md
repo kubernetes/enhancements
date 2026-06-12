@@ -17,10 +17,10 @@
   - [Phase 1: Make the internal types memory-identical to the stable served version](#phase-1-make-the-internal-types-memory-identical-to-the-stable-served-version)
     - [Step 1:](#step-1)
     - [Step 2:](#step-2)
-  - [Phease 2: Remove internal types](#phease-2-remove-internal-types)
-    - [Step 1](#step-1-1)
-    - [Step 2](#step-2-1)
-    - [Step 3](#step-3)
+  - [Phase 2: Alias internal types](#phase-2-alias-internal-types)
+    - [Step 1: Replace internal types with aliases](#step-1-replace-internal-types-with-aliases)
+    - [Step 2: Retire <code>__internal</code> registration](#step-2-retire-__internal-registration)
+  - [Potential Future Work: Remove internal type aliases entirely](#potential-future-work-remove-internal-type-aliases-entirely)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -71,17 +71,19 @@ Today many APIs have progressed to a stable `v1` version and the alpha and beta
 types are no longer served by the API. For such APIs the internal type, there is
 no benefit to having an internal type that differs from the preferred served type.
 
-This KEP proposes a two phrase project:
+This KEP proposes a two-phase project:
 
 Phase 1: **make the internal types memory-identical to the preferred served
 type**, resulting in O(n) -> O(1) allocation cost for conversions which
 reduces peak memory utilization by up to 5x faster and 3x less memory
 utilization for the conversions performed by large list operations.
 
-Phase 2: **incrementally migrate built-in APIs off the internal type**, using
-**Go type aliases as the first and lowest-risk step**. Longer term we can remove
-the internal types from the code entirely. This long term maintenance benefits
-to the project.
+Phase 2: **alias internal types to versioned types** using Go type aliases,
+and retire the `__internal` registration so the versioned type becomes the hub.
+
+Longer term, removing the internal types from the code entirely is considered
+potential future work.
+
 
 
 ## Motivation
@@ -179,15 +181,16 @@ internal <-> v1 pod conversion allocs go from O(n) -> O(1)  if the internal type
 ### Phasing
 
 - Phase 1: Make the internal types memory-identical to the stable served version.
-- Phase 2: Remove the internal types.
+- Phase 2: Alias internal types to the stable versioned types (and retire `__internal` registration).
+- Potential Future Work: Remove the internal type aliases and packages entirely.
 
 #### Commitment
 
 Our Phase 1 goal is to optimize away the conversion costs via memory-identical types.
 
-If Phase 1 is successful, we will expore Phase 2, starting with type aliasing.
+If Phase 1 is successful, we will proceed to Phase 2.
 We commit to either completing Phase 2 or reverting all code to retain the
-internal types within a 3-release (~1 year) window**.
+distinct internal types within a 3-release (~1 year) window**.
 
 ### User Stories
 
@@ -266,11 +269,11 @@ already have many memory-identical types and are planning to make pod and other
 high traffic APIs memory-identical. If any of those types become different than
 the performance will regress.
 
-### Phase 2: Remove internal types
+### Phase 2: Alias internal types
 
 This is our goal for v1.38+
 
-#### Step 1
+#### Step 1: Replace internal types with aliases
 
 Once we have structurally-identical resource, the internal type definitions can be
 replaced by aliases to the storage version:
@@ -296,12 +299,16 @@ Object ownership is a bit tricky. We will review all impacted conversion calls, 
 - Unsafe convert in the PATCH handler.
 - Unsafe encode does a hack where is GVK stamps and then removes the stamp in a defer and will need careful review.
 
-Also:
+To support aliasing, we must also:
 
-1. Get rid of any internal-only methods
-2. Disable deepcopy gen on the internal type
+1. **Remove all methods on internal types**: Go does not allow defining new methods
+   on type aliases when the underlying type is in another package.
+2. **Disable `deepcopy` generation on internal types**: Because `deepcopy` functions
+   are generated as methods on the types, they cannot be defined on the type aliases.
+   Instead, code referencing the internal types will transparently use the `deepcopy`
+   methods generated on the versioned types they alias.
 
-#### Step 2
+#### Step 2: Retire `__internal` registration
 
 Phase 2 retires the `__internal` registration for the resource and make the
 storage version the hub.
@@ -312,10 +319,12 @@ storage version the hub.
   versioned type.
 - Adjust the round-trip fuzz harness to work primarily off the new hub version
 
-#### Step 3
+### Potential Future Work: Remove internal type aliases entirely
 
-Delete the internal type after moving all handwritten validation and any custom
-functions off of the internal type.
+A potential future phase is to delete the internal type aliases entirely after
+moving all handwritten validation and any custom functions off of the internal type.
+This would require updating all references in the codebase to use the versioned types
+directly, which is a large-scale refactoring that is not part of this KEP.
 
 ### Test Plan
 
@@ -361,14 +370,10 @@ Phase 1:
 
 Phase 2:
 
-- We're committed to the migration, and the remaining structurally-identical and
-  will complete all remaining migration work over a 3-release window.
-
-Phase 3:
-
-- All built-in APIs use a versioned hub type.
-- Internal packages for migrated groups are deleted.
+- All built-in APIs are aliased to a versioned type and use it as the hub.
 - All new APIs use a versioned hub type by default.
+- We're committed to the migration, and will complete all remaining migration work
+  over a 3-release window.
 
 ### Upgrade / Downgrade Strategy
 
