@@ -943,13 +943,13 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Check which node the pod was scheduled to (`kubectl get pod <pod> -o wide`)
+    and verify it is the node with the most available storage capacity by running
+    `kubectl get csistoragecapacities -A`. By default, the VolumeBinding plugin
+    prefers the node with the most available capacity for dynamic provisioning.
+    This can be configured to prefer the node with the least available capacity
+    instead via the `Shape` setting in `VolumeBindingArgs`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
