@@ -203,8 +203,8 @@ Features/scenarios that we will not support:
   pods on a single node, meaning that it will not be able to free up devices that are allocated to claims
   referenced by pods spanning multiple nodes.
 * **ResourceClaims for PodGroups**: These claims are allocated to a PodGroup, meaning that all pods in the
-  group must be scheduled together. The default preemption algorithm does not consider the PodGroup at all,
-  so we will not allow preemption of pods that reference such claims.
+  group must be scheduled together. The dynamicresources plugin will not support preemption for
+  ResourceClaims allocated at the PodGroup level.
 
 
 ### Test Plan
@@ -313,7 +313,6 @@ scenarios will be handled by integration tests.
 
 #### Beta
 
-- Gather feedback
 - Additional tests are in Testgrid and linked in KEP
 
 #### GA
@@ -561,7 +560,7 @@ There are no SLOs for this feature.
 
 ## Implementation History
 
-1.33: first KEP revision and implementation directly to Beta
+1.37: first KEP revision and implementation directly to Beta
 
 ## Drawbacks
 
