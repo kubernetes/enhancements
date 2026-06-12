@@ -1,0 +1,9 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+reviewers:
+  - tallclair # sig-node-assigned-reviewer
+  - mrunalp
+
+approvers:
+  - dchen1107 # sig-node-assigned-approver
+  - derekwaynecarr

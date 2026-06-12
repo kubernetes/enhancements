@@ -1,0 +1,8 @@
+title: Mixed Case Fixture
+kep-number: 6
+owning-sig: sig-node
+status: implementable
+reviewers:
+  - "@TallClair" # sig-node-assigned-reviewer
+approvers:
+  - "@TALLCLAIR" # sig-node-assigned-approver

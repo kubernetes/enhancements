@@ -1,0 +1,10 @@
+title: Valid Fixture
+kep-number: 1
+owning-sig: sig-node
+status: implementable
+reviewers:
+  - "@mrunalp"
+  - "@tallclair" # sig-node-assigned-reviewer
+approvers:
+  - "@dchen1107" # sig-node-tl
+  - "@tallclair" # sig-node-assigned-approver
