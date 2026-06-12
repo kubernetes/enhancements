@@ -42,4 +42,9 @@ disable-supported: true
 
 # Metrics required for beta release; can be placeholders for now.
 metrics:
-  - dra_scheduling_attempts_affinity_mismatch_total
+  - sharing_affinity_locked_devices
+  - sharing_affinity_unreconstructable_devices
+  - sharing_affinity_extractor_evaluations_total
+  - sharing_affinity_lock_conflict_total
+  - sharing_affinity_no_keys_extracted_total
+  - sharing_affinity_compatible_reuse_total

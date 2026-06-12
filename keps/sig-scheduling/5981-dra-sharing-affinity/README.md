@@ -1922,19 +1922,19 @@ placement decisions, not on already-running pods.
 
 Each signal below names a metric trajectory and the condition under which rollback beats a forward fix.
 
-- `sharing_affinity_unknown_device_total` does not decay over an
+- `sharing_affinity_unreconstructable_devices` does not decay over an
   extended window (remains near its post-enablement peak after the
   expected workload-churn window). Indicates legacy in-use devices are not
   draining naturally and conservative handling will continue to
   suppress schedulable capacity indefinitely. Rollback restores
   permissive sharing for these devices; forward-fix has no lever.
-- `sharing_affinity_filter_mismatch_total` rises for claims that
+- `sharing_affinity_lock_conflict_total` rises for claims that
   operators expect to be compatible (cross-check against
   `sharing_affinity_compatible_reuse_total` staying flat). Indicates
   the driver's CEL extractor is producing incorrect keys and
   over-filtering legitimate placements. Rollback re-enables fungible
   sharing while the extractor is corrected and re-published.
-- `sharing_affinity_filter_missing_parameters_total` rises for
+- `sharing_affinity_no_keys_extracted_total` rises for
   workloads that previously placed successfully. Indicates
   extraction is silently dropping required parameters — typically
   claim opaque-config schema drift or extractor mis-targeting.
@@ -1974,10 +1974,26 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Operators can determine usage by inspecting `ResourceSlice` objects that
-declare `sharingAffinity` and by observing `ResourceClaim`s whose
-opaque configs yield non-empty keys under one of the declared
-extractors.
+Two signals, in order of cost-to-collect:
+
+1. **Metrics (recommended for fleet-scale visibility).**
+   - `sharing_affinity_locked_devices` reports how many devices the
+     scheduler currently has under affinity lock. Any non-zero value
+     confirms the feature is in active use in this cluster — the
+     primary fleet-adoption signal.
+   - A rising `sharing_affinity_extractor_evaluations_total` counter
+     indicates the scheduler is actively running CEL extraction against
+     published `sharingAffinity` slices, even if no locks have stuck yet.
+
+   Both metrics are defined in the
+   ["Are there any missing metrics..."](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
+   section below.
+
+2. **Object inspection (single-cluster diagnosis).** `ResourceSlice` objects
+   that declare `sharingAffinity` show driver-side opt-in; `ResourceClaim`s
+   whose opaque configs yield non-empty keys under one of the declared
+   extractors show workload-side participation. Useful for diagnosing a
+   specific cluster, but not for fleet observability.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -2016,12 +2032,17 @@ Useful SLIs include:
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-This feature would benefit from scheduler-observable counters and/or events for:
+This feature would benefit from scheduler-observable counters, gauges, and/or events for:
 
-- `sharing_affinity_filter_mismatch_total` — claims rejected because the device's locked affinity values differ from the claim's extracted keys.
-- `sharing_affinity_filter_missing_parameters_total` — claims rejected because extraction yielded no non-empty keys.
-- `sharing_affinity_unknown_device_total` — devices in conservative quarantine because lock state cannot be reconstructed (legacy claims).
-- `sharing_affinity_compatible_reuse_total` — successful placements onto an already-locked device whose affinity values matched (the intended-benefit counter).
+- `sharing_affinity_locked_devices` — number of devices currently holding at least one active affinity lock. The primary "feature in active use" signal: non-zero means the scheduler is actively maintaining affinity constraints in this cluster.
+- `sharing_affinity_unreconstructable_devices` — number of devices currently in conservative quarantine because their lock state cannot be reconstructed (legacy active claims, or extractors that no longer produce keys for those claims). If paired with `sharing_affinity_locked_devices`, they describe the cluster's current device-state distribution under the feature.
+- `sharing_affinity_extractor_evaluations_total` — total CEL extractor evaluations the scheduler has performed. Useful as a "feature is being exercised" signal independent of placement outcomes. If this is rising but `sharing_affinity_locked_devices` stays at zero, the scheduler is evaluating extractors but no new locks are being established. Common causes, distinguishable by inspecting the other metrics in this list:
+  - candidate devices are unreconstructable (`sharing_affinity_unreconstructable_devices > 0`) — legacy claims have not drained yet,
+  - extractors do not match the claims' opaque-config schemas (`sharing_affinity_no_keys_extracted_total` rising) — driver configuration or claim-template issue,
+  - lock conflicts are blocking placements (`sharing_affinity_lock_conflict_total` rising) — competing claims with incompatible affinity values.
+- `sharing_affinity_lock_conflict_total` — candidate devices filtered out during Filter because the device's existing affinity lock is incompatible with the claim's extracted keys. This is the "feature is gating incompatible placements as designed" signal — non-zero is expected and healthy; the rate scales with claim diversity, not feature health.
+- `sharing_affinity_no_keys_extracted_total` — candidate devices filtered out during Filter because the slice's extractors produced an empty effective affinity-key map for the claim. The adoption-gap signal: a high ratio of `no_keys_extracted_total / extractor_evaluations_total` means the feature is wired up but workloads aren't engaging. Settles low in mature clusters; drops over time as workload teams update ClaimTemplates during rollout.
+- `sharing_affinity_compatible_reuse_total` — successful placements onto an already-locked device whose affinity values matched. It can stay zero when the feature is in use but the scheduler picks a different device for scoring reasons (spread, topology preference). Use `sharing_affinity_locked_devices` as the in-use indicator and `sharing_affinity_compatible_reuse_total` as the "preference is delivering value" indicator.
 
 Counters above give cluster-wide visibility; individual pods that fail to schedule also need a clear per-pod reason. The scheduler should surface a specific diagnostic on the pod's `PodScheduled=False` condition (and corresponding scheduling event) whenever an affinity check rejects a device, so the workload owner can tell *why* their pod is stuck. For example:
 
