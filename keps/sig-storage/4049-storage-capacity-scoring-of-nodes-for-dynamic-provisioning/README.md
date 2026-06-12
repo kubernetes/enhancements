@@ -1080,7 +1080,16 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Yes, it may affect the time taken by scheduling.
+Yes, it may affect the time taken by scheduling, but the impact is negligible.
+
+The additional overhead introduced by this KEP is limited to arithmetic
+calculations in the Score phase: iterating over `DynamicProvisions` per node
+and summing the requested and available capacity values. This is equivalent in
+complexity to the existing static provisioning scoring. Importantly, the
+`CSIStorageCapacity` objects are already fetched and cached during the Filter
+phase, so no additional API calls or I/O occur during scoring. The SLO for
+`plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}`
+is therefore the same as established by KEP-1845 (<= 100ms on 90-percentile).
 
 <!--
 Look at the [existing SLIs/SLOs].
