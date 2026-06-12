@@ -141,7 +141,7 @@ We propose adding boolean fields `SkipNodePrepare` and `SkipNodeUnprepare` to
    true` and/or `SkipNodeUnprepare: true` in `ResourceSlice` resources if the
    published devices do not require node-local setup or cleanup.
 2. **API Validation**: To prevent pods from getting stuck during termination, we enforce a
-   validation rule: **If `SkipNodeUnprepare` is `false/nil`, `SkipNodePrepare` must
+   validation rule: **If `SkipNodeUnprepare` is `false` or `nil`, `SkipNodePrepare` must
    not be `true`**. The combination of skipping preparation but requiring
    unpreparation (`SkipNodePrepare: true` and `SkipNodeUnprepare: false/nil`) is
    invalid and will be rejected. This configuration is fragile because the kubelet
@@ -229,11 +229,13 @@ this architectural difference.
        ...
        // SkipNodePrepare indicates that node-local resource preparation (NodePrepareResources gRPC)
        // is not required for the devices in this slice. Defaults to nil (false).
+       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
        // +optional
        SkipNodePrepare *bool `json:"skipNodePrepare,omitempty" protobuf:"varint,5,opt,name=skipNodePrepare"`
 
        // SkipNodeUnprepare indicates that node-local resource cleanup (NodeUnprepareResources gRPC)
        // is not required for the devices in this slice. Defaults to nil (false).
+       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
        // +optional
        SkipNodeUnprepare *bool `json:"skipNodeUnprepare,omitempty" protobuf:"varint,6,opt,name=skipNodeUnprepare"`
    }
@@ -245,11 +247,13 @@ this architectural difference.
        ...
        // SkipNodePrepare indicates that node-local preparation is not required for this allocated device.
        // Typically copied from the corresponding ResourceSliceSpec by the allocator/scheduler. Defaults to nil (false).
+       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
        // +optional
        SkipNodePrepare *bool `json:"skipNodePrepare,omitempty" protobuf:"varint,6,opt,name=skipNodePrepare"`
 
        // SkipNodeUnprepare indicates that node-local cleanup is not required for this allocated device.
        // Typically copied from the corresponding ResourceSliceSpec by the allocator/scheduler. Defaults to nil (false).
+       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
        // +optional
        SkipNodeUnprepare *bool `json:"skipNodeUnprepare,omitempty" protobuf:"varint,7,opt,name=skipNodeUnprepare"`
    }
@@ -259,21 +263,22 @@ this architectural difference.
 
 The API server enforces the following co-dependency validation rule on both
 `ResourceSlice` and `ResourceClaim` (via its status):
-*   **Co-dependency Validation**: If `SkipNodePrepare` is `true`,
-    `SkipNodeUnprepare` **must** be `true`.
-    *   If `SkipNodePrepare` is `true` and `SkipNodeUnprepare` is `false` (or
-        `nil`/omitted), the resource is **rejected** with a validation error
-        (e.g., `forbidden: skipNodePrepare cannot be true when skipNodeUnprepare
-        is false`).
-    *   This ensures we fail early and prevent workloads from entering a state
-        where they cannot terminate.
+*   **Co-dependency Validation**: If `SkipNodeUnprepare` is `false` or `nil`,
+   `SkipNodePrepare` **must not** be `true`.
+    *   If `SkipNodeUnprepare` is `false` (or `nil`/omitted) and
+        `SkipNodePrepare` is `true`, the resource is **rejected** with a
+        validation error (e.g., `forbidden: skipNodePrepare cannot be true when
+        skipNodeUnprepare is false`).
+    *   **Rationale**: If `SkipNodePrepare` is `true` but `SkipNodeUnprepare` is `false` or `nil`,
+        the kubelet would skip preparation but still attempt to call `NodeUnprepareResources` during
+        pod termination. If the node-local daemon is not running (since preparation was skipped),
+        the cleanup call will fail, causing the pod to get stuck in the `Terminating` state.
 
-To ensure fail-fast feedback and prevent workloads from entering a broken state,
-the `kube-apiserver` validates the new fields against the state of the
-`DRAOptionalNodePreparation` feature gate.
-
-To support safe cluster rollbacks and downgrades, the API server implements
-**Ratcheting Validation** (in accordance with the [Kubernetes API Changes
+Beyond co-dependency checks, the `kube-apiserver` validates the new fields against the
+state of the `DRAOptionalNodePreparation` feature gate to prevent workloads from
+entering a broken state. To support safe cluster rollbacks and downgrades, this
+feature gate enforcement is implemented using **Ratcheting Validation** (in
+accordance with the [Kubernetes API Changes
 Guide](https://github.com/kubernetes/community/blob/main/contributors/devel/sig-architecture/api_changes.md#ratcheting-validation)):
 
 * **When the feature gate is disabled**:
@@ -366,8 +371,8 @@ None.
     are correctly propagated to `AllocationResult` (covering combinations of
     true, false, and omitted cases).
 - **Kubelet DRA Manager Unit Tests**: In `pkg/kubelet/cm/dra/manager_test.go`:
-  - Mock claims with all combinations of `SkipNodePrepare` and
-    `SkipNodeUnprepare` (true/true, true/false, false/true, false/false).
+  - Mock claims with all valid combinations of `SkipNodePrepare` and
+    `SkipNodeUnprepare` (true/true, false/true, false/false).
   - Assert that `prepareResources` and `unprepareResources` behave accordingly:
     - If `SkipNodePrepare` is `true`, `prepareResources` bypasses the plugin
       manager and succeeds immediately.
@@ -537,7 +542,7 @@ upgrade or downgrade/rollback of the feature gate.
 
 ### Version Skew Strategy
 
-- **Older kubelet (N-1) / Upgraded Control Plane (N)**:
+- **Older kubelet (N-1 and older) / Upgraded Control Plane (N)**:
   - If the control plane is upgraded and generates allocations with
     `SkipNodePrepare: true` or `SkipNodeUnprepare: true`, but a worker node is
     running an older kubelet, the older kubelet will ignore these fields and
@@ -553,7 +558,7 @@ upgrade or downgrade/rollback of the feature gate.
     - Deploy a temporary, minimal "no-op" node driver component on the older
       worker nodes to satisfy the older kubelet's gRPC preparation calls with
       success responses until those nodes are upgraded.
-- **Upgraded kubelet (N) / Older Control Plane (N-1)**:
+- **Upgraded kubelet (N) / Older Control Plane (N-1 and older)**:
   - If the control plane has not been upgraded yet, any new allocations will not
     have `SkipNodePrepare` or `SkipNodeUnprepare` set in the status.
   - An upgraded kubelet (N) will read the absent fields and default to `false`
