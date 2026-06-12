@@ -258,7 +258,7 @@ For completeness here is a complete list of open PDB issues. Most are relevant t
 
 ### Goals
 
-- Introduce new EvictionRequest and Eviction APIs (`evictionrequest.coordination.k8s.io`) and
+- Introduce new EvictionRequest and Eviction APIs (`evictionrequest.lifecycle.k8s.io`) and
   eviction request controller.
 - Allow the Eviction API to be extended with a set of responders for each pod.
 - Use API-initiated Eviction API of pods that support the eviction request process, only if there
@@ -558,10 +558,13 @@ To mitigate the sudden eviction problem, users should use PodDisruptionBudgets o
 
 ### EvictionRequest
 
-We will introduce `evictionrequest.coordination.k8s.io` and `eviction.coordination.k8s.io` types to
+We will introduce `evictionrequest.lifecycle.k8s.io` and `eviction.lifecycle.k8s.io` types to
 enforce the contract between the eviction requesters and the responders. This type is a bit similar
 to `leases.coordination.k8s.io` in that it requires multiple actors to synchronize the state. Which
-in our case is the progress of the eviction.
+in our case is the progress of the eviction. The coordination group is not being reused for these
+new types, because it should only contain coordination primitives for generic apiservers. And even
+though PDBs are in the policy group, evictions are ephemeral and do not adhere properly to being a
+policy. Therefore, we will introduce a new lifecycle group.
 
 ### Eviction Requester
 [Eviction Requester](#eviction-requester) section provides a general overview.
@@ -1843,8 +1846,6 @@ extending the production code to implement this enhancement.
 -->
 
 - `pkg/apis/core/validation`: `2026-02-06` - `85.3%`
-- `pkg/apis/coordination/validation`: `2026-02-06` - `97.1%`
-- `pkg/registry/coordination`: `2026-02-06` - `N/A`
 - `pkg/controller`: `2026-02-06` - `71.9%`
 
 
@@ -2376,7 +2377,7 @@ There are multiple issues with this approach:
 
 We could support annotations in the Pod object that encode the `.spec.evictionResponders`
 information. For example, the value could be stored as
-`responder.evictionrequest.coordination.k8s.io/priority_${RESPONDER_NAME}: ${PRIORITY}/${ROLE}`.
+`responder.evictionrequest.lifecycle.k8s.io/priority_${RESPONDER_NAME}: ${PRIORITY}/${ROLE}`.
 
 This was originally considered because it does not require changes to the Pod API. Unfortunately,
 there are major drawbacks:
