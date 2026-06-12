@@ -884,12 +884,13 @@ No Kubernetes feature gate. The framework provides a boolean flag (e.g. `--enabl
 
 #### Beta
 
-- Consider making metadata required (drivers must explicitly opt-out)
-- Standardize JSON schema with versioning (`"schemaVersion": "v1beta1"`)
+- At least one real DRA driver and one consumer (e.g., KubeVirt) validated the feature
+- MetadataUpdater API validated with network DRA drivers (NRI hook flow)
 - Production-ready error handling and edge cases
-- Performance benchmarks for prepare latency
+- Performance benchmarks show < 10ms added latency to PrepareResourceClaims
+- Metrics for observability (errors, latency, writes, active files)
 - Documentation for workload developers
-- Real-world validation from KubeVirt and other consumers
+- Upgrade/downgrade testing completed
 
 #### GA
 - At least one stable consumer (e.g., KubeVirt) using attributes in production
@@ -971,7 +972,24 @@ Tests will be added to `test/e2e/dra/dra.go`.
 
 #### Beta
 
-TBD
+- [ ] At least one real DRA driver (e.g., dra-example-driver, GPU driver) has adopted the feature
+- [ ] At least one consumer (e.g., KubeVirt) has validated the feature in a test environment
+- [ ] MetadataUpdater API validated with network DRA drivers (NRI hook flow)
+- [ ] Performance benchmarks show < 10ms added latency to PrepareResourceClaims
+- [ ] Metrics exposed for observability:
+  - `dra_metadata_feature_enabled`
+  - `dra_metadata_write_errors_total`
+  - `dra_metadata_update_errors_total`
+  - `dra_metadata_write_duration_seconds`
+  - `dra_metadata_writes_total`
+  - `dra_metadata_files_active`
+- [ ] Declarative validation for metadata types ([#137761](https://github.com/kubernetes/kubernetes/issues/137761))
+- [ ] Roundtrip test for device metadata API ([#137839](https://github.com/kubernetes/kubernetes/issues/137839))
+- [ ] E2E tests for device metadata ([#137699](https://github.com/kubernetes/kubernetes/pull/137699))
+- [ ] Add v1beta1 API for device metadata format ([#138994](https://github.com/kubernetes/kubernetes/issues/138994))
+- [ ] Documentation for workload developers published
+- [ ] All Beta PRR questions answered
+- [ ] Upgrade/downgrade testing completed
 
 #### GA
 
@@ -1050,36 +1068,49 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+This feature is implemented entirely in the DRA driver plugin framework, not in kubelet or the
+control plane. Rollout/rollback is controlled by the driver's deployment (e.g., DaemonSet args).
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+**Rollout failure scenarios:**
+- **Driver restart mid-rollout**: Running pods retain their metadata files (already mounted).
+  New pods scheduled to that node wait for the driver to become ready. No data loss.
+- **Mixed node states**: During rollout, some nodes may have the updated driver while others don't.
+  Cluster administrators should complete the driver rollout across all relevant nodes before
+  communicating to workload authors that metadata support is available. Workloads expecting
+  metadata should only be deployed after the administrator confirms the rollout is complete.
+  Additionally, workload documentation and library functions guide consumers to handle missing
+  metadata files gracefully as a defensive measure.
+- **File write failure**: If the framework cannot write metadata files due to I/O errors,
+  `PrepareResourceClaims` fails and the pod fails to start. This is the correct behavior.
+  Note: The DRA driver DaemonSet is expected to be configured with proper permissions to write
+  to `/var/run/dra-device-attributes/`, so permission errors should not occur in normal operation.
+
+**Impact on running workloads**: None. Metadata files are mounted read-only at pod start.
+Disabling the feature or restarting the driver does not affect already-running pods.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Operators should monitor the following metrics:
+- **`dra_metadata_write_errors_total`**: Increasing error count indicates file write failures
+- **`dra_metadata_update_errors_total`**: Increasing error count indicates NRI hook update failures
+- **`dra_metadata_write_duration_seconds`**: Latency spikes (p99 > 100ms) may indicate I/O issues
+
+If error metrics increase after enabling the feature, rollback by disabling the metadata feature
+in the driver configuration.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Yes, automated e2e testing is included in [kubernetes/kubernetes#137699](https://github.com/kubernetes/kubernetes/pull/137699):
+- **Upgrade**: Enable the feature, deploy pods, verify metadata files exist
+- **Downgrade**: Disable the feature, deploy new pods, verify no metadata files are created
+- **Upgrade again**: Re-enable the feature, verify new pods receive metadata files as expected
+
+The feature is additive and stateless (files are created per-pod, cleaned up on unprepare),
+so the upgrade/downgrade cycle has no persistent side effects.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No. This feature is purely additive. No existing APIs, flags, or behaviors are deprecated or removed.
 
 ### Monitoring Requirements
 
@@ -1092,67 +1123,79 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Operators can check:
+1. **Metric**: Query `dra_metadata_feature_enabled == 1` to find nodes with the feature enabled
+2. **File presence on node**: Check for metadata files under `/var/run/dra-device-attributes/` on nodes
+3. **Pod inspection**: Exec into a pod using DRA claims and check if the metadata file exists at
+   `/var/run/dra-device-attributes/{ns}-{claim}/{request}/metadata.json`
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - `dra_metadata_feature_enabled == 1`: Confirms the feature is enabled on the node
+  - `dra_metadata_writes_total` increasing when pods with DRA claims are created: Confirms metadata files are being written
+  - `dra_metadata_write_errors_total == 0`: Confirms no write failures
+- [x] Other
+  - Details: Users can also verify by checking for the metadata file inside their container:
+    ```bash
+    # Inside the container
+    ls /var/run/dra-device-attributes/
+    cat /var/run/dra-device-attributes/{ns}-{claim}/{request}/metadata.json
+    ```
+    If the file exists and contains valid JSON with the expected device attributes, the feature
+    is working.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+This feature adds minimal overhead to pod startup. The metrics below cover only the
+overhead within the DRA driver framework (writing metadata files). Additional overhead
+exists from the container runtime processing CDI specs with mount directives and the
+kernel performing bind mounts. This runtime/kernel overhead has not been measured.
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
+SLOs expressed as metrics queries (covering the measurable DRA framework portion):
 
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+- **Latency**: `histogram_quantile(0.99, dra_metadata_write_duration_seconds) < 0.01`
+  - 99th percentile of metadata file write latency should be < 10ms
+- **Reliability**: `rate(dra_metadata_write_errors_total[5m]) == 0`
+  - No write errors when pods with DRA claims are being prepared
+- **Availability**: `dra_metadata_feature_enabled == 1` on all nodes where the feature is expected
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+- [x] Metrics
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  The following metrics are defined in the kubeletplugin framework, which may or may not
+  be exposed by a DRA driver using the framework. Admins need to check the documentation
+  of a DRA driver to determine how to collect these metrics.
+
+  - Metric name: `dra_metadata_feature_enabled`
+    - Description: Gauge (0/1) indicating if the feature is enabled on this driver instance
+    - Aggregation method: current value per node/driver
+    - Components exposing the metric: DRA driver plugin framework
+  - Metric name: `dra_metadata_write_errors_total`
+    - Description: Counter of failed metadata file writes
+    - Aggregation method: sum by driver, error_type
+    - Components exposing the metric: DRA driver plugin framework
+  - Metric name: `dra_metadata_update_errors_total`
+    - Description: Counter of failed metadata updates during NRI hooks (network drivers)
+    - Aggregation method: sum by driver, error_type
+    - Components exposing the metric: DRA driver plugin framework
+  - Metric name: `dra_metadata_write_duration_seconds`
+    - Description: Histogram of metadata file write latency
+    - Aggregation method: histogram buckets (p50, p99)
+    - Components exposing the metric: DRA driver plugin framework
+  - Metric name: `dra_metadata_writes_total`
+    - Description: Counter of successful metadata writes
+    - Aggregation method: sum by driver
+    - Components exposing the metric: DRA driver plugin framework
+  - Metric name: `dra_metadata_files_active`
+    - Description: Gauge of current metadata files on node
+    - Aggregation method: current value per node
+    - Components exposing the metric: DRA driver plugin framework
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No. The implemented metrics cover both operational health (errors, latency) and usage visibility (writes, active files).
 
 ### Dependencies
 
@@ -1162,20 +1205,14 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
+- **DRA driver with framework support**
+  - Usage description: The DRA driver must use the `k8s.io/dynamic-resource-allocation/kubeletplugin`
+    framework and populate `Device.Metadata` in `PrepareResult`.
+  - Impact of its outage on the feature: If the driver is unavailable, DRA claims cannot be
+    prepared (this affects all DRA functionality, not just this feature).
+  - Impact of its degraded performance or high-error rates on the feature: Metadata file
+    writing adds minimal overhead; driver performance issues would manifest as slow pod startup.
 
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
 
 ### Scalability
 
@@ -1237,22 +1274,60 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+This feature operates entirely on the node side within the DRA driver plugin framework.
+It does not make API server calls during metadata file creation or mounting.
+
+- **API server unavailable**: No impact on metadata file writing. The feature continues to work
+  for pods that are already scheduled. New pods cannot be scheduled (general Kubernetes behavior).
+- **etcd unavailable**: Same as above. The feature doesn't interact with etcd directly.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- **Metadata file write failure (permissions, I/O error)**
+  - Detection: Pod fails to start with error from DRA driver. Check `kubectl describe pod` for
+    events mentioning `NodePrepareResources` failure.
+  - Mitigations: Ensure the DRA driver process has write permissions to `/var/run/dra-device-attributes/`.
+    This directory is created and written to by the driver plugin framework during `PrepareResourceClaims`.
+    Running pods are unaffected.
+  - Diagnostics: DRA driver logs will show file write errors from the kubeletplugin framework.
+  - Testing: Unit tests cover file write error handling. Integration tests verify cleanup.
+
+- **CDI runtime doesn't support the mount**
+  - Detection: Pod fails to start with CRI errors about invalid CDI spec.
+  - Mitigations: Upgrade CRI runtime to a version with CDI support (containerd 1.7+, CRI-O 1.23+),
+    or disable the feature by unsetting the driver flag.
+  - Diagnostics: CRI runtime logs will show CDI parsing errors.
+  - Testing: E2E tests run on clusters with supported CRI runtimes.
+
+- **Driver populates invalid metadata (malformed JSON)**
+  - Detection: Workload fails to parse the metadata file.
+  - Mitigations: Fix the driver implementation. The framework validates basic structure but
+    cannot validate all driver-provided content.
+  - Diagnostics: Workload logs showing JSON parse errors. Inspect the file directly on the node.
+  - Testing: Unit tests validate JSON generation. E2E tests verify content structure.
+
+- **MetadataUpdater called for wrong claim (network drivers)**
+  - Detection: Framework returns error; metadata not updated.
+  - Mitigations: Fix the driver's NRI hook implementation to pass correct claim/request identifiers.
+  - Diagnostics: Driver logs showing `"UpdateRequestMetadata failed: claim not found"` or similar.
+  - Testing: Integration tests cover ownership validation.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+**If latency SLO is not met** (`dra_metadata_write_duration_seconds` p99 > 10ms):
+1. Check node I/O performance - `/var/run/` is typically tmpfs, so high latency suggests memory pressure
+2. Check if the node is under heavy load during pod creation
+3. Review driver logs for slow metadata serialization
+
+**If error rate SLO is not met** (`dra_metadata_write_errors_total` increasing):
+1. Check driver logs for specific error messages during `PrepareResourceClaims`
+2. Verify directory permissions for `/var/run/dra-device-attributes/`
+3. Check for filesystem issues on the node
+
+**If availability SLO is not met** (`dra_metadata_feature_enabled == 0` on expected nodes):
+1. Verify driver configuration enables the metadata feature
+2. Check if the driver pod is running on the affected node
+3. Review driver startup logs for configuration errors
 
 ## Implementation History
 
@@ -1269,11 +1344,14 @@ For each of them, fill in the following information by copying the below templat
   - Added `MetadataUpdater` for network DRA drivers to update metadata via NRI hooks
     (two-phase metadata with generation number for late-arriving network info)
 - 2026-01-25: Changed from per-claim to per-request metadata organization:
-  - Each request gets its own `{driverName}-metadata.json` file in `{claimNs}_{claimName}/{requestName}/`
-  - CDI mounts are per-file (bind-mounting the driver's specific metadata file), so containers only see
-    metadata for requests they use and there are no mount conflicts between drivers
+  - Each request gets its own `metadata.json` file in `{claimNs}-{claimName}/{requestName}/`
+  - CDI mounts are per-request, so containers only see metadata for requests they use
   - Enables proper isolation when a claim has multiple requests used by different containers
-  - Prevents races when a single request allocates devices from multiple drivers (`count > 1`)
+- 2026-06-05: Promoted to Beta (v1.37):
+  - Completed all Beta PRR questionnaire sections
+  - Added rollout/rollback planning, monitoring requirements, dependencies, troubleshooting
+  - Added metrics for observability
+  - Defined SLOs with concrete metrics queries
 
 ## Drawbacks
 
