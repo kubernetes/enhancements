@@ -423,17 +423,81 @@ driver based on the individual skip flags, allowing mixed-mode execution.
     - Delete the Pod.
     - Assert that the driver's `NodeUnprepareResources` was **not** called.
 
+###### Scenario 3: Upgrade / Downgrade and Feature Gate Rollback
+This scenario validates that the system behaves correctly during a rolling
+upgrade or downgrade/rollback of the feature gate.
+
+- **Test Case 3.1: Rolling Upgrade (N-1 to N)**:
+  - **Setup**: Start with a cluster running version N-1 (feature gate disabled).
+    Deploy a DRA driver.
+  - **Action 1 (Control Plane Upgrade)**: Upgrade the control plane to version N
+    (feature gate enabled).
+    - **Assertions**:
+      - If we deploy a new workload using a control-plane-only driver (no
+        node-local components):
+        - The Pod gets stuck in `ContainerCreating` on the N-1 kubelet, as the
+          N-1 kubelet attempts to contact the non-existent node-local driver.
+  - **Action 2 (Kubelet Upgrade)**: Upgrade the kubelets to version N.
+    - **Assertions**:
+      - Verify that the control-plane-only workload (which was stuck in
+        `ContainerCreating`) now successfully bypasses node preparation,
+        transitions to `Running`, and runs successfully.
+      - Verify that deleting the control-plane-only workload completes
+        immediately without trying to contact a node-local driver.
+- **Test Case 3.2: Feature Gate Rollback / Downgrade (N to N-1)**:
+  - **Setup**: Start with a cluster running version N (feature gate enabled).
+    Deploy a standard DRA driver and a workload using `SkipNodePrepare: true`
+    and `SkipNodeUnprepare: true`.
+  - **Action 1 (Control Plane Downgrade)**: Downgrade the control plane to N-1
+    (feature gate disabled).
+    - **Assertions**:
+      - The API server's ratcheting validation allows the existing
+        `ResourceSlice` objects to remain valid and not be rejected on unrelated
+        updates.
+      - The running workload on the N kubelet continues to run without
+        interruption.
+  - **Action 2 (Kubelet Downgrade)**: Downgrade the kubelets to N-1 (feature
+    gate disabled).
+    - **Assertions**:
+      - Verify that the kubelet behaves according to the
+        [Disabled Feature Gate Behavior](#disabled-feature-gate-behavior) section
+        upon workload deletion.
+- **Test Case 3.3: Upgrade -> Downgrade -> Upgrade (N-1 -> N -> N-1 -> N)**:
+  - **Setup**: Start with a cluster running version N-1 (feature gate disabled).
+    Deploy a standard DRA driver.
+  - **Action 1 (Upgrade)**: Upgrade the cluster to version N (feature gate
+    enabled).
+    - Deploy a workload using a driver configured with `SkipNodePrepare: true`
+      and `SkipNodeUnprepare: true`.
+    - Assert that the workload runs successfully.
+  - **Action 2 (Downgrade)**: Downgrade the cluster to version N-1 (feature gate
+    disabled).
+    - **Assertions**:
+      - Assert that the API server's ratcheting validation allows the existing
+        `ResourceSlice` (which has `SkipNodePrepare: true` and `SkipNodeUnprepare:
+        true`) to remain valid and unmodified.
+      - Delete the workload and verify that the kubelet behaves according to the
+        [Disabled Feature Gate Behavior](#disabled-feature-gate-behavior) section.
+  - **Action 3 (Upgrade Again)**: Upgrade the cluster back to version N (feature
+    gate enabled).
+    - Deploy a new workload using the same driver.
+    - Assert that the new fields are respected, and the workload runs
+      successfully.
+    - Assert that any pre-existing resource slices that survived the downgrade
+      cycle continue to function correctly with the re-enabled feature gate.
+
 ### Graduation Criteria
 
 #### Alpha
 
 - Feature implemented behind the `DRAOptionalNodePreparation` feature flag (off
   by default).
-- Full unit, integration, and E2E test suites implemented and green.
+- Full unit and basic E2E test suites (Scenario 1 & 2) implemented and green.
 
 #### Beta
 
 - Enable the feature gate by default.
+- E2E upgrade/downgrade and rollback test suites (Scenario 3) implemented and green.
 - Gather real-world feedback from developers and vendors deploying
   controller-managed DRA drivers.
 - Ensure no regressions or performance issues are observed in large clusters.
@@ -589,7 +653,10 @@ is attempting node preparation and blocking/failing due to missing node drivers.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-To be completed at Beta stage.
+This will be tested as part of the Beta graduation criteria using the
+upgrade/downgrade E2E test plan. See [Scenario 3: Upgrade / Downgrade and
+Feature Gate Rollback](#scenario-3-upgrade--downgrade-and-feature-gate-rollback)
+in the Test Plan for the detailed test cases.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
