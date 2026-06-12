@@ -826,7 +826,23 @@ Re-enabling the feature from a rolled-back state will result in scheduling that 
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. We will add unit tests with and without the feature gate enabled.
+Yes. The unit tests in `TestVolumeBinding` cover both cases:
+
+- Feature gate enabled
+  (`fts: feature.Features{EnableStorageCapacityScoring: true}`):
+  the scoring tests listed in the [Unit tests](#unit-tests) section
+  above (e.g., [`TestVolumeBinding/storage_capacity_score`][scoring-test])
+  verify that dynamic provisioning scoring based on
+  `CSIStorageCapacity` works correctly.
+- Feature gate disabled (no `fts` field, defaulting to `false`):
+  test cases such as
+  [`TestVolumeBinding/unbound_claims_no_matches`][no-match-test]
+  verify that when the feature gate is disabled, `PreScore` returns
+  `Skip` for dynamic-provisioning-only scenarios, meaning behavior
+  reverts to static provisioning scoring only.
+
+[scoring-test]: https://github.com/kubernetes/kubernetes/blob/c2e3492837be213a2ffc143bb81588d20df91247/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L738
+[no-match-test]: https://github.com/kubernetes/kubernetes/blob/c2e3492837be213a2ffc143bb81588d20df91247/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L198
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
