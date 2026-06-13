@@ -364,7 +364,7 @@ None — this adds a new attribute and helper functions, does not modify existin
 
 #### e2e tests
 
-- End-to-end test using the in-tree DRA test driver (`test/e2e/dra/test-driver`) configured to publish `resource.kubernetes.io/numaNode` across multiple devices, with a ResourceClaim that uses `matchAttribute: resource.kubernetes.io/numaNode` across them. CI cannot run real vendor DRA drivers, so the in-tree test driver provides the automated coverage; adoption by real out-of-tree drivers is the complementary real-world validation, tracked separately rather than in CI.
+N/A. The in-tree DRA test driver has no real devices, so any NUMA values it published would be artificial; such a test would only exercise "a driver can publish an attribute," which existing DRA tests already cover. The meaningful coverage is the unit tests for the SLIT-based helpers and the integration tests for `matchAttribute` intersection above. Real out-of-tree driver adoption is the complementary real-world validation, tracked outside CI.
 
 ### Graduation Criteria
 
