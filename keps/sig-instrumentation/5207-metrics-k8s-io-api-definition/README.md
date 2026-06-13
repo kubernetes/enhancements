@@ -10,6 +10,9 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -32,18 +35,18 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -75,7 +78,12 @@ Given the API's long track record and unchanged schema, graduating to stable is 
 
 - Introduce `v1` version of the API that differs from `v1beta1` in any way,
   except naming.
-- Drop support for any of the existing `v1beta1` version(s).
+- Drop support for the existing `v1beta1` version as part of this graduation.
+  `v1beta1` continues to be served alongside `v1`; it will be deprecated once
+  `v1` is GA and removed later following the
+  [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/)
+  (a deprecated beta API version is supported for at least 3 releases / 9
+  months before removal).
 
 ## Proposal
 
@@ -89,8 +97,8 @@ The former will more or less be a cosmetic change, essentially bumping
 with the only difference being the version name itself.
 
 The latter will focus on utilizing the stable version in the
-`metrics.k8s.io`'s client, as well as `pkg/controller/podautoscaler`,
-which is currently on the latest beta version.
+`metrics.k8s.io`'s client, as well as `pkg/controller/podautoscaler` and
+`kubectl top`, which are currently on the latest beta version.
 
 ### Risks and Mitigations
 
@@ -109,18 +117,22 @@ all requests from the requester towards that `GroupVersion`. Note that while the
 APIServer will promote or fallback between versions that support conversions,
 that is not the case within the aggregation layer.
 
-Now, let's consider the different scenarios that can arise from varying
-configurations of the two:
+Both `v1.metrics.k8s.io` and `v1beta1.metrics.k8s.io` APIServices can be
+registered at the same time. A request is served only if an APIService is
+registered and available for the exact version requested; otherwise that
+request gets `404 NotFound`, while requests to other registered versions are
+unaffected. The metric server's internal type-definition version has no
+effect, since the `v1` and `v1beta1` surfaces are identical.
 
-| Requester's `metrics.k8s.io` client version | APIService's `GroupVersion` | Metric Server's `k8s.io/metrics/pkg/apis/metrics` type definitions' version | Working version       |
-| -------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------- | --------------------- |
-| Beta                                               | Stable                      | No effect (as both API surfaces are interchangeable)                         | 404 for client's verb |
-| Stable                                             | Beta                        | No effect (as both API surfaces are interchangeable)                         | 404 for client's verb |
-| Stable                                             | Stable                      | No effect (as both API surfaces are interchangeable)                         | Stable                |
-| Beta                                               | Beta                        | No effect (as both API surfaces are interchangeable)                         | Beta                  |
+| Registered APIServices | `v1` client request | `v1beta1` client request |
+| --- | --- | --- |
+| `v1beta1` only (before upgrade) | `404 NotFound` | Served |
+| `v1` + `v1beta1` (during migration) | Served | Served |
+| `v1` only (after `v1beta1` removed) | Served | `404 NotFound` |
 
-Therefore, users need to ensure that the same version is being used between the
-requester and the metric-server in order for the migration to be successful.
+In practice, the in-tree consumers avoid the `404` case by negotiating the
+served version through discovery and falling back to `v1beta1` when `v1` is
+not yet available.
 
 ## Design Details
 
@@ -176,6 +188,54 @@ to implement this enhancement.
 Since the change only encompasses the API surface which remains unchanged
 going into stable, we believe that the existing testing should suffice.
 
+Note that `metrics.k8s.io` is not eligible for conformance coverage: the API
+is served through the aggregation layer by an optional addon (e.g.,
+metrics-server), and [conformance tests cannot depend on optional features](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md#conformance-test-requirements).
+This is the same reason the HPA endpoints were
+[marked ineligible for conformance](https://github.com/kubernetes/kubernetes/pull/107349).
+The conformance-related items in the checklist above are therefore left
+unchecked.
+
+##### Unit tests
+
+The API types and the generated clients live in the `k8s.io/metrics` staging
+repository. As part of this KEP, the existing tests are extended to cover the
+new `v1` version:
+
+- [`k8s.io/metrics/pkg/apis/roundtrip_test.go`](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/metrics/pkg/apis/roundtrip_test.go):
+  round-trip testing of the `metrics.k8s.io` API types across all served
+  versions.
+- [`k8s.io/metrics/pkg/client/clientset_test`](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/metrics/pkg/client/clientset_test/clientset_test.go):
+  clientset wiring for all served versions.
+
+The in-tree consumers are unit-tested against fakes of the metrics client,
+and will be exercised with `v1` once they are migrated:
+
+- [`k8s.io/kubectl/pkg/cmd/top`](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/kubectl/pkg/cmd/top):
+  `kubectl top node` / `kubectl top pod`.
+- [`k8s.io/kubernetes/pkg/controller/podautoscaler/metrics`](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podautoscaler/metrics/client_test.go):
+  the HPA controller's resource metrics client.
+
+##### Integration tests
+
+- [`test/integration/podautoscaler`](https://github.com/kubernetes/kubernetes/blob/master/test/integration/podautoscaler/podautoscaler_test.go):
+  exercises the HPA controller together with the metrics clients.
+
+There is no integration test that serves the aggregated `metrics.k8s.io` API
+itself, as that requires an implementation (e.g., metrics-server), which
+lives out of tree.
+
+##### e2e tests
+
+- HPA e2e tests
+  ([`test/e2e/autoscaling/horizontal_pod_autoscaling*.go`](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling))
+  exercise the `metrics.k8s.io` API end-to-end through metrics-server in e2e
+  clusters: [sig-autoscaling-hpa testgrid](https://testgrid.k8s.io/sig-autoscaling-hpa).
+- metrics-server's own e2e suite
+  ([`test/e2e_test.go`](https://github.com/kubernetes-sigs/metrics-server/blob/master/test/e2e_test.go))
+  directly verifies serving the API on a kind cluster, and will be extended
+  to cover the `v1` APIService.
+
 ### Graduation Criteria
 
 #### Alpha
@@ -189,30 +249,40 @@ Promoted to `v1beta1`. The API surface has remained stable since then.
 #### GA
 
 - e2e tests have been stable with no flakes for a minimum two-week window.
-- All in-tree consumers (e.g., `pkg/controller/podautoscaler`) have been
-  migrated to use the `v1` API.
+- All in-tree consumers (e.g., `pkg/controller/podautoscaler`, `kubectl top`)
+  have been migrated to use the `v1` API.
 
 ### Upgrade / Downgrade Strategy
 
-The primary area of focus when upgrading or downgrading is ensuring that a
-registered APIService exists for the same version that the
-`metrics.k8s.io`'s client is using, i.e., if the latter is on an older
-version ensure that the APIServer knows where to route requests based on that,
-and vice versa.
-
-Do note that the version used in the implementation (assuming it's one
-of `v1beta1` or `v1`) does not affect its interoperability with the version
-defined in the APIService or the requester.
+Because the API is served through the aggregation layer with no persisted
+state, the versions available to clients are determined by which
+`metrics.k8s.io` APIServices are registered and available. Upgrading or
+downgrading therefore comes down to whether the implementation registers the
+`v1.metrics.k8s.io` APIService (alongside `v1beta1.metrics.k8s.io`) or removes
+it — a symmetric, reversible operation with no data migration involved.
 
 ### Version Skew Strategy
 
-Within the scope of k/k, an upgraded `pkg/controller/podautoscaler`
-(the only affected component) using the `v1` API will fail to fetch
-data if the implementation (e.g., metrics-server) has not yet
-registered the `v1.metrics.k8s.io` APIService. To handle this
-gracefully during version skew, implementations should register
-APIServices for both `v1` and `v1beta1` simultaneously until the
-older version is formally deprecated.
+Within the scope of k/k, the in-tree consumers (`pkg/controller/podautoscaler`
+and `kubectl top`) will handle version skew gracefully by discovering which
+`metrics.k8s.io` versions are served by the cluster, preferring `v1` and
+falling back to `v1beta1` when `v1` is not available:
+
+- `kubectl top` already determines the available API version through
+  discovery; `v1` will be added to its supported versions list and preferred
+  over `v1beta1`. This graceful fallback is required by the official
+  [version skew policy](https://kubernetes.io/releases/version-skew-policy/),
+  as a newer `kubectl` must keep working against clusters that only serve
+  `v1beta1`.
+- The HPA controller will follow the same discovery-based version selection
+  already used by its custom metrics client
+  (`k8s.io/metrics/pkg/client/custom_metrics`), which picks the preferred
+  available version of the API group via discovery.
+
+On the serving side, implementations (e.g., metrics-server) should register
+APIServices for both `v1` and `v1beta1` simultaneously until the older
+version is formally deprecated, so that older clients that only support
+`v1beta1` keep working against an upgraded implementation.
 
 ## Production Readiness Review Questionnaire
 
@@ -266,17 +336,44 @@ for more information.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-The API surface is identical between `v1beta1` and `v1`. Rollback
-amounts to re-registering the `v1beta1` APIService and ensuring
-consumers use the corresponding version.
+Not yet — exercising this path end-to-end requires an implementation
+release (e.g., metrics-server) that registers and serves the `v1`
+APIService, which will only become available after the `v1` API lands in
+`k8s.io/metrics`. The path will be verified manually as part of the
+graduation, following the process below.
+
+Note that the API is read-only and serves live data: there are no
+persisted objects, so neither direction involves any data migration. The
+only state that changes between the steps is which APIService objects are
+registered and which version the clients pick.
+
+1. **Upgrade**: upgrade the implementation to a release that serves `v1`
+   and registers both the `v1.metrics.k8s.io` and `v1beta1.metrics.k8s.io`
+   APIServices; upgrade the control plane and `kubectl`. Verify that:
+   - both APIServices report `Available=True`,
+   - `kubectl get --raw /apis/metrics.k8s.io/` lists both versions,
+   - `kubectl get --raw /apis/metrics.k8s.io/v1/nodes` returns data,
+   - HPAs keep scaling (the `ScalingActive` condition remains `True`) and
+     `kubectl top node`/`kubectl top pod` keep working, now via `v1`.
+2. **Downgrade**: roll back the implementation to the previous release and
+   ensure the `v1.metrics.k8s.io` APIService object is removed along with
+   it. A stale `v1` APIService left behind would keep advertising `v1` in
+   discovery while requests to it fail, which would mislead the
+   discovery-based clients — verifying its removal is part of the rollback.
+   Verify that:
+   - only `v1beta1.metrics.k8s.io` remains and reports `Available=True`,
+   - downgraded (or fallback-capable) clients keep working via `v1beta1`.
+3. **Upgrade again**: repeat step 1 and its verification. Since no state is
+   persisted by the API, the second upgrade is indistinguishable from the
+   first.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No deprecations or removals, only the introduction of a newer API version.
+This rollout introduces the `v1` API and does not remove anything. Graduating
+`v1` does deprecate `v1beta1`, which continues to be served and is removed only
+in a later release following the deprecation policy.
 
 ### Monitoring Requirements
-
-N/A
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -285,24 +382,44 @@ N/A
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] API .status
-  - Condition name: AbleToScale
-  - Other field: `.status == True`
-- [x] API .status
-  - Condition name: ScalingActive
-  - Other field: `.reason == ValidMetricFound`
+  - Condition name: `Available` on the `v1.metrics.k8s.io` APIService:
+  ```
+  kubectl get apiservice v1.metrics.k8s.io
+  ```
 - [x] Other (treat as last resort)
-  - Details: Registered versions can be listed by quering `/apis`:
+  - Details: Registered versions can be listed by querying `/apis`, and the
+    API can be queried directly to confirm it serves data:
   ```
   kubectl get --raw /apis/metrics.k8s.io/ | jq .
+  kubectl get --raw /apis/metrics.k8s.io/v1/nodes
   ```
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-N/A
+The `v1.metrics.k8s.io` APIService stays `Available` (i.e.,
+`aggregator_unavailable_apiservice{name="v1.metrics.k8s.io"}` is 0), except
+during upgrades of the backing implementation.
+
+Note that metrics on request success ratio, latency, and data freshness are
+the responsibility of the implementation serving the API (e.g.,
+metrics-server) and are out of scope for this KEP, which only defines the
+API surface.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-N/A
+The aggregation layer in kube-apiserver exposes the following metrics about
+the `metrics.k8s.io` APIService itself:
+
+- [x] Metrics
+  - Metric names:
+    - `aggregator_unavailable_apiservice{name="v1.metrics.k8s.io"}` (gauge)
+      and `aggregator_unavailable_apiservice_total{name="v1.metrics.k8s.io"}`
+      (counter) — availability of the APIService as seen by the aggregation
+      layer.
+    - `apiserver_request_terminations_total{component="aggregator"}` —
+      requests rejected by the aggregator while the backing service is
+      unavailable.
+  - Components exposing the metrics: kube-apiserver (aggregation layer).
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -331,7 +448,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-By one. An APIService object needs to be created to register the newer API version.
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -354,7 +471,20 @@ register the addon APIServer, and thus disrupts the HPA controller.
 
 ###### What are other known failure modes?
 
-N/A
+The metrics path has two hops that can fail independently when authentication
+or network connectivity breaks:
+
+- **Between kube-apiserver and the implementation** (the aggregation-layer
+  proxy): the `metrics.k8s.io` APIService becomes unavailable
+  (`aggregator_unavailable_apiservice` fires) and consumers (HPA controller,
+  `kubectl top`) cannot fetch any metrics.
+- **Between the implementation and the kubelets** (metric collection): the
+  implementation cannot scrape the affected kubelets, so metrics for the
+  corresponding nodes/pods are missing or stale while the API itself still
+  responds.
+
+The second hop is implementation-specific (e.g., metrics-server scraping the
+kubelet resource-metrics endpoint).
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
