@@ -1,0 +1,36 @@
+title: PreQueueingHint Extension Point for Scheduler Event Processing
+kep-number: 6132
+authors:
+  - "@geetasg"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+status: implementable
+creation-date: 2026-05-31
+reviewers:
+  - "@sanposhiho"
+  - "@macsko"
+  - "@pohly"
+approvers:
+  - "@sanposhiho"
+
+see-also:
+  - "/keps/sig-scheduling/624-scheduling-framework"
+
+stage: beta
+
+latest-milestone: "v1.37"
+
+milestone:
+  beta: "v1.37"
+  stable: "v1.38"
+
+feature-gates:
+  - name: SchedulerPreQueueingHints
+    components:
+      - kube-scheduler
+disable-supported: true
+
+metrics:
+  - scheduler_scheduling_attempt_duration_seconds
+  - scheduler_pod_scheduled_after_flush_total
