@@ -113,11 +113,11 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-This proposal introduces a new option, `scale-delay-time`, in the CPU Manager static policy. The `scale-delay-time` option specifies the minimum delay before the updated cpuset is applied when a container scales down.
+This proposal introduces a new option, `scale-delay-time`, in the CPU Manager static policy. The `scale-delay-time` option ensures the updated cpuset is not applied sooner than the specified delay after a container scale-down event.
 
-This proposal also extends the downward API volume to expose the CPU state, such as assigned cpuset, which is controlled by the `DownwardAPIAssignedResources` feature gate.
+This proposal also extends the downward API volume to expose the CPUs assigned to containers. This extension is controlled by the new `DownwardAPIAssignedResources` feature gate.
 
-Together, these two features allow latency-sensitive applications to obtain the assigned cpuset in advance via the downward API, enabling workloads to prepare for CPU removal during the guaranteed delay window `scale-delay-time`, thus avoiding performance degradation caused by sudden CPU loss. 
+Together, these two features allow latency-sensitive applications to obtain the assigned cpuset in advance via the downward API. This enables workloads to prepare for CPU removal triggered by scale-down within the guaranteed delay window `scale-delay-time`. As a result, performance degradation caused by sudden CPU loss is avoided.
 
 ## Motivation
 
@@ -143,10 +143,10 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-* Expose CPU Manager CPUSet state to containers via the downward API volume with `DownwardAPIAssignedResources` enabled:
+* Expose CPUSet assignments to containers via the downward API volume with `DownwardAPIAssignedResources` feature gate enabled:
    + `assigned.cpuset`: the desired exclusive cpuset (Linux cpuset format, e.g. `0-3,7,12-15`). Empty string when no exclusive CPUs are assigned.
-* Delay applying the new cpuset configuration when a container scales down, with the minimum delay configured by the `scale-delay-time` option.
-* The `scale-delay-time` option applies to the entire kubelet. Its default value is 0 (preserving legacy behavior), with a maximum of 10 seconds.
+* Wait at least the configured `scale-delay-time` before applying the new cpuset configuration when a container scales down.
+* The `scale-delay-time` option applies to the entire kubelet. Its value must be between 0s and 10s. Setting it to 0s preserves the existing behavior (no delay before applying the cpuset), whereas 10s is the maximum allowed value.
 
 ### Non-Goals
 
@@ -174,7 +174,7 @@ During the delay window, the container continues to use the current cpuset for a
 
 This proposal also extends the Downward API volume to expose CPU Manager cpuset information through a new `assigned.cpuset` resource field. During the delay window, `assigned.cpuset` exposes the desired cpuset so that workloads can prepare for the upcoming change. Exposition of new field is gated by the `DownwardAPIAssignedResources` feature gate.
 
-This proposal does not require a handshake (acknowledgment) from the workload, because the scale-delay-time is configured based on the workload's needed reaction time, providing a guaranteed time window for the workload to react to the upcoming cpuset change.
+This proposal does not require a handshake (acknowledgment) from the workload, because the `scale-delay-time` is configured based on the workload's needed reaction time, providing a guaranteed time window for the workload to react to the upcoming cpuset change.
 
 ### Use Cases
 
@@ -219,20 +219,20 @@ The overview of the design:
 ![alt text](scale_delay_overview.png)
 
 The basic flow shown in the diagram is as follows:
-- During allocation of new CPUSets, changes are not applied to assignments immediately but kept in preAssignments, and scale_delay_timer are started.
+- During allocation of new CPUSets, changes are not applied to assignments immediately but kept in preAssignments, and scale_delay_timers are started.
 - Downward API exposes the new CPUSets in preAssignments to the container.
-- After at least `scale-delay-time` delay and the cpuset actuation time is reached, the preAssignments are written to assignments and actuated to the container.
+- During cpuset actuation, containers scaling down (with active `scale_delay_timer`) are skipped if the scale-delay-time has not yet elapsed. For those where the time has passed, preAssignments are written to assignments and actuated in containers.
 - The SyncPod processes two actions after there are no active scale_delay_timer on the pod, and actuated states equal the allocated ones:
   - Marking the resize as completed
   - Updating the actual resources
 
-When a scale-down operation is started and accepted for processing, it is handled by the AllocationManager. The AllocationManager delegates allocation of new CPUSets to the CPUManager. The CPUManager allocates new CPUs (and modifies the default CPUSet), and at this point the synchronous control of resize is completed.
+When a scale-down operation is started and accepted for processing, it is handled by the AllocationManager. The AllocationManager delegates allocation of new CPUSets to the CPUManager. The CPUManager allocates new CPUs, and at this point the synchronous control of resize is completed.
 
 There are 2 more asynchronous actions:
 1. The CPUManager actuates the cpuset in the container to reflect the allocated state.
 2. The SyncPod loop updates actual resources and marks the pod resize as completed when all actuated states equal the allocated ones.
 
-The existing flow among AllocationManager, CPUManager, and SyncPod is as follows:
+The existing flow (before applying this KEP) among AllocationManager, CPUManager, and SyncPod is as follows:
 
 ![alt text](flow_as_is.png)
 
@@ -260,13 +260,14 @@ const (
 	DistributeCPUsAcrossCoresOption string = "distribute-cpus-across-cores"
 	StrictCPUReservationOption      string = "strict-cpu-reservation"
 	PreferAlignByUnCoreCacheOption  string = "prefer-align-cpus-by-uncorecache"
+	// ⚠️ new option
 	ScaleDelayTimeOption            string = "scale-delay-time"
 )
 ```
 
 The `scale-delay-time` value must be in the range [0s, 10s]. Negative values are not allowed. It can be specified in seconds or milliseconds, for example: '5s', or '500ms'.
 
-The default value of `scale-delay-time` is 0s, meaning the existing behavior is preserved — no minimum delay before the cpuset is applied. 
+The default value of `scale-delay-time` is 0s, meaning the existing behavior is preserved — no guaranteed delay is enforced before the cpuset is applied.
 
 1. In the Allocate CPU stage:
    Allocate a new CPUSet based on the container's assignments and defaultCPUset in the checkpoint (all references to "checkpoint" below refer to cpu_manager_state).
@@ -285,9 +286,9 @@ The default value of `scale-delay-time` is 0s, meaning the existing behavior is 
    - The container's assignments are updated.
    - CPU manager checkpoint is updated immediately with new assignments and defaultCPUSet.
    - If the `scale-delay-time` is not 0:
-     - The scale_delay_timer and preAssignment is cleared if it exist
+     - The scale_delay_timer and preAssignment are cleared if they exist
 
-   When kubelet restart during a pod scale down delay time, the pod will restart the scale_delay_timer and reallocate the new cpuset.
+   When kubelet restarts during a pod scale-down delay time, the pod will restart the scale_delay_timer and reallocate the new cpuset.
 
 2. When cpuset actuation time is reached:
    If scale_delay_timer exists for a container, and after the scale_delay_timer has expired:
@@ -301,7 +302,7 @@ The default value of `scale-delay-time` is 0s, meaning the existing behavior is 
    - If the CPUSet(assignments) is an exclusive CPUSet, a PLEG event is triggered.
 
 
-Note: If the kubelet restarts during the scale delay, there is no need to restart the timer after restoring the checkpoint, because the kubelet will reallocate the new cpuset and start the scale_delay_timer after restart. (HandlePodAdditions->kl.allocationManager.AddPod->m.canAdmitPod)
+Note: If the kubelet restarts during a pending scale-down delay, the scale-down operation is restarted from the beginning with a fresh `scale_delay_timer`. This is because the CPU Manager does not persist `preAssignments` or active timers to the checkpoint — only the current `assignments` (the original cpuset before scale-down) are preserved. Upon restart, the kubelet observes a mismatch between the container's desired CPU request (from the Pod spec) and the allocated CPUs (from the checkpoint), triggering a new allocation cycle. This results in new `preAssignments` being created and a new `scale_delay_timer` being started, ensuring the full `scale-delay-time` delay is guaranteed even after a restart.
 
 ##### Scale-Down Delay Timing
 
@@ -313,7 +314,7 @@ The following diagrams illustrate the two cases.
 
 **Case A: Timer expires before cpuset actuation time** — The scale_delay_timer expires between two cpuset actuation times. Since the timer has already expired when the next actuation time arrives, the new cpuset is applied at that actuation time as it normally would. In this case, the scale_delay_timer does not affect the actual time when the cpuset is applied.
 
-**Case B: Timer active during cpuset actuation time** — The scale_delay_timer is still active when the next cpuset actuation time arrives. The new cpuset cannot be applied at this actuation time because the timer has not yet expired. It is applied at the next actuation time after the timer expires. In this case, the actual delay is longer than the normal delay, with the additional delay being at most `scale-delay-time`.
+**Case B: Timer active during cpuset actuation time** — The scale_delay_timer is still active when the next cpuset actuation time arrives. The new cpuset cannot be applied at this actuation time because the timer has not yet expired. It is applied at the next actuation time after the timer expires. In this case, the actual delay is longer than the normal delay.
 
 In both cases, the actual delay is at least `scale-delay-time`, but may be longer due to the gap between timer expiry and the cpuset actuation time.
 
@@ -327,17 +328,18 @@ When a scale-up request arrives while a scale-down is in progress, the behavior 
 - **If the new CPU count is still lower than the original CPU count**, it is effectively a scale-down: the preAssignments are updated with the new cpuset, and the scale_delay_timer is reset.
 
 #### Resize Complete State
-The pod resize completed event is not emitted until the new cpuset has been successfully applied to all containers in the pod. Only then is the pod resize considered complete.
+The pod resize completed event (Pod Lifecycle Event) is not emitted until the new cpuset has been successfully applied to all containers in the pod. Only then is the pod resize considered complete.
 
-In SyncPod(), before clear Pod Resize InProgress status, an additional condition must be checked in addition to the existing ones: the cpuset must equal lastCPUSet and there must be no scale_delay_timer for any container. Only then is the Pod Resize InProgress status cleared, indicating that the Pod resize is complete.
+In SyncPod(), the Pod Resize InProgress status is cleared only when the allocated cpusets equal actuated ones and no scale_delay_timer is active for any container, in addition to the existing conditions. This indicates the pod resize is complete.
+These new conditions are evaluated by the CPU Manager, which is queried from SyncPod() via the Container Manager.
 
 #### Actual Resources Update
 
 The actual resources are used by the scheduler to calculate the available CPU number for the node (see [KEP-1287](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources#scheduler-and-api-server-interaction)). The actual resources reflect the container resource current state, reported by the runtime.
 
-When a pod resize passes admission, the CPU request is applied immediately (updating cpu.weight in cgroup v2), but the cpuset is applied after at least the `scale-delay-time` delay. Therefore, in `convertToAPIContainerStatuses`, before the cpuset is applied, do not update the actual resources; after the cpuset is applied (i.e., after at least the `scale-delay-time` expires and the new cpuset is applied), the actual resources are converted to the current cpu.weight value.
+When a pod resize passes admission, the CPU request is applied immediately (updating cpu.weight in cgroup v2), but the cpuset is applied after a delay. Therefore, in `convertToAPIContainerStatuses`, before the cpuset is applied, the actual resources are not updated; after the cpuset is applied (i.e., after at least the `scale-delay-time` expires and the new cpuset is applied), the actual resources are converted to the current cpu.weight value.
 
-Note: Before the checkpoint is updated and the cpuset is applied, if the runtime-reported CPU resource request (value from cpu.weight in cgroup v2) were used to update the actual resources during the delay, it would cause a mismatch between the available CPU number reported to the scheduler and the actual available CPUs in kubelet. This would result in a new pod being scheduled to the node but failing to allocate CPU resources, leading to an `UnexpectedAdmissionError`. This change for actual resources fixes the `UnexpectedAdmissionError` issue.
+Note: Before the checkpoint is updated and the cpuset is applied, if the runtime-reported CPU resource request (value from cpu.weight in cgroup v2) were used to update the actual resources during the delay, it would cause a mismatch between the available CPU number reported to the scheduler and the actual available CPUs in kubelet. This would result in a new pod being scheduled to the node but failing to allocate CPU resources, leading to an `UnexpectedAdmissionError`. Deferring the actual resources update until after cpuset application prevents this scenario from occurring.
 
 #### Extend Downward API Volume to Expose CPU Manager Status
 
@@ -467,7 +469,7 @@ These cases will be added in the existing e2e_node tests to verify that CPU Mana
 
 Prerequisites:
 
-1. Enable the following feature gates: 
+1. Enable the following feature gates:
     * `InPlacePodVerticalScalingExclusiveCPUs`
     * `CPUManagerPolicyAlphaOptions`
     * `DownwardAPIAssignedResources`
@@ -704,7 +706,7 @@ The feature gate `DownwardAPIAssignedResources` is Alpha and is disabled by defa
 
 The upgrade and rollback of kubelet and kube-apiserver components can be conducted with feature gate enabled only if it does not break the rule written in documentation: "Only enable this feature gate when all kubelets in the cluster support this feature.". See above sections for  Upgrade / Downgrade Strategy and Version Skew Strategy
 
-This feature ensures a minimum delay before applying the new cpuset during scale-down. A rollout or rollback can fail if the kubelet configuration is invalid (e.g., an invalid `scale-delay-time` value). 
+This feature ensures a minimum delay before applying the new cpuset during scale-down. A rollout or rollback can fail if the kubelet configuration is invalid (e.g., an invalid `scale-delay-time` value).
 
 However, since this feature only affects the timing of cpuset changes and not the allocation itself, a failure does not impact already running workloads — their current cpuset remains in effect.
 
