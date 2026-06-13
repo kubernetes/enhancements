@@ -181,10 +181,10 @@ A good summary is probably at least a paragraph in length.
 We propose introducing a new cluster-scoped API resource,
 `ClusterResourceClaimTemplate`, to allow cluster administrators to define
 standard Dynamic Resource Allocation (DRA) templates once at the cluster level.
-Any workload in any namespace can reference these templates. During Pod
+Any workload (via Pod or PodGroup) in any namespace can reference these templates. During Pod or PodGroup
 scheduling/admission, the control plane's resource claim controller resolves the
 cluster template and automatically generates a namespace-local `ResourceClaim`
-under the Pod's namespace.
+under the Pod's or PodGroup's namespace.
 
 ## Motivation
 
@@ -211,12 +211,12 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-- Introduce a new cluster-scoped API resource: `ClusterResourceClaimTemplate`.
-- Support referencing `ClusterResourceClaimTemplate` inside `PodResourceClaim`.
-- Automatically generate namespaced `ResourceClaim` resources on behalf of Pods
-  referencing the cluster-scoped template.
-- Ensure referencing a cluster-scoped template behaves consistently with
-  namespaced templates and does not introduce new privilege escalation vectors.
+- **Reduce administrative overhead**: Eliminate the need to replicate and
+  synchronize identical DRA templates across multiple namespaces.
+- **Simplify workload configuration**: Allow Pods and PodGroups in any namespace
+  to easily consume centrally managed hardware templates.
+- **Preserve namespace isolation**: Ensure cluster-scoped templates do not
+  introduce privilege escalation or cross-namespace risks.
 
 ### Non-Goals
 
@@ -245,12 +245,12 @@ nitty-gritty.
 We propose introducing a new cluster-scoped API resource,
 `ClusterResourceClaimTemplate`, which serves as a cluster-wide template for
 generating `ResourceClaims`. Along with this, we propose adding a new
-`clusterResourceClaimTemplateName` field to `PodResourceClaim` alongside the
+`clusterResourceClaimTemplateName` field to `PodResourceClaim` and `PodGroupResourceClaim` alongside the
 existing `resourceClaimName` and `resourceClaimTemplateName` fields. 
 
-When `clusterResourceClaimTemplateName` is populated in a Pod specification, the
+When `clusterResourceClaimTemplateName` is populated in a Pod or PodGroup specification, the
 `ResourceClaim` controller fetches the referenced `ClusterResourceClaimTemplate`
-and generates a corresponding `ResourceClaim` in the Pod's namespace,
+and generates a corresponding `ResourceClaim` in the Pod's or PodGroup's namespace,
 maintaining standard resource ownership and garbage collection semantics.
 
 ### User Stories (Optional)
@@ -274,7 +274,6 @@ cluster without managing templates in every individual namespace.
    resource claim controller automatically generates the namespaced
    `ResourceClaim` in `project-alpha` with the spec defined in
    `nvidia-h100-80gb`:
-
 
 ```yaml
 apiVersion: v1
@@ -389,6 +388,33 @@ type PodResourceClaim struct {
 }
 ```
 
+We will also add `ClusterResourceClaimTemplateName` to `PodGroupResourceClaim`
+in `k8s.io/api/scheduling/v1alpha3` (or the appropriate API group for
+PodGroups):
+
+```go
+type PodGroupResourceClaim struct {
+  Name string `json:"name"`
+  ResourceClaimName *string `json:"resourceClaimName,omitempty"`
+  ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
+
+  // ClusterResourceClaimTemplateName is the name of a ClusterResourceClaimTemplate
+  // object in the cluster.
+  //
+  // The template will be used to create a new ResourceClaim in the same
+  // namespace as this PodGroup, which will be bound to this PodGroup. Except for the
+  // cluster scope, it behaves identically to ResourceClaimTemplateName.
+  //
+  // This field is immutable and no changes will be made to the
+  // corresponding ResourceClaim by the control plane after creating the
+  // ResourceClaim.
+  //
+  // Exactly one of ResourceClaimName, ResourceClaimTemplateName, and
+  // ClusterResourceClaimTemplateName must be set.
+  ClusterResourceClaimTemplateName *string `json:"clusterResourceClaimTemplateName,omitempty"`
+}
+```
+
 ### `ResourceClaim` Controller Changes
 
 `ResourceClaimController` will be updated to:
@@ -398,11 +424,15 @@ type PodResourceClaim struct {
   create a namespaced `ResourceClaim` in the Pod's namespace using
   `template.Spec.Spec`, and attach standard OwnerReferences mapping it to the
   Pod.
+- When a `PodGroupResourceClaim` references a `ClusterResourceClaimTemplateName`,
+  create a namespaced `ResourceClaim` in the PodGroup's namespace using
+  `template.Spec.Spec`, and attach standard OwnerReferences mapping it to the
+  PodGroup.
 
 ### Admission & Validation
 
-A Pod reference to a cluster-scoped template does not require explicit reference
-authorization checks (such as `SubjectAccessReview`) during Pod admission. This
+A Pod or PodGroup reference to a cluster-scoped template does not require explicit reference
+authorization checks (such as `SubjectAccessReview`) during Pod or PodGroup admission. This
 is consistent with other cluster-scoped templates and class resources like
 `StorageClass` or `RuntimeClass`.
 
@@ -414,7 +444,7 @@ control on the actual underlying hardware or scheduling resources must be done
 at the resource driver level or via namespace resource quotas/limits.
 
 During admission, the API server will perform standard structural validation on
-the `clusterResourceClaimTemplateName` field (e.g. checking that only one of the
+the `clusterResourceClaimTemplateName` field in both `PodResourceClaim` and `PodGroupResourceClaim` (e.g. checking that only one of the
 template/claim name fields is populated).
 
 ### Test Plan
@@ -463,6 +493,7 @@ extending the production code to implement this enhancement.
 -->
 
 - `k8s.io/kubernetes/pkg/apis/core/validation`: `85.5%`
+- `k8s.io/kubernetes/pkg/apis/scheduling/validation`: `90.6%`
 - `k8s.io/kubernetes/pkg/apis/resource/validation`: `96.6%`
 - `k8s.io/kubernetes/pkg/controller/resourceclaim`: `75.0%`
 
@@ -491,12 +522,12 @@ This can be done with:
 
 Integration tests will verify:
 - Successful generation of namespaced `ResourceClaims` from
-  `ClusterResourceClaimTemplate` resources when a Pod is created.
+  `ClusterResourceClaimTemplate` resources when a Pod or PodGroup is created.
 - Correct `ownerReferences` on the generated `ResourceClaims` and matching
-  garbage collection when Pods are deleted.
+  garbage collection when Pods or PodGroups are deleted.
 - API validation ensuring that only one of `resourceClaimName`,
   `resourceClaimTemplateName`, and `clusterResourceClaimTemplateName` is set on
-  Pod creation.
+  Pod or PodGroup creation.
 - Proper behavior in edge cases (e.g. non-existent templates, updates to
   templates, and multi-namespace references).
 
@@ -517,7 +548,7 @@ If e2e tests are not necessary or useful, explain why.
 -->
 
 E2E tests will verify:
-- Complete scheduling lifecycle of a Pod referencing a
+- Complete scheduling lifecycle of a Pod or PodGroup referencing a
   `ClusterResourceClaimTemplate` using a test DRA resource driver (successful
   allocation, execution, and deallocation/clean-up).
 - Correct resource isolation and independent allocation across multiple
@@ -595,7 +626,7 @@ enhancement:
   registers the `ClusterResourceClaimTemplate` API. The feature is opt-in and
   does not affect existing workloads.
 - **Downgrade**: Disabling the feature gate will prevent the creation of new
-  `ClusterResourceClaimTemplate` objects, and Pod creation requests referencing
+  `ClusterResourceClaimTemplate` objects, and Pod or PodGroup creation requests referencing
   them will be rejected. Already-generated, namespaced `ResourceClaims` remain
   unaffected and continue to function as standard claims.
 
@@ -615,7 +646,7 @@ enhancement:
 -->
 
 - **Kube-apiserver / Kube-controller-manager skew**: If `kube-apiserver` is
-  upgraded but `kube-controller-manager` is not, Pods referencing a cluster
+  upgraded but `kube-controller-manager` is not, Pods or PodGroups referencing a cluster
   template will be admitted but remain in `Pending` state indefinitely because
   the claim controller won't generate the namespaced `ResourceClaims`.
 - **Kubelet skew**: The kubelet only interacts with standard, namespaced
@@ -697,8 +728,8 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. If disabled, new Pod specifications with `clusterResourceClaimTemplateName`
-set will be rejected during API validation. Existing Pods with the field
+Yes. If disabled, new Pod or PodGroup specifications with `clusterResourceClaimTemplateName`
+set will be rejected during API validation. Existing Pods or PodGroups with the field
 populated will fail validation on any subsequent updates. Generated
 `ResourceClaim` resources already created will continue to exist and be bound,
 but further template resolution will be disabled.
@@ -707,7 +738,7 @@ but further template resolution will be disabled.
 
 The `kube-apiserver` and `kube-controller-manager` will resume resolving
 `ClusterResourceClaimTemplate` references and generating corresponding local
-`ResourceClaim` resources for any new or updated Pods.
+`ResourceClaim` resources for any new or updated Pods or PodGroups.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -744,9 +775,9 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-During upgrade, if a new `kube-apiserver` is upgraded and admits a Pod with
+During upgrade, if a new `kube-apiserver` is upgraded and admits a Pod or PodGroup with
 `clusterResourceClaimTemplateName` but `kube-controller-manager` has not yet
-been upgraded or does not have the feature gate enabled, the Pod will remain
+been upgraded or does not have the feature gate enabled, the Pod or PodGroup will remain
 pending indefinitely because the claim controller won't create the namespaced
 `ResourceClaim`. Already running workloads are unaffected.
 
@@ -757,7 +788,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-- An increase in the number of Pods stuck in `Pending` state with unscheduled
+- An increase in the number of Pods or PodGroups stuck in `Pending` state with unscheduled
   `ResourceClaims`.
 - High error rates in `kube-controller-manager` logs related to `ResourceClaim`
   creation.
@@ -815,7 +846,7 @@ Recall that end users cannot usually observe component logs or access metrics.
   - Event Reason: 
 - [x] API .status
   - Condition name: `ResourceClaim` transitions to `status.allocation` set.
-  - Other field: Pod's `status.resourceClaims` list.
+  - Other field: Pod's `status.resourceClaims` list, and the existence of the generated namespaced `ResourceClaim` owned by the Pod or PodGroup.
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -837,7 +868,7 @@ question.
 -->
 
 99% of local `ResourceClaim` creations corresponding to a
-`ClusterResourceClaimTemplate` should succeed within 1 second of the Pod being
+`ClusterResourceClaimTemplate` should succeed within 1 second of the Pod or PodGroup being
 admitted.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
@@ -919,7 +950,7 @@ Focusing mostly on:
 Yes:
 - `kube-controller-manager` will list and watch `ClusterResourceClaimTemplates`
   (cluster-wide informer index).
-- Throughput is bounded by Pod creation/admission rates that use these
+- Throughput is bounded by Pod or PodGroup creation/admission rates that use these
   templates.
 
 ###### Will enabling / using this feature result in introducing new API types?
@@ -952,7 +983,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Yes, Pod specifications referencing a cluster template will have one extra field
+Yes, Pod or PodGroup specifications referencing a cluster template will have one extra field
 (`clusterResourceClaimTemplateName`) set.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -966,7 +997,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-No additional checks or operations are performed during Pod admission that
+No additional checks or operations are performed during Pod or PodGroup admission that
 would impact existing SLIs/SLOs.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
@@ -1013,7 +1044,7 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Admission/creation of Pods using the templates, as well as the creation, update,
+Admission/creation of Pods or PodGroups using the templates, as well as the creation, update,
 or deletion of the `ClusterResourceClaimTemplate` resources themselves, is blocked,
 similar to other Kubernetes resources.
 
@@ -1032,13 +1063,13 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-- **Template Reference Resolution Failure**: A Pod specifies a non-existent
+- **Template Reference Resolution Failure**: A Pod or PodGroup specifies a non-existent
   `clusterResourceClaimTemplateName`.
-  - Detection: Pod remains `Pending` with a status event indicating that
+  - Detection: Pod or PodGroup remains `Pending` (or unscheduled) with a status event indicating that
     template resolution failed.
-  - Mitigations: Correct the Pod specification to use a valid template or create
+  - Mitigations: Correct the Pod or PodGroup specification to use a valid template or create
     the referenced `ClusterResourceClaimTemplate`.
-  - Diagnostics: Look at events on the Pod and logs of
+  - Diagnostics: Look at events on the Pod/PodGroup and logs of
     `kube-controller-manager`.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
