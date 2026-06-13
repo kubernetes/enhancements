@@ -181,6 +181,7 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 * Pod Resizing: Dynamically resizing individual Pod resource requests and limits (covered independently by KEP-1287).
 
+* Node Capacity Overcommit: Configuring the Kubelet to report a logical capacity to the API Server that exceeds the raw, physical underlying hardware capacity (e.g., reporting 48Gi on a 32Gi machine relying on swap). For Alpha, logical capacity is strictly bounded by physical reality to preserve Eviction Manager stability.
 
 ## Proposal
 
@@ -341,8 +342,10 @@ The Kubelet monitors both the API (`Node.Status.Capacity`) and local hardware (`
 If the capacity drift passes the validation filter, the execution path diverges based on whether it is an upscale or a downscale.
 
 #### Path A: Declarative HotPlug / External Trigger
-When capacity is added, the Kubelet utilizes a declarative, API-driven approach to respect control plane admission (e.g., Webhooks) and allow for external triggers.
-1. **Trigger:** `cAdvisor` detects new hardware metrics (passing the validation filter), OR an external controller manually patches the Node API.
+
+When capacity is added, the Kubelet utilizes a declarative, API-driven approach. Instead of blindly enforcing new hardware boundaries locally, the Kubelet delegates policy control to the API Server, allowing cluster administrators to limit or reject hotplug via standard admission control mechanisms.
+
+1. **Trigger:** `cAdvisor` detects new hardware metrics (passing the validation filter).
 2. **API Update:** If triggered locally by hardware, the Kubelet attempts to patch `Node.Status.Capacity` and `Node.Status.Allocatable`.
 3. **Admission / Webhooks:** If an API webhook declines the patch, the Kubelet aborts. The physical hardware remains larger than the Kubelet's logical view, which is completely safe.
 4. **Host & Runtime Reconciliation:** Once the API is successfully updated (or if the Kubelet detects an approved external patch), a dedicated Goroutine executes the host integration sequence:
@@ -354,7 +357,7 @@ When capacity is added, the Kubelet utilizes a declarative, API-driven approach 
 #### Path B: Emergency Hardware Hot-UnPlug
 When physical hardware (e.g., Memory) is dynamically removed, physics dictates the timeline. The Kubelet acts immediately to secure the host, treating the API update as a mandatory notification rather than a request for permission.
 1. **Trigger:** `cAdvisor` detects a critical drop in physical hardware metrics (passing the validation filter).
-2. **API Dissemination (Anti-Thrash):** The Kubelet immediately patches `Node.Status` to reflect the reduced capacity. Updating the API *before* evictions ensures the Scheduler knows the node has shrunk and will not attempt to backfill pods.
+2. **API Dissemination (Anti-Thrash):** The Kubelet immediately patches `Node.Status.Capacity` and `Node.Status.Allocatable` to reflect the reduced capacity. Updating the API *before* evictions ensures the Scheduler knows the node has shrunk and will not attempt to backfill pods.
 3. **Immediate Host Enforcement:** The `ContainerManager` locks its state, updates its internal cache, and instantly shrinks the `/kubepods` cgroups to physically secure the Linux kernel.
 4. **Eviction Synchronization:** The Eviction Manager's absolute memory and disk thresholds are recalculated based on the new total capacity.
 5. **Graceful Degradation:** The Kubelet evaluates active workloads against the newly reduced capacity. If a strict request contract can no longer be met, starved pods are gracefully evicted with `Reason: NodeCapacityExceeded`.
