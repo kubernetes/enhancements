@@ -16,6 +16,7 @@
     - [API Server Handling and Ratcheting Validation](#api-server-handling-and-ratcheting-validation)
   - [Allocator Changes](#allocator-changes)
   - [Kubelet Changes](#kubelet-changes)
+  - [Node Declared Features Integration](#node-declared-features-integration)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -330,19 +331,56 @@ allocated devices' status:
    has a `nil` or `false` value, it defaults to `false` (do not skip).
 4. **Disabled Feature Gate Behavior**: If the `DRAOptionalNodePreparation`
    feature gate is disabled on the kubelet:
-   - For **`PrepareResources`**: If a claim's allocation result specifies
-     `SkipNodePrepare: true` or `SkipNodeUnprepare: true`, the DRA manager fails `PrepareResources`
-     immediately with a clear error (e.g.,
-     `DRAOptionalNodePreparationDisabled`), preventing the pod from running with
-     uninitialized hardware.
-   - For **`UnprepareResources`**: Since we already validate and fail during `PrepareResources`,
-     we do not need any additional checks or errors during `UnprepareResources` if the
-     feature gate is disabled. Specifically, if a pod with `SkipNodeUnprepare:
-     true` was already processed (e.g., when the feature gate was enabled) but
-     the feature gate is subsequently disabled, the kubelet will still skip the
-     unprepare call and allow the pod to terminate cleanly. This honors the
-     original intent and prevents the pod from getting permanently stuck in the
-     `Terminating` state.
+   - **Early Admission Failure**: If the `NodeDeclaredFeatures` framework is
+     active, the Kubelet's pod admission handler will use the shared library to
+     infer the pod's requirements. If a pod requires
+     `DraOptionalNodePreparation` (because its allocated claims specify skipping
+     node prep) but the Kubelet has the feature gate disabled (meaning it does
+     not declare the feature in its status), the Kubelet will **reject the pod
+     during admission**. This prevents the pod from attempting to run and
+     failing later.
+   - **Defense-in-Depth for `PrepareResources`**: If a pod somehow bypasses the
+     Kubelet's admission handler, the DRA manager's existing check acts as a
+     secondary defense: if a claim's allocation result specifies
+     `SkipNodePrepare: true` or `SkipNodeUnprepare: true`, the DRA manager fails
+     `PrepareResources` immediately with a `DRAOptionalNodePreparationDisabled`
+     error, preventing the pod from running with uninitialized hardware.
+   - **Safe Rollback for `UnprepareResources`**: Since we already validate and
+     fail during admission or `PrepareResources`, we do not need any additional
+     checks or errors during `UnprepareResources` if the feature gate is
+     disabled. Specifically, if a pod with `SkipNodeUnprepare: true` was already
+     processed (e.g., when the feature gate was enabled) but the feature gate is
+     subsequently disabled, the Kubelet will still skip the unprepare call and
+     allow the pod to terminate cleanly. This honors the original intent and
+     prevents the pod from getting permanently stuck in the `Terminating` state.
+     Since the pod is already running, it is not subject to new admission checks
+     during termination.
+
+### Node Declared Features Integration
+
+To manage version skew safely during rolling upgrades, this KEP integrates with
+the **Node Declared Features** framework
+This allows the control plane to dynamically discover if a node's Kubelet
+supports optional node preparation before scheduling workloads, preventing pods
+from being scheduled to incompatible nodes.
+
+We register a new declared feature:
+*   **Feature Name**: `DraOptionalNodePreparation`
+*   **Associated Feature Gate**: `DRAOptionalNodePreparation`
+*   **Discovery Logic (Kubelet)**: A node declares support for
+    `DraOptionalNodePreparation` in its `node.status.declaredFeatures` if and
+    only if the `DRAOptionalNodePreparation` feature gate is enabled on the
+    Kubelet.
+*   **Inference Logic (Scheduler & Admission)**: The control plane infers that a
+    Pod requires the `DraOptionalNodePreparation` feature if:
+    1.  The Pod references one or more `ResourceClaims`.
+    2.  At least one of those claims is allocated (has an `AllocationResult`).
+    3.  Within the allocation result, any device has `SkipNodePrepare` or
+    `SkipNodeUnprepare` set to `true`. If these conditions are met, the Pod is
+    marked as requiring `DraOptionalNodePreparation` on the target node.
+*   **Max Version**: This feature ceases to be a scheduling constraint once the
+    `DRAOptionalNodePreparation` feature graduates to GA and the minimum
+    supported Kubelet version in the cluster skew policy guarantees support.
 
 ### Test Plan
 
@@ -382,10 +420,27 @@ None.
       manager and succeeds immediately.
     - If `SkipNodeUnprepare` is `false`, `unprepareResources` attempts to call
       the local driver.
+- **Shared Library Unit Tests**: In
+  `staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features/draoptionalnodepreparation_test.go`:
+  - Verify the node declared feature for `DraOptionalNodePreparation` behaves
+    correctly.
+- **Kubelet Admission Unit Tests**: In Kubelet pod admission tests:
+  - Verify that the Kubelet's pod admission handler rejects a pod requiring
+    `DraOptionalNodePreparation` if the feature gate is disabled on the Kubelet.
 
 ##### Integration tests
 
-- No need to add integration tests since the feature can be validated with unit and e2e tests.
+- **Scheduler Filtering Integration Tests**: In
+  `test/integration/scheduler/filters/`:
+  - Verify that a pod requiring `DraOptionalNodePreparation` (having a claim
+    allocated with skip fields set to `true`) is successfully scheduled to a
+    node that advertises the feature.
+  - Verify that the scheduler filters out (rejects) nodes that do not advertise
+    the feature (representing older Kubelets or nodes with the feature gate
+    disabled).
+  - Verify that if no compatible nodes are available, the pod remains in the
+    `Pending` state with a `FailedScheduling` event indicating the missing
+    `DraOptionalNodePreparation` feature on nodes.
 
 ##### e2e tests
 
@@ -450,13 +505,15 @@ upgrade or downgrade/rollback of the feature gate.
     - **Assertions**:
       - If we deploy a new workload using a control-plane-only driver (no
         node-local components):
-        - The Pod gets stuck in `ContainerCreating` on the N-1 kubelet, as the
-          N-1 kubelet attempts to contact the non-existent node-local driver.
+        - The Pod remains in the `Pending` state (unschedulable). The scheduler's
+          `NodeDeclaredFeatures` plugin must filter out all N-1 worker nodes because
+          they do not advertise the `DraOptionalNodePreparation` feature in their status.
+        - The pod must not be scheduled to any N-1 node.
   - **Action 2 (Kubelet Upgrade)**: Upgrade the kubelets to version N.
     - **Assertions**:
-      - Verify that the control-plane-only workload (which was stuck in
-        `ContainerCreating`) now successfully bypasses node preparation,
-        transitions to `Running`, and runs successfully.
+      - Once a Kubelet is upgraded to N and advertises `DraOptionalNodePreparation`,
+        verify that the pending workload is **automatically scheduled** to that node,
+        successfully bypasses node preparation, transitions to `Running`, and runs successfully.
       - Verify that deleting the control-plane-only workload completes
         immediately without trying to contact a node-local driver.
 - **Test Case 3.2: Feature Gate Rollback / Downgrade (N to N-1)**:
@@ -530,6 +587,9 @@ upgrade or downgrade/rollback of the feature gate.
   - Newer claims can utilize drivers that publish resource slices configured
     with `SkipNodePrepare: true` or `SkipNodeUnprepare: true` to bypass
     node-local execution.
+  - During rolling upgrades, the scheduler's `NodeDeclaredFeatures` plugin will
+    automatically restrict the scheduling of pods using these newer "no-prep" claims
+    to upgraded nodes that advertise support for `DraOptionalNodePreparation`.
 - **Downgrade**:
   - If a cluster is downgraded to a version where `DRAOptionalNodePreparation`
     is disabled/unavailable, the kubelet will ignore the skip fields and default
@@ -543,21 +603,16 @@ upgrade or downgrade/rollback of the feature gate.
 ### Version Skew Strategy
 
 - **Older kubelet (N-1 and older) / Upgraded Control Plane (N)**:
-  - If the control plane is upgraded and generates allocations with
-    `SkipNodePrepare: true` or `SkipNodeUnprepare: true`, but a worker node is
-    running an older kubelet, the older kubelet will ignore these fields and
-    look for a node-local driver to be registered.
-  - If no node-local driver is running on that node, resource preparation will
-    fail, blocking DRA manager's `PrepareResources` and preventing the pod from running.
-  - *Mitigation*: Cluster administrators have several options during the upgrade
-    transition window:
-    - Restrict the workloads requesting these devices to only schedule onto
-      upgraded nodes (e.g., via node selectors or taints/tolerations).
-    - Defer setting skip fields in `ResourceSlice`s until
-      all nodes and kubelets are successfully upgraded.
-    - Deploy a temporary, minimal "no-op" node driver component on the older
-      worker nodes to satisfy the older kubelet's gRPC preparation calls with
-      success responses until those nodes are upgraded.
+  - **Automated Version Skew Protection**: If the control plane is upgraded and
+    generates allocations with `SkipNodePrepare: true` or `SkipNodeUnprepare:
+    true`, the scheduler's `NodeDeclaredFeatures` plugin will automatically
+    infer that the pod requires the `DraOptionalNodePreparation` feature.
+  - Because older worker nodes running older Kubelets ($N-1$ and older) do not
+    support the feature gate, they will not advertise
+    `DraOptionalNodePreparation` in their `node.status.declaredFeatures`.
+  - The scheduler will **automatically filter out these older nodes** during the
+    scheduling cycle, guaranteeing that the pod will only land on compatible,
+    upgraded nodes.
 - **Upgraded kubelet (N) / Older Control Plane (N-1 and older)**:
   - If the control plane has not been upgraded yet, any new allocations will not
     have `SkipNodePrepare` or `SkipNodeUnprepare` set in the status.
@@ -722,7 +777,7 @@ server.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No.
+Yes. This feature depends on the **Node Declared Features** framework.
 
 ### Scalability
 
