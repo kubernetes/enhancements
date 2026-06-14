@@ -106,12 +106,23 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Version](#version)
     - [Properties](#properties)
     - [Conditions](#conditions)
+    - [Access Providers](#access-providers)
   - [Cluster Access](#cluster-access)
     - [Pull Model with Work API](#pull-model-with-work-api)
     - [Push Model with Identity Federation (Recommended)](#push-model-with-identity-federation-recommended)
-    - [Push Model via Credentials in Secret (Not Recommended)](#push-model-via-credentials-in-secret-not-recommended)
-      - [Secret format](#secret-format)
+    - [Push Model via Access Provider Plugins](#push-model-via-access-provider-plugins)
+  - [Access Provider Plugin Design](#access-provider-plugin-design)
+    - [External Access Provider Plugin Mechanism](#external-access-provider-plugin-mechanism)
+    - [Standardizing the Provider Definition](#standardizing-the-provider-definition)
+      - [Cluster Data](#cluster-data)
+      - [Passing Plugin Configuration via Extensions](#passing-plugin-configuration-via-extensions)
+      - [Security Concerns](#security-concerns)
+    - [Configuring Plugins in the Controller](#configuring-plugins-in-the-controller)
+    - [Plugin Examples](#plugin-examples)
+      - [Secret Reader Plugin](#secret-reader-plugin)
+      - [GKE with Workload Identity Federation](#gke-with-workload-identity-federation)
 - [API Example](#api-example)
+  - [API Examples with Access Providers](#api-examples-with-access-providers)
   - [Scalability implication](#scalability-implication)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -219,6 +230,19 @@ ClusterProfile API. The objective is to establish a shared interface
 for cluster inventory, defining a standard for status reporting while
 allowing for multiple implementations.
 
+Additionally, to manage an inventory of clusters, a platform admin can rely on
+having the cluster manager output
+[ClusterProfile CRs](https://github.com/kubernetes-sigs/cluster-inventory-api/blob/main/apis/v1alpha1/clusterprofile_types.go)
+that point to the clusters. Those CRs are key for multicluster controllers
+that want to operate on the clusters. However, there isn't a single way to
+obtain credentials to reach those clusters. This KEP also provides a
+standardized way to obtain credentials for clusters when using ClusterProfile
+and makes it pluggable to allow the diverse ecosystem to support the multitude
+of ways to obtain credentials. It reuses part of the Kubeconfig external
+provider semantics (see
+[KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md))
+to make implementation easier.
+
 ## Motivation
 
 <!--
@@ -263,6 +287,15 @@ management. Examples of consumers includes:
 * Cluster manager implementations themselves, for purposes such as
   grouping clusters into MCS API clustersets.
 
+Furthermore, ClusterInventory is unfinished without an ability to use the
+clusters and controller writers have been very explicit that credentials are
+needed. Previous attempts at writing credentials have
+failed and we believe that a plugin model, also reusing known flows
+such as [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md),
+will help solve the "credentials" need for ClusterProfiles.
+
+See also: [Credential Plugin introduction slides](https://docs.google.com/presentation/d/1v5-J-kFJ3TSpKqSraHcYkCz2NG7cNnYpq0ISF85wNMU/edit)
+
 ### Goals
 
 <!--
@@ -281,6 +314,11 @@ know that this has succeeded?
   foundational tool to create extensions compatible with multiple
   providers.
 * Allow cluster managers of different types to share a single point inventory.
+* Provide a library for controllers to obtain credentials for a cluster
+  represented by a ClusterProfile
+* Allow cluster managers to provide a method to obtain credentials that
+  doesn't require to be embedded into the controller code and recompiling.
+* Be a secure mechanism for credential obtention and storage.
 
 
 ### Non-Goals
@@ -294,6 +332,11 @@ and make progress.
 * Define specific implementation details beyond general API behavior.
 * Offering functionalities related to multi-cluster orchestration.
 * Define the Consumer registration API
+* Define the mechanism for shipping plugins to be used by the controllers
+  and their delivery in the controller image/pod.
+* Design plugin or a library for plugins
+* Mandate Federated workload identity / OIDC frameworks (though they are
+  recommended)
 
 
 ## Proposal
@@ -318,6 +361,20 @@ the API proposed by this KEP aims to
   failures, and connectivity issues.
 - Provide a simple, clear interface for human operators to understand
   clusters under management.
+- Provide a standardized, pluggable mechanism for obtaining credentials
+  to access clusters represented by ClusterProfile objects. The proposed
+  approach is to leverage plugins for retrieving the credentials from an
+  issuer recognized by the target cluster. The controller using
+  ClusterProfile would use a library to run a local executable which
+  would retrieve the credentials for the current controller and a given
+  clusterprofile. Plugins would be exec'ed by the controller so that
+  they don't need be built-in the binary, allowing flexibility into
+  writing their own access plugins and still leveraging multicluster
+  controllers written by the community. We propose to reuse the exec
+  approach and protocol used for external credentials in Kubeconfig (but
+  not the configuration part of kubeconfig). Finally, in order to
+  retrieve the endpoint for the cluster, we standardize the property
+  names that are used in ClusterProfile.
 
 ### Terminology
 - **Cluster Inventory**: A conceptual term referring to a collection of clusters.
@@ -443,6 +500,27 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
+Because of its interaction with authentication and credentials, particular
+attention in the access provider plugin design must be paid to security:
+
+* Credentials leak: ClusterProfile, Controller configuration and Plugin
+  configuration should never contain sensitive information.
+* Plugin poisoning: supporting access provider plugins in a controller
+  relies on trusting the plugin itself and its path in the filesystem.
+  Particular attention must be provided by the user deploying a controller to
+  make sure the plugins that they install are from a trusted source as they
+  will have access to the controller's identity. In addition, the path of the
+  plugin may be edited or hijacked by an attacker which would then sit in lieu
+  of the normal plugin, allowing process execution by the controller's process.
+  This risk is mitigated by the assumption that the pod's filesystem is private
+  to it and that no lower-privileged (or separate) processes are able to access
+  it.
+
+Another risk is around AuthZ. This design doesn't cover the distribution of
+RBAC to multiple clusters and identifying what principal a controller can be
+identified as. This setup is currently left to the responsibility of the
+platform admin setting up the different clusters and controllers.
+
 ## Design Details
 
 <!--
@@ -559,6 +637,43 @@ Predefined condition types:
   The status of the cluster SHOULD be updated by the cluster manager under
   this condition.
 
+#### Access Providers
+
+We standardize a new field in ClusterProfile called `accessProviders` that is
+stored in the Status of the ClusterProfile.
+
+All the data from this structure is specific to the clusterProfile and does not
+contain any Controller-specific information. It must be usable by different
+controller, applications or consumers without requiring changes. It also
+cannot contain any data considered a secret; and we consider that reachability
+information is not sensitive.
+
+The definition is as follows:
+
+```
+type AccessProviders struct {
+  // +listType=map
+  // +listMapKey=name
+  accessProviders []AccessConfig
+}
+
+// AccessType defines the type of access provider that is used to reach
+// the cluster. For example, GCP access (using tokens that are understood
+// by GCP's IAM) is designated by the string `google`.
+type AccessType string
+
+// AccessConfig gives more details on data that is necessary to reach
+// the cluster for this kind of access provider.
+type AccessConfig struct {
+  Name string
+  Cluster *Cluster
+}
+```
+
+See [Access Provider Plugin Design](#access-provider-plugin-design)
+for full details on how `accessProviders` is consumed by the access
+provider plugin mechanism.
+
 ### Cluster Access
 There are multiple methods for a ClusterInventory Consumer to gain access to the cluster represented by a ClusterProfile API.
 This KEP does not define the exact mechanism for each approach, but it is recommended that ClusterInventory Consumers avoid 
@@ -576,22 +691,301 @@ or [GCP Workload Identity Federation](https://cloud.google.com/iam/docs/workload
 ClusterInventory Consumer to use an identity that already has access to the clusters in the Cluster Inventory.
 While the Cluster Manager can assist in setting up the federation, it is not a mandatory requirement.
 
-#### Push Model via Credentials in Secret (Not Recommended)
-The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by reading 
-from a secret. In this approach, the Cluster Manager generates secrets containing the necessary credentials within the namespace
-accessible to the ClusterInventory Consumer. For this to function correctly, Cluster Managers must be aware of the following details 
-about the consumer: their name, whether credentials are required, and the preferred unique namespace for reading credentials as secrets.
-Those information can be obtained during the "registering" process but this is out of the scope of this KEP.
+#### Push Model via Access Provider Plugins
+The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by
+using an access provider plugin. In this approach, the controller using ClusterProfile would use a library to run a
+local executable which would retrieve the credentials for the current controller and a given clusterprofile. It is
+expected that plugins would leverage elements local to the controller to help assert the identity of the controller
+(environment variables, config files, KSA, the local IP, etc.) to retrieve credentials that are valid on the target
+cluster. This approach reuses the exec protocol defined in
+[KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md),
+giving the ability to reuse the code in client-go. The cluster's endpoint and TLS configuration
+are read from the `accessProviders` field in the ClusterProfile status.
 
-##### Secret format
-- The secret *MUST* reside in the namespace with the label `x-k8s.io/cluster-inventory-consumer` with the value being the name of the ClusterInventory Consumer.
-- The secret *MUST* contain the label `x-k8s.io/cluster-profile` with the value being the name of the ClusterProfile object that the secret is associated with.
-- The secret *MAY* contain the label `x-k8s.io/cluster-profile-namespace` with the value being the namespace of the ClusterProfile object that the secret is associated with. If not present, the ClusterProfile is assumed to be in the default namespace.
-- The access information in the secret must contain the following fields
-  - **Config**: This field contains cluster access information compatible with the
-    [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/v1.31.2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
-  - Since a single [Kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) supports access to multiple clusters, the Cluster manager *MUST* ensure that each secret contains access information for only a single consumer.
+See [Access Provider Plugin Design](#access-provider-plugin-design) for the full design details.
 
+### Access Provider Plugin Design
+
+The access provider plugin implementation would be done via a library in
+https://github.com/kubernetes-sigs/cluster-inventory-api.
+The library would be in golang. The library is provided as the community shared
+implementation for golang and it is possible that other implementations would be
+created, and would work with the same plugin mechanism defined here, allowing
+for reuse of the external providers that cluster managers write.
+
+The expected prototype for a controller is expected to be the following:
+
+`func (c *access.Config) BuildConfigFromCP(cp *ClusterProfile) (*rest.Config, error)`
+
+The library implementation flow is expected to be as follows:
+
+1. Build the endpoint details of the cluster by reading properties of the
+   ClusterProfile
+2. Call the external access provider plugin, following the same flow defined in
+   [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md)
+   (giving the ability to reuse the code in
+   [client-go's exec package](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159))
+3. If the `Cluster` includes an `extensions` entry named
+   `client.authentication.k8s.io/exec`, pass its `extension` object through to
+   `ExecCredential.Spec.Cluster.Config` as plugin configuration.
+4. Build the rest.Config and return it to the caller
+
+#### External Access Provider Plugin Mechanism
+
+In order to call the plugin, the library execs the plugin defined in the
+configuration. It passes the Cluster information that was obtained from the
+ClusterProfile. The library then calls the plugin following the protocol
+defined in
+[KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md).
+The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api
+can leverage the
+[original code that is kept in client-go](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159).
+
+#### Standardizing the Provider Definition
+
+In order to populate the Cluster object that the exec provider requires, a new
+field in ClusterProfile called `accessProviders` is standardized and stored in
+the Status of the ClusterProfile (see [Access Providers](#access-providers)).
+
+##### Cluster Data
+
+The Cluster structure for the exec defined in KEP 541,
+[implemented in k/client-go](https://github.com/kubernetes/client-go/blob/master/tools/clientcmd/api/types.go#L69-L106)
+assumes the following:
+
+```
+type Cluster struct {
+	// LocationOfOrigin indicates where this object came from. It is used for round tripping config post-merge, but never serialized.
+	// +k8s:conversion-gen=false
+	LocationOfOrigin string `json:"-"`
+	// Server is the address of the kubernetes cluster (https://hostname:port).
+	Server string `json:"server"`
+	// TLSServerName is used to check server certificate. If TLSServerName is empty, the hostname used to contact the server is used.
+	// +optional
+	TLSServerName string `json:"tls-server-name,omitempty"`
+	// InsecureSkipTLSVerify skips the validity check for the server's certificate. This will make your HTTPS connections insecure.
+	// +optional
+	InsecureSkipTLSVerify bool `json:"insecure-skip-tls-verify,omitempty"`
+	// CertificateAuthority is the path to a cert file for the certificate authority.
+	// +optional
+	CertificateAuthority string `json:"certificate-authority,omitempty"`
+	// CertificateAuthorityData contains PEM-encoded certificate authority certificates. Overrides CertificateAuthority
+	// +optional
+	CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
+	// ProxyURL is the URL to the proxy to be used for all requests made by this
+	// client. URLs with "http", "https", and "socks5" schemes are supported. If
+	// this configuration is not provided or the empty string, the client
+	// attempts to construct a proxy configuration from http_proxy and
+	// https_proxy environment variables. If these environment variables are not
+	// set, the client does not attempt to proxy requests.
+	//
+	// socks5 proxying does not currently support spdy streaming endpoints (exec,
+	// attach, port forward).
+	// +optional
+	ProxyURL string `json:"proxy-url,omitempty"`
+	// DisableCompression allows client to opt-out of response compression for all requests to the server. This is useful
+	// to speed up requests (specifically lists) when client-server network bandwidth is ample, by saving time on
+	// compression (server-side) and decompression (client-side): https://github.com/kubernetes/kubernetes/issues/112296.
+	// +optional
+	DisableCompression bool `json:"disable-compression,omitempty"`
+	// Extensions holds additional information. This is useful for extenders so that reads and writes don't clobber unknown fields
+	// +optional
+	Extensions map[string]runtime.Object `json:"extensions,omitempty"`
+}
+```
+
+In this structure, not all fields would apply, such as:
+
+* `CertificateAuthority`, which points to a file (and a ClusterProfile doesn't
+  have a filesystem)
+
+And there are fields that require special attention:
+
+* `Extensions`, which holds additional, usually cluster-specific information,
+  that might help authenticate with the cluster. (For more information about
+  this field and how it is handled, see the section on
+  [Passing Plugin Configuration via Extensions](#passing-plugin-configuration-via-extensions)).
+
+##### Passing Plugin Configuration via Extensions
+
+Some access providers require cluster-specific, non-secret parameters (for
+example, a `clusterName`) in order to obtain credentials. To standardize how
+this information is conveyed from a `ClusterProfile` to a plugin, the library
+follows the existing convention defined by the client authentication API:
+
+> Optional: when a plugin needs per-cluster, non-secret config, set an
+> extension entry with `name: client.authentication.k8s.io/exec` under
+> `Cluster.extensions`.
+> The library reads only the `extension` field of that entry and passes it
+> through verbatim to `ExecCredential.Spec.Cluster.Config`.
+> The content must be non-secret and cluster-specific. Controller- or
+> environment-specific data must not be placed here.
+> Plugins may read values (e.g. `clusterName`) from
+> `ExecCredential.Spec.Cluster.Config`.
+
+Reference: [client.authentication.k8s.io/v1 Cluster: `config` sourced from `extensions[client.authentication.k8s.io/exec]`](https://kubernetes.io/docs/reference/config-api/client-authentication.v1/#client-authentication-k8s-io-v1beta1-Cluster)
+
+Example (embedded in `ClusterProfile.status.accessProviders[].cluster`):
+
+```
+extensions:
+- name: client.authentication.k8s.io/exec
+  extension:
+    clusterName: spoke-1
+```
+
+In practice, however, there exist certain scenarios where setting the reserved
+`client.authentication.k8s.io/exec` extension to pass cluster-specific data
+might not be appropriate: libraries such as `client/go` will eventually save
+the extension data (along with other information, including the CA bundles for
+a cluster) to an environment variable, `KUBERNETES_EXEC_INFO`, which exec
+plugins can read; however:
+
+* some exec plugins might be expecting inputs from CLI arguments or
+  plugin-specific environment variables directly; they might not read the
+  `KUBERNETES_EXEC_INFO` environment variable at all, or might make only
+  limited use of the environment variable.
+* it might not be proper to set the `KUBERNETES_EXEC_INFO` environment variable
+  in the target environment: for example, `KUBERNETES_EXEC_INFO` includes CA
+  bundles for a cluster and its size might exceed length limitations in the
+  environment.
+* the `client.authentication.k8s.io/exec` extension keeps the data in the free
+  form, `runtime.RawExtension`; before it is saved to the
+  `KUBERNETES_EXEC_INFO` environment variable, `client/go` will pass it to the
+  `ExecConfig.Config` struct first, which accepts only `runtime.Object` data.
+  This brings about possible marshalling/unmarshalling complications, which
+  could be difficult to handle gracefully for the community-provided library
+  proposed in this KEP.
+
+To address the deficiencies above, we further propose that:
+
+* this KEP reserves a name in the extensions,
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-args`, which holds
+  additional CLI arguments that would be supplied to the exec plugin when the
+  ClusterProfile API and community-provided library are used for
+  authentication.
+
+  If an extension under this name is present, the community-provided library
+  will extract the data, and append the additional arguments to the
+  `ExecConfig` struct (specifically the `ExecConfig.Args` field) that will be
+  used to prepare the `rest.Config` output. The arguments will then be used to
+  invoke the exec plugin.
+
+  The additional arguments shall be saved as a string array in the YAML format.
+
+  For simplicity reasons, the community-provided library will not perform any
+  de-duplication on the CLI arguments after the additional arguments are
+  appended.
+
+* this KEP reserves another name in the extensions,
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-envs`, which holds
+  additional environment variables that would be supplied upon calling the exec
+  plugin when the ClusterProfile API and community-provided library are used
+  for authentication.
+
+  If an extension under this name is present, the community-provided library
+  will extract the data, and add the additional variables to the `ExecConfig`
+  struct (specifically the `ExecConfig.Env` field) that will be used to prepare
+  the `rest.Config` output. The variables will then be set when invoking the
+  exec plugin.
+
+  The additional environment variables shall be represented as a string map in
+  the YAML format.
+
+  The community-provided library will de-duplicate the list of environment
+  variables when adding the additional variables; if two entries are present
+  under the same name, the one from the extension will prevail.
+
+##### Security Concerns
+
+With the addition of newly reserved extensions, understandably there might be
+situations where users might want to block additional CLI arguments or
+environment variables from being set due to security reasons. To resolve this,
+the KEP proposes that the community-provided library implementation must allow
+users to specify whether additional CLI arguments or environment variables can
+be set by a `ClusterProfile` object. By default the reserved extensions should
+be ignored.
+
+See the [Configuring Plugins in the Controller](#configuring-plugins-in-the-controller)
+section for more information.
+
+#### Configuring Plugins in the Controller
+
+Plugins are selected by a string which represents the type of access provider
+that is used to reach the cluster, for example, "google" for GKE Clusters.
+This allows the controller to attach a different binary name or path for the
+binary.
+
+It is expected that the library will have a mapping from its supported type of
+access provider to the expected binary to call. The library would be fed via a
+JSON configuration file, specified by the `--clusterprofile-provider-file`
+flag. The file maps access provider types to the associated exec configuration
+and potential flags that should be passed. It cannot contain cluster-specific
+information (which is not known at that time).
+
+```
+./controller ... --clusterprofile-provider-file "clusterprofile-provider-file.json"
+```
+
+The structure for each Provider in the configuration file:
+
+```
+type Provider struct {
+  Name                        string
+  ExecConfig                  *clientcmdapi.ExecConfig
+  ProfileSourcedCLIArgsPolicy ProfileSourcedCLIArgsPolicy
+  ProfileSourcedEnvVarsPolicy ProfileSourcedEnvVarsPolicy
+}
+```
+
+Given the plugin is executed directly by the controller, it may expect to have
+access to the same environment as the controller itself, inclusive of envvars,
+filesystem and network. It is expected that the identity of the plugin is the
+same as the controller itself.
+
+The `ClusterProfileSourcedCLIArgsPolicy` and
+`ClusterProfileSourcedEnvVarsPolicy` flags control whether the library will
+process `clusterprofiles.multicluster.x-k8s.io/exec/additional-args` and
+`clusterprofiles.multicluster.x-k8s.io/exec/additional-envs` extensions, as
+described earlier. If set to `Ignore`, additional CLI arguments and/or
+environment variables cannot be set from the ClusterProfile side.
+
+#### Plugin Examples
+
+As an example, we provide pseudocode for plugins that could easily be
+implemented with the protocol. They are ultrasimplified versions of the code
+and structures to convey the idea and not be an implementation example.
+
+##### Secret Reader Plugin
+
+This plugin assumes the controller is aware of the list of clusters ahead of
+time and has created secrets for them in its namespace. It simply reads the
+token from the secret mapped to the cluster specifically for this controller.
+Note that namespace comes from the controller config while `clusterName` is
+read by the plugin from `ExecCredential.Spec.Cluster.Config`, which the
+library populates from the `Cluster.extensions` entry named
+`client.authentication.k8s.io/exec`.
+
+```
+func GetToken(namespace, clusterName string) string {
+  // query secrets local to this controller (same cluster, same namespace)
+  secret := secrets.Namespace(namespace).Get(clusterName)
+  return secret.Data.token
+}
+```
+
+##### GKE with Workload Identity Federation
+
+This plugin uses Workload Identity Federation to call the other clusters that
+are GKE clusters and therefore understanding google-issued credentials.
+
+```
+func GetToken() string {
+  // This library calls looks at the standard envvar called GOOGLE_CREDENTIALS and if not found, calls the Metadata Server IP (169.254.169.254)
+  creds := google.GetDefaultCredentials()
+  return creds.Token()
+}
+```
 
 ## API Example
 
@@ -624,6 +1018,113 @@ status:
      lastTransitionTime: "2023-05-08T07:58:55Z"
      message: ""
 ```
+
+### API Examples with Access Providers
+
+Below is an example of a GKE ClusterProfile, which would map to a plugin
+providing credentials of type `google`:
+
+```yaml
+apiVersion: multicluster.x-k8s.io/v1alpha1
+kind: ClusterProfile
+metadata:
+ name: my-cluster-1
+spec:
+  displayName: my-cluster-1
+  clusterManager:
+    name: GKE-Fleet
+status:
+  version:
+    kubernetes: 1.28.0
+  properties:
+   - name: clusterset.k8s.io
+     value: some-clusterset
+   - name: location
+     value: us-central1
+  accessProviders:
+  - name: google
+    cluster:
+      server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
+```
+
+Below are some examples that feature the use of extensions in ClusterProfiles:
+
+* This example uses the reserved `client.authentication.k8s.io/exec` extension
+  to pass cluster names to a plugin of the secret reader type:
+
+  ```yaml
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+    name: my-cluster-1
+  spec:
+    displayName: my-cluster-1
+    clusterManager:
+      name: inhouse-manager
+  status:
+    accessProviders:
+    - name: secretreader
+      cluster:
+        server: https://<spoke-server>
+        certificate-authority-data: <BASE64_CA>
+        extensions:
+        - name: client.authentication.k8s.io/exec
+          extension:
+            clusterName: spoke-1
+  ```
+
+* This example uses the
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-args` extension to
+  pass additional CLI arguments (`-audience https://my-on-prem-k8s.example.dev`)
+  to the exec plugin when the `spire-agent` access provider is used, as the
+  cluster's authentication solution is expecting tokens with this specific
+  audience for security reasons.
+
+  ```yaml
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+    name: my-on-prem-cluster
+  spec: ...
+  status:
+    ...
+    accessProviders:
+    - name: spire-agent
+      cluster:
+        server: https://my-on-prem-k8s.example.dev
+        ...
+        extensions:
+        - name: "clusterprofiles.multicluster.x-k8s.io/exec/additional-args"
+          extension:
+          - "-audience"
+          - "https://my-on-prem-k8s.example.dev"
+  ```
+
+* This example uses the
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-envs` extension to
+  pass additional environment variables `CLIENT_ID` and `TENANT_ID` to the exec
+  plugin when the `kubelogin` access provider is used; these entries can
+  help the exec plugin exchange for cluster-specific access tokens.
+
+  ```yaml
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+   name: my-aks-cluster
+  spec: ...
+  status:
+    ...
+    accessProviders:
+    - name: kubelogin
+      cluster:
+        server: https://braveion-abcxyz.hcp.eastus2.azmk8s.io
+        ...
+        extensions:
+        - name: "clusterprofiles.multicluster.x-k8s.io/exec/additional-envs"
+          extension:
+            "CLIENT_ID": "my-client-id"
+            "TENANT_ID": "my-tenant-id"
+  ```
 
 ### Scalability implication
 
@@ -694,6 +1195,8 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 - A CRD definition and generated client.
 - A dummy controller and unit test to validate the CRD and client.
+- An access provider plugin library and protocol definition.
+- Unit tests for the access provider library.
 
 #### Beta
 
@@ -909,6 +1412,12 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+The following metrics would be added into the access provider plugin
+library to help observability:
+
+* Number of Credential Obtention, categorized per plugin type, reply state
+* Latency to obtain credentials, categorized per plugin type
+
 ### Dependencies
 
 <!--
@@ -1064,6 +1573,11 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 2025-06-01: KEP-5339 (Plugin for Credentials in ClusterProfile) merged into
+  this KEP. The access provider plugin mechanism, `accessProviders` API
+  field, and all related design details were consolidated here since the base
+  API and the access-related fields are expected to graduate together.
 
 ## Drawbacks
 
