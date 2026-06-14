@@ -291,9 +291,8 @@ limit. The `storage.Interface` is unchanged.
 
 #### Beta
 
-- Feature implemented behind the `EtcdRangeStream` feature gate, default off
-  initially. May flip to default on within Beta if testing data and
-  API Machinery leads agree there is sufficient signal of stability.
+- Feature implemented behind the `EtcdRangeStream` feature gate, default on
+  in Beta.
 - Watch cache initialization routes through `RangeStream` with
   automatic `Unimplemented` fallback for older etcd.
 - Feature is covered with unit, integration, and e2e tests.
