@@ -1,0 +1,124 @@
+title: CSI Direct In-Memory Environment Variable Injection
+kep-number: NNNN  # To be assigned via kubernetes/enhancements PR process
+authors:
+  - "@assafkatz"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-node
+  - sig-auth
+  - sig-api-machinery
+status: provisional  # Will become 'implementable' after SIG-Storage approval
+creation-date: 2026-02-02
+last-updated: 2026-02-02
+reviewers:
+  - "@kubernetes/sig-storage-pr-reviews"
+  - "@kubernetes/sig-node-pr-reviews"
+approvers:
+  - "@kubernetes/sig-storage-api-approvers"
+  - "@kubernetes/sig-node-approvers"
+prr-approvers:
+  - "@kubernetes/sig-storage-prr-approvers"
+
+see-also:
+  - "/keps/sig-auth/3721-support-environment-files"
+  - "https://github.com/kubernetes-sigs/secrets-store-csi-driver"
+  - "https://github.com/container-storage-interface/spec"
+
+replaces:
+
+superseded-by:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.36"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CSIDirectEnvInjection
+    components:
+      - kubelet          # kubelet: CRI integration and NodeGetEnvVars call-site
+      - kube-apiserver   # kube-apiserver: admission/webhook validation for ProviderClass and csiSecretRef
+
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - name: kubelet_csi_env_injection_requests_total
+    type: Counter
+    labels:
+      - driver
+      - provider_class
+      - result  # success, failure, timeout
+    description: Total number of CSI environment variable injection requests
+    stability: alpha
+    
+  - name: kubelet_csi_env_injection_duration_seconds
+    type: Histogram
+    labels:
+      - driver
+      - provider_class
+    description: Latency distribution for CSI environment variable injection RPC calls
+    buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
+    stability: alpha
+    slo: "quantile='0.99' ≤ 0.1s"  # p99 ≤ 100ms
+    
+  - name: kubelet_csi_env_injection_errors_total
+    type: Counter
+    labels:
+      - driver
+      - error_type  # timeout, unauthorized, not_found, backend_error
+    description: Total number of CSI environment variable injection errors by type
+    stability: alpha
+    
+  - name: csi_driver_env_backend_duration_seconds
+    type: Histogram
+    labels:
+      - backend_type  # vault, aws_secrets, imds, local_os
+    description: Backend-specific latency for environment variable retrieval
+    buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
+    stability: alpha
+    
+  - name: csi_driver_env_cache_hit_ratio
+    type: Gauge
+    labels:
+      - driver
+    description: Cache hit ratio for environment variable requests (0.0-1.0)
+    stability: alpha
+    slo: "≥ 0.8"  # Target 80% cache hit rate in steady state
+    
+  - name: kubelet_csi_env_injection_request_payload_bytes
+    type: Histogram
+    labels:
+      - driver
+      - provider_class
+    description: Payload size distribution (bytes) for NodeGetEnvVars requests. Requests larger than 65536 bytes are rejected.
+    buckets: [64, 256, 1024, 4096, 16384, 65536]
+    stability: alpha
+
+  - name: kubelet_csi_env_injection_fallbacks_total
+    type: Counter
+    labels:
+      - driver
+      - provider_class
+      - fallback_reason  # driver_hint_missing, providerclass_missing, kubelet_default
+    description: Counter of times kubelet used a fallback value (driver hint not provided). Labeled by fallback reason.
+    stability: alpha
+
+  - name: kubelet_csi_env_injection_inflight_requests
+    type: Gauge
+    labels:
+      - driver
+    description: Number of in-flight NodeGetEnvVars requests currently being processed by kubelet per driver
+    stability: alpha
+    slo: "alert if >100 for 1m"
