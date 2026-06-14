@@ -7,7 +7,7 @@ owning-sig: sig-scheduling
 participating-sigs:
   - sig-node
   - sig-autoscaling
-status: implementable
+status: implemented
 creation-date: 2024-09-24
 reviewers:
   - "@pohly"
@@ -44,7 +44,7 @@ feature-gates:
       - kube-apiserver
       - kube-controller-manager
       - kube-scheduler
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
