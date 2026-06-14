@@ -1,0 +1,30 @@
+title: Add Topology Manager option to improve workload density for single-numa-node
+kep-number: 6007
+authors:
+  - "jingczhang"
+  - "saipranav36"
+owning-sig: sig-node
+participating-sigs: []
+status: implementable
+creation-date: "2026-04-07"
+reviewers: []
+approvers: 
+  - "@sig-node-tech-leads"
+see-also: []
+replaces: []
+last-updated: "2026-06-05"
+stage: alpha
+latest-milestone: "v1.37"
+milestone: 
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
+feature-gates:
+  - name: "TopologyManagerPolicyAlphaOptions"
+    components:
+      - kubelet
+disable-supported: true
+metrics:
+  - topology_manager_admission_duration_ms
+  - topology_manager_admission_requests_total
+  - topology_manager_admission_errors_total
