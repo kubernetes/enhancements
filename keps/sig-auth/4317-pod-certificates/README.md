@@ -26,6 +26,11 @@
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+  - [Version Skew and API Versioning Impact](#version-skew-and-api-versioning-impact)
+    - [1. Kubelet Upgrade from 1.35 to 1.36 (Field Migration)](#1-kubelet-upgrade-from-135-to-136-field-migration)
+    - [2. Kubelet Upgrade from 1.36 to 1.37 (API Version Transition)](#2-kubelet-upgrade-from-136-to-137-api-version-transition)
+    - [3. Skewed Kubelet (1.35) with Upgraded Signer (1.37)](#3-skewed-kubelet-135-with-upgraded-signer-137)
+    - [4. Kubelet and Signer both use v1 (&gt;= 1.37)](#4-kubelet-and-signer-both-use-v1--137)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -47,10 +52,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
@@ -914,8 +919,15 @@ For Beta:
 * Deprecate and remove the alpha API.
 
 For GA:
-* The `PKIXPublicKey` and `ProofOfPossession` fields will not be promoted to v1.
-  They will remain on the v1beta1 API until it is removed.
+* The `PKIXPublicKey` and `ProofOfPossession` fields, which have been marked as
+  deprecated in beta, will not be promoted to v1. They will remain on the
+  v1beta1 API until it is removed.
+* Allow time for feedback (wait at least two releases in Beta) with no major
+  bugs or regressions reported.
+* Ensure all e2e tests related to the feature are stable and flake-free, and
+  promote the e2e tests (`test/e2e/auth/projected_podcertificate.go`) to
+  conformance.
+* Official user-facing documentation is updated to reflect GA status.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -1050,6 +1062,60 @@ following skew cases:
   specified key type against its list of supported key types.
 * (`kube-apiserver>=N`, `kubelet>=N`): No problems, everything works.
 
+### Version Skew and API Versioning Impact
+
+The transition of the `PodCertificateRequest` API from Beta to GA involves two
+key changes across releases:
+1. **In 1.36 (Beta):** A field migration where Kubelet starts populating
+   `StubPKCS10Request` and leaves the deprecated `PKIXPublicKey` and
+   `ProofOfPossession` fields empty.
+2. **In 1.37 (GA):** The graduation to `v1`, where the deprecated
+   `PKIXPublicKey` and `ProofOfPossession` fields are dropped from the `v1`
+   schema (but kept in `v1beta1` and core/internal types).
+
+The skew scenarios and their impacts are detailed below:
+
+#### 1. Kubelet Upgrade from 1.35 to 1.36 (Field Migration)
+In this transition, both components are still using the `v1beta1` API version,
+but Kubelet changes the payload fields it writes.
+* **Kubelet version:** 1.36 (writes `v1beta1` with `StubPKCS10Request` only).
+* **Signer version:** 1.35 or unupgraded 1.36 (expects `PKIXPublicKey` or
+  `ProofOfPossession` to be populated).
+* **Impact:** The signer will fail to process requests from the 1.36 Kubelet.
+* **Mitigation:** Signer implementations must be upgraded to support
+  `StubPKCS10Request` before (or at the same time as) Kubelets in the cluster
+  are upgraded to 1.36.
+
+#### 2. Kubelet Upgrade from 1.36 to 1.37 (API Version Transition)
+In this transition, Kubelet is upgraded to 1.37 and begins using the `v1` API.
+* **Kubelet version:** 1.37 (writes `v1` with `StubPKCS10Request` only).
+* **Signer version:** 1.36 (uses `v1beta1`, supports `StubPKCS10Request`).
+* **Impact:** No compatibility impact. The API server automatically converts
+  the `v1` request written by Kubelet to `v1beta1` for the signer. Since the
+  1.36 signer already supports `StubPKCS10Request`, it will successfully sign
+  the request.
+
+#### 3. Skewed Kubelet (1.35) with Upgraded Signer (1.37)
+In this transition, the control plane/signer is upgraded to GA (`v1`), but
+there are still old 1.35 Kubelets in the cluster.
+* **Kubelet version:** 1.35 (writes `v1beta1`, populating `PKIXPublicKey` and
+  `ProofOfPossession` but not `StubPKCS10Request`).
+* **Signer version:** 1.37 (upgraded to use the `v1` API).
+* **Impact:** The API server converts the `v1beta1` request from the 1.35
+  Kubelet to `v1` for the signer. During this conversion, `PKIXPublicKey` and
+  `ProofOfPossession` are dropped. The `v1` signer will see an empty
+  `StubPKCS10Request` and will not be able to sign the request.
+* **Mitigation:** Signer controllers must continue to support and watch the
+  `v1beta1` API if they need to support skewed Kubelets (< 1.36) in the cluster.
+  Once all Kubelets are upgraded to >= 1.36, the signer can be safely
+  transitioned to use `v1` only.
+
+#### 4. Kubelet and Signer both use v1 (>= 1.37)
+* **Kubelet version:** >= 1.37
+* **Signer version:** >= 1.37 (using `v1` API)
+* **Impact:** Both use `StubPKCS10Request` over the `v1` API. The transition is
+  complete and functions normally.
+
 ## Production Readiness Review Questionnaire
 
 <!--
@@ -1078,13 +1144,7 @@ you need any help or guidance.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-At beta, enabling this feature in a live cluster will require the following steps.
-
-1. Enable the certificates/v1beta1 API.
-2. Enable the PodCertificateRequest feature gate on all kube-apiserver replicas.
-3. Enable the PodCertificateRequest feature gate on all kubelet instances.
-
-At this point, you can begin to create pods that use the features.
+This feature is enabled by default. You can begin to create pods that use the features without any additional enablement steps.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1092,18 +1152,11 @@ No, no default behavior is changed.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the feature can be disabled safely by following this procedure.
-
-1. Remove any workloads that are currently using PodCertificate projected volumes.
-2. Disable the PodCertificateRequest feature gate on all kubelet instances
-3. Disable the PodCertificateRequest feature gate on all kube-apiserver replicas
-5. Disable the certificates/v1beta1 API.
+No, the `PodCertificateRequest` feature gate is enabled by default and locked to true, meaning the feature cannot be disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the procedure in the previous section was followed, nothing.  If workloads
-using PodCertificate projected volumes remained in the cluster, their behavior
-may suddenly change.
+Not applicable, the feature cannot be disabled or rolled back at stable.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1163,14 +1216,32 @@ Upgrade is not tested for the Alpha to Beta transition.  Anyone evaluating the
 feature in alpha is expected to completely disable usage, then re-enable the
 beta version of the feature.
 
+No manual upgrade/rollback tests are planned for the Beta to Stable transition.
+Instead, we will promote the dedicated e2e tests
+(`test/e2e/auth/projected_podcertificate.go`) to conformance first.
+Standard Kubernetes CI jobs (such as `kubeadm-kinder-upgrade` and
+version-skewed Kubelet jobs) will continuously verify compatibility during
+upgrades and under version skew.
+
+Regarding API and component changes:
+* For clusters already running with the feature enabled in Beta: The only API
+  change is the schema transition from `v1beta1` to `v1` (where the deprecated
+  `PKIXPublicKey` and `ProofOfPossession` fields are dropped). Workloads not
+  relying on these deprecated fields will continue functioning safely.
+
+* For clusters upgrading from a version where the feature was disabled or not
+  present: Upgrading to GA will enable the `PodCertificateRequest` API and the
+  kubelet volume manager by default. This transition path (from disabled to
+  enabled) is continuously verified by standard CI runs where the feature gate
+  is enabled.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-The alpha API will be deprecated simultaneously with the beta API being
-launched.
+No.
 
 ### Monitoring Requirements
 
@@ -1412,10 +1483,17 @@ If a third party signer controller has an outage, that will affect
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+If SLOs for certificate issuance or refresh are not met, the problem likely lies in the third-party signer implementation. Operators should:
+1. Check the logs and metrics of the component implementing the signer to determine why it is failing to process `PodCertificateRequest` objects in a timely manner.
+2. Inspect `PodCertificateRequest` objects directly (`kubectl get podcertificaterequests`) to see their status or any error conditions.
+3. Check `kube-apiserver` and `kubelet` logs for errors related to managing `PodCertificateRequest` objects.
+
 ## Implementation History
 
 * 1.34 --- Launched to alpha.
 * 1.35 --- Launched to beta, with the addition of the `spec.userConfig` field.
+* 1.36 --- Introduced the `spec.stubPKCS10Request` field and deprecated the `spec.PKIXPublicKey` and `spec.proofOfPossession`
+* 1.37 --- Launched to stable.
 
 ## Drawbacks
 
