@@ -7,15 +7,14 @@ participating-sigs:
   - sig-node
   - sig-windows
 creation-date: "2025-02-01"
-reviewers: 
-  - '@mikebrow'
+reviewers:
+  - '@mikebrow' # sig-node-assigned-reviewer
   - '@thockin'
   - '@mrunalp'
   - '@kannon92'
-  - "@mikebrow" # sig-node-assigned-reviewer
-approvers: 
+approvers:
+  - '@sergeykanzhelev' # sig-node-assigned-approver
   - '@mrunalp'
-  - "@sergeykanzhelev" # sig-node-assigned-approver
 
 status: implementable
 stage: beta

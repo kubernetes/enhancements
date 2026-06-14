@@ -9,6 +9,7 @@ status: implemented
 creation-date: "2022-09-26"
 reviewers: []
 approvers:
+  - "@klueska" # sig-node-assigned-approver
   - "@sig-node-tech-leads"
 last-updated: "2024-11-06"
 see-also: []

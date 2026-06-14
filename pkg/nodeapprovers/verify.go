@@ -149,13 +149,13 @@ func VerifyKEP(kepYAMLPath string) ([]Violation, error) {
 	assignedReviewers := assignedUsers(mappingValue(root, "reviewers"), reviewerMarker)
 	assignedApprovers := assignedUsers(mappingValue(root, "approvers"), approverMarker)
 
-	if len(assignedReviewers) == 0 && len(assignedApprovers) == 0 {
-		return nil, nil
-	}
-
 	ownersPath := filepath.Join(filepath.Dir(kepYAMLPath), "OWNERS")
 	ownersData, err := os.ReadFile(ownersPath)
-	if err != nil {
+	if os.IsNotExist(err) {
+		if len(assignedReviewers) == 0 && len(assignedApprovers) == 0 {
+			// No annotations and no OWNERS file — nothing to check.
+			return nil, nil
+		}
 		var violations []Violation
 		for _, u := range assignedReviewers {
 			violations = append(violations, Violation{
@@ -174,6 +174,8 @@ func VerifyKEP(kepYAMLPath string) ([]Violation, error) {
 			})
 		}
 		return violations, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", ownersPath, err)
 	}
 
 	var owners ownersFile
