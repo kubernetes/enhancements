@@ -45,6 +45,8 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+- [Future Considerations](#future-considerations)
+  - [Derived Attributes in Device Selectors](#derived-attributes-in-device-selectors)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -317,6 +319,7 @@ type DeviceRequest struct {
 	// +featureGate=DRADerivedAttributes
 	// +listType=map
 	// +listMapKey=name
+	// +optional
 	// +k8s:optional
 	// +k8s:maxItems=8
 	DerivedAttributes []DerivedAttribute `json:"derivedAttributes,omitempty"`
@@ -344,12 +347,7 @@ type DerivedAttribute struct {
 	// is an error and causes CEL evaluation for the device to fail.
 	//
 	// The expression's input is an object named "device", which carries the
-	// following properties:
-	//  - driver (string): the name of the driver which defines this device.
-	//  - attributes (map[string]object): the device's attributes, grouped by prefix
-	//    (e.g. device.attributes["dra.example.com"] evaluates to an object with all
-	//    of the attributes which were prefixed by "dra.example.com").
-	//  - capacity (map[string]object): the device's capacities, grouped by prefix.
+	// same properties as in a CELDeviceSelector.
 	//
 	// When pod scheduling encounters CEL runtime errors (such as looking
 	// up an attribute that isn't defined) for some devices, it will abort
@@ -375,6 +373,10 @@ attributes.
 ### CEL Environment & Validation
 - **Environment**: The CEL environment for `Expression` is exactly the same
   as that for `CELDeviceSelector`, containing a single variable `device`.
+- **Evaluation Order**: Derived attributes are evaluated **after** the device
+  request's `CELDeviceSelector` has filtered candidate devices. They are not
+  injected into the selector's CEL environment and are exclusively used for
+  evaluating constraints like `matchAttribute` and `distinctAttribute`.
 - **Return Type**: The CEL expression must evaluate to a scalar (string,
   integer, boolean, or semver) or a list of these scalars (`[]string`, `[]int64`,
   `[]bool`, `[]semver`).
@@ -398,11 +400,12 @@ In `pkg/scheduler/framework/plugins/dynamicresources`:
 2. When evaluating candidate devices for a request, the plugin executes the
    cached CEL expressions against each `Device` object. The computed values are
    stored in a temporary map associated with the candidate device.
-3. When evaluating `matchAttribute` constraints during the plugin
-   implements a lookup precedence: it first checks if the attribute name matches
-   a cached derived attribute on the candidate device's request; if not found,
-   it falls back to looking up the static attribute on the `Device` object. If
-   values do not match across the specified requests, the permutation is pruned.
+3. When evaluating constraints (like `matchAttribute` and `distinctAttribute`),
+   the plugin implements a lookup precedence: it first checks if the attribute
+   name matches a cached derived attribute on the candidate device's request;
+   if not found, it falls back to looking up the static attribute on the
+   `Device` object. If values do not match across the specified requests, the
+   permutation is pruned.
 
 ### Test Plan
 
@@ -424,10 +427,10 @@ None.
   - Verify correct CEL evaluation and constraint matching.
 
 ##### Integration tests
-- `test/integration/scheduler/dra`:
-  - Add test cases with simulated DRA drivers publishing disparate attribute
-    schemas. Verify that Pods using `derivedAttributes` successfully schedule,
-    while invalid claims fail scheduling.
+- `test/integration/scheduler_perf/dra/derived-attributes`:
+  - Include a realistic scenario (number of attributes, complexity of the CEL
+    expressions), then define a simple case for correctness checking and
+    larger cases for performance measurement.
 
 ##### e2e tests
 - `test/e2e/scheduling/dra.go`:
@@ -444,7 +447,8 @@ None.
 #### Beta
 - Gather feedback from DRA driver maintainers (SIG Node / SIG Network).
 - Any additional e2e tests implemented and running in Testgrid canaries.
-- Verify scheduler performance and latency overhead with large device counts.
+- Verify scheduler performance and latency overhead with large device counts
+  using the `scheduler_perf` test cases.
 
 #### GA
 - Proven adoption in deployment manifests and user documentation for real-world DRA drivers (e.g., dra-driver-cpu,
@@ -478,7 +482,7 @@ None.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: DRADerivedAttributes
   - Components depending on the feature gate: kube-apiserver,
-    kube-controller-manager, kube-scheduler, kubelet
+    kube-controller-manager, kube-scheduler
 
 ###### Does enabling the feature change any default behavior?
 
@@ -500,8 +504,8 @@ correctly by the scheduler.
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. Unit tests in `pkg/apis/resource/validation` verify that
-`derivedAttributes` and non-FQDN `matchAttribute` strings are rejected when the
-feature gate is disabled.
+`derivedAttributes` and non-FQDN `matchAttribute` or `distinctAttribute` strings
+are rejected when the feature gate is disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -649,3 +653,27 @@ in pending `ResourceClaims` are causing high evaluation latency.
   flexibility, evaluating expressions across entire device groups made it
   difficult for the scheduler to prune invalid permutations early, leading to
   combinatorial explosion during device filtering.
+
+## Future Considerations
+
+### Derived Attributes in Device Selectors
+
+In the current design, `derivedAttributes` are evaluated **after** the device
+request's `CELDeviceSelector` has filtered candidate devices. As a result,
+derived attributes cannot be referenced within the selector's CEL expression
+itself.
+
+While making derived attributes available within selectors would improve
+usability (by avoiding the need to duplicate complex mapping logic across the
+selector and the derived attribute), it introduces significant complexities:
+
+1. **Performance Overhead**: Evaluating derived attributes before selectors
+   forces early evaluation on *all* candidate devices.
+2. **CEL Environment Ambiguity**: Referencing derived attributes in the CEL
+   environment requires resolving namespace collisions or expanding the
+   standard schema (e.g., introducing `device.derivedAttributes`).
+
+This functionality is excluded from the current KEP to prioritize scheduling
+performance and simplify the initial implementation. It may be explored in a
+future enhancement if the community identifies a strong need for this usability
+improvement.
