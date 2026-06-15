@@ -54,6 +54,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [1. LIFO (Last-In, First-Out) CPU Release](#1-lifo-last-in-first-out-cpu-release)
+  - [2. CPU Release Based on Real-Time Usage](#2-cpu-release-based-on-real-time-usage)
+  - [3. Immediate Actuation (No Delay)](#3-immediate-actuation-no-delay)
+  - [4. Handshake-Based Synchronization](#4-handshake-based-synchronization)
+  - [5. Node Declared Features as Opt-Out Mechanism](#5-node-declared-features-as-opt-out-mechanism)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -1047,11 +1052,46 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
+This section summarizes the alternatives considered during the design phase. These discussions originated in the context of KEP-5554 (which enables in-place scaling of pods with exclusive CPUs) and continued during the design of this KEP (which adds configurable scale-down delay and Downward API exposure).
+
+The following alternatives were discussed in SIG Node meetings and in the KEP review process. For more details, see:
+- [SIG Node Meeting Recording (March 2025) discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg)
+- [SIG Node Meeting Minutes (March 11, 2025)](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit)
+- [KEP Review Document (Google Doc)](https://docs.google.com/document/d/19-yzI41L6_XRj6l_27ylWSc114fzgP301FhxCPf0Dbg/edit)
+- [GitHub Discussion: kubernetes/kubernetes#131309](https://github.com/kubernetes/kubernetes/pull/131309)
+
+The following alternatives were considered:
+
+### 1. LIFO (Last-In, First-Out) CPU Release
+
+* **Description**: Track the order in which CPUs were allocated and release them in reverse order during scale-down.
+* **Why Rejected**: This approach was discussed as a potential implementation detail for determining which CPUs to remove. However, KEP-5554 established the principle of preserving the *Original CPUSet* allocated during pod creation. The "never-remove-promised-CPUs" requirement means that the initial CPUs must remain in the actuated set throughout the pod's lifetime. LIFO would add tracking complexity without providing additional guarantees. This was rejected during SIG Node meetings as an unnecessary complication.
+
+### 2. CPU Release Based on Real-Time Usage
+
+* **Description**: Monitor CPU utilization inside the container and release the least utilized or idle cores during scale-down.
+* **Why Rejected**: This approach was briefly mentioned as a possibility but was rejected because:
+  1. It deviates from Kubernetes' deterministic resource management model.
+  2. CPU usage fluctuates rapidly, making it unreliable for infrastructure decisions.
+  3. It risks performance degradation for workloads that depend on specific cache topologies (NUMA, L3 caches).
+
+### 3. Immediate Actuation (No Delay)
+
+* **Description**: Apply the new cpuset immediately when the scale-down request is processed, without any delay.
+* **Why Rejected**: This is the current behavior without this KEP. Immediate actuation does not give workloads time to prepare for CPU removal. Latency-sensitive applications (e.g., DPDK workloads) may experience performance degradation because they cannot migrate tasks away from CPUs being removed. This KEP addresses this gap by introducing a configurable delay window.
+
+### 4. Handshake-Based Synchronization
+
+* **Description**: Require the workload to send a signal to kubelet when it is ready for the cpuset change, rather than using a time-based delay.
+* **Why Rejected**: This approach would create a dependency between kubelet and workload state, which violates Kubernetes' design principle of keeping kubelet independent from application behavior. A workload could potentially block the scaling operation indefinitely. The time-based delay provides a guaranteed preparation window without introducing this coupling.
+
+### 5. Node Declared Features as Opt-Out Mechanism
+
+* **Description**: Use Node Declared Features to allow pods to opt out of the scale-down delay at the pod level.
+* **Why Rejected**: Node Declared Features are intended to be temporary and tied to feature gates, to be removed at GA+3. They are not suitable as a permanent opt-out mechanism. Alternative approaches (such as pod annotations or node taints) will be evaluated for Beta graduation.
+
+**Note:** The scale-down delay approach was selected during the KEP review process (discussed in SIG Node meetings and document reviews) as it provides a simple, deterministic guarantee without requiring workload-kubelet synchronization. Concerns about timer-based approaches introducing race conditions are unfounded: both the delay verification and cpuset actuation occur sequentially within the CPUManager's reconcile loop, ensuring deterministic behavior.
+
 
 ## Infrastructure Needed (Optional)
 
