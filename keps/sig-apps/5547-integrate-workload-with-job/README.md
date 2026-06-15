@@ -35,6 +35,7 @@
     - [Object Creation Order](#object-creation-order)
     - [Handling Updates and Mutability](#handling-updates-and-mutability)
     - [Reconciliation Flow upon Updates](#reconciliation-flow-upon-updates)
+  - [Interaction with BYO Workload/PodGroup](#interaction-with-byo-workloadpodgroup)
   - [Naming Conventions](#naming-conventions)
   - [Deletion and Garbage Collection](#deletion-and-garbage-collection)
   - [Test Plan](#test-plan)
@@ -724,7 +725,9 @@ If the `Workload` was created by another actor (e.g., a higher-level controller 
 pre-creates a `Workload`), the Job controller respects and uses it and its associated PodGroups when
 creating pods. The Job controller falls back (ignores the discovered `Workload`/`PodGroup`) when the
 discovered `Workload` has an unsupported structure (for alpha, when the number of `PodGroupTemplates`
-is not 1). In that case, a condition or event should be triggered to inform the user.
+is not 1). In that case, a condition or event should be triggered to inform the user. See
+[Interaction with BYO `Workload`/`PodGroup`](#interaction-with-byo-workloadpodgroup) for how
+`spec.scheduling` behaves in this case and why such objects are never mutated by the controller.
 
 #### OwnerReferences Relationship
 
@@ -756,14 +759,17 @@ By this ownerReferences relationship, garbage collection will remove objects acc
 
 #### Defaulting Rules
 
-To ensure backward compatibility and avoid breaking existing pipelines:
+- **`Scheduling` unset → `Basic`.** Existing Jobs and users that do not opt into WAS carry no 
+`spec.scheduling`. Defaulting the whole field to a `Basic` policy preserves their behavior.
+- **`Scheduling` set but `Policy` nil → `Basic`.** `WorkloadPodGroupSchedulingPolicy` is a 
+discriminated union for which the compiled `PodGroup` must carry exactly one concrete policy 
+where a nil `Policy` has no valid compiled form.
+- **`Gang` with `MinCount` unset → `MinCount = parallelism`** (or `MinCount = completions` when
+  `parallelism` is unset): a context-aware sane default for the gang size.
 
-- If `Scheduling` is unset or `Policy` is nil, the Job controller defaults to the `Basic` scheduling
-  policy (standard pod-by-pod scheduling).
-- If a user selects `Gang` but leaves `MinCount` unset, the controller injects a context-aware sane
-  default of `MinCount = parallelism` (or `MinCount = completions` when `parallelism` is unset).
-- Users can configure an escape hatch — for example, requesting only topology constraints while
-  keeping the standard `Basic` policy.
+Optional modifiers (`DisruptionMode`, `Constraints`, `ResourceClaims`) are deliberately not
+defaulted. Unlike `Policy`, these are optional fields whose absence is a defined state. A nil `DisruptionMode` resolves to standard per-pod (`Single`) disruption, a nil `Constraints`
+means no topology co-location, and a nil `ResourceClaims` means no shared claims.
 
 #### Object Creation Order
 
@@ -820,6 +826,30 @@ In either case, the Job controller reconciles the change as follows:
 already-scheduled pods and apply only to pods evaluated in future scheduling cycles. The scheduler
 also operates on an eventually consistent view, so an update may not take effect until the next
 scheduling cycle.
+
+### Interaction with BYO Workload/PodGroup
+
+The reconciliation above applies only to a `Workload`/`PodGroup` that the Job controller created
+and owns. There is another case where the `Workload` and/or `PodGroup` is pre-created by a user or a higher-level:
+
+- **BYO `Workload`:** the user pre-creates a `Workload` whose `spec.controllerRef` points to 
+the `Job` and still expects the `Job` controller to create the runtime `PodGroup`(s) from 
+that `Workload` template.
+- **BYO `PodGroup`:** the user manages the `PodGroup` themselves and wires pods to it by setting
+  `pod.spec.schedulingGroup.podGroupName` directly via the `PodTemplate`. Here the controller does
+  not create or own the `PodGroup` at all.
+
+In both cases the `Job` controller treats the discovered object as the source of truth and does not
+take ownership of it and it adds no controller `ownerReference`, never mutates it on `Job` spec 
+changes, and does not delete it.
+
+How the new `spec.scheduling` fields interact with BYO objects:
+
+- When an authoritative BYO `Workload`/`PodGroup` is present for the `Job`, the controller uses it 
+as-is and does not translate `spec.scheduling` into it or reconcile the two. This avoids a split-brain where the controller would fight the object's owner or over reconcile the two.
+- `minCount` is not synced into a BYO `PodGroup` [KEP-4671].
+- If a discovered `Workload` has an unsupported shape for alpha, the controller ignores it and 
+surfaces a condition or event.
 
 ### Naming Conventions
 
@@ -910,6 +940,10 @@ We will add the following integration tests to the Job controller (`test/integra
 - A Job owned by a parent workload skips `Workload` creation and skips `PodGroup`
   creation when no annotation is set, but creates a `PodGroup`
   mapped to the parent's `PodGroupTemplate` when the annotation is present.
+- The controller discovers and uses a pre-created `Workload`/`PodGroup`,
+  does not take ownership, and does not mutate it on Job spec changes — in particular, updating
+  `spec.scheduling.policy.gang.minCount` leaves a BYO `PodGroup`'s `minCount` untouched, and 
+  the BYO object is not GC'd when the Job is deleted.
 - Jobs created by CronJob get one `Workload` and one `PodGroup` per Job, and these are GC'd when the
   Job completes or is deleted.
 - When a Job is suspended, pods are deleted but `Workload`/`PodGroup` remain; on resume the same
