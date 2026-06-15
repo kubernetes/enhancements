@@ -429,8 +429,12 @@ No.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-Currently, `controller-manager` relies on this API, and in order to establish an
-overall workflow, needs the aggregation layer to route the requests accordingly.
+Yes. Serving the `metrics.k8s.io` API requires an implementation running in the
+cluster — most commonly
+[metrics-server](https://github.com/kubernetes-sigs/metrics-server) — that
+registers and backs the corresponding APIService. Currently, `controller-manager`
+relies on this API, and in order to establish an overall workflow, needs the
+aggregation layer to route the requests accordingly.
 
 ### Scalability
 
