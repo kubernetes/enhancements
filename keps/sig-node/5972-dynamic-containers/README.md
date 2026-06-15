@@ -20,11 +20,11 @@
     - [Changes to Resize behavior](#changes-to-resize-behavior)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
-    - [Pod Updates](#pod-updates)
+    - [Dynamic Subresource](#dynamic-subresource)
     - [Limitations](#limitations)
     - [No SecurityContext escalations](#no-securitycontext-escalations)
     - [Container Status](#container-status)
-    - [Allocated Pods Subresource](#allocated-pods-subresource)
+    - [Allocated Subresource](#allocated-subresource)
   - [Allocation](#allocation)
     - [Image update allocation](#image-update-allocation)
   - [Container Termination](#container-termination)
@@ -206,12 +206,17 @@ a deferred resize will be recorded in a Kubelet log line.
 
 ### API Changes
 
-This proposal does not introduce any new fields. The API changes are limited to:
+This proposal does not introduce any new fields. The API changes are limited to two new subresources
 
-1. Relaxing validation on Pod updates.
-2. Introducing a new `allocated` pods subresource.
+1. `/dynamic`: Enables the new update functionality, in addition to updates allowed on the main
+resource, and `/resize`.
+2. `/allocated`: Returns the allocated version of the pod, served directly from the Kubelet.
 
-#### Pod Updates
+#### Dynamic Subresource
+
+Dynamic container mutation is allowed only through the new `/dynamic` subresource. Update
+permission on this subresource is NOT granted to the default `edit` Role, and must be explicitly
+granted by a `cluster-admin`.
 
 Containers are added and removed via an update on the pod resource.
   - Multiple containers can be added and removed in a single request.
@@ -221,10 +226,14 @@ Containers are added and removed via an update on the pod resource.
   - `.spec.containers` must be non-empty (i.e. cannot remove the last container).
   - Container changes cannot be made once a `DeletionTimestamp` is set on the pod.
 
-In addition to adding & removing containers, container & pod resizes are also now permitted via
-updates to the main pod resource. No permissions beyond `update` on the pod are needed. The `resize`
-subresource will still be supported so that permission to resize *without* permission to modify
-running code can be granted. The same validation rules apply.
+In addition to adding & removing containers, container & pod resizes will also now permitted via
+this `/dynamic` subresource, along with updates allowed on the main pod resource (including
+updates to images, gracePeriods, etc.). The `resize` subresource will still be supported so that
+permission to resize *without* permission to modify running code can be granted. The same validation
+rules apply.
+
+Future extensions that enable additional pod dynamism and mutability (such as dynamic volume
+provisioning) will be added to this same subresource.
 
 #### Limitations
 
@@ -270,9 +279,9 @@ Containers that have been added but not allocated will generate a `ContainerStat
 Containers that have been removed from the allocation will remain in the `Running` state until
 terminated. After termination, the container status will remain until garbage collected (see below).
 
-#### Allocated Pods Subresource
+#### Allocated Subresource
 
-A new read-only `allocated` subresource on pods will surface the allocated pod spec. The allocated
+A new read-only `/allocated` subresource on pods will surface the allocated pod spec. The allocated
 pod will be fetched directly from the Kubelet on-demand, thus avoiding additional storage overhead
 in the API server.
 
@@ -572,14 +581,13 @@ initialization work would require complicated cross-pod coordination.
 Ephemeral containers are already mutable, so maybe we should expand the scope of ephemeral
 containers rather than making regular containers mutable?
 
-Ephemeral containers lack support for the following:
+The largest gaps are that ephemeral containers are **not restartable or removable**. Additionally,
+they lack supoort for:
   - Probes
   - Lifecycle hooks
   - Volume subpath mounts
   - Container ports
   - Resources
-
-Furthermore, ephemeral containers don't support removal.
 
 In aggregate, these gaps are significant enough that it would be a larger change to close these gaps
 in ephemeral containers than make regular containers mutable.
