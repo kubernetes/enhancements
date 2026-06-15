@@ -164,6 +164,7 @@ and make progress.
 
 * Add new CPU manager policies.
 * Allow containers to specify which CPUs to remove during scale-down.
+* **Scale-down delay for PodLevelResourceManagers:** The scale-down delay introduced by this KEP does not apply to resources managed by `PodLevelResourceManagers` (KEP-5526). `PodLevelResourceManagers` does not support In-Place scaling for pod-level resources. Additionally, KEP-5554 (which enables In-Place scaling of exclusive CPU at the container level) excludes scaling for pods that define pod-level resources.
 
 ## Proposal
 
