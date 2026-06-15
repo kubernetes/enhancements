@@ -433,6 +433,27 @@ The Kubelet will declare support for DynamicContainers in it's declared features
   - Feature gate name: `DynamicContainers`
   - Components depending on the feature gate: `kube-apiserver`, `kubelet`
 
+Additionally, a cluster admin can prevent dynamic container mutation with a ValidatingAdmissionPolicy, such as:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: disable-dynamic-containers
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups:   [""]
+        apiVersions: ["v1"]
+        operations:  ["UPDATE"]
+        resources:   ["pods/dynamic"]
+  validations:
+    - expression: >-
+        object.spec.containers.map(c, c.name) == oldObject.spec.containers.map(c, c.name)
+      message: "Dynamic Containers are disabled: adding or removing main containers is not allowed."
+```
+
 ###### Does enabling the feature change any default behavior?
 
 No.
