@@ -193,7 +193,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-This KEP proposes adding topology support to volume snapshots in Kubernetes by extending the `VolumeSnapshotContentSpec` object with an immutable `NodeAffinity` field and enforcing topology compatibility when restoring volumes from snapshots. Currently, volume snapshots lack any topology information, creating a gap that prevents topology-aware scheduling and features.
+This KEP proposes adding topology support to volume snapshots in Kubernetes by extending the `VolumeSnapshotContentSpec` object with a `NodeAffinity` field and enforcing topology compatibility when restoring volumes from snapshots. Currently, volume snapshots lack any topology information, creating a gap that prevents topology-aware scheduling and features.
 
 The enhancement has two parts. First, topology information will be added to volume snapshot contents by returning the topology in the CSI `CreateSnapshotResponse` and stored in the resulting `VolumeSnapshotContent`. Second, topology enforcement ensures that volumes restored from snapshots are provisioned in compatible topologies:
 - For `WaitForFirstConsumer` volume binding: an out-of-tree scheduler plugin (in `kubernetes-sigs/scheduler-plugins`) will filter nodes whose topology is incompatible with the snapshot's `NodeAffinity`, ensuring the selected node leads to provisioning in a compatible topology.
@@ -211,7 +211,7 @@ While CSI volumes have comprehensive topology support, snapshots operate without
 
 ### Goals
 
-- Add topology information to `VolumeSnapshotContent` objects via an immutable `NodeAffinity` field.
+- Add topology information to `VolumeSnapshotContent` objects via a mutable `NodeAffinity` field.
 - Extend CSI spec to support optional topology fields in `CreateSnapshotRequest` and `CreateSnapshotResponse`.
 - Provide an out-of-tree scheduler plugin (in `kubernetes-sigs/scheduler-plugins`) that enforces topology compatibility when scheduling pods with PVCs that reference a snapshot as their data source with `WaitForFirstConsumer` volume binding, ensuring the scheduler only selects nodes whose topology is compatible with the snapshot's `NodeAffinity`.
 - Ensure the external-provisioner intersects the snapshot's `NodeAffinity` with `StorageClass.AllowedTopologies` when provisioning volumes from snapshot data sources with `Immediate` volume binding mode.
@@ -251,7 +251,15 @@ N/A
 
 ### Feature Gate
 
-A new feature gate,`VolumeSnapshotTopology`, will be introduced to control the functionality implemented by this KEP. When the feature gate is disabled the `NodeAffinity` field in the `VolumeSnapshotContent.spec` will not be filled.
+A new feature gate, `VolumeSnapshotTopology`, will be introduced to control the functionality implemented by this KEP. Since VolumeSnapshotContent is a CRD, the field cannot be dropped at the API level the way core types handle feature-gated fields. For alpha, the feature gate controls controller behavior only:
+
+- When disabled, the csi-snapshotter sidecar does not patch `NodeAffinity` onto VolumeSnapshotContent objects.
+- The scheduler plugin does not enforce topology constraints.
+- The external-provisioner does not read the `NodeAffinity` field for topology intersection.
+
+The field exists in the CRD schema but remains empty. If someone manually patches it while the gate is disabled, no component acts on it since all consumers also check the gate.
+
+For Beta, we will investigate using ValidatingAdmissionPolicy/MutatingAdmissionPolicy to reject writes to the field when the gate is disabled, providing API-level enforcement.
 
 ### CSI Spec Changes
 
@@ -308,6 +316,14 @@ message Snapshot {
 }
 ```
 
+Additionally, a new error condition is added to the CreateSnapshot Errors table:
+
+| Condition | gRPC Code | Description | Recovery Behavior |
+|-----------|-----------|-------------|-------------------|
+| Unable to create snapshot in `accessibility_requirements` | 8 RESOURCE_EXHAUSTED | Indicates that although the `accessibility_requirements` field is valid, a snapshot cannot be created with the specified topology constraints. More human-readable information MAY be provided in the gRPC `status.message` field. | Caller MUST ensure that whatever is preventing snapshots from being created in the specified location (e.g. quota issues) is addressed before retrying with exponential backoff. |
+
+This mirrors the existing error condition defined for `CreateVolume` when topology cannot be satisfied.
+
 ### Volume Snapshot Components Changes
 
 There will be changes required in the Volume Snapshot CRDs and the CSI snapshotter sidecar controller.
@@ -323,13 +339,18 @@ type VolumeSnapshotContentSpec struct {
 	// nodeAffinity defines the node topologies from which a volume can
 	// be provisioned using this snapshot as a source. This is derived from the
 	// CSI driver's CreateSnapshotResponse. For WaitForFirstConsumer volume
-	// binding, the scheduler compares these terms against node labels to filter
-	// candidate nodes. For Immediate volume binding, the external-provisioner
-	// intersects these terms with StorageClass.AllowedTopologies to select a
-	// compatible provisioning topology.
-	// This field is immutable.
+	// binding, the scheduler plugin compares these terms against node labels
+	// to filter candidate nodes (alongside the built-in volumebinding plugin
+	// which also considers StorageClass.AllowedTopologies). For Immediate
+	// volume binding, the external-provisioner intersects these terms with
+	// StorageClass.AllowedTopologies to select a compatible provisioning
+	// topology.
+	// This field is mutable to support topology changes during the snapshot
+	// lifecycle (e.g., snapshot replication to additional regions, admin
+	// corrections for statically provisioned snapshots). Changes only affect
+	// future scheduling and provisioning - already-running workloads are not
+	// impacted.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="nodeAffinity is immutable"
 	NodeAffinity []v1.TopologySelectorTerm `json:"nodeAffinity,omitempty" protobuf:"bytes,7,rep,name=nodeAffinity"`
 }
 ```
@@ -611,19 +632,19 @@ Since there is no `CreateSnapshot` call for snapshots that are statically provis
 ### Error Handling
 
 **Topology requirement cannot be satisfied (e.g., no capacity in requested region/zone):**
-The CSI driver returns a gRPC error (`ResourceExhausted`) from `CreateSnapshot`. The sidecar controller handles this like any other `CreateSnapshot` failure. The error is set on `VolumeSnapshotContent.Status.Error`, a warning event is emitted, and the operation is retried. No topology is written to the Spec since the snapshot was not created.
-
-**Topology is valid but temporarily unavailable:**
-The SP may return a transient gRPC error. The sidecar controller's existing retry logic handles this. The `CreateSnapshot` call will be retried.
+The CSI driver returns gRPC error code `8 RESOURCE_EXHAUSTED` from `CreateSnapshot`, indicating that although the `accessibility_requirements` field is valid, a snapshot cannot be created with the specified topology constraints. This mirrors the same error condition defined for `CreateVolume` when topology cannot be satisfied. The sidecar controller sets the error on `VolumeSnapshotContent.Status.Error`, emits a warning event, and retries with exponential backoff. No topology is written to the Spec since the snapshot was not created. The caller MUST ensure that whatever is preventing snapshots from being created in the specified location (e.g., quota issues) is addressed before the retry will succeed.
+- *User-facing*: The user sees the error on `VolumeSnapshotContent.Status.Error` and a warning event with the gRPC `RESOURCE_EXHAUSTED` message. The user should verify capacity/quota in the requested topology or remove topology constraints from the VolumeSnapshotClass.
 
 **CSI driver does not return topology in the response:**
 If the driver does not populate `accessible_topology` in the `CreateSnapshotResponse`, the sidecar controller simply skips the topology patch. The `VolumeSnapshotContent` is created successfully without topology information. This ensures backward compatibility with drivers that do not support topology.
 
 **No nodes match the snapshot's `NodeAffinity` (scheduler plugin):**
 All candidate nodes are filtered out by the plugin because no node's labels satisfy any of the snapshot's `NodeAffinity` terms. The pod remains unschedulable with an event indicating the topology mismatch. This is a permanent failure unless new nodes are added in a compatible topology.
+- *User-facing*: The pod remains in `Pending` state with a scheduler event indicating no nodes satisfy the snapshot topology constraints. The user should add nodes in a compatible topology or use a different snapshot whose `NodeAffinity` matches available nodes.
 
 **Snapshot `NodeAffinity` incompatible with `StorageClass.AllowedTopologies` (Immediate binding):**
-The external-provisioner detects that the intersection of `StorageClass.AllowedTopologies` and the snapshot's `NodeAffinity` is empty. Provisioning fails immediately with an event indicating the topology incompatibility. The user must either use a StorageClass with compatible `AllowedTopologies` or use a snapshot accessible from the desired topology.
+The external-provisioner detects that the intersection of `StorageClass.AllowedTopologies` and the snapshot's `NodeAffinity` is empty. Provisioning fails immediately with an event indicating the topology incompatibility.
+- *User-facing*: The user sees a warning event on the PVC indicating topology incompatibility between the snapshot and StorageClass. The user should use a StorageClass with `AllowedTopologies` compatible with the snapshot's `NodeAffinity`, or use a different snapshot.
 
 **VolumeSnapshotContent has topology field empty:**
 In this case, default scheduler behavior will run, so no snapshot topology will be taken into account when filtering out nodes.
@@ -675,6 +696,13 @@ extending the production code to implement this enhancement.
 - `<package>`: `<date>` - `<test coverage>`
 -->
 
+This enhancement is entirely out-of-tree, so testgrid coverage data does not apply. The packages we will be touching and their current coverage:
+
+- `github.com/kubernetes-csi/external-snapshotter/pkg/sidecar-controller`: 2026-06-15 - 69.8%
+- `github.com/kubernetes-csi/external-snapshotter/pkg/snapshotter`: 2026-06-15 - 90.2%
+- `github.com/kubernetes-csi/external-provisioner/pkg/controller`: 2026-06-15 - 80.9%
+- `sigs.k8s.io/scheduler-plugins/pkg/<snapshot-topology>`: New package (does not exist yet)
+
 Since the e2e framework does not currently support enabling or disabling feature gates, there will be various unit tests that are exercising the `switch` of feature gate itself and handling of relevant data.
 
 Additionally, unit tests for the scheduler plugin will cover:
@@ -708,7 +736,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-N/A, this enhancement does not introduce configuration parameters or CLI options that are used to start binaries. 
+This enhancement is entirely out-of-tree (external-snapshotter, external-provisioner, and `kubernetes-sigs/scheduler-plugins`). There are no changes to `kubernetes/kubernetes`, so integration tests in `test/integration/` do not apply. The equivalent integration-level testing will be done in the respective out-of-tree repositories' test suites, covering the interaction between the sidecar controller, CRDs, and the scheduler plugin.
 
 ##### e2e tests
 
@@ -731,6 +759,11 @@ If e2e tests are not necessary or useful, explain why.
 - Test that a pod with a PVC referencing a snapshot as its data source is scheduled to a node whose topology is compatible with the snapshot's `NodeAffinity`.
 - Test that a pod remains unschedulable when no nodes match the snapshot's `NodeAffinity`.
 - Test that Immediate binding mode with a snapshot data source provisions in a topology compatible with the snapshot's `NodeAffinity`.
+- Test multi-zone cluster with partial topology coverage: snapshot accessible in zone-a only, nodes exist in zone-a and zone-b. Verify pod is scheduled to zone-a.
+- Test topology changes during snapshot lifecycle: update `NodeAffinity` on a VolumeSnapshotContent to add a new zone, verify subsequent scheduling considers the updated topology.
+- Test scheduler plugin failure modes: VolumeSnapshot or VolumeSnapshotContent not found (e.g., deleted mid-scheduling), plugin should not block scheduling of unrelated pods.
+- Test that CSI drivers which do not advertise `SNAPSHOT_ACCESSIBILITY_CONSTRAINTS` are unaffected: `NodeAffinity` is not populated, scheduling behavior is unchanged.
+- Test that snapshots accessible in any zone (driver returns empty `accessible_topology`) do not restrict scheduling.
 
 ### Graduation Criteria
 
@@ -746,6 +779,11 @@ If e2e tests are not necessary or useful, explain why.
 - Validate that the `NodeAffinity` field is being accurately populated.
 - Validate snapshot-controller behavior with and without volume snapshot topology enabled.
 - Validate scheduler plugin correctly filters nodes based on snapshot topology.
+- Evaluate whether a size limit on the `NodeAffinity` field is necessary to prevent object bloat from misbehaving CSI drivers, and implement validation/truncation if needed based on alpha feedback.
+- Add sidecar-level validation of topology data from CSI drivers before patching `NodeAffinity` (e.g., valid label key format, valid label value length, non-empty keys). For alpha, the sidecar passes through what the driver returns.
+- Investigate compatibility with Topology Aware Workload Scheduling (TAS/WAS) and the scheduler plugin.
+- Complete detailed feature gate skew analysis across all three components (csi-snapshotter, external-provisioner, scheduler plugin).
+- Investigate using ValidatingAdmissionPolicy/MutatingAdmissionPolicy to enforce API-level gating of the `NodeAffinity` field on the CRD when the feature gate is disabled.
 
 #### GA
 - No bug reports / feedback / improvements to address.
@@ -800,15 +838,21 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-Since the changes of this enhancement span two independent components (the external-snapshotter sidecar and the out-of-tree scheduler plugin), the following version skew scenarios apply:
+Since the changes of this enhancement span three independent components (the csi-snapshotter sidecar, the external-provisioner, and the out-of-tree scheduler plugin), the following version skew scenarios apply:
 
-- **Scheduler plugin deployed without updated external-snapshotter:** The `NodeAffinity` field will not be populated on `VolumeSnapshotContent` objects. The scheduler plugin will see no topology data and will not filter any nodes. Scheduling behavior is unchanged, this is safe.
+- **Scheduler plugin deployed without updated csi-snapshotter:** The `NodeAffinity` field will not be populated on `VolumeSnapshotContent` objects. The scheduler plugin will see no topology data and will not filter any nodes. Scheduling behavior is unchanged, this is safe.
 
-- **Updated external-snapshotter deployed without scheduler plugin:** The `NodeAffinity` field will be populated on new `VolumeSnapshotContent` objects, but no scheduling enforcement occurs. The topology data is informational only. Provisioning may still fail if the selected node's topology is incompatible with the snapshot which is what the behavior is today.
+- **Updated csi-snapshotter deployed without scheduler plugin:** The `NodeAffinity` field will be populated on new `VolumeSnapshotContent` objects, but no scheduling enforcement occurs for `WaitForFirstConsumer` binding. The topology data is informational only. Provisioning may still fail if the selected node's topology is incompatible with the snapshot, which is the same behavior as today.
 
-- **Both components deployed:** Full functionality, topology is populated and enforced during scheduling.
+- **Updated csi-snapshotter deployed without updated external-provisioner:** The `NodeAffinity` field will be populated on `VolumeSnapshotContent` objects, but Immediate binding mode will not perform topology intersection. The provisioner continues with existing behavior. This is safe — same behavior as today.
 
-Both components must be at the minimum version that includes the topology changes for full functionality. The recommended deployment order is to upgrade the external-snapshotter first (so topology data is available), then deploy the scheduler plugin.
+- **Updated external-provisioner deployed without updated csi-snapshotter:** The provisioner checks for `NodeAffinity` but the field will be empty on all VolumeSnapshotContent objects. The provisioner falls back to existing behavior (using only `StorageClass.AllowedTopologies`). This is safe.
+
+- **All components deployed:** Full functionality, topology is populated by the csi-snapshotter, enforced during scheduling by the plugin (WaitForFirstConsumer), and enforced during provisioning by the external-provisioner (Immediate binding).
+
+All components must be at the minimum version that includes the topology changes for full functionality. The recommended deployment order is to upgrade the csi-snapshotter first (so topology data is available), then deploy the scheduler plugin and update the external-provisioner.
+
+A more detailed analysis of feature gate skew scenarios (e.g., feature gate enabled on one component but disabled on another) will be completed as a Beta graduation requirement.
 
 ## Production Readiness Review Questionnaire
 
@@ -899,7 +943,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Yes, there will be a combination of e2e tests and unit tests.
+Yes, there will be a combination of e2e tests and unit tests. Tests will verify that when the `VolumeSnapshotTopology` feature gate is disabled: (1) the sidecar controller does not patch `NodeAffinity` onto VolumeSnapshotContent objects even if the CSI driver returns topology in the CreateSnapshotResponse, and (2) existing VolumeSnapshotContent objects that already have `NodeAffinity` set are not stripped of the field (data is preserved but no new topology is written).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -919,6 +963,8 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+TBD after alpha.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
@@ -935,6 +981,8 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
+
+TBD after alpha.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -998,11 +1046,15 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+TBD after alpha.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
+
+TBD after alpha.
 
 - [ ] Metrics
   - Metric name:
@@ -1017,6 +1069,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+TBD after alpha.
 
 ### Dependencies
 
@@ -1161,6 +1215,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+TBD after alpha.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1176,7 +1232,11 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+TBD after alpha.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+TBD after alpha.
 
 ## Implementation History
 

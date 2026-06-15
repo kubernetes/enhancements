@@ -4,7 +4,7 @@ authors:
   - "@mdzraf"
 owning-sig: sig-storage
 participating-sigs:
-  - sig-storage
+  - sig-scheduling
 status: implementable
 creation-date: 2026-03-03
 reviewers:
