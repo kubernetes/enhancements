@@ -1,0 +1,32 @@
+title: EmptyDir Volume Permission Mode
+kep-number: 5502
+authors:
+  - "@nispriha"
+  - "@ngopalak-redhat"  
+owning-sig: sig-storage
+participating-sigs:
+  - sig-node
+status: implementable
+creation-date: 2026-06-15
+reviewers:
+  - "@jsafrane"
+  - "@haircommander"
+approvers:
+  - TBD
+see-also:
+replaces:
+
+stage: alpha
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+
+feature-gates:
+  - name: EmptyDirVolumeMode
+    components:
+      - kubelet
+      - kube-apiserver
+disable-supported: true
+
+metrics:
