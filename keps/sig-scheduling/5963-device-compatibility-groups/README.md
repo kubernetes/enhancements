@@ -188,12 +188,16 @@ that aren't also enabled in the cluster.
 #### CompatibilityGroups Assignment
 
 The slice-side `compatibilityGroups` field has type `[]string` and lives on
-each `device.consumesCounters[]` entry for drivers to populate. For two 
+each `device.consumesCounters[]` entry for drivers to populate. For two
 devices consuming counters from the same counter set to be allocated together,
-either both must leave the field unset, or both must declare it and share at 
-least one group name. A nil `compatibilityGroups` and an empty `compatibilityGroups: []` 
-are treated identically. This means a device that declares the field is never
-allocated on a shared counter at the same time with a sibling that omits it.
+either both must have no groups, or both must declare at least one group and
+share at least one group name.
+
+An unset field, an explicit nil, and an empty list (`compatibilityGroups: []`)
+are all equivalent and mean "no groups". A device with no groups is only
+co-allocatable on a shared counter set with sibling devices that likewise have
+no groups; it is never co-allocatable with a device that declares one or more
+groups.
 
 The field is placed on each `consumesCounters[]` entry rather than on the
 device itself because compatibility is a physical-hardware property scoped to
@@ -210,7 +214,23 @@ type DeviceCounterConsumption struct {
     CounterSet string             `json:"counterSet" protobuf:"bytes,1,opt,name=counterSet"`
     Counters   map[string]Counter `json:"counters,omitempty" protobuf:"bytes,2,opt,name=counters"`
 
-    // CompatibilityGroups is declared by drivers on the ResourceSlice.
+    // CompatibilityGroups is a driver-declared list of opaque group names for
+    // this counter-set consumption.
+    //
+    // The scheduler uses it to decide whether devices that draw from the same
+    // counter set may be allocated at the same time: two such devices may be
+    // co-allocated only if their CompatibilityGroups for that counter set
+    // intersect (share at least one name). Devices that consume from different
+    // counter sets are never compared via this field.
+    //
+    // An unset field, an explicit nil, and an empty list are equivalent and
+    // mean "no groups": such a device is only co-allocatable with sibling
+    // devices on the same counter set that also have no groups, and is never
+    // co-allocatable with a device that declares one or more groups.
+    //
+    // Group names are opaque to the scheduler and meaningful only within the
+    // publishing driver's pool.
+    //
     // +optional
     // +listType=atomic
     // +featureGate=DRADeviceCompatibilityGroups
@@ -749,12 +769,17 @@ allocator backtracks and tries other device combinations. A claim is only
 Unschedulable when no combination satisfies all requests and the compatibility
 predicate.
 
-**Composition with `DeviceConstraints`.** `compatibilityGroups` is a
-driver-authored, ResourceSlice-side constraint. `DeviceConstraints` (e.g.,
-`matchAttribute`) is a user-authored, ResourceClaim-side constraint. The two
-are evaluated independently and both must pass for a candidate to be
-allocated. A claim can never *relax* a driver-declared compatibility group,
-and a driver can never *force* a claim-side `matchAttribute`. They compose by
+**Composition with `DeviceConstraints`.** From the scheduler's perspective,
+`compatibilityGroups` behaves like a `matchAttribute` constraint: both are
+evaluated as per-candidate filters inside the allocator's backtracking search
+(see [Scheduler Changes](#scheduler-changes)) — a candidate that would violate
+either is rejected, triggering backtracking rather than immediate failure. They
+differ only in authorship and target: `compatibilityGroups` is a
+driver-authored, ResourceSlice-side constraint, while `DeviceConstraints`
+(e.g., `matchAttribute`) is a user-authored, ResourceClaim-side constraint. The
+two are evaluated independently and both must pass for a candidate to be
+allocated. A claim can never *relax* a driver-declared compatibility group, and
+a driver can never *force* a claim-side `matchAttribute`. They compose by
 conjunction.
 
 ### Driver Responsibilities
