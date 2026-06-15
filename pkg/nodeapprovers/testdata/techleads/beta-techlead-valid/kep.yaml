@@ -1,0 +1,8 @@
+title: Beta Tech Lead Valid
+kep-number: 4
+owning-sig: sig-node
+stage: beta
+approvers:
+  - "@mrunalp"
+  - "@someoneelse"
+latest-milestone: "v1.37"

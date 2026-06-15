@@ -17,6 +17,7 @@ reviewers:
 
 approvers:
   - "@haircommander"
+  - "@mrunalp"
 
 see-also:
   - "/keps/sig-node/6090-exec-env-injection"

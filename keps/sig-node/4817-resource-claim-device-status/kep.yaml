@@ -18,6 +18,7 @@ approvers:
   - "@aojea"
   - "@thockin"
   - "@johnbelamaric"
+  - "@mrunalp"
 
 see-also:
   - "/keps/sig-node/3063-dynamic-resource-allocation"

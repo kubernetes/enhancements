@@ -15,11 +15,10 @@ Enhancement Proposal) is valid.
 
 ## SIG Node assigned reviewers/approvers
 
-A `kep.yaml` may annotate individual entries with the inline comments
-`# sig-node-assigned-reviewer` and `# sig-node-assigned-approver` to
-[scale SIG Node KEP approvers](https://github.com/kubernetes/community/blob/main/sig-node/CONTRIBUTING.md#scaling-up-kep-approvers). Any handle so
-annotated must also be listed in the `OWNERS` file next to that `kep.yaml`:
-assigned reviewers under `reviewers:`, assigned approvers under `approvers:`.
-Conversely, every entry in an `OWNERS` file must have a corresponding annotation
-in `kep.yaml` — extra entries in `OWNERS` that are not annotated in `kep.yaml`
-are also flagged as violations.
+As per [Scaling up KEP approvers](https://github.com/kubernetes/community/blob/main/sig-node/CONTRIBUTING.md#scaling-up-kep-approvers) SIG Node declares an official way to assign approvers to KEPs past beta and enforces tech leads to be approvers for KEPs entering alpha.
+
+Every SIG Node KEP must list at least one `sig-node-tech-leads` member
+(from `OWNERS_ALIASES`) or an approver annotated with
+`# sig-node-assigned-approver` under `approvers:`. Active alpha KEPs must list
+a tech lead and must not use the `# sig-node-assigned-approver` marker.
+

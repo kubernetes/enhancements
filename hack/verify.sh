@@ -36,7 +36,6 @@ EXCLUDED_PATTERNS=(
   "verify-*-dockerized.sh"   # Don't run any scripts that intended to be run dockerized
 
   # TODO(verify): Enable these checks once their errors have been resolved
-  "verify-boilerplate.sh"
   "verify-shellcheck.sh"
 )
 
