@@ -42,6 +42,7 @@ metrics:
   - csi_volume_health_probe_duration_seconds
   - csi_volume_health_probe_total
   - csi_node_volume_health_status
+  - csi_controller_volume_health_status
   - csi_node_storage_backend_health_status
 # Exact label sets are defined alongside the implementation, not
 # in this KEP, so they can evolve without a KEP amendment.

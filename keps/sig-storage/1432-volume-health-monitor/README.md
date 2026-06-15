@@ -324,6 +324,11 @@ a CSI driver reports same adverse condition for a volume
 repeatedly no updates are written to API server because 
 we only store `lastTransitionTime`.
 
+Another way we can mitigate this risk is by using in-process
+queuing system so that unhealthy update to same PVC and pod can
+be queued and only latest values are written to the underlying
+object if multiple health updates are queued.
+
 A second risk is compromised or malicious nodes lying about a
 volume's health to influence operator behavior. This was the
 original objection to per-PVC node-keyed health, and it's why the
