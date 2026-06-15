@@ -10,6 +10,7 @@ reviewers:
   - "@thockin"
   - "@bobbypage"
 approvers:
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
   - "@mrunalp"
 see-also: []
 replaces: []

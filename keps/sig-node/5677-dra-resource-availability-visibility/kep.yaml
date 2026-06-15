@@ -15,7 +15,7 @@ reviewers:
   - "@liggitt"
   - "@pohly"
 approvers:
-  - "@mrunalp" # sig-node-tl
+  - "@mrunalp" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/4381-dra-structured-parameters"

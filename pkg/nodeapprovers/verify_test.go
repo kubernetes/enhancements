@@ -100,8 +100,20 @@ func TestVerifyKEP(t *testing.T) {
 			),
 		},
 		{
-			name: "no markers",
+			name: "no markers but OWNERS exists",
 			dir:  "no-markers",
+			want: violationsFor("no-markers",
+				Violation{
+					Role:   reviewerRole,
+					User:   "tallclair",
+					Reason: "listed in OWNERS but not annotated as sig-node-assigned-reviewer in kep.yaml",
+				},
+				Violation{
+					Role:   approverRole,
+					User:   "dchen1107",
+					Reason: "listed in OWNERS but not annotated as sig-node-assigned-approver in kep.yaml",
+				},
+			),
 		},
 		{
 			name: "extra in owners",
@@ -135,11 +147,10 @@ func TestVerifyAll(t *testing.T) {
 	violations, err := VerifyAll("testdata")
 	require.NoError(t, err)
 
-	// Aggregated violations across all fixtures: missing-reviewer and
-	// missing-approver each contribute one, no-owners contributes two,
-	// extra-in-owners contributes two, and valid, mixed-case, and no-markers
-	// contribute none.
-	want := make([]Violation, 0, 8)
+	// Aggregated violations across all fixtures: missing-reviewer,
+	// missing-approver, no-owners, extra-in-owners, and no-markers each
+	// contribute two, and valid and mixed-case contribute none.
+	want := make([]Violation, 0, 10)
 	want = append(want, violationsFor("missing-reviewer",
 		Violation{
 			Role:   reviewerRole,
@@ -185,6 +196,18 @@ func TestVerifyAll(t *testing.T) {
 		Violation{
 			Role:   approverRole,
 			User:   "derekwaynecarr",
+			Reason: "listed in OWNERS but not annotated as sig-node-assigned-approver in kep.yaml",
+		},
+	)...)
+	want = append(want, violationsFor("no-markers",
+		Violation{
+			Role:   reviewerRole,
+			User:   "tallclair",
+			Reason: "listed in OWNERS but not annotated as sig-node-assigned-reviewer in kep.yaml",
+		},
+		Violation{
+			Role:   approverRole,
+			User:   "dchen1107",
 			Reason: "listed in OWNERS but not annotated as sig-node-assigned-approver in kep.yaml",
 		},
 	)...)
