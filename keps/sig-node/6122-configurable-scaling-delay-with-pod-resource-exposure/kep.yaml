@@ -23,8 +23,7 @@ reviewers:
   - "@SergeyKanzhelev"
   - "@jeremyrickard"
 approvers:
-  - "@dawnchen" # SIG Node approval
-  - "@ffromani"
+  - "@dchen1107" # SIG Node approval
   - "@tallclair"
 
 see-also:
