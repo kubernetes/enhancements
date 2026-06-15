@@ -19,6 +19,7 @@
     - [Periodic reconcile](#periodic-reconcile)
     - [Workqueue singleton](#workqueue-singleton)
     - [Node update filters](#node-update-filters)
+    - [Metrics](#metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -145,8 +146,6 @@ This is mitigated by:
 
 We use a similar concept as already implemented in the node and service controller. Through node informers we register event handlers for the add, delete and update node events, where updates are filtered by certain criteria. To introduce the feature we establish a new feature gate called `CloudControllerManagerWatchBasedRoutesReconciliation`.
 
-Additionally, we introduce a new non-gated metric `route_controller_route_sync_total`, which tracks the number of route reconciliations. This metric can be used for A/B testing to evaluate the impact of watch based route reconciliation.
-
 #### Full reconcile
 
 The current route controller always does a “full reconcile”, looking at all routes inside the configured `ClusterCIDR` and all nodes and then taking action to create/update/delete any routes to match the expectation.
@@ -169,6 +168,13 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 1. `Node.Status.Addresses` maps to the `TargetNodeAddresses` field in the `Route` struct. It determines where packets for a given IP range should be sent. Changes to this field must trigger a reconcile.
 2. `Node.Spec.PodCIDRs` contains the IP ranges assigned to the node. These CIDRs are used as the destination in the created routes. Changes to this field must trigger a reconcile.
+
+#### Metrics
+
+Two new metrics are introduced:
+
+1. `route_controller_route_sync_total` (non-gated): tracks the total number of route reconciliations. Useful for A/B testing the impact of watch-based route reconciliation.
+2. `route_controller_route_corrections_total` (gated): tracks how often routes required adjustment after a periodic reconcile. This signals whether our node update filters are accurate or need revision.
 
 ### Test Plan
 
@@ -197,7 +203,8 @@ Two fields are relevant for determining whether a reconcile should occur:
 
 #### Beta
 
-- Multiple infrastructure provider have enabled the feature flag, and we are confident that the field selectors are correct.
+- A non-gated metric (`route_controller_route_sync_total`) is available to A/B test the feature's impact on the number of route reconciliations.
+- A gated metric is available to track the number of route corrections made during periodic reconciles.
 
 #### GA
 
