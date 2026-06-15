@@ -1,87 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-Follow the guidelines of the [documentation style guide].
-In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
-# KEP-6035: Exec session identity propagation
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
+# KEP-6035: Exec Session Identity Propagation
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -93,18 +10,27 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Story 3](#story-3)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [The Exec Call Chain](#the-exec-call-chain)
+  - [CRI Primitive: ExecRequest.envs](#cri-primitive-execrequestenvs)
+  - [Environment Variable Precedence](#environment-variable-precedence)
+  - [Scope](#scope)
   - [Hooks and Probes](#hooks-and-probes)
-  - [Explicit API Field Propagation](#explicit-api-field-propagation)
+  - [Audit ID Propagation](#audit-id-propagation)
+  - [Validation](#validation)
+  - [Silent Degradation](#silent-degradation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
+      - [CRI conformance tests](#cri-conformance-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -118,24 +44,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [OTel Baggage Propagation](#otel-baggage-propagation)
+  - [Keeping the CRI Primitive as a Separate KEP](#keeping-the-cri-primitive-as-a-separate-kep)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
-
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
@@ -154,10 +67,6 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
@@ -165,194 +74,367 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+When a user runs `kubectl exec`, the API server authenticates the caller and records their
+identity in the audit log, but this information is never forwarded to the kubelet or the
+container runtime. This makes it impossible for runtime security tooling to attribute
+in-container activity to the Kubernetes user who initiated the session. This KEP proposes
+propagating the API server's audit request ID — a UUID generated per-request and recorded
+in the audit log — through the kubelet and into each exec session, so that runtime security
+agents can correlate in-container process activity with the originating request. Raw user
+credentials (such as usernames or tokens) are not transmitted to the node.
 
-A good summary is probably at least a paragraph in length.
--->
-
-When a user runs `kubectl exec`, the API server authenticates the caller and records their identity in the audit log, but this identity is never forwarded to the kubelet or the container runtime. This makes it impossible for runtime security tooling to attribute in-container activity to the Kubernetes user who initiated the session. This KEP proposes passing the audit request ID from the API server through to the kubelet as part of the exec request flow, enabling runtime-level tooling to correlate process-level events with the originating user. Crucially, raw user identity data (such as usernames or tokens) will not be transmitted to the nodes to prevent potential credential theft by compromised or malicious workloads running on that node.
+Delivering the audit ID into the exec'd process requires a reliable CRI-level mechanism for
+environment variable injection. The existing workaround of prepending the exec command with
+the `env` binary is unreliable — it fails silently on distroless or minimal images — and
+carries no runtime contract. This KEP therefore also adds a `repeated KeyValue envs` field
+to `ExecRequest` and `ExecSyncRequest` in the CRI protobuf, establishing a contract that the
+runtime must inject the provided key-value pairs into the OCI process spec before handing
+off to the low-level runtime.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
+Kubernetes audit logs record who opened an exec session and when. Runtime security agents
+(such as Falco or Tetragon) record what commands and syscalls are executed inside containers.
+Today, there is no reliable mechanism to link these two sources of information.
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
+The gap is structural: the `ExecRequest` protobuf message in the CRI specification contains
+only six fields (`container_id`, `cmd`, `tty`, `stdin`, `stdout`, `stderr`). There is no
+field for request metadata. The API server's `Connect` handler proxies the exec request to
+the kubelet using the API server's own credentials, not the original caller's. The audit ID
+that was present in the request context is dropped and never forwarded.
 
-Kubernetes audit logs record who opened an exec session and when. Runtime security agents (such as Falco) record what commands and syscalls are executed inside containers. Today, there is no reliable mechanism to link these two sources of information.
+When multiple exec sessions overlap on the same pod, it becomes impossible to determine which
+user ran a specific command. Time-based correlation between audit logs and runtime events only
+works when sessions do not overlap, a condition that cannot be guaranteed in production.
 
-The gap is structural: the `ExecRequest` protobuf message in the CRI specification contains only six fields (`container_id`, `cmd`, `tty`, `stdin`, `stdout`, `stderr`). There is no field for caller identity. The API server's `Connect` handler proxies the exec request to the kubelet using the API server's own credentials, not the original caller's. The identity that was present in the request context is dropped and never forwarded.
+This is not a tooling limitation at the transport layer. No runtime security agent can recover
+request information that was never forwarded, because the data is lost at the protocol level
+before it reaches the runtime. This gap has been independently identified by the Falco
+community: [falcosecurity/falco#2895](https://github.com/falcosecurity/falco/issues/2895).
 
-When multiple exec sessions overlap on the same pod, it becomes impossible to determine which user ran a specific command. Time-based correlation between audit logs and runtime events only works when sessions do not overlap which is a condition that cannot be guaranteed in production.
+The Security Profiles Operator (SPO) currently works around the identity gap by using a
+mutating webhook to inject the API server's request UID as an environment variable
+(`SPO_EXEC_REQUEST_UID`) into exec sessions. This approach requires an external operator,
+and relies on prepending the exec command with the `env` binary — a workaround that is
+unreliable because the `env` binary is not guaranteed to be present in distroless or minimal
+images, and inline `KEY=VALUE cmd` is a shell feature that is not interpreted by `execve()`
+directly. There is no reliable CRI-level mechanism to inject environment variables into exec
+sessions today.
 
-This is not a tooling limitation at the transport layer. No runtime security agent can recover request information that was never forwarded, because the identity is lost at the protocol level before it reaches the runtime.
-
-The Security Profiles Operator (SPO) currently works around this gap by using a mutating webhook to inject the API server's request UID as an environment variable (`SPO_EXEC_REQUEST_UID`) into exec sessions. While functional, this approach requires an external operator that must be installed separately for runtime security tooling to consume, and the tamperability of environment variables by the caller remains an open concern. A proper upstream solution is needed to make request information available through the Kubernetes architecture itself, without depending on an external component.
-
-This gap has been independently identified by the Falco community as well:
-[falcosecurity/falco#2895](https://github.com/falcosecurity/falco/issues/2895): This issue proposed injecting Kubernetes control plane user identity into Falco syscall logs for `kubectl exec` sessions but could not be fully addressed without upstream changes to Kubernetes.
-
-Solving this gap requires addressing two distinct problems:
- - **The transport problem**: how does request information (such as a request ID or audit ID) travel from the API server to the container runtime through the Kubernetes stack?
- - **The attribution problem**: once it arrives, how do we ensure it cannot be tampered with by the caller, and that all commands run in an interactive or non-interactive (single command) session are correctly attributed to the originating request?
+Solving the identity correlation gap requires addressing two distinct problems:
+- **The transport problem**: how does the audit ID travel from the API server to the
+  container runtime through the Kubernetes stack? This KEP solves the transport problem.
+- **The attribution problem**: once it arrives, how do we ensure it cannot be tampered
+  with by the caller? This is explicitly out of scope and deferred to follow-up work. See
+  [Bridging the Kubernetes Exec Identity Gap](https://blog.sigtrapd.dev/posts/bridging-k8s-exec-identity-gap/)
+  for background on out-of-tree approaches to this problem.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
-
-- Solve the transport problem: pass request information (such as a request ID or audit ID) from the API server to the kubelet as part of the exec (and attach) request flow.
-- Make this request information available to the kubelet so that it can be forwarded to the CRI runtime as part of the `ExecRequest`.
-- Enable runtime security tooling to correlate in-container process activity with the Kubernetes user who initiated the exec session, using the propagated identifier as a join key between the API server audit log and runtime observations.
+- Add `repeated KeyValue envs` to `ExecRequest` and `ExecSyncRequest` in the CRI protobuf,
+  establishing a clear runtime contract for environment variable injection at exec time.
+- Add `Env []EnvVar` to `PodExecOptions` as the Kubernetes API surface for this capability,
+  allowing user agents (such as `kubectl exec --env`) to reliably inject environment
+  variables into exec'd processes without depending on any binary or shell being present
+  inside the container image.
+- Propagate the API server audit request ID — not raw user identity — end-to-end as the
+  first consumer of the CRI primitive.
+- Enable runtime security agents to correlate in-container process activity with the
+  originating exec request, using the audit ID as a join key against the API server audit log.
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
-
-- Solving the attribution problem: ensuring the propagated request information cannot be tampered with by the caller, and that all commands in a session are correctly attributed to the originating request. This is explicitly deferred to allow the community to evaluate solutions independently.
-- Modifying RBAC policies or admission control behavior. This KEP does not change who is allowed to exec into a pod. It only makes existing request information available further down the stack.
-- Supporting identity propagation for every possible API server operation. The initial scope is limited to exec and attach sessions where interactive in-container access creates the attribution gap.
+- Solving the attribution problem: ensuring the propagated audit ID cannot be tampered with
+  by the caller. Deferred to follow-up work (e.g., eBPF-based agents capturing the value
+  at `execve` time into kernel-managed storage before any userspace code runs).
+- Identity propagation for lifecycle hooks and probes via `ExecSyncRequest`. The CRI field
+  is added to `ExecSyncRequest` for API consistency, but no component populates it in this
+  KEP. This is deferred as independent work.
+- Modifying RBAC policies or admission control. This KEP does not change who is allowed
+  to exec into a pod.
+- Propagating raw user credentials (usernames, tokens, groups) to nodes.
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
+This KEP makes two coordinated changes.
 
-This KEP proposes propagating identity information from the API server through the kubelet and into the CRI layer as part of the exec (and attach) request flow. Today, identity is present at the API server but is dropped before the request reaches the kubelet. The proposed change would carry the audit request ID through the entire chain, so that the container runtime has access to it.
+The first is a CRI API change: add `repeated KeyValue envs` to `ExecRequest` (and
+`ExecSyncRequest`) in the CRI protobuf. The contract: the runtime must mechanically inject the
+provided key-value pairs into the exec'd process's environment, without filtering
+or modification. This is a general-purpose primitive. Any future caller (user-facing env
+injection, tracing metadata, etc.) that needs to surface key-value data into exec sessions
+can use this field without further API changes.
 
-Once the ID reaches the container runtime, runtime security agents (such as Falco, Tetragon etc.) would be able to read it and correlate in-container activity with the API server audit log, closing the attribution gap.
+The second change is the first consumer of that primitive: the API server reads the audit
+request ID from the request context and appends it as `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` on the HTTP
+request to the kubelet. The kubelet parses the `env` query parameter and forwards it to the
+CRI runtime via `ExecRequest.envs`. The runtime injects it as an
+environment variable into the exec'd process, where runtime security agents can capture it.
+
+The audit ID (a UUID such as `f4a3b2c1-...`) is a per-request identifier assigned by the
+API server and present in audit log entries. It is not the user's name or credentials — it
+is an opaque correlation key. A security agent that captures `KUBERNETES_EXEC_AUDIT_ID` from the exec'd
+process can look up that UUID in the API server audit log to find the full user context
+(username, groups, UID) associated with that exec request.
 
 ### User Stories
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
-
 #### Story 1
 
-As a security engineer investigating a production incident, I need to determine which Kubernetes admin user (normally support personnel) ran a specific command inside a container when multiple exec sessions were active on the same pod at the same time. Today, the API server audit log tells me who opened sessions and when, and the runtime security agent tells me what commands were executed, but there is no way to link a specific command to a specific user when sessions overlap. 
+As a security engineer investigating a production incident, I need to determine which
+Kubernetes user ran a specific command inside a container when multiple exec sessions were
+active on the same pod simultaneously. Today, the API server audit log tells me who opened
+sessions and when, and my runtime security agent tells me what commands were executed, but
+there is no way to link a specific command to a specific user when sessions overlap.
 
-With this KEP implemented, each exec session would carry the audit request ID from the API server that the runtime agent can include in its logs, allowing me to correlate the command directly to the user who ran it.
+With this KEP, each exec session carries the API server's audit request ID. My eBPF-based
+runtime agent captures the `KUBERNETES_EXEC_AUDIT_ID` environment variable at `execve` time and includes it
+in its process event records. I join that UUID against the API server audit log to find the
+requesting user's identity.
 
 #### Story 2
 
-As a platform security engineer configuring runtime security policies, I want to write detection rules that are aware of the Kubernetes user identity, for example, alerting when a user who is not on an approved list runs commands in a privileged pod. Today, runtime security agents like Falco or Tetragon can only match on process-level attributes (command, container, namespace) because Kubernetes user identity is not available at the runtime layer. 
+As a platform security engineer writing runtime detection rules, I want to alert when a
+specific user runs commands in a privileged pod. Today, runtime agents can only match on
+process-level attributes (command, container, namespace) because Kubernetes user context is
+not available at the runtime layer. With this KEP, the propagated audit ID serves as an
+indirect reference to the requesting user that my detection rules can use.
 
-With this KEP, the propagated audit request ID would allow security agents to incorporate user identity into their detection rules, enabling identity-aware runtime policies.
+#### Story 3
 
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+As a cluster operator, I want to inject environment variables into exec sessions without
+depending on any binary or shell being present in the container image. Today, the only
+option is to prepend `env KEY=VALUE` to the exec command, which fails silently on distroless
+images. With this KEP, `kubectl exec --env KEY=VALUE` provides a reliable mechanism to
+inject metadata at exec time without any in-container dependency.
 
 ### Risks and Mitigations
 
-- **Environment variable tamperability.** The audit ID is set by the API server and cannot be spoofed by the caller - even if a user provides a value, the API server overrides it on the downstream call to the kubelet. However, once the audit ID is injected as an environment variable into the exec'd process, userspace code can modify or unset it before runtime security tooling reads it. This KEP does not provide tamper-proof guarantees at the runtime layer. Consumers of the propagated audit ID should understand this trust boundary. Tamper-proofing is deferred to follow-up work using eBPF-based agents that capture the value at `execve` time into kernel-managed storage before any userspace code runs.
+- **Environment variable tamperability.** Once injected into the exec'd process, userspace
+  code inside the exec session can overwrite or unset the `KUBERNETES_EXEC_AUDIT_ID` value before a security
+  agent reads it. Consumers should treat it as a correlation hint rather than a security
+  assertion. Tamper-proofing via kernel-space eBPF capture is deferred to follow-up work.
+- **Log exposure.** Env vars are passed as `?env=KEY=VALUE` query parameters on the HTTP
+  request to the kubelet and can appear in access logs and other request logging at the API
+  server and kubelet. Values injected via this mechanism should not be sensitive. Future use
+  cases requiring sensitive values are out of scope for this KEP; a natural extension would
+  be to allow `PodExecOptions.Env` entries to reference Kubernetes Secrets or ConfigMaps,
+  similar to how `Container.env` supports `valueFrom`.
+- **Sensitive environment variable injection (PATH, LD_PRELOAD, etc.).** Exposing
+  `PodExecOptions.Env` as a first-class API field raises the question of whether callers
+  could inject dangerous keys such as `PATH` or `LD_PRELOAD` to influence the exec'd
+  process. However, this risk already exists today — any caller with exec permission can
+  achieve the same effect via the `env` binary on containers that have it. The appropriate
+  mitigation is at the RBAC level: exec permission should not be granted to untrusted users.
+  Additionally, by surfacing env vars as a structured `PodExecOptions.Env` field rather than
+  burying them inside the command array, admission controllers (Gatekeeper, Kyverno) can now
+  inspect and enforce policies against specific keys, which was not possible before.
+- **CRI runtime compatibility.** Runtimes that have not yet implemented `ExecRequest.envs`
+  will silently ignore the field (standard protobuf behaviour for unrecognised fields). The
+  feature degrades gracefully. Beta graduation requires at least two CRI implementations
+  (containerd and CRI-O) to have implemented and tested the field.
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
+This KEP uses two feature gates with distinct responsibilities:
+
+- **`ExecEnvVar`** (kube-apiserver and kubelet): gates the end-to-end env var wiring —
+  `PodExecOptions.Env` parsing at the API server, `env` query parameter forwarding at the
+  kubelet, and `ExecRequest.envs` population to the CRI runtime. This is the general-purpose
+  primitive and must be enabled for any env injection to work.
+- **`ExecRequestID`** (kube-apiserver): gates the audit ID injection specifically — the API
+  server reading the audit ID from context and injecting it as `KUBERNETES_EXEC_AUDIT_ID` into the `env`
+  query parameter. Requires `ExecEnvVar` to be enabled.
+
+The CRI contract (`ExecRequest.envs` and kubelet wiring) and the Kubernetes API object
+changes (`PodExecOptions.Env`) are designed to be independently landable. The audit ID
+propagation uses the `env` query parameter on the kubelet HTTP request and does not depend
+on `PodExecOptions.Env`, so the exec identity gap can be closed even if the API object
+changes face review delays.
 
 ### The Exec Call Chain
 
 The exec request flows through the following steps:
 
-1. The API server receives the exec request and generates an audit ID.
-2. The API server makes an HTTP request to the kubelet at `/exec/{podNamespace}/{podID}/{containerName}` (or `/exec/{podNamespace}/{podID}/{uid}/{containerName}` when pod UID is included).
-3. The kubelet makes a gRPC `Exec` call to the CRI runtime (containerd/CRI-O), receiving back a streaming URL.
-4. The kubelet dials the streaming URL via raw TCP, hijacks both ends, and splices them together.
-5. The CRI runtime serves the exec session over the streaming connection.
+1. The API server receives the exec request, generates an audit ID, and records it in the
+   audit context for this request.
+2. With the feature gate enabled, the API server reads the audit ID from
+   `audit.AuditContext(ctx).AuditID()` and appends it as `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` to the
+   HTTP request URL sent to the kubelet.
+3. The kubelet receives the request, parses the `env` query parameter, and makes a gRPC
+   `Exec` call to the CRI runtime with `ExecRequest.envs` populated from the parsed values.
+4. The CRI runtime injects the provided env vars into the exec'd process's environment
+   and returns a streaming URL.
+5. The kubelet dials the streaming URL, hijacks both ends, and splices them together.
+6. The exec session runs. Runtime security agents on the node (e.g., eBPF-based agents)
+   observe the `KUBERNETES_EXEC_AUDIT_ID` env var at `execve` time and record it alongside process events.
 
-The audit ID must be delivered during step 3 - the gRPC call. By step 4, the connection is a raw byte splice with no opportunity to inject metadata into the container environment.
+The audit ID must be delivered at step 3 — the gRPC call. By step 5, the connection is a
+raw byte splice with no opportunity to inject metadata into the container environment.
+
+### CRI Primitive: ExecRequest.envs
+
+Add `repeated KeyValue envs` to `ExecRequest` and `ExecSyncRequest` in
+`staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto`:
+
+```protobuf
+message ExecRequest {
+    string container_id = 1;
+    repeated string cmd = 2;
+    bool tty = 3;
+    bool stdin = 4;
+    bool stdout = 5;
+    bool stderr = 6;
+    repeated KeyValue envs = 7;  // new field
+}
+
+message ExecSyncRequest {
+    string container_id = 1;
+    repeated string cmd = 2;
+    int64 timeout = 3;
+    repeated KeyValue envs = 4;  // new field
+}
+```
+
+The contract established by this change: the runtime must inject all provided env vars into
+the exec'd process's environment.
+
+### Environment Variable Precedence
+
+The final environment of the exec'd process is constructed so that earlier entries take
+precedence on collision:
+
+```
+final_envp[] = kubelet_envs + apiserver_envs + caller_envs + container_envs
+```
+
+Highest to lowest precedence:
+1. Kubelet-injected envs (reserved for future node-level use)
+2. API server-injected envs (e.g., `KUBERNETES_EXEC_AUDIT_ID`)
+3. Caller-provided envs (e.g., from `kubectl exec --env`)
+4. Container baseline envs (from OCI image config and `CreateContainerRequest`)
+
+This ordering is intentionally counter-intuitive — conventionally, the layer closest to the
+process would take highest precedence. Here it is reversed: control plane layers outrank the
+caller and the container, because keys like `KUBERNETES_EXEC_AUDIT_ID` must not be overridable by the exec
+caller or the container's base environment. If a caller passes
+`KUBERNETES_EXEC_AUDIT_ID=fake` via `PodExecOptions.Env`, the request is rejected by API
+server validation before reaching the kubelet (see [Validation](#validation)).
+
+If a key appears multiple times within a single precedence tier (e.g., two entries with
+`LOG_LEVEL` in `ExecRequest.envs`), the last entry wins.
+
+Caller-provided envs outranking the container baseline is intentional and useful. A user
+running `kubectl exec --env LOG_LEVEL=debug` should be able to override a `LOG_LEVEL`
+defined in the container spec for the duration of the exec session. Similarly, a user may
+want to point a tool at a different endpoint by overriding a `SERVICE_URL` env var that was
+baked into the image. This only applies to envs explicitly set at exec time — the container's
+default environment remains unchanged for any keys the caller does not override.
+
+### Scope
+
+- `ExecRequest` (streaming exec) is in scope. This covers `kubectl exec` and all programmatic
+  exec calls.
+- `ExecSyncRequest` (used by lifecycle hooks and probes) has the `envs` field added for CRI
+  API consistency, but no component populates it in this KEP (see
+  [Hooks and Probes](#hooks-and-probes)).
+- `AttachRequest` is explicitly out of scope. Attach connects to an already-running process;
+  modifying the environment of a running process would require `ptrace`, which is invasive
+  and beyond this proposal's scope. Attach sessions are traceable via API server audit logs.
 
 ### Hooks and Probes
 
-Lifecycle hooks (`postStart`, `preStop`) and liveness/readiness/startup probes use a separate gRPC call - `ExecSync` (`ExecSyncRequest`) - which returns output synchronously and never goes through the streaming exec path. This KEP does not address hooks and probes. Extending identity propagation to `ExecSyncRequest` would require independent parallel work regardless of which propagation mechanism is used.
+Lifecycle hooks (`postStart`, `preStop`) and liveness/readiness/startup probes use
+`ExecSync` (`ExecSyncRequest`), which executes synchronously and does not go through the
+streaming exec path. This KEP adds the `envs` field to `ExecSyncRequest` for CRI API
+consistency, but does not wire any component to populate it. Extending identity propagation
+to probes is deferred as independent parallel work.
 
-### Explicit API Field Propagation
+### Audit ID Propagation
 
-The audit ID is propagated by adding an `Env` field to `PodExecOptions` (the Kubernetes API object representing exec parameters) and a corresponding `repeated KeyValue envs` field to `ExecRequest` and `ExecSyncRequest` in the CRI protobuf. The API server populates the `Env` field with the audit ID before building the request URL to the kubelet. It flows as `?env=AUDIT_ID=<value>` query parameters on the HTTP call to the kubelet, then into `ExecRequest.Env` on the gRPC call to the CRI runtime, which sets them on the exec process.
+The audit request ID is a UUID assigned by the API server to each incoming request and
+recorded in audit log entries. To be precise: the audit ID is **not** the user's name
+or group — it is an opaque identifier. To look up the user associated with an exec session,
+a security agent joins the captured `KUBERNETES_EXEC_AUDIT_ID` value against the `auditID` field in the
+API server audit log, where the full user context (username, groups, UID) is available.
 
-Introducing `PodExecOptions.Env` as a new versioned Kubernetes API field triggers the standard API review, feature gate, and API graduation process. The audit ID use case is a subset of the capability - this generalises to arbitrary environment variable injection into exec processes, enabling future use cases (e.g., tracing IDs, user identity hints) without further API changes. The `env` binary workaround currently used to inject environment variables into exec processes is unreliable, and this would provide a reliable alternative at the API level.
+**API server** (`pkg/registry/core/pod/rest/subresources.go:Connect`)
 
-Every layer of the chain is explicit and inspectable with this approach. It requires changes at every layer: a new CRI proto field (`repeated KeyValue envs` in `ExecRequest`), new Kubernetes API types (internal and versioned `PodExecOptions`), deepcopy/conversion/openapi regeneration, URL construction changes in the API server, query parameter parsing in the kubelet, and runtime updates in CRI-O and containerd.
+Read `audit.AuditContext(ctx).AuditID()` and append `?env=KUBERNETES_EXEC_AUDIT_ID=<value>`
+to the kubelet request URL before forwarding the exec request. If the audit context is
+absent or returns an empty ID (e.g., audit logging is disabled), inject a fixed placeholder
+value (e.g., `KUBERNETES_EXEC_AUDIT_ID=unknown`) so the variable is always present when the
+feature gate is enabled. Caller-supplied `KUBERNETES_EXEC_AUDIT_ID` entries in
+`PodExecOptions.Env` are rejected at validation time (see [Validation](#validation)).
 
-#### Implementation
+A Prometheus counter `apiserver_exec_audit_id_injected_total` is incremented on each exec
+request, with a `result` label distinguishing `injected` (real audit ID), `placeholder`
+(fallback value), and `skipped` (feature gate disabled). This metric is the primary signal
+for operators to confirm the feature is in use and to detect regressions.
 
-**CRI protobuf**
+**`PodExecOptions` API type**
 
-Add `repeated KeyValue envs` to `ExecRequest` and `ExecSyncRequest` in `staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto`. This aligns exec with the existing `ContainerConfig.envs` pattern used for container creation.
+Add `Env []EnvVar` to both the internal and versioned `PodExecOptions` type, with the same
+field semantics as `Container.Env`. This is a new versioned Kubernetes API field and
+triggers the standard API review, feature gate, and graduation process. It generalises to
+arbitrary key-value injection into exec sessions for future use cases without further API
+changes. This requires deepcopy/conversion/OpenAPI regeneration.
 
-**API server**
+**Kubelet** (`pkg/kubelet/server/server.go:getExec`)
 
-`pkg/registry/core/pod/rest/subresources.go:Connect` - read the audit ID from `audit.AuditContext(ctx).AuditID()` and add it as `?env=AUDIT_ID=<value>` to the kubelet request URL.
+Parse the `env` query parameters from the incoming HTTP request and forward them to the CRI
+runtime as `ExecRequest.envs`. When the feature gate is disabled, the `env` query parameters
+are ignored and `ExecRequest.envs` is left empty.
 
-**Kubelet**
+**kubectl** (`staging/src/k8s.io/kubectl/pkg/cmd/exec`)
 
-`pkg/kubelet/server/server.go:getExec` - parse the `env` query parameter from the incoming HTTP request (similar to how `cmd` is parsed today) and forward it to the CRI runtime via `ExecRequest.Env`.
+Add an `--env KEY=VALUE` flag (repeatable) to `kubectl exec`. The values are populated into
+`PodExecOptions.Env` on the request to the API server, which then includes them in the
+serialised `PodExecOptions` query on the kubelet request. The flag is gated on the
+`ExecEnvVar` feature gate at the server side; older API servers will reject unknown fields.
 
-**CRI-O**
+**CRI-O and containerd**
 
-Read `ExecRequest.Env` and inject the provided key-value pairs into the exec'd process via `execve()` `envp[]`.
+Read `ExecRequest.envs` and inject the provided key-value pairs into the exec'd process's
+environment, following the precedence rules in
+[Environment Variable Precedence](#environment-variable-precedence).
 
-**containerd**
+### Validation
 
-Same change at the equivalent call site.
+`PodExecOptions.Env` is validated by the API server in `pkg/apis/core/validation` before the
+exec request is forwarded to the kubelet. Validation rules align with the existing rules for
+`Container.Env` where applicable:
 
-The runtime would inject this identifier as an environment variable into the exec'd process. The environment variable serves as a transport mechanism - it delivers the identifier to the process context where runtime security tooling (such as eBPF-based agents) can capture it inline at `execve` time into kernel-managed storage before any userspace code can modify it. The tamper-proofing of this identifier is out of scope for this KEP and will be addressed separately.
+- **`Name` is required and must match `[-._a-zA-Z][-._a-zA-Z0-9]*`.** This is the same
+  pattern Kubernetes already uses for `Container.Env` names. Empty names are rejected.
+- **`Value` may be empty.** Setting a key with an empty string is a valid use case.
+- **Duplicate keys are rejected at the API level.** A request containing two entries with
+  the same `Name` returns a validation error. This prevents ambiguity at the source — the
+  `last entry wins` rule in [Environment Variable Precedence](#environment-variable-precedence)
+  applies only when entries arrive from different layers (e.g., kubelet vs. API server).
+- **Maximum 256 entries per request.** Prevents unbounded URL/audit log growth.
+- **Maximum 32KB total size across all entries.** Prevents oversized requests that could
+  exceed practical URL length limits or bloat audit logs.
+- **Reserved keys are rejected with a clear error.** `KUBERNETES_EXEC_AUDIT_ID` and any
+  other reserved keys (defined in a constant list) cannot be supplied by callers; the API
+  server returns a validation error such as
+  `"KUBERNETES_EXEC_AUDIT_ID is reserved by the API server"`. This gives users immediate
+  feedback rather than silently stripping the entry.
 
-The contract is explicit and visible in both the CRI API and Kubernetes API. The `AUDIT_ID` key-value pair travels as a first-class field through every layer of the stack, making it inspectable and testable at each boundary.
+### Silent Degradation
+
+If a runtime receives `ExecRequest.envs` populated but has not yet implemented forwarding,
+the field is silently ignored (standard protobuf zero-value behaviour for unrecognised
+fields). Exec sessions continue to work normally; the audit ID is simply not injected into
+the process environment. This is consistent with how other new CRI fields have been handled
+historically and is acceptable during the rollout period. Beta graduation explicitly requires
+at least two runtimes to have implemented the field.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-The goal is to ensure that we don't accept enhancements with inadequate testing.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-[x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+[x] I/we understand the owners of the involved components may require updates to existing
+tests to make this code solid enough prior to committing the changes necessary to implement
+this enhancement.
 
 ##### Prerequisite testing updates
 
@@ -360,200 +442,174 @@ None.
 
 ##### Unit tests
 
-Unit tests will be added to verify that the API server injects the audit ID as an `env` query parameter on outbound exec requests, and that the kubelet forwards it to `ExecRequest.Env`.
+Unit tests will cover the following packages:
 
-- `pkg/registry/core/pod/rest`: TBD
+- `pkg/registry/core/pod/rest` — API server appends `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` to the kubelet
+  request URL when the feature gate is enabled; does not append when disabled.
+- `pkg/kubelet/server` — kubelet parses `env` query parameters and populates
+  `ExecRequest.envs`; omits when the feature gate is disabled.
+- `pkg/apis/core/validation` — validation of `PodExecOptions.Env` entries.
+- CRI client stub tests — `ExecRequest.envs` is populated correctly from the parsed query
+  parameters.
 
 ##### Integration tests
 
-Not applicable for alpha. The propagation path crosses component boundaries (API server, kubelet, CRI runtime) which are better validated through e2e tests.
+Integration tests (spanning the API server without running the kubelet or CRI runtime) will
+cover:
+
+- The API server appends `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` to the outbound kubelet exec request URL
+  when the feature gate is enabled.
+- The API server does not append env params when the feature gate is disabled.
 
 ##### e2e tests
 
-An e2e test will be added that runs `kubectl exec` with the feature enabled and verifies the `AUDIT_ID` environment variable is present inside the exec'd process.
+The following e2e tests will be added:
+
+**Audit ID propagation (requires both feature gates enabled):**
+1. Run `kubectl exec` against a pod on a CRI runtime that supports `ExecRequest.envs`.
+2. Verify that `KUBERNETES_EXEC_AUDIT_ID` is present in the exec'd process's environment.
+3. Verify the `KUBERNETES_EXEC_AUDIT_ID` value matches the `auditID` field in the API server audit log
+   entry for that exec request.
+
+**User-provided env injection (requires `ExecEnvVar` gate enabled):**
+1. Run `kubectl exec --env LOG_LEVEL=debug` against a pod where `LOG_LEVEL` is already set
+   in the container spec.
+2. Verify that `LOG_LEVEL=debug` is present in the exec'd process's environment, confirming
+   caller-provided envs override the container baseline.
+
+**Concurrent sessions produce distinct audit IDs:**
+1. Open two concurrent `kubectl exec` sessions against the same pod simultaneously.
+2. Verify that each session carries a distinct `KUBERNETES_EXEC_AUDIT_ID` value, confirming the feature
+   correctly attributes overlapping sessions.
+
+**Spoofing prevention:**
+1. Attempt to pass `KUBERNETES_EXEC_AUDIT_ID=fake` as a user-provided env via
+   `kubectl exec --env`.
+2. Verify that the request is rejected by API server validation with a clear error
+   indicating the key is reserved.
+
+##### CRI conformance tests
+
+This KEP introduces a new CRI contract that must be validated across runtimes. The following
+test cases should be added to `kubernetes-sigs/cri-tools` (`critest`) as conformance
+requirements for beta. Precedence resolution between kubelet-injected, caller-provided, and
+container baseline envs happens at the kubelet; from the CRI runtime's perspective the
+contract is simpler — whatever arrives in `ExecRequest.envs` must take precedence over the
+container baseline:
+
+- **Env injection**: verify that env vars provided in `ExecRequest.envs` are present in the
+  exec'd process's environment.
+- **Precedence over container baseline**: verify that `ExecRequest.envs` entries override
+  conflicting keys from the container's baseline environment, not the other way around.
+- **No variable expansion**: verify that env vars inherited from the container baseline are
+  not expanded or interpolated when `ExecRequest.envs` entries are added. Values must be
+  injected literally.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- `ExecEnvVar` feature gate implemented (kube-apiserver and kubelet): end-to-end env var
+  wiring from `PodExecOptions.Env` through `env` query parameter to `ExecRequest.envs`.
+- `ExecRequestID` feature gate implemented (kube-apiserver): audit ID injection as
+  `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` on kubelet exec requests, including placeholder for absent audit context.
+- `repeated KeyValue envs` added to `ExecRequest` and `ExecSyncRequest` in the CRI protobuf.
+- `Env []EnvVar` added to `PodExecOptions` (internal and versioned).
+- `kubectl exec --env KEY=VALUE` flag added (repeatable), populating `PodExecOptions.Env`.
+- API-level validation for `PodExecOptions.Env` (name format, no duplicates, count/size
+  limits, reserved-key rejection).
+- `apiserver_exec_audit_id_injected_total` counter exposed by the API server with
+  `result` label (`injected` / `placeholder` / `skipped`).
+- Initial unit tests completed and passing.
+- Initial e2e tests completed and enabled.
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- All functionality completed
-- All security enforcement completed
-- All monitoring requirements completed
-- All testing requirements completed
-- All known pre-release issues and gaps resolved
-
-**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+- No major bugs reported during alpha.
+- At least two CRI implementations (containerd and CRI-O) support `ExecRequest.envs` and
+  have been validated end-to-end.
+- CRI conformance tests added to `kubernetes-sigs/cri-tools` (`critest`) covering env
+  injection, precedence over container baseline, and no variable expansion.
+- Integration tests linked in KEP and passing in Testgrid.
+- e2e tests stable in Testgrid with no flakes in the last month.
+- All monitoring requirements completed.
+- All known alpha issues resolved.
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
-
-**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-<!--
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
-
-#### Beta
-
-- No major bugs reported during alpha
-- Gather feedback from developers and surveys
-
-#### GA
-
-- Stable for at least two releases
-- No major issues reported
+- Stable for at least two releases with no major issues reported.
 
 ### Upgrade / Downgrade Strategy
 
-The feature is additive. On upgrade, no configuration changes are required to maintain previous behavior. To use the feature, enable the `ExecRequestID` feature gate on the API server and kubelet, and ensure the CRI runtime supports the `ExecRequest.Env` field. On downgrade, the API server stops populating the `env` query parameter and the kubelet stops populating `ExecRequest.Env`. Exec sessions continue to work normally without identity propagation. No persistent state is created, so there is nothing to clean up on downgrade.
+The feature is additive. On upgrade, no configuration changes are required to maintain
+previous behavior. To use the feature, enable the `ExecEnvVar` and `ExecRequestID` feature
+gates on the API server and kubelet, and ensure the CRI runtime supports `ExecRequest.envs`.
+On downgrade, the API server stops appending `env` query parameters and the kubelet stops
+populating `ExecRequest.envs`. Exec sessions continue to work normally. No persistent state
+is created, so there is nothing to clean up on downgrade.
 
 ### Version Skew Strategy
 
-This enhancement involves the API server and the CRI runtime (via the kubelet).
+This enhancement involves the API server, kubelet, and CRI runtime. All skew scenarios
+degrade gracefully:
 
-- **Newer API server, older kubelet/runtime:** The API server sends the `env` query parameter. If the kubelet does not recognise it, the parameter is ignored. If the kubelet forwards it but the CRI runtime does not support `ExecRequest.Env`, the new protobuf field is silently ignored (standard protobuf behaviour). Exec sessions work normally without the identity propagation.
-- **Older API server, newer kubelet/runtime:** The API server does not send the `env` query parameter. The kubelet does not populate `ExecRequest.Env`. The runtime receives an empty `envs` field and does not inject any additional environment variables. Exec sessions work normally.
+- **Newer API server, older kubelet:** The API server appends `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` to the
+  kubelet request URL. If the kubelet does not recognise the `env` query parameter, it is
+  ignored and `ExecRequest.envs` is not populated. The exec session works; the audit ID is
+  not injected.
+- **Newer kubelet, older CRI runtime:** The kubelet populates `ExecRequest.envs`. If the
+  runtime has not implemented the field, it is silently ignored (protobuf zero-value
+  behaviour). The exec session works; the env var is not injected.
+- **Older API server, newer kubelet/runtime:** The API server does not append `env` query
+  parameters. The kubelet sends an empty `ExecRequest.envs`. The runtime injects nothing
+  additional. Normal exec behaviour is unchanged.
 
-No coordination is required between components. The feature degrades gracefully in all skew scenarios.
+No coordination between components is required for rollout.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: ExecRequestID
+  - Feature gate name: `ExecEnvVar` — gates end-to-end env var wiring (API server, kubelet)
+  - Components depending on the feature gate:
+    - kube-apiserver
+    - kubelet
+  - Feature gate name: `ExecRequestID` — gates audit ID injection at the API server; requires `ExecEnvVar`
   - Components depending on the feature gate:
     - kube-apiserver
     - kubelet
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
-
-No, there is no change in the default behavior.
+Yes, when the feature gates are enabled: the API server starts appending `?env=KUBERNETES_EXEC_AUDIT_ID=<value>`
+to kubelet exec request URLs, and the kubelet starts forwarding `env` query parameters to the
+CRI runtime via `ExecRequest.envs`. CRI runtimes that support the field will inject the
+`KUBERNETES_EXEC_AUDIT_ID` environment variable into exec'd processes. Both gates are disabled by default at
+alpha, so there is no change to default cluster behavior. Existing exec sessions and
+workloads are not affected.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
-
-Yes. Disabling the feature gate stops the API server from populating the `env` query parameter and the kubelet from populating `ExecRequest.Env`. No existing workloads are affected. Exec sessions that were already established continue without interruption since the identity propagation only applies at session creation time.
+Yes. Disabling `ExecEnvVar` stops the kubelet from forwarding `env` query parameters to
+`ExecRequest.envs`. Disabling `ExecRequestID` stops the API server from appending
+`?env=KUBERNETES_EXEC_AUDIT_ID=<value>` to kubelet requests. No existing workloads are affected. In-flight
+exec sessions continue without interruption since identity propagation applies only at
+session creation time.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-New exec sessions will again include the audit ID via `ExecRequest.Env`. There is no persistent state, so re-enablement has no side effects.
+New exec sessions will again include the audit ID in `ExecRequest.envs`. There is no
+persistent state, so re-enablement has no side effects.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests will verify that the `env` query parameter is populated when the feature gate is enabled and not populated when it is disabled.
+Yes. The observable signal is the `KUBERNETES_EXEC_AUDIT_ID` environment variable in the exec'd process —
+present when both feature gates are enabled, absent when either is disabled. The e2e test
+covers both cases. There is no separate unit-level gate test; the gate simply controls
+whether the code path that appends the `env` query parameter is exercised.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -563,104 +619,55 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-
 ###### What specific metrics should inform a rollback?
-
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
-
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
-
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
 
 ### Monitoring Requirements
 
 <!--
 This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
 -->
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+The `apiserver_exec_audit_id_injected_total` counter on the API server tracks every exec
+request that passes through the audit ID injection path. A non-zero `injected` count
+indicates the feature is in active use. A non-zero `placeholder` count indicates the feature
+is enabled but the audit context is missing for some requests (worth investigating). A
+non-zero `skipped` count indicates the feature gate is disabled.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [x] Other (treat as last resort)
-  - Details: Users can verify the feature is working by running `kubectl exec` into a pod and checking for the `AUDIT_ID` environment variable in the exec'd process. If the variable is present and contains a valid audit request ID, the feature is functioning correctly.
+- [x] Metrics
+  - Metric name: `apiserver_exec_audit_id_injected_total{result="injected"}`
+  - Components exposing the metric: kube-apiserver
+- [x] Other
+  - Details: Run `kubectl exec <pod> -- env | grep KUBERNETES_EXEC_AUDIT_ID`. If the variable is present and
+    contains a UUID, the feature is functioning correctly for that exec session. The UUID
+    should match the `auditID` field in the API server audit log entry for that exec request.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+When both feature gates are enabled, every exec request reaching the API server should
+result in either an `injected` or `placeholder` increment of
+`apiserver_exec_audit_id_injected_total`. The ratio of `placeholder` to `injected` should
+remain near zero in clusters with audit logging enabled — a sustained non-zero
+`placeholder` rate indicates audit context is missing and warrants investigation.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `apiserver_exec_audit_id_injected_total`
+  - Aggregation method: counter, summed by `result` label (`injected` / `placeholder` / `skipped`)
+  - Components exposing the metric: kube-apiserver
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+None at alpha. A kubelet-side counter for `ExecRequest.envs` population could be added at
+beta if operators need node-level visibility separately from the control plane signal.
 
 ### Dependencies
 
@@ -670,36 +677,16 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+This feature requires the CRI runtime to support `ExecRequest.envs`. Runtimes that do not
+support the field will silently ignore it, and the feature degrades gracefully. The feature
+is inert without runtime support but does not impact cluster operation.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-No. The feature adds a query parameter to existing exec proxy requests. No new API calls are introduced.
+No. The feature adds a field to an existing exec proxy request. No new API calls are
+introduced.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -711,93 +698,94 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-No. No existing API objects are modified in size. The audit ID is propagated via a query parameter on the exec proxy request and a new CRI protobuf field, not stored in any persistent API object.
+No. The audit ID is propagated transiently as a query parameter on the kubelet HTTP request
+and via the CRI `ExecRequest.envs` field. It is never stored in etcd. No persistent API
+objects are modified in size or count.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No measurable increase.
+No measurable increase. Reading a UUID from the audit context and adding a single `KeyValue`
+to an existing protobuf message is negligible.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No. The feature adds a single query parameter (~60 bytes) to the exec proxy request and a single `KeyValue` entry in the CRI `ExecRequest.Env` field. No additional in-memory state, disk I/O, or network traffic beyond that.
+No. The feature adds a single `KeyValue` entry (~60 bytes) to an existing exec request. No
+additional in-memory state, disk I/O, or network traffic beyond that.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No. The feature does not create any new processes, sockets, or files. It only adds metadata to existing exec request flows.
+No. The feature does not create any new processes, sockets, or files. It only adds metadata
+to an existing exec request flow.
 
 ### Troubleshooting
 
 <!--
 This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
 -->
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature is part of the exec request path. If the API server is unavailable, exec requests
+fail entirely as they do today. The feature does not introduce additional failure modes.
 
 ###### What are other known failure modes?
 
 <!--
 For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+    - Detection: How can it be detected via metrics?
+    - Mitigations: What can be done to stop the bleeding?
+    - Diagnostics: What are the useful log messages and their required logging levels?
+    - Testing: Are there any tests for failure mode?
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
-- 2026-04-28: KEP created
+- 2026-04-28: KEP-6035 created (exec session identity propagation via audit ID)
+- 2026-05-18: KEP-6090 created (CRI exec environment variable injection primitive)
+- 2026-05-19: Proposal presented at SIG Node meeting
+  ([recording](https://www.youtube.com/watch?v=bl8OX2nlEfM&t=900s), discussion starts at 15:00)
+- 2026-06-15: KEP-6035 and KEP-6090 merged into this KEP per reviewer feedback; CRI
+  primitive and audit ID propagation are presented as a single coherent proposal
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+Adding `ExecRequest.envs` extends the CRI surface and requires updates to CRI
+implementations. The additional implementation cost per runtime is minimal — each runtime
+must populate the `env` array in the OCI process spec it constructs before handing off to
+the low-level runtime (e.g., runc).
 
 ## Alternatives
 
-<!--
-What other approaches did you consider, and why did you rule them out? These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
 ### OTel Baggage Propagation
 
-An alternative approach is to use [W3C Baggage](https://www.w3.org/TR/baggage/) to propagate the audit ID out-of-band. The API server would inject the audit ID as a baggage member (`audit-id=<value>`) on the outbound HTTP request to the kubelet. The kubelet HTTP server already has an `otelrestful` filter that extracts W3C Baggage from incoming HTTP headers into the Go `context.Context`. That context flows unbroken to the gRPC `Exec` call, where an `otelgrpc` stats handler already injects it as gRPC metadata (HTTP/2 headers, separate from the protobuf payload). On the CRI side, the gRPC handler receives a context with the baggage in its incoming metadata. The CRI runtime extracts the audit ID from there and appends it to the environment variables before caching the `ExecRequest` for the streaming connection.
+The audit ID could be propagated out-of-band using [W3C Baggage](https://www.w3.org/TR/baggage/).
+The API server would inject the audit ID as a baggage member (`audit-id=<value>`) on the
+outbound HTTP request to the kubelet. The kubelet HTTP server already has an `otelrestful`
+filter that extracts W3C Baggage from incoming HTTP headers into the Go `context.Context`.
+That context flows to the gRPC `Exec` call, where an `otelgrpc` stats handler injects it as
+gRPC metadata. The CRI runtime extracts the audit ID from the incoming metadata and appends
+it to the environment variables before caching the `ExecRequest`.
 
-CRI-O and containerd each require a one-line change to pass the gRPC handler context through to `GetExec`, plus an interface change in the `cri-streaming` library.
+CRI-O and containerd each require a one-line change to pass the gRPC handler context through
+to `GetExec`, plus an interface change in the `cri-streaming` library.
 
-However, the contract - that the W3C Baggage key `audit-id` becomes the environment variable `AUDIT_ID` in the exec process - is implicit in the runtime's baggage-reading code rather than visible in the CRI API or Kubernetes API. The mechanism is specific to out-of-band metadata propagation; it does not generalise to arbitrary environment variable injection by API callers. It also introduces a one-off env field injection at the gRPC client/server layer rather than using a first-class CRI API field, and still requires CRI integration/implementation changes in each runtime.
+However, the contract — that the W3C Baggage key `audit-id` becomes the environment variable
+`KUBERNETES_EXEC_AUDIT_ID` in the exec process — is implicit in the runtime's baggage-reading code rather
+than visible in the CRI API or Kubernetes API. The mechanism is specific to out-of-band
+metadata propagation and does not generalise to arbitrary env injection for future callers.
+A first-class CRI field is preferred for inspectability, testability, and generality.
+
+### Keeping the CRI Primitive as a Separate KEP
+
+KEP-6090 was initially proposed as a standalone KEP for the CRI `ExecRequest.envs`
+primitive, with KEP-6035 as the first consumer. Reviewers noted that KEP-6035 implicitly
+depended on KEP-6090 without stating it, and requested that the two be compressed into one.
+Landing a CRI-only change with no user-visible consumer in the same release is also harder
+to justify to SIGs. The merged KEP presents a coherent end-to-end story with a clear
+motivation, from the structural gap in the API server through to the CRI contract and
+runtime injection.
 
 ## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->

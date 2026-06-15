@@ -10,7 +10,7 @@ participating-sigs:
   - sig-security
   - sig-api-machinery
 
-status: provisional
+status: implementable
 creation-date: 2026-04-28
 reviewers:
   - "@haircommander"
@@ -19,8 +19,13 @@ approvers:
   - "@haircommander"
 
 see-also:
+  - "/keps/sig-node/6090-exec-env-injection"
+  - "https://blog.sigtrapd.dev/posts/k8s-exec-identity-gap/"
+  - "https://blog.sigtrapd.dev/posts/exploring-the-exec-identity-gap/"
+  - "https://blog.sigtrapd.dev/posts/bridging-k8s-exec-identity-gap/"
 
 replaces:
+  - "6090"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -45,9 +50,13 @@ feature-gates:
     components:
       - kube-apiserver
       - kubelet
+  - name: ExecEnvVar # This FG is required for the above FG to work. 
+    components:
+      - kube-apiserver
+      - kubelet
 
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TBD
+  - apiserver_exec_audit_id_injected_total
