@@ -1379,18 +1379,18 @@ statuses:
 * **During subsequent cycles:** In subsequent scheduling cycles, when the root CPG
   with pending extra or newly scaled member pods pops from the queue, the
   standard recursive scheduling algorithm is executed for the root CPG
-  hierarchy. If the recursive algorithm fails to place one or more of these
-  pending member pods (i.e., there remain some unschedulable member pods), the
-  scheduler triggers the preemption engine at the root CPG level to release
-  capacity for the remaining unschedulable pods, even if some other pending pods
-  were successfully placed in the current cycle.
+  hierarchy. If the recursive algorithm fails to place any (for gang policy)
+  or all (for basic policy) of the pending member pods, the scheduler triggers
+  the preemption engine at the root CPG level to release capacity for the remaining
+  unschedulable pods, even if some other pending pods were successfully placed in
+  the current cycle.
 
 In summary, workload preemption is triggered at the root level if and only if:
 the root-level `PlacementFeasible` returns `Unschedulable` (i.e., the scheduling
 policy is not satisfied but is resolvable via preemption), OR the scheduling
 policy is satisfied, the hierarchy was already scheduled in a previous cycle,
-and there remain some pending member pods that the scheduler failed to place
-in the current cycle.
+and the scheduler failed to place some (for gang policy) or all (for basic policy)
+pending member pods in the current cycle.
 
 ###### Inadmissible child groups
 A root `CompositePodGroup` might successfully pass the `PreEnqueue` queue filter,
@@ -1860,8 +1860,6 @@ More tests will be added for beta release.
   are too deep, have a cycle, refer to two or more Workloads, or have an
   invalid combination of scheduling policies or disruption modes at different
   levels of the hierarchy).
-- All e2e tests for the `CompositePodGroup` API are added and graduated to
-  conformance tests.
 - The recursive greedy scheduling search trade-offs are re-evaluated, and a
   decision on incorporating advanced backtracking heuristics (such as
   restricted search depth or bounded branches) is made to optimize scheduling
@@ -1889,6 +1887,8 @@ More tests will be added for beta release.
 
 #### GA
 
+- All e2e tests for the `CompositePodGroup` API are added and graduated to
+  conformance tests.
 - TBD in for Beta release
 
 ### Upgrade / Downgrade Strategy
@@ -2169,6 +2169,11 @@ Status updates (potentially not in Alpha):
   - estimated throughput < XX/s
   - originating component: kube-scheduler
 
+Watching for Workloads for validation (Beta):
+  - API call type: LIST+WATCH Workloads
+  - estimated throughput < XX/s
+  - originating component: kube-scheduler
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 Yes:
@@ -2191,7 +2196,7 @@ The exact size increase will be small, however:
 
 - `PodGroup` is extended with a single string field,
 - Templates definition in the `Workload` object is evolved into a tree-like
-  structure and we enforce an explicit limit on the depth and width of that
+  structure and we enforce an explicit limit on the depth (4) and width (branching factor of 8) of that
   tree.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
