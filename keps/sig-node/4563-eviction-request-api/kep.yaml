@@ -20,7 +20,9 @@ reviewers:
   - "@haircommander"
   - "@intUnderflow"
   - "@JoelSpeed"
+  - "@jpbetz"
   - "@mmerkes"
+  - "@mortent"
   - "@paulgmiller"
   - "@pwschuurman"
   - "@razo7"
@@ -28,6 +30,7 @@ reviewers:
   - "@rst0git"
   - "@rthallisey"
   - "@sftim"
+  - "@sohankunkerkar"
   - "@soltysh"
   - "@thockin"
   - "@toVersus"
@@ -35,6 +38,7 @@ reviewers:
   - "@uMetalooper"
   - "@viktoriaas"
   - "@wojtek-t"
+  - "@yongruilin"
 approvers:
   - "@dchen1107"
 

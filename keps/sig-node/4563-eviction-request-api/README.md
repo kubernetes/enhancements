@@ -30,9 +30,9 @@
   - [Eviction Request Controller](#eviction-request-controller-1)
     - [Validation](#validation)
     - [Registration](#registration)
-    - [pod-name-prefix-hash123456abc](#pod-name-prefix-hash123456abc)
-    - [pod-uid-hash123456abc](#pod-uid-hash123456abc)
-    - [target-type-eviction-counter-target-name-prefix (pod-1-ngingx)](#target-type-eviction-counter-target-name-prefix-pod-1-ngingx)
+      - [pod-name-prefix-hash123456abc](#pod-name-prefix-hash123456abc)
+      - [pod-uid-hash123456abc](#pod-uid-hash123456abc)
+      - [target-type-eviction-counter-target-name-prefix (pod-1-ngingx)](#target-type-eviction-counter-target-name-prefix-pod-1-ngingx)
     - [Cancellation and default GC](#cancellation-and-default-gc)
     - [Label Generation](#label-generation)
     - [Responder Selection](#responder-selection)
@@ -304,29 +304,24 @@ The following items provide further information on the evolution and adoption of
 ### EvictionRequest and Eviction API
 
 `EvictionRequest` is used to request and store an eviction intent and to report the final state of
-the eviction (`Evicted`, `Failed`). 
+the eviction (`TargetEvicted`, `Failed`).
 
 `Eviction` is used to coordinate the eviction process. Each eviction responder is given the
 opportunity to progress or complete the eviction. The entire eviction process and Eviction object
 lifecycle is managed by the eviction request controller. 
 
-Alternatively, the EvictionRequest and Eviction could be combined into a single object. However,
-there are major advantages to decoupling the eviction request and the eviction invocation into two
+There are major advantages to decoupling the eviction request and the eviction invocation into two
 separate types.
 
 The eviction request lifecycle differs from the eviction lifecycle. There is a many-to-many
 relationship between the requests and evictions. Multiple requesters can request the eviction of the
-same pod, and they can register and withdraw their eviction intent over time. 
-- If there were only a single EvictionRequest type and an instance for a single pod, multiple actors
-  would run into conflicts when requesting or canceling an eviction. 
-- Some actors could even block an eviction by creating an EvictionRequest object with a finalizer
-  and cancelling the eviction. 
-- It would also be difficult to agree on who should perform garbage collection on old or canceled
-  EvictionRequests.
-- We would also need to introduce a one-to-one mapping to ensure that there is at most one active
-  Eviction per pod. The identity and lookup raise additional concerns.
+same pod, and they can register and withdraw their eviction intent over time. Each requester
+managing their own object has the following advantages:
+- It prevents update and synchronization conflicts.
+- The requester can use finalizers and manage garbage collection on their own object without
+  interrupting the eviction lifecycle (e.g. via cancellation) and blocking other requesters.
 
-With two types, the management becomes simple: each requester creates their own EvictionRequest.
+To reiterate the management story, each requester creates their own EvictionRequest.
 If they no longer require the eviction, they can either cancel the eviction intent or just delete
 the object. Alternatively, they can also wait until the eviction completion, read the results,
 and garbage collect the request when desired. There are no naming restrictions and the name can be
@@ -436,7 +431,7 @@ Its responsibility is to observe eviction requests from requesters and:
    available, it will resort to pod eviction by calling the eviction API (taking
    PodDisruptionBudgets into consideration).
 
-It is also responsible for reconciling the `Canceled`, `Evicted`, conditions
+It is also responsible for reconciling the `Canceled`, `TargetEvicted`, conditions
 according to the [EvictionRequest and Eviction Completion and Deletion](#evictionrequest-and-eviction-completion-and-deletion)
 
 ### User Stories (Optional)
@@ -569,7 +564,7 @@ policy. Therefore, we will introduce a new lifecycle group.
 ### Eviction Requester
 [Eviction Requester](#eviction-requester) section provides a general overview.
 
-There can be many eviction requesters, each of whome manages their own EvictionRequest object.
+There can be many eviction requesters, each of whom manages their own EvictionRequest object.
 
 When a requester decides that a pod needs to be evicted, it should create an EvictionRequest:
 - `.spec.target.pod` should be set to fully identify the pod. The name and the UID should be
@@ -587,7 +582,7 @@ requesters' intents are withdrawn in all EvictionRequests, the eviction will be 
 eviction request controller will set a `Canceled` condition to `.status.conditions`. See also
 [EvictionRequest Cancellation Examples](#evictionrequest-cancellation-examples).
 
-The requester can observe the `Canceled` and `Evicted` conditions ([EvictionRequest and Eviction Completion and Deletion](#evictionrequest-and-eviction-completion-and-deletion))
+The requester can observe the `Canceled` and `TargetEvicted` conditions ([EvictionRequest and Eviction Completion and Deletion](#evictionrequest-and-eviction-completion-and-deletion))
 to decide whether the EvictionRequest should be deleted/garbage collected.
  
 ### Responder
@@ -735,16 +730,16 @@ Eviction object.
 There are multiple options for naming the Evictions, but we must be careful as new targets could be
 added later.
 
-#### pod-name-prefix-hash123456abc
+##### pod-name-prefix-hash123456abc
 
 - Pod name prefix might be too long.
 - Pod name prefix might be shared with a different target so it might be confusing.
 
-#### pod-uid-hash123456abc
+##### pod-uid-hash123456abc
 - New id per eviction invocation.
 - Not user-friendly.
 
-#### target-type-eviction-counter-target-name-prefix (pod-1-ngingx)
+##### target-type-eviction-counter-target-name-prefix (pod-1-ngingx)
 - User-friendly.
 
 The counter (1) would only be used for conflict resolution of eviction chain detection. If
@@ -754,6 +749,9 @@ controllers that still work with the old evict instance can finish their in-flig
 start processing the newer instance (e.g. pod-3-nginx). The UID can also change, so the responders
 may have to start the eviction process from scratch. If there is a long pause, we can start the
 eviction chain again and drop back to pod-1-nginx.
+
+The third user-friendly option does not appear to have any drawbacks, we will name pods in the
+`pod-3-nginx` format.
 
 #### Cancellation and default GC
 
@@ -806,7 +804,7 @@ eviction is canceled and an `Active` states transition to `Canceled` states in
 
 #### Condition synchronization
 
-If an Eviction object exists, Failed and Evicted conditions will be periodically copied into all
+If an Eviction object exists, Failed and TargetEvicted conditions will be periodically copied into all
 EvictionRequests so that the requesters can observe the final result of the underlying Eviction.
 These two conditions can be resolved early without the Eviction as well, if the initial validation
 fails.
@@ -944,11 +942,11 @@ type EvictionRequestSpec struct {
 type EvictionRequestStatus struct {
     // conditions contain information about the eviction request.
     //
-    // EvictionRequest specific conditions are: Evicted or Failed (managed by evictionrequest-controller).
+    // EvictionRequest specific conditions are: TargetEvicted or Failed (managed by evictionrequest-controller).
     // - Failed means that the eviction request is no longer being processed
     //   by any eviction responder. This can happen if the request is canceled or if no responder
     //   managed to evict the target (e.g. terminate or delete a pod).
-    // - Evicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
+    // - TargetEvicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
     //
     // These conditions can be reset if the eviction was unsuccessful and a new Eviction intent has
     // been submitted.
@@ -1002,7 +1000,7 @@ type Eviction struct {
     metav1.TypeMeta `json:",inline"`
 
     // metadata is the standard object metadata; More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata.
-    // .metadaata.name set by the evictionrequest-controller is purely informative and subject to change.
+    // .metadata.name set by the evictionrequest-controller is purely informative and subject to change.
     // .spec.target field should be used to identify the target precisesly.
     //
     // The requester and responder names will be used as label keys and added to the labels of the
@@ -1067,11 +1065,11 @@ type EvictionPodReference struct {
 type EvictionStatus struct {
     // conditions contain information about the eviction request.
     //
-    // Eviction request specific conditions are: Evicted or Failed (managed by evictionrequest-controller).
+    // Eviction request specific conditions are: TargetEvicted or Failed (managed by evictionrequest-controller).
     // - Failed means that the eviction request is no longer being processed
     //   by any eviction responder. This can happen if the request is canceled or if no responder
     //   managed to evict the target (e.g. terminate or delete a pod).
-    // - Evicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
+    // - TargetEvicted means that the target has been evicted (e.g. a pod has been terminated or deleted).
     //
     // 	The maximum length of the conditions list is 100.
     // +optional
@@ -1168,9 +1166,9 @@ const (
     // managed to evict the target (e.g. terminate or delete a pod).
     EvictionConditionFailed EvictionConditionType = "Failed"
 
-    // EvictionConditionEvicted means that the target has been evicted (e.g. a pod has been
+    // EvictionConditionTargetEvicted means that the target has been evicted (e.g. a pod has been
     // terminated or deleted).
-    EvictionConditionEvicted EvictionConditionType = "Evicted"
+    EvictionConditionTargetEvicted EvictionConditionType = "TargetEvicted"
 )
 
 type EvictionConditionReason string
@@ -1179,7 +1177,7 @@ type EvictionConditionReason string
 const (
     // EvictionConditionReasonAwaitingEviction means that this Eviction works as expected and the target
     // is scheduled for an eviction.
-    // This reason is set for the Failed and Evicted condition.
+    // This reason is set for the Failed and TargetEvicted condition.
     EvictionConditionReasonAwaitingEviction EvictionConditionReason = "AwaitingEviction"
     // EvictionConditionReasonEvictionInvalid means that the Eviction is not accepted because the
     // initial configuration is not valid.
@@ -1197,13 +1195,13 @@ const (
     // This reason is set for the Failed condition.
     EvictionConditionReasonNoFurtherResponder EvictionConditionReason = "NoFurtherResponder"
     // EvictionConditionReasonPodDeleted means that the target pod has been deleted.
-    // This reason is set for the Evicted condition.
+    // This reason is set for the TargetEvicted condition.
     EvictionConditionReasonPodDeleted EvictionConditionReason = "PodDeleted"
     // EvictionConditionReasonPodTerminal means that the target pod has reached a terminal state.
-    // This reason is set for the Evicted condition.
+    // This reason is set for the TargetEvicted condition.
     EvictionConditionReasonPodTerminal EvictionConditionReason = "PodTerminal"
     // EvictionConditionReasonEvictionFailed means that the eviction of the target was unsuccessful.
-    // This reason is set for the Evicted condition.
+    // This reason is set for the TargetEvicted condition.
     EvictionConditionReasonEvictionFailed EvictionConditionReason = "EvictionFailed"
 )
 
@@ -1387,10 +1385,10 @@ type ResponderStatus struct {
 
 - Other responders should insert themselves into the `.spec.evictionResponders` according to
   their own needs. Lower index responders are selected first by the eviction request controller. 
-- The number of the responders is limited to 15 for the Pod and for the Eviction. If there
-  is a need for a larger number of responders, the current use case should be re-evaluated.
-  Limiting the number of responders ensures that the Eviction cannot be blocked indefinitely by
-  setting an abnormally large number of these responders on a pod.
+- The number of the responders is limited to 16 (+1 default responder) for the Pod and for the
+  Eviction. If there is a need for a larger number of responders, the current use case should
+  be re-evaluated. Limiting the number of responders ensures that the Eviction cannot be blocked
+  indefinitely by setting an abnormally large number of these responders on a pod.
 - To prevent misuse, we will maintain a list of allowed `*.k8s.io` responder names. And reject
   any names with `k8s.io` suffix outside the main Kubernetes project on admission.
 
@@ -1461,7 +1459,7 @@ The following diagrams describe what the EvictionRequest process will look like 
 
 #### EvictionRequest and Eviction Completion and Deletion
 
-The EvictionRequest and Eviction is considered evicted if:
+The EvictionRequest and Eviction acknowledge target eviction if:
 - The referenced pod/target has reached the terminal phase (`Succeeded` or `Failed`), signaling a
   successful eviction.
 - The referenced pod/target no longer exists (has been deleted from etcd), signaling a successful
@@ -1476,13 +1474,13 @@ The EvictionRequest is considered canceled if:
 - All requesters' intents (.spec.intent) are set to `Withdrawn`. This has been taken over from the
   Eviction cancellation reasons above.
 
-Eviction controller will signal each of these by setting  `Canceled` or `Evicted` conditions to
-`True` in the EvictionRequest and Eviction objects. See
+Eviction controller will signal each of these by setting  `Canceled` or `TargetEvicted` conditions
+to `True` in the EvictionRequest and Eviction objects. See
 [Condition synchronization](#condition-synchronization) for more details.
 
-Requesters are expected to delete the EvictionRequest when the `Canceled` or `Evicted` condition
-is `True`, after they have processed the EvictionRequest and Eviction status. Although early
-deletion instead of cancellation is supported, it should generally be avoided in order to give
+Requesters are expected to delete the EvictionRequest when the `Canceled` or `TargetEvicted`
+condition is `True`, after they have processed the EvictionRequest and Eviction status. Although
+early deletion instead of cancellation is supported, it should generally be avoided in order to give
 responders time to react to such an abrupt cancellation. Setting .spec.intent to `Withdrawn` and
 delete with a delay is preferred. Eviction objects have an ownerReference set to all matching
 EvictionRequests and are subject to garbage collection. 
@@ -1508,11 +1506,11 @@ metadata:
 
 1. A node drain controller starts draining a node Z and makes it unschedulable.
 2. The node drain controller creates an EvictionRequest for the only pod p-1 of application P to
-   evict it from a node. It sets the`nodemaintenance.disruption-management.org` value to the
-   `.spec.requesterName` and `Eviction` to `.spec.intent`.
+   evict it from a node, setting `.spec.requesterName` to
+   `nodemaintenance.disruption-management.org` and `Eviction` to `.spec.intent`.
 3. The descheduling controller notices that the pod p-1 is running in the wrong zone. It creates a
-   new EvictionRequest and sets the`descheduling.avalanche.io` value to the
-   `.spec.requesterName` and `Eviction` to `.spec.intent`.
+   new EvictionRequest, setting `.spec.requesterName` to `descheduling.avalanche.io` and
+   `.spec.intent` to `Eviction`.
 4. The eviction request controller creates an Eviction and starts tracking these two requesters in
    `.status.requesters`.
 5. The eviction request controller designates Actor B as the next responder by updating
@@ -1521,8 +1519,7 @@ metadata:
    a disruption and delays the disruption so that the users can finish their work.
 7. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
    again.
-8. The node drain controller sets the intent to `Withdrawn` in `.spec.intent` of its own
-   EvictionRequest.
+8. The node drain controller sets `.spec.intent` to `Withdrawn` on of its own EvictionRequest.
 9. The eviction request controller notices the change in `.spec.intent`, but there is still an
    active descheduling requester, so no action is required other than updating the
    `.status.requesters`.
@@ -1531,8 +1528,8 @@ metadata:
 11. The eviction request controller designates Actor A as the next responder by updating
     `.status.targetResponders[1].state` to `Active`.
 12. Actor A deletes the p-1 pod and sets `.status.responders[].completionTime`.
-13. Once the pod terminates, the eviction request controller sets `Evicted` condition to `True` in
-    all EvictionRequests and the single instance of Eviction.
+13. Once the pod terminates, the eviction request controller sets `TargetEvicted` condition to
+    `True` in all EvictionRequests and the single instance of Eviction.
 14. The node drain and descheduling controllers can delete their own EvictionRequests.
 15. The Eviction is garbage collected.
 
@@ -1540,9 +1537,9 @@ metadata:
 
 1. A node drain controller starts draining a node Z and makes it unschedulable.
 2. The node drain controller creates an EvictionRequest for the only pod p-1 of application P to
-   evict it from a node. It sets the`nodemaintenance.disruption-management.org` value to the
-   `.spec.requesterName` and `Eviction` to `.spec.intent`.
-3. The eviction request controller creates an Eviction and starts tracking this single requesters in
+   evict it from a node. It sets `.spec.requesterName` to `nodemaintenance.disruption-management.org`
+   and `.spec.intent` to `Eviction`.
+3. The eviction request controller creates an Eviction and starts tracking this single requester in
    `.status.requesters`.
 4. The eviction request controller designates Actor B as the next responder by updating
    `.status.targetResponders[0].state` to `Active`.
@@ -1550,8 +1547,7 @@ metadata:
    a disruption and delays the disruption so that the users can finish their work.
 6. The admin changes his/her mind and cancels the node drain of node Z and makes it schedulable
    again.
-7. The node drain controller sets the intent to `Withdrawn` in `.spec.intent` of its own
-   EvictionRequest.
+7. The node drain controller sets `.spec.intent` to `Withdrawn` on its own EvictionRequest.
 8. The eviction request controller notices the change in `.spec.intent`, and sets `Canceled`
    condition to `True` in both EvictionRequest and Eviction as there is no requester present. It 
    also updates `.status.targetResponders[0].state` to `Canceled`.
@@ -1617,7 +1613,7 @@ This example can also be applied to other direct or higher level controllers
 7. Pods C are scheduled on a new schedulable node that is not under the node drain.
 8. Pods C become available.
 9. The deployment controller scales down the surging replica sets back to their original value.
-10. The deployment controller sets `Complete` `.status.responders[].completionTime` on the
+10. The deployment controller sets `.status.responders[].completionTime` to `Complete` on the
     evictions of pods B that are ready to be deleted.
 11. The eviction request controller designates the replica set controller as the next responder by
     updating `.status.targetResponders[1].state` to `Active`.
@@ -1880,8 +1876,8 @@ https://storage.googleapis.com/k8s-triage/index.html
   canceled or when validation fails.
 - Test that the Eviction has the `Canceled=True` condition when all the EvictionRequest are
   canceled.
-- Test that the Eviction and EvictionRequests have the `Evicted=True` condition when the pod is
-  terminated.
+- Test that the Eviction and EvictionRequests have the `TargetEvicted=True` condition when the pod
+  is terminated.
 
 ##### e2e tests
 
@@ -2083,7 +2079,8 @@ A manual test will be performed, as follows:
 1. Create a cluster in 1.35.
 2. Upgrade to 1.36.
 3. Create an EvictionRequest A and pod A. Observe that the EvictionRequest and Eviction evicts the
-   pod and terminates it. Observe that the EvictionRequest has `Evicted=True` condition at the end.
+   pod and terminates it. Observe that the EvictionRequest has `TargetEvicted=True` condition at the
+   end.
 4. Create an EvictionRequest B, pod B and PDB B targeting the pod B with `maxUnavailable=0`. Observe
    that the imperative eviction responder controller increases the
    `imperative_eviction_responder_controller_failed_evictions` metric and correctly updates
@@ -2092,7 +2089,7 @@ A manual test will be performed, as follows:
 6. Delete PDB B. Observe that the pod B keeps running without any termination.
 7. Upgrade to 1.36.
 8. Observe that the EvictionRequest B evicts pod B and terminates it. Observe that the
-   EvictionRequest B has `Evicted=True` condition at the end.
+   EvictionRequest B has `TargetEvicted=True` condition at the end.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -2272,8 +2269,8 @@ Before the feature gate is turned off, special precautions should be taken as me
 
 ### Track EvictionRequests and Eviction in a single object.
 
-[EvictionRequest and Eviction API](#evictionrequest-and-eviction-api) already includes a set of
-issues that arise when a single object is used.
+[EvictionRequest and Eviction API](#evictionrequest-and-eviction-api) already mentions the
+advantages of having two objects.
 
 One important issue that would need to be solved is EvictionRequest cancellation and restart. In
 order to prevent a race and share a state, EvictionRequests would required a stable identity. The
@@ -2440,7 +2437,8 @@ cancellation.
 Requesters are advised to reconcile the Evictions object to ensure that the Eviction is
 present, but they are not required to do so.
 
-The eviction request controller will set the `Evicted` condition to `True` as the pod is terminated.
+The eviction request controller will set the `TargetEvicted` condition to `True` as the pod is
+terminated.
 
 To avoid implementing the cancellation, we could alternatively forbid deletion of Eviction on
 admission, unless the pod has already disappeared. The main drawback is, that there are many
