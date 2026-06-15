@@ -9,7 +9,6 @@
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Deploying controller-managed resources without node-local drivers](#deploying-controller-managed-resources-without-node-local-drivers)
-    - [Flexibility for drivers with mixed preparation requirements](#flexibility-for-drivers-with-mixed-preparation-requirements)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
@@ -83,8 +82,8 @@ In some cases, node preparation or cleanup is a pure no-op. Requiring it forces
 administrators and vendors to deploy and maintain empty node-local drivers on
 every node, which introduces unnecessary operational complexity and risk.
 
-By introducing `SkipNodePrepare` and `SkipNodeUnprepare` fields to the
-`ResourceSliceSpec` and propagating them to the device allocation results at
+By introducing a `SkipNodeOperations` field to the
+`ResourceSliceSpec` and propagating it to the device allocation results at
 scheduling time, the kubelet can safely skip driver lookup and gRPC calls for
 devices that do not require these node-local actions.
 
@@ -108,7 +107,7 @@ hook fails and retries indefinitely, leaving terminating pods permanently "stuck
 in Terminating" and blocking cluster upgrades and node drains.
 
 To resolve this architectural mismatch and accommodate modern deployments, we
-need a way for resource drivers to declare that node preparation and/or cleanup
+need a way for resource drivers to declare that node preparation and cleanup
 can be skipped. Bypassing these gRPC hooks directly at the `ResourceSlice` level
 allows vendors to deploy central-only controllers with zero worker node
 footprints. It also provides the flexibility to support mixed hardware
@@ -118,12 +117,12 @@ unnecessary footprints onto worker nodes.
 
 ### Goals
 
-- Allow resource drivers to declare that node-local preparation and/or
-  unpreparation is optional for devices.
+- Allow resource drivers to declare that node-local operations (preparation and
+  clean-up) are optional for devices.
 - Propagate this configuration from the `ResourceSlice` to the final allocated
   `ResourceClaim.Status.Allocation` result.
 - Update the kubelet to skip driver lookup and gRPC preparation/unpreparation
-  steps when node preparation or clean-up is explicitly configured as skipped.
+  steps when node operations are explicitly configured as skipped.
 - Maintain backward compatibility: by default, all existing DRA drivers must
   continue to require node-local preparation and unpreparation.
 
@@ -135,27 +134,20 @@ unnecessary footprints onto worker nodes.
 
 ## Proposal
 
-We propose adding boolean fields `SkipNodePrepare` and `SkipNodeUnprepare` to
+We propose adding a boolean field `SkipNodeOperations` to
 `ResourceSliceSpec` and `DeviceRequestAllocationResult`.
 
-1. **API Definition**: The driver/controller publisher sets `SkipNodePrepare:
-   true` and/or `SkipNodeUnprepare: true` in `ResourceSlice` resources if the
-   published devices do not require node-local setup or cleanup.
-2. **API Validation**: To prevent pods from getting stuck during termination, we enforce a
-   validation rule: **If `SkipNodeUnprepare` is `false` or `nil`, `SkipNodePrepare` must
-   not be `true`**. The combination of skipping preparation but requiring
-   unpreparation (`SkipNodePrepare: true` and `SkipNodeUnprepare: false/nil`) is
-   invalid and will be rejected. This configuration is fragile because the kubelet
-   wouldn't verify the driver's presence at startup, leading to pods getting stuck
-   in `Terminating` if the driver is missing during deletion.
-3. **Control Plane Resolution**: The allocator/scheduler resolves the referenced
+1. **API Definition**: The driver/controller publisher sets `SkipNodeOperations:
+   true` in `ResourceSlice` resources if the published devices do not require
+   node-local setup or cleanup.
+2. **Control Plane Resolution**: The allocator/scheduler resolves the referenced
    `ResourceSlice` during allocation, and copies this configuration into
-   `ResourceClaim.Status.Allocation.Devices.Results[i].SkipNodePrepare` and
-   `SkipNodeUnprepare`.
-4. **Node Execution**: The kubelet reads these fields from the `ResourceClaim`'s
+   `ResourceClaim.Status.Allocation.Devices.Results[i].SkipNodeOperations`.
+3. **Node Execution**: The kubelet reads this field from the `ResourceClaim`'s
    allocation results. If all allocated devices for a given driver within a
-   claim set `SkipNodePrepare: true` (or `SkipNodeUnprepare: true`), the kubelet
-   bypasses the corresponding gRPC call to the node-local resource driver.
+   claim set `SkipNodeOperations: true`, the kubelet bypasses the corresponding
+   gRPC calls (`NodePrepareResources` and `NodeUnprepareResources`) to the
+   node-local resource driver.
 
 ### User Stories
 
@@ -166,26 +158,15 @@ partitioned network services) where availability is discovered and published as
 `ResourceSlice` resources centrally by the controller. Because the devices
 require no node-local plumbing or mount operations on worker nodes, there is no
 node driver deployed. The controller publishes these resources with
-`SkipNodePrepare: true` and `SkipNodeUnprepare: true`. When users request these
+`SkipNodeOperations: true`. When users request these
 devices, the kubelet launches the pods immediately and cleanly, without
 complaining about missing node-local drivers, and without requiring any node
 driver DaemonSet to be present in the cluster.
 
-#### Flexibility for drivers with mixed preparation requirements
-As a hardware vendor, I develop a DRA driver that supports multiple classes of
-devices. Some devices of our hardware pool require node-local interface setups
-(e.g., local host bindings), while others are fully managed and provisioned
-out-of-band in the control plane. By setting `SkipNodePrepare: false` (default)
-on node-local `ResourceSlices` and `SkipNodePrepare: true` on
-control-plane-managed `ResourceSlices`, the kubelet can dynamically determine
-whether to run node prep based on which device was selected by the scheduler. I
-do not need to split my driver into multiple separate drivers just to handle
-this architectural difference.
-
 ### Risks and Mitigations
 
 - **Dynamic ResourceSlice Changes**: An administrator or controller could update
-  `SkipNodePrepare` or `SkipNodeUnprepare` in a `ResourceSlice` while claims are
+  `SkipNodeOperations` in a `ResourceSlice` while claims are
   already allocated.
   - *Mitigation*: While freezing the allocation configuration into the
     `ResourceClaim` status ensures consistent execution for already running pods,
@@ -205,8 +186,7 @@ this architectural difference.
     driver before changing its configuration or decommissioning node-local driver components.
 - **Backward Compatibility & Out-of-Tree / Custom Allocators**: Old scheduler
   clients or out-of-tree custom driver controllers/allocators might write
-  allocation results without setting the new `SkipNodePrepare` and
-  `SkipNodeUnprepare` fields.
+  allocation results without setting the new `SkipNodeOperations` field.
   - *Mitigation*: The behavior depends on whether the driver uses optional node preparation:
     1. **For drivers that do not use optional node preparation** (i.e., require node-local setup):
        The pointer fields default to `nil` when omitted, which is treated as `false` (not skipped).
@@ -224,58 +204,31 @@ this architectural difference.
 ## Design Details
 ### API Changes
 
-1. **`ResourceSliceSpec`** in `pkg/apis/resource`:
+1. **`ResourceSliceSpec`**:
    ```go
    type ResourceSliceSpec struct {
        ...
-       // SkipNodePrepare indicates that node-local resource preparation (NodePrepareResources gRPC)
-       // is not required for the devices in this slice. Defaults to nil (false).
-       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
+       // SkipNodeOperations indicates that node-local resource operations (NodePrepareResources and NodeUnprepareResources gRPC calls)
+       // are not required for the devices in this slice. Defaults to nil (false).
        // +optional
-       SkipNodePrepare *bool `json:"skipNodePrepare,omitempty" protobuf:"varint,5,opt,name=skipNodePrepare"`
-
-       // SkipNodeUnprepare indicates that node-local resource cleanup (NodeUnprepareResources gRPC)
-       // is not required for the devices in this slice. Defaults to nil (false).
-       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
-       // +optional
-       SkipNodeUnprepare *bool `json:"skipNodeUnprepare,omitempty" protobuf:"varint,6,opt,name=skipNodeUnprepare"`
+       SkipNodeOperations *bool `json:"skipNodeOperations,omitempty" protobuf:"varint,9,opt,name=skipNodeOperations"`
    }
    ```
 
-2. **`DeviceRequestAllocationResult`** in `pkg/apis/resource`:
+2. **`DeviceRequestAllocationResult`**:
    ```go
    type DeviceRequestAllocationResult struct {
        ...
-       // SkipNodePrepare indicates that node-local preparation is not required for this allocated device.
+       // SkipNodeOperations indicates that node-local operations are not required for this allocated device.
        // Typically copied from the corresponding ResourceSliceSpec by the allocator/scheduler. Defaults to nil (false).
-       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
        // +optional
-       SkipNodePrepare *bool `json:"skipNodePrepare,omitempty" protobuf:"varint,6,opt,name=skipNodePrepare"`
-
-       // SkipNodeUnprepare indicates that node-local cleanup is not required for this allocated device.
-       // Typically copied from the corresponding ResourceSliceSpec by the allocator/scheduler. Defaults to nil (false).
-       // (SkipNodePrepare: true and SkipNodeUnprepare: false/nil) is invalid and will be rejected.
-       // +optional
-       SkipNodeUnprepare *bool `json:"skipNodeUnprepare,omitempty" protobuf:"varint,7,opt,name=skipNodeUnprepare"`
+       SkipNodeOperations *bool `json:"skipNodeOperations,omitempty" protobuf:"varint,11,opt,name=skipNodeOperations"`
    }
    ```
 
 #### API Server Handling and Ratcheting Validation
 
-The API server enforces the following co-dependency validation rule on both
-`ResourceSlice` and `ResourceClaim` (via its status):
-*   **Co-dependency Validation**: If `SkipNodeUnprepare` is `false` or `nil`,
-   `SkipNodePrepare` **must not** be `true`.
-    *   If `SkipNodeUnprepare` is `false` (or `nil`/omitted) and
-        `SkipNodePrepare` is `true`, the resource is **rejected** with a
-        validation error (e.g., `forbidden: skipNodePrepare cannot be true when
-        skipNodeUnprepare is false`).
-    *   **Rationale**: If `SkipNodePrepare` is `true` but `SkipNodeUnprepare` is `false` or `nil`,
-        the kubelet would skip preparation but still attempt to call `NodeUnprepareResources` during
-        pod termination. If the node-local daemon is not running (since preparation was skipped),
-        the cleanup call will fail, causing the pod to get stuck in the `Terminating` state.
-
-Beyond co-dependency checks, the `kube-apiserver` validates the new fields against the
+The `kube-apiserver` validates the new `SkipNodeOperations` field against the
 state of the `DRAOptionalNodePreparation` feature gate to prevent workloads from
 entering a broken state. To support safe cluster rollbacks and downgrades, this
 feature gate enforcement is implemented using **Ratcheting Validation** (in
@@ -284,13 +237,13 @@ Guide](https://github.com/kubernetes/community/blob/main/contributors/devel/sig-
 
 * **When the feature gate is disabled**:
   * **New Resources (POST)**: Any attempt to create a `ResourceSlice` or
-    allocate a `ResourceClaim` (via its status) with `SkipNodePrepare` or
-    `SkipNodeUnprepare` set to `true` is **rejected** with a validation error.
+    allocate a `ResourceClaim` (via its status) with `SkipNodeOperations`
+    set to `true` is **rejected** with a validation error.
   * **Existing Resources (PUT)**: The API server allows updates to existing
-    resources that already have these fields set to `true` (e.g., persisted
+    resources that already have this field set to `true` (e.g., persisted
     while the feature gate was enabled before a downgrade), provided the update
-    does not attempt to newly enable or modify these fields. Any transition of
-    these fields from `nil`/`false` to `true` is **rejected**.
+    does not attempt to newly enable or modify this field. Any transition of
+    this field from `nil`/`false` to `true` is **rejected**.
 * **When the feature gate is enabled**:
   * The fields are validated and persisted normally.
 
@@ -300,15 +253,15 @@ During scheduling, the structured parameters allocator resolves `ResourceSlices`
 that contain the allocated devices.
 
 If the `DRAOptionalNodePreparation` feature gate is enabled:
-- The allocator extracts the `SkipNodePrepare` and `SkipNodeUnprepare` boolean
-  values from the corresponding `ResourceSliceSpec` and copies them directly into
+- The allocator extracts the `SkipNodeOperations` boolean
+  value from the corresponding `ResourceSliceSpec` and copies it directly into
   each `DeviceRequestAllocationResult` under
   `ResourceClaim.Status.Allocation.Devices.Results`.
 
 If the `DRAOptionalNodePreparation` feature gate is disabled:
-- If any resolved `ResourceSlice` has `SkipNodePrepare` or `SkipNodeUnprepare`
+- If any resolved `ResourceSlice` has `SkipNodeOperations`
   set to `true`, the allocator will fail the allocation of this claim. This
-  prevents scheduling pods when node preparation cannot be safely bypassed or
+  prevents scheduling pods when node operations cannot be safely bypassed or
   properly requested.
 
 ### Kubelet Changes
@@ -316,16 +269,15 @@ If the `DRAOptionalNodePreparation` feature gate is disabled:
 When Kubelet prepares resources for an allocated claim, it evaluates the
 allocated devices' status:
 1. **Aggregation**: Because Kubelet invokes preparation and clean-up per-claim,
-   Kubelet can only bypass a gRPC step if **all** devices for a given driver
-   allocated in a claim have the respective skip field (`SkipNodePrepare` or
-   `SkipNodeUnprepare`) set to `true`.
-2. **Checkpointing**: Kubelet caches these aggregated properties inside its
-   checkpointed, claim-specific state (`ClaimInfo`) so they are safely preserved
+   Kubelet can only bypass node operations if **all** devices for a given driver
+   allocated in a claim have `SkipNodeOperations` set to `true`.
+2. **Checkpointing**: Kubelet caches this aggregated property inside its
+   checkpointed, claim-specific state (`ClaimInfo`) so it is safely preserved
    across Kubelet restarts. To ensure robust upgrade/downgrade compatibility, the
    checkpoint serialization must be forward and backward compatible.
 3. **Bypassing**: During `PrepareResources` and `UnprepareResources`, the DRA manager
    checks the claim's cached properties. If skipping is enabled for the driver
-   under that claim (meaning all allocated devices have the respective skip field
+   under that claim (meaning all allocated devices have `SkipNodeOperations`
    explicitly set to `true` in the allocation result), it bypasses driver registry
    lookup and the respective gRPC calls (`NodePrepareResources` or `NodeUnprepareResources`),
    allowing container startup/pod termination to proceed immediately. If any device
@@ -336,20 +288,20 @@ allocated devices' status:
      active, the Kubelet's pod admission handler will use the shared library to
      infer the pod's requirements. If a pod requires
      `DraOptionalNodePreparation` (because its allocated claims specify skipping
-     node prep) but the Kubelet has the feature gate disabled (meaning it does
+     node operations) but the Kubelet has the feature gate disabled (meaning it does
      not declare the feature in its status), the Kubelet will **reject the pod
      during admission**. This prevents the pod from attempting to run and
      failing later.
    - **Defense-in-Depth for `PrepareResources`**: If a pod somehow bypasses the
      Kubelet's admission handler, the DRA manager's existing check acts as a
      secondary defense: if a claim's allocation result specifies
-     `SkipNodePrepare: true` or `SkipNodeUnprepare: true`, the DRA manager fails
+     `SkipNodeOperations: true`, the DRA manager fails
      `PrepareResources` immediately with a `DRAOptionalNodePreparationDisabled`
      error, preventing the pod from running with uninitialized hardware.
    - **Safe Rollback for `UnprepareResources`**: Since we already validate and
      fail during admission or `PrepareResources`, we do not need any additional
      checks or errors during `UnprepareResources` if the feature gate is
-     disabled. Specifically, if a pod with `SkipNodeUnprepare: true` was already
+     disabled. Specifically, if a pod with `SkipNodeOperations: true` was already
      processed (e.g., when the feature gate was enabled) but the feature gate is
      subsequently disabled, the Kubelet will still skip the unprepare call and
      allow the pod to terminate cleanly. This honors the original intent and
@@ -376,8 +328,8 @@ We register a new declared feature:
     Pod requires the `DraOptionalNodePreparation` feature if:
     1.  The Pod references one or more `ResourceClaims`.
     2.  At least one of those claims is allocated (has an `AllocationResult`).
-    3.  Within the allocation result, any device has `SkipNodePrepare` or
-    `SkipNodeUnprepare` set to `true`. If these conditions are met, the Pod is
+    3.  Within the allocation result, any device has `SkipNodeOperations`
+    set to `true`. If these conditions are met, the Pod is
     marked as requiring `DraOptionalNodePreparation` on the target node.
 *   **Max Version**: This feature ceases to be a scheduling constraint once the
     `DRAOptionalNodePreparation` feature graduates to GA and the minimum
@@ -397,30 +349,20 @@ None.
 
 - **API Server Validation Unit Tests**: In `pkg/apis/resource/validation/validation_test.go`:
   - Verify the four ratcheting validation cases when the feature gate is disabled:
-    - New valid (fields `nil`/`false`) -> Succeeds.
-    - New invalid (fields `true`) -> Fails.
-    - Old valid (fields `nil`/`false`) -> Succeeds.
-    - Old invalid (fields `true` in old object, unchanged in new) -> Succeeds.
-  - Verify co-dependency validation:
-    - `SkipNodePrepare: true` and `SkipNodeUnprepare: false/nil` -> Fails.
-    - `SkipNodePrepare: true` and `SkipNodeUnprepare: true` -> Succeeds.
+    - New valid (field `nil`/`false`) -> Succeeds.
+    - New invalid (field `true`) -> Fails.
+    - Old valid (field `nil`/`false`) -> Succeeds.
+    - Old invalid (field `true` in old object, unchanged in new) -> Succeeds.
 - **Allocator Unit Tests**: In
   `staging/src/k8s.io/dynamic-resource-allocation/structured/allocator_test.go`:
-  - Verify that `SkipNodePrepare` and `SkipNodeUnprepare` in `ResourceSliceSpec`
-    are correctly propagated to `AllocationResult` (covering combinations of
+  - Verify that `SkipNodeOperations` in `ResourceSliceSpec`
+    is correctly propagated to `AllocationResult` (covering combinations of
     true, false, and omitted cases).
 - **Kubelet DRA Manager Unit Tests**: In `pkg/kubelet/cm/dra/manager_test.go`:
-  - Mock claims with all valid combinations of `SkipNodePrepare` and
-    `SkipNodeUnprepare` (true/true, false/true, false/false).
+  - Mock claims with valid values of `SkipNodeOperations` (true, false, nil).
   - Assert that `prepareResources` and `unprepareResources` behave accordingly:
-    - If `SkipNodePrepare` is `true`, `prepareResources` bypasses the plugin
-      manager and succeeds immediately.
-    - If `SkipNodePrepare` is `false`, `prepareResources` attempts to call the
-      local driver.
-    - If `SkipNodeUnprepare` is `true`, `unprepareResources` bypasses the plugin
-      manager and succeeds immediately.
-    - If `SkipNodeUnprepare` is `false`, `unprepareResources` attempts to call
-      the local driver.
+    - If `SkipNodeOperations` is `true`, `prepareResources` and `unprepareResources` bypass the plugin manager and succeed immediately.
+    - If `SkipNodeOperations` is `false` or `nil`, `prepareResources` and `unprepareResources` attempt to call the local driver.
 - **Shared Library Unit Tests**: In
   `staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features/draoptionalnodepreparation_test.go`:
   - Verify the node declared feature for `DraOptionalNodePreparation` behaves
@@ -434,14 +376,14 @@ None.
     checkpoint state:
     - **Forward Compatibility (Downgrade/Rollback)**: Verify that a checkpoint
       file written by a Kubelet running version N (containing the new
-      `SkipNodePrepare` and `SkipNodeUnprepare` fields in `ClaimInfo`) can be
+      `SkipNodeOperations` field in `ClaimInfo`) can be
       successfully parsed and deserialized by a Kubelet running version N-1 (or
       with the feature gate disabled) without parsing errors or crashes, with
       unrecognized fields being safely ignored.
     - **Backward Compatibility (Upgrade)**: Verify that an older checkpoint file
       written by a Kubelet running version N-1 (which completely lacks the new
-      fields) is successfully parsed and deserialized by Kubelet version N, with
-      the fields defaulting to `false`/`nil` (ensuring we do not skip
+      field) is successfully parsed and deserialized by Kubelet version N, with
+      the field defaulting to `false`/`nil` (ensuring we do not skip
       preparation/unpreparation for legacy claims).
 
 ##### Integration tests
@@ -461,7 +403,7 @@ None.
 ##### e2e tests
 
 We will add new End-to-End test cases inside `test/e2e/dra/dra.go` to validate
-all combinations of `SkipNodePrepare` and `SkipNodeUnprepare` using different
+`SkipNodeOperations` configurations using different
 driver configurations.
 
 ###### Scenario 1: Driver without node-local components (Pure Control-Plane)
@@ -470,9 +412,8 @@ deploy any node-local components.
 
 - **Setup**: Deploy a DRA test driver without node gRPC components running on
   worker nodes (`WithKubelet = false`).
-- Test Case 1.1: Fully skipped preparation (`SkipNodePrepare: true`,
-  `SkipNodeUnprepare: true`)
-  - **API Configuration**: Publish `ResourceSlices` with both fields set to
+- Test Case 1.1: Fully skipped node operations (`SkipNodeOperations: true`)
+  - **API Configuration**: Publish `ResourceSlices` with `SkipNodeOperations` set to
     `true`.
   - **Workload**: Deploy a Pod referencing this resource.
   - **Assertions**:
@@ -480,34 +421,30 @@ deploy any node-local components.
     - No `FailedPrepareDynamicResources` warnings are posted to the Pod events.
     - Pod deletion completes cleanly and immediately (does not hang in
       `Terminating` waiting for unprepare).
-- Test Case 1.2: Missing node component failure (`SkipNodePrepare: false`)
-  - **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare` set
+- Test Case 1.2: Missing node component failure (`SkipNodeOperations: false`)
+  - **API Configuration**: Publish `ResourceSlices` with `SkipNodeOperations` set
     to `false` (or omitted).
   - **Workload**: Deploy a Pod referencing this resource.
   - **Assertions**:
     - The Pod gets stuck in `ContainerCreating`
       with `FailedPrepareDynamicResources` errors because the kubelet tries to
       contact the non-existent node driver.
-    - Note: The configuration `SkipNodePrepare: true` and `SkipNodeUnprepare:
-      false` is rejected at the API level and cannot be tested with a running
-      Pod.
 
 ###### Scenario 2: Driver with node-local components (Standard Driver)
-This scenario validates that the kubelet selectively invokes the node-local
-driver based on the individual skip flags, allowing mixed-mode execution.
+This scenario validates that the kubelet invokes the node-local
+driver when `SkipNodeOperations` is `false`.
 
 - **Setup**: Deploy a standard DRA test driver that includes node-local gRPC
   components.
-- Test Case 2.1: Skip Unprepare Only (`SkipNodePrepare: false`,
-  `SkipNodeUnprepare: true`)
-  - **API Configuration**: Publish `ResourceSlices` with `SkipNodePrepare:
-    false` and `SkipNodeUnprepare: true`.
+- Test Case 2.1: Standard Node Execution (`SkipNodeOperations: false`)
+  - **API Configuration**: Publish `ResourceSlices` with `SkipNodeOperations:
+    false`.
   - **Workload**: Deploy a Pod.
   - **Assertions**:
     - The Pod reaches the `Running` phase.
     - Assert that the driver's `NodePrepareResources` **was** called.
     - Delete the Pod.
-    - Assert that the driver's `NodeUnprepareResources` was **not** called.
+    - Assert that the driver's `NodeUnprepareResources` **was** called.
 
 ###### Scenario 3: Upgrade / Downgrade and Feature Gate Rollback
 This scenario validates that the system behaves correctly during a rolling
@@ -534,8 +471,7 @@ upgrade or downgrade/rollback of the feature gate.
         immediately without trying to contact a node-local driver.
 - **Test Case 3.2: Feature Gate Rollback / Downgrade (N to N-1)**:
   - **Setup**: Start with a cluster running version N (feature gate enabled).
-    Deploy a standard DRA driver and a workload using `SkipNodePrepare: true`
-    and `SkipNodeUnprepare: true`.
+    Deploy a standard DRA driver and a workload using `SkipNodeOperations: true`.
   - **Action 1 (Control Plane Downgrade)**: Downgrade the control plane to N-1
     (feature gate disabled).
     - **Assertions**:
@@ -552,10 +488,10 @@ upgrade or downgrade/rollback of the feature gate.
         the checkpoint file without errors or crashes.
         - *For Kubelet version N (gate disabled)*: The Kubelet successfully
           recovers the full `ClaimInfo` state including the saved
-          `SkipNodeUnprepare: true` setting.
+          `SkipNodeOperations: true` setting.
         - *For Kubelet version N-1*: The Kubelet successfully parses the
           checkpoint by ignoring the unknown fields, and recovers the rest of
-          the state while defaulting the missing skip fields to `false`.
+          the state while defaulting the missing skip field to `false`.
       - **Workload Deletion**:
         - Verify that the kubelet behaves according to the
           [Disabled Feature Gate Behavior](#disabled-feature-gate-behavior) section
@@ -565,21 +501,19 @@ upgrade or downgrade/rollback of the feature gate.
     Deploy a standard DRA driver.
   - **Action 1 (Upgrade)**: Upgrade the cluster to version N (feature gate
     enabled).
-    - Deploy a workload using a driver configured with `SkipNodePrepare: true`
-      and `SkipNodeUnprepare: true`.
+    - Deploy a workload using a driver configured with `SkipNodeOperations: true`.
     - Assert that the workload runs successfully.
   - **Action 2 (Downgrade)**: Downgrade the cluster to version N-1 (feature gate
     disabled).
     - **Assertions**:
       - Assert that the API server's ratcheting validation allows the existing
-        `ResourceSlice` (which has `SkipNodePrepare: true` and `SkipNodeUnprepare:
-        true`) to remain valid and unmodified.
+        `ResourceSlice` (which has `SkipNodeOperations: true`) to remain valid and unmodified.
       - Delete the workload and verify that the kubelet behaves according to the
         [Disabled Feature Gate Behavior](#disabled-feature-gate-behavior) section.
   - **Action 3 (Upgrade Again)**: Upgrade the cluster back to version N (feature
     gate enabled).
     - Deploy a new workload using the same driver.
-    - Assert that the new fields are respected, and the workload runs
+    - Assert that the new field is respected, and the workload runs
       successfully.
     - Assert that any pre-existing resource slices that survived the downgrade
       cycle continue to function correctly with the re-enabled feature gate.
@@ -607,18 +541,18 @@ upgrade or downgrade/rollback of the feature gate.
 
 - **Upgrade**:
   - When the cluster control plane and nodes are upgraded, all preexisting
-    claims (where the new pointer fields are absent/`nil`) automatically evaluate
+    claims (where the new pointer field is absent/`nil`) automatically evaluate
     to `false` (not skipped). This guarantees no change in behavior for running
     workloads.
   - Newer claims can utilize drivers that publish resource slices configured
-    with `SkipNodePrepare: true` or `SkipNodeUnprepare: true` to bypass
+    with `SkipNodeOperations: true` to bypass
     node-local execution.
   - During rolling upgrades, the scheduler's `NodeDeclaredFeatures` plugin will
     automatically restrict the scheduling of pods using these newer "no-prep" claims
     to upgraded nodes that advertise support for `DraOptionalNodePreparation`.
 - **Downgrade**:
   - If a cluster is downgraded to a version where `DRAOptionalNodePreparation`
-    is disabled/unavailable, the kubelet will ignore the skip fields and default
+    is disabled/unavailable, the kubelet will ignore the skip field and default
     to the legacy behavior of expecting node preparation.
   - If any pods are running using a driver without node-local drivers, those
     pods will fail to restart or delete cleanly if the kubelet tries to invoke
@@ -630,8 +564,8 @@ upgrade or downgrade/rollback of the feature gate.
 
 - **Older kubelet (N-1 and older) / Upgraded Control Plane (N)**:
   - **Automated Version Skew Protection**: If the control plane is upgraded and
-    generates allocations with `SkipNodePrepare: true` or `SkipNodeUnprepare:
-    true`, the scheduler's `NodeDeclaredFeatures` plugin will automatically
+    generates allocations with `SkipNodeOperations: true`,
+    the scheduler's `NodeDeclaredFeatures` plugin will automatically
     infer that the pod requires the `DraOptionalNodePreparation` feature.
   - Because older worker nodes running older Kubelets ($N-1$ and older) do not
     support the feature gate, they will not advertise
@@ -641,7 +575,7 @@ upgrade or downgrade/rollback of the feature gate.
     upgraded nodes.
 - **Upgraded kubelet (N) / Older Control Plane (N-1 and older)**:
   - If the control plane has not been upgraded yet, any new allocations will not
-    have `SkipNodePrepare` or `SkipNodeUnprepare` set in the status.
+    have `SkipNodeOperations` set in the status.
   - An upgraded kubelet (N) will read the absent fields and default to `false`
     (requiring node preparation/unpreparation).
   - The behavior depends on whether the driver uses optional node preparation:
@@ -657,23 +591,22 @@ upgrade or downgrade/rollback of the feature gate.
 
     *Note*: This same fallback behavior occurs if the control plane is upgraded (N)
     but the active custom allocator or scheduler has not been upgraded to support
-    KEP-5945 yet and fails to copy the fields.
+    KEP-5945 yet and fails to copy the field.
 
-- **Kubelet Feature Gate Disabled / SkipNodePrepare or SkipNodeUnprepare set to true**:
-  - If the control plane has the gate enabled and writes `SkipNodePrepare: true`
-    or `SkipNodeUnprepare: true`, but the upgraded kubelet has the gate
+- **Kubelet Feature Gate Disabled / SkipNodeOperations set to true**:
+  - If the control plane has the gate enabled and writes `SkipNodeOperations: true`, but the upgraded kubelet has the gate
     disabled:
-    - Pods requesting `SkipNodePrepare: true` or `SkipNodeUnprepare: true` will
+    - Pods requesting `SkipNodeOperations: true` will
       fail `PrepareResources` with a clear `DRAOptionalNodePreparationDisabled`
       error.
     - For already running pods (in case the feature gate was disabled after
-      successful `PrepareResources`), the kubelet will honor `SkipNodeUnprepare: true` and skip the
+      successful `PrepareResources`), the kubelet will honor `SkipNodeOperations: true` and skip the
       unprepare call during `UnprepareResources`, allowing the pod to terminate cleanly.
 
-- **Scheduler Feature Gate Disabled / SkipNodePrepare or SkipNodeUnprepare set to true**:
+- **Scheduler Feature Gate Disabled / SkipNodeOperations set to true**:
   - If the `DRAOptionalNodePreparation` feature gate is disabled in the
     scheduler/allocator, but a driver publishes `ResourceSlices` with
-    `SkipNodePrepare: true` or `SkipNodeUnprepare: true` (e.g., due to
+    `SkipNodeOperations: true` (e.g., due to
     inconsistent feature gates in a rolling upgrade, or lingering slices after
     downgrade), the scheduler/allocator will fail the allocation of those
     claims.
@@ -708,14 +641,14 @@ preparation and cleanup unless explicitly set to `true` in the published
 Yes. Setting the feature gate to `false` and restarting components will disable
 it. If disabled, any new allocations for standard drivers will proceed normally
 (propagating `false` or `nil`). However, any allocation requests targeting drivers
-that set `SkipNodePrepare: true` or `SkipNodeUnprepare: true` in their `ResourceSlices`
+that set `SkipNodeOperations: true` in their `ResourceSlices`
 will fail during allocation, preventing workloads from scheduling into a state
 where node preparation is incorrectly expected by the kubelet but cannot be satisfied.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Re-enabling the feature gate is safe. Any claims allocated while the feature was
-disabled will have the skip fields as `false` in their status, so they will
+disabled will have the skip field as `false` in their status, so they will
 continue to be processed with node-local preparation. Newly allocated claims
 after re-enablement can once again utilize no-prep resource pools. No state
 corruption or data loss occurs.
@@ -723,13 +656,12 @@ corruption or data loss occurs.
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. Unit tests in the allocator will verify that when the feature gate is
-disabled, if any `ResourceSlice` has `SkipNodePrepare: true` or
-`SkipNodeUnprepare: true`, the allocator returns an error and fails allocation.
+disabled, if any `ResourceSlice` has `SkipNodeOperations: true`,
+the allocator returns an error and fails allocation.
 Kubelet unit tests will verify that when the feature gate is disabled on the node:
-- It fails `PrepareResources` if any active claim has `SkipNodePrepare: true` or
-  `SkipNodeUnprepare: true`.
+- It fails `PrepareResources` if any active claim has `SkipNodeOperations: true`.
 - During `UnprepareResources` of an already running pod, it still skips cleanup if the claim
-  has `SkipNodeUnprepare: true`, allowing the pod to terminate cleanly.
+  has `SkipNodeOperations: true`, allowing the pod to terminate cleanly.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -765,14 +697,12 @@ No.
 By exposing and monitoring the kubelet-side counter metrics
 `kubelet_dra_node_prepare_skips_total` and
 `kubelet_dra_node_unprepare_skips_total`, or by auditing active `ResourceClaim`
-allocations to check if `.status.allocation.devices.results[*].skipNodePrepare`
-or `skipNodeUnprepare` is set to `true`.
+allocations to check if `.status.allocation.devices.results[*].skipNodeOperations` is set to `true`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [x] API .status
-  - Other field: `.Status.Allocation.Devices.Results[*].SkipNodePrepare` and
-    `.Status.Allocation.Devices.Results[*].SkipNodeUnprepare` will be `true` in
+  - Other field: `.Status.Allocation.Devices.Results[*].SkipNodeOperations` will be `true` in
     the `ResourceClaim`.
   - Workloads run successfully without node-local drivers deployed.
 
@@ -821,7 +751,7 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes, slightly. Two optional boolean pointer fields are added to
+Yes, slightly. An optional boolean pointer field is added to
 `ResourceSliceSpec` and `DeviceRequestAllocationResult`.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -850,17 +780,17 @@ without requiring API server calls for no-prep claims.
 
 ###### What are other known failure modes?
 
-- **Misconfigured driver skip settings**: If a driver controller misconfigures `SkipNodePrepare: true` for a physical
+- **Misconfigured driver skip settings**: If a driver controller misconfigures `SkipNodeOperations: true` for a physical
 device that *does* require node preparation, the kubelet will skip preparation,
 causing containers to start without necessary mounts or initialization, leading
 to container application crashes.
   - *Mitigation*: Driver developers and administrators must ensure that
-  `SkipNodePrepare: true` and `SkipNodeUnprepare: true` are only applied to
+  `SkipNodeOperations: true` is only applied to
   `ResourceSlice`s representing resources that require absolutely no node-local
   preparation or device plumbing on the worker nodes.
 
 - **Driver requirements change in-place**: If a driver's node preparation requirements
-  are updated in-place (e.g., changing `SkipNodePrepare` in new resource slices),
+  are updated in-place (e.g., changing `SkipNodeOperations` in new resource slices),
   existing claims will still use the older configuration. Specifically:
   - If changing from skipping to requiring preparation, existing claims will still
     have node preparation skipped by the kubelet (potentially causing pod failures).
@@ -871,8 +801,8 @@ to container application crashes.
   (e.g., ensuring no active claims or pods exist for the driver before updating
   its configuration or decommissioning node-local driver components).
 
-- **Older or custom allocator fails to copy fields**: If an older or custom scheduler/allocator does
-  not support copying the skip fields from the `ResourceSlice` to the `ResourceClaim` status, the
+- **Older or custom allocator fails to copy field**: If an older or custom scheduler/allocator does
+  not support copying the skip field from the `ResourceSlice` to the `ResourceClaim` status, the
   kubelet will default to executing node preparation, which will fail if the driver has no node-local
   component deployed on the worker nodes.
   - *Mitigation*: Ensure the custom allocator/scheduler is upgraded to support and copy the new fields
@@ -884,10 +814,10 @@ to container application crashes.
 1. Verify if the affected Pod has `FailedPrepareDynamicResources` events.
 2. Inspect the associated `ResourceClaim` status: `kubectl get resourceclaim
    <claim-name> -o yaml`.
-3. Check if `.status.allocation.devices.results[*].skipNodePrepare` is set to
-   `true`. If it is `nil` or `false` but the driver is configured with `SkipNodePrepare: true`
+3. Check if `.status.allocation.devices.results[*].skipNodeOperations` is set to
+   `true`. If it is `nil` or `false` but the driver is configured with `SkipNodeOperations: true`
    in its `ResourceSlice`, verify if the scheduler or custom allocator has been upgraded to
-   support KEP-5945 and correctly copies these fields.
+   support KEP-5945 and correctly copies this field.
 4. If allocation itself is failing for the pod's claims with errors indicating that
    the optional node preparation feature is disabled in the scheduler, verify that the
    `DRAOptionalNodePreparation` feature gate is enabled in the scheduler/allocator components.
@@ -895,12 +825,12 @@ to container application crashes.
    verify that the `DRAOptionalNodePreparation` feature gate is enabled on the
    target kubelet.
 6. If a terminating pod was deleted and skipped cleanup, verify if it had
-   `SkipNodeUnprepare: true` in its allocation result, which allows bypassing
+   `SkipNodeOperations: true` in its allocation result, which allows bypassing
    cleanup even when the feature gate is disabled.
 7. If resource preparation succeeded (skipped) but the container fails to start
    or run because of missing hardware access, verify that the `ResourceSlice`
    was not misconfigured. If the device actually requires node-local prep,
-   `SkipNodePrepare` must be set to `false` (or omitted).
+   `SkipNodeOperations` must be set to `false` (or omitted).
 
 ## Implementation History
 
@@ -922,7 +852,7 @@ Configure this on the cluster-scoped `DeviceClassSpec`.
   capability.
 
 ### Alternative 2: Claim-level declaration
-Allow users to declare `SkipNodePrepare: true` in their `ResourceClaimSpec`.
+Allow users to declare `SkipNodeOperations: true` in their `ResourceClaimSpec`.
 - *Reason for Rejection*: Users should not be concerned with, or even know
   about, the underlying node-level physical or logical prep requirements of the
   hardware. This is an operational and infrastructure concern that belongs
@@ -958,5 +888,5 @@ work.
     same node to selectively handle or bypass preparation.
   - **Lack of Explicit Intent**: It hides the logical nature of the resource
     behind a dummy driver, making debugging and cluster observation more
-    difficult compared to an explicit `SkipNodePrepare` field in the
+    difficult compared to an explicit `SkipNodeOperations` field in the
     `ResourceSlice`.
