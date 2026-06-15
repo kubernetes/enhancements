@@ -136,6 +136,8 @@ When scaling down, guaranteed QoS pods need to know in advance which CPUs will b
 
 This KEP depends on [KEP-1287](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/1287-in-place-update-pod-resources/README.md), which allows Pods (without exclusive CPUs) to update their resource requests and limits in-place, and [KEP-5554](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5554-in-place-update-pod-resources-alongside-static-cpu-manager-policy/README.md), which extends this feature to support guaranteed QoS Pods with exclusive CPUs to resize without restarts. The scale-down delay feature only applies to in-place resize enabled by KEP-1287 and exclusive CPUs resize enabled by KEP-5554.
 
+> **Note:** This KEP was originally considered as part of KEP-5554 but was separated to keep KEP-5554 focused on the core scaling functionality. This KEP introduces two complementary features: configurable scale-down delay and exposure of assigned CPU sets via the Downward API. These features are independent of the basic scaling mechanism and can be implemented and adopted separately.
+
 ### Goals
 
 <!--
@@ -202,7 +204,11 @@ When `scale-delay-time` is configured on a node, the delay applies to all guaran
 
 **Mitigation in Alpha:** Operators are recommended to taint nodes that have `scale-delay-time` configured, so that only pods with corresponding tolerations are scheduled to those nodes. This effectively provides an opt-in mechanism at the node level.
 
-**Future improvement:** In Alpha2/Beta, a more granular opt-out mechanism will be investigated, such as using taints or Node Declared Features to allow pods to opt out of the scale-down delay at the pod level.
+**Future improvement:** In Alpha2/Beta, a more granular opt-out mechanism will be investigated, such as using taints, labels/annotations or other mechanisms to allow pods to opt out of the scale-down delay at the pod level.
+
+**Workload may not complete preparations within the delay window:** The kubelet guarantees only that the cpuset will not be applied before `scale-delay-time` has elapsed. There is no synchronization mechanism between the workload and kubelet — if the workload fails to complete its preparations (e.g., workload migration, draining tasks) within the delay window, the cpuset change is applied anyway. This is an inherent limitation of keeping kubelet independent from workload state.
+
+**Mitigation:** Operators should configure `scale-delay-time` based on the worst-case preparation time required by their latency-sensitive workloads. Workloads should be designed to handle premature CPU removal gracefully (e.g., by quickly migrating tasks to remaining CPUs or tolerating brief performance degradation). The `assigned.cpuset` field in the Downward API provides early notification of the upcoming change, giving workloads the maximum possible preparation time.
 
 ## Design Details
 
@@ -509,6 +515,7 @@ For downward API exposing CPU states feature
 
 * No unresolved critical bugs.
 * Bugs reported by users have been addressed
+* A pod-level opt-out mechanism for the scale-down delay has been analyzed and designed. This allows pods that do not require the delay to skip it, while still allowing latency-sensitive pods to benefit from the guaranteed preparation time.
 
 #### GA
 
