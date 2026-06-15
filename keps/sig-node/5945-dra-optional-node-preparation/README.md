@@ -321,7 +321,8 @@ allocated devices' status:
    `SkipNodeUnprepare`) set to `true`.
 2. **Checkpointing**: Kubelet caches these aggregated properties inside its
    checkpointed, claim-specific state (`ClaimInfo`) so they are safely preserved
-   across Kubelet restarts.
+   across Kubelet restarts. To ensure robust upgrade/downgrade compatibility, the
+   checkpoint serialization must be forward and backward compatible.
 3. **Bypassing**: During `PrepareResources` and `UnprepareResources`, the DRA manager
    checks the claim's cached properties. If skipping is enabled for the driver
    under that claim (meaning all allocated devices have the respective skip field
@@ -427,6 +428,21 @@ None.
 - **Kubelet Admission Unit Tests**: In Kubelet pod admission tests:
   - Verify that the Kubelet's pod admission handler rejects a pod requiring
     `DraOptionalNodePreparation` if the feature gate is disabled on the Kubelet.
+- **Kubelet Checkpoint State Unit Tests**: In
+  `pkg/kubelet/cm/dra/claiminfo_test.go`:
+  - Verify backward and forward compatibility of the serialized `ClaimInfo`
+    checkpoint state:
+    - **Forward Compatibility (Downgrade/Rollback)**: Verify that a checkpoint
+      file written by a Kubelet running version N (containing the new
+      `SkipNodePrepare` and `SkipNodeUnprepare` fields in `ClaimInfo`) can be
+      successfully parsed and deserialized by a Kubelet running version N-1 (or
+      with the feature gate disabled) without parsing errors or crashes, with
+      unrecognized fields being safely ignored.
+    - **Backward Compatibility (Upgrade)**: Verify that an older checkpoint file
+      written by a Kubelet running version N-1 (which completely lacks the new
+      fields) is successfully parsed and deserialized by Kubelet version N, with
+      the fields defaulting to `false`/`nil` (ensuring we do not skip
+      preparation/unpreparation for legacy claims).
 
 ##### Integration tests
 
@@ -528,12 +544,22 @@ upgrade or downgrade/rollback of the feature gate.
         updates.
       - The running workload on the N kubelet continues to run without
         interruption.
-  - **Action 2 (Kubelet Downgrade)**: Downgrade the kubelets to N-1 (feature
-    gate disabled).
+  - **Action 2 (Kubelet Downgrade / Feature Gate Rollback)**: Downgrade the
+    Kubelet binary to N-1, or disable the `DRAOptionalNodePreparation` feature
+    gate on Kubelet version N, and restart the Kubelet.
     - **Assertions**:
-      - Verify that the kubelet behaves according to the
-        [Disabled Feature Gate Behavior](#disabled-feature-gate-behavior) section
-        upon workload deletion.
+      - **Checkpoint Recovery**: The Kubelet starts up successfully and parses
+        the checkpoint file without errors or crashes.
+        - *For Kubelet version N (gate disabled)*: The Kubelet successfully
+          recovers the full `ClaimInfo` state including the saved
+          `SkipNodeUnprepare: true` setting.
+        - *For Kubelet version N-1*: The Kubelet successfully parses the
+          checkpoint by ignoring the unknown fields, and recovers the rest of
+          the state while defaulting the missing skip fields to `false`.
+      - **Workload Deletion**:
+        - Verify that the kubelet behaves according to the
+          [Disabled Feature Gate Behavior](#disabled-feature-gate-behavior) section
+          upon workload deletion.
 - **Test Case 3.3: Upgrade -> Downgrade -> Upgrade (N-1 -> N -> N-1 -> N)**:
   - **Setup**: Start with a cluster running version N-1 (feature gate disabled).
     Deploy a standard DRA driver.
