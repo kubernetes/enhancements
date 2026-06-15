@@ -7,6 +7,7 @@ owning-sig: sig-node
 status: implementable
 creation-date: "2026-06-02"
 reviewers:
+  - "@everpeace"
   - "@mortent"
 approvers:
   - "@pohly"
