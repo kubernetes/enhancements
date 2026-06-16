@@ -171,8 +171,8 @@ The key design principles for this alpha are:
 
 - One `Job` maps to one `PodGroup` representing a single group of pods. The `PodGroup` 
 always links to a `Workload` via a `PodGroupTemplate`:
-  * For a root Job the controller compiles the `Workload` itself
-  * For a non-root Job the `PodGroup` links to the parent-owned `Workload`
+  * For a root Job it links to the `Workload` the controller compiles itself
+  * For a non-root Job it links to the parent-owned `Workload`
   * The `PodGroup` links to a parent `CompositePodGroup` instance only when the parent 
   supplies the `scheduling.k8s.io/parent-composite-podgroup` annotation
 - The scheduling policy comes from the user's `spec.scheduling`, not from the Job's type. When
@@ -571,7 +571,7 @@ The Job controller compiles `spec.scheduling` into a `Workload` using the `workl
 The `scheduling.k8s.io/v1alpha3` building-block types live in the API staging repo
 (`k8s.io/api/scheduling/v1alpha3`). The `workloadbuilder` library lives separately in
 `k8s.io/component-helpers`, so it can be vendored by both in-tree controllers and out-of-tree 
-controllers. The Job controller consumes its `NewBuilder`/`Build`, `WorkloadNode`, and 
+controllers. The Job controller consumes its `NewBuilder`/`Build`, `WorkloadItem`, and 
 `MapPodGroupConfig`. If the library API shifts before it stabilizes, the Job integration 
 tracks those changes through the shared dependency rather than maintaining its own copy.
 
@@ -580,7 +580,7 @@ tracks those changes through the shared dependency rather than maintaining its o
 The controller's `generateWorkload` helper performs four steps: 
   1. Set the Job's default configuration to `Basic`.
   2. Map the user-facing `spec.scheduling` block into the library IR via `MapPodGroupConfig`.
-  3. Assemble a single-node `WorkloadNode`, supplying `DefaultGangMinCount` from `spec.parallelism` 
+  3. Assemble a single-node WorkloadItem, if needed supplying minCount for gang from spec.parallelism.
     as the fallback gang size.
   4. Invoke `Build`, passing the Job's identity and a controller `OwnerReference` so the emitted
     `Workload` is owned by the Job and garbage-collected with it.
@@ -741,18 +741,22 @@ flowchart BT
     Workload[Workload]
     Job[Job]
 
-    Workload -->|ownerRef| Job
-    PodGroup -->|ownerRef| Job
-    Pod -->|ownerRef| Job
-
-    PodGroup -->|ownerRef| Workload
     Pod -->|ownerRef| PodGroup
+    Pod -->|ownerRef| Job
+    PodGroup -->|ownerRef| Job
+    PodGroup -->|ownerRef <br/> (root Job only)| Workload
+    Workload -->|ownerRef| Job
+
+    PodGroup -.->|via <br/> podGroupTemplateRef| Workload
+
+    linkStyle 5 stroke:#888,color:#888
 ```
 
 - The `Workload` object has an ownerReference to the `Job` object with `controller: true` in case 
   it was created by the Job controller.
-- The `PodGroup` object has an ownerReference to the `Job` object with `controller: true` in case 
-  it was created by the Job controller and another ownerReference to the `Workload` object.
+- The `PodGroup` object links to a `Workload` via `spec.podGroupTemplateRef`. When created 
+by the Job controller it carries a controller ownerReference to the `Job`. A parent-owned 
+`Workload` is never given an ownerReference from the `PodGroup`.
 - The `Pod` object has an ownerReference to the `Job` object with `controller: true` and another 
   ownerReference to the `PodGroup` object
 
@@ -769,7 +773,9 @@ This is a controller-side resolution that is required to resolve the unset case 
 - **`Scheduling` set but `Policy` nil → `Basic`.** `WorkloadPodGroupSchedulingPolicy` is a 
   discriminated union for which the compiled `PodGroup` must carry exactly one concrete policy, so a
   nil `Policy` is resolved to `Basic`.
-- **`Gang` with `MinCount` unset → `MinCount = parallelism`.** a context-aware sane gang size supplied via `DefaultGangMinCount`.
+- **`Gang` with `MinCount` unset → `MinCount = parallelism`.** Done controller-side only 
+without persisting the derived value back onto the Job spec because writing it back would make a 
+user-set `minCount` indistinguishable from the default on later updates, where `minCount` is mutable.
 
 Optional modifiers (`DisruptionMode`, `Constraints`, `ResourceClaims`) are deliberately not
 defaulted. Unlike `Policy`, these are optional fields whose absence is a defined state. A nil `DisruptionMode` resolves to standard per-pod (`Single`) disruption, a nil `Constraints`
@@ -818,7 +824,7 @@ In either case, the Job controller reconciles the change as follows:
 
 1. **Detection:** the Job controller's reconcile loop detects the change and fetches the existing
    `Workload` resource from the API server.
-2. **Workload Compilation:** it builds a fresh single-node `WorkloadNode` tree from the updated
+2. **Workload Compilation:** it builds a fresh single-node `WorkloadItem` tree from the updated
    `spec.parallelism`/`minCount` and passes it to the `workloadbuilder` library to compile a fresh
    `Workload` object.
 3. **Workload Update:** the controller applies the newly compiled `Workload` spec to the existing
