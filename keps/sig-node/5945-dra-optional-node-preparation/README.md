@@ -153,8 +153,10 @@ We propose adding a boolean field `SkipNodeOperations` to
 
 #### Deploying controller-managed resources without node-local drivers
 As a cluster administrator or vendor using a central driver controller, I want
-to offer resources (e.g., cluster-wide shared resource pools or logically
-partitioned network services) where availability is discovered and published as
+to offer resources (e.g., cluster-wide shared resource pools, logically
+partitioned network services, or pure control-plane gating drivers like
+[dra-driver-image-configurator](https://github.com/gke-labs/dra-drivers/tree/main/dra-driver-image-configurator))
+where availability is discovered and published as
 `ResourceSlice` resources centrally by the controller. Because the devices
 require no node-local plumbing or mount operations on worker nodes, there is no
 node driver deployed. The controller publishes these resources with
@@ -418,6 +420,7 @@ deploy any node-local components.
   - **Workload**: Deploy a Pod referencing this resource.
   - **Assertions**:
     - The Pod reaches the `Running` phase successfully.
+    - The allocated device can be accessed.
     - No `FailedPrepareDynamicResources` warnings are posted to the Pod events.
     - Pod deletion completes cleanly and immediately (does not hang in
       `Terminating` waiting for unprepare).
