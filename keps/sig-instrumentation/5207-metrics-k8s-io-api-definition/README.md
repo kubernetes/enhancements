@@ -71,6 +71,8 @@ Given the API's long track record and unchanged schema, graduating to stable is 
 
 - Graduate `metrics.k8s.io` to stable, by introducing the same API under
   `v1` as exists currently under `v1beta1`.
+- Migrate the in-tree consumers (e.g., `pkg/controller/podautoscaler`,
+  `kubectl top`) to the `v1` API.
 - The graduation (and thus the migration to the newer version) should be
   non-breaking.
 
@@ -92,7 +94,7 @@ The proposal broadly entails two efforts:
 - Introducing `metrics.k8s.io/v1` for the `k8s.io/metrics` package, and,
 - Migrating in-house components and sub-projects to utilize the stable version.
 
-The former will more or less be a cosmetic change, essentially bumping
+The former will be a cosmetic change, essentially bumping
 `v1beta1` to `v1`. The `v1` API surface will be identical to `v1beta1`,
 with the only difference being the version name itself.
 
@@ -105,13 +107,13 @@ The latter will focus on utilizing the stable version in the
 For the purpose of explaining the risks, we'll assume two entities here.
 
 First, a requester (e.g., HPAs), which utilizes the `metrics.k8s.io`
-client, and second, a Metric Server which
+client, and second, a server (for e.g., [metrics-server](https://sigs.k8s.io/metrics-server)) which
 utilizes the type definitions exposed by
 `k8s.io/metrics/pkg/apis/metrics` to wrap over and expose the metrics
 received from the metrics backend in a manner that is consumable by the
 requester. 
 
-The requester and the Metric Server are linked through an `APIService` object, which
+The requester and the server are linked through an `APIService` object, which
 allows the latter to act as addon APIServer through the aggregation layer for
 all requests from the requester towards that `GroupVersion`. Note that while the
 APIServer will promote or fallback between versions that support conversions,
@@ -121,7 +123,7 @@ Both `v1.metrics.k8s.io` and `v1beta1.metrics.k8s.io` APIServices can be
 registered at the same time. A request is served only if an APIService is
 registered and available for the exact version requested; otherwise that
 request gets `404 NotFound`, while requests to other registered versions are
-unaffected. The metric server's internal type-definition version has no
+unaffected. The server's internal type-definition version has no
 effect, since the `v1` and `v1beta1` surfaces are identical.
 
 | Registered APIServices | `v1` client request | `v1beta1` client request |
@@ -177,7 +179,30 @@ spec:
   version: v1beta1
 ```
 
-* The implementation collects resource metrics from each kubelet and returns `NodeMetrics` or `PodMetrics` objects. `PodMetrics` includes per-container breakdown via `ContainerMetrics`.
+* The implementation collects resource metrics from each kubelet and returns `NodeMetrics` or `PodMetrics` objects. `PodMetrics` includes per-container breakdown via `ContainerMetrics`. The `v1` types are identical to `v1beta1` except for the version name:
+
+```go
+type NodeMetrics struct {
+    metav1.TypeMeta
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+    Timestamp metav1.Time     `json:"timestamp"`
+    Window    metav1.Duration `json:"window"`
+    Usage     v1.ResourceList `json:"usage"`
+}
+
+type PodMetrics struct {
+    metav1.TypeMeta
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+    Timestamp  metav1.Time        `json:"timestamp"`
+    Window     metav1.Duration    `json:"window"`
+    Containers []ContainerMetrics `json:"containers"`
+}
+
+type ContainerMetrics struct {
+    Name  string          `json:"name"`
+    Usage v1.ResourceList `json:"usage"`
+}
+```
 
 ### Test Plan
 
@@ -230,11 +255,16 @@ lives out of tree.
 - HPA e2e tests
   ([`test/e2e/autoscaling/horizontal_pod_autoscaling*.go`](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/autoscaling))
   exercise the `metrics.k8s.io` API end-to-end through metrics-server in e2e
-  clusters: [sig-autoscaling-hpa testgrid](https://testgrid.k8s.io/sig-autoscaling-hpa).
+  clusters: [sig-autoscaling-hpa-periodics testgrid](https://testgrid.k8s.io/sig-autoscaling-hpa-periodics).
 - metrics-server's own e2e suite
   ([`test/e2e_test.go`](https://github.com/kubernetes-sigs/metrics-server/blob/master/test/e2e_test.go))
   directly verifies serving the API on a kind cluster, and will be extended
   to cover the `v1` APIService.
+- A `kubectl top node` / `kubectl top pod` e2e test is planned, to be added
+  under `test/e2e/kubectl`. The `--provider=gce` jobs that already run the HPA
+  e2e tests ship metrics-server (and the `metrics.k8s.io` APIService) by
+  default, so the path is viable; the exact placement will be coordinated with
+  SIG CLI, which owns `kubectl top`.
 
 ### Graduation Criteria
 
@@ -386,7 +416,7 @@ N/A
   ```
   kubectl get apiservice v1.metrics.k8s.io
   ```
-- [x] Other (treat as last resort)
+- [x] Kubectl
   - Details: Registered versions can be listed by querying `/apis`, and the
     API can be queried directly to confirm it serves data:
   ```
@@ -431,7 +461,7 @@ No.
 
 Yes. Serving the `metrics.k8s.io` API requires an implementation running in the
 cluster — most commonly
-[metrics-server](https://github.com/kubernetes-sigs/metrics-server) — that
+[metrics-server](https://sigs.k8s.io/metrics-server) — that
 registers and backs the corresponding APIService. Currently, `controller-manager`
 relies on this API, and in order to establish an overall workflow, needs the
 aggregation layer to route the requests accordingly.
