@@ -40,6 +40,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Alpha2](#alpha2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -529,7 +530,7 @@ For downward API exposing CPU states feature
 * Kubelet has support for CPU manager exposure in the pod
 * unit testing and e2e testing for downward API enhancement for CPU exposure.
 
-#### Beta
+#### Alpha2
 
 For scale down delay feature
 * No unresolved critical bugs.
@@ -541,6 +542,11 @@ For scale down delay feature
 For downward API exposing CPU states feature
 * Exposing Memory Manager information (e.g., `assigned.memset`) via the Downward API.
 * unit testing and e2e testing for downward API enhancement for memory exposure.
+
+#### Beta
+
+* No unresolved critical bugs.
+* Bugs reported by users have been addressed
 
 #### GA
 
