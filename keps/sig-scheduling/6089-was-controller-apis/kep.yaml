@@ -33,9 +33,6 @@ milestone:
   stable: "v1.39"
 
 feature-gates:
-  - name: WorkloadAwareIntegration
-    components:
-      - kube-apiserver
   - name: WorkloadWithJob
     components:
       - kube-controller-manager

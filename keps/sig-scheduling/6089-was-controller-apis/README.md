@@ -411,18 +411,14 @@ type WorkloadPodGroupSchedulingConstraints struct {
 }
 
 // WorkloadPodGroupDisruptionMode defines how individual pods within a group can be disrupted.
-// Exactly one mode can be set.
-//
-// +union
+// Exactly one mode must be set.
 type WorkloadPodGroupDisruptionMode struct {
     // Single specifies that pods can be disrupted independently from each other.
     // +optional
-    // +k8s:unionMember
     Single *WorkloadPodGroupSingleDisruptionMode `json:"single,omitempty"`
 
     // All specifies that all pods in the group must be disrupted together.
     // +optional
-    // +k8s:unionMember
     All *WorkloadPodGroupAllDisruptionMode `json:"all,omitempty"`
 }
 
@@ -438,16 +434,13 @@ type WorkloadPodGroupAllDisruptionMode struct {
 
 // WorkloadPodGroupSchedulingPolicy defines the scheduling policy for a group of pods.
 // Exactly one policy must be set.
-// +union
 type WorkloadPodGroupSchedulingPolicy struct {
     // Basic specifies that standard, pod-by-pod Kubernetes scheduling behavior should be used.
     // +optional
-    // +k8s:unionMember
     Basic *WorkloadPodGroupBasicSchedulingPolicy `json:"basic,omitempty"`
 
     // Gang specifies all-or-nothing scheduling semantics.
     // +optional
-    // +k8s:unionMember
     Gang *WorkloadPodGroupGangSchedulingPolicy `json:"gang,omitempty"`
 }
 
@@ -459,29 +452,24 @@ type WorkloadPodGroupBasicSchedulingPolicy struct {
 // WorkloadPodGroupGangSchedulingPolicy defines the parameters for gang (all-or-nothing) scheduling.
 type WorkloadPodGroupGangSchedulingPolicy struct {
     // MinCount is the minimum number of pods that must be scheduled
-    // at the same time for the scheduler to admit the entire group.
+    // at the same time for the scheduler to admit the entire group. must be >= 1 when set
     // If omitted, the controller should inject a context-specific sane default.
     // +optional
-    // +k8s:minimum=1
     MinCount *int32 `json:"minCount,omitempty"`
 }
 
 // WorkloadPodGroupResourceClaim references dynamic resource claims for the group.
 // Exactly one of ResourceClaimName or ResourceClaimTemplateName must be set.
-// +union
 type WorkloadPodGroupResourceClaim struct {
     // Name uniquely identifies this resource claim inside the group.
-    // +k8s:format=dns-label
     Name string `json:"name"`
 
     // ResourceClaimName is the name of a ResourceClaim object in the same namespace.
     // +optional
-    // +k8s:unionMember
     ResourceClaimName *string `json:"resourceClaimName,omitempty"`
 
     // ResourceClaimTemplateName is the name of a ResourceClaimTemplate object.
     // +optional
-    // +k8s:unionMember
     ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
 }
 ```
@@ -1095,14 +1083,9 @@ Job-specific test plans are tracked in [KEP-5547].
 
 ### Upgrade / Downgrade Strategy
 
-`workloadbuilder` is a build-time, vendored Go library, not a deployed component, so cluster
-upgrade/downgrade does not apply to it.
-
-The `WorkloadAwareIntegration` gate (kube-apiserver only) gates only whether the shared building-block fields are served on integrating APIs:
-- **Upgrade:** upgrade kube-apiserver and enable the gate before any integration can persist these
-  fields.
-- **Downgrade:** the fields are no longer served on writes; existing values are ignored but left in
-  etcd.
+The API building blocks are not top-level objects, and thus are not exposed directly 
+by kube-apiserver. Update/Downgrade strategy for top-level APIs (like `Job`) are 
+described in detail in corresponding KEPs.
 
 ### Version Skew Strategy
 
@@ -1116,9 +1099,6 @@ version at build time. Skew applies only to the runtime components of each integ
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `WorkloadAwareIntegration`
-    - Components depending on the feature gate:
-      - kube-apiserver
   - Feature gate name: `WorkloadWithJob`
     - Components depending on the feature gate:
       - kube-controller-manager
@@ -1130,36 +1110,31 @@ version at build time. Skew applies only to the runtime components of each integ
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
 
-The `WorkloadAwareIntegration` feature gate scopes only the shared building-block API surface, it controls
-whether the standardized building-block types are served and persisted when embedded into an
-integrating API. It does not gate any controller's scheduling implementation, and the
-`workloadbuilder` library (which is a build-time dependency) is not gated at runtime. 
-Each integrating controller ships its own feature gate that enables its runtime behavior 
-and `Workload`/`PodGroup` creation.
-
 ###### Does enabling the feature change any default behavior?
 
-No. Enabling this gate only makes the shared building-block fields available. Whether and how those fields affect
-scheduling is determined by each integration's own gate and controller.
+This KEP itself is a code-level change and a building block for few KEPs. 
+The API building blocks and libraries can't really be disabled. The integration 
+with those however is handled by feature gates dedicated to integrations (e.g. 
+`WorkloadWithJob` for the integration with Job API and job-controller). This 
+can be disabled and it's described in detail in corresponding KEPs (e.g. 
+[KEP-5547] for Job integration).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling `WorkloadAwareIntegration` stops the shared building-block fields from being served
-on new writes, and the apiserver ignores them on update. Values already persisted in etcd are not
-cleared, and no `Workload`/`PodGroup` objects are deleted. Whether scheduling falls back to
-pod-by-pod depends on the integrating controller's own gate.
+The building blocks and libraries themselves aren't gated, so there is nothing to roll back at this
+level. Rollback is a property of each integration, disabling that integration's dedicated gate (e.g.
+`WorkloadWithJob`) is what stops the building-block fields from being served.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The shared building-block fields are served again. Because values persisted in etcd are retained
-while the gate is off, objects that already had them set keep their values, and integrating
-controllers (subject to their own gates) resume honoring them on the next reconciliation.
+This is likewise governed by the integration rather than the building blocks. Reenabling an
+integration's gate is handled according to each controller's enablement/disablement strategy.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. For the newly introduced API fields, dedicated
-enablement/disablement tests at the kube-apiserver registry layer will be added in
-Alpha, including tests exercising the feature-gate `switch`
+Since the building blocks aren't gated, enablement/disablement tests live with each 
+integration and are described in the corresponding KEPs. This KEP is covered by library 
+and unit tests for the building blocks themselves.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1300,10 +1275,10 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Enabling `WorkloadAwareIntegration` feature gate adds no new API calls; it only allows the
-shared building-block fields to be persisted. The new calls (creating `Workload`/`PodGroup`
-objects) are made by integrating controllers when a user opts in, gated separately. 
-Workloads that omit the `scheduling` block generate no new API calls.
+Enabling an integration's gate adds no new API calls by itself, it only allows the integration's
+building-block fields to be persisted. The new calls (creating `Workload`/`PodGroup` objects) are
+made by integrating controllers when a user opts in. Workloads that omit the `scheduling` block
+generate no new API calls.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
