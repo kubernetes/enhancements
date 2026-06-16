@@ -342,9 +342,13 @@ Logs from removed containers will be managed by the [existing container garbage 
 ### Security Considerations
 
 **Admission Configuration:** If custom admission webhooks are configured to intercept only `CREATE`
-operations for Pods, they can be bypassed by adding a violating container via update. Container image is already mutable,
-so the only new risk introduced is granting new permissions. This is mitigated by explicitly forbidding new containers from escalating permissions.
-See [No SecurityContext escalations](#no-securitycontext-escalations).
+operations for Pods or aren't upgraded to intercept the new `dynamic` subresource, then they can be
+bypassed by adding a violating container. Container image is already mutable, so the only new risk
+introduced is granting new permissions. This is mitigated by explicitly forbidding new containers
+from escalating permissions. See [No SecurityContext escalations](#no-securitycontext-escalations).
+Further mitigations will be explored, which is a Beta-blocking criteria.
+
+Built-in admission controllers will be updated to handle the new subresource (see [Implementation Details](#implementation-details) below).
 
 ### Implementation Details
 
@@ -363,9 +367,12 @@ See [No SecurityContext escalations](#no-securitycontext-escalations).
 **Allocation Manager Admission handling**
   - Treat new containers as an allocation step, similar to resize.
 
-**Admission Handlers** need to handle updates to the pod:
+**Admission Handlers** need to handle updates to the new subresource, including:
+  - `PodSecurityAdmission`
   - `PodResizeValidator`
   - `LimitRanger`
+  - `NodeDeclaredFeatures`
+  - `ResourceQuota`
 
 ### Test Plan
 
