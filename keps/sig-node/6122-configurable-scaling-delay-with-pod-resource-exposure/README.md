@@ -146,6 +146,8 @@ This KEP depends on [KEP-1287](https://github.com/kubernetes/enhancements/blob/m
 
 > **Note:** This KEP was originally considered as part of KEP-5554 but was separated to keep KEP-5554 focused on the core scaling functionality. This KEP introduces two complementary features: configurable scale-down delay and exposure of assigned CPU sets via the Downward API. These features are independent of the basic scaling mechanism and can be implemented and adopted separately.
 
+> **Note:** This KEP depends on three feature gates. Two of them (`InPlacePodVerticalScalingExclusiveCPUs` and `CPUManagerPolicyAlphaOptions`) are already available in Kubernetes. This KEP only introduces one new feature gate: `DownwardAPIAssignedResources`.
+
 ### Goals
 
 <!--
