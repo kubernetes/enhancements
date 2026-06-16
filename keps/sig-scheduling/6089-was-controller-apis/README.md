@@ -21,6 +21,7 @@
   - [Core Principles &amp; Assumptions](#core-principles--assumptions)
   - [Standardized Building Blocks Definitions (<code>scheduling.k8s.io</code>)](#standardized-building-blocks-definitions-schedulingk8sio)
   - [Job Integration (batch/v1)](#job-integration-batchv1)
+    - [API Changes](#api-changes)
   - [Shared workloadbuilder Go Translation Library](#shared-workloadbuilder-go-translation-library)
     - [1. Design &amp; Architecture](#1-design--architecture)
     - [2. Controller Opt-In for New Scheduling Capabilities](#2-controller-opt-in-for-new-scheduling-capabilities)
@@ -496,6 +497,44 @@ maturity levels, with the field cleared on write and ignored on read while the g
 This integration serves as the foundational implementation ("blazing the path") that demonstrates
 the viability of these building blocks before out-of-tree controllers adopt them. More design 
 details are covered in [KEP-5547].
+
+#### API Changes
+
+We will introduce a new `Scheduling` field inside `JobSpec`. This field embeds a curated, composed
+structure consisting of the standardized building blocks:
+
+```go
+// API Group: batch/v1
+
+// JobSpec defines the desired state of a Job.
+type JobSpec struct {
+    // ... existing fields ...
+
+    // Scheduling defines the Workload-aware Scheduling configuration for this Job.
+    // This field is alpha-gated by the WorkloadWithJob feature gate.
+    // +optional
+    Scheduling *JobSchedulingConfiguration `json:"scheduling,omitempty"`
+}
+
+// JobSchedulingConfiguration composes the reusable WAS building blocks.
+type JobSchedulingConfiguration struct {
+    // Policy defines the gang or basic scheduling rules for this Job.
+    // +optional
+    Policy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy `json:"policy,omitempty"`
+
+    // Constraints defines topology co-location constraints for the Job's pods.
+    // +optional
+    Constraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"constraints,omitempty"`
+
+    // DisruptionMode specifies how the pods in this Job should be disrupted (Single vs All).
+    // +optional
+    DisruptionMode *schedulingv1alpha3.WorkloadPodGroupDisruptionMode `json:"disruptionMode,omitempty"`
+
+    // ResourceClaims specifies dynamic resource claims shared across the Job's pods.
+    // +optional
+    ResourceClaims []schedulingv1alpha3.WorkloadPodGroupResourceClaim `json:"resourceClaims,omitempty"`
+}
+```
 
 ### Shared workloadbuilder Go Translation Library
 
