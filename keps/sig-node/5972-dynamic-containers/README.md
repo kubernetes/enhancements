@@ -400,6 +400,8 @@ See [No SecurityContext escalations](#no-securitycontext-escalations).
 
 - Gather feedback from developers and ecosystem maintainers (e.g., Ray, Slurm).
 - Ecosystem research & outreach for static container assumptions.
+- Decide on (and implement) strategy for legacy admission controllers.
+- Decide on strategy for resolving the Kubelet / Scheduler resize race condition.
 
 #### GA
 
