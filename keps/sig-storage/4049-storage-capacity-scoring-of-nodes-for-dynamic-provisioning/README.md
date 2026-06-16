@@ -1000,7 +1000,23 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No.
+Yes. This feature depends on a CSI driver that opts into storage capacity
+tracking by setting `StorageCapacity: true` in its `CSIDriver` spec. If no
+such driver is deployed, the feature has no effect on scheduling.
+
+- CSI driver (with `StorageCapacity: true` in its `CSIDriver` spec)
+  - Usage description: The scheduler reads `CSIStorageCapacity` objects
+    published by the CSI driver's `external-provisioner` sidecar to
+    determine available storage capacity on each node, which is used to
+    score nodes for dynamic provisioning.
+    - Impact of its outage on the feature: `CSIStorageCapacity` objects are
+      no longer updated. Scoring continues based on stale capacity data and
+      may place pods on suboptimal nodes.
+    - Impact of its degraded performance or high-error rates on the feature:
+      Stale or infrequently updated `CSIStorageCapacity` data causes scoring
+      to reflect outdated capacity values. Pods may be placed on suboptimal
+      nodes, reducing the effectiveness of the feature. Scoring returns to
+      accurate behavior once the driver resumes updating the capacity objects.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
