@@ -21,18 +21,11 @@
   - [Core Principles &amp; Assumptions](#core-principles--assumptions)
   - [Standardized Building Blocks Definitions (<code>scheduling.k8s.io</code>)](#standardized-building-blocks-definitions-schedulingk8sio)
   - [Job Integration (batch/v1)](#job-integration-batchv1)
-    - [1. API Changes](#1-api-changes)
-    - [2. Defaulting Rules](#2-defaulting-rules)
   - [Shared workloadbuilder Go Translation Library](#shared-workloadbuilder-go-translation-library)
     - [1. Design &amp; Architecture](#1-design--architecture)
     - [2. Controller Opt-In for New Scheduling Capabilities](#2-controller-opt-in-for-new-scheduling-capabilities)
     - [3. Library API Definition](#3-library-api-definition)
     - [4. Library Usage Example (Job)](#4-library-usage-example-job)
-  - [Job Integration - Handling Updates and Mutability](#job-integration---handling-updates-and-mutability)
-    - [Gang MinCount Defaulting &amp; Scaling Behavior](#gang-mincount-defaulting--scaling-behavior)
-    - [Reconciliation Flow upon Updates](#reconciliation-flow-upon-updates)
-    - [API Validation via the workloadbuilder Library](#api-validation-via-the-workloadbuilder-library)
-      - [Allowing Mutability of spec.parallelism](#allowing-mutability-of-specparallelism)
   - [Reference Integration Examples: JobSet (Multi-Level)](#reference-integration-examples-jobset-multi-level)
     - [1. Option A: Template Delegation Model (Nested Configuration)](#1-option-a-template-delegation-model-nested-configuration)
       - [Example YAML Manifest](#example-yaml-manifest)
@@ -490,52 +483,6 @@ This integration serves as the foundational implementation ("blazing the path") 
 the viability of these building blocks before out-of-tree controllers adopt them. More design 
 details are covered in [KEP-5547].
 
-#### 1. API Changes
-We will introduce a new `Scheduling` field inside `JobSpec`. This field embeds a curated, composed
-structure consisting of the standardized building blocks:
-
-```go
-// API Group: batch/v1
-
-// JobSpec defines the desired state of a Job.
-type JobSpec struct {
-    // ... existing fields ...
-
-    // Scheduling defines the Workload-aware Scheduling configuration for this Job.
-    // +optional
-    Scheduling *JobSchedulingConfiguration `json:"scheduling,omitempty"`
-}
-
-// JobSchedulingConfiguration composes the reusable WAS building blocks.
-type JobSchedulingConfiguration struct {
-    // Policy defines the gang or basic scheduling rules for this Job.
-    // +optional
-    Policy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy `json:"policy,omitempty"`
-
-    // Constraints defines topology co-location constraints for the Job's pods.
-    // +optional
-    Constraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"constraints,omitempty"`
-
-    // DisruptionMode specifies how the pods in this Job should be disrupted (Single vs All).
-    // +optional
-    DisruptionMode *schedulingv1alpha3.WorkloadPodGroupDisruptionMode `json:"disruptionMode,omitempty"`
-
-    // ResourceClaims specifies dynamic resource claims that are shared across the Job's pods.
-    // +optional
-    ResourceClaims []schedulingv1alpha3.WorkloadPodGroupResourceClaim `json:"resourceClaims,omitempty"`
-}
-```
-
-#### 2. Defaulting Rules
-To ensure 100% backward compatibility and prevent breaking existing CI/CD pipelines:
-* If `Scheduling` is unset or `Policy` is nil, the Job controller defaults to the
-  `Basic` scheduling policy (meaning standard Kubernetes pod-by-pod scheduling).
-* If a user configures `Policy` to use `Gang` scheduling, but leaves `MinCount` unset,
-  the Job controller automatically injects a context-aware sane default: `MinCount = parallelism`
-  (or `MinCount = completions` if parallelism is unset).
-* Users can explicitly configure an escape hatch (e.g., opting in only to topology constraints
-  while maintaining standard `Basic` pod-by-pod scheduling).
-
 ### Shared workloadbuilder Go Translation Library
 
 To prevent every workload controller (both core and out-of-tree) from writing custom, translation
@@ -556,7 +503,7 @@ the library:
   functions (`MapPodGroupConfig` and `MapCompositeGroupConfig`). These helper adapters cleanly
   translate public, level-specific schemas into polymorphic IR models at runtime.
 
-Controller authors construct a logical tree using `WorkloadNode` representing their workload
+Controller authors construct a logical tree using `WorkloadItem` representing their workload
 structure, populate `DefaultConfig` and the user's `UserConfig` (using the standard mapping
 helpers), and invoke the builder.
 
@@ -671,9 +618,12 @@ type ResourceClaim struct {
     ResourceClaimTemplateName *string
 }
 
-// WorkloadNode represents a logical component of a workload (e.g., the whole JobSet,
+
+type WorkloadItemFunc func(*WorkloadItem)
+
+// WorkloadItem represents a logical component of a workload (e.g., the whole JobSet,
 // a specific ReplicatedJob role, or a single standalone Job).
-type WorkloadNode struct {
+type WorkloadItem struct {
     // Name is the logical identifier of this component (e.g., "jobset-root", "driver").
     Name string
 
@@ -692,10 +642,12 @@ type WorkloadNode struct {
     // - If len(Children) > 0, the node is inferred as a structural group
     //   (i.e., represents a CompositePodGroupTemplate).
     // - If len(Children) == 0, the node is inferred as a leaf (i.e. represents a PodGroup)
-    Children []*WorkloadNode
+    Children []*WorkloadItem
+    
+    Callbacks []WorkloadItemFunc
 }
 
-// WorkloadBuilder translates the logical WorkloadNode tree into a scheduler Workload object.
+// WorkloadBuilder translates the logical WorkloadItem tree into a scheduler Workload object.
 type WorkloadBuilder interface {
     // Build translates the tree, merges defaults, validates policies,
     // and generates the Workload resource.
@@ -707,7 +659,7 @@ type WorkloadBuilder interface {
 }
 
 // NewBuilder initializes a builder with a specific root node.
-func NewBuilder(root *WorkloadNode) WorkloadBuilder {
+func NewBuilder(root *WorkloadItem) WorkloadBuilder {
     return &builderImpl{root: root}
 }
 
@@ -763,7 +715,7 @@ func (r *JobReconciler) generateWorkload(
     }
 
     // 3. Create the flat logical tree for Job (root node representing a single PodGroup)
-    rootNode := &workloadbuilder.WorkloadNode{
+    rootNode := &workloadbuilder.WorkloadItem{
         Name:                "job-root",
         DefaultConfig:       defaultConfig,
         DefaultGangMinCount: ptr.To(job.Spec.Parallelism), // Defaults to parallelism if MinCount is nil
@@ -785,60 +737,6 @@ func (r *JobReconciler) generateWorkload(
     return workloadObj, nil
 }
 ```
-
-### Job Integration - Handling Updates and Mutability
-
-To support the dynamic scaling of gang-scheduled workloads (Elastic Jobs) in v1.37+, the Job API
-allows in-flight updates to `spec.scheduling.policy.gang.minCount`. All other scheduling
-fields in `spec.scheduling` are strictly immutable upon Job creation. API
-validation reuses the `workloadbuilder` library where possible so the accepted configurations stay
-consistent with what the controller actually compiles.
-
-#### Gang MinCount Defaulting & Scaling Behavior
-
-If `minCount` is set explicitly, it has full precedence and defines the target gang size; changes 
-to `spec.parallelism` are then ignored for gang-size calculations. If `minCount` is omitted 
-(nil), the gang size dynamically defaults to and follows `spec.parallelism`, so changing 
-`spec.parallelism` automatically changes the target gang size.
-
-#### Reconciliation Flow upon Updates
-
-When `spec.parallelism` (with unset `minCount`) or explicit `minCount` is changed:
-
-1. **Detection:** The Job controller's reconcile loop detects the change and fetches the existing
-   `Workload` resource from the API server.
-2. **Workload Compilation:** It creates a fresh logical `WorkloadNode` tree representing the Job
-   using the updated `spec.parallelism` and `minCount` value. It then passes this node to
-   the `workloadbuilder` library to compile a fresh `Workload` API object.
-3. **Workload Update:** The Job controller performs an API Update to apply this newly compiled
-   `Workload` spec to the active resource on the API server.
-4. **PodGroup Sync:** The Job controller propagates the updated size to the corresponding
-   runtime `PodGroup` to ensure the scheduler immediately targets the newly scaled size.
-
-*Note on Alternative Propagation Semantics:*
-Alternative update propagation semantics are possible. For example, for composite controllers (such as
-`JobSet`), scaling might not propagate down to existing `PodGroups` at all. Instead, it only applies
-to newly spawned children (e.g., new `Jobs` created in-flight) via `Workload` change, while active,
-running child `PodGroups` remain untouched to avoid unnecessary disruption.
-
-#### API Validation via the workloadbuilder Library
-
-Validation of `spec.scheduling` is layered. The integrating controller owns the *structural* and
-*mutability* checks (e.g. exactly one policy is set, and every `spec.scheduling` field is immutable
-except `gang.minCount`), since these are specific to its API types. The `workloadbuilder` library
-owns the *semantic* checks: the api-server calls the library's `Validate` entrypoint, which runs the
-same resolution and policy validation as `Build`, so the server only accepts configurations the
-controller can compile into a valid `Workload`. Because this resolution reads only the incoming
-object and never cluster state, it is safe to call from the api-server.
-
-##### Allowing Mutability of spec.parallelism
-
-The v1.36 integration hardcoded the gang size to `spec.parallelism` and therefore had to reject
-`spec.parallelism` updates on gang Jobs, which disabled [Elastic Indexed
-Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/#elastic-indexed-jobs). Because
-the gang size is now driven by the mutable `spec.scheduling.policy.gang.minCount` ([KEP-4671]), 
-while all other `spec.scheduling` fields stay immutable. The concrete `Job` validation rules 
-are specified in [KEP-5547].
 
 ### Reference Integration Examples: JobSet (Multi-Level)
 
@@ -964,7 +862,7 @@ func (r *JobSetReconciler) generateWorkload(
     // 2. Define the Root node representing the entire JobSet (CPG Level 1).
     // The default configuration at the root is Gang scheduling, with size defaulted
     // to the count of child ReplicatedJob roles.
-    rootNode := &workloadbuilder.WorkloadNode{
+    rootNode := &workloadbuilder.WorkloadItem{
         Name: js.Name,
         DefaultConfig: &workloadbuilder.SchedulingConfig{
             Policy: &workloadbuilder.SchedulingPolicy{
@@ -978,7 +876,7 @@ func (r *JobSetReconciler) generateWorkload(
     // 3. Build the intermediate (Level 2) and leaf (Level 3) nodes representing hierarchy
     for _, rJob := range js.Spec.ReplicatedJobs {
         // Create intermediate CompositePodGroup node representing the ReplicatedJob role
-        repJobNode := &workloadbuilder.WorkloadNode{
+        repJobNode := &workloadbuilder.WorkloadItem{
             Name: rJob.Name,
             DefaultConfig: &workloadbuilder.SchedulingConfig{
                 Policy: &workloadbuilder.SchedulingPolicy{
@@ -1000,7 +898,7 @@ func (r *JobSetReconciler) generateWorkload(
                 )
             }
 
-            leafNode := &workloadbuilder.WorkloadNode{
+            leafNode := &workloadbuilder.WorkloadItem{
                 Name: fmt.Sprintf("%s-%s-%d", js.Name, rJob.Name, i),
                 DefaultConfig: &workloadbuilder.SchedulingConfig{
                     Policy: &workloadbuilder.SchedulingPolicy{
@@ -1084,7 +982,7 @@ metadata annotations directly into the created child objects (for example, the `
 controller sets these annotations on each standard `Job` resource it creates):
 
 * **Template Linkage Annotation:**
-  * **Annotation Key:** `scheduling.k8s.io/podgroup-template`
+  * **Annotation Key:** `scheduling.k8s.io/group-template-name`
   * **Value:** The unique name of the target `PodGroupTemplate` or `CompositePodGroupTemplate`
     defined inside the parent `Workload` resource (ensuring direct mapping, as all template
     names inside a Workload are guaranteed to be unique).
@@ -1145,14 +1043,14 @@ Job-specific test plans are tracked in [KEP-5547].
     controller default `Basic`)
   - `workloadbuilder` defaults `gang.minCount` from `DefaultGangMinCount` when omitted
   - `workloadbuilder` `Validate` rejects semantically invalid configurations
-  - Single-level `WorkloadNode` (flat, no children) produces a leaf `PodGroup` only
-  - Multi-level `WorkloadNode` tree (with children) produces a `CompositePodGroup` with correct
+  - Single-level `WorkloadItem` (flat, no children) produces a leaf `PodGroup` only
+  - Multi-level `WorkloadItem` tree (with children) produces a `CompositePodGroup` with correct
     parent–child structure
   - `MapPodGroupConfig` and `MapCompositeGroupConfig` correctly translate API types into the
     library IR
 - Reference integration tests for multi-level controllers (e.g. `JobSet`) verify that the
   `workloadbuilder` produces the expected `CompositePodGroup` and child `PodGroup` objects from
-  a composite `WorkloadNode` tree.
+  a composite `WorkloadItem` tree.
 
 ##### Integration tests
 
@@ -1175,7 +1073,7 @@ Job-specific test plans are tracked in [KEP-5547].
 
 - Reusable scheduling API building blocks (`SchedulingConstraints`, `DisruptionMode`,
   `SchedulingMode`, `ResourceClaim`) introduced under the `scheduling.k8s.io` API group.
-- The shared `workloadbuilder` Go translation library implemented in the Kubernetes repository.
+- The shared `workloadbuilder` Go translation library implemented in the staging repository.
 - Comprehensive unit and integration tests added for the `workloadbuilder` library to verify
   correct resource translation and default-overriding logic.
 - Core `Job` API (batch/v1) integrated with the standardized WAS building blocks and validated in
@@ -1499,6 +1397,8 @@ This represents a conscious and deliberate architectural trade-off:
   requirements change from month to month. Users need working scheduling capabilities today, not
   an idealized but delayed API a year from now. A "prettier" global API structure is not an
   acceptable justification for blocking immediate ecosystem adoption.
+
+
 
 
 [KEP-5547]: https://kep.k8s.io/5547
