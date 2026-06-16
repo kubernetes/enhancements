@@ -115,9 +115,11 @@ This KEP makes two coordinated changes.
 
 The first is a CRI API change: add `repeated KeyValue envs` to `ExecRequest` in the CRI protobuf. The contract: the runtime must mechanically inject the provided key-value pairs into the exec'd process's environment, without filtering or modification. This is a general-purpose primitive. Any future caller (user-facing env injection, tracing metadata, etc.) that needs to surface key-value data into exec sessions can use this field without further API changes.
 
-The second change is the first consumer of that primitive: the API server reads the audit request ID from the request context and appends it as `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` on the HTTP request to the kubelet. The kubelet parses the `env` query parameter and forwards it to the CRI runtime via `ExecRequest.envs`. The runtime injects it as an environment variable into the exec'd process, where runtime security agents can capture it.
+The second change is the first consumer of that primitive: the API server reads the audit request ID from the request context and appends it as `?env=KUBERNETES_EXEC_AUDIT_ID=<value>` on the HTTP request to the kubelet. The kubelet parses the `env` query parameter and forwards it to the CRI runtime via `ExecRequest.envs`. The runtime injects it into the exec'd process's environment.
 
 The audit ID (a UUID such as `f4a3b2c1-...`) is a per-request identifier assigned by the API server and present in audit log entries. It is not the user's name or credentials: it is an opaque correlation key. A security agent that captures `KUBERNETES_EXEC_AUDIT_ID` from the exec'd process can look up that UUID in the API server audit log to find the full user context (username, groups, UID) associated with that exec request.
+
+Runtime security agents capture the value once it lands in the process environment. eBPF-based agents (Falco, Tetragon) attach to `execve`/`sched_process_exec` tracepoints and read the new process's environment at exec time, propagating the captured `KUBERNETES_EXEC_AUDIT_ID` to every subsequent process event for that PID and its descendants. Userspace agents can also read `/proc/<pid>/environ`, though that is racier and easier to tamper with (see [Risks and Mitigations](#risks-and-mitigations)). The captured value is then used as a join key against the API server audit log to recover the originating user context.
 
 ### User Stories
 
