@@ -2,7 +2,7 @@
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Latest Update](#latest-update)
-  - [Why Alpha v3 Instead of Beta](#why-alpha-v3-instead-of-beta)
+  - [Previous Status (v1.36)](#previous-status-v136)
   - [Previous Status (v1.28)](#previous-status-v128)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -13,6 +13,7 @@
     - [Alpha v1.27](#alpha-v127)
     - [Beta v1.28 - Cancelled](#beta-v128---cancelled)
     - [Alpha v1.36](#alpha-v136)
+    - [Beta v1.37](#beta-v137)
   - [User Stories (Optional)](#user-stories-optional)
     - [Memory Sensitive Workload](#memory-sensitive-workload)
     - [Node Availability](#node-availability)
@@ -68,17 +69,17 @@
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
 ## Latest Update
 
-Targeting Alpha-3 in v1.36. The livelock issue that blocked Beta in v1.28 has been resolved—kernel 5.9+ contains a fix ([commit b3ff929](https://github.com/torvalds/linux/commit/b3ff92916af3b458712110bb83976a23471c12fa)) that prevents indefinite throttling at `memory.high`. See [Alpha v1.36](#alpha-v136) for details.
+Targeting Beta in v1.37. Rollback cleanup is now fully implemented. Cgroup v2 memory knobs (`memory.min`, `memory.low`, `memory.high`) are properly cleared when the MemoryQoS feature gate is disabled. Node e2e tests cover memory protection, throttling, and rollback cleanup. Benchmark testing validates memory.high throttle behavior, tiered memory protection, and rollback safety. See [Beta v1.37](#beta-v137) for details.
 
-### Why Alpha v3 Instead of Beta
+### Previous Status (v1.36)
 
-This release is Alpha v3 rather than Beta based on PRR feedback:
+v1.36 shipped as Alpha v3 rather than Beta based on PRR feedback:
 
 1. **New KubeletConfiguration field requires Alpha iteration**: Adding `memoryReservationPolicy` to KubeletConfiguration is an API-level change. Per Kubernetes policy, features adding API fields must start in Alpha. This field provides independent control over `memory.min` protection, addressing concerns about validating memory.min behavior separately.
 
@@ -366,6 +367,21 @@ Linux kernel 5.9+ is required for correct `memory.high` behavior. See [Prerequis
 | CRI-O | 1.22 |
 
 
+#### Beta v1.37
+**Status:** Beta graduation criteria met. Rollback cleanup is fully implemented. Benchmark testing validates node stability under sustained memory pressure. No regressions reported from Alpha v3 (v1.36) users.
+
+**Changes from Alpha v1.36:**
+- No changes to memory.high formula or `memoryReservationPolicy` mapping
+- Rollback cleanup fully implemented: when the MemoryQoS feature gate is disabled, cgroup v2 memory knobs are cleaned up as follows:
+  - `memory.min` on the kubepods root cgroup is reset to 0 at kubelet startup ([kubernetes/kubernetes#138903](https://github.com/kubernetes/kubernetes/pull/138903))
+  - `memory.low` on the Burstable QoS cgroup is reset to 0 at kubelet startup ([kubernetes/kubernetes#138903](https://github.com/kubernetes/kubernetes/pull/138903))
+  - Per-container `memory.high` is set to `max` in the container resource config so that it is cleared when the container runtime applies the config. This takes effect on newly created containers, restarted containers, and existing containers updated via InPlacePodResize ([KEP-1287](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/1287-in-place-update-pod-resources/README.md)). For already-running containers with no restart or resize, stale `memory.high` values persist until the next container restart or InPlacePodResize update ([kubernetes/kubernetes#139377](https://github.com/kubernetes/kubernetes/pull/139377))
+- Rollback e2e test re-enabled (previously skipped due to systemd unit property side effects, see [kubernetes/kubernetes#138485](https://github.com/kubernetes/kubernetes/pull/138485))
+- Pod-level and container-level `memory.min`/`memory.low` values persist after feature disable but are effectively neutralized because parent cgroup protection is set to 0 (cgroup v2 memory protection is hierarchical — parent=0 wins)
+- Benchmark testing:
+  - Alpha v1.36: tiered reservation, `memory.high` throttle behavior, and kubelet overhead ([benchmark report](https://github.com/sohankunkerkar/kep-2570-memoryqos-benchmarks))
+  - Rollback safety and BestEffort `memory.high` fix validation ([beta benchmark report](https://github.com/QiWang19/kep-2570-memoryqos-benchmarks/blob/rollback-validation/README-rerun.md))
+
 ### User Stories (Optional)
 #### Memory Sensitive Workload
 Some workloads are sensitive to memory allocation and availability, slight delays may cause service outage. In this case, a mechanism is needed to ensure the quality of memory.
@@ -402,11 +418,12 @@ This might be a good place to talk about core concepts and how they relate.
 **Other Considerations:**
 
 - **Pod overhead (RuntimeClass)**: Pod overhead is included in pod-level memory.min calculation. The `ResourceConfigForPod()` function calls `PodRequests()` which includes overhead by default. This means overhead memory receives memory.min protection at the pod cgroup level.
-- **In-Place Pod Resize (KEP-1287)**: When container memory requests/limits are resized in-place, memory.min and memory.high are recalculated during the next cgroup reconciliation cycle.
+- **In-Place Pod Resize (KEP-1287)**: When container memory requests/limits are resized in-place, memory.min/memory.low and memory.high are recalculated during the next cgroup reconciliation cycle. When MemoryQoS is disabled, InPlacePodResize clears stale `memory.high` to `max` on already-running containers that were created while MemoryQoS was enabled.
 - **Swap (KEP-2400)**: When swap is enabled, memory.high triggers reclaim which may push pages to swap rather than throttle allocations. This is expected behavior.
 - **memory.min overcommit**: The scheduler ensures sum(pod_requests) ≤ node_allocatable before placing pods. Since memory.min = requests.memory, memory.min overcommit is prevented at scheduling time. In edge cases (e.g., node allocatable decreases after pods are scheduled), if sum of memory.min exceeds physical memory, the kernel may OOM kill to honor guarantees.
 - **memoryThrottlingFactor validation**: Valid range is (0, 1.0]. Values outside this range are rejected by kubelet configuration validation. Setting to 1.0 effectively disables early throttling (memory.high = limit).
 - **memoryReservationPolicy**: When set to `TieredReservation`, kubelet sets `memory.min` for Guaranteed containers/pods, and `memory.low` for Burstable containers/pods. Default is `None`.
+- **TieredReservation and Guaranteed pods with page-cache-heavy workloads**: When `memoryReservationPolicy: TieredReservation` is configured, Guaranteed pods have `memory.min` set equal to `memory.max` (since requests = limits). Per the [kernel cgroup v2 documentation](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files), `memory.min` specifies memory that "can never be reclaimed by the system" and "the cgroup's memory won't be reclaimed under any conditions." When `memory.min` equals `memory.max`, the kernel cannot reclaim page cache within the cgroup to make room for new allocations, causing OOM kills when the cgroup reaches `memory.max`. This does not affect Burstable pods because `memory.low` is soft protection and the kernel still reclaims page cache within the cgroup when it approaches `memory.max`. With the default `memoryReservationPolicy: None` (v1.36+), `memory.min` is set to 0 for all pods, so page cache is freely reclaimable and no additional OOM risk is introduced. Users who opt into `TieredReservation` should ensure Guaranteed pods with page-cache-heavy workloads size their memory limits to include headroom for page cache.
 - **pageSize**: The formula uses the system's base page size (typically 4KiB on x86_64, configurable on ARM64). Hugepages are not used for the pageSize calculation
 
 ### Risks and Mitigations
@@ -427,8 +444,8 @@ The main risk of this proposal is throttling applications too early.
 We intend to mitigate this by (1) setting a `memory.high` that is closer to the
 limit and (2) only throttling when usage > request.
 
-**Blast Radius Alpha v1.36:** in Alpha v1.36, the `MemoryQoS ` feature gate is disabled by default. There is no impact on existing clusters unless the feature is explicitly opted in. Mitigations for cluster with `MemoryQoS ` turned on:
-- Operators can set `memoryReservationPolicy: None` to disable memory.min/memory.low protection or `memoryThrottlingFactor: 1.0` to disable early throttling
+**Blast Radius:** In Alpha (v1.36), the `MemoryQoS` feature gate is disabled by default. In Beta (v1.37), the feature gate is enabled by default. On upgrade to v1.37, `memory.high` is set for all Burstable and BestEffort containers. Memory protection (`memory.min`/`memory.low`) is not applied unless `memoryReservationPolicy` is set to `TieredReservation` (default is `None`). Mitigations:
+- Operators can set `memoryReservationPolicy: None` (default) to disable memory.min/memory.low protection or `memoryThrottlingFactor: 1.0` to disable early throttling
 - The default throttling factor (0.9) is conservative, leaving 10% headroom before throttling
 - Guaranteed pods are exempt from memory.high throttling
 - Operators should test with the feature explicitly enabled before production upgrades
@@ -440,7 +457,7 @@ limit and (2) only throttling when usage > request.
 3. Kubelet enables `--enforce-node-allocatable=<pods, kube-reserved, system-reserved>` 
 
 ### Feature Gate
-Set `--feature-gates=MemoryQoS=true` to enable the feature.
+In Beta (v1.37), the `MemoryQoS` feature gate is enabled by default. To disable it, set `--feature-gates=MemoryQoS=false`, and ensure `memoryReservationPolicy` is not set or is set to `None`.
 
 When enabled, the following KubeletConfiguration fields control behavior:
 - `memoryThrottlingFactor` (float, range (0, 1.0], default 0.9): Controls memory.high calculation. Set to 1.0 to effectively disable early throttling.
@@ -537,10 +554,8 @@ to implement this enhancement.
 
 Overall Test plan:
 
-For `Alpha`, unit tests were added to test functionality for container/pod/node level cgroup with containerd and CRI-O.
-
-For second alpha iteration, (1.27), we plan to add new node e2e tests to
-validate the MemoryQoS settings are applied correctly.
+Unit tests cover container/pod/node level cgroup functionality with containerd and CRI-O.
+Node e2e tests (added in v1.27+) validate that MemoryQoS cgroup settings are correctly applied.
 
 ##### Prerequisite testing updates
 
@@ -582,7 +597,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
-n/a: plan to use node e2e tests (see below)
+n/a: MemoryQoS is validated through node e2e tests which run against a real kubelet and real cgroups v2 filesystem. Integration tests cannot verify cgroup file values (`memory.min`, `memory.low`, `memory.high`) since they run without a real node. See [e2e tests](#e2e-tests) below.
 
 ##### e2e tests
 
@@ -596,8 +611,9 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-As part of alpha, we plan to add a new node e2e test to validate that the MemoryQoS settings will be correctly set on both pods as well as node allocatable.
-The test will reside in `test/e2e_node`.
+Node e2e tests validate that MemoryQoS cgroup settings are correctly applied at container, pod, QoS-class, and node levels, including memory protection (`memory.min`/`memory.low`), throttling (`memory.high`), rollback cleanup, and `memoryReservationPolicy` switching.
+
+- [memory_qos_test.go](https://github.com/kubernetes/kubernetes/blob/0e5d54a29a9ec86d7a61e2d4339b095f79364c48/test/e2e_node/memory_qos_test.go): [testgrid](https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-serial-crio-cgroupv2&include-filter-by-regex=MemoryQoS), [triage](https://storage.googleapis.com/k8s-triage/index.html?test=MemoryQoS)
 
 ### Graduation Criteria
 
@@ -663,12 +679,10 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
-v1.36 status: rollback cleanup of this feature is not implemented.
-Reason: periodic QoS cgroup reconciliation on the systemd cgroup driver can cause unwanted side effects (for example, resetting unrelated settings like `cpu.max`).
-This side-effect can also occur on the enabled path when MemoryQoS reconciliation updates QoS cgroups.
-See https://github.com/kubernetes/kubernetes/issues/138431 and https://github.com/kubernetes/kubernetes/pull/138430.
-
-Expected related cgroups can be rolled back when the feature is disabled. QoS class level `memory.min`/`memory.low` should reset to default `0`. 
+v1.37 status: rollback cleanup is fully implemented. When the MemoryQoS feature gate is disabled:
+- QoS class level `memory.min` (kubepods root cgroup) and `memory.low` (Burstable QoS cgroup) are reset to 0 at kubelet startup ([kubernetes/kubernetes#138903](https://github.com/kubernetes/kubernetes/pull/138903))
+- Per-container `memory.high` is set to `max` in the container resource config so that it is cleared when the container runtime applies the config. This takes effect on newly created containers, restarted containers, and existing containers updated via InPlacePodResize. For already-running containers with no restart or resize, stale `memory.high` values persist until the next container restart or InPlacePodResize update ([kubernetes/kubernetes#139377](https://github.com/kubernetes/kubernetes/pull/139377))
+- Pod-level and container-level `memory.min`/`memory.low` values persist but are effectively neutralized because parent cgroup protection is set to 0 (cgroup v2 memory protection is hierarchical — parent=0 wins)
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -686,7 +700,7 @@ Pick one of these and delete the rest.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Yes, the kubelet will set `memory.min` for Guaranteed pod/container level cgroups and `memory.low` for Burstable pod/container level cgroups. It also sets `memory.high` for burstable and best effort containers, which may slow memory allocation when usage reaches `memory.high`. `memory.min` on the kubepods root QoS cgroup and `memory.low` on the Burstable QoS cgroup will be set when `--cgroups-per-qos` is satisfied. `memory.min` for node level cgroups will be set when `--enforce-node-allocatable` is satisfied.
+Yes, when `memoryReservationPolicy` is set to `TieredReservation` (default is `None`), the kubelet will set `memory.min` for Guaranteed pod/container level cgroups and `memory.low` for Burstable pod/container level cgroups. The MemoryQoS feature gate also sets `memory.high` for burstable and best effort containers, which may slow memory allocation when usage reaches `memory.high`. `memory.min` on the kubepods root QoS cgroup and `memory.low` on the Burstable QoS cgroup will be set when `--cgroups-per-qos` is satisfied. `memory.min` for node level cgroups will be set when `--enforce-node-allocatable` is satisfied.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -697,15 +711,12 @@ feature, can it break the existing applications?).
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Set featuregate `MemoryQoS: false` to stop memory protection writes. the kubelet stops writing `memory.min`/`memory.low`/`memory.high` for new pods and containers. 
-Existing pod `memory.min`/`memory.low` values persist, cleanup of QoS and pod level cgroup values is not fully implemented due to systemd unit property side effects; see https://github.com/kubernetes/kubernetes/issues/138431.
-Container-level `memory.min`/`memory.low`/`memory.high` reset depends on container 
-runtime behavior during restart.
+Set featuregate `MemoryQoS: false` to stop memory protection writes. The kubelet stops writing `memory.min`/`memory.low`/`memory.high` for new pods and containers. On kubelet startup, QoS class level `memory.min` (kubepods root cgroup) and `memory.low` (Burstable QoS cgroup) are reset to 0. Per-container `memory.high` is set to `max` in the container resource config and is cleared when the container runtime applies the config — this takes effect on newly created containers, restarted containers, and existing containers updated via InPlacePodResize. For already-running containers with no restart or resize, stale `memory.high` values persist until the next container restart or InPlacePodResize update. Pod-level and container-level `memory.min`/`memory.low` values persist but are effectively neutralized because parent cgroup protection is set to 0 (cgroup v2 memory protection is hierarchical — parent=0 wins).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 For newly created pods, the kubelet will reconcile `memory.min`/`memory.low`/`memory.high` with related cgroups.
-Existing QoS class level, pod level `memory.min`/`memory.low` will keep their current values. 
-Existing container level `memory.min`/`memory.low`/`memory.high` will keep their current values.
+QoS class level and pod level `memory.min`/`memory.low` are reconciled during the next QoS cgroup manager update cycle.
+Existing container level `memory.min`/`memory.low`/`memory.high` will keep their current values until the container is restarted.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -717,20 +728,18 @@ conversion tests if API types are being modified.
 -->
 Yes, unit and e2e tests cover feature enabled behavior. When enabled, and `memoryReservationPolicy: TieredReservation`, tests verify `memory.min`/`memory.low`/`memory.high` for workloads and node cgroups are set correctly. Tests also cover `memoryReservationPolicy: None` behavior.
 
-Rollback cleanup is currently not implemented, and the below rollback e2e test is currently skipped (see https://github.com/kubernetes/kubernetes/pull/138485):
+Rollback cleanup is fully implemented and the rollback e2e test has been re-enabled (see [kubernetes/kubernetes#138903](https://github.com/kubernetes/kubernetes/pull/138903)):
 
-When transitioning from enabled to disabled, tests verify QoS class level `memory.min`/`memory.low` reset to 0. Tests also cover the `memoryReservationPolicy: None` configuration to verify `memory.min`/`memory.low` is set to 0.
+When transitioning from enabled to disabled, tests verify QoS class level `memory.min`/`memory.low` reset to 0 at kubelet startup. Tests also verify per-container `memory.high` is reset to `max` during InPlacePodResize updates (see [kubernetes/kubernetes#139377](https://github.com/kubernetes/kubernetes/pull/139377)). Tests also cover the `memoryReservationPolicy: None` configuration to verify `memory.min`/`memory.low` is set to 0.
 
-Note: Pod-level `memory.min`/`memory.low` values persist after rollback 
-and are not verified to reset. Container-level `memory.min`/`memory.low`/`memory.high` reset depends on container 
-runtime behavior during restart and is not tested. See the links below for more details:  https://github.com/kubernetes/kubernetes/pull/137889 and https://github.com/kubernetes/kubernetes/issues/137674
+Note: Pod-level and container-level `memory.min`/`memory.low` values persist after rollback but are effectively neutralized because cgroup v2 memory protection is hierarchical (parent=0 wins).
 
 ### Rollout, Upgrade and Rollback Planning
 
 <!--
 This section must be completed when targeting beta to a release.
 -->
-Rollout this feature requires enabling the `MemoryQoS` feature gate in kubelet. The feature also adds two KubeletConfiguration fields:
+In Beta (v1.37), the `MemoryQoS` feature gate is enabled by default. No explicit opt-in is required. The feature uses two KubeletConfiguration fields:
 - `memoryThrottlingFactor` (float, default 0.9): Controls memory.high calculation
 - `memoryReservationPolicy` (enum, default `None`): Controls whether memory protection is applied. Set to `TieredReservation` to enable memory.min for Guaranteed and memory.low for Burstable workloads.
 
@@ -775,7 +784,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 -->
 Yes. Manual testing was performed:
 - Upgrade: Enabling `MemoryQoS`, `memoryReservationPolicy: TieredReservation` on a running kubelet correctly sets `memory.min`/`memory.low`/`memory.high` on new pods and updates node-level cgroups
-- Rollback: disabling MemoryQoS stops new MemoryQoS writes; cleanup/reset of existing values is not currently implemented.
+- Rollback: Disabling MemoryQoS stops new MemoryQoS writes. QoS class level `memory.min` and `memory.low` are cleared to 0 at kubelet startup. Per-container `memory.high` is set to `max` in the container resource config and is cleared when the container runtime applies the config on newly created containers, restarted containers, or existing containers updated via InPlacePodResize. For already-running containers with no restart or resize, stale `memory.high` values persist until the next container restart or InPlacePodResize update.
 - Upgrade->downgrade->upgrade: On re-enable, cgroup values are correctly reconciled; stale values from the prior enable cycle are overwritten.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -802,9 +811,11 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-An operator could run ls `/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod<SOME_ID>.slice` on a node with cgroupv2 enabled to confirm the values of `memory.min` (Guaranteed) and `memory.low` (Burstable) files are non-zero, which indicates that the feature is in use by workloads. For example, for a Burstable pod: `cat /sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod<SOME_ID>.slice/memory.low`. If it returns a value > 0, the feature is active.
+When `memoryReservationPolicy: TieredReservation` is configured, an operator could run ls `/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod<SOME_ID>.slice` on a node with cgroupv2 enabled to confirm the values of `memory.min` (Guaranteed) and `memory.low` (Burstable) files are non-zero, which indicates that the feature is in use by workloads. For example, for a Burstable pod: `cat /sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod<SOME_ID>.slice/memory.low`. If it returns a value > 0, the feature is active.
 
 An operator can use kubelet metric `kubelet_memory_qos_node_memory_min_bytes` and `kubelet_memory_qos_node_memory_low_bytes` to observe protected memory bytes on a node.
+
+With the default configuration (`memoryReservationPolicy: None`), an operator can check if `memory.high` is set below `max` on a Burstable or BestEffort container to confirm the feature is active.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -817,11 +828,6 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
 - [X] Other (treat as last resort)
   - Details: Operators can verify Memory QoS is working by inspecting cgroup v2 files
   in the container's cgroup hierarchy. Check `memory.min` and `memory.high` values
@@ -860,6 +866,18 @@ Pick one more of these and delete the rest.
     - Components exposing the metric: kubelet (via cadvisor)
   - Metric name: `container_memory_working_set_bytes` (existing cadvisor metric)
     - Aggregation method: compare against memory.high threshold to detect throttling
+    - Components exposing the metric: kubelet (via cadvisor)
+  - Metric name: `kubelet_memory_qos_node_memory_min_bytes`
+    - Aggregation method: gauge
+    - Components exposing the metric: kubelet
+  - Metric name: `kubelet_memory_qos_node_memory_low_bytes`
+    - Aggregation method: gauge
+    - Components exposing the metric: kubelet
+  - Metric name: `container_memory_events_high_total`
+    - Aggregation method: rate() to detect memory.high throttle event spikes
+    - Components exposing the metric: kubelet (via cadvisor)
+  - Metric name: `container_memory_events_max_total`
+    - Aggregation method: rate() to detect memory limit exceeded events
     - Components exposing the metric: kubelet (via cadvisor)
 - [X] Other
   - Details: Monitor cgroup files directly for throttling events:
@@ -1088,6 +1106,7 @@ For each of them, fill in the following information by copying the below templat
   - Detection: When feature is enabled, unrelated cgroup settings (for example, `cpu.max`)  reset after kubelet cgroup update cycles.
   - Mitigations: Disable MemoryQoS feature gate, or set `memoryReservationPolicy: None` to stop QoS cgroup reconciliation writes. See [kubernetes/kubernetes#138431](https://github.com/kubernetes/kubernetes/issues/138431).
   - Diagnostics: Compare pre/post values in `/sys/fs/cgroup/kubepods.slice/*` around kubelet cgroup update intervals
+  - Note: The rollback cleanup now injects `memory.min=0`/`memory.low=0` into existing startup cgroup update calls rather than adding new reconciliation calls, avoiding the side effects when the feature is disabled ([kubernetes/kubernetes#138903](https://github.com/kubernetes/kubernetes/pull/138903))
  
  
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -1109,6 +1128,7 @@ For each of them, fill in the following information by copying the below templat
 - 2023/03/03: target Alpha v2 to v1.27
 - 2023/06/14: target Beta to v1.28
 - 2026/03/17: Alpha v3 updates for v1.36: kernel compatibility warning, node metrics, and `memoryReservationPolicy` for independent memory reservation control
+- 2026/06/01: Beta updates for v1.37: rollback cleanup fully implemented (`memory.min`/`memory.low` cleared at kubelet startup, `memory.high` cleared on container creation/restart/InPlacePodResize), rollback e2e test re-enabled
 
 ## Drawbacks
 
