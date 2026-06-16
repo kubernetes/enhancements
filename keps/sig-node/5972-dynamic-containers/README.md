@@ -386,17 +386,20 @@ Built-in admission controllers will be updated to handle the new subresource (se
 - `pkg/kubelet/kuberuntime`: Validate `computePodActions` correctly identifies and gracefully terminates unallocated containers.
 - `pkg/kubelet/status`: Test logic surrounding status batching and the GC retention limit for `ContainerStatuses`.
 - `pkg/api/pod`: Validate admission updates (ensuring unique names, preventing init container modifications, and blocking privileged containers).
-- `pkg/apis/core/validation`: Coverage of validation changes.
+- `pkg/apis/core/validation`: Coverage of validation changes, including all [limitations](#limitations). Extra coverage of the [security context escalation rules](#no-securitycontext-escalations).
 - `pkg/kubelet/prober`: Coverage of updated probe manager functionality.
 - `pkg/kubelet/allocation`: Coverage of updated allocation functionality.
 
 ##### Integration tests
 
 - Test routing for the newly proxy-served `/allocated` subresource.
+- Test that the default `edit` role does not allow `/dynamic` mutation.
+- Test that 1st-party admission handlers are invoked on updates through new subresource (including PodSecurityAdmission, PodResizeValidator, LimitRanger, NodeDeclaredFeatures, and ResourceQuota).
 
 ##### e2e tests
 
 - End-to-end lifecycle verification: Add a container -> Verify `Running` -> Remove container -> Verify `Terminated` -> Verify GC limits cap the status list at 10.
+- Deferred allocation coverage: Add a container, remove a container, and update an image along with a pod resize beyond available capacity. Verify none of the container changes are actuated, and are absent from the `/allocated` spec. Resize the pod to fit, and verify the changes are allocated & actuated.
 - Expand resource quota & resize test cases to include Dynamic Containers coverage.
 
 ### Graduation Criteria
