@@ -4,7 +4,7 @@ authors:
   - "@troychiu"
 owning-sig: sig-node
 # participating-sigs:
-status: implementable
+status: withdrawn
 creation-date: "2026-06-02"
 reviewers:
   - "@everpeace"

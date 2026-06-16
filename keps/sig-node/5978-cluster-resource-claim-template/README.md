@@ -67,6 +67,8 @@ SIG Architecture for cross-cutting KEPs).
 -->
 # KEP-5978: DRA: ClusterResourceClaimTemplate
 
+**NOTE:** This KEP was withdrawn in favor of [the Out-of-Tree Synchronization Controller alternative](#out-of-tree-alternative).
+
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
 title can help communicate what the KEP is and should be considered as part of
@@ -1094,6 +1096,7 @@ Major milestones might include:
 -->
 
 - **2026-06-02**: Initial KEP drafted and proposed targeting v1.37 Alpha.
+- **2026-06-16**: KEP withdrawn in favor of an out-of-tree controller solution.
 
 ## Drawbacks
 
@@ -1121,6 +1124,29 @@ information to express the idea and why it was not acceptable.
     silently override/shadow the cluster-scoped template, changing Pod
     provisioning paths without explicit audit trails. Dedicated fields make
     references completely explicit and easily auditable.
+
+<a id="out-of-tree-alternative"></a>
+- **Out-of-Tree Synchronization Controller / CRD**: Create an out-of-tree
+  controller (for example, in a `kubernetes-sigs` repository) that automatically
+  generates namespaced `ResourceClaimTemplate` objects in target namespaces. This
+  could be driven either by a `ClusterResourceClaimTemplate` CRD or by publishing
+  master `ResourceClaimTemplate` objects in a centralized controller namespace
+  using a special naming convention or annotation mapping. Pods would then
+  refer to the generated namespaced templates by name.
+  - *Trade-offs / Motivation for Withdrawal*: While this approach involves certain
+    trade-offs compared to an in-tree API:
+    - **Race Conditions**: When a new namespace is created, Pods referencing the
+      template might be rejected or fail to deploy if they are created before the
+      out-of-tree controller finishes copying the template into the new namespace.
+    - **Resource Proliferation and Overhead**: Duplicating identical template
+      objects across tens or hundreds of namespaces creates unnecessary `etcd`
+      storage overhead and additional API server load.
+
+    Despite these trade-offs, the SIG decided to withdraw this KEP in favor of this
+    out-of-tree controller approach. The alternative is considered good enough to
+    fulfill the target use cases, and implementing an in-tree solution does not
+    justify the required engineering effort and the expansion of the core
+    Kubernetes API surface.
 
 ## Infrastructure Needed (Optional)
 
