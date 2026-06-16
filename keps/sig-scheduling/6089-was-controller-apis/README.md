@@ -416,10 +416,12 @@ type WorkloadPodGroupSchedulingConstraints struct {
 type WorkloadPodGroupDisruptionMode struct {
     // Single specifies that pods can be disrupted independently from each other.
     // +optional
+    // +k8s:unionMember
     Single *WorkloadPodGroupSingleDisruptionMode `json:"single,omitempty"`
 
     // All specifies that all pods in the group must be disrupted together.
     // +optional
+    // +k8s:unionMember
     All *WorkloadPodGroupAllDisruptionMode `json:"all,omitempty"`
 }
 
@@ -439,10 +441,12 @@ type WorkloadPodGroupAllDisruptionMode struct {
 type WorkloadPodGroupSchedulingPolicy struct {
     // Basic specifies that standard, pod-by-pod Kubernetes scheduling behavior should be used.
     // +optional
+    // +k8s:unionMember
     Basic *WorkloadPodGroupBasicSchedulingPolicy `json:"basic,omitempty"`
 
     // Gang specifies all-or-nothing scheduling semantics.
     // +optional
+    // +k8s:unionMember
     Gang *WorkloadPodGroupGangSchedulingPolicy `json:"gang,omitempty"`
 }
 
@@ -457,20 +461,26 @@ type WorkloadPodGroupGangSchedulingPolicy struct {
     // at the same time for the scheduler to admit the entire group.
     // If omitted, the controller should inject a context-specific sane default.
     // +optional
+    // +k8s:minimum=1
     MinCount *int32 `json:"minCount,omitempty"`
 }
 
 // WorkloadPodGroupResourceClaim references dynamic resource claims for the group.
+// Exactly one of ResourceClaimName or ResourceClaimTemplateName must be set.
+// +union
 type WorkloadPodGroupResourceClaim struct {
     // Name uniquely identifies this resource claim inside the group.
+    // +k8s:format=dns-label
     Name string `json:"name"`
 
     // ResourceClaimName is the name of a ResourceClaim object in the same namespace.
     // +optional
+    // +k8s:unionMember
     ResourceClaimName *string `json:"resourceClaimName,omitempty"`
 
     // ResourceClaimTemplateName is the name of a ResourceClaimTemplate object.
     // +optional
+    // +k8s:unionMember
     ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
 }
 ```
