@@ -425,7 +425,8 @@ Built-in admission controllers will be updated to handle the new subresource (se
   client explicitly issues an `UPDATE` that modifies `.spec.containers`.
 
 - **Downgrade:** If disabled, the API server will reject any further structural changes to
-  `.spec.containers`. Kubelet will continue to operate on the final pod spec.
+  `.spec.containers`. Kubelet will continue to operate on the final pod spec. Note that in-place
+  Kubelet upgrades & downgrades are not supported without a node drain.
 
 #### Allocation Checkpoint
 
