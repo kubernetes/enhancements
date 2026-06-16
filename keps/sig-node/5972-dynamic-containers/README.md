@@ -126,9 +126,9 @@ Decoupling these elements from workload startup will be critical in achieving th
 
 ### Goals
 
-  - Decouple scheduling, initialization, and workload execution.
+  - Decouple pod creation, scheduling, and initialization from workload execution to enable the "warm pool" use case.
   - Enable high-churn addition and removal of containers.
-  - Enable low-latency workload startup, targeting < 100ms of overhead.
+  - Enable low-latency workload startup, working towards a sub-100ms goal (request to code execution).
 
 ### Non-Goals
 
@@ -148,15 +148,15 @@ The scope of this KEP is deliberately minimized for more effective execution. I 
 This enables specialized Control Planes (Raylet/Slurmlet) to act as "Local Pod Controllers".
   - **Value:** Low-latency task spawning and guaranteed framework stability without re-invoking the Kube-Scheduler.
 
-#### The Agentic Sandbox (AI-Native)
+#### Warm-pools for agentic workloads
 
-An "Agent" container spawns ephemeral tool-execution sandboxes on-the-fly within preallocated pods.
+An "Agent" container or orchestrator spawns ephemeral tool-execution sandboxes on-the-fly within preallocated pods.
   - **Value:** By bypassing pod creation, scheduling and initialization, agents can interact with tools with minimal overhead.
 
-#### Stateful Fast-Path (Hot-Swap Migration)
+#### Restore or migration Fast-Path
 
-A "Shadow Shell" pod is pre-scheduled on a target node. During migration, the workload state is streamed node-to-node and injected directly into the waiting shell.
-  - **Value:** The workload resumes execution in **sub-second levels**, while the KCP reconciles the new Pod status in the background.
+A "Shell" pod is pre-scheduled on a target node, and a pod checkpoint or live state is restored into the shell.
+  - **Value:** The workload resumes execution in **sub-second levels**.
 
 #### In-Place Upgrades (Sidecars, Daemons)
 
@@ -243,6 +243,9 @@ in the future.
 
   - Only main containers can be added or removed (not init containers).
   - Container `SecurityContext` cannot escalate permissions. See below.
+  - The pod must be in the Running phase before any dynamic container changes can be made. The
+    Kubelet will not make any further allocations once the pod has entered a terminated (or
+    terminating) phase.
   - The pod must be in an initialized state (i.e. all init containers have completed) before any dynamic container changes can be made.
   - This proposal does not allow for general container mutation. A corollary is that a container
     with the same name can only be added after the previous container with that name is *completely*
@@ -410,6 +413,7 @@ Built-in admission controllers will be updated to handle the new subresource (se
 - Ecosystem research & outreach for static container assumptions.
 - Decide on (and implement) strategy for legacy admission controllers.
 - Decide on strategy for resolving the Kubelet / Scheduler resize race condition.
+- Decision on whether to add a field to designate pods as dynamic/non-dynamic at creation time.
 
 #### GA
 
