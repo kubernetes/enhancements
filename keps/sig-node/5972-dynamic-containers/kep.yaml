@@ -19,7 +19,7 @@ latest-milestone: "v1.37"
 
 milestone:
   alpha: "v1.37"
-  beta: "v1.38"
+  beta: "TBD"
   stable: "TBD"
 
 feature-gates:
