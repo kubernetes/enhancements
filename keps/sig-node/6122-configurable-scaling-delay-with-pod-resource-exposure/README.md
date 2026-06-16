@@ -766,16 +766,24 @@ Local Testing Plan:
 
 **Test `DownwardAPIAssignedResources` feature upgrade and rollback**
 
-1. Deploy kubelet with the feature gate `DownwardAPIAssignedResources` disabled.
-2. Initiate a pod downscaling request.
-   - Verify CPU manager states are NOT exposed through the Downward API.
-3. Enable the feature gate and initiate another pod downscaling request.
+Note: The `DownwardAPIAssignedResources` feature gate is configured on kube-apiserver (not kubelet). The kubelet always supports reading `assigned.cpuset` from pod specs and exposing CPU manager state via Downward API volumes. The feature gate only controls API server validation of the `assigned.cpuset` field.
+
+1. Deploy cluster with `DownwardAPIAssignedResources` feature gate disabled on kube-apiserver.
+2. Create a pod with `assigned.cpuset` downward API volume.
+   - Verify the pod is admitted (field is silently ignored by apiserver).
+   - Verify kubelet creates the downward API volume file (empty or with current cpuset).
+3. Initiate a pod downscaling request.
+   - Verify the pod scales down after timer expiry.
+   - Verify the downward API volume file is updated with the new cpuset by kubelet.
+4. Enable the feature gate on kube-apiserver (restart apiserver) and initiate another pod downscaling request.
    - Verify the pod remains in `Running` state without errors.
    - Verify CPU manager states are exposed through the Downward API.
-4. Disable the feature gate again and initiate another pod downscaling request.
-   - Verify the pod remains in `Running` state without errors.
-   - Verify CPU manager states are NOT exposed through the Downward API
-5. Finally, re-enable the feature gate and initiate another pod downscaling request.
+   - Verify new pods with `assigned.cpuset` are accepted by apiserver.
+5. Disable the feature gate on kube-apiserver again and initiate another pod downscaling request.
+   - Verify existing pods with `assigned.cpuset` continue running without errors (field is silently ignored).
+   - Verify the pod still scales down after timer expiry.
+   - Verify kubelet continues to update the downward API volume file (kubelet behavior is independent of the feature gate).
+6. Finally, re-enable the feature gate on kube-apiserver and initiate another pod downscaling request.
    - Verify the pod remains in `Running` state without errors.
    - Verify CPU manager states are exposed through the Downward API.
 
