@@ -151,7 +151,7 @@ This enables specialized Control Planes (Raylet/Slurmlet) to act as "Local Pod C
 #### The Agentic Sandbox (AI-Native)
 
 An "Agent" container spawns ephemeral tool-execution sandboxes on-the-fly within preallocated pods.
-  - **Value:** By bypassing the Kubernetes control plane, agents can interact with tools with minimal overhead.
+  - **Value:** By bypassing pod creation, scheduling and initialization, agents can interact with tools with minimal overhead.
 
 #### Stateful Fast-Path (Hot-Swap Migration)
 
