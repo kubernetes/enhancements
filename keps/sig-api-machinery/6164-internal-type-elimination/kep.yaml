@@ -5,7 +5,7 @@ authors:
   - "@michaelasp"
   - "@yedou37"
 owning-sig: sig-api-machinery
-status: provisional
+status: implementable
 creation-date: 2026-06-05
 reviewers:
   - "@deads2k"
