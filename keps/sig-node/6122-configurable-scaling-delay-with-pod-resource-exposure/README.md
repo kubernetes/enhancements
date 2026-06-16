@@ -221,6 +221,8 @@ When `scale-delay-time` is configured on a node, the delay applies to all guaran
 
 **Mitigation:** Operators should configure `scale-delay-time` based on the worst-case preparation time required by their latency-sensitive workloads. Workloads should be designed to handle premature CPU removal gracefully (e.g., by quickly migrating tasks to remaining CPUs or tolerating brief performance degradation). The `assigned.cpuset` field in the Downward API provides early notification of the upcoming change, giving workloads the maximum possible preparation time.
 
+**Security Considerations:** Exposing `assigned.cpuset` via Downward API does not introduce new security risks. The same CPU assignment information is already accessible to applications from inside the container via `/proc/self/cgroup` controllers and from the node level. The `assigned.cpuset` field only exposes CPU IDs (e.g., `0-3,7,12-15`), not NUMA topology information. This KEP simply exposes the assigned CPUset in advance (during the scale-down delay window) without creating new data recipients or adding new security risks.
+
 ## Design Details
 
 <!--
