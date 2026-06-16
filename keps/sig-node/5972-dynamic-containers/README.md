@@ -387,6 +387,7 @@ See [No SecurityContext escalations](#no-securitycontext-escalations).
 ##### e2e tests
 
 - End-to-end lifecycle verification: Add a container -> Verify `Running` -> Remove container -> Verify `Terminated` -> Verify GC limits cap the status list at 10.
+- Expand resource quota & resize test cases to include Dynamic Containers coverage.
 
 ### Graduation Criteria
 
