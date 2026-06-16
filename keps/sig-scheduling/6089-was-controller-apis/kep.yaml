@@ -36,7 +36,10 @@ feature-gates:
   - name: WorkloadAwareIntegration
     components:
       - kube-apiserver
+  - name: WorkloadWithJob
+    components:
       - kube-controller-manager
+      - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release

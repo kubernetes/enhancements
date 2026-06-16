@@ -76,9 +76,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -479,6 +479,10 @@ type WorkloadPodGroupResourceClaim struct {
 To deliver native, typed Workload-aware Scheduling support in core Kubernetes, we propose
 integrating the standardized building blocks directly into the core `Job` API (`batch/v1`).
 
+The new fields in the `Job` API follow the standard process to graduate to a stable type:
+the new fields are gated behind a feature gate and progress through the usual Alpha → Beta → Stable
+maturity levels, with the field cleared on write and ignored on read while the gate is disabled.
+
 This integration serves as the foundational implementation ("blazing the path") that demonstrates
 the viability of these building blocks before out-of-tree controllers adopt them. More design 
 details are covered in [KEP-5547].
@@ -487,6 +491,12 @@ details are covered in [KEP-5547].
 
 To prevent every workload controller (both core and out-of-tree) from writing custom, translation
 and validation logic, we propose providing a shared Go library: `workloadbuilder`.
+
+**Package placement:** The library ships from staging under 
+`k8s.io/component-helpers/scheduling/schedulingv1`. It is scoped as helpers shared by multiple
+core binaries, keeps a minimal dependency surface (no external deps), and is meant for this 
+kind of scheduling-API translation. `k8s.io/kube-scheduler` was considered but
+carries heavier dependencies and is a less natural import for out-of-tree controllers.
 
 #### 1. Design & Architecture
 
@@ -509,7 +519,9 @@ helpers), and invoke the builder.
 
 The library encapsulates the following logic:
 1. **Policy Resolution:** Merges default configurations with user-provided overrides (e.g.,
-   resolving escape hatches uniformly across the ecosystem).
+   resolving escape hatches uniformly across the ecosystem) into each node's `ResolvedConfig`,
+   then applies that node's `Callbacks` so controllers can post-process the resolved
+   configuration (e.g. defaulting gang `MinCount`).
 2. **Structural Resolution:** Maps the logical tree hierarchy to the corresponding technical
    structures in the low-level scheduler `Workload` API, abstracting version variations (e.g. flat
    templates vs. nested sub-group templates).
@@ -618,7 +630,8 @@ type ResourceClaim struct {
     ResourceClaimTemplateName *string
 }
 
-
+// WorkloadItemFunc mutates a single WorkloadItem during Build that is 
+// used for controller-specific defaulting.
 type WorkloadItemFunc func(*WorkloadItem)
 
 // WorkloadItem represents a logical component of a workload (e.g., the whole JobSet,
@@ -631,20 +644,21 @@ type WorkloadItem struct {
     // based on its specific orchestration domain logic.
     DefaultConfig *SchedulingConfig
 
-    // DefaultGangMinCount provides fallback gang size if user selects Gang but leaves MinCount nil.
-    DefaultGangMinCount *int32
-
     // UserConfig is the exact policy intent configured by the user at this specific level.
     // Can be nil if the user left the scheduling block unconfigured.
     UserConfig *SchedulingConfig
+
+    // Callbacks is a list of controller-supplied mutator functions that the
+    // controller can attach to this item. Callbacks are primarily intended
+    // as defaulting functions (e.g. MinCount), but they are general-purpose
+    //  and may perform any controller-specific adjustment.
+    Callbacks []WorkloadItemFunc
 
     // Children contains the logical sub-components of this workload.
     // - If len(Children) > 0, the node is inferred as a structural group
     //   (i.e., represents a CompositePodGroupTemplate).
     // - If len(Children) == 0, the node is inferred as a leaf (i.e. represents a PodGroup)
     Children []*WorkloadItem
-    
-    Callbacks []WorkloadItemFunc
 }
 
 // WorkloadBuilder translates the logical WorkloadItem tree into a scheduler Workload object.
@@ -714,12 +728,16 @@ func (r *JobReconciler) generateWorkload(
         )
     }
 
-    // 3. Create the flat logical tree for Job (root node representing a single PodGroup)
+    // 3. Create the flat logical tree for Job (root node representing a single PodGroup).
+    //    A callback defaults gang MinCount to the Job's parallelism when the user opts
+    //    into Gang but leaves MinCount unset (see defaultMinCountForJob below).
     rootNode := &workloadbuilder.WorkloadItem{
-        Name:                "job-root",
-        DefaultConfig:       defaultConfig,
-        DefaultGangMinCount: ptr.To(job.Spec.Parallelism), // Defaults to parallelism if MinCount is nil
-        UserConfig:          userConfig,
+        Name:          "job-root",
+        DefaultConfig: defaultConfig,
+        UserConfig:    userConfig,
+        Callbacks: []workloadbuilder.WorkloadItemFunc{
+            defaultMinCountForJob(job),
+        },
     }
 
     // 4. Let the workloadbuilder compile and generate the Workload object
@@ -735,6 +753,35 @@ func (r *JobReconciler) generateWorkload(
     }
 
     return workloadObj, nil
+}
+```
+
+The callbacks attached above are ordinary functions the controller can set on 
+a node. Their most common job is defaulting, but because they receive the whole node
+they can also apply arbitrary, controller-specific adjustments:
+
+```go
+// defaultMinCountForJob fills in a sane default for gang MinCount (the Job's
+// parallelism) when the resolved policy is Gang and MinCount was left unset.
+func defaultMinCountForJob(job *batchv1.Job) workloadbuilder.WorkloadItemFunc {
+    return func(item *workloadbuilder.WorkloadItem) {
+        if item.Policy.Gang != nil && 
+          item.Policy.Gang.MinCount == nil {  
+            item.Policy.Gang.MinCount = ptr.To(job.Spec.Parallelism)
+        }
+    }
+}
+
+// multiplyMinCountForAdjustedJob is an example of a non-defaulting adjustment: callbacks
+// are free to implement arbitrary, controller-specific logic when needed.
+func multiplyMinCountForAdjustedJob(job *batchv1.Job) workloadbuilder.WorkloadItemFunc {
+    return func(item *workloadbuilder.WorkloadItem) {
+      if job.Annotations["isAdjustedJob.example.com"] == "true" {  
+        if item.Policy.Gang != nil {  
+            item.Policy.Gang.MinCount *= 42  
+        }  
+      }  
+    }
 }
 ```
 
@@ -869,9 +916,11 @@ func (r *JobSetReconciler) generateWorkload(
                 Gang: &workloadbuilder.GangSchedulingPolicy{},
             },
         },
-        DefaultGangMinCount: ptr.To(int32(len(js.Spec.ReplicatedJobs))),
-        UserConfig:          rootUserConfig,
-    }
+        UserConfig: rootUserConfig,
+        Callbacks: []workloadbuilder.WorkloadItemFunc{
+            defaultGangMinCount(int32(len(js.Spec.ReplicatedJobs))),
+        },
+   }
 
     // 3. Build the intermediate (Level 2) and leaf (Level 3) nodes representing hierarchy
     for _, rJob := range js.Spec.ReplicatedJobs {
@@ -883,7 +932,9 @@ func (r *JobSetReconciler) generateWorkload(
                     Gang: &workloadbuilder.GangSchedulingPolicy{},
                 },
             },
-            DefaultGangMinCount: ptr.To(rJob.Replicas),
+            Callbacks: []workloadbuilder.WorkloadItemFunc{
+                defaultGangMinCount(rJob.Replicas),
+            },
         }
 
         // Under each ReplicatedJob role, create leaf nodes for each Job replica instance
@@ -906,8 +957,10 @@ func (r *JobSetReconciler) generateWorkload(
                     },
                 },
                 // In this example, we assume a Sane default for a ReplicatedJob leaf is Gang scheduling.
-                DefaultGangMinCount: ptr.To(rJob.Template.Spec.Parallelism),
-                UserConfig:          leafUserConfig,
+                UserConfig: leafUserConfig,
+                Callbacks: []workloadbuilder.WorkloadItemFunc{
+                    defaultGangMinCount(rJob.Template.Spec.Parallelism),
+                },
             }
             repJobNode.Children = append(repJobNode.Children, leafNode)
         }
@@ -928,6 +981,22 @@ func (r *JobSetReconciler) generateWorkload(
     }
 
     return workloadObj, nil
+}
+```
+
+The `defaultGangMinCount` helper used above is a single reusable defaulting callback that each
+node attaches with its own context-specific count:
+
+```go
+// defaultMinCountForJob fills in a sane default for gang MinCount (the Job's
+// parallelism) when the resolved policy is Gang and MinCount was left unset.
+func defaultMinCountForJob(job *batchv1.Job) workloadbuilder.WorkloadItemFunc {
+    return func(item *workloadbuilder.WorkloadItem) {
+        if item.Policy.Gang != nil && 
+          item.Policy.Gang.MinCount == nil {  
+            item.Policy.Gang.MinCount *= 42
+        }
+    }
 }
 ```
 
@@ -1041,7 +1110,8 @@ Job-specific test plans are tracked in [KEP-5547].
   - `workloadbuilder` correctly maps topology constraints, disruption mode, and resourceClaims
   - `workloadbuilder` merges controller defaults with user overrides (e.g. user `Gang` overrides
     controller default `Basic`)
-  - `workloadbuilder` defaults `gang.minCount` from `DefaultGangMinCount` when omitted
+  - `workloadbuilder` runs node `Callbacks` after merging config, and a defaulting callback
+    fills `gang.minCount` (e.g. from a Job's parallelism) when omitted
   - `workloadbuilder` `Validate` rejects semantically invalid configurations
   - Single-level `WorkloadItem` (flat, no children) produces a leaf `PodGroup` only
   - Multi-level `WorkloadItem` tree (with children) produces a `CompositePodGroup` with correct
@@ -1073,7 +1143,8 @@ Job-specific test plans are tracked in [KEP-5547].
 
 - Reusable scheduling API building blocks (`SchedulingConstraints`, `DisruptionMode`,
   `SchedulingMode`, `ResourceClaim`) introduced under the `scheduling.k8s.io` API group.
-- The shared `workloadbuilder` Go translation library implemented in the staging repository.
+- The shared `workloadbuilder` Go translation library implemented in the `k8s.io/component-helpers`
+  staging repository.
 - Comprehensive unit and integration tests added for the `workloadbuilder` library to verify
   correct resource translation and default-overriding logic.
 - Core `Job` API (batch/v1) integrated with the standardized WAS building blocks and validated in
@@ -1095,7 +1166,19 @@ Job-specific test plans are tracked in [KEP-5547].
 
 ### Upgrade / Downgrade Strategy
 
+`workloadbuilder` is a build-time, vendored Go library, not a deployed component, so cluster
+upgrade/downgrade does not apply to it.
+
+The `WorkloadAwareIntegration` gate (kube-apiserver only) gates only whether the shared building-block fields are served on integrating APIs:
+- **Upgrade:** upgrade kube-apiserver and enable the gate before any integration can persist these
+  fields.
+- **Downgrade:** the fields are no longer served on writes; existing values are ignored but left in
+  etcd.
+
 ### Version Skew Strategy
+
+`workloadbuilder` adds no version-skew constraints of its own, each component vendors a fixed
+version at build time. Skew applies only to the runtime components of each integration.
 
 ## Production Readiness Review Questionnaire
 
@@ -1104,10 +1187,13 @@ Job-specific test plans are tracked in [KEP-5547].
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: "WorkloadAwareIntegration"
-  - Components depending on the feature gate:
-    - kube-apiserver
-    - kube-controller-manager
+  - Feature gate name: `WorkloadAwareIntegration`
+    - Components depending on the feature gate:
+      - kube-apiserver
+  - Feature gate name: `WorkloadWithJob`
+    - Components depending on the feature gate:
+      - kube-controller-manager
+      - kube-apiserver
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -1115,27 +1201,30 @@ Job-specific test plans are tracked in [KEP-5547].
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
 
+The `WorkloadAwareIntegration` feature gate scopes only the shared building-block API surface, it controls
+whether the standardized building-block types are served and persisted when embedded into an
+integrating API. It does not gate any controller's scheduling implementation, and the
+`workloadbuilder` library (which is a build-time dependency) is not gated at runtime. 
+Each integrating controller ships its own feature gate that enables its runtime behavior 
+and `Workload`/`PodGroup` creation.
+
 ###### Does enabling the feature change any default behavior?
 
-No. Enabling the feature only exposes the new opt-in `scheduling` API fields. When
-the `scheduling` block is omitted, the controller defaults to `Basic` scheduling policy (pod-by-pod), 
-so existing workloads behave exactly as before. Behavior changes only when a 
-user explicitly sets a scheduling policy (e.g. Gang or a topology constraint).
+No. Enabling this gate only makes the shared building-block fields available. Whether and how those fields affect
+scheduling is determined by each integration's own gate and controller.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling the `WorkloadAwareIntegration` feature gate stops the controller from
-honoring the new `scheduling` fields, so workloads fall back to the `Basic`
-scheduling policy (pod-by-pod). The fields are ignored while the gate is off. 
-However, the content of the `scheduling` fields in objects will not be cleared,
-and existing `Workload` objects will not be deleted.
+Yes. Disabling `WorkloadAwareIntegration` stops the shared building-block fields from being served
+on new writes, and the apiserver ignores them on update. Values already persisted in etcd are not
+cleared, and no `Workload`/`PodGroup` objects are deleted. Whether scheduling falls back to
+pod-by-pod depends on the integrating controller's own gate.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The feature starts working again, and the controller resumes honoring the
-`scheduling` fields. Since these fields are stored in etcd while the gate is off,
-objects that already had them set will have their scheduling policies applied again
-on the next reconciliation.
+The shared building-block fields are served again. Because values persisted in etcd are retained
+while the gate is off, objects that already had them set keep their values, and integrating
+controllers (subject to their own gates) resume honoring them on the next reconciliation.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1282,16 +1371,15 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Only when a user opts in by setting the `scheduling` fields. In that case the
-integrating controller (e.g. the Job controller) creates the corresponding
-scheduling objects.
-
+Enabling `WorkloadAwareIntegration` feature gate adds no new API calls; it only allows the
+shared building-block fields to be persisted. The new calls (creating `Workload`/`PodGroup`
+objects) are made by integrating controllers when a user opts in, gated separately. 
 Workloads that omit the `scheduling` block generate no new API calls.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes,the building-block field types under `scheduling.k8s.io/v1alpha3`. No new top-level/standalone API resource kinds are
-introduced by this KEP.
+Yes, the building-block field types under `scheduling.k8s.io/v1alpha3`, embedded into integrating
+APIs.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1299,26 +1387,21 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes, but only when a user opts in. Setting the `scheduling` fields adds a small
-field to the workload object and causes the controller to create the corresponding `Workload` and
-`PodGroup` (or `CompositePodGroup`) objects (~500 bytes each), typically one per
-workload that opts in. Workloads that omit the `scheduling` block are unaffected.
+Yes, but only when a user opts in. This KEP itself only adds optional building-block fields
+to integrating workload objects. The larger effect — creating `Workload` and `PodGroup` (or
+`CompositePodGroup`) objects (~500 bytes each, typically one per opted-in workload) — is performed
+by integrating controllers and quantified per integration.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Only for workloads that opt in. For those, there may be an increase in workload sync
-duration due to creating the `Workload`/`PodGroup` objects, plus a potential
-increase in scheduling latency / Pod Startup SLO. This KEP itself only adds API translation in the
-controller. Workloads that omit the `scheduling` block are unaffected.
+This KEP itself adds only in-process API translation (negligible CPU) in controllers that vendor
+the library. The user-visible effects come from the integrations and the scheduler and 
+apply only to opted-in workloads. Workloads that omit the `scheduling` block are unaffected.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Only for workloads that opt in, and the increase comes from the `Workload`/`PodGroup` objects:
-  * kube-controller-manager: additional memory for `Workload`/`PodGroup` informers and
-  the (negligible) CPU for translating the `scheduling` fields.
-  * kube-scheduler: additional memory for `Workload`/`PodGroup` caches.
-  * etcd: additional storage for the `Workload`/`PodGroup` objects.
-  * kube-apiserver: additional watches for `Workload`/`PodGroup` resources, with minimal CPU impact.
+This KEP itself adds only the building-block fields and the build-time translation library
+(negligible CPU).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
