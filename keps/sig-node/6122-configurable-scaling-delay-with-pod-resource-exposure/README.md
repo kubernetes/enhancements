@@ -284,6 +284,8 @@ The `scale-delay-time` value must be in the range [0s, 10s]. Negative values are
 
 The default value of `scale-delay-time` is 0s, meaning the existing behavior is preserved — no guaranteed delay is enforced before the cpuset is applied.
 
+When `InPlacePodVerticalScalingExclusiveCPUs` is disabled, `scale-delay-time` must be 0; otherwise, the kubelet will emit a warning and reject the configuration.
+
 1. In the Allocate CPU stage:
    Allocate a new CPUSet based on the container's assignments and defaultCPUset in the checkpoint (all references to "checkpoint" below refer to cpu_manager_state).
 
@@ -518,14 +520,23 @@ For scale down delay feature
 * Unit and e2e tests are completed with sufficient coverage.
 
 For downward API exposing CPU states feature
-* Feature is behind the `DownwardAPIAssignedResources`.
+* Feature implemented behind the `DownwardAPIAssignedResources`.
+* Validation logic is in-place in kube-apiserver
+* Kubelet has support for CPU manager exposure in the pod
+* unit testing and e2e testing for downward API enhancement for CPU exposure.
 
 #### Beta
 
+For scale down delay feature
 * No unresolved critical bugs.
 * Bugs reported by users have been addressed
 * A pod-level opt-out mechanism for the scale-down delay has been analyzed and designed. This allows pods that do not require the delay to skip it, while still allowing latency-sensitive pods to benefit from the guaranteed preparation time.
 * Generalization of scale down delay to another type of resources has been analyzed.
+* New metrics or events will be considered to improve the observability of this feature.
+
+For downward API exposing CPU states feature
+* Exposing Memory Manager information (e.g., `assigned.memset`) via the Downward API.
+* unit testing and e2e testing for downward API enhancement for memory exposure.
 
 #### GA
 
@@ -643,8 +654,8 @@ The following table shows the effect of each feature gate combination:
 | ✗ | ✗ | ✓ | No scaling of exclusive CPUs, no minimum delay, desired cpuset exposed in downwardAPI |
 | ✗ | ✓ | ✗ | Scaling of exclusive CPUs, no minimum delay, no exposure of cpuset in downwardAPI |
 | ✗ | ✓ | ✓ | Scaling of exclusive CPUs, no minimum delay, desired cpuset exposed in downwardAPI |
-| ✓ | ✗ | ✗ | No scaling of exclusive CPUs, delay configurable but with no effect, no exposure of cpuset in downwardAPI |
-| ✓ | ✗ | ✓ | No scaling of exclusive CPUs, delay configurable but with no effect, desired cpuset exposed in downwardAPI |
+| ✓ | ✗ | ✗ | No scaling of exclusive CPUs, `scale-delay-time` > 0 rejected (warning emitted), no exposure of cpuset in downwardAPI |
+| ✓ | ✗ | ✓ | No scaling of exclusive CPUs, `scale-delay-time` > 0 rejected (warning emitted), desired cpuset exposed in downwardAPI |
 | ✓ | ✓ | ✗ | Scaling of exclusive CPUs, delay configurable and working, no exposure of cpuset in downwardAPI |
 | ✓ | ✓ | ✓ | Full feature: scaling of exclusive CPUs, delay configurable and working, desired cpusets exposed in downwardAPI |
 
@@ -745,22 +756,35 @@ are missing a bunch of machinery and tooling and can't do that now.
 -->
 
 Local Testing Plan:
+
+**Test `DownwardAPIAssignedResources` feature upgrade and rollback**
+
 1. Deploy kubelet with the feature gate `DownwardAPIAssignedResources` disabled.
 2. Initiate a pod downscaling request.
    - Verify CPU manager states are NOT exposed through the Downward API.
-   - Verify the pod scales down after timer expiry.
 3. Enable the feature gate and initiate another pod downscaling request.
    - Verify the pod remains in `Running` state without errors.
    - Verify CPU manager states are exposed through the Downward API.
-   - Verify the pod scales down after timer expiry.
 4. Disable the feature gate again and initiate another pod downscaling request.
    - Verify the pod remains in `Running` state without errors.
-   - Verify CPU manager states are NOT exposed through the Downward API.
-   - Verify the pod scales down after timer expiry.
+   - Verify CPU manager states are NOT exposed through the Downward API
 5. Finally, re-enable the feature gate and initiate another pod downscaling request.
    - Verify the pod remains in `Running` state without errors.
    - Verify CPU manager states are exposed through the Downward API.
-   - Verify the pod scales down after timer expiry.
+
+**Test `scale-delay-time` feature upgrade and rollback**
+
+1. Deploy kubelet v1.36 with `scale-delay-time` as 0.
+   - Do not verify the pod scale-down delay, as exclusive CPU resize is not supported in this version.
+2. Upgrade kubelet from v1.36 to v1.37, configure `scale-delay-time` as Xs (e.g. 5s), and initiate a pod scale up first and request scale-down.
+   - Verify the pod remains in `Running` state without errors.
+   - Verify the pod scales down delay is greater than 5s.
+3. Downgrade kubelet from v1.37 to v1.36, clear the `scale-delay-time` configuration.
+   - Verify the pod remains in `Running` state without errors.
+   - Do not verify the pod scale-down delay, as exclusive CPU resize is not supported in this version.
+4. Upgrade kubelet back to v1.37, configure `scale-delay-time` again, and initiate a pod scale up first and request scale-down.
+   - Verify the pod remains in `Running` state without errors.
+   - Verify the pod scales down delay is greater than 5s.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -849,6 +873,8 @@ implementation difficulties, etc.).
 -->
 
 These can be measured via kubelet metrics and events. For example, a `scale_delay_timer_fired` event and a `cpuset_applied` timestamp allow computing the delay between notification and application.
+
+These metrics won't be implemented for alpha stage, but will be considered later for alpha2/beta
 
 ### Dependencies
 
