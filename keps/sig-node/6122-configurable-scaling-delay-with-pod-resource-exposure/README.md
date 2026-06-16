@@ -59,6 +59,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [3. Immediate Actuation (No Delay)](#3-immediate-actuation-no-delay)
   - [4. Handshake-Based Synchronization](#4-handshake-based-synchronization)
   - [5. Node Declared Features as Opt-Out Mechanism](#5-node-declared-features-as-opt-out-mechanism)
+  - [6. Pod-Level Grace Period (Opt-In/Opt-Out Mechanism)](#6-pod-level-grace-period-opt-inopt-out-mechanism)
+  - [7. Hook-Based Synchronization Approach](#7-hook-based-synchronization-approach)
+  - [8. Generalizing Scale-Down Delay to Other Resource Types](#8-generalizing-scale-down-delay-to-other-resource-types)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -522,6 +525,7 @@ For downward API exposing CPU states feature
 * No unresolved critical bugs.
 * Bugs reported by users have been addressed
 * A pod-level opt-out mechanism for the scale-down delay has been analyzed and designed. This allows pods that do not require the delay to skip it, while still allowing latency-sensitive pods to benefit from the guaranteed preparation time.
+* Generalization of scale down delay to another type of resources has been analyzed.
 
 #### GA
 
@@ -1090,6 +1094,36 @@ The following alternatives were considered:
 
 * **Description**: Use Node Declared Features to allow pods to opt out of the scale-down delay at the pod level.
 * **Why Rejected**: Node Declared Features are intended to be temporary and tied to feature gates, to be removed at GA+3. They are not suitable as a permanent opt-out mechanism. Alternative approaches (such as pod annotations or node taints) will be evaluated for Beta graduation.
+
+### 6. Pod-Level Grace Period (Opt-In/Opt-Out Mechanism)
+
+* **Description**: Introduce a `scaleDownGracePeriodSeconds` field at the Pod spec level (analogous to `terminationGracePeriodSeconds`). This approach, proposed by @natasha41575, would allow application developers to define the grace period on an opt-in, per-pod basis, completely decoupled from any specific resource manager (CPU Manager, Memory Manager, DRA, etc.).
+
+* **Why Deferred to Alpha2/Beta**: This approach requires changes to the Pod API spec and broader SIG Node consensus. The current node-level `scale-delay-time` configuration was chosen for Alpha as it allows faster iteration and feedback collection without API changes. The pod-level approach remains a strong candidate for a more granular opt-in/opt-out mechanism in Beta.
+
+### 7. Hook-Based Synchronization Approach
+
+* **Description**: Instead of using a time-based delay, implement a hook-based mechanism where the workload can register a pre-scale-down hook that the kubelet invokes before applying the cpuset change. The kubelet would wait for the hook to complete (or timeout) before proceeding with the actual cpuset actuation. This approach was suggested by @ffromani during the KEP review process as an alternative to the timer-based delay.
+
+* **Future Consideration**: The hook-based approach remains a candidate for Alpha2/Beta as one of the mechanisms to provide opt-in/opt-out capability at the pod or container level.
+
+### 8. Generalizing Scale-Down Delay to Other Resource Types
+
+* **Description**: Extend the scale-down delay mechanism beyond exclusive CPUs to other resource types, such as memory, hugepages, ephemeral-storage, or dynamically allocated resources via the Dynamic Resource Allocation (DRA) framework. This approach would provide a unified grace period mechanism for various resize operations across the kubelet.
+
+* **Key Considerations**:
+  - **Memory Resize**: When a container's memory limit is scaled down, the application could receive a notification via the Downward API and the kubelet would wait for a configured grace period before enforcing the new limit. This gives the application time to reduce its memory usage (e.g., by releasing caches, shrinking buffers, or triggering garbage collection) before the hard limit is applied. This use case was explicitly mentioned in discussions around KEP-6050 for memory-backed emptyDir downsizing scenarios.
+  
+  - **DRA Resources**: For dynamically allocated resources (e.g., GPUs, FPGAs, or other accelerators managed via DRA), a scale-down grace period would allow applications to gracefully release or migrate workloads from resources being removed. This is particularly relevant as DRA evolves to support more dynamic allocation patterns.
+
+* **Why Deferred to Alpha2/Beta**: This generalization was not included in the initial Alpha implementation for the following reasons:
+  1. **Scope Focus**: The initial implementation focuses exclusively on exclusive CPUs, which is the only resource type currently supporting in-place vertical scaling with guaranteed QoS pods (via KEP-5554). Non-exclusive resources like general CPU and memory requests are not distinguishable at the container level for the purposes of selective resource removal.
+  
+  2. **Implementation Complexity**: Extending the delay mechanism to other resource types requires coordination across multiple resource managers (Memory Manager, DRA framework, etc.) and potentially new APIs. Each resource type has different semantics for what "graceful release" means.
+  
+  3. **Limited Use Cases**: As of today, exclusive CPUs are the primary use case requiring delayed scale-down. Not all of other resource types have in-place scaling implementations that would benefit from this feature.
+  
+  4. **Need for User Feedback**: The SIG Node community agreed to collect user feedback from the Alpha1 implementation of the CPU-focused delay mechanism before designing a more generalized solution. This feedback will inform whether and how to extend the feature to other resource types.
 
 **Note:** The scale-down delay approach was selected during the KEP review process (discussed in SIG Node meetings and document reviews) as it provides a simple, deterministic guarantee without requiring workload-kubelet synchronization. Concerns about timer-based approaches introducing race conditions are unfounded: both the delay verification and cpuset actuation occur sequentially within the CPUManager's reconcile loop, ensuring deterministic behavior.
 
