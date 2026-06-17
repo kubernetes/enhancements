@@ -1,4 +1,4 @@
-title: KEP Template
+title: API Server Authentication to Admission Webhooks
 kep-number: 6060
 authors:
   - "@pmengelbert"
@@ -6,8 +6,7 @@ authors:
 owning-sig: sig-auth
 participating-sigs:
   - sig-auth
-  - sig-api-machinery
-status: provisional
+status: implementable
 creation-date: 2026-06-04
 reviewers:
   - "@enj"
@@ -19,6 +18,10 @@ approvers:
   - "@liggitt"
 
 see-also:
+  - "https://github.com/kubernetes/enhancements/blob/46e48e35c72de7511fa3e22fed14adf484fbd06d/keps/sig-auth/2510-webhook-request-bearer-token/README.md"
+  - "https://github.com/pbarker/enhancements/blob/0188107d011f17e6dc19a6331ac2d7fb999a2474/keps/sig-auth/apiserver_auth_to_webhooks.md"
+  - "https://github.com/kubernetes/enhancements/pull/658"
+
 replaces:
 #  - "/keps/sig-auth/2510-replaced-kep"
 
