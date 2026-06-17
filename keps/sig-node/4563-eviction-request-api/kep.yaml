@@ -20,7 +20,9 @@ reviewers:
   - "@haircommander" # sig-node-assigned-reviewer
   - "@intUnderflow"
   - "@JoelSpeed"
+  - "@jpbetz"
   - "@mmerkes"
+  - "@mortent"
   - "@paulgmiller"
   - "@pwschuurman"
   - "@razo7"
@@ -28,6 +30,7 @@ reviewers:
   - "@rst0git"
   - "@rthallisey"
   - "@sftim"
+  - "@sohankunkerkar"
   - "@soltysh"
   - "@thockin"
   - "@toVersus"
@@ -35,6 +38,7 @@ reviewers:
   - "@uMetalooper"
   - "@viktoriaas"
   - "@wojtek-t"
+  - "@yongruilin"
 approvers:
   - "@dchen1107" # sig-node-tl
 
@@ -44,11 +48,11 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.36"
+  alpha: "v1.37"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -61,8 +65,7 @@ disable-supported: true
 
 ## The following PRR answers are required at beta release
 metrics:
-  - evictionrequest_controller_imperative_evictions
-  - evictionrequest_controller_active_interceptor
-  - evictionrequest_controller_processed_interceptor
-  - evictionrequest_controller_active_requester
-  - evictionrequest_controller_pod_interceptors
+  - imperative_eviction_responder_controller_failed_evictions
+  - evictionrequest_controller_responder_state
+  - evictionrequest_controller_requester_intent
+  - evictionrequest_controller_target_responders
