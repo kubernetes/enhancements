@@ -2,6 +2,7 @@ title: CSI global mount fallback for volume reconstruction
 kep-number: 6058
 authors:
   - "@cniackz"
+  - "@kannon92"
 owning-sig: sig-storage
 participating-sigs:
   - sig-node
