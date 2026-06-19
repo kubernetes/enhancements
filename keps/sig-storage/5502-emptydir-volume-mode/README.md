@@ -14,6 +14,7 @@
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
   - [Implementation](#implementation)
+  - [Windows Behavior](#windows-behavior)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -165,6 +166,7 @@ type EmptyDirVolumeSource struct {
     // If not specified, defaults to 0777.
     // This might be in conflict with other options that affect the file
     // mode, like fsGroup, and the result can be other mode bits set.
+    // This field has no effect on Windows.
     // +featureGate=EmptyDirVolumeMode
     // +optional
     Mode *int32 `json:"mode,omitempty" protobuf:"varint,3,opt,name=mode"`
@@ -177,28 +179,11 @@ The feature is gated behind `EmptyDirVolumeMode`. When the gate is disabled:
 
 ### Implementation
 
-The implementation is in the emptyDir volume plugin (`pkg/volume/emptydir/empty_dir.go`):
+The implementation is in the emptyDir volume plugin (`pkg/volume/emptydir/empty_dir.go`). The kubelet reads the `mode` field from `EmptyDirVolumeSource` and, if set, uses it as the permission bits when creating the directory. If `mode` is not set, the default `0777` is used. An explicit `os.Chmod` call follows `os.MkdirAll` because `MkdirAll` applies the process umask, which may strip requested bits. `Chmod` sets the exact mode regardless of umask.
 
-1. Read the `mode` field from `EmptyDirVolumeSource`:
-   ```go
-   perm := os.FileMode(0777)
-   if ed.mode != nil {
-       perm = os.FileMode(*ed.mode)
-   }
-   ```
+### Windows Behavior
 
-2. Apply the permissions when creating the directory:
-   ```go
-   if err := os.MkdirAll(dir, perm); err != nil {
-       return err
-   }
-   // MkdirAll applies the umask, so explicitly chmod to set the exact mode
-   if err := os.Chmod(dir, perm); err != nil {
-       return err
-   }
-   ```
-
-The `os.Chmod` after `os.MkdirAll` is necessary because `MkdirAll` applies the process umask, which may strip requested bits. `Chmod` sets the exact mode regardless of umask.
+The `mode` field has no effect on Windows nodes. Windows does not support Unix-style file permission bits or the sticky bit. On Windows, the kubelet will log a warning if `mode` is set and create the emptyDir volume with default Windows ACLs, consistent with existing emptyDir behavior on Windows.
 
 ### Test Plan
 
@@ -219,6 +204,7 @@ Unit tests will cover:
 - Mode is applied correctly for all emptyDir medium types (default, tmpfs, hugepages)
 - Validation rejects values outside `0000`-`01777`
 - Feature gate drop test: `mode` is stripped when the gate is disabled, preserved when enabled
+- Windows: setting `mode` does not cause an error (logs a warning, creates directory with default ACLs)
 
 Coverage targets:
 - `pkg/volume/emptydir`
