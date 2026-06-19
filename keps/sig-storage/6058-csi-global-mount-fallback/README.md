@@ -121,9 +121,9 @@ automatic one without changing any contract with CSI drivers.
 
 ### Non-Goals
 
-- In-tree volume plugins (FibreChannel, iSCSI, NFS, etc.) that derive state
-  from `/proc/mounts` rather than a state file. Those plugins are being
-  migrated to CSI; addressing them in-tree is out of scope.
+- FibreChannel and iSCSI in-tree volume plugins. They are out of scope for
+  this KEP, but the same global mount reconstruction could be implemented for
+  them in a similar way as for the CSI volume plugin.
 - CSI drivers that do not implement `NodeStageVolume`. Without a global mount
   there is nothing to fall back to. Pods using such drivers continue to use
   the existing pod-local-only reconstruction path.
