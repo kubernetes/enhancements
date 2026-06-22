@@ -1,61 +1,87 @@
 # KEP-6116: EndpointSelector
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [Service Compatibility Path](#service-compatibility-path)
-  - [Controller-Managed Creation](#controller-managed-creation)
-  - [User-Managed Creation](#user-managed-creation)
-  - [User Stories](#user-stories)
-    - [Story 1: InferencePool Implementation Simplification](#story-1-inferencepool-implementation-simplification)
-    - [Story 2: Controller-Managed Endpoints Without Redundant Pod Watching](#story-2-controller-managed-endpoints-without-redundant-pod-watching)
-    - [Story 3: Client Settings Configuration for an Existing Service](#story-3-client-settings-configuration-for-an-existing-service)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-  - [Risks and Mitigations](#risks-and-mitigations)
-    - [Security](#security)
-    - [Control Plane Load](#control-plane-load)
-    - [Orphaned Resources](#orphaned-resources)
-    - [API Confusion](#api-confusion)
-- [Design Details](#design-details)
-  - [Current State](#current-state)
-  - [Proposed Implementation](#proposed-implementation)
-  - [API Definition](#api-definition)
-  - [EndpointSlice-Controller Changes](#endpointslice-controller-changes)
-  - [New Service EndpointSelector Controller](#new-service-endpointselector-controller)
-  - [Metadata Propagation](#metadata-propagation)
-  - [Service Compatibility Matrix](#service-compatibility-matrix)
-  - [Edge Cases and Deferred Design Decisions](#edge-cases-and-deferred-design-decisions)
-  - [Controller-Managed Conventions](#controller-managed-conventions)
-  - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
-      - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
-      - [e2e tests](#e2e-tests)
-  - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta](#beta)
-    - [GA](#ga)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring Requirements](#monitoring-requirements)
-  - [Dependencies](#dependencies)
-  - [Scalability](#scalability)
-  - [Troubleshooting](#troubleshooting)
-- [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
-  - [Extend Service.spec.selector to Support matchExpressions](#extend-servicespecselector-to-support-matchexpressions)
-  - [Manual EndpointSlice Management](#manual-endpointslice-management)
-  - [Shadow Service (Headless Service to Generate EndpointSlices)](#shadow-service-headless-service-to-generate-endpointslices)
-  - [Broader Service Decomposition](#broader-service-decomposition)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [KEP-6116: EndpointSelector](#kep-6116-endpointselector)
+  - [Release Signoff Checklist](#release-signoff-checklist)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [Service Compatibility Path](#service-compatibility-path)
+    - [Controller-Managed Creation](#controller-managed-creation)
+    - [User-Managed Creation](#user-managed-creation)
+    - [User Stories](#user-stories)
+      - [Story 1: InferencePool Implementation Simplification](#story-1-inferencepool-implementation-simplification)
+      - [Story 2: Controller-Managed Endpoints Without Redundant Pod Watching](#story-2-controller-managed-endpoints-without-redundant-pod-watching)
+      - [Story 3: Client Settings Configuration for an Existing Service](#story-3-client-settings-configuration-for-an-existing-service)
+    - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [Risks and Mitigations](#risks-and-mitigations)
+      - [Security](#security)
+      - [Control Plane Load](#control-plane-load)
+      - [Orphaned Resources](#orphaned-resources)
+      - [API Confusion](#api-confusion)
+  - [Design Details](#design-details)
+    - [Current State](#current-state)
+    - [Proposed Implementation](#proposed-implementation)
+    - [API Definition](#api-definition)
+    - [EndpointSlice-Controller Changes](#endpointslice-controller-changes)
+    - [New Service EndpointSelector Controller](#new-service-endpointselector-controller)
+    - [Metadata Propagation](#metadata-propagation)
+    - [Service Compatibility Matrix](#service-compatibility-matrix)
+    - [Edge Cases and Deferred Design Decisions](#edge-cases-and-deferred-design-decisions)
+    - [Controller-Managed Conventions](#controller-managed-conventions)
+    - [Test Plan](#test-plan)
+        - [Prerequisite testing updates](#prerequisite-testing-updates)
+        - [Unit tests](#unit-tests)
+        - [Integration tests](#integration-tests)
+        - [e2e tests](#e2e-tests)
+    - [Graduation Criteria](#graduation-criteria)
+      - [Alpha](#alpha)
+      - [Beta](#beta)
+      - [GA](#ga)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
+  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+          - [How can this feature be enabled / disabled in a live cluster?](#how-can-this-feature-be-enabled--disabled-in-a-live-cluster)
+          - [Does enabling the feature change any default behavior?](#does-enabling-the-feature-change-any-default-behavior)
+          - [Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement)
+          - [What happens if we reenable the feature if it was previously rolled back?](#what-happens-if-we-reenable-the-feature-if-it-was-previously-rolled-back)
+          - [Are there any tests for feature enablement/disablement?](#are-there-any-tests-for-feature-enablementdisablement)
+    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+          - [How can a rollout or rollback fail? Can it impact already running workloads?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
+          - [What specific metrics should inform a rollback?](#what-specific-metrics-should-inform-a-rollback)
+          - [Were upgrade and rollback tested? Was the upgrade-\>downgrade-\>upgrade path tested?](#were-upgrade-and-rollback-tested-was-the-upgrade-downgrade-upgrade-path-tested)
+          - [Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?](#is-the-rollout-accompanied-by-any-deprecations-andor-removals-of-features-apis-fields-of-api-types-flags-etc)
+    - [Monitoring Requirements](#monitoring-requirements)
+          - [How can an operator determine if the feature is in use by workloads?](#how-can-an-operator-determine-if-the-feature-is-in-use-by-workloads)
+          - [How can someone using this feature know that it is working for their instance?](#how-can-someone-using-this-feature-know-that-it-is-working-for-their-instance)
+          - [What are the reasonable SLOs (Service Level Objectives) for the enhancement?](#what-are-the-reasonable-slos-service-level-objectives-for-the-enhancement)
+          - [What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?](#what-are-the-slis-service-level-indicators-an-operator-can-use-to-determine-the-health-of-the-service)
+          - [Are there any missing metrics that would be useful to have to improve observability of this feature?](#are-there-any-missing-metrics-that-would-be-useful-to-have-to-improve-observability-of-this-feature)
+    - [Dependencies](#dependencies)
+          - [Does this feature depend on any specific services running in the cluster?](#does-this-feature-depend-on-any-specific-services-running-in-the-cluster)
+    - [Scalability](#scalability)
+          - [Will enabling / using this feature result in any new API calls?](#will-enabling--using-this-feature-result-in-any-new-api-calls)
+          - [Will enabling / using this feature result in introducing new API types?](#will-enabling--using-this-feature-result-in-introducing-new-api-types)
+          - [Will enabling / using this feature result in any new calls to the cloud provider?](#will-enabling--using-this-feature-result-in-any-new-calls-to-the-cloud-provider)
+          - [Will enabling / using this feature result in increasing size or count of the existing API objects?](#will-enabling--using-this-feature-result-in-increasing-size-or-count-of-the-existing-api-objects)
+          - [Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?](#will-enabling--using-this-feature-result-in-increasing-time-taken-by-any-operations-covered-by-existing-slisslos)
+          - [Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?](#will-enabling--using-this-feature-result-in-non-negligible-increase-of-resource-usage-cpu-ram-disk-io--in-any-components)
+          - [Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?](#can-enabling--using-this-feature-result-in-resource-exhaustion-of-some-node-resources-pids-sockets-inodes-etc)
+    - [Troubleshooting](#troubleshooting)
+          - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
+          - [What are other known failure modes?](#what-are-other-known-failure-modes)
+          - [What steps should be taken if SLOs are not being met to determine the problem?](#what-steps-should-be-taken-if-slos-are-not-being-met-to-determine-the-problem)
+  - [Implementation History](#implementation-history)
+  - [Drawbacks](#drawbacks)
+  - [Alternatives](#alternatives)
+    - [Extend Service.spec.selector to Support matchExpressions](#extend-servicespecselector-to-support-matchexpressions)
+    - [Manual EndpointSlice Management](#manual-endpointslice-management)
+    - [Shadow Service (Headless Service to Generate EndpointSlices)](#shadow-service-headless-service-to-generate-endpointslices)
+    - [Broader Service Decomposition](#broader-service-decomposition)
+  - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -150,9 +176,7 @@ has been deferred due to the complexity of adding new selector fields to
   of `Service` objects when the feature gate is enabled.
 - Create a new controller that creates an `EndpointSelector` for each `Service`
   with a pod selector to maintain backwards compatibility.
-- Support equality-based pod selection initially (`matchLabels`), matching the
-  practical selector expressiveness of `Service.spec.selector` without carrying
-  forward `Service`'s nil-selector opt-out semantics.
+- Support `matchLabels` and `matchExpressions` for pod selection.
 
 ### Non-Goals
 
@@ -250,7 +274,7 @@ selection behavior are unchanged, though `EndpointSlices` gain the new
 
 [gep-4488]: https://gateway-api.sigs.k8s.io/geps/gep-4488/
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 `EndpointSelector` and `Service` overlap in the endpoint-selection piece but
 are not in conflict. Once this feature is enabled, the `Service` controller
@@ -341,10 +365,11 @@ registration failure — the controller falls back to `Service`-watching until
 the API becomes accessible, then transitions automatically. A new controller
 (the `service-endpointselector-controller`) in `kube-controller-manager`
 watches `Service` objects and creates an `EndpointSelector` for each `Service`
-with a pod selector, ensuring backwards compatibility. The `Service` remains
-the source of truth; the `EndpointSelector` is a derived resource managed by
-the `Service` controller. Users and tooling that interact with `Services` and
-their `EndpointSlices` observe the same functional behavior.
+with a pod selector, ensuring backwards compatibility. `Service` resources
+without a pod selector will NOT result in an `EndpointSelector` being created.
+The `Service` remains the source of truth; the `EndpointSelector` is a derived
+resource managed by the `Service` controller. Users and tooling that interact
+with `Services` and their `EndpointSlices` observe the same functional behavior.
 
 ### API Definition
 
@@ -428,7 +453,7 @@ type EndpointSelectorPort struct {
 // that the endpointslice-controller uses when generating `EndpointSlices`.
 type EndpointSelectorTrafficSettings struct {
   // TrafficDistribution expresses a preference for how traffic is routed to
-  // endpoints (for example, "PreferClose"). The endpointslice-controller
+  // endpoints (for example, "PreferSameZone"). The endpointslice-controller
   // uses this value to calculate the topology hints on generated EndpointSlices.
   // +optional
   TrafficDistribution *string `json:"trafficDistribution,omitempty"`
@@ -454,7 +479,7 @@ spec:
       protocol: TCP
       appProtocol: kubernetes.io/grpc
   trafficSettings:
-    trafficDistribution: PreferClose
+    trafficDistribution: PreferSameZone
 ---
 apiVersion: gateway.networking.x-k8s.io/v1alpha1
 kind: XBackend
@@ -850,18 +875,13 @@ sync without manual intervention.
 ### Version Skew Strategy
 
 Kubernetes requires `kube-apiserver` to be upgraded before
-`kube-controller-manager`, which is the standard control-plane upgrade order.
-
-The `endpointslice-controller` detects `EndpointSelector` API availability via
-informer registration. When the gate is enabled, the controller attempts to
-register a watch on `discovery.k8s.io/v1alpha1 EndpointSelector`. If the API
-server does not yet have the resource registered, the watch returns a
-resource-not-found error. The controller detects this, falls back to
-`Service`-watching mode, and retries registration periodically. Once the API
-becomes available and registration succeeds, the controller transitions to
-`EndpointSelector`-watching automatically. `EndpointSlices` remain current
-throughout — during the fallback window they are produced from `Service`
-objects; after the transition they are produced from `EndpointSelector` objects.
+`kube-controller-manager`, which means a new `kube-controller-manager` will
+always run against an apiserver that is at least its version. Under the standard
+upgrade order, if the `EndpointSelector` feature gate is enabled by default on
+a given release, both the API and the controller can assume the API is
+available. During the off-by-default stage, the administrator is responsible
+for enabling the feature gate on both `kube-controller-manager` and
+`kube-apiserver`.
 
 **n-1 controller-manager (old controller, new API server).** The old
 `kube-controller-manager` does not know about `EndpointSelector`. It continues
@@ -869,16 +889,6 @@ to watch `Service` objects and produce `EndpointSlices` from them as today.
 `EndpointSelector` objects may exist on the new API server if the gate is
 enabled there, but nothing reconciles them until the controller-manager is
 upgraded.
-
-**n+1 controller-manager (new controller, old API server).** The new
-`endpointslice-controller` attempts to register an `EndpointSelector` informer;
-the old apiserver returns a resource-not-found error, and the controller falls
-back to `Service`-watching. `EndpointSlices` continue to be produced from
-`Service` objects without interruption. The `service-endpointselector-controller`
-similarly retries `EndpointSelector` CREATEs against the old apiserver. As each
-apiserver node is upgraded and the `EndpointSelector` API becomes available, the
-informer registration succeeds and the controller transitions to
-`EndpointSelector`-watching automatically.
 
 **kubelet and kube-proxy** are not involved in `EndpointSelector`
 reconciliation. They consume `EndpointSlices` regardless of whether those
@@ -1188,7 +1198,7 @@ which was [presented at a SIG Network meeting][decompose-svc-recording].
 [decompose-svc-slides]: https://docs.google.com/presentation/d/1h_2WYyvIbyyCIMN61FInAfFtaJk_TrYpDXKoHXnUfy8/edit?slide=id.p#slide=id.p
 [decompose-svc-recording]: https://youtu.be/OmD_fKasCNA?si=xpcOhcPgUd7_mbQw&t=1083
 
-## Infrastructure Needed (Optional)
+## Infrastructure Needed
 
 None for Alpha. If the shared controller library is extracted to a staging
 repository in a future release, that subproject will be noted here.
