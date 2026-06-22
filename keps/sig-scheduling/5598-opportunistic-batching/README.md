@@ -339,8 +339,9 @@ current pod by checking:
    scheduling decisions.
 4. **Last chosen node feasibility check:** Filter plugins are run against the node chosen in the
    previous cycle. Two outcomes are possible:
-   - **Infeasible:** The node is full (one-pod-per-node case). The node is discarded and batch
-     proceeds without it.
+   - **Infeasible:** The node cannot host another pod from the batch (one-pod-per-node case),                                                                                                                                           
+     either it is at capacity or a per-node constraint (such as a host port conflict) prevents                                                                                                                                            
+     placement. The node is discarded and batch proceeds without it.
    - **Still feasible:** The node can host another pod (multi-pod-per-node case). This node is
      rescored (see [Rescoring the Last Chosen Node](#rescoring-the-last-chosen-node)).
 
@@ -401,12 +402,14 @@ of flushing the batch:
 
 1. Node A is re-inserted into the cached sorted list. Since it is still feasible, it can host
    additional pods.
-2. `Score` is called for each scoring plugin against node A using the current `CycleState`. The
-   resulting score accurately reflects pod N's placement.
-3. `NormalizeScore` is called for each plugin over all nodes in the cached list (the re-inserted
+2. `RunPreScorePlugins` is called for all plugins against the current pod to populate `CycleState`
+   with the state required by `Score`.
+3. `Score` is called for each scoring plugin against node A. The resulting score accurately 
+   reflects pod N's placement.
+4. `NormalizeScore` is called for each plugin over all nodes in the cached list (the re-inserted
    node A plus the remaining nodes).
-4. The cached list is re-sorted by aggregate normalized score.
-5. The top-ranked node is popped and returned as the hint for the current pod.
+5. The cached list is re-sorted by aggregate normalized score.
+6. The top-ranked node is popped and returned as the hint for the current pod.
 
 This is correct under the assumption that scoring is node-local: placing pod N on node A does not
 affect the scores of other nodes. This holds for all signable pods. Group-aware scoring plugins
@@ -417,13 +420,14 @@ affect the scores of other nodes. This holds for all signable pods. Group-aware 
 | Scenario | Batching disabled | Batching enabled |
 |---|---|---|
 | One-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter, 0 scoring |
-| Multi-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter + O(1) Score + O(M) NormalizeScore + O(M log M) sort |
+| Multi-pod-per-node | O(N) filter + O(N) Score + O(N) NormalizeScore | O(1) filter + O(P) PreScore + O(1) Score + O(M) NormalizeScore + O(M log M) sort |
 
-Where M is the number of nodes in the cached list (M ≤ N). For multi-pod-per-node workloads M stays
-close to N since nodes are re-inserted each cycle. However, both the O(N) Filter pass and the O(N)
-Score pass are eliminated: only a single `RunFilterPlugins` call and a single `Score` call run per
-cycle. `NormalizeScore` over M cached nodes is the only remaining cost, and it is lightweight
-relative to `Score`: it is arithmetic normalization rather than plugin logic.
+Where P is the number of plugins and M is the number of nodes in the cached list (M ≤ N). For
+multi-pod-per-node workloads M stays close to N since nodes are re-inserted each cycle. Both the
+O(N) Filter pass and the O(N) Score pass are eliminated: only a single `RunFilterPlugins` call,
+a single `PreScore` pass over all plugins O(P), and a single `Score` call run per cycle.
+`NormalizeScore` over M cached nodes is the only remaining node-proportional cost, and it is
+lightweight relative to `Score`: it is arithmetic normalization rather than plugin logic.
 
 #### NormalizeScore on a Subset
 
@@ -483,10 +487,10 @@ observed.
 
 #### Rescore mixes scores from different cluster states
 
-When rescoring runs, only the last chosen node is scored against the current cycle state. The
-remaining cached nodes retain raw scores computed when the batch was created, so the resulting
-ranking combines scores from two different cluster states and may diverge slightly from a fresh
-full pipeline run.
+When rescoring runs, `PreScore` is re-run for the current pod and `Score` is called only for the
+last chosen node. The remaining cached nodes retain raw scores computed when the batch was created,
+so the resulting ranking combines scores from two different cluster states and may diverge slightly
+from a fresh full pipeline run.
 
 This is bounded by the same 500ms `maxBatchAge` expiry: a batch older than 500ms is flushed and a
 full pipeline reruns.
@@ -624,6 +628,7 @@ Will add an extra function and test for plugins we touch.
   into the scheduling pipeline.
 
 Rescoring-specific unit tests (will be added to `batching_test.go` and `schedule_one_test.go`):
+- `RunPreScorePlugins` is called for all plugins before `Score` during rescoring.
 - Raw score updated only for the rescored node; other nodes' cached scores unchanged.
 - `NormalizeScore` called once per plugin with the full cached node list (including re-inserted
   `lastChosenNode`).
@@ -1377,9 +1382,9 @@ type RescorePlugin interface {
 ```
 
 This KEP's rescoring approach is the implicit special case of this design: it always assumes only
-`placedNode` is affected (node-local scoring), calls `Score` to get its raw score, and normalizes
-the full cached set. The `Rescore` extension point generalizes that by letting group-aware plugins
-declare additional affected nodes and provide their raw scores.
+`placedNode` is affected (node-local scoring), runs `PreScore` and then calls `Score` to get its
+raw score, and normalizes the full cached set. The `Rescore` extension point generalizes that by 
+letting group-aware plugins declare additional affected nodes and provide their raw scores.
 
 Pros:
 - Semantically correct: plugins can provide correct raw scores for any affected nodes, including
@@ -1404,6 +1409,12 @@ This KEP's approach can be cleanly replaced by a dedicated `Rescore` extension p
   other group-aware scoring plugins are currently unsignable and receive no batching benefit.
   Extending the signature mechanism to handle these plugins, possibly by incorporating their
   constraints into the signature itself, would unlock batching for additional workloads.
+- **PreScore optimization**: The current rescoring flow runs `RunPreScorePlugins` on every rescore
+  cycle to populate `CycleState` before calling `Score`. This is not optimal. A more efficient
+  approach would introduce a `PreScoreExtension` interface, analogous to the existing
+  `PreFilterExtension`, with an `AddPod` method that plugins implement to incrementally update
+  `CycleState` when a pod is placed, rather than recomputing it from scratch. This optimization is
+  deferred for now.
 - **New Rescore extension point**: Once group-aware plugins become signable, a dedicated `Rescore`
   plugin interface can be introduced to handle related-node score updates correctly. Plugins would
   return raw scores for all affected nodes; the framework combines them with cached raw scores for
