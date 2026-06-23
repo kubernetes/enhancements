@@ -1,0 +1,7 @@
+title: Alpha Alias Invalid
+kep-number: 8
+owning-sig: sig-node
+stage: alpha
+approvers:
+  - "@sig-node-tech-leads"
+latest-milestone: "v1.37"
