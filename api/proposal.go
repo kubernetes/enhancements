@@ -98,8 +98,8 @@ func (p *Proposals) AddProposal(proposal *Proposal) {
 
 // TODO(api): json fields are not using consistent casing
 type Proposal struct {
-	ID       string `json:"id"`
-	PRNumber string `json:"prNumber,omitempty"`
+	ID        string `json:"id"`
+	PRNumber  string `json:"prNumber,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Directory string `json:"directory,omitempty"`
 
