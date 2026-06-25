@@ -99,6 +99,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Code synchronization](#code-synchronization)
       - [Individual repo history](#individual-repo-history)
       - [Reproducible builds &amp; Dependencies Management](#reproducible-builds--dependencies-management)
+      - [Lease migration strategy](#lease-migration-strategy)
     - [Risks And Mitigations](#risks-and-mitigations)
     - [Development workflow](#development-workflow)
   - [MileStone](#milestone)
@@ -525,6 +526,24 @@ Process: We will provide clear documentation outlining the steps for integration
 Ownership: The original developers will retain full ownership and control of their sidecar project.
 
 
+##### Lease migration strategy
+
+To safely migrate from multiple legacy leader-election leases (e.g., for csi-provisioner, csi-resizer) to a single, consolidated lease for the new all-in-one (AIO) csi-sidecars container. This process must prevent a "split-brain" scenario where both old and new sidecars are active simultaneously.
+
+1. Acquire New Lease: The new process(in csi-lib-utils) starts and acquires the consolidated lease.
+2. Check for Migration Marker: It inspects the lease object for a migration.csi.k8s.io/status: completed annotation.
+   - If Marker Exists: The migration is already complete. The proceeds to run the controllers immediately.
+   - If Marker is Missing: Migration is required. The process proceeds to the next step.
+3. Attempt to Seize Old Leases: The process attempts to acquire the leases of all legacy sidecars (e.g., provisioner, resizer). This is an all-or-nothing check.
+   - On Success: This confirms no old sidecars are active. The process then:
+        1. Adds the migration.csi.k8s.io/status: completed annotation to the new lease.
+        2. Releases the old leases it just acquired.
+        3. Starts the main controllers.
+   - On Failure: This means at least one old sidecar is still running and holds its lease. The AIO process will:
+        1. Log a clear error message instructing the user to scale down the legacy sidecar deployment.
+        2. Exit with an error, causing the pod to enter a CrashLoopBackOff state. This safely prevents a "split-brain" scenario and alerts the user to the required manual intervention.
+
+
 #### Risks And Mitigations
 
 - Breaking Changes Amplification: Breaking changes in one component forces the single release to be a breaking change
@@ -566,7 +585,9 @@ Tasks:
 
 1. For {external-attacher, external-provisioner, ...} split the main function
 2. For {external-attacher, external-provisioner, ...} add per sidecar specific flags
-3. Introduce the concept of global flags in the AIO sidecar 
+3. Introduce the concept of global flags in the csi-lib-utils [already merged]
+  - https://github.com/kubernetes-csi/csi-lib-utils/pull/202
+4. Modify the individual sidecar entrypoint to reuse the global flags
 
 
 > **workflow2:**
@@ -714,6 +735,11 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+[x] I/we understand the owners of the involved components may require updates to
+existing tests to make this code solid enough prior to committing the changes necessary
+to implement this enhancement.
+
+The testing strategy for the AIO MonoRepo is primarily based on inheriting and reusing the existing test suites from the individual CSI sidecar repositories. Since the AIO sidecar consolidates the same logic into a single binary, the correctness of each controller can be validated using the same tests that were used in their respective individual repositories.
 
 ##### Prerequisite testing updates
 
@@ -722,7 +748,8 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
-
+- Ensure all existing unit tests in individual sidecar repositories (external-attacher, external-provisioner, external-resizer, external-snapshotter, livenessprobe, node-driver-registrar) pass before code synchronization into the MonoRepo.
+- Verify the existing e2e test suites for the [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) driver are stable and non-flaky.
 
 ##### Unit tests
 
@@ -745,6 +772,15 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
+Unit tests are inherited from each individual sidecar repository. Since the entrypoints of existing sidecars are refactored to expose public functions that can be invoked from the AIO binary, unit tests require modifications to:
+
+- Validate the new AIO command-line flag parsing (global flags and per-controller prefixed flags).
+- Test the controller selection logic (`--controllers=attacher,provisioner,...`).
+- Ensure each controller can be initialized and run independently within the unified binary.
+- Verify the leader election integration works correctly for the consolidated process.
+- Test the lease migration logic (acquiring legacy leases, migration marker annotation).
+
+All existing unit tests from individual repositories will continue to run against their respective MonoRepo components to ensure no regressions are introduced during code synchronization.
 
 ##### Integration tests
 
@@ -756,6 +792,7 @@ For Beta and GA, add links to added tests together with links to k8s-triage for 
 https://storage.googleapis.com/k8s-triage/index.html
 -->
 
+N/A. The CSI sidecars are out-of-tree components and do not have integration tests in `k8s.io/kubernetes/test/integration`. Testing is covered by unit tests and e2e tests.
 
 ##### e2e tests
 
@@ -768,6 +805,19 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
+
+E2E tests are based on the [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) driver's original e2e test suite, which is the standard CSI driver used for testing sidecar compatibility with Kubernetes releases.
+
+For Alpha, the following e2e tests will be validated:
+- All existing e2e tests from individual sidecar repositories pass when run against the AIO sidecar binary deployed with the hostpath CSI driver.
+- The AIO sidecar correctly performs volume provisioning, attaching, resizing, and snapshotting operations via the hostpath driver.
+- Node driver registration works correctly when the AIO sidecar is configured with `--controllers=node-driver-registrar`.
+- Liveness probe health checks function correctly for the consolidated binary.
+- Leader election and failover behavior is validated in a multi-replica deployment.
+
+The e2e test infrastructure will be set up using prow jobs and GitHub Actions to run the full hostpath driver e2e suite against the AIO sidecar on every PR.
+
+
 
 ### Graduation Criteria
 
@@ -1094,6 +1144,8 @@ For each of them, fill in the following information by copying the below templat
 
 ## Implementation History
 
+- 2024-11-10: KEP created
+- Kubernetes v1.38: Targeted for Alpha
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
