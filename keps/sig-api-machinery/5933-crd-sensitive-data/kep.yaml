@@ -1,0 +1,28 @@
+title: Sensitive Data Marker for CRD Fields
+kep-number: 5933
+authors:
+  - "@trofimovdals"
+  - "@sprait"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-auth
+  - sig-security
+status: provisional
+creation-date: 2026-02-25
+reviewers:
+  - "@deads2k"
+  - "@fedebongio"
+  - "@liggitt"
+approvers:
+  - "@deads2k"
+  - "@fedebongio"
+  - "@liggitt"
+stage: alpha
+latest-milestone: ""
+milestone:
+  alpha: ""
+feature-gates:
+  - name: CRDSensitiveData
+    components:
+      - kube-apiserver
+disable-supported: true
