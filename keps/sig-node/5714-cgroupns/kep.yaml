@@ -1,0 +1,47 @@
+title: Allow specifying whether to unshare cgroup namespaces
+kep-number: 5714
+authors:
+  - "@AkihiroSuda"
+owning-sig: sig-node
+# participating-sigs:
+#  - sig-aaa
+#  - sig-bbb
+status: implementable
+creation-date: 2025-12-03
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-node/2254-cgroup-v2"
+# replaces:
+#   - "/keps/sig-ccc/3456-replaced-kep"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+  # beta: "v1.XX"
+  # stable: "v1.XX"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CgroupNamespacesSupport
+    components:
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+# metrics:
+#   - my_feature_metric
