@@ -1,4 +1,4 @@
-# KEP-NNNN: DRA Shared Consumable Capacities Across Related Devices
+# KEP-5941: DRA Shared Consumable Capacities Across Related Devices
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -8,7 +8,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Story 1: SR-IOV bandwidth as a shared parent resource](#story-1-sr-iov-bandwidth-as-a-shared-parent-resource)
+    - [Story 1: Virtual network interface bandwidth as a shared parent resource](#story-1-virtual-network-interface-bandwidth-as-a-shared-parent-resource)
     - [Story 2: CPU/Memory resource alignment via PCIE root grouping](#story-2-cpumemory-resource-alignment-via-pcie-root-grouping)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -114,15 +114,15 @@ At a high level:
 
 ### User Stories
 
-#### Story 1: SR-IOV bandwidth as a shared parent resource
+#### Story 1: Virtual network interface bandwidth as a shared parent resource
 
-As a cluster user, I request one or more VFs and a bandwidth amount per request.
-As an operator, I want scheduler admission to ensure that total bandwidth promised across VFs on the same PF does not exceed PF capacity.
+As a cluster user, I request one or more virtual network interfaces (e.g. SR-IOV VFs) and a bandwidth amount per request.
+As an operator, I want scheduler admission to ensure that total bandwidth promised across virtual interfaces on the same physical function does not exceed its capacity.
 
 This allows:
 
-- keeping VF as the allocatable unit, and
-- preventing over-allocation of PF bandwidth without static pre-partitioning.
+- keeping the virtual interface as the allocatable unit, and
+- preventing over-allocation of physical link bandwidth without static pre-partitioning.
 
 #### Story 2: CPU/Memory resource alignment via PCIE root grouping
 
@@ -141,7 +141,7 @@ Example from real hardware (dual XEON Gold 6320R):
 "root"="pci0000:d7" "localCPUs"="1,3,5,...,103" "NUMANode"=1
 ```
 
-A CPU/memory DRA driver can publish one shared capacity set per NUMA node (the parent budget of available CPUs and memory) and map each PCIE root device to the appropriate set. Scheduler accounting then prevents aggregate over-allocation of CPUs or memory across PCIE roots that share the same NUMA zone.
+A CPU/memory DRA driver can publish one shared capacity set per physical CPU package (the parent budget of available CPUs and memory) and map each PCIE root device to the appropriate set. Scheduler accounting then prevents aggregate over-allocation of CPUs or memory across PCIE roots within the same physical package.
 
 See also: [kubernetes/enhancements#5491](https://github.com/kubernetes/enhancements/issues/5491) for related work on PCIE-root-based resource alignment.
 
@@ -423,9 +423,9 @@ Planned:
 
 ###### What specific metrics should inform a rollback?
 
-- Increased allocation failure rate attributable to shared counter checks
-- Unexpected pending claims for requests that should fit
-- Scheduler allocation latency regression
+- `scheduler_unschedulable_pods{plugin="DynamicResources"}` — increased allocation failure rate attributable to shared counter checks
+- `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` — scheduler allocation latency regression
+- Unexpected pending claims for requests that should fit (observable via `apiserver_request{resource="resourceclaims"}`)
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
