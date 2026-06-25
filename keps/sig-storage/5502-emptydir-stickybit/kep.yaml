@@ -1,0 +1,30 @@
+title: EmptyDir Volume Sticky Bit Support
+kep-number: 5502
+authors:
+  - "@oliverguenther"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-storage
+  - sig-node
+status: provisional
+creation-date: 2026-01-30
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+replaces:
+
+stage: alpha
+latest-milestone: "v1.36"
+
+milestone:
+  alpha: "v1.36"
+
+feature-gates:
+  - name: EmptyDirStickyBit
+    components:
+      - kubelet
+disable-supported: true
+
+metrics:
