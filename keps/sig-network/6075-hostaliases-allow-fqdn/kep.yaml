@@ -1,0 +1,30 @@
+title: Allow FQDN with trailing dot in HostAliases
+kep-number: 6075
+authors:
+  - "@kairosci"
+owning-sig: sig-network
+status: provisional
+creation-date: 2026-05-14
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+  - "@SergeyKanzhelev"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+  - "@SergeyKanzhelev"
+stage: alpha
+latest-milestone: "v1.36"
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+feature-gates:
+  - name: HostAliasesAllowFQDN
+    components:
+      - kube-apiserver
+disable-supported: true
+metrics:
+  - apiserver_request_total
