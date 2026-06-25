@@ -1,0 +1,45 @@
+title: CEL Based Comparisons to Tolerations and NodeAffinity
+kep-number: 5500
+authors:
+  - "@galal-hussein"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+  - sig-apps
+status: implementable
+creation-date: 2026-01-21
+reviewers:
+  - "@helayoty"
+approvers:
+  - "@macsko"
+  - "@sanposhiho"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.36"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.36"
+  beta: "v1.37"
+  stable: "v1.38"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: TaintTolerationCEL
+    components:
+      - kube-apiserver
+      - kube-scheduler
+      - kube-controller-manager
+      - kubelet
+disable-supported: true
+
+metrics:
+  - my_feature_metric
