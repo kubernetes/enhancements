@@ -1,0 +1,39 @@
+title: OCI Artifact-Based Security Profile Distribution
+kep-number: 6061
+authors:
+  - "@saschagrunert"
+owning-sig: sig-node
+participating-sigs:
+  - sig-auth
+  - sig-security
+status: implementable
+creation-date: 2026-05-06
+reviewers:
+  - "@SergeyKanzhelev"
+  - "@haircommander"
+  - "@deads2k"
+approvers:
+  - "@mrunalp"
+see-also:
+  - "/keps/sig-node/135-seccomp"
+  - "/keps/sig-node/24-apparmor"
+  - "/keps/sig-node/2413-seccomp-by-default"
+  - "/keps/sig-node/4639-oci-volume-source"
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: SecurityProfileOCIArtifact
+    components:
+      - kubelet
+      - kube-apiserver
+disable-supported: true
+
+metrics:
+  - kubelet_security_profile_artifact_pull_duration_seconds
+  - kubelet_security_profile_artifact_pull_errors_total
