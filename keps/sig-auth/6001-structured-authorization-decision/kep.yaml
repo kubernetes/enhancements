@@ -1,0 +1,22 @@
+title: Structured Authorization Decision
+kep-number: 6001
+authors:
+- "@nabokihms"
+owning-sig: sig-auth
+participating-sigs:
+status: provisional
+creation-date: 2026-04-08
+reviewers:
+- TBD
+approvers:
+- TBD
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+feature-gates:
+  - name: StructuredAuthorizationDecision
+    components:
+      - kube-apiserver
+disable-supported: true
+metrics: []
