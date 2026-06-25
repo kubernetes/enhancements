@@ -1,0 +1,68 @@
+# examples/migration-init-to-csi.yaml
+# Example: migrate from Init Container + fileKeyRef (KEP-3721) to CSI in-memory env injection (csiSecretRef)
+
+# 1) Old pattern (init container writes secret to an emptyDir)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-init-migration
+spec:
+  initContainers:
+  - name: fetch-secrets
+    image: myapp-init:latest
+    env:
+    - name: VAULT_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: vault-token
+          key: token
+    volumeMounts:
+    - name: env-files
+      mountPath: /env
+    command:
+    - sh
+    - -c
+    - |
+      curl -H "X-Vault-Token: $VAULT_TOKEN" https://vault/v1/secret/data/myapp \
+        | jq -r '.data.password' > /env/DB_PASSWORD
+  containers:
+  - name: app
+    image: myapp:latest
+    env:
+    - name: DB_PASSWORD
+      valueFrom:
+        fileKeyRef:
+          path: /env/DB_PASSWORD
+    volumeMounts:
+    - name: env-files
+      mountPath: /env
+  volumes:
+  - name: env-files
+    emptyDir: {}
+
+---
+
+# 2) New pattern (CSI-driven in-memory injection) - requires ProviderClass and driver set up
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-csi-migrated
+spec:
+  containers:
+  - name: app
+    image: myapp:latest
+    env:
+    - name: DB_PASSWORD
+      valueFrom:
+        csiSecretRef:
+          driver: secrets.csi.example.com
+          providerClassName: vault-secrets
+          key: secret/data/db-creds
+          parameters:
+            vaultRole: myapp-role
+
+# Migration notes:
+# - Ensure that the ProviderClass `vault-secrets` exists and is configured with correct `vaultAddr` and `allowedNamespaces`/`allowedFields`.
+# - Confirm ServiceAccount RBAC permissions to use the ProviderClass (admission webhook may be used for validation).
+# - Test with a non-critical Pod before mass-migration. Use events (`EnvVarInjectionSuccess` / `EnvVarInjectionFailed`), kubelet logs, and driver metrics to verify behavior.
+# - If CSI spec ratification is pending, prototype using the mock `NodeGetEnvVars` RPC behind the `CSIDirectEnvInjection` feature gate to validate real-world behavior.
