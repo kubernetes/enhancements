@@ -1,0 +1,27 @@
+title: HTTPS (TLS) for kube-proxy admin endpoints
+kep-number: "6038"
+authors:
+  - "@yashsingh74"
+  - "@aroradaman"
+owning-sig: sig-network
+participating-sigs: []
+status: provisional
+creation-date: "2026-04-29"
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+see-also: []
+replaces: []
+
+# The following fields are filled in by SIG Network / PRR as the KEP matures.
+stage: ""
+latest-milestone: ""
+milestone: {}
+feature-gates: []
+disable-supported: false
+metrics: []
