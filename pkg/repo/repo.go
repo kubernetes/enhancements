@@ -470,7 +470,7 @@ func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) 
 	}
 
 	p.Name = filepath.Base(filepath.Dir(kepPath))
-	p.Directory = strings.TrimPrefix(
+	p.Area = strings.TrimPrefix(
 		filepath.Dir(kepPath),
 		ProposalPathStub+string(filepath.Separator),
 	)
