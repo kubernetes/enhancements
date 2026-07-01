@@ -10,9 +10,9 @@ participating-sigs:
 status: provisional #provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
 creation-date: 2025-10-28
 reviewers:
-  - janetkuo
+  - "@janetkuo"
 approvers:
-  - janetkuo
+  - "@janetkuo"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -22,13 +22,13 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.36"
+latest-milestone: "v1.37"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.36"
-  beta: "v1.37"
-  stable: "v1.38"
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -39,6 +39,10 @@ milestone:
 #       - kube-controller-manager
 # disable-supported: true
 feature-gates:
+  # MultiPodPDBs depends on the GenericWorkload feature gate, and the disruption
+  # controller needs scheduling.k8s.io/v1beta1 to be served
+  # (--runtime-config=scheduling.k8s.io/v1beta1=true). The kep.yaml schema has no
+  # field for gate dependencies; see "Feature Enablement and Rollback" in README.md.
   - name: MultiPodPDBs
     components:
       - kube-apiserver
