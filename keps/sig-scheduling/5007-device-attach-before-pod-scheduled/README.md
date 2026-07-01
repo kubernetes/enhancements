@@ -757,6 +757,68 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 - 1 example of real-world usage
 - Allowing time for feedback
+  - To collect feedback, we consulted with the developers of each DRA driver.
+  We believe we have conducted as much review and feedback collection as
+  possible. Based on the discussions below, we conclude that no mandatory
+  API changes are required for GA promotion.
+
+  [Cases where BindingConditions are utilized]
+  - [dra-driver-image-configurator](https://github.com/gke-labs/dra-drivers/tree/main/dra-driver-image-configurator)
+    - This DRA driver follows the "happy path" of BindingConditions, so it
+      can serve as both a feedback source and a real-world use case.
+    - Although there were some [concerns](https://kubernetes.slack.com/archives/C0409NGC1TK/p1779966556200499?thread_ts=1776760295.580409&cid=C0409NGC1TK),
+      it turned out that no API additions or changes to the Kubernetes core
+      were necessary.
+    - There was a proposal to add a new field called
+      [BindingPermanentFailureConditions](https://github.com/gke-labs/dra-drivers/pull/8#discussion_r3424337609)
+      to BindingConditions, but after the discussion,
+      we decided not to implement it.
+  - CoHDI composable-dra-driver
+    - Already covered as the primary real-world use case above (see the
+      Beta-graduation feedback). BindingConditions are used to wait for
+      device attach completion before the Pod is scheduled, and
+      BindingFailureCondition triggers Pod rescheduling on failure.
+  - [cxl-dra-driver](https://github.com/askervin/intel-resource-drivers-for-kubernetes/blob/5fC-cxl/cxl-dra-driver.stage-2.architecture.md)
+    - In fabric systems using CXL switches, BindingConditions are used when
+      attaching CXL memory to nodes.
+    - Since this is essentially the same model as the Composable system, no
+      API additions or modifications are expected to be necessary.
+
+  [Cases where utilization was deferred]
+  - NVIDIA DRA Driver (dra-driver-nvidia-gpu)
+    - Initially, BindingConditions were thought to be useful in the compute
+      domain scenario and were
+      [implemented](https://github.com/kubernetes-sigs/dra-driver-nvidia-gpu/pull/855#issuecomment-4245369184).
+    - However, the compute domain design was changed to a method called
+      "static IMEX daemonsets". Since this method does not require
+      BindingConditions, the implementation was not merged.
+    - Regarding how to obtain ResourceClaims with BindingConditions,
+      improvements to FieldSelector might have been required from a
+      performance standpoint. However, by using the
+      [nominatedNodeName method](https://kubernetes.slack.com/archives/C09TP78DV/p1772639330382179?thread_ts=1772618881.142109&cid=C09TP78DV),
+      we concluded that such improvements are unnecessary.
+  - DRANET
+    - For the IPAM case, we shared the idea of utilizing BindingConditions
+      when assigning IP addresses. However, since there are
+      [alternatives](https://github.com/kubernetes-sigs/dranet/issues/103#issuecomment-4264984417)
+      to BindingConditions, this approach was not adopted.
+  - Other network configuration scenarios (RDMA / VLAN / vSwitch)
+    - For connection setup of inter-node RDMA communication, a
+      [proposal](https://github.com/kubernetes-sigs/dranet/issues/209) was
+      made to complete the configuration via `BindingConditions` before the
+      Pod is scheduled. However, no DRA driver currently performs such
+      configuration, and this falls outside the scope of DRANET.
+    - VLAN and vSwitch configurations were also considered. The community
+      plans to leverage DRA to provide a feature called the Multi-Network
+      API, but its design is still under discussion, and no specific case
+      requiring BindingConditions has been identified yet.
+  - FPGA
+    - BindingConditions would be useful to ensure that circuit
+      initialization and reconfiguration are reliably completed before Pod
+      scheduling. However, as far as we know, there is currently no DRA
+      driver for FPGAs (only a device plugin). Therefore, while we cannot
+      collect concrete feedback, we assume that no API changes will be
+      required.
 
 #### Deprecation
 <!--
