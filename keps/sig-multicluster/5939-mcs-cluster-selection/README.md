@@ -100,6 +100,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Label Selector](#label-selector)
     - [Validation](#validation)
   - [Cluster Selection Algorithm](#cluster-selection-algorithm)
+  - [EndpointSlice Active Label](#endpointslice-active-label)
   - [Interaction with Service Traffic Distribution](#interaction-with-service-traffic-distribution)
   - [Reading ClusterProperties from Constituent Clusters](#reading-clusterproperties-from-constituent-clusters)
   - [Reference Implementation in kubernetes-sigs/mcs-api](#reference-implementation-in-kubernetes-sigsmcs-api)
@@ -540,6 +541,26 @@ lost all ready endpoints), implementations should not instantly drop existing
 connections. How this is handled (for example, connection draining, graceful
 transition) is implementation specific, but implementations should make a best
 effort to avoid abrupt connection termination.
+
+### EndpointSlice Active Label
+
+MCS-API implementations that create `EndpointSlice`s for imported services must
+add the `multicluster.kubernetes.io/active` label to every MCS-managed
+`EndpointSlice`, whether or not cluster selection is supported or configured for
+that service. If cluster selection is not supported, all MCS-managed
+`EndpointSlice`s are active.
+
+For active `EndpointSlice`s, the label value must be `"true"`. The label value
+must be `"false"` when cluster selection is configured and the `EndpointSlice`'s
+source cluster is not currently selected.
+
+Consumers such as Gateway API implementations can use this label to consume
+endpoints from selected clusters. For example, consumers can use the selector
+`multicluster.kubernetes.io/active!=false` to only select active
+`EndpointSlice`s and keep compatibility with `EndpointSlice`s created before
+this label existed. Consumers that manage live traffic should make a best effort
+to avoid abrupt connection termination when the selected clusters change and
+some `EndpointSlice`s become inactive.
 
 ### Interaction with Service Traffic Distribution
 
