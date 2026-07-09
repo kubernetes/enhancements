@@ -604,11 +604,13 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 #### Properties
 
-Name/value pairs to represent properties of the clusters. It could be a
-collection of ClusterProperty resources, but could also be info based on
-other implementations. The name of the cluster property can be predefined
-name from ClusterProperty resources and is allowed to be customized by
-different cluster managers.
+Name/value pairs to represent properties of the clusters. Cluster managers
+SHOULD include ClusterProperty resources defined on the member cluster in the
+ClusterProfile's `.status.properties`. They MAY also include properties from
+other implementations. Properties derived from ClusterProperty resources MUST
+preserve the name and value of the ClusterProperty as-is. Cluster managers MAY
+additionally include their own custom-named properties, as long as they do not
+conflict with names derived from ClusterProperty resources.
 
 #### Conditions
 
