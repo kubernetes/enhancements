@@ -20,6 +20,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -109,9 +110,9 @@ credentials to containers that need only one.
 
 - Allow a Secret or ConfigMap key reference to select a JSON subtree via RFC 6901
   JSON Pointer, for both environment variables and projected volume items.
-- Re-serialize the selected subtree to JSON for volume items, and to a string for
-  environment variables (with non-scalar handling as an open question, see
-  Notes/Constraints).
+- Re-serialize the selected subtree to compact JSON for volume items; for
+  environment variables, decode JSON strings and compact-serialize all other JSON
+  types.
 - Keep the feature declarative and consistent with existing Secret/ConfigMap
   update and kubelet atomic-writer semantics.
 - Ship behind a feature gate; alpha is opt-in.
@@ -188,9 +189,8 @@ When `jsonPointer` is set on a key reference:
      to the projected `path`, replacing what would otherwise be the raw key
      bytes. File mode/ownership semantics are unchanged.
    - For environment variables: JSON string targets become the decoded string;
-     number, boolean, and null targets become their compact JSON lexical value
-     (`123`, `true`, `null`). Object and array targets are unresolved (see the
-     open question on non-scalar targets below).
+     number, boolean, null, object, and array targets become their compact JSON
+     representation (`123`, `true`, `null`, `{"host":"db"}`, `[1,2]`).
 
 A pointer whose target does not exist is a hard failure (see
 Notes/Constraints). A key that is not exactly one valid JSON value when
@@ -201,13 +201,12 @@ literally (JSON `null` to a file; the string `"null"` to an env var).
 
 #### Story 1
 
-An off-the-shelf application accepts registry credentials through environment
-variables (for example, a tool whose `config.js` references
-`process.env.REGISTRY_TOKEN`). The operator has a single
-`kubernetes.io/dockerconfigjson` Secret holding credentials for several
-registries. With this KEP, one env var can select the credential for the one
-registry the application needs, without duplicating the value into a second
-Secret and without exposing sibling credentials to the container.
+An application expects its full registry auth config — host, scope, and token —
+as a JSON string in one environment variable. The operator stores credentials
+for multiple registries in one structured Secret. With this KEP, one env var
+selects the right registry's config object and delivers it as a compact JSON
+string, without duplicating data into a separate Secret and without exposing
+sibling credentials.
 
 #### Story 2
 
@@ -216,6 +215,16 @@ fan it out into `docker-ghcr-auth`, `docker-ecr-auth`, and `docker-gcr-auth` so
 that different workloads each receive only their registry's entry as a projected
 file. With this KEP, each workload selects its subtree directly from the single
 source Secret, eliminating the derived Secrets and their drift.
+
+#### Story 3
+
+An identity provider is configured with a list of OAuth/OIDC connectors (for
+example, Google, GitHub, an internal IdP). Each connector's config is a JSON
+object with fields like `clientID`, `clientSecret`, and `redirectURI`. Instead
+of maintaining one ConfigMap per connector, the operator stores them all in one
+ConfigMap key as a JSON object keyed by connector name. Each connector instance
+selects its config via `jsonPointer` (for example, `/google`) and receives just
+its own config as a projected file.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -232,19 +241,6 @@ source Secret, eliminating the derived Secrets and their drift.
   document whose only field is a base64(`user:pass`) `auth` blob cannot yield
   the split `username`/`password` via selection alone; that requires decode and
   split, which is out of scope.
-
-<<[UNRESOLVED non-scalar env var targets ]>>
-For environment variables, if the JSON Pointer resolves to an object or array,
-should the kubelet reject the container start (`CreateContainerError`), or
-serialize the subtree to a compact JSON string and set it as the env var value?
-
-- Rejecting avoids the object-in-env-var anti-pattern, size/UTF-8 issues, and
-  `$(VAR)` expansion surprises.
-- Serializing is more permissive but invites misuse.
-
-For volume items there is no open question: the subtree is always serialized to
-JSON and written to the file.
-<<[/UNRESOLVED]>>
 
 ### Risks and Mitigations
 
@@ -327,8 +323,7 @@ All failures surface through existing pod-condition/event machinery
 | `jsonPointer` set, pointer target missing | Fail closed; event states the pointer did not resolve. Never fall back to the whole document. |
 | Pointer resolves to `null` | Deliver literal JSON `null`. Not an error. |
 | Pointer resolves to scalar/array/object (volume) | Serialize to compact JSON and write the file. |
-| Pointer resolves to string/number/bool/null (env var) | String targets become the decoded string; number/bool/null targets become compact JSON lexical values. |
-| Pointer resolves to non-scalar (env var) | Open; see the UNRESOLVED block above. |
+| Pointer resolves to any type (env var) | Strings become the decoded string; numbers, booleans, null, objects, and arrays become compact JSON. |
 | Older kubelet (no `jsonPointer` support) | `key` is empty on the wire; non-optional refs fail with `FailedMount` / `CreateContainerError`; optional env vars or volume items are omitted. Never delivers the whole document. |
 | `jsonPointer` set while apiserver gate disabled | Rejected at admission with a clear message. |
 | `jsonPointer` set while kubelet gate disabled | Kubelet treats the selector as unsupported and fails/omits as above. It must not evaluate `jsonPointer` while its gate is off. |
@@ -350,9 +345,10 @@ spec cannot silently degrade to delivering the whole document.
 ### Performance
 
 - One `json.Decoder` (with `UseNumber`) + pointer evaluation (+ one
-  `json.Marshal` for volume items) per referenced key that sets `jsonPointer`,
-  on each kubelet refresh of the payload. Bounded by existing refresh cadence
-  and the 1 MiB Secret/ConfigMap size limit.
+  `json.Marshal` for volume items and for non-string env var targets) per
+  referenced key that sets `jsonPointer`, on each kubelet refresh of the
+  payload. Bounded by existing refresh cadence and the 1 MiB Secret/ConfigMap
+  size limit.
 - JSON Pointer evaluation is O(pointer length); no regex, no backtracking.
 - Peak transient memory is ~3x document size (decoded tree + encoded output +
   input). For a 1 MiB Secret this is ~3 MiB, negligible against existing
@@ -430,7 +426,6 @@ and pod creation acceptance with the field set.
 - Enabled by default.
 - No unresolved correctness or security issues from alpha.
 - Benchmark confirming negligible overhead at 1 MiB documents.
-- The non-scalar env var question is resolved.
 
 #### GA
 
