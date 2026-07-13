@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/yaml"
@@ -134,25 +135,29 @@ func (o *TableOutput) PrintProposals(proposals []*api.Proposal) {
 		return
 	}
 
-	table := tablewriter.NewWriter(o.Out)
+	table := tablewriter.NewTable(o.Out, tablewriter.WithRowAlignment(tw.AlignLeft))
 
 	headers := make([]string, 0, len(o.Configs))
 	for _, c := range o.Configs {
 		headers = append(headers, c.Title())
 	}
 
-	table.SetHeader(headers)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.Header(headers)
 
 	for _, k := range proposals {
 		var s []string
 		for _, c := range o.Configs {
 			s = append(s, c.Value(k))
 		}
-		table.Append(s)
+		if err := table.Append(s); err != nil {
+			fmt.Fprintf(o.Err, "error printing KEPs as table: %s", err)
+			return
+		}
 	}
 
-	table.Render()
+	if err := table.Render(); err != nil {
+		fmt.Fprintf(o.Err, "error printing KEPs as table: %s", err)
+	}
 }
 
 type CSVOutput columnOutput

@@ -51,7 +51,11 @@ compile() {
 check_deps() {
   echo "Checking dependencies..."
 
-  compile github.com/psampaz/go-mod-outdated
+  # Install go-mod-outdated with an explicit version so it builds in its own
+  # module graph. Building it as part of this module would force it onto our
+  # tablewriter dependency, whose v1 API go-mod-outdated does not support.
+  echo "Installing go-mod-outdated..."
+  go install github.com/psampaz/go-mod-outdated@v0.9.0
 
   local gmo_args=( '-update' '-direct' )
   if [ -n "${FAIL_ON_OUTDATED:-}" ]; then

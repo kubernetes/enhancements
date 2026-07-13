@@ -19,16 +19,14 @@ package repo
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/google/go-github/v33/github"
+	"github.com/google/go-github/v89/github"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/oauth2"
 
 	krgh "k8s.io/release/pkg/github"
 	"k8s.io/test-infra/prow/git"
@@ -304,13 +302,17 @@ func (r *Repo) LoadLocalKEP(sig, name string) (*api.Proposal, error) {
 func (r *Repo) LoadPullRequestKEPs(sig string) ([]*api.Proposal, error) {
 	// Initialize github client
 	logrus.Debugf("Initializing github client to load PRs for sig: %v", sig)
-	var auth *http.Client
 	ctx := context.Background()
+
+	var opts []github.ClientOptionsFunc
 	if r.Token != "" {
-		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.Token})
-		auth = oauth2.NewClient(ctx, ts)
+		opts = append(opts, github.WithAuthToken(r.Token))
 	}
-	gh := github.NewClient(auth)
+
+	gh, err := github.NewClient(opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	// Fetch list of all PRs if none exists
 	if r.allPRs == nil {
