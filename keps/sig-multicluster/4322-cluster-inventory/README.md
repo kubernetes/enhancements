@@ -463,7 +463,8 @@ The ClusterProfile API represents a single member cluster in a cluster inventory
 #### What's the relationship between a cluster inventory and clusterSet?
 A cluster inventory may or may not represent a ClusterSet. A cluster inventory is considered a [clusterSet](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#terminology)
 if all its member clusters adhere to the [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) principle.
-Note that a cluster can only be in one ClusterSet while there is not such restriction for a cluster inventory.
+Note that a cluster may belong to multiple ClusterSets at the same time, and likewise there is no restriction on
+the number of cluster inventories a cluster can be part of.
 
 #### How should the API be consumed?
 We recommend that all ClusterProfile objects within the same cluster inventory reside on
@@ -476,16 +477,14 @@ While there are no strict requirements, we recommend making the ClusterProfile A
 This approach allows users to leverage Kubernetes' native namespace-based RBAC if they wish to restrict access to 
 certain clusters within the inventory.
 
-However, if a cluster inventory represents a ClusterSet, all its ClusterProfile objects MUST be part of the same clusterSet
-and namespace must be used as the grouping mechanism. In addition, the namespace must have a label with the key "clusterset.multicluster.x-k8s.io"
-and the value as the name of the clusterSet.
+However, if a cluster inventory represents a ClusterSet, all its ClusterProfile objects MUST be part of that clusterSet.
 
 #### Uniqueness of the ClusterProfile object
 While there are no strict requirements, we recommend that there is only one ClusterProfile object representing any member cluster
 on a hub cluster. 
 
-However, a ClusterProfile object can only be in one ClusterSet since the namespace sameness property is transitive, therefore 
-it can only be in the namespace of that clusterSet if it is in a ClusterSet.
+A ClusterProfile object may be associated with multiple ClusterSets; its memberships are expressed with the
+`clusterset.k8s.io` property.
 
 
 ### Risks and Mitigations
@@ -611,6 +610,19 @@ other implementations. Properties derived from ClusterProperty resources MUST
 preserve the name and value of the ClusterProperty as-is. Cluster managers MAY
 additionally include their own custom-named properties, as long as they do not
 conflict with names derived from ClusterProperty resources.
+
+The `clusterset.k8s.io` property defined by
+[KEP-2149](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid)
+is the source of truth for ClusterSet membership. When the member cluster
+belongs to multiple ClusterSets, the property value is a comma-separated list
+of all ClusterSet names.
+
+To make ClusterProfiles selectable by ClusterSet with standard label
+selectors, a cluster manager SHOULD also mirror each membership as a label on
+the ClusterProfile, with the key
+`clusterset.multicluster.x-k8s.io/<clusterset-name>` and the value `"true"`.
+Note that the name segment of a label key is limited to 63 characters, which
+constrains the ClusterSet names representable as labels.
 
 #### Conditions
 
@@ -1016,6 +1028,8 @@ metadata:
  name: generated-cluster-name
  labels:
    x-k8s.io/cluster-manager: some-cluster-manager
+   clusterset.multicluster.x-k8s.io/some-clusterset: "true"
+   clusterset.multicluster.x-k8s.io/another-clusterset: "true"
 spec:
   displayName: cluster-us-east
   clusterManager:
@@ -1025,7 +1039,7 @@ status:
     kubernetes: 1.28.0
   properties:
    - name: clusterset.k8s.io
-     value: some-clusterset
+     value: some-clusterset,another-clusterset
    - name: location
      value: apac
   conditions:
@@ -1058,7 +1072,7 @@ status:
     kubernetes: 1.28.0
   properties:
    - name: clusterset.k8s.io
-     value: some-clusterset
+     value: some-clusterset,another-clusterset
    - name: location
      value: us-central1
   accessProviders:
@@ -1646,7 +1660,7 @@ more straightforward with namespaced resources.
 
 ![illustration of global hub for multiple clustersets topology](./global-hub.svg)
 
-In this model, a single global hub cluster is used to manage multiple clustersets (a "Prod" clusterset and "Dev" clusterset in this illustration). For this use case, some means of segmenting the ClusterProfile resources into distinct groups for each clusterset is needed, and ideally should facilitate selecting all ClusterProfiles of a given clusterset. Because of this selection-targeting goal, setting clusterset membership within the `spec` of a ClusterProfile would not be sufficient. While setting a label such as the proposed `clusterset.multicluster.x-k8s.io` on the ClusterProfile resource (instead of a namespace) could be acceptable, managing multiple cluster-scoped ClusterProfile resources for multiple unrelated clustersets on a single global hub could quickly get cluttered. In addition to grouping clarity, namespace scoping could allow RBAC delegation for separate teams to manage resources for their own clustersets in isolation while still using a shared hub. The group of all clusters registered on the hub (potentially including clusters belonging to different clustersets or clusters not belonging to any clusterset) may represent a single "inventory" or multiple inventories, but such a definition is beyond the scope of this document and is permissible to be an undefined implementation detail.
+In this model, a single global hub cluster is used to manage multiple clustersets (a "Prod" clusterset and "Dev" clusterset in this illustration). For this use case, some means of segmenting the ClusterProfile resources into distinct groups for each clusterset is needed, and ideally should facilitate selecting all ClusterProfiles of a given clusterset. Because of this selection-targeting goal, setting clusterset membership within the `spec` of a ClusterProfile would not be sufficient. While setting a clusterset label on the ClusterProfile resource (instead of a namespace) could be acceptable, managing multiple cluster-scoped ClusterProfile resources for multiple unrelated clustersets on a single global hub could quickly get cluttered. In addition to grouping clarity, namespace scoping could allow RBAC delegation for separate teams to manage resources for their own clustersets in isolation while still using a shared hub. The group of all clusters registered on the hub (potentially including clusters belonging to different clustersets or clusters not belonging to any clusterset) may represent a single "inventory" or multiple inventories, but such a definition is beyond the scope of this document and is permissible to be an undefined implementation detail.
 
 #### Global hub cluster per clusterset
 
