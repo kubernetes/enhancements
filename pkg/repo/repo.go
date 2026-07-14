@@ -472,6 +472,10 @@ func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) 
 	}
 
 	p.Name = filepath.Base(filepath.Dir(kepPath))
+	p.Path = strings.TrimPrefix(
+		filepath.Dir(kepPath),
+		ProposalPathStub+string(filepath.Separator),
+	)
 	prrApprovalPath := filepath.Join(repoPath, ProposalPathStub, PRRApprovalPathStub)
 
 	// Read the PRR approval file and add any listed PRR approvers in there
