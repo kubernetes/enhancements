@@ -201,22 +201,26 @@ always links to a `Workload` via a `PodGroupTemplate`:
   `spec.scheduling` is omitted, the controller defaults to the `Basic` policy.
 - Following the [KEP-6089], the controller always materializes scheduling objects (a `Workload`
   and/or `PodGroup`) for an *eligible* Job — a Job the controller is responsible for when the gate is
-  on: a standalone/root Job, or a non-root Job whose parent delegates the `PodGroup` (a Job whose
-  parent owns both objects is skipped). This holds even for the `Basic` scheduling policy.
+  on: a Job that sets `spec.scheduling`, a Job with no controller `ownerReference`, or a Job whose
+  parent delegates the `PodGroup`. An owned Job that sets none of these is skipped. This holds even
+  for the `Basic` scheduling policy.
 - For `Gang`, an omitted `minCount` defaults to the Job's `parallelism`. `minCount` is mutable to support elastic scaling; all other
   `spec.scheduling` fields are immutable after creation.
-- The Job controller compiles a `Workload` only for a Job that has no parent workload controller.
-  When a higher-level controller owns the Job, the ancestor (e.g. `JobSet`, `TrainJob`) compiles 
-  the `Workload` and the Job controller never creates one. The 
-  `scheduling.k8s.io/group-template-name` annotation on the Job then decides who creates the
-  runtime `PodGroup`:
-  * If the annotation is present, the Job controller creates it from the named template in the 
-    `Workload` based on the `scheduling.k8s.io/workload-name` annotation.
-  * If the annotation is absent, the ancestor creates it and the Job controller creates nothing.
-- The same annotations on a standalone BYO Job point the controller at a user pre-created
-  `Workload` instead of compiling one.
-- Jobs created by `CronJob` are standalone (no parent-workload `OwnerReference`); the Job controller
-  creates one `Workload` and one `PodGroup` per Job for them based on each Job's `spec.scheduling`.
+- The management mode is a pure function of the Job object, with no lookups and no
+  ownerRef-based discovery (see [Job Controller Changes](#job-controller-changes)):
+  * `scheduling.k8s.io/workload-name` or `scheduling.k8s.io/group-template-name` on the Job
+    selects a template in an external `Workload` (compiled by an ancestor such as `JobSet` or
+    `TrainJob`, or pre-created by the user). The Job controller creates only the runtime
+    `PodGroup` from that template and never compiles a `Workload`.
+  * `spec.scheduling` is explicit intent: the Job controller compiles a `Workload` and creates a
+    `PodGroup` regardless of the Job's owner.
+  * Otherwise the controller `ownerReference` decides only whether to materialize the default
+    `Basic` objects: a Job with no controller owner gets them, an owned Job gets nothing and its
+    owner is responsible for scheduling objects.
+- Validation makes `spec.scheduling` mutually exclusive with `spec.template.spec.schedulingGroup`
+  and with the two annotations above, so it is either honored or rejected, never silently ignored.
+- Jobs created by `CronJob` have no special case. A `CronJob` whose `jobTemplate` sets
+  `spec.scheduling` gets one `Workload` and one `PodGroup` per Job; one that omits it gets none.
 - Discovery and lifecycle are separate: 
   * In every mode, both the `Workload` and the `PodGroup` are discovered by name.
   * ownerReferences govern garbage collection only and play no part in discovery. 
@@ -396,10 +400,10 @@ spec:
 
 #### Example 3: CronJob with Gang Scheduling
 
-A `CronJob` that periodically runs a gang-scheduled training Job. Each `Job` created by the
-`CronJob` is treated as standalone. `CronJob` does not create or manage `Workload` objects,
-the Job controller creates a separate `Workload` and `PodGroup` per `Job`. These objects are
-garbage-collected when each `Job` completes or is deleted.
+A `CronJob` that periodically runs a gang-scheduled training Job. `CronJob` does not create or
+manage `Workload` objects. Because the `jobTemplate` sets `spec.scheduling`, the Job controller
+creates a separate `Workload` and `PodGroup` per `Job`. These objects are garbage-collected when
+each `Job` completes or is deleted.
 
 ```yaml
 apiVersion: batch/v1
@@ -429,7 +433,8 @@ spec:
 
 Each `Job` created by this `CronJob` produces its own `Workload` and `PodGroup`, compiled from
 the Job's `spec.scheduling`.
-If the `CronJob`'s `jobTemplate` omits the `scheduling` block, each `Job` defaults to `Basic`.
+If the `CronJob`'s `jobTemplate` omits the `scheduling` block, the Job has a controller
+`ownerReference` and asked for nothing, so the Job controller creates no scheduling objects for it.
 
 In all cases, the Job controller then creates the pods and sets the `schedulingGroup` field so the
 scheduler can associate each pod with its `PodGroup`:
@@ -552,7 +557,8 @@ The integration follows the Workload-aware Scheduling design principles from [KE
 single-level `Job`:
 
 - **The Root Controller is the Compiler.** By default, the Job controller compiles and manages the
-  scheduler-facing `Workload` for a scheduling-root Job, including Jobs created by `CronJob`.
+  scheduler-facing `Workload` for a scheduling-root Job: a Job that sets `spec.scheduling`, or a Job
+  with no controller `ownerReference`.
   * When `scheduling.k8s.io/workload-name` and `scheduling.k8s.io/group-template-name` select a
   template in an external `Workload` (ancestor-owned or user pre-created), the `Workload` is the
   authoritative compiler output. 
@@ -708,6 +714,11 @@ so it recompiles against the already-persisted template instead of re-deriving i
    * `spec.scheduling` is rejected when `spec.template.spec.schedulingGroup` is set, because the
      user's `PodGroup` is authoritative and `spec.scheduling` would have no effect. This applies on
      create and on update, unless the old object already had both fields (v1.37 alpha).
+   * `spec.scheduling` is rejected when the Job carries `scheduling.k8s.io/workload-name` or
+     `scheduling.k8s.io/group-template-name`, because the external `Workload` is authoritative and
+     `spec.scheduling` would have no effect. This applies on create, on update (unless the old
+     object already had the combination, since annotations are mutable), and to a `CronJob`
+     `jobTemplate`, whose annotations are copied onto each Job.
 3. **`workloadbuilder` semantic validation** owns the consistency rules that must stay identical to
    what the controller compiles. Validation builds the same `WorkloadItem` tree the controller does 
    and calls `NewBuilder(...).Validate()`. This runs the builder's allow-list checks. In-tree 
@@ -773,32 +784,43 @@ and `PodGroup` objects exist before creating pods.
 Before doing any work, the controller classifies each Job into one of three management modes,
 which determines how much of the scheduling tree it owns. The supported scenarios are:
 
-- **`manageBoth`**: The controller compiles and owns both the `Workload` and runtime `PodGroup` from 
-  `spec.scheduling`. Jobs created by `CronJob` are scheduling roots even though they have a controller
-  `ownerReference`.
-- **`managePodGroupOnly`**: the Job carries the `scheduling.k8s.io/group-template-name` annotation.
-  The controller gets the external `Workload` from the `scheduling.k8s.io/workload-name` annotation, uses the
-  named `PodGroupTemplate`, and creates the runtime `PodGroup` only.
-- **`manageNone`**: the controller creates nothing and only stamps pods with whatever
-  `schedulingGroup` the pod template already carries. This mode is selected when any of the
-  following holds:
-  - `spec.template.spec.schedulingGroup` is set (bring-your-own `PodGroup`): the user manages the
-    objects.
-  - A higher-level workload controller (e.g. JobSet) owns the Job and no 
-    `scheduling.k8s.io/group-template-name` annotation is present. The parent controller owns 
-    both scheduling objects and has set `schedulingGroup` on the pod template itself.
-  - The `WorkloadWithJob` feature gate is disabled.
+The mode is a pure function of the Job object: it needs no lookups and does not inspect the
+owner's kind. Rules are evaluated in order:
+
+- **`manageNone`** when the `WorkloadWithJob` feature gate is disabled, or
+  `spec.template.spec.schedulingGroup` is set (bring-your-own `PodGroup`): the controller creates
+  nothing and pods keep whatever `schedulingGroup` the pod template carries.
+- **`managePodGroupOnly`** when the Job carries `scheduling.k8s.io/workload-name` or
+  `scheduling.k8s.io/group-template-name`. The controller gets the external `Workload` named by
+  `scheduling.k8s.io/workload-name`, uses the `PodGroupTemplate` named by
+  `scheduling.k8s.io/group-template-name`, and creates the runtime `PodGroup` only. If either
+  annotation is missing, the Job is blocked as described in
+  [Workload/PodGroup Management and Discovery](#workloadpodgroup-management-and-discovery).
+- **`manageBoth`** when `spec.scheduling` is set, regardless of the Job's owner. The controller
+  compiles and owns both the `Workload` and runtime `PodGroup`.
+- Otherwise the controller `ownerReference` decides whether to materialize the default `Basic`
+  objects for a Job that asked for nothing:
+  - **`manageNone`** when the Job has a controller `ownerReference` (e.g. `JobSet`, `CronJob`, or
+    any other controller). A non-WAS-aware owner does not get a `Workload` per Job unless the Job
+    asks for one.
+  - **`manageBoth`** otherwise, with the `Basic` policy.
+
+Validation rejects `spec.scheduling` together with `schedulingGroup` or with either annotation (see
+[API Validation](#api-validation-via-the-workloadbuilder-library)), so `spec.scheduling` is never
+silently ignored.
 
 ```mermaid
 flowchart TD
     gate{WorkloadWithJob on?} -->|no| none[manageNone]
     gate -->|yes| sg{Pod template schedulingGroup set?}
     sg -->|yes| none
-    sg -->|no| ann{group-template-name set?}
+    sg -->|no| ann{"workload-name or group-template-name set?"}
     ann -->|yes| pgOnly[managePodGroupOnly]
-    ann -->|no| parent{Higher-level workload controller owns Job?}
-    parent -->|yes| none
-    parent -->|no, including CronJob| both[manageBoth]
+    ann -->|no| sched{spec.scheduling set?}
+    sched -->|yes| both[manageBoth]
+    sched -->|no| owner{Controller ownerReference?}
+    owner -->|"yes, any kind"| none
+    owner -->|no| basic["manageBoth (Basic)"]
 ```
 
 #### Workload/PodGroup Management and Discovery
@@ -1221,8 +1243,10 @@ to implement this enhancement.
   - Mixed-gang guard: a Job with an existing `PodGroup` and an active pod without
     `schedulingGroup` creates its next pod without `schedulingGroup` and emits
     `MixedSchedulingGroup` once. Once no such pod is active, new pods carry `schedulingGroup`.
-  - Parent-owned `Workload`, both delegated: a Job with an `OwnerReference` to a parent workload and
-    no annotation creates neither `Workload` nor `PodGroup`.
+  - Parent-owned `Workload`, both delegated: a Job with an `OwnerReference` to a parent workload,
+    no annotation, and no `spec.scheduling` creates neither `Workload` nor `PodGroup`.
+  - Owned Job with `spec.scheduling`: a Job with a controller `OwnerReference` (including
+    `CronJob`) and `spec.scheduling` creates both the `Workload` and the `PodGroup`.
   - Parent-owned `Workload`, `PodGroup` delegated: a Job with an `OwnerReference` to a parent
     workload and both annotations present does not create a `Workload`, but does create a `PodGroup`
     linked to the `Workload` named by `scheduling.k8s.io/workload-name`, including when that
@@ -1363,8 +1387,9 @@ The second alpha replaced the automatic model with the user-facing API:
 - The `Workload` and the `PodGroup` are discovered by name in every mode, using the
   `scheduling.k8s.io/workload-name` annotation for an external `Workload`.
   Every `PodGroup` the controller creates is owned by the Job.
-- Validation rejects `spec.scheduling` if it is set together with `spec.template.spec.schedulingGroup`,
-  on create and on update, unless the old object already had both.
+- Validation rejects `spec.scheduling` if it is set together with `spec.template.spec.schedulingGroup`
+  or with the `scheduling.k8s.io/workload-name` or `scheduling.k8s.io/group-template-name`
+  annotation, on create and on update, unless the old object already had the combination.
 - Re-enabling the gate never produces a half-grouped gang (`MixedSchedulingGroup`).
 - Metrics `job_scheduling_object_syncs_total` and `job_scheduling_object_sync_duration_seconds`.
 - E2E tests passed as designed in the [Test Plan](#test-plan) and linked in Testgrid.
