@@ -74,6 +74,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Handling race condition](#handling-race-condition)
+    - [Why not kubelet admission](#why-not-kubelet-admission)
   - [Extending CSI specification](#extending-csi-specification)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -345,12 +346,14 @@ Whoever modifies the `PersistentVolume.spec.nodeAffinity` field should ensure th
 no running Pods on nodes with incompatible labels are using the PV.
 Kubernetes will not verify this. It is expensive and racy.
 
-If the incompatibility does happen (i.e. someone updated nodeAffinity, making running Pods violate the new nodeAffinity),
+If the incompatibility does happen while pod running (i.e. someone updated nodeAffinity, making running Pods violate the new nodeAffinity),
 we don't guarantee that those Pods will continue to run without any issue.
 However, we try our best not to interrupt them:
-- For volumes that are not yet present in the Node.status.volumesAttached field,
-  we fail the Pods that use them, since we are sure the Pods have never been running.
-  (see [Handling race condition](#handling-race-condition) below)
+- For volumes that have never been mounted for the Pod (i.e. not present in
+  kubelet's actual state of world), we fail the Pods that use them, since we are
+  sure the Pods have never been running. This is plugin-agnostic and covers
+  attachable and non-attachable volumes alike (see
+  [Handling race condition](#handling-race-condition) below).
 - We will not detach the volume. So if the volume is actually accessible (depends on the storage provider), the Pod can continue to run.
 - For CSI drivers with `requiresRepublish` set to true, we will stop calling NodePublishVolume periodically, and an event is emitted.
 - For CSI drivers with `requiresRepublish` set to false, an event is emitted on kubelet restart. Otherwise the pod should continue to run.
@@ -398,21 +401,61 @@ proposal will be implemented, this is the place to discuss them.
 ### Handling race condition
 
 There is a race condition between volume modification and pod scheduling:
-1. User modifies the volume from storage provider.
-2. A new Pod is created and scheduler schedules it with the old affinity.
-3. external-resizer (or the operator) sets the new affinity to the PV.
-4. KCM/external-attacher attaches the volume to the node, and finds the affinity mismatch.
+1. User requests a volume modification.
+2. A new Pod is created and scheduler schedules it using the affinity as it is
+   at that moment.
+3. external-resizer (or the operator) narrows the affinity on the PV and applies
+   the modification on the storage provider.
+4. KCM/external-attacher tries to attach the volume to the node, but the storage
+   provider rejects the attach because the volume is no longer reachable from
+   that node.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant R as external-resizer
+    participant SP as Storage Provider
+    participant PV as PV.spec.nodeAffinity
+    participant S as kube-scheduler
+    participant A as attacher
+    participant K as kubelet on node1
+
+    Note over SP,PV: backend reachable from node1 and node2.<br/>PV affinity allows node1 and node2.
+    User->>R: 1. request volume modification (regional to zonal)
+    S->>PV: reads affinity: node1, node2
+    S->>K: 2. binds Pod to node1, allowed by current affinity
+    R->>PV: 3a. sets affinity to allow only node2
+    R->>SP: 3b. ControllerModifyVolume
+    Note over SP: backend now reachable only from node2
+    A->>SP: 4. attach volume to node1
+    SP--xA: reject.
+    Note over A,K: volume is never mounted for the Pod
+    K->>PV: kubelet reads fresh affinity, only node2 allowed
+    Note over K: never mounted AND node1 excluded by affinity.<br/>reject Pod
+```
 
 If this happens, the pod will be stuck in a `ContainerCreating` state.
 Kubelet should detect this condition and reject the pod.
 Hopefully some other controllers (StatefulSet controller) will re-create the pod and it will be scheduled to the correct node.
 
-Specifically, kubelet should reject the pod (setting pod phase to 'Failed')
-if the volume is not present in the `node.status.volumesAttached` list and the volume nodeAffinity does not match the current node
-in `waitForVolumeAttach()`.
+Specifically, kubelet should reject the pod (setting pod phase to 'Failed') when
+both of the following hold:
+- the volume is not mounted for this pod — i.e. it is not present in
+  kubelet's actual state of world (neither `mounted` nor `uncertain`); and
+- the volume nodeAffinity does not match the current node.
 
-We check `volumesAttached` to ensure the Pods have never been running, to avoid interrupting running Pods.
-We don't check the VolumeAttachment to make this also work for non-CSI volumes.
+The "not mounted" condition should mean the Pod is not running,
+so rejecting it cannot interrupt a running workload.
+Kubelet reconstructs its actual state of world from the on-disk mounts when it restarts,
+marking each recovered volume as `uncertain`,
+so a Pod that was already running before a kubelet restart is still considered mounted and is never rejected.
+
+#### Why not kubelet admission
+
+PV nodeAffinity can change after admission, before volume attachment.
+So we must continuously monitor the affinity until the volume is attached and mounted.
+
+Also, admission may fail the Pod on kubelet restart, which can be a breaking change.
 
 ### Extending CSI specification
 
