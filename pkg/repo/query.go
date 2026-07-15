@@ -46,12 +46,19 @@ func (o *QueryOpts) Validate() error {
 	}
 
 	for _, s := range o.Stage {
+		// empty string and "none" are handled by PrepareQueryOpts
+		if s == "" || s == "none" {
+			continue
+		}
 		if err := api.Stage(s).IsValid(); err != nil {
 			return fmt.Errorf("invalid stage: %s. Valid values: %v", s, api.ValidStages)
 		}
 	}
 
 	for _, s := range o.Status {
+		if s == "" {
+			continue
+		}
 		if err := api.Status(s).IsValid(); err != nil {
 			return fmt.Errorf("invalid status: %s. Valid values: %v", s, api.ValidStatuses)
 		}
