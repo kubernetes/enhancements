@@ -46,11 +46,11 @@ func (r *Repo) Validate() (
 	err = filepath.Walk(
 		kepDir,
 		func(path string, info os.FileInfo, err error) error {
-			logrus.Debugf("processing filename %s", info.Name())
-
 			if err != nil {
 				return err
 			}
+
+			logrus.Debugf("processing filename %s", info.Name())
 
 			if info.IsDir() {
 				if info.Name() == PRRApprovalPathStub {

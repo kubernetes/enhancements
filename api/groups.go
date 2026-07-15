@@ -29,7 +29,7 @@ import (
 	"k8s.io/enhancements/pkg/yaml"
 )
 
-// GroupFetcher is responsible for getting informationg about groups in the
+// GroupFetcher is responsible for getting information about groups in the
 // Kubernetes Community
 type GroupFetcher interface {
 	// FetchGroups returns the list of valid Kubernetes Community groups
@@ -87,6 +87,9 @@ type RemoteGroupFetcher struct {
 
 var _ GroupFetcher = &RemoteGroupFetcher{}
 
+// sigDirRegex is pre-compiled to avoid recompiling on every call to FetchGroups.
+var sigDirRegex = regexp.MustCompile(`- dir: (.*)$`)
+
 // FetchGroups returns the list of valid Kubernetes Community groups as
 // fetched from a remote source
 func (f *RemoteGroupFetcher) FetchGroups() ([]string, error) {
@@ -94,7 +97,6 @@ func (f *RemoteGroupFetcher) FetchGroups() ([]string, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching SIG list")
 	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -106,7 +108,7 @@ func (f *RemoteGroupFetcher) FetchGroups() ([]string, error) {
 		)
 	}
 
-	re := regexp.MustCompile(`- dir: (.*)$`)
+	re := sigDirRegex
 
 	var result []string
 	scanner := bufio.NewScanner(resp.Body)
@@ -132,7 +134,6 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching owners aliases")
 	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -159,7 +160,7 @@ func (f *RemoteGroupFetcher) FetchPRRApprovers() ([]string, error) {
 
 	result := make([]string, 0, len(config.Data[f.PRRApproversAlias])+len(config.Data[f.PRRApproversEmeritusAlias]))
 	result = append(result, config.Data[f.PRRApproversAlias]...)
-	// TODO: Figre out if we want to treat emeritus approvers differently.
+	// TODO: Figure out if we want to treat emeritus approvers differently.
 	result = append(result, config.Data[f.PRRApproversEmeritusAlias]...)
 
 	if len(result) == 0 {

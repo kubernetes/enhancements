@@ -45,7 +45,18 @@ func (o *QueryOpts) Validate() error {
 		return fmt.Errorf("unsupported output format: %s. Valid values: %v", o.Output, output.ValidFormats())
 	}
 
-	// TODO: check the valid values of stage, status, etc.
+	for _, s := range o.Stage {
+		if err := api.Stage(s).IsValid(); err != nil {
+			return fmt.Errorf("invalid stage: %s. Valid values: %v", s, api.ValidStages)
+		}
+	}
+
+	for _, s := range o.Status {
+		if err := api.Status(s).IsValid(); err != nil {
+			return fmt.Errorf("invalid status: %s. Valid values: %v", s, api.ValidStatuses)
+		}
+	}
+
 	return nil
 }
 

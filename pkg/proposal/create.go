@@ -101,7 +101,7 @@ func createKEP(kep *api.Proposal, opts *CreateOpts) error {
 
 	err := r.WriteKEP(kep)
 	if err != nil {
-		return fmt.Errorf("unable to create KEP: %s", err)
+		return fmt.Errorf("unable to create KEP: %w", err)
 	}
 
 	template := r.ProposalTemplate
