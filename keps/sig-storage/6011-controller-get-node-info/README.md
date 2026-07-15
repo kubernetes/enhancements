@@ -50,9 +50,10 @@
   - [Alternative 2: Instance Metadata Enhancement](#alternative-2-instance-metadata-enhancement)
   - [Alternative 3: Node Label Patching (e.g., AWS metadata-labeler)](#alternative-3-node-label-patching-eg-aws-metadata-labeler)
   - [Alternative 4: CRD-based Topology Retrieval (e.g., vSphere CSINodeTopology)](#alternative-4-crd-based-topology-retrieval-eg-vsphere-csinodetopology)
-  - [Alternative 5: Fold NodeGetID into NodeGetInfo](#alternative-5-fold-nodegetid-into-nodegetinfo)
-  - [Alternative 6: Reactive-Only Discovery](#alternative-6-reactive-only-discovery)
-  - [Alternative 7: Static Node Context Object](#alternative-7-static-node-context-object)
+  - [Alternative 5: Hardcoded Instance-Type Tables in the Driver Binary](#alternative-5-hardcoded-instance-type-tables-in-the-driver-binary)
+  - [Alternative 6: Fold NodeGetID into NodeGetInfo](#alternative-6-fold-nodegetid-into-nodegetinfo)
+  - [Alternative 7: Reactive-Only Discovery](#alternative-7-reactive-only-discovery)
+  - [Alternative 8: Static Node Context Object](#alternative-8-static-node-context-object)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -169,7 +170,7 @@ Returns only the node identifier, obtainable locally without cloud API credentia
 - **AWS EBS**: `http://169.254.169.254/latest/meta-data/instance-id`, no IAM credentials needed
 - **Alibaba Cloud**: `http://100.100.100.200/latest/meta-data/instance-id`, no cloud API credentials needed
 
-**Why a separate RPC instead of reusing `NodeGetInfo`**: `NodeGetID` serves as a protocol handshake — when the CO calls `NodeGetID` instead of `NodeGetInfo`, the SP knows the CO supports the new flow and will obtain topology/limits from `ControllerGetNodeInfo`. This is necessary because there is no safe "I don't know yet" value for `NodeGetInfo`'s existing fields: `max_volumes_per_node = 0` means "CO decides" (treated as unlimited), and empty `accessible_topology` means "no topological constraint" (node won't match zone-restricted PVs). Both lead to silent mis-scheduling if an old CO consumes them. With a separate RPC, removing node credentials while still running an old CO produces a loud `NodeGetInfo` RPC error rather than silent incorrect behavior. See [Alternative 5](#alternative-5-fold-nodegetid-into-nodegetinfo) for detailed discussion.
+**Why a separate RPC instead of reusing `NodeGetInfo`**: `NodeGetID` serves as a protocol handshake — when the CO calls `NodeGetID` instead of `NodeGetInfo`, the SP knows the CO supports the new flow and will obtain topology/limits from `ControllerGetNodeInfo`. This is necessary because there is no safe "I don't know yet" value for `NodeGetInfo`'s existing fields: `max_volumes_per_node = 0` means "CO decides" (treated as unlimited), and empty `accessible_topology` means "no topological constraint" (node won't match zone-restricted PVs). Both lead to silent mis-scheduling if an old CO consumes them. With a separate RPC, removing node credentials while still running an old CO produces a loud `NodeGetInfo` RPC error rather than silent incorrect behavior. See [Alternative 6](#alternative-6-fold-nodegetid-into-nodegetinfo) for detailed discussion.
 
 #### ControllerGetNodeInfo RPC
 
@@ -656,9 +657,24 @@ Enhance cloud instance metadata services to provide all required information.
 
 ### Alternative 3: Node Label Patching (e.g., AWS metadata-labeler)
 
-The AWS EBS CSI driver implements a [metadata-labeler](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/pkg/cloud/metadata/labels.go) sidecar that runs on the controller, queries EC2 APIs for ENI and block device counts, and patches Node labels. The node-side driver reads these labels via the Kubernetes API.
+The AWS EBS CSI driver implements a [metadata-labeler](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/pkg/cloud/metadata/labels.go) sidecar that runs on the controller, queries EC2 APIs for ENI and block device counts, and patches Node labels.
+The node-side driver reads these labels via the Kubernetes API.
 
-**Why not**: Provider-specific, every driver needs its own solution. Mixes storage info into Node labels. Not portable to other COs. Cannot leverage `VolumeAttachment` objects to distinguish CSI-managed vs non-CSI volumes. When IMDS is unavailable and labels haven't been patched yet, the node-side driver falls back to less accurate metadata sources.
+The GCP PD CSI driver independently arrived at the same pattern:
+a [`gce-pd-node-labeler`](https://github.com/kubernetes-sigs/gcp-compute-persistent-disk-csi-driver/blob/master/pkg/nodelabeler/reconciler.go) controller sidecar watches Node objects
+and patches `disk-type.gke.io/<type>` labels indicating which disk types each machine family supports,
+which the node-side driver reads back via the Kubernetes API to populate `NodeGetInfoResponse`'s accessible topology.
+
+The Alibaba Cloud CSI driver did the same a third time:
+a [controller-side `csi-metadata-labeler`](https://github.com/kubernetes-sigs/alibaba-cloud-csi-driver/blob/master/pkg/labeler/reconcile.go) queries ECS APIs for the disk categories and attach limit supported by each instance type,
+then patches `node.csi.alibabacloud.com/disktype.<type>` labels and a `max-disk` annotation onto the Node;
+the node plugin runs with `--use-labeler=true` to consume them.
+
+**Why not**: Provider-specific, every driver needs its own solution — AWS, GCP, and Alibaba Cloud each independently reinvented the controller-side label-patching sidecar.
+Mixes storage info into Node labels.
+Not portable to other COs.
+Cannot leverage `VolumeAttachment` objects to distinguish CSI-managed vs non-CSI volumes.
+When the source metadata is unavailable and labels haven't been patched yet, the node-side driver falls back to less accurate sources.
 
 ### Alternative 4: CRD-based Topology Retrieval (e.g., vSphere CSINodeTopology)
 
@@ -666,9 +682,21 @@ The vSphere CSI driver uses a [`CSINodeTopology`](https://github.com/kubernetes-
 
 **Why not**: Provider-specific. Node registration blocks until the controller updates the CR, and if the controller is slow or down, the node waits until timeout. Requires additional CRD and controller. Not portable to other COs.
 
+### Alternative 5: Hardcoded Instance-Type Tables in the Driver Binary
+
+Because the node-side driver often lacks cloud credentials, several drivers ship static per-instance-type lookup tables compiled into the binary to answer `max_volumes_per_node`.
+The AWS EBS CSI driver embeds a [~800-line table](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/pkg/cloud/volume_limits_table.go) that is regenerated from the EC2 `DescribeInstanceTypes` API [at build time](https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/hack/generate-volume-limits-table/main.go).
+The GCP PD CSI driver similarly [hardcodes per-machine-family attach-limit tables](https://github.com/kubernetes-sigs/gcp-compute-persistent-disk-csi-driver/blob/master/pkg/constants/constants.go), but maintains them by hand.
+
+**Why not**: Provider-specific, every driver needs its own table.
+The table is a frozen snapshot: it must be updated and the driver re-released for every new instance type or limit change, and a stale binary silently returns wrong limits.
+Notably, the underlying data *is* available from the cloud provider's API (AWS regenerates its table from that very API) — the only reason it is baked into the binary is that the node lacks credentials to query it at runtime.
+A controller-side RPC, which runs where credentials already exist, can query the live API directly and eliminate the static table entirely.
+The Alibaba Cloud CSI driver already demonstrates this in practice: rather than hardcoding a table, its controller-side labeler queries ECS APIs at runtime for both the attach limit and the supported disk types of each instance type.
+
 This proposal provides a standardized CSI spec approach that all drivers can adopt, avoiding provider-specific implementations.
 
-### Alternative 5: Fold NodeGetID into NodeGetInfo
+### Alternative 6: Fold NodeGetID into NodeGetInfo
 
 Instead of introducing a new `NodeGetID` RPC, reuse the existing `NodeGetInfo` and have the CO ignore (or combine) its topology/limit fields when `ControllerGetNodeInfo` is available.
 
@@ -682,7 +710,7 @@ Instead of introducing a new `NodeGetID` RPC, reuse the existing `NodeGetInfo` a
 
 4. **Field ownership contention (Kubernetes-specific)**: If both kubelet (from `NodeGetInfo`) and external-attacher (from `ControllerGetNodeInfo`) write to `CSINode.Spec.Drivers`, they fight over the same fields. Periodic updates (KEP-4876) cause oscillation, and the scheduler sees stale intermediate values during the update window. Workarounds (storing node_limit elsewhere, making the scheduler aware of mid-update state) add complexity that `NodeGetID` avoids by design: kubelet writes only an annotation, external-attacher exclusively owns `Spec.Drivers`.
 
-### Alternative 6: Reactive-Only Discovery
+### Alternative 7: Reactive-Only Discovery
 
 Skip upfront reporting entirely and let Kubernetes learn capacity from `RESOURCE_EXHAUSTED` failures.
 
@@ -690,7 +718,7 @@ Skip upfront reporting entirely and let Kubernetes learn capacity from `RESOURCE
 
 However, reactive error handling remains necessary as a complement to proactive reporting. Out-of-band volume attachments (manually attached disks, network interfaces) can always occur, so the CO must handle violations after the fact. The existing `RESOURCE_EXHAUSTED` → re-query mechanism (KEP-4876) serves this purpose and is unchanged by this KEP.
 
-### Alternative 7: Static Node Context Object
+### Alternative 8: Static Node Context Object
 
 Store controller-side information in a "node context" (similar to volume context or publish context) — call the controller once per node, persist the result, and have kubelet pass it to the node plugin on subsequent calls so the node can answer `NodeGetInfo` accurately.
 
