@@ -15,7 +15,7 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
 - [Design Details](#design-details)
   - [CSI Spec Changes](#csi-spec-changes)
-    - [NodeGetID RPC](#nodegetid-rpc)
+    - [NodeGetInfo Request Flag](#nodegetinfo-request-flag)
     - [ControllerGetNodeInfo RPC](#controllergetnodeinfo-rpc)
     - [New Capabilities](#new-capabilities)
   - [Kubernetes Integration](#kubernetes-integration)
@@ -51,9 +51,10 @@
   - [Alternative 3: Node Label Patching (e.g., AWS metadata-labeler)](#alternative-3-node-label-patching-eg-aws-metadata-labeler)
   - [Alternative 4: CRD-based Topology Retrieval (e.g., vSphere CSINodeTopology)](#alternative-4-crd-based-topology-retrieval-eg-vsphere-csinodetopology)
   - [Alternative 5: Hardcoded Instance-Type Tables in the Driver Binary](#alternative-5-hardcoded-instance-type-tables-in-the-driver-binary)
-  - [Alternative 6: Fold NodeGetID into NodeGetInfo](#alternative-6-fold-nodegetid-into-nodegetinfo)
-  - [Alternative 7: Reactive-Only Discovery](#alternative-7-reactive-only-discovery)
-  - [Alternative 8: Static Node Context Object](#alternative-8-static-node-context-object)
+  - [Alternative 6: Separate NodeGetID RPC](#alternative-6-separate-nodegetid-rpc)
+  - [Alternative 7: Combine Node and Controller Values](#alternative-7-combine-node-and-controller-values)
+  - [Alternative 8: Reactive-Only Discovery](#alternative-8-reactive-only-discovery)
+  - [Alternative 9: Static Node Context Object](#alternative-9-static-node-context-object)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -83,7 +84,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP introduces two new optional CSI RPCs, `NodeGetID` and `ControllerGetNodeInfo`, that together allow a CSI driver to split node registration into two phases: a lightweight node-side identity call and a controller-side lookup for topology and capacity. This eliminates the need for cloud API credentials on worker nodes while preserving full topology-aware scheduling and accurate volume limit tracking.
+This KEP introduces a new optional CSI RPC, `ControllerGetNodeInfo`, and a companion request flag on the existing `NodeGetInfo`, that together allow a CSI driver to split node registration into two phases: a lightweight node-side identity call and a controller-side lookup for topology and capacity. This eliminates the need for cloud API credentials on worker nodes while preserving full topology-aware scheduling and accurate volume limit tracking.
 
 ## Motivation
 
@@ -106,7 +107,7 @@ This KEP addresses all four problems by introducing a clean split: the node repo
 - Enable CSI node registration without cloud API credentials on the node
 - Provide accurate volume capacity tracking by leveraging controller-side `VolumeAttachment` knowledge to account for non-CSI attachments
 - Improve scalability through controller-side batching and caching of cloud API calls
-- Maintain full backward compatibility; drivers that do not implement the new RPCs continue to work unchanged
+- Maintain full backward compatibility; drivers that do not adopt the new flow continue to work unchanged
 
 ### Non-Goals
 
@@ -120,7 +121,7 @@ This KEP addresses all four problems by introducing a clean split: the node repo
 
 #### Story 1: Security-hardened Environment
 
-A financial services company prohibits cloud API credentials on worker nodes. Today, their CSI driver's `NodeGetInfo` either returns incomplete data (no topology, inaccurate limits) or requires a provider-specific workaround. With this proposal, the node calls `NodeGetID` using only local instance metadata, and the controller calls `ControllerGetNodeInfo` with existing credentials. Full functionality, no credentials on nodes, no custom workarounds.
+A financial services company prohibits cloud API credentials on worker nodes. Today, their CSI driver's `NodeGetInfo` either returns incomplete data (no topology, inaccurate limits) or requires a provider-specific workaround. With this proposal, the node answers `NodeGetInfo` with only its `node_id` from local instance metadata, and the controller calls `ControllerGetNodeInfo` with existing credentials. Full functionality, no credentials on nodes, no custom workarounds.
 
 #### Story 2: Accurate Non-CSI Volume Accounting
 
@@ -134,7 +135,7 @@ A 5000-node cluster startup triggers 5000 concurrent cloud API calls from `NodeG
 
 | Risk | Mitigation |
 |------|------------|
-| Node registration latency increases | `NodeGetID` is faster than `NodeGetInfo` (no cloud API). The controller-side roundtrip adds seconds, but node registration is a one-time event. Net impact is minimal. |
+| Node registration latency increases | The node-side `NodeGetInfo` becomes faster (no cloud API). The controller-side roundtrip adds seconds, but node registration is a one-time event. Net impact is minimal. |
 | Controller becomes a bottleneck | The controller already handles `ControllerPublishVolume` for every attach. `ControllerGetNodeInfo` adds one call per node registration, which is negligible overhead. Batching and caching further reduce load. |
 | Race between `ControllerGetNodeInfo` and concurrent attach/detach | CO records volume IDs processed during the call and considers them CSI-managed. See [Race Condition Mitigation](#race-condition-mitigation). |
 | Version skew | Feature gates on both kubelet and external-attacher. Capability detection provides graceful fallback. See [Version Skew Strategy](#version-skew-strategy). |
@@ -143,9 +144,9 @@ A 5000-node cluster startup triggers 5000 concurrent cloud API calls from `NodeG
 
 - **CSI Spec Dependency**: This KEP requires [CSI spec PR #603](https://github.com/container-storage-interface/spec/pull/603) to be merged first. Kubernetes implementation cannot proceed until the spec changes land.
 
-- **Upgrade Order**: External-attacher must be upgraded before nodes. When kubelet uses `NodeGetID` but external-attacher doesn't yet support `ControllerGetNodeInfo`, nodes register with only a `node_id` annotation, and topology and allocatable remain unset until external-attacher catches up. This is a transient state, not a failure.
+- **Upgrade Order**: External-attacher must be upgraded before nodes. When kubelet sets the request flag but external-attacher doesn't yet support `ControllerGetNodeInfo`, nodes register with only a `node_id` annotation, and topology and allocatable remain unset until external-attacher catches up. This is a transient state, not a failure.
 
-- **Backward Compatibility**: Drivers that do not implement the new RPCs continue to use `NodeGetInfo` unchanged. No breaking changes.
+- **Backward Compatibility**: Drivers that do not adopt the new flow continue to use `NodeGetInfo` unchanged. No breaking changes.
 
 ## Design Details
 
@@ -153,24 +154,44 @@ A 5000-node cluster startup triggers 5000 concurrent cloud API calls from `NodeG
 
 This KEP depends on [CSI spec PR #603](https://github.com/container-storage-interface/spec/pull/603).
 
-#### NodeGetID RPC
+#### NodeGetInfo Request Flag
+
+A new optional field is added to `NodeGetInfoRequest`:
 
 ```protobuf
-rpc NodeGetID(NodeGetIDRequest) returns (NodeGetIDResponse) {
-    option (alpha_method) = true;
+message NodeGetInfoRequest {
+  // When true, the CO will obtain accessible_topology and
+  // max_volumes_per_node from ControllerGetNodeInfo. The SP MAY omit
+  // those two fields from NodeGetInfoResponse and return only node_id.
+  // The CO MUST NOT consume accessible_topology or max_volumes_per_node
+  // from a response to a request with this field set.
+  // The CO MUST NOT set this field to true unless the SP has the
+  // NODE_INFO_FROM_CONTROLLER node capability.
+  // This field is OPTIONAL.
+  bool controller_get_node_info = 1 [(alpha_field) = true];
 }
 ```
 
-Returns only the node identifier, obtainable locally without cloud API credentials (e.g., from instance metadata).
+The CO sets `controller_get_node_info` only when the driver advertises the `NODE_INFO_FROM_CONTROLLER` node capability (see [New Capabilities](#new-capabilities)).
+The `node_id` returned in this mode comes from local instance metadata and requires no cloud API credentials — for example, `http://169.254.169.254/latest/meta-data/instance-id` (AWS) or `http://100.100.100.200/latest/meta-data/instance-id` (Alibaba Cloud).
 
-**Input**: None
-**Output**: `node_id` (string), e.g. EC2 instance ID, ECS instance ID
+**Why a request flag rather than always deferring**: the flag is a handshake.
+Under the new workflow an SP may want to skip fetching topology and limits itself,
+either to avoid storing credentials on the node or to reduce API traffic to the cloud or Kubernetes.
+Without the flag, such an SP would have to either:
+- Omit topology and limits unconditionally, assuming every CO supports the new workflow.
+  But `NodeGetInfoResponse` has no safe "I don't know yet" value for these fields —
+  `max_volumes_per_node = 0` means "no limit" and empty `accessible_topology` means "no constraint" —
+  so an old CO would silently mis-schedule.
+- Always return them, incurring useless API traffic even where the CO ignores the result.
 
-**Example implementations**:
-- **AWS EBS**: `http://169.254.169.254/latest/meta-data/instance-id`, no IAM credentials needed
-- **Alibaba Cloud**: `http://100.100.100.200/latest/meta-data/instance-id`, no cloud API credentials needed
+The flag resolves this: the SP omits those fields only when the CO has signaled it will
+source them authoritatively from `ControllerGetNodeInfo`, so the node side is never misread.
 
-**Why a separate RPC instead of reusing `NodeGetInfo`**: `NodeGetID` serves as a protocol handshake — when the CO calls `NodeGetID` instead of `NodeGetInfo`, the SP knows the CO supports the new flow and will obtain topology/limits from `ControllerGetNodeInfo`. This is necessary because there is no safe "I don't know yet" value for `NodeGetInfo`'s existing fields: `max_volumes_per_node = 0` means "CO decides" (treated as unlimited), and empty `accessible_topology` means "no topological constraint" (node won't match zone-restricted PVs). Both lead to silent mis-scheduling if an old CO consumes them. With a separate RPC, removing node credentials while still running an old CO produces a loud `NodeGetInfo` RPC error rather than silent incorrect behavior. See [Alternative 6](#alternative-6-fold-nodegetid-into-nodegetinfo) for detailed discussion.
+**Why not a separate `NodeGetID` RPC**: reusing `NodeGetInfo` requires only a capability plus one optional request field,
+so the existing CSI drivers add support incrementally instead of implementing a new RPC.
+`node_id` also flows to the controller side in this design (see below); a shared node-produced field has one natural home on `NodeGetInfoResponse`, whereas a subset RPC would duplicate it.
+See [Alternative 6](#alternative-6-separate-nodegetid-rpc).
 
 #### ControllerGetNodeInfo RPC
 
@@ -182,7 +203,7 @@ rpc ControllerGetNodeInfo(ControllerGetNodeInfoRequest) returns (ControllerGetNo
 
 Retrieves topology, attached volumes, and instance limit from the controller side, where cloud API credentials are already available.
 
-**Input**: `node_id` (from `NodeGetID`)
+**Input**: `node_id` (from `NodeGetInfo`)
 **Output**: `accessible_topology` (zone, region, etc.), `max_volumes_per_node` (volume attachment limit calculated by SP), `published_volume_ids` (volumes attached according to cloud API)
 
 **Design: volume classification**. The scheduler treats `allocatable.count` in `CSINode` as the number of CSI-managed volumes the node can support, then subtracts the CSI volumes it already knows about to determine available slots. The scheduler has no awareness of non-CSI attachments (boot volumes, network interfaces consuming shared device slots, manually attached disks). So non-CSI volumes must be accounted for.
@@ -209,10 +230,10 @@ CO avoids a race condition by recording all volume IDs processed during the `Con
 
 #### New Capabilities
 
-- `NodeServiceCapability.RPC.GET_ID`: indicates support for `NodeGetID`
+- `NodeServiceCapability.RPC.NODE_INFO_FROM_CONTROLLER`: the node plugin supports the `controller_get_node_info` request flag and may omit topology/limits when it is set. kubelet needs this node-side signal because it cannot observe controller capabilities.
 - `ControllerServiceCapability.RPC.GET_NODE_INFO`: indicates support for `ControllerGetNodeInfo`
 
-**Invariant**: If a driver advertises `GET_ID`, it MUST also advertise `GET_NODE_INFO`. This is enforced by the CSI spec. Without this invariant, a node could register with only a `node_id` annotation and never have topology or allocatable populated, because kubelet skips `NodeGetInfo` when `GET_ID` is present.
+**Invariant**: If a driver advertises `NODE_INFO_FROM_CONTROLLER`, it MUST also advertise `GET_NODE_INFO`. This is enforced by the CSI spec. Without this invariant, a node could register with only a `node_id` annotation and never have topology or allocatable populated, because the SP omits them once kubelet sets the flag.
 
 **Topology key consistency**: `ControllerGetNodeInfo` MUST return the same topology keys as the driver's `NodeGetInfo` would. Existing PersistentVolumes have `nodeAffinity` rules referencing these keys (e.g., `topology.ebs.csi.aws.com/zone`). Inconsistent keys would break scheduling for already-provisioned volumes.
 
@@ -220,28 +241,32 @@ CO avoids a race condition by recording all volume IDs processed during the `Con
 
 #### kubelet Changes
 
-When the `CSINodeGetID` feature gate is enabled and the CSI node plugin advertises `GET_ID`:
+When the `CSIControllerGetNodeInfo` feature gate is enabled and the CSI node plugin advertises `NODE_INFO_FROM_CONTROLLER`:
 
-1. Call `NodeGetID` instead of `NodeGetInfo`
+1. Call `NodeGetInfo` with `controller_get_node_info = true`
 2. Store the `node_id` in a CSINode annotation: `csi.volume.kubernetes.io/nodeid` (JSON map of driver name → node ID)
-3. Do NOT populate topology or allocatable; external-attacher handles this via `ControllerGetNodeInfo`
+3. Do NOT populate topology or allocatable from the response, even if present; external-attacher handles this via `ControllerGetNodeInfo`
 4. Skip periodic `NodeGetInfo` calls (KEP-4876) for this driver, as external-attacher takes over
-5. If `NodeGetID` fails, fail registration (no fallback to `NodeGetInfo` since the driver claims to support `GET_ID`, so it must work)
-6. If `GET_ID` is not advertised, use existing `NodeGetInfo` flow unchanged
+5. If `NodeGetInfo` fails or returns an empty `node_id`, fail registration
+6. If `NODE_INFO_FROM_CONTROLLER` is not advertised, use the existing `NodeGetInfo` flow unchanged
 
 ```go
-if hasGetIDCapability(driver) {
-    nodeID, err := nodePlugin.NodeGetID()
-    if err != nil {
-        return fmt.Errorf("NodeGetID failed: %w", err)
-    }
-    // Read-modify-write with resourceVersion conflict detection
+req := &csi.NodeGetInfoRequest{}
+if hasNodeInfoFromControllerCapability(driver) {
+    req.ControllerGetNodeInfo = true
+}
+info, err := nodePlugin.NodeGetInfo(req)
+if err != nil {
+    return fmt.Errorf("NodeGetInfo failed: %w", err)
+}
+if req.ControllerGetNodeInfo {
+    // Read-modify-write with resourceVersion conflict detection.
+    // topology/allocatable are ignored; external-attacher supplies them.
     nodeIDMap := json.Unmarshal(csiNode.Annotations["csi.volume.kubernetes.io/nodeid"])
-    nodeIDMap[driverName] = nodeID
+    nodeIDMap[driverName] = info.NodeId
     csiNode.Annotations["csi.volume.kubernetes.io/nodeid"] = json.Marshal(nodeIDMap)
 } else {
-    nodeInfo, err := nodePlugin.NodeGetInfo()
-    // ... existing flow ...
+    // ... existing flow: populate topology and allocatable from info ...
 }
 ```
 
@@ -349,14 +374,14 @@ sequenceDiagram
     end
 
     kubelet->>+csi-node: NodeGetCapabilities
-    csi-node-->>-kubelet: GET_ID capability
+    csi-node-->>-kubelet: NODE_INFO_FROM_CONTROLLER capability
 
     attacher->>+csi-ctrl: ControllerGetCapabilities
     csi-ctrl-->>-attacher: GET_NODE_INFO capability
 
-    kubelet->>+csi-node: NodeGetID
+    kubelet->>+csi-node: NodeGetInfo(controller_get_node_info=true)
     csi-node->>csi-node: Read instance ID from metadata
-    csi-node-->>-kubelet: node_id
+    csi-node-->>-kubelet: node_id (topology/limits omitted)
 
     kubelet->>apiserver: Update CSINode annotation
     apiserver-->>attacher: CSINode watch event
@@ -380,21 +405,23 @@ sequenceDiagram
 
 #### CSINode Annotation
 
-A new annotation on `CSINode` objects stores node IDs for drivers using `NodeGetID`:
+A new annotation on `CSINode` objects stores node IDs for drivers using the controller-side flow:
 
 ```
 csi.volume.kubernetes.io/nodeid: '{"disk.csi.alibabacloud.com": "i-xxx", "ebs.csi.aws.com": "i-yyy"}'
 ```
 
+The annotation carries `node_id` from kubelet (which calls `NodeGetInfo`) to external-attacher (which calls `ControllerGetNodeInfo`).
+
 This reuses the same key as the existing Node annotation intentionally. The format is identical (JSON map of driver name → node ID). The two live on different objects and serve different consumers:
-- **Node annotation** (existing): set during `NodeGetInfo` flow, consumed by legacy code paths
-- **CSINode annotation** (new): set during `NodeGetID` flow, consumed by external-attacher
+- **Node annotation** (existing): set during the default `NodeGetInfo` flow, consumed by legacy code paths
+- **CSINode annotation** (new): set during the controller-side flow, consumed by external-attacher
 
 External-attacher watches CSINode objects, not Node objects, so there is no ambiguity.
 
 **Why a JSON map?** CSI driver names can be up to 63 characters. A per-driver annotation key like `csi.volume.kubernetes.io/nodeid.{driver}` could reach 95 characters, exceeding the 63-character annotation key name segment limit. The JSON map keeps the key fixed at 31 characters.
 
-**Annotation Lifecycle**: kubelet owns the `CSINode` annotation. On driver unregistration (`UninstallCSIDriver`), kubelet removes the driver's entry from the JSON map (and removes the annotation entirely if the map is empty), removes the `CSINode.Spec.Drivers` entry, and removes the Node annotation entry. On re-registration, kubelet calls `NodeGetID` again, setting the annotation and triggering external-attacher to call `ControllerGetNodeInfo`.
+**Annotation Lifecycle**: kubelet owns the `CSINode` annotation. On driver unregistration (`UninstallCSIDriver`), kubelet removes the driver's entry from the JSON map (and removes the annotation entirely if the map is empty), removes the `CSINode.Spec.Drivers` entry, and removes the Node annotation entry. On re-registration, kubelet calls `NodeGetInfo` again, setting the annotation and triggering external-attacher to call `ControllerGetNodeInfo`.
 
 **Concurrent Annotation Updates**: Multiple drivers registering on the same node update the same JSON map annotation. kubelet uses read-modify-write with `resourceVersion` conflict detection, retrying on conflict. This is consistent with existing Node annotation handling.
 
@@ -404,24 +431,24 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 
 ##### Prerequisite testing updates
 
-- CSI mock driver updated to support `NodeGetID` and `ControllerGetNodeInfo` RPCs
+- CSI mock driver updated to support the `controller_get_node_info` request flag and the `ControllerGetNodeInfo` RPC
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/volume/csi`: Capability detection, `NodeGetID` call, annotation JSON handling, `resourceVersion` conflict retry
-- `k8s.io/kubernetes/pkg/kubelet`: `NodeGetID` failure (no fallback), `NodeGetInfo` fallback when `GET_ID` absent, periodic update responsibility switching
-- `external-attacher`: Annotation detection and `ControllerGetNodeInfo` trigger, effective limit calculation (comparing `published_volume_ids` from SP against VolumeAttachments), race condition mitigation (recording processed volume IDs), `RESOURCE_EXHAUSTED` → `ControllerGetNodeInfo` → CSINode update flow, multi-driver coexistence (one driver uses new RPCs, another does not), periodic update work queue with jitter, partial response handling, external-attacher restart recovery
+- `k8s.io/kubernetes/pkg/volume/csi`: Capability detection, `NodeGetInfo` with the request flag, annotation JSON handling, `resourceVersion` conflict retry
+- `k8s.io/kubernetes/pkg/kubelet`: `NodeGetInfo` failure blocks registration, default flow when `NODE_INFO_FROM_CONTROLLER` absent, periodic update responsibility switching
+- `external-attacher`: Annotation detection and `ControllerGetNodeInfo` trigger, effective limit calculation (comparing `published_volume_ids` from SP against VolumeAttachments), race condition mitigation (recording processed volume IDs), `RESOURCE_EXHAUSTED` → `ControllerGetNodeInfo` → CSINode update flow, multi-driver coexistence (one driver uses the new flow, another does not), periodic update work queue with jitter, partial response handling, external-attacher restart recovery
 
 ##### Integration tests
 
-- Node registration end-to-end with new RPCs
-- `NodeGetID` failure blocks registration
+- Node registration end-to-end with the controller-side flow
+- `NodeGetInfo` failure blocks registration
 - Capacity update after `RESOURCE_EXHAUSTED`
 
 ##### e2e tests
 
-- End-to-end workflow with CSI driver supporting new RPCs
-- Backward compatibility with drivers not supporting new RPCs
+- End-to-end workflow with CSI driver supporting the controller-side flow
+- Backward compatibility with drivers not supporting the controller-side flow
 - Topology-aware scheduling with controller-side topology
 - Capacity update after volume limit reached
 
@@ -429,9 +456,9 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 
 #### Alpha
 
-- Feature implemented behind `CSINodeGetID` (kubelet) and `CSIControllerGetNodeInfo` (external-attacher) feature gates
-- CSI spec PR #603 merged with new RPCs (alpha)
-- kubelet: `NodeGetID` support with `NodeGetInfo` fallback
+- Feature implemented behind the `CSIControllerGetNodeInfo` feature gate (kubelet and external-attacher)
+- CSI spec PR #603 merged (alpha)
+- kubelet: `controller_get_node_info` request flag with default `NodeGetInfo` flow when the capability is absent
 - external-attacher: `ControllerGetNodeInfo` support
 - Unit and integration tests passing
 
@@ -454,14 +481,14 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 
 **Upgrade**: Controller-first. Upgrade external-attacher (with feature gate enabled), then upgrade nodes incrementally. The controller is ready to process annotations before nodes start producing them. No coordination beyond ordering is required.
 
-**Downgrade**: Reverse order. Downgrade nodes first (they revert to `NodeGetInfo`), then downgrade external-attacher. Existing `CSINode` objects remain valid throughout.
+**Downgrade**: Reverse order. Downgrade nodes first (they revert to the default `NodeGetInfo` flow), then downgrade external-attacher. Existing `CSINode` objects remain valid throughout.
 
 ### Version Skew Strategy
 
 | Scenario | Behavior |
 |---|---|
-| kubelet has feature, CSI driver lacks `GET_ID` | kubelet detects missing capability, uses `NodeGetInfo` |
-| CSI driver has `GET_ID`, kubelet lacks feature | `GET_ID` capability ignored, `NodeGetInfo` called |
+| kubelet has feature, CSI driver lacks `NODE_INFO_FROM_CONTROLLER` | kubelet detects missing capability, calls `NodeGetInfo` without the flag |
+| CSI driver has `NODE_INFO_FROM_CONTROLLER`, kubelet lacks feature | capability ignored, `NodeGetInfo` called without the flag; SP returns full node-side info |
 | external-attacher has feature, CSI controller lacks `GET_NODE_INFO` | external-attacher detects missing capability, skips `ControllerGetNodeInfo` |
 | CSI controller has `GET_NODE_INFO`, external-attacher lacks feature | `GET_NODE_INFO` capability ignored |
 | Node side has feature, controller side does not | Annotation written but not consumed; topology/allocatable unset until controller upgraded |
@@ -473,20 +500,20 @@ External-attacher watches CSINode objects, not Node objects, so there is no ambi
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [X] Feature gate
-  - Feature gate name: `CSINodeGetID` (kubelet), `CSIControllerGetNodeInfo` (external-attacher)
+  - Feature gate name: `CSIControllerGetNodeInfo`
   - Components depending on the feature gate: kubelet, external-attacher
 
 ###### Does enabling the feature change any default behavior?
 
-No. kubelet checks for `GET_ID` capability first. If the CSI driver does not advertise it, the existing `NodeGetInfo` flow is used unchanged.
+No. kubelet checks for the `NODE_INFO_FROM_CONTROLLER` capability first. If the CSI driver does not advertise it, the existing `NodeGetInfo` flow is used unchanged.
 
 ###### Can the feature be disabled once it has been enabled?
 
-Yes. Set feature gates to `false` and restart components. kubelet reverts to `NodeGetInfo`. Existing `CSINode` objects remain valid.
+Yes. Set feature gates to `false` and restart components. kubelet reverts to calling `NodeGetInfo` without the flag. Existing `CSINode` objects remain valid.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-kubelet re-checks capabilities and uses the new RPCs if supported. External-attacher re-processes any pending annotations.
+kubelet re-checks capabilities and uses the controller-side flow if supported. External-attacher re-processes any pending annotations.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -498,17 +525,17 @@ Yes, unit tests cover capability detection, fallback logic, and behavior with fe
 
 Running workloads are not affected. Failure scenarios affect only new node registrations and new scheduling decisions:
 - kubelet enabled but external-attacher not upgraded: nodes register with annotation only, topology/allocatable unset. Mitigated by upgrading controller first.
-- `NodeGetID` RPC fails: node registration fails for that driver. Mitigated by fixing the driver or disabling the feature gate.
+- `NodeGetInfo` fails: node registration fails for that driver. Mitigated by fixing the driver or disabling the feature gate.
 
 ###### What specific metrics should inform a rollback?
 
-- `csi_operations_seconds{method_name="NodeGetID",grpc_status_code!="OK"}`: high error rate indicates `NodeGetID` failures
+- `csi_operations_seconds{method_name="NodeGetInfo",grpc_status_code!="OK"}`: high error rate indicates node-side registration failures
 - `csi_sidecar_operations_seconds{method_name="ControllerGetNodeInfo",grpc_status_code!="OK"}`: high error rate indicates controller-side failures
 - Increase in pods stuck in `ContainerCreating` or `Pending` due to missing topology or incorrectly scheduled.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Manual testing during alpha: enable feature gates → verify new RPCs used → disable feature gates → verify `NodeGetInfo` fallback → re-enable → verify new RPCs resume.
+Manual testing during alpha: enable feature gates → verify controller-side flow used → disable feature gates → verify default `NodeGetInfo` flow → re-enable → verify controller-side flow resumes.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -535,7 +562,7 @@ Check for `csi.volume.kubernetes.io/nodeid` annotation on CSINode objects. If pr
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - `csi_operations_seconds{method_name="NodeGetID"}`: kubelet-side latency and error rate
+  - `csi_operations_seconds{method_name="NodeGetInfo"}`: kubelet-side latency and error rate
   - `csi_sidecar_operations_seconds{method_name="ControllerGetNodeInfo"}`: external-attacher-side latency and error rate
   - Both are existing histogram metrics with new `method_name` label values. Error rate derived via `grpc_status_code!="OK"`.
 
@@ -547,7 +574,7 @@ No. The existing `csi_operations_seconds` and `csi_sidecar_operations_seconds` h
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-- **CSI drivers supporting the new RPCs**: Required for the feature to activate. Drivers without the new RPCs fall back to `NodeGetInfo` with no impact.
+- **CSI drivers supporting the controller-side flow**: Required for the feature to activate. Drivers without the `NODE_INFO_FROM_CONTROLLER` capability use the default `NodeGetInfo` flow with no impact.
 - **external-attacher sidecar**: Must be deployed with the `CSIControllerGetNodeInfo` feature gate enabled. If external-attacher is down, nodes register with annotation only, and topology and allocatable remain unset until it recovers and processes pending annotations.
 
 ### Scalability
@@ -570,15 +597,15 @@ CSINode gains one annotation (~100-200 bytes per driver). `Spec.Drivers` fields 
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Node registration time may increase slightly due to the controller-side roundtrip, offset by `NodeGetID` being faster than `NodeGetInfo`. Overall impact expected < 1 second.
+Node registration time may increase slightly due to the controller-side roundtrip, offset by the node-side `NodeGetInfo` no longer calling cloud APIs. Overall impact expected < 1 second.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-Minimal. kubelet makes one lighter RPC (`NodeGetID`). External-attacher handles annotation processing and `ControllerGetNodeInfo` calls, plus a small map for pending node tracking.
+Minimal. The node-side `NodeGetInfo` becomes lighter (no cloud API). External-attacher handles annotation processing and `ControllerGetNodeInfo` calls, plus a small map for pending node tracking.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No. `NodeGetID` is a single gRPC call on the existing CSI socket. No new processes, files, or connections.
+No. `NodeGetInfo` remains a single gRPC call on the existing CSI socket. No new processes, files, or connections.
 
 ### Troubleshooting
 
@@ -606,10 +633,10 @@ This self-correcting mechanism ensures the cluster eventually reaches a consiste
 
 ###### What are other known failure modes?
 
-- **`NodeGetID` RPC fails**
-  - Detection: `csi_operations_seconds{method_name="NodeGetID",grpc_status_code!="OK"}`
-  - Mitigation: Fix driver or disable feature gate. Node uses `NodeGetInfo` on restart.
-  - Diagnostics: kubelet error log: "NodeGetID failed: ..."
+- **`NodeGetInfo` RPC fails during registration**
+  - Detection: `csi_operations_seconds{method_name="NodeGetInfo",grpc_status_code!="OK"}`
+  - Mitigation: Fix driver or disable feature gate. Node retries on restart.
+  - Diagnostics: kubelet error log: "NodeGetInfo failed: ..."
 
 - **external-attacher cannot reach CSI controller**
   - Detection: `csi_sidecar_operations_seconds{method_name="ControllerGetNodeInfo",grpc_status_code!="OK"}`
@@ -622,7 +649,7 @@ This self-correcting mechanism ensures the cluster eventually reaches a consiste
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Check error rate metrics for `NodeGetID` (kubelet) and `ControllerGetNodeInfo` (external-attacher)
+1. Check error rate metrics for `NodeGetInfo` (kubelet) and `ControllerGetNodeInfo` (external-attacher)
 2. Check latency metrics for both RPCs
 3. Review kubelet and external-attacher logs for RPC failures
 4. Verify CSI driver advertises the expected capabilities
@@ -637,7 +664,7 @@ This self-correcting mechanism ensures the cluster eventually reaches a consiste
 
 ## Drawbacks
 
-- Adds two new RPCs to the CSI spec, increasing spec surface area
+- Adds one new RPC and a request flag to the CSI spec, increasing spec surface area
 - Requires coordination between kubelet and external-attacher during upgrade
 - Adds one roundtrip to node registration (offset by lighter node-side call)
 
@@ -696,21 +723,48 @@ The Alibaba Cloud CSI driver already demonstrates this in practice: rather than 
 
 This proposal provides a standardized CSI spec approach that all drivers can adopt, avoiding provider-specific implementations.
 
-### Alternative 6: Fold NodeGetID into NodeGetInfo
+### Alternative 6: Separate NodeGetID RPC
 
-Instead of introducing a new `NodeGetID` RPC, reuse the existing `NodeGetInfo` and have the CO ignore (or combine) its topology/limit fields when `ControllerGetNodeInfo` is available.
+Instead of a request flag on `NodeGetInfo`, add a dedicated `NodeGetID` RPC that returns only `node_id`.
+The CO calls `NodeGetID` (not `NodeGetInfo`) when a driver advertises a `GET_ID` node capability, which serves the same handshake role as the flag.
+
+This is a clean design — the response type structurally cannot carry topology or limits, so there is nothing for the CO to ignore.
+It was the original proposal for this KEP.
 
 **Why not**:
 
-1. **No safe empty values**: If the SP returns empty/zero values from `NodeGetInfo` (because node credentials are removed), an old CO misinterprets them: `max_volumes_per_node = 0` is treated as "unlimited" (silent over-scheduling), and empty `accessible_topology` means "no topological constraint" (silent under-scheduling for zone-restricted volumes). Both are hard to debug. With a separate `NodeGetID`, premature credential removal causes a loud `NodeGetInfo` RPC error instead.
+1. **Higher adoption cost**: A new RPC must be implemented, tested, and versioned across the 100+ existing CSI drivers.
+   The request flag requires only a capability plus one optional field, so drivers adopt it incrementally.
 
-2. **CO still needs `node_id`**: Without a separate RPC, the new CO would still call `NodeGetInfo` to obtain `node_id` for the controller-side workflow. gRPC does not return a response alongside an error, so `NodeGetInfo` must succeed — meaning the SP must have cloud credentials to populate the response. The security goal (removing credentials from nodes) is fundamentally unreachable.
+2. **Two node-side RPCs with overlapping purpose**: `NodeGetInfo` is not deprecated, so drivers and readers face two node identity RPCs where `NodeGetID` returns a strict subset of `NodeGetInfo`.
+   This is confusing for new implementers, since CSI's other capability-gated RPCs each add a distinct operation rather than a subset of an existing one.
 
-3. **No clear topology combination semantic**: For count, `min(node, controller)` is well-defined. For topology, there is no natural combination — intersection, union, and override all have problems. Empty topology from the node cannot express "unknown, wait for controller" in the current spec. The asymmetry between count and topology makes a "combine both" design inelegant.
+3. **Duplicates shared node-produced fields**: `node_id` is produced by the node but consumed by the controller side, so it must live on a message the node returns.
+   A future node-produced field needed by both flows (e.g. a node context relayed to `ControllerPublishVolume`) has the same property.
+   With the flag, such fields have one home on `NodeGetInfoResponse`; with `NodeGetID`, they must be duplicated on both messages and kept in sync.
 
-4. **Field ownership contention (Kubernetes-specific)**: If both kubelet (from `NodeGetInfo`) and external-attacher (from `ControllerGetNodeInfo`) write to `CSINode.Spec.Drivers`, they fight over the same fields. Periodic updates (KEP-4876) cause oscillation, and the scheduler sees stale intermediate values during the update window. Workarounds (storing node_limit elsewhere, making the scheduler aware of mid-update state) add complexity that `NodeGetID` avoids by design: kubelet writes only an annotation, external-attacher exclusively owns `Spec.Drivers`.
+The trade-off is that `NodeGetInfoResponse` now has two fields whose validity depends on the request flag.
 
-### Alternative 7: Reactive-Only Discovery
+### Alternative 7: Combine Node and Controller Values
+
+Instead of the controller being the sole authority for topology and limits when the flag is set,
+let the node still report what it can (e.g. its zone from local metadata, or a coarse limit) and
+have the values combined with the controller's — for example `min(node_count, controller_count)` for the limit and a union of topology keys.
+
+**Why not**:
+
+1. **No CO-agnostic combination rule**: `min` for the limit and union for topology are one specific policy.
+   Other drivers may want `max`, "controller wins unless zero", or a per-key rule.
+   The CO cannot know a driver's intended semantic, so any rule the CO hard-codes is wrong for some driver.
+
+2. **Correct combination belongs in the SP, which reintroduces the transport it was meant to avoid**: doing it right means relaying the node's partial values as *input* to `ControllerGetNodeInfo` so the SP combines them.
+   That grows the annotation into arbitrary node-side state and adds request fields and SP-side merge logic — significant complexity for a marginal gain.
+
+The sole-authority design is simpler and has no rule-policy problem: the node reports only `node_id`, and the controller owns topology and limits.
+Combination remains addable later if a concrete case shows the controller genuinely cannot determine a value the node can.
+We may also consider the node context described in alternative 6.
+
+### Alternative 8: Reactive-Only Discovery
 
 Skip upfront reporting entirely and let Kubernetes learn capacity from `RESOURCE_EXHAUSTED` failures.
 
@@ -718,7 +772,7 @@ Skip upfront reporting entirely and let Kubernetes learn capacity from `RESOURCE
 
 However, reactive error handling remains necessary as a complement to proactive reporting. Out-of-band volume attachments (manually attached disks, network interfaces) can always occur, so the CO must handle violations after the fact. The existing `RESOURCE_EXHAUSTED` → re-query mechanism (KEP-4876) serves this purpose and is unchanged by this KEP.
 
-### Alternative 8: Static Node Context Object
+### Alternative 9: Static Node Context Object
 
 Store controller-side information in a "node context" (similar to volume context or publish context) — call the controller once per node, persist the result, and have kubelet pass it to the node plugin on subsequent calls so the node can answer `NodeGetInfo` accurately.
 
@@ -729,4 +783,4 @@ Additionally, even if we could pass controller context to the node, the data nee
 ## Infrastructure Needed
 
 - CSI spec update: [PR #603](https://github.com/container-storage-interface/spec/pull/603)
-- CSI mock driver updated with new RPCs for testing
+- CSI mock driver updated with the `controller_get_node_info` flag and `ControllerGetNodeInfo` RPC for testing

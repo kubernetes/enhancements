@@ -37,11 +37,9 @@ milestone:
 
 # The following PRR answers are required at alpha release
 feature-gates:
-  - name: CSINodeGetID
-    components:
-      - kubelet
   - name: CSIControllerGetNodeInfo
     components:
+      - kubelet
       - external-attacher
 disable-supported: true
 
