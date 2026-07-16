@@ -104,13 +104,10 @@ command in image-specific tooling such as `timeout`.
 
 ### Goals
 
-- Add an optional `timeoutSeconds` field to `ExecAction`.
-- Support the field for lifecycle hook exec actions in both `postStart` and
-  `preStop`.
-- Preserve existing behavior when `timeoutSeconds` is unset or set to `0`.
-- Reject negative timeout values.
-- Implement the feature behind a `PodLifecycleExecActionTimeout` feature gate.
-- Avoid changes to the kubelet `/run` HTTP API.
+- Allow users to set an optional timeout value for exec actions in lifecycle
+  hooks to prevent arbitrary command execution from hanging indefinitely.
+- Preserve existing behavior for workloads that do not opt in to a lifecycle
+  exec timeout.
 
 ### Non-Goals
 
@@ -197,12 +194,16 @@ When kubelet executes a lifecycle hook with `exec.timeoutSeconds`:
   current no-timeout behavior.
 - `timeoutSeconds` greater than `0`: pass that duration to `RunInContainer`.
 - If the exec action times out, the lifecycle hook fails and kubelet handles
-  that failure the same way it handles other lifecycle exec failures.
+  that failure the same way it handles other lifecycle exec failures. The
+  failure message and kubelet log should make it clear that the exec action hit
+  its configured timeout.
 
 For `preStop`, the hook remains subject to the existing pod termination flow and
 grace-period cancellation. The exec timeout provides an additional
 hook-specific bound when it is shorter than the remaining termination grace
-period.
+period. It does not extend the pod termination grace period; a `preStop`
+timeout value longer than the remaining grace period can still be interrupted by
+pod termination.
 
 ### User Stories (Optional)
 
@@ -213,9 +214,10 @@ stuck startup script cannot block the kubelet pod worker indefinitely.
 
 #### Story 2
 
-As a workload author, I want to set a timeout on a `preStop` exec hook so that
-my cleanup command has a smaller, explicit budget inside the pod termination
-grace period.
+As a workload author, I want to set a timeout on a best-effort `preStop` cleanup
+or drain command so that it has a smaller, explicit budget inside the pod
+termination grace period, leaving time for the main process to finish graceful
+shutdown.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -227,6 +229,11 @@ startup or shutdown.
 This KEP also avoids changing the kubelet `/run` HTTP API. A previous attempt
 to add timeout support there had kubelet API impact and did not provide a
 workload-level API for lifecycle hook timeout configuration.
+
+For `preStop`, users need to choose a timeout that fits within the pod's
+termination grace period. Setting `preStop.exec.timeoutSeconds` larger than
+`terminationGracePeriodSeconds` does not extend termination; it only defines the
+maximum time the hook may run if that much grace period remains.
 
 ### Risks and Mitigations
 
@@ -341,7 +348,9 @@ Alpha:
 - Feedback from alpha users is addressed.
 - Upgrade, downgrade, and feature gate disablement behavior is tested.
 - e2e tests are stable in CI.
-- Documentation is added to describe lifecycle exec timeout usage.
+- Documentation is added to describe lifecycle exec timeout usage, including the
+  interaction between `preStop.exec.timeoutSeconds` and pod termination grace
+  period.
 
 #### GA
 
@@ -436,10 +445,12 @@ timeout again.
 
 ###### What specific metrics should inform a rollback?
 
-No new metric is proposed for alpha. Operators can use existing pod event and
-kubelet log signals for lifecycle hook failures. If users see unexpected
-lifecycle hook timeout failures after enabling this feature, they can disable
-the feature gate or remove the field from affected workloads.
+No new metric is proposed for alpha. Operators can use pod event and kubelet log
+signals for lifecycle hook failures. The implementation should ensure timeout
+failures are distinguishable from other lifecycle exec failures in those
+signals. If users see unexpected lifecycle hook timeout failures after enabling
+this feature, they can disable the feature gate or remove the field from
+affected workloads.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -466,8 +477,8 @@ Inspect pod specs for non-zero lifecycle `exec.timeoutSeconds` values in
   - Other field:
 - [x] Other (treat as last resort)
   - Details: Observe lifecycle hook completion, pod events, and kubelet logs.
-    A hook command that runs longer than its configured timeout should fail with
-    timeout behavior from the runtime exec path.
+    A hook command that runs longer than its configured timeout should fail, and
+    the resulting failure should identify the configured timeout as the cause.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -481,7 +492,8 @@ N/A
   - Components exposing the metric:
 - [x] Other (treat as last resort)
   - Details: Watch pod lifecycle hook failures through pod events and kubelet
-    logs.
+    logs. Timeout failures should be identifiable separately from other exec
+    failures.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -538,7 +550,8 @@ kubelet.
 
 The configured timeout can be too short for the hook command. In that case the
 exec action fails. Users should increase `timeoutSeconds`, remove the field, or
-fix the hook command.
+fix the hook command. For `preStop`, users should also check whether the pod
+termination grace period is shorter than the configured hook timeout.
 
 If a kubelet does not support the feature or has the feature gate disabled, the
 hook runs with the existing no-timeout behavior.
@@ -546,7 +559,8 @@ hook runs with the existing no-timeout behavior.
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 Inspect affected pod specs for lifecycle exec `timeoutSeconds`, check pod
-events and kubelet logs for lifecycle hook failures, and disable the
+events and kubelet logs for lifecycle hook failures, verify the configured
+`preStop` timeout fits within the pod termination grace period, and disable the
 `PodLifecycleExecActionTimeout` feature gate or remove the field if necessary.
 
 ## Implementation History
