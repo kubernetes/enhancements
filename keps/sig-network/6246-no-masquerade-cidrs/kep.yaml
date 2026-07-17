@@ -1,0 +1,24 @@
+title: Kube-Proxy no-masquerade-cidrs option
+kep-number: 6246
+authors:
+  - "@kairosci"
+owning-sig: sig-network
+participating-sigs: []
+status: provisional
+creation-date: 2026-07-17
+reviewers:
+  - "@danwinship"
+approvers:
+  - "@thockin"
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.39"
+feature-gates:
+  - name: KubeProxyNoMasqueradeCIDRs
+    components:
+      - kube-proxy
+disable-supported: true
+
