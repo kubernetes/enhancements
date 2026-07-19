@@ -9,6 +9,7 @@ creation-date: 2026-07-17
 reviewers:
   - "@danwinship"
 approvers:
+  - "@danwinship"
   - "@thockin"
 stage: alpha
 latest-milestone: "v1.37"
