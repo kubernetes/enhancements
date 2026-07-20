@@ -112,7 +112,7 @@ The new `LoadBalancer` resource provides:
 
 The resource is optional and additive. Existing Services of type
 `LoadBalancer` continue to work unchanged. When a `LoadBalancer`
-resource exists with the same name as a Service in the same namespace,
+resource exists with the same name as a `Service` in the same namespace,
 the cloud controller manager uses it as the source of truth, falling
 back to `Service.Spec` for unset fields.
 
@@ -137,7 +137,7 @@ several problems:
    balancer is being provisioned, has failed, is serving traffic, or
    is operating in a degraded mode. This was the primary motivation
    behind [KEP-4631], which attempted to add conditions directly to
-   the Service resource but was never implemented.
+   the `Service` resource but was never implemented.
 
 3. **Service is overloaded.** The `Service` resource serves multiple
    purposes: service discovery, internal cluster routing, and
@@ -149,7 +149,7 @@ several problems:
    infrastructure.** Gateway API implementations that run their
    proxy inside the cluster need load balancers to route and forward
    traffic from external clients to the proxy pods. Today, this is
-   done through `Service` of type `LoadBalancer` with cloud-specific
+   done through `Service` of type [`LoadBalancer`](https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer) with cloud-specific
    annotations. A standalone `LoadBalancer` resource provides a
    structured way to configure and observe this routing/forwarding
    layer. (Gateway API implementations that run externally and manage
@@ -174,9 +174,9 @@ several problems:
 - Provide structured status reporting with conditions (`Accepted`,
   `Programmed`, `Degraded`) aligned with Gateway API conventions.
 
-- Mirror load balancer addresses (IPs/hostnames) in
-  `LoadBalancer.Status` so users can observe load balancer state from
-  a single resource.
+- Mirror load balancer addresses (IPs/hostnames) from `Services` in
+  `LoadBalancer.Status` so users can observe load balancer state 
+  (conditions, IPs) from `LoadBalancer` resource only.
 
 - Provide a feature reporting mechanism so cloud providers can
   advertise supported capabilities.
@@ -473,7 +473,7 @@ type LoadBalancerRoutability string
 
 const (
     // LoadBalancerRoutabilityExternal indicates the load balancer
-    // is reachable from the public internet.
+    // is reachable from outside of the cluster network.
     LoadBalancerRoutabilityExternal LoadBalancerRoutability = "External"
 
     // LoadBalancerRoutabilityInternal indicates the load balancer
@@ -630,7 +630,7 @@ support.
 
 <<[UNRESOLVED service-status-interaction]>>
 
-When a `LoadBalancer` resource exists alongside a Service, the
+When a `LoadBalancer` resource exists alongside a `Service`, the
 relationship between `LoadBalancer.Status.Addresses` and
 `Service.Status.LoadBalancer.Ingress` must be clearly defined:
 
@@ -903,7 +903,7 @@ None.
     `LoadBalancer` resource.
   - Populating `.Status.Addresses` when the load balancer is
     provisioned.
-  - Falling back to Service.Spec when `LoadBalancer` fields are unset.
+  - Falling back to `Service.Spec` when `LoadBalancer` fields are unset.
   - Using `LoadBalancer.Spec.Routability` to provision internal vs
     external load balancers.
   - Reporting `SupportedFeatures` in status.
