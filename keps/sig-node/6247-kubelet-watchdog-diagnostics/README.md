@@ -43,6 +43,7 @@
 - [Alternatives](#alternatives)
   - [Only raise <code>SdNotify()</code> error log visibility](#only-raise-sdnotify-error-log-visibility)
   - [Add kubelet configuration for watchdog timeout budgets](#add-kubelet-configuration-for-watchdog-timeout-budgets)
+  - [Only wrap <code>SdNotify()</code> outside the source library](#only-wrap-sdnotify-outside-the-source-library)
   - [Add metrics or events](#add-metrics-or-events)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
@@ -119,6 +120,8 @@ notify call.
 - Identify `SdNotify()` calls that exceed their timeout budget.
 - Summarize exhausted notification retry attempts.
 - Preserve existing successful watchdog heartbeat behavior.
+- Keep the watchdog loop non-blocking and reliable when an individual health
+  checker or systemd notification operation stalls.
 - Avoid new Kubernetes API, kubelet configuration, metric, event, or
   NodeCondition surface in the initial implementation.
 
@@ -127,9 +130,12 @@ notify call.
 - This KEP does not add kubelet configuration fields for watchdog timeout
   budgets.
 - This KEP does not add metrics, events, or NodeConditions.
+- This KEP does not initially add Node Problem Detector integration.
 - This KEP does not redesign kubelet health checking.
 - This KEP does not define node self-healing behavior beyond existing systemd
   watchdog behavior.
+- This KEP does not dynamically disable watchdog health checks that fail or
+  time out.
 - This KEP does not change the non-Linux watchdog implementation.
 - This KEP does not guarantee forced cancellation of health checker or
   `SdNotify()` internals that block in non-cancellable code.
@@ -156,32 +162,55 @@ The alpha implementation is guarded by the `KubeletWatchdogDiagnostics`
 kubelet feature gate. The gate gives SIG Node and operators a rollback switch
 while timeout budgets and log volume are validated.
 
+During implementation, kubelet should evaluate whether the underlying
+`SdNotify()` path can accept cancellation directly. If the current source
+library cannot support context-aware notification calls, the implementation may
+need a small library contribution or kubelet-local adapter. This KEP does not
+require a broad redesign of the notification library, but it should not assume
+that a goroutine wrapper is the only viable implementation.
+
 ### User Stories
 
 #### Story 1: Triage watchdog-triggered kubelet restarts
 
-As a cluster operator, I want kubelet to leave clear diagnostic evidence before
-a systemd watchdog-triggered restart so that I can understand why the node
-stopped sending watchdog heartbeats without needing to reproduce the incident.
+A cluster operator receives an alert that kubelet restarted on a node, for
+example from existing process restart monitoring or systemd journal entries. The
+operator checks the normal kubelet logs around the restart timestamp and finds a
+structured watchdog diagnostic entry. The entry indicates whether the last
+watchdog iteration failed because a health checker returned an error, a checker
+timed out, `SdNotify()` returned an error, or notification retries were
+exhausted. The operator uses that evidence to decide whether to investigate
+kubelet health, node-local systemd notification delivery, or a failing watchdog
+checker.
 
 #### Story 2: Preserve evidence at default log levels
 
-As an on-call SRE, I want watchdog failure evidence to appear in the normal
-kubelet logs collected from production nodes so that an incident can be
-investigated after the fact, even when verbose logging was not enabled.
+An on-call SRE investigates a watchdog-triggered kubelet restart after the node
+has already recovered. The SRE only has the default kubelet logs collected from
+the affected node and cannot reproduce the failure with higher verbosity. The
+SRE finds default-visible watchdog failure logs with stable fields such as the
+operation, elapsed time, timeout budget, retry attempt, and returned error when
+available. Those fields let the SRE preserve the incident evidence and avoid
+classifying the restart only as an unexplained kubelet process restart.
 
 #### Story 3: Separate node environment issues from kubelet health issues
 
-As a node operator, I want to distinguish a kubelet-internal health problem from
-a node-local systemd notification problem so that I can route the fix to the
-right owner instead of treating every watchdog restart as the same failure.
+A node operator compares kubelet logs with systemd journal entries after a
+watchdog restart. If kubelet reports a watchdog health-check failure, the
+operator investigates kubelet internals and the failing checker. If kubelet
+reports `SdNotify()` errors, notification timeouts, or exhausted notification
+retries, the operator investigates node-local systemd notification delivery
+instead. The diagnostic distinction reduces the chance of misdiagnosing a node
+environment problem as a kubelet health problem, or the reverse.
 
 #### Story 4: Investigate repeated node restarts at fleet scale
 
-As a platform engineer responsible for many nodes, I want watchdog restart
-diagnostics to use consistent fields so that I can group similar failures across
-nodes and identify whether an incident is isolated to one machine, one node
-image, or a broader kubelet behavior.
+A platform engineer sees repeated kubelet watchdog restarts across multiple
+nodes from existing restart-count monitoring. The engineer queries collected
+kubelet logs for the structured watchdog operation fields and groups failures by
+checker name, notify error, timeout, and retry exhaustion. This helps determine
+whether the incident is isolated to one machine, correlated with a node image or
+systemd configuration, or likely caused by broader kubelet behavior.
 
 ### Notes/Constraints/Caveats
 
@@ -212,6 +241,10 @@ notify call for the current iteration.
 - Wrapping blocking calls can leave goroutines running after timeout. The
   implementation must treat timeouts as diagnostic boundaries and avoid
   unbounded goroutine accumulation.
+- Dynamically disabling a failing or timed-out watchdog health checker could
+  make the watchdog loop appear healthy while hiding a real kubelet health
+  problem. The initial implementation should keep failed checks visible and
+  continue treating them as failed for the current watchdog iteration.
 - Default-visible notify error logs could be noisy in repeatedly failing
   environments. The implementation should log exceptional failure and timeout
   paths at default visibility while keeping success logs at high verbosity.
@@ -486,6 +519,13 @@ Metrics for watchdog checker timeout count or notify failure count could be
 useful in the future, but they are intentionally out of scope for the initial
 proposal to avoid expanding metric stability and label cardinality concerns.
 
+This KEP does not propose Node Problem Detector integration for alpha. The
+initial recommendation is to keep the diagnostic signal in kubelet logs because
+the first user story is local post-restart investigation using kubelet and
+systemd logs. If SIG Node finds that these diagnostics need a cluster-visible
+surface, a follow-up enhancement could evaluate whether NPD conditions, events,
+or another node-level reporting mechanism is appropriate.
+
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
@@ -572,6 +612,16 @@ for important watchdog restart cases.
 This would provide operator control, but it would add kubelet configuration API
 surface and significantly increase review scope. The initial proposal keeps
 timeouts internal and derived from the existing watchdog interval.
+
+### Only wrap `SdNotify()` outside the source library
+
+A kubelet-local wrapper around `SdNotify()` would minimize changes to
+dependencies, but it may leave blocked notification calls running until the
+underlying operation returns. During implementation, kubelet should evaluate
+whether the notification source library can support cancellation directly. A
+small context-aware library change may be preferable if it avoids lingering
+blocked notification operations without expanding this KEP into a broad library
+redesign.
 
 ### Add metrics or events
 
