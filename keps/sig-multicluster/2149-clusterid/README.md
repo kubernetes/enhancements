@@ -274,7 +274,7 @@ nitty-gritty.
 -->
 
 ### Overview
-This proposal defines a new cluster-scoped`ClusterProperty` resource for storing
+This proposal defines a new cluster-scoped `ClusterProperty` resource for storing
 cluster-level metadata. The primary justification is to enable identification of
 a cluster and its relevant properties within a cluster set, but there is no
 intention to limit general use of `ClusterProperty` to multi-cluster scenarios.
@@ -296,7 +296,7 @@ ClusterSet lasts, and removed when the cluster is no longer a member.
 More detail and examples of the uniqueness, lifespan, immutability, and content
 requirements for both the `id.k8s.io ClusterProperty` and
 `clusterset.k8s.io ClusterProperty` are described further below. The goal of
-these requirements are to provide to the MCS API a cluster id of viable
+these requirements is to provide to the MCS API a cluster id of viable
 usefulness to address known user stories without being too restrictive or
 prescriptive.
 
@@ -331,7 +331,7 @@ I have a headless multi-cluster service deployed across clusters in my
 ClusterSet with similarly named pods in each cluster. I need a way to
 disambiguate each backend pod via DNS.
 
-_For example, an exported headless service of services name `myservice` in
+_For example, an exported headless service named `myservice` in
 namespace `test`,  backed by pods in two clusters with cluster ids `clusterA`
 and `clusterB`, could be disambiguated by different DNS names following the
 pattern `<clusterid>.<svc>.<ns>.svc.clusterset.local`:
@@ -370,7 +370,7 @@ following information:
 
 *   **Name** - a well known or custom name to identify the property. This is the
     metadata.Name of the resource.
-*   **Value** - a property-dependent string, up 128k Unicode code points (see
+*   **Value** - a property-dependent string, up to 128k Unicode code points (see
     _Notes/Constraints/Caveats_ section). This is the one and only field in this
     Kind.
 
@@ -417,7 +417,7 @@ Contains a unique identifier for the containing cluster.
 *   The identifier **must** be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123)
     DNS subdomain and should be less than 128 characters in total. This may be
     used to compose larger DNS names (e.g. in the case of multi-cluster
-    services), so care should be take to ensure that the final names fit into the
+    services), so care should be taken to ensure that the final names fit into the
     limit of 253 characters.
 *   The identifier **may** be used as a component in MCS DNS.
 *   The identifier **may** be a human readable description of its cluster.
@@ -593,7 +593,7 @@ could occur local to the cluster. It does not necessarily ever need to be
 deleted, particularly if the identifier selection mechanism chooses an
 identifier that is immutable for a cluster's lifetime. A recommended option
 that meets this restriction is a cluster's
-kube-system.uuid. 
+kube-system.uuid.
 
 That being said, for a user-specified and human-readable value, global
 uniqueness is harder to guarantee, and a given `id.k8s.io ClusterProperty`
@@ -632,7 +632,7 @@ actual API specification to allow for this is outside the scope of this KEP at
 this time (see the Non-Goals section).
 
 ```
-# An example object of `id.k8s.io ClusterProperty` 
+# An example object of `id.k8s.io ClusterProperty`
 # using a kube-system ns uuid as the id value (recommended above):
 
 apiVersion: about.k8s.io/v1
@@ -644,7 +644,7 @@ spec:
 ```
 
 ```
-# An example object of `id.k8s.io ClusterProperty` 
+# An example object of `id.k8s.io ClusterProperty`
 # using a human-readable string as the id value:
 
 apiVersion: about.k8s.io/v1
@@ -674,7 +674,7 @@ will act as an admission controller to verify individual objects of this
 property.
 
 Because there are obligations of the `id.k8s.io ClusterProperty`
-that are not meanigfully verifiable until a cluster tries to join a ClusterSet
+that are not meaningfully verifiable until a cluster tries to join a ClusterSet
 and set its `clusterset.k8s.io ClusterProperty`, the admission controller
 responsible for setting a `clusterset.k8s.io ClusterProperty` will need the
 ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]`
@@ -788,7 +788,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-This KEP proposes and out-of-tree CRD that is not expected to integrate with any
+This KEP proposes an out-of-tree CRD that is not expected to integrate with any
 of the Kubernetes CI infrastructure. In addition, it explicitly provides only
 the CRD definition and generated clients for use by third party implementers,
 and does not provide a controller or any other binary with business logic to
@@ -801,7 +801,7 @@ However, similar to other out-of-tree CRDs that serve third party implementers,
 such as Gateway API and MCS API, there is rationale for the project to provide
 conformance tests for implementers to use to confirm they adhere to the
 restrictions set forth in this KEP that are not otherwise enforced by the CRD
-definition; in thise case, the constraints defined on the well-known properties
+definition; in this case, the constraints defined on the well-known properties
 `clusterset.k8s.io` and `id.k8s.io`. Providing these tests are
 not considered blocking graduation requirements for the maturity level of this
 API.
@@ -1007,19 +1007,19 @@ _This section must be completed when targeting beta graduation to a release._
 determine the health of the service?**
 
   N/A: This KEP does not propose a service, only leverages the existing
-  Kuebernetes API service and CRD extension mechanism.
+  Kubernetes API service and CRD extension mechanism.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above
   SLIs?**
 
   N/A: This KEP does not propose a service, only leverages the existing
-  Kuebernetes API service and CRD extension mechanism.
+  Kubernetes API service and CRD extension mechanism.
 
 * **Are there any missing metrics that would be useful to have to improve
 observability of this feature?**
   
   Default metrics for CRDs in general for number of requests by workload source
-  would improve 
+  would improve observability of this feature.
 
 ### Dependencies
 
