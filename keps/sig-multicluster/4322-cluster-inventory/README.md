@@ -110,8 +110,6 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Cluster Access](#cluster-access)
     - [Pull Model with Work API](#pull-model-with-work-api)
     - [Push Model with Identity Federation (Recommended)](#push-model-with-identity-federation-recommended)
-    - [Push Model via Credentials in Secret (Not Recommended)](#push-model-via-credentials-in-secret-not-recommended)
-      - [Secret format](#secret-format)
     - [Push Model via Access Provider Plugins](#push-model-via-access-provider-plugins)
   - [Access Provider Plugin Design](#access-provider-plugin-design)
     - [External Access Provider Plugin Mechanism](#external-access-provider-plugin-mechanism)
@@ -156,6 +154,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Self-assembling clustersets](#self-assembling-clustersets)
     - [Workload placement across multiple clusters <em>without</em> cross-cluster service networking](#workload-placement-across-multiple-clusters-without-cross-cluster-service-networking)
     - [Workload placement into a specific clusterset](#workload-placement-into-a-specific-clusterset)
+  - [Push Model via Credentials in Secret](#push-model-via-credentials-in-secret)
+    - [Secret format](#secret-format)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -681,7 +681,7 @@ provider plugin mechanism.
 ### Cluster Access
 There are multiple methods for a ClusterInventory Consumer to gain access to the cluster represented by a ClusterProfile API.
 This KEP does not define the exact mechanism for each approach, but it is recommended that ClusterInventory Consumers avoid 
-using a secret if possible. Here are the four approaches:
+using a secret if possible. Here are the three approaches:
 
 #### Pull Model with Work API
 The ClusterInventory Consumer can leverage the [Work API](https://multicluster.sigs.k8s.io/concepts/work-api/) so that
@@ -694,22 +694,6 @@ The ClusterInventory consumer can utilize identity federation mechanisms, such a
 or [GCP Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation). This allows the 
 ClusterInventory Consumer to use an identity that already has access to the clusters in the Cluster Inventory.
 While the Cluster Manager can assist in setting up the federation, it is not a mandatory requirement.
-
-#### Push Model via Credentials in Secret (Not Recommended)
-The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by reading 
-from a secret. In this approach, the Cluster Manager generates secrets containing the necessary credentials within the namespace
-accessible to the ClusterInventory Consumer. For this to function correctly, Cluster Managers must be aware of the following details 
-about the consumer: their name, whether credentials are required, and the preferred unique namespace for reading credentials as secrets.
-Those information can be obtained during the "registering" process but this is out of the scope of this KEP.
-
-##### Secret format
-- The secret *MUST* reside in the namespace with the label `x-k8s.io/cluster-inventory-consumer` with the value being the name of the ClusterInventory Consumer.
-- The secret *MUST* contain the label `x-k8s.io/cluster-profile` with the value being the name of the ClusterProfile object that the secret is associated with.
-- The secret *MAY* contain the label `x-k8s.io/cluster-profile-namespace` with the value being the namespace of the ClusterProfile object that the secret is associated with. If not present, the ClusterProfile is assumed to be in the default namespace.
-- The access information in the secret must contain the following fields
-  - **Config**: This field contains cluster access information compatible with the
-    [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/v1.31.2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
-  - Since a single [Kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) supports access to multiple clusters, the Cluster manager *MUST* ensure that each secret contains access information for only a single consumer.
 
 #### Push Model via Access Provider Plugins
 The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by
@@ -1679,6 +1663,30 @@ In this model, a consumer of the Cluster Inventory API is looking to optimize wo
 #### Workload placement into a specific clusterset
 
 Within a single clusterset, a global workload placement controller may seek to balance capacity across multiple regions in response to demand, cost efficiency, or other factors. Querying a list of all clusters within a single clusterset should be possible to serve this use case, which is amenable to either cluster-scoped or namespaced-scoped ClusterProfile CRDs.
+
+### Push Model via Credentials in Secret
+
+This was previously a fourth [Cluster Access](#cluster-access) approach, marked
+not recommended. It was ruled out in favor of the
+[access provider plugin mechanism](#push-model-via-access-provider-plugins),
+whose [secret reader](https://github.com/kubernetes-sigs/cluster-inventory-api/tree/main/plugins/secretreader)
+and [kubeconfig secret reader](https://github.com/kubernetes-sigs/cluster-inventory-api/tree/main/plugins/kubeconfig-secretreader)
+plugins cover the same use case through the standard exec protocol.
+
+The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by reading
+from a secret. In this approach, the Cluster Manager generates secrets containing the necessary credentials within the namespace
+accessible to the ClusterInventory Consumer. For this to function correctly, Cluster Managers must be aware of the following details
+about the consumer: their name, whether credentials are required, and the preferred unique namespace for reading credentials as secrets.
+Those information can be obtained during the "registering" process but this is out of the scope of this KEP.
+
+#### Secret format
+- The secret *MUST* reside in the namespace with the label `x-k8s.io/cluster-inventory-consumer` with the value being the name of the ClusterInventory Consumer.
+- The secret *MUST* contain the label `x-k8s.io/cluster-profile` with the value being the name of the ClusterProfile object that the secret is associated with.
+- The secret *MAY* contain the label `x-k8s.io/cluster-profile-namespace` with the value being the namespace of the ClusterProfile object that the secret is associated with. If not present, the ClusterProfile is assumed to be in the default namespace.
+- The access information in the secret must contain the following fields
+  - **Config**: This field contains cluster access information compatible with the
+    [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/v1.31.2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
+  - Since a single [Kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) supports access to multiple clusters, the Cluster manager *MUST* ensure that each secret contains access information for only a single consumer.
 
 ## Infrastructure Needed (Optional)
 
