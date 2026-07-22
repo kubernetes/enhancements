@@ -758,8 +758,8 @@ are actively using the feature.
   - `spec.schedulingConstrains` field is not empty.
   - Condition Name: `PodGroupInitiallyScheduled`
 - [X] Metrics
-  - Metric: `scheduler_placement_total`
-  - Value is greater then 0.
+  - Metric: `scheduler_generated_placements_total`
+  - Value is greater than 0.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -782,7 +782,7 @@ of the standard scheduling loop.
 
 The beta version of this feature introduces three new metrics to track pod group scheduling behavior:
 
-- `scheduler_placement_total` — counter tracking the total number of candidate placements generated
+- `scheduler_generated_placements_total` — counter tracking the total number of candidate placements generated
   during pod group scheduling.
 - `scheduler_placement_evaluations_total` — counter tracking the total number of evaluated candidate
   placements, partitioned by the result label (`feasible`/`infeasible`).
