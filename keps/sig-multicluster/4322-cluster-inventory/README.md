@@ -499,6 +499,14 @@ Within a cluster inventory, each member cluster SHOULD be represented by at most
 ClusterProfile object, regardless of which cluster manager created it. The same member
 cluster may be represented in more than one inventory on the same hub cluster.
 
+ClusterProfile objects in the same namespace with the same `id.k8s.io` property
+value claim the same cluster identity. The platform administrator SHOULD
+resolve such duplicates by deleting all but one of the objects. Until then,
+consumers SHOULD surface a warning and SHOULD act on only the object with the
+oldest creationTimestamp; if two or more objects share it, consumers SHOULD
+NOT act on any of them. Objects without the property are not treated as
+duplicates.
+
 
 ### Risks and Mitigations
 
@@ -624,6 +632,12 @@ other implementations. Properties derived from ClusterProperty resources MUST
 preserve the name and value of the ClusterProperty as-is. Cluster managers MAY
 additionally include their own custom-named properties, as long as they do not
 conflict with names derived from ClusterProperty resources.
+
+The well-known property [`id.k8s.io`](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid)
+is a globally unique identifier for a member cluster, independent of any
+inventory or ClusterSet membership. Cluster managers SHOULD ensure that the
+member cluster has an `id.k8s.io` ClusterProperty and mirror it into this
+property.
 
 #### Conditions
 
@@ -1022,8 +1036,8 @@ status:
   version:
     kubernetes: 1.28.0
   properties:
-   - name: clusterset.k8s.io
-     value: some-clusterset
+   - name: id.k8s.io
+     value: 721ab723-13bc-11e5-aec2-42010af0021e
    - name: location
      value: apac
   conditions:
@@ -1056,6 +1070,8 @@ status:
   version:
     kubernetes: 1.28.0
   properties:
+   - name: id.k8s.io
+     value: 0475b938-3869-4e78-8629-105cd93d3f9b
    - name: clusterset.k8s.io
      value: some-clusterset
    - name: location
@@ -1602,8 +1618,9 @@ Major milestones might include:
   API and the access-related fields are expected to graduate together.
 - 2026-07-16: Defined a cluster inventory as the set of ClusterProfile
   objects in one namespace, scoped the ClusterProfile and cluster name
-  uniqueness rules to the inventory, and defined cluster inventories
-  independently of ClusterSet.
+  uniqueness rules to the inventory, defined cluster inventories
+  independently of ClusterSet, and defined `id.k8s.io`-based deduplication
+  of ClusterProfile objects within an inventory.
 
 ## Drawbacks
 
