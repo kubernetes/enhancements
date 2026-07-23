@@ -357,7 +357,7 @@ To support unified accounting for node allocatable resources, this KEP proposes 
 
 #### Device API Extensions
 
-The new field `NodeAllocatableResourceMappings` within the
+The new field `NodeAllocatableResources` within the
 `ResourceSlice.Device` spec is used to define the node allocatable
 resource quantities.
 
@@ -365,11 +365,11 @@ resource quantities.
 // In k8s.io/api/resource/v1/types.go
 type Device struct {
     // ... existing fields
-    // NodeAllocatableResourceMappings defines the mapping of node resources
-    // that are managed by the DRA driver exposing this device. This includes resources currently
+    // NodeAllocatableResources defines the mapping of node resources
+    // that are managed by the DRA driver exposing this device. These are resources currently
     // reported in v1.Node `status.allocatable` that are not extended resources
     // (see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#extended-resources).
-    // Examples include "cpu", "memory", "ephemeral-storage", and hugepages.
+    // The only allowed keys are "cpu", "memory", and "hugepages-<size>".
     // In addition to standard requests made through the Pod `spec`, these resources
     // can also be requested through claims and allocated by the DRA driver.
     // For example, a CPU DRA driver might allocate exclusive CPUs or auxiliary node memory
@@ -378,59 +378,102 @@ type Device struct {
     // Extended resource names are not permitted as keys.
     // +optional
     // +featureGate=DRANodeAllocatableResources
-    NodeAllocatableResourceMappings map[v1.ResourceName]NodeAllocatableResourceMapping `json:"nodeAllocatableResourceMappings,omitempty" protobuf:"bytes,13,opt,name=nodeAllocatableResourceMappings"`
+    NodeAllocatableResources map[v1.ResourceName]NodeAllocatableResource `json:"nodeAllocatableResources,omitempty" protobuf:"bytes,14,opt,name=nodeAllocatableResources"`
 }
 
-// NodeAllocatableResourceMapping defines the translation between the DRA device/capacity
+// NodeAllocatableResource defines the translation between the DRA device/capacity
 // units requested to the corresponding quantity of the node allocatable resource.
-// Exactly one of Direct or Overhead must be specified. Specifying both simultaneously is an invalid configuration.
-type NodeAllocatableResourceMapping struct {
-    // Direct is used when the device directly models a node allocatable resource like standard CPU or memory
-    // (e.g., with a CPU DRA driver). The calculated quantity is accounted for exactly once per claim instance
-    // on the node. To prevent node cgroup isolation friction, the scheduler explicitly
-    // blocks sharing direct-mapped device claims across multiple pods.
-    // +optional
-    // +oneOf=MappingType
-    Direct *NodeAllocatableDirectMapping `json:"direct,omitempty" protobuf:"bytes,1,opt,name=direct"`
+// At least one of Mapping or Overhead must be specified. Not specifying either is an invalid configuration.
+type NodeAllocatableResource struct {
+	// Mapping is used when the device directly models a node allocatable resource like standard CPU or memory
+	// (e.g., with a CPU DRA driver). The calculated quantity is accounted for exactly once per claim instance
+	// on the node. To prevent node cgroup isolation friction, the scheduler explicitly
+	// blocks sharing mapped device claims across multiple pods.
+	// +optional
+	// +k8s:optional
+	Mapping *NodeAllocatableMapping `json:"mapping,omitempty" protobuf:"bytes,3,opt,name=mapping"`
 
-    // Overhead contains fields for modeling auxiliary overhead incurred on node allocatable resources
-    // when allocating devices that are not themselves modeling a node allocatable resource (e.g., host memory overhead for GPUs).
-    // Sharing overhead-mapped claims across multiple pods is allowed. The node allocatable overhead is accounted
-    // for individually for each pod referencing the claim.
-    // +optional
-    // +oneOf=MappingType
-    Overhead *NodeAllocatableOverhead `json:"overhead,omitempty" protobuf:"bytes,2,opt,name=overhead"`
+	// Overhead contains fields for modeling auxiliary overhead incurred on node allocatable resources
+	// when allocating devices that are not themselves modeling a node allocatable resource (e.g., host memory overhead for GPUs).
+	// Sharing overhead-mapped claims across multiple pods is allowed. The node allocatable overhead is accounted
+	// for individually for each pod referencing the claim.
+	// Overhead is always subtracted from the node's allocatable capacity for the resource, even when mapping
+	// is specified for the same resource.
+	// Eg: If a device models memory capacity per socket as a consumable capacity pool via Mapping (with CapacityKey),
+	// any overhead specified for the same resource will be subtracted from the node's general allocatable capacity
+	// and not from the per-socket capacity pool in Mapping.
+	// +optional
+	// +k8s:optional
+	Overhead *NodeAllocatableOverhead `json:"overhead,omitempty" protobuf:"bytes,4,opt,name=overhead"`
 }
 
-// NodeAllocatableDirectMapping defines how a DRA allocation directly translates into a node allocatable resource quantity.
-// The mapping can be derived from the count of allocated devices, the specific capacity consumed, or a combination of both.
-type NodeAllocatableDirectMapping struct {
-    // CapacityKey references a capacity name defined as a key in the
-    // `spec.devices[*].capacity` map. When this field is set, the value associated with
-    // this key in the `status.allocation.devices.results[*].consumedCapacity` map
-    // determines the base quantity for the node allocatable resource.
-    // +optional
-    CapacityKey *QualifiedName `json:"capacityKey,omitempty" protobuf:"bytes,1,opt,name=capacityKey"`
+// NodeAllocatableMapping defines how a DRA allocation directly translates into a node allocatable resource quantity.
+// The mapping can be derived from either the count of allocated devices (via deviceMultiplier) or the specific capacity consumed (via capacityKey and capacityMultiplier). These options are mutually exclusive.
+// Kubelet adds this mapped resource quantity from claim to both requests and limits at the pod-level cgroup, and to limits at the container-level cgroup for each container referencing the claim.
+type NodeAllocatableMapping struct {
+	// CapacityKey references a capacity name defined as a key in the
+	// `spec.devices[*].capacity` map. When this field is set, the value associated with
+	// this key in the `status.allocation.devices.results[*].consumedCapacity` map
+	// (for a specific claim allocation) determines the base quantity for
+	// the node allocatable resource. `capacityMultiplier` must also be set and is
+	// multiplied with the base quantity.
+	// For example, if `spec.devices[*].capacity` has an entry "dra.example.com/memory": "128Gi",
+	// and this field is set to "dra.example.com/memory", then for a claim allocation
+	// that consumes { "dra.example.com/memory": "4Gi" } the base quantity for the
+	// node allocatable resource mapping will be "4Gi".
+	// The final node allocatable resource amount is `consumedCapacity[capacityKey]` * `capacityMultiplier`.
+	// +optional
+	// +k8s:optional
+	// +k8s:unionMember
+	// +k8s:alpha(since: "1.37")=+k8s:dependentRequired("capacityMultiplier")
+	CapacityKey *QualifiedName `json:"capacityKey,omitempty" protobuf:"bytes,1,opt,name=capacityKey"`
 
-    // AllocationMultiplier is used as a multiplier for the allocated device count or the allocated capacity in the claim.
-    // If omitted, it defaults to 1.
-    // +optional
-    AllocationMultiplier *resource.Quantity `json:"allocationMultiplier,omitempty" protobuf:"bytes,2,opt,name=allocationMultiplier"`
+	// CapacityMultiplier is used as a multiplier for the allocated capacity consumed.
+	// It is only valid if `capacityKey` is set.
+	// The final node allocatable resource amount is `consumedCapacity[capacityKey]` * `capacityMultiplier`.
+	// For example, if a Device's capacity "dra.example.com/cores" is consumed,
+	// and each "core" provides 2 "cpu"s, the mapping would be:
+	// {ResourceName: "cpu", capacityKey: "dra.example.com/cores", capacityMultiplier: "2"}.
+	// If a claim consumes 8 "dra.example.com/cores", the CPU footprint is 8 * 2 = 16.
+	// +optional
+	// +k8s:optional
+	// +k8s:alpha(since: "1.37")=+k8s:dependentRequired("capacityKey")
+	CapacityMultiplier *resource.Quantity `json:"capacityMultiplier,omitempty" protobuf:"bytes,2,opt,name=capacityMultiplier"`
+
+	// DeviceMultiplier is used as a multiplier for the allocated device count in the claim.
+	// The final node allocatable resource amount is `deviceCount` * `deviceMultiplier`.
+	// For example, a DRA driver representing each cache complex (CCX) as a device would have
+	// {ResourceName: "cpu", deviceMultiplier: "8"} in its `nodeAllocatableResources`.
+	// If 2 devices (CCX) are allocated to the claim, 2 * 8 = 16 CPUs would be considered as allocated.
+	// It is only valid when `capacityKey` and `capacityMultiplier` are not set.
+	// +optional
+	// +k8s:optional
+	// +k8s:unionMember
+	DeviceMultiplier *resource.Quantity `json:"deviceMultiplier,omitempty" protobuf:"bytes,3,opt,name=deviceMultiplier"`
 }
 
 // NodeAllocatableOverhead defines auxiliary resource overheads incurred when allocating a device.
 // Overheads can be specified as a fixed cost per pod referencing the claim, a variable cost per container reference, or both.
+// Kubelet accounts for this overhead by adding it to both the pod-level and container-level cgroups of referencing containers.
 type NodeAllocatableOverhead struct {
-    // PerPodReference is auxiliary overhead applied once per pod referencing the claim on this node.
-    // This is useful in cross-pod sharing scenarios to model flat overhead incurred for every pod
-    // connecting to the shared claim.
-    // +optional
-    PerPodReference *resource.Quantity `json:"perPodReference,omitempty" protobuf:"bytes,1,opt,name=perPodReference"`
+	// PerPod is overhead applied once per pod referencing the claim on this node.
+	// This is a flat overhead incurred for every pod referencing the claim.
+	// +optional
+	// +k8s:optional
+	PerPod *resource.Quantity `json:"perPod,omitempty" protobuf:"bytes,1,opt,name=perPod"`
 
-    // PerContainerReference is auxiliary overhead applied per container reference to the claim.
-    // This models overhead scaling linearly with the number of containers actively using the device.
-    // +optional
-    PerContainerReference *resource.Quantity `json:"perContainerReference,omitempty" protobuf:"bytes,2,opt,name=perContainerReference"`
+	// PerContainer is applied per container reference to the claim.
+	// This models overhead scaling linearly with the number of containers actively using the device.
+	// When both PerPod and PerContainer are specified, the total overhead allocated for each pod referencing
+	// the claim is computed as:
+	// Quantity = PerPod + (PerContainer * NumReferences)
+	// Kubelet accounts for this overhead in cgroups:
+	// - Pod-level cgroup (requests and limits): Kubelet adds PerPod + (PerContainer * NumReferences).
+	// - Container-level cgroup (limits only): Kubelet adds PerPod + PerContainer for each referencing container.
+	// This allows any single container to access the pod-level overhead, while the parent cgroup caps the total usage to account for PerPod exactly once.
+	// +optional
+	// +k8s:optional
+	PerContainer *resource.Quantity `json:"perContainer,omitempty" protobuf:"bytes,2,opt,name=perContainer"`
 }
 ```
 
@@ -458,56 +501,82 @@ type PodStatus struct {
 
 // NodeAllocatableResourceClaimStatus describes the status of node allocatable resources allocated via DRA.
 type NodeAllocatableResourceClaimStatus struct {
-  // ResourceClaimName is the resource claim referenced by the pod that resulted in this node allocatable resource allocation.
-  // +required
-  ResourceClaimName string `json:"resourceClaimName" protobuf:"bytes,1,opt,name=resourceClaimName"`
+	// ResourceClaimName is the resource claim referenced by the pod that resulted in this node allocatable resource allocation.
+	// +required
+	// +k8s:required
+	ResourceClaimName string `json:"resourceClaimName" protobuf:"bytes,1,opt,name=resourceClaimName"`
+	// Containers lists the names of all containers in this pod that reference the claim.
+	// +optional
+	// +listType=set
+	// +k8s:optional
+	// +k8s:listType=set
+	Containers []string `json:"containers,omitempty" protobuf:"bytes,2,rep,name=containers"`
 
-  // Containers lists the names of all containers in this pod that reference the claim.
-  // +optional
-  // +listType=set
-  Containers []string `json:"containers,omitempty" protobuf:"bytes,2,rep,name=containers"`
+	// Resources is tombstoned since it got replaced with more granular Mapping and Overhead fields.
+	// Resources map[ResourceName]resource.Quantity `json:"resources,omitempty" protobuf:"bytes,3,rep,name=resources"`
 
-  // Direct contains allocations through devices mapped in `device.nodeAllocatableResourceMappings.direct`.
-  // This is used by kubelet for node cgroup enforcement.
-  // +optional
-  // +oneOf=MappingType
-  Direct []NodeAllocatableDirectResources `json:"direct,omitempty" protobuf:"bytes,3,rep,name=direct"`
-
-  // Overhead contains allocations through devices mapped in `device.nodeAllocatableResourceMappings.overhead`.
-  // This is used by kubelet for node cgroup enforcement.
-  // +optional
-  // +oneOf=MappingType
-  Overhead []NodeAllocatableOverheadResources `json:"overhead,omitempty" protobuf:"bytes,4,rep,name=overhead"`
+	// Mapping contains allocations through devices mapped in the device spec's `nodeAllocatableResources[...].mapping` field.
+	// This is used by kubelet for pod level and container-level cgroup enforcement.
+	// +optional
+	// +patchStrategy=merge
+	// +patchMergeKey=name
+	// +listType=map
+	// +listMapKey=name
+	// +k8s:optional
+	// +k8s:listType=map
+	// +k8s:listMapKey=name
+	Mapping []NodeAllocatableMappedResources `json:"mapping,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,4,rep,name=mapping"`
+	// Overhead contains allocations through devices mapped in the device spec's `nodeAllocatableResources[...].overhead` field.
+	// This is used by kubelet for pod level and container-level cgroup enforcement.
+	// +optional
+	// +patchStrategy=merge
+	// +patchMergeKey=name
+	// +listType=map
+	// +listMapKey=name
+	// +k8s:optional
+	// +k8s:listType=map
+	// +k8s:listMapKey=name
+	Overhead []NodeAllocatableOverheadResources `json:"overhead,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,5,rep,name=overhead"`
 }
 
-// NodeAllocatableDirectResources describes direct node allocatable resource allocations.
-type NodeAllocatableDirectResources struct {
-  // Name is the name of the resource (e.g., cpu, memory).
-  // +required
-  Name ResourceName `json:"name" protobuf:"bytes,1,opt,name=name"`
-
-  // Quantity is the total node allocatable resource capacity allocated for the claim.
-  // This claim's allocated devices is shared by all the containers referencing the claim.
-  // +required
-  Quantity resource.Quantity `json:"quantity" protobuf:"bytes,2,opt,name=quantity"`
+// NodeAllocatableMappedResources describes mapped node allocatable resource allocations.
+type NodeAllocatableMappedResources struct {
+	// Name is the name of the resource (e.g., cpu, memory).
+	// +required
+	// +k8s:required
+	Name ResourceName `json:"name" protobuf:"bytes,1,opt,name=name,casttype=ResourceName"`
+	// Quantity is the total node allocatable resource capacity allocated for the claim.
+	// This claim's allocated devices is shared by all the containers referencing the claim.
+	// Kubelet adds this value to both requests and limits at the pod-level cgroup, and to limits at the container-level cgroup for each container referencing the claim.
+	// +required
+	// +k8s:required
+	Quantity *resource.Quantity `json:"quantity" protobuf:"bytes,2,opt,name=quantity"`
 }
 
 // NodeAllocatableOverheadResources describes auxiliary overhead resource allocations.
 type NodeAllocatableOverheadResources struct {
-  // Name is the name of the resource (e.g., cpu, memory).
-  // +required
-  Name ResourceName `json:"name" protobuf:"bytes,1,opt,name=name"`
-
-  // PerPodReference is the flat overhead quantity allocated per pod.
-  // +optional
-  PerPodReference *resource.Quantity `json:"perPodReference,omitempty" protobuf:"bytes,3,opt,name=perPodReference"`
-
-  // PerContainerReference is the variable overhead quantity applied for each container referencing the claim.
-  // The container references are recorded in `nodeAllocatableResourceClaimStatuses.containers`.
-  // The total overhead quantity allocated for the claim is computed as:
-  // Quantity = PerPodReference + (PerContainerReference * NumReferences)
-  // +optional
-  PerContainerReference *resource.Quantity `json:"perContainerReference,omitempty" protobuf:"bytes,4,opt,name=perContainerReference"`
+	// Name is the name of the resource (e.g., cpu, memory).
+	// +required
+	// +k8s:required
+	Name ResourceName `json:"name" protobuf:"bytes,1,opt,name=name,casttype=ResourceName"`
+	// PerPod is the flat overhead quantity allocated per pod.
+	// Adding to each container limit allows individual containers to utilize the overhead, while the parent pod-level cgroup limit caps the total usage at the pod boundary where the overhead is accounted for exactly once.
+	// At least one of PerPod or PerContainer must be specified. Specifying neither is an invalid configuration.
+	// +optional
+	// +k8s:optional
+	PerPod *resource.Quantity `json:"perPod,omitempty" protobuf:"bytes,2,opt,name=perPod"`
+	// PerContainer is the variable overhead quantity applied for each container referencing the claim.
+	// The container references are recorded in `nodeAllocatableResourceClaimStatuses.containers`.
+	// The total overhead quantity allocated for the claim is computed as:
+	// Quantity = PerPod + (PerContainer * NumReferences)
+	// Kubelet accounts for this overhead in cgroups:
+	// - Pod-level cgroup (requests and limits): Kubelet adds PerPod + (PerContainer * NumReferences).
+	// - Container-level cgroup (limits only): Kubelet adds PerPod + PerContainer for each referencing container.
+	// This allows any single container to access the pod-level overhead, while the parent cgroup caps the total usage to account for PerPod exactly once.
+	// At least one of PerPod or PerContainer must be specified. Specifying neither is an invalid configuration.
+	// +optional
+	// +k8s:optional
+	PerContainer *resource.Quantity `json:"perContainer,omitempty" protobuf:"bytes,3,opt,name=perContainer"`
 }
 ```
 
@@ -517,8 +586,8 @@ type NodeAllocatableOverheadResources struct {
 1.  Direct Device Mapping with Individual Devices
   
   *   Each device instance in the slice corresponds directly to a fixed unit of the node allocatable resource.
-  *   The `allocationMultiplier` determines the resource footprint per device instance.
-  *   The number of devices allocated to the claim multiplied by `allocationMultiplier` determines the overall node allocatable resource footprint and is recorded in the pod status.
+  *   The `deviceMultiplier` determines the resource footprint per device instance.
+  *   The number of devices allocated to the claim multiplied by `deviceMultiplier` determines the overall node allocatable resource footprint and is recorded in the pod status.
 
   ```yaml
     # ResourceSlice
@@ -533,16 +602,16 @@ type NodeAllocatableOverheadResources struct {
       devices:
       - name: cpu0
         attributes: { numaNode: 0 }
-        nodeAllocatableResourceMappings:
+        nodeAllocatableResources:
           cpu: 
-            direct:
-              allocationMultiplier: "1"
+            mapping:
+              deviceMultiplier: "1"
       - name: cpu1
         attributes: { numaNode: 0 }
-        nodeAllocatableResourceMappings:
+        nodeAllocatableResources:
           cpu: 
-            direct:
-              allocationMultiplier: "1"
+            mapping:
+              deviceMultiplier: "1"
     ---
     # ResourceClaim
     apiVersion: resource.k8s.io/v1
@@ -576,7 +645,7 @@ type NodeAllocatableOverheadResources struct {
       - resourceClaimName: cpu-claim
         containers:
         - worker
-        direct:
+        mapping:
         - name: cpu
           quantity: "2" # Derived from 2 allocated devices * multiplier 1
   ```
@@ -586,7 +655,7 @@ type NodeAllocatableOverheadResources struct {
   *   The device is represented as a consumable capacity.
   *   The `capacityKey` links the mapping directly to a specific capacity attribute inside the device.
   *   The scheduler reads the exact consumed capacity from the claim allocation results to determine the base quantity.
-  *   Applying an `allocationMultiplier` allows translating between pool capacity units and standard resource units, converting one pool core into two standard CPUs.
+  *   Applying a `capacityMultiplier` allows translating between pool capacity units and standard resource units, converting one pool core into two standard CPUs.
   *   The final calculated amount is recorded in the pod status.
 
   ```yaml
@@ -607,14 +676,15 @@ type NodeAllocatableOverheadResources struct {
         capacity:
           "dra.example.com/cores": "64"
           "dra.example.com/memory": "256Gi"
-        nodeAllocatableResourceMappings: 
+        nodeAllocatableResources: 
           cpu:
-            direct:
+            mapping:
               capacityKey: "dra.example.com/cores"
-              allocationMultiplier: "2"
+              capacityMultiplier: "2"
           memory:
-            direct:
+            mapping:
               capacityKey: "dra.example.com/memory"
+              capacityMultiplier: "1"
     ---
     # ResourceClaim
     apiVersion: resource.k8s.io/v1
@@ -652,7 +722,7 @@ type NodeAllocatableOverheadResources struct {
       - resourceClaimName: shared-cpu-pool-claim
         containers:
         - app
-        direct:
+        mapping:
         - name: cpu
           quantity: "4" # Derived from consumed pool cores (2 cores * multiplier 2)
   ```
@@ -677,11 +747,11 @@ type NodeAllocatableOverheadResources struct {
       - name: xpu-model-x-001
         attributes:
           example.com/model: "model-x"
-        nodeAllocatableResourceMappings:
+        nodeAllocatableResources:
           memory:
             overhead:
-              perPodReference: "1Gi"
-              perContainerReference: "500Mi"
+              perPod: "1Gi"
+              perContainer: "500Mi"
     ---
     # ResourceClaim
     apiVersion: resource.k8s.io/v1
@@ -722,8 +792,8 @@ type NodeAllocatableOverheadResources struct {
         - app-c2
         overhead:
         - name: memory
-          perPodReference: "1Gi"
-          perContainerReference: "500Mi"
+          perPod: "1Gi"
+          perContainer: "500Mi"
   ```
 
 4.  Partitionable Devices
@@ -755,10 +825,11 @@ type NodeAllocatableOverheadResources struct {
         - counterSet: node-cpu-counters
           counters:
             "dra.example.com/cpu": "16"
-        nodeAllocatableResourceMappings:
+        nodeAllocatableResources:
           cpu:
-            direct:
+            mapping:
               capacityKey: "dra.example.com/cpu"
+              capacityMultiplier: "1"
       # L3 Cache Level Devices
       - name: numa-0-l3-0
         attributes:
@@ -771,10 +842,11 @@ type NodeAllocatableOverheadResources struct {
         - counterSet: node-cpu-counters
           counters:
             "dra.example.com/cpu": "8"
-        nodeAllocatableResourceMappings:
+        nodeAllocatableResources:
           cpu:
-            direct:
+            mapping:
               capacityKey: "dra.example.com/cpu"
+              capacityMultiplier: "1"
       - name: numa-0-l3-1
         attributes:
           dra.example.com/type: l3cache
@@ -786,10 +858,11 @@ type NodeAllocatableOverheadResources struct {
         - counterSet: node-cpu-counters
           counters:
             "dra.example.com/cpu": "8"
-        nodeAllocatableResourceMappings:
+        nodeAllocatableResources:
           cpu:
-            direct:
+            mapping:
               capacityKey: "dra.example.com/cpu"
+              capacityMultiplier: "1"
       # ... additional devices for numa-1
     ---
     # ResourceClaim
@@ -824,7 +897,7 @@ type NodeAllocatableOverheadResources struct {
       - resourceClaimName: l3-cache-claim
         containers:
         - fast-app
-        direct:
+        mapping:
         - name: cpu
           quantity: "8" # Derived from specific consumed capacity key of the L3 cache device
   ```
@@ -879,18 +952,18 @@ type NodeAllocatableOverheadResources struct {
       nodeAllocatableResourceClaimStatuses:
       - resourceClaimName: gpu-or-cpu
         containers: ["my-app"]
-        direct:
+        mapping:
         - name: cpu
           quantity: "30"
   ```
 
 #### API Validation
 
-* The keys in the `nodeAllocatableResourceMappings` map must be valid standard node allocatable resource names like CPU, memory, or huge pages, and are not permitted to be extended resources.
-* If `capacityKey` is specified, it must be a valid qualified name.
-* If `allocationMultiplier` is specified, it must be a valid non-negative resource quantity. If omitted, it defaults to `1`.
-* Within a single resource mapping, the `direct` and `overhead` fields are mutually exclusive, meaning only one of them can be specified.
-* If the `overhead` field is specified, it must contain at least one non-negative value for either the `perPodReference` or `perContainerReference` overhead quantities.
+* The keys in the `nodeAllocatableResources` map must be exactly `cpu`, `memory`, or `hugepages-<size>`. All other names, including extended resources and `ephemeral-storage`, are rejected (`ephemeral-storage` is deferred to beta together with DRA-aware eviction in kubelet).
+* Within a single resource mapping, at least one of the `mapping` or `overhead` fields must be specified.
+* If `mapping` is specified, it must use either `deviceMultiplier` or a combination of `capacityKey` and `capacityMultiplier`. These options are mutually exclusive.
+* If `capacityKey` is specified, it must be a valid qualified name and `capacityMultiplier` is required.
+* If the `overhead` field is specified, it must contain at least one non-negative value for either the `perPod` or `perContainer` overhead quantities.
 * For `PodStatus` updates, each entry in the `nodeAllocatableResourceClaimStatuses` array must reference a valid claim name and contain correctly formatted resource quantities.
 
 ### Kube-Scheduler Changes
@@ -912,9 +985,9 @@ plugins.
    *  **DynamicResources Plugin:** This plugin takes on the authoritative role for checking node allocatable resource fit if any of the
       pod's `ResourceClaim`s request node allocatable resources.
       *   The plugin tries to allocate devices to all the resource claims of the pod.
-      *   **Claim Resource Calculation:** For each allocated device, the plugin checks `nodeAllocatableResourceMappings` and computes the quantity for each node allocatable resource based on whether a direct or overhead mapping is specified:
-          *   If `direct` is specified, the quantity is derived using the `capacityKey` or `allocationMultiplier` fields. If `capacityKey` is set, the base quantity is the consumed capacity from the claim allocation results multiplied by `allocationMultiplier`. If `capacityKey` is omitted, the `allocationMultiplier` is applied directly to the count of allocated devices.
-          *   If `overhead` is specified, the auxiliary overhead is calculated by summing any `perPodReference` cost and the variable `perContainerReference` cost scaled by the number of active container references.
+      *   **Claim Resource Calculation:** For each allocated device, the plugin checks `nodeAllocatableResources` and computes the quantity for each node allocatable resource based on whether a mapping and/or overhead mapping is specified:
+          *   If `mapping` is specified, the quantity is derived using the `capacityKey`, `capacityMultiplier`, or `deviceMultiplier` fields. If `capacityKey` is set, the base quantity is the consumed capacity from the claim allocation results multiplied by `capacityMultiplier`. If `capacityKey` is omitted, the `deviceMultiplier` is applied directly to the count of allocated devices.
+          *   If `overhead` is specified, the auxiliary overhead is calculated by summing any `perPod` cost and the variable `perContainer` cost scaled by the number of active container references.
       *   The plugin calculates the total effective demand for each node allocatable resource by:
           *   Summing up container requests from the pod spec requests and the amounts determined from DRA claims.
           *   If a claim is referenced by multiple containers, it is accounted for only once.
@@ -927,8 +1000,8 @@ plugins.
               requests (standard + DRA claims) does not exceed the budget set at the pod level in `pod.spec.resources`([details](#integration-with-pod-level-resources)).
           *   The plugin enforces sharing rules based on mapping. If a claim is already assigned to
               an existing pod and the allocated device uses direct device mappings
-              (`nodeAllocatableResourceMappings.direct`), shared access is blocked across pods to prevent
-              cgroup conflicts. Auxiliary overhead mappings (`nodeAllocatableResourceMappings.overhead`) are
+              (`nodeAllocatableResources[...].mapping`), shared access is blocked across pods to prevent
+              cgroup conflicts. Auxiliary overhead mappings (`nodeAllocatableResources[...].overhead`) are
               allowed to share across pods ([details](#handling-shared-claims)).
       *   This total effective demand is checked against the node's allocatable resources and node is filtered out if it does not have enough capacity.
       *   The calculated node allocatable resource allocations for the pod on this specific node (`NodeAllocatableResourceClaimStatus`) are
@@ -970,7 +1043,7 @@ The total node allocatable resource requirements for a pod are determined as fol
 *   **With Pod-Level Resources**: If pod-level resources (`pod.spec.resources.requests`) are specified for a resource, they define the overall footprint for that resource. Individual container-level requests and any DRA status allocations/overheads are ignored.
 *   **Without Pod-Level Resources**: The footprint is calculated by combining standard container requests and DRA status allocations:
     - For each container, its effective request is the sum of its standard resource requests and any DRA allocations it references. We get these 
-      DRA allocations from the fields in `pod.status.nodeAllocatableResourceClaimStatuses` (both `direct` and `overhead` mappings).
+      DRA allocations from the fields in `pod.status.nodeAllocatableResourceClaimStatuses` (both `mapping` and `overhead` mappings).
     - If init containers reference a claim with an overhead.perContainer mapping, we rely on the existing logic used with standard requests where the
       peak of regular and init containers' resources is considered.
     - Any pod-scoped DRA overheads (`overhead.perPod`) are added directly to this total.
@@ -1020,32 +1093,20 @@ within the Pod scope (standard requests in Spec and DRA requests in `status.node
 **Inter-Pod Sharing:**
 
 Sharing `ResourceClaim`s that manage node allocatable resources across different pods is evaluated differentially depending on the mapping type established in the `Device` mapping:
-1.  **CPU/Memory Direct Mappings (`Direct` field is set)**: The `DynamicResources` plugin **continues to block sharing across pods** (returning `UnschedulableAndUnresolvable`). 
+1.  **CPU/Memory Direct Mappings (`Mapping` field is set)**: The `DynamicResources` plugin **continues to block sharing across pods** (returning `UnschedulableAndUnresolvable`). 
     Sharing pools of direct native resources creates severe accounting ambiguities (attributing fractional pool costs against distinct pod-level budgets) and intense Kubelet cgroup reconciliation friction.
-2.  **Accelerator Overheads (`Overhead` field is set)**: The `DynamicResources` plugin **allows sharing across pods**. Auxiliary overheads represent host memory or 
+2.  **Accelerator Overheads (Only `Overhead` field is set)**: The `DynamicResources` plugin **allows sharing across pods**. Auxiliary overheads represent host memory or 
     auxiliary tracking structures required per consumer pod/reference. Because these represent standard additive overheads without dynamic draw-down interactions, 
     the scheduler and Kubelet safely accumulate and sum all resources directly from `pod.Status.NodeAllocatableResourceClaimStatuses` for each individual pod independently.
 
-A new field `NodeAllocatableDRAClaimStates` is added in `NodeInfo` to track the state of node allocatable resource DRA claims on this node. 
-The `DynamicResources` plugin uses this during the `Filter` stage to enforce sharing restriction on direct-mapped claims assigned to an existing pod.
+The `DynamicResources` plugin enforces the sharing restriction during the `Filter` stage by inspecting the claim's
+existing consumers (`claim.status.reservedFor`): if an allocated claim with a `mapping` entry is already reserved for
+another pod, the node is rejected with `UnschedulableAndUnresolvable`. Pods reserved together in the same scheduling
+cycle (e.g., gang scheduling) are permitted, since their footprints are accounted together.
 
-
-```go
-    // In pkg/scheduler/framework/types.go
-    type NodeInfo struct {
-        // ... existing fields
-
-        // NodeAllocatableDRAClaimStates tracks the state of claims requesting node allocatable resources.
-        // The key is the NamespacedName of the ResourceClaim.
-        NodeAllocatableDRAClaimStates map[types.NamespacedName]*NodeAllocatableDRAClaimState
-    }
-
-    // NodeAllocatableDRAClaimState holds information about a node allocatable resource DRA claim's allocation on a node.
-    type NodeAllocatableDRAClaimState struct {
-      // Pods using this claim on this node.
-      ConsumerPods sets.Set[types.UID]
-    }
-```
+No new scheduler framework API is required for this. The `NodeAllocatableDRAClaimState` type and the corresponding
+`NodeInfo` tracking introduced in the initial alpha (v1.36) were removed in the alpha2 rework of the
+`k8s.io/kube-scheduler` staging module.
 
 #### Multiple Claims per Container
 
@@ -1154,8 +1215,8 @@ HugePages Limit = Sum(Spec.Limits[hugepages-<size>]) + DRADirectMapped(hugepages
 
 *   **`Sum(Spec.Requests[resource])`**: Sum of requests across all containers in the pod.
 *   **`Sum(Spec.Limits[resource])`**: Sum of limits across all containers in the pod.
-*   **`DRADirectMapped(resource)`**: Sum of direct mapped DRA allocations for all the claims referenced in the pod (obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].direct[].quantity`).
-*   **`DRAOverheadMappedPodTotal(resource)`**: Sum of overhead mapped DRA allocations across all distinct claims allocated to the pod, obtained as `PerPodReference + (PerContainerReference * len(containers))`.
+*   **`DRADirectMapped(resource)`**: Sum of direct mapped DRA allocations for all the claims referenced in the pod (obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].mapping[].quantity`).
+*   **`DRAOverheadMappedPodTotal(resource)`**: Sum of overhead mapped DRA allocations across all distinct claims allocated to the pod, obtained as `PerPod + (PerContainer * len(containers))`.
 
 **Why Pod Level Cgroup Limits includes DRA allocations?**
 
@@ -1192,9 +1253,9 @@ HugePages Limit = Spec.Limits[hugepages-<size>] + DRADirectMapped(hugepages-<siz
 *   **`Spec.Requests[resource]`**: Standard request specified in `pod.spec.containers[].resources.requests` (or default value if unset)
 *   **`Spec.Limits[resource]`**: Standard limit specified in `pod.spec.containers[].resources.limits`. If container-level limits are omitted
     but `PodLevelResources` (`pod.spec.resources.limits`) are explicitly specified, this value falls back to the pod level resource limit.
-*   **`DRADirectMapped(resource)`**: Sum of direct compute resources allocated via DRA (e.g., resources allocated via cpu/memory dra driver), obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].direct[].quantity`.
-*   **`DRAOverheadMappedPerContainer(resource)`**: Sum of overhead resources allocated via DRA (e.g., additional cpu/memory resources for a GPU device), obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].overhead[].perContainerReference`.
-*   **`DRAOverheadMappedPerPod(resource)`**: Sum of overhead DRA allocations for the pod, obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].overhead[].perPodReference`.
+*   **`DRADirectMapped(resource)`**: Sum of direct compute resources allocated via DRA (e.g., resources allocated via cpu/memory dra driver), obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].mapping[].quantity`.
+*   **`DRAOverheadMappedPerContainer(resource)`**: Sum of overhead resources allocated via DRA (e.g., additional cpu/memory resources for a GPU device), obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].overhead[].perContainer`.
+*   **`DRAOverheadMappedPerPod(resource)`**: Sum of overhead DRA allocations for the pod, obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].overhead[].perPod`.
     *   Since the claim resources are shared by all containers referencing the claim, the per-pod overhead is included in the limit of all the containers, but is counted exactly once at the parent pod-level cgroup ceiling.
 
 **Why Container Level Limits includes DRA allocations?**
@@ -1285,7 +1346,7 @@ When a container omits limits for CPU, Memory, or HugePages, the Kubelet sets cg
 ```
 CPU Quota = -1 (unlimited)
 Memory Limit = unset (unlimited)
-HugePages Limit = DRADirect(hugepages-<size>) + DRAOverhead(hugepages-<size>)
+HugePages Limit = DRAMapped(hugepages-<size>) + DRAOverhead(hugepages-<size>)
 ```
 
 **Pod-Level Cgroup Defaults:**
@@ -1295,7 +1356,7 @@ If `PodLevelResources` are explicitly specified (`pod.spec.resources.limits`), t
 ```
 CPU Quota = -1 (unlimited)
 Memory Limit = unset (unlimited)
-HugePages Limit = DRADirectUnique(hugepages-<size>) + DRAOverheadUnique(hugepages-<size>)
+HugePages Limit = DRAMappedUnique(hugepages-<size>) + DRAOverheadUnique(hugepages-<size>)
 ```
 
 ##### Handling Kubelet Disabling Quota with Exclusive CPUs
@@ -1339,7 +1400,7 @@ status:
   nodeAllocatableResourceClaimStatuses:
   - resourceClaimName: shared-cpu-claim
     containers: ["c1"]
-    direct:
+    mapping:
     - name: cpu
       quantity: "5"
     - name: memory
@@ -1347,7 +1408,7 @@ status:
 ```
 
 * **Pod Level Cgroup**:
-  * `cpu.weight` (CPU Shares): Set based on standard request + DRA direct: 2 + 5 = **7 CPUs**.
+  * `cpu.weight` (CPU Shares): Set based on standard request + DRA mapping: 2 + 5 = **7 CPUs**.
   * `cpu.max` (CPU Quota): Set based on standard limit + DRA (4 + 5) - **9 CPUs**.
   * `memory.max` (Memory Limit): Set based on standard limit + DRA (4 + 5) - **9 GiB**.
 * **Container Level Cgroup**:
@@ -1379,13 +1440,13 @@ status:
   nodeAllocatableResourceClaimStatuses:
   - resourceClaimName: shared-cpu-claim
     containers: ["c1"]
-    direct:
+    mapping:
     - name: cpu
       quantity: "5"
 ```
 
 *   **Pod Level Cgroup**:
-  * `cpu.weight` (CPU Shares): Set based on standard request + DRA direct: 0 + 5 = **5 CPUs**.
+  * `cpu.weight` (CPU Shares): Set based on standard request + DRA mapping: 0 + 5 = **5 CPUs**.
   * `cpu.max` (CPU Quota): -1 (Unlimited).
 * **Container Level Cgroup**:
   * C1
@@ -1422,7 +1483,7 @@ status:
   nodeAllocatableResourceClaimStatuses:
   - resourceClaimName: shared-cpu-claim
     containers: ["c1", "c2"]
-    direct:
+    mapping:
     - name: cpu
       quantity: "5"
     - name: memory
@@ -1430,7 +1491,7 @@ status:
 ```
 
 * **Pod Level Cgroup**:
-  * `cpu.weight` (CPU Shares): Set based on standard requests sum + DRA direct: (2 + 4) + 5 = **11 CPUs**.
+  * `cpu.weight` (CPU Shares): Set based on standard requests sum + DRA mapping: (2 + 4) + 5 = **11 CPUs**.
   * `cpu.max` (CPU Quota): Set based on standard limit sum + DRA counted once (4 + 8 + 5) - **17 CPUs**.
   * `memory.max` (Memory Limit): Set based on standard limit sum + DRA counted once (4 + 8 + 5) - **17 GiB**.
 * **Container Level C1 Cgroup**:
@@ -1476,7 +1537,7 @@ status:
   nodeAllocatableResourceClaimStatuses:
   - resourceClaimName: shared-cpu-claim
     containers: ["c1", "c2"]
-    direct:
+    mapping:
     - name: cpu
       quantity: "5"
     - name: memory
@@ -1530,7 +1591,7 @@ status:
   nodeAllocatableResourceClaimStatuses:
   - resourceClaimName: shared-cpu-claim
     containers: ["c1", "c2"]
-    direct:
+    mapping:
     - name: cpu
       quantity: "5"
     - name: memory
@@ -1588,17 +1649,17 @@ status:
     containers: ["c1", "c2"]
     overhead:
     - name: cpu
-      perPodReference: "1"
-      perContainerReference: "500m"
+      perPod: "1"
+      perContainer: "500m"
     - name: memory
-      perPodReference: "1Gi"
-      perContainerReference: "500Mi"
+      perPod: "1Gi"
+      perContainer: "500Mi"
 ```
 
 * **Pod Level Cgroup**:
-  * `cpu.weight` (CPU Shares): Set based on standard requests sum + DRA overhead: 2(C1 Spec request) + 2(C2 Spec request)+ 1(perPodReference) + 500m * 2 (perContainerReference for C1 and C2)- **6 CPUs**.
-  * `cpu.max` (CPU Quota): Set based on standard limits sum + DRA overhead: 2(C1 Spec limit) + 4(C2 Spec limit) + 1(perPodReference) + 500m * 2 (perContainerReference for C1 and C2): **8 CPUs**.
-  * `memory.max` (Memory Limit): Set based on standard limits sum + DRA overhead: 4(C1 Spec limit) + 8(C2 Spec limit) + 1Gi(perPodReference) * 500Mi * 2 (perContainerReference for C1 and C2): - **14 GiB**.
+  * `cpu.weight` (CPU Shares): Set based on standard requests sum + DRA overhead: 2(C1 Spec request) + 2(C2 Spec request)+ 1(perPod) + 500m * 2 (perContainer for C1 and C2)- **6 CPUs**.
+  * `cpu.max` (CPU Quota): Set based on standard limits sum + DRA overhead: 2(C1 Spec limit) + 4(C2 Spec limit) + 1(perPod) + 500m * 2 (perContainer for C1 and C2): **8 CPUs**.
+  * `memory.max` (Memory Limit): Set based on standard limits sum + DRA overhead: 4(C1 Spec limit) + 8(C2 Spec limit) + 1Gi(perPod) * 500Mi * 2 (perContainer for C1 and C2): - **14 GiB**.
 * **Container Level Cgroup**:
   * C1 
     * `cpu.weight` (CPU Shares): Set based on standard request - **2 CPUs**.
@@ -1884,7 +1945,7 @@ Integrating DRA node allocatable resources would involve ensuring this helper is
 #### Pass Allocation Details from Driver to Kubelet
 
 Currently, Kubelet is blind to the type of resource allocation performed by the DRA driver. Passing this information from the DRA driver to Kubelet enables better 
-coordination and node-level cgroup enforcement. This can be solved by adding an `AllocationType` field inside `NodeAllocatableResourceMappings` and propagating 
+coordination and node-level cgroup enforcement. This can be solved by adding an `AllocationType` field inside `NodeAllocatableResources` and propagating 
 it all the way to the `pod.status` in the API.
 
 The two types of allocation that can be configured are:
@@ -1910,17 +1971,17 @@ const (
 type Device struct {
     // existing fields
     // +optional
-    NodeAllocatableResourceMappings map[v1.ResourceName]NodeAllocatableResourceMapping `json:"nodeAllocatableResourceMappings,omitempty" protobuf:"bytes,13,opt,name=nodeAllocatableResourceMappings"`
+    NodeAllocatableResources map[v1.ResourceName]NodeAllocatableResource
 }
 
-type NodeAllocatableResourceMapping struct {
-    Direct *NodeAllocatableDirectMapping
+type NodeAllocatableResource struct {
+    Mapping *NodeAllocatableMapping
     Overhead *NodeAllocatableOverhead
 }
 
-type NodeAllocatableDirectMapping struct {
-    CapacityKey          *QualifiedName     `json:"capacityKey,omitempty" protobuf:"bytes,1,opt,name=capacityKey"`
-    AllocationMultiplier *resource.Quantity `json:"allocationMultiplier,omitempty" protobuf:"bytes,2,opt,name=allocationMultiplier"`
+type NodeAllocatableMapping struct {
+    CapacityKey          *QualifiedName
+    CapacityMultiplier *resource.Quantity 
     
     // AllocationType describes whether the resources represent exclusive or shared capacity.
     // If omitted, it defaults to AllocationTypeShared.
@@ -1939,17 +2000,17 @@ type PodStatus struct {
 }
 
 type NodeAllocatableResourceClaimStatus struct {
-  ResourceClaimName string `json:"resourceClaimName" protobuf:"bytes,1,opt,name=resourceClaimName"`
-  Containers []string `json:"containers,omitempty" protobuf:"bytes,2,rep,name=containers"`
-  Direct []NodeAllocatableDirectResources `json:"direct,omitempty" protobuf:"bytes,3,rep,name=direct"`
-  Overhead []NodeAllocatableOverheadResources `json:"overhead,omitempty" protobuf:"bytes,4,rep,name=overhead"`
+  ResourceClaimName string
+  Containers []string
+  Mapping []NodeAllocatableMappedResources
+  Overhead []NodeAllocatableOverheadResources
 }
 
-type NodeAllocatableDirectResources struct {
+type NodeAllocatableMappedResources struct {
   Name           ResourceName      `json:"name" protobuf:"bytes,1,opt,name=name"`
   Quantity       resource.Quantity `json:"quantity" protobuf:"bytes,2,opt,name=quantity"`
   
-  // AllocationType is resolved from `device.nodeAllocatableResourceMappings.direct.allocationType` and added here.
+  // AllocationType is resolved from `device.nodeAllocatableResources.mapping.allocationType` and added here.
   // +required
   AllocationType AllocationType    `json:"allocationType" protobuf:"bytes,3,opt,name=allocationType"`
 }
@@ -1975,11 +2036,11 @@ type NodeAllocatableDirectResources struct {
       allowMultipleAllocations: true
       capacity:
         "dra.example.com/cores": "64"
-      nodeAllocatableResourceMappings: 
+      nodeAllocatableResources: 
         cpu:
-          direct:
+          mapping:
             capacityKey: "dra.example.com/cores"
-            allocationMultiplier: "2"
+            capacityMultiplier: "2"
             allocationType: "Exclusive"
   ```
 
@@ -2013,7 +2074,7 @@ type NodeAllocatableDirectResources struct {
             isolates CPU capacity to the container (e.g., cpuset pinning), the workloads do not experience scheduling contention with other co-located pods on the node, making CFS shares inflation unnecessary. 
             Setting shared based on exclusive resouces reserved by the DRA driver also gives the container/pod unfair advantage in the shared resource pool during resource contention.
         *   **Shared Mode (`AllocationType: Shared`)**: Shares are inflated by adding the standard pod Spec requests sum and the resolved direct CPU quantity mapped by the claim 
-            (obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].direct[].quantity`). Since the workload competes inside the node's general shared resource pool, this inflation guarantees 
+            (obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].mapping[].quantity`). Since the workload competes inside the node's general shared resource pool, this inflation guarantees 
             that the pod as a whole obtains its scheduler-reserved resources under contention.
 *   **Memory Limits**: Set based on standard limits sum + unique direct mapped memory resources (refer to the [Pod-Level Cgroup Limits](#pod-level-cgroup-limits) calculation section above).
 *   **Memory Requests**: Currently in kubelet, we do not set memory cgroups based on requests.
@@ -2061,7 +2122,7 @@ status:
   nodeAllocatableResourceClaimStatuses:
   - resourceClaimName: shared-cpu-claim
     containers: ["c1", "c2"]
-    direct:
+    mapping:
     - name: cpu
       quantity: "5"
       allocationType: Shared
@@ -2090,7 +2151,7 @@ status:
   nodeAllocatableResourceClaimStatuses:
   - resourceClaimName: shared-cpu-claim
     containers: ["c1", "c2"]
-    direct:
+    mapping:
     - name: cpu
       quantity: "5"
       allocationType: Exclusive
@@ -2264,6 +2325,9 @@ E2E tests will be added to `test/e2e/dra`:
 #### Beta
 
 -   At least one DRA driver has integrated the API extensions and successfully validated the node allocatable resource mapping in ResourceSlice.
+-   Integrate DRA-allocated node allocatable resources into the Kubelet Eviction Manager to ensure accurate eviction decisions during node pressure.
+-   Support unified ResourceQuota and LimitRange enforcement for DRA-allocated node allocatable resources.
+-   Support node allocatable resource mappings to ephemeral storage.
 
 ### Upgrade / Downgrade Strategy
 
@@ -2291,8 +2355,7 @@ E2E tests will be added to `test/e2e/dra`:
     - To proactively prevent pods utilizing DRA node allocatable resources from landing on older Kubelets that do not enforce 
       cgroup restriction based on DRA, the scheduler must use the [Node Declared Features framework](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features).
     - A new declared feature `DRANodeAllocatableResources` is registered in `node.status.declaredFeatures`.
-      During scheduling, the scheduler must verify that pods with DRA node allocatable
-      claims are only placed on nodes declaring this feature support.
+      The API server admission controller uses this framework to validate and reject `ResourceSlice` objects that contain `nodeAllocatableResources` mappings if they target a node that lacks support for this feature.
 
 ## Production Readiness Review Questionnaire
 
@@ -2308,7 +2371,7 @@ E2E tests will be added to `test/e2e/dra`:
 
 No. This feature only takes effect if users create Pods that request node allocatable resources via
 `pod.spec.resourceClaims` and DRA drivers are installed and configured to expose node allocatable resources via
-`nodeAllocatableResourceMappings` in `ResourceSlice` objects. Existing pods are unaffected.
+`nodeAllocatableResources` in `ResourceSlice` objects. Existing pods are unaffected.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -2386,7 +2449,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-- `ResourceSlice` objects containing `Device` entries with `nodeAllocatableResourceMappings`.
+- `ResourceSlice` objects containing `Device` entries with `nodeAllocatableResources`.
 - Pods with `status.nodeAllocatableResourceClaimStatuses` populated.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -2529,7 +2592,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Yes. Individual `ResourceSlice` and `Pod` objects will have additional structured fields (`nodeAllocatableResourceMappings`
+Yes. Individual `ResourceSlice` and `Pod` objects will have additional structured fields (`nodeAllocatableResources`
 and `nodeAllocatableResourceClaimStatuses`). However, because these fields are populated only for specialized workloads
 utilizing DRA node allocatable claims, the overall cluster-wide memory and etcd storage footprint increase is minimal.
 
@@ -2781,7 +2844,7 @@ this alternative model, consider the following walkthroughs:
       nodeAllocatableResourceClaimStatuses:
       - resourceClaimName: dra-claim
         containers: ["c1"]
-        direct:
+        mapping:
         - name: cpu
           quantity: "5"
         - name: memory
@@ -2857,7 +2920,7 @@ this alternative model, consider the following walkthroughs:
       nodeAllocatableResourceClaimStatuses:
       - resourceClaimName: preferred-gpu-fallback-cpu
         containers: ["c1"]
-        direct:
+        mapping:
         - name: cpu
           quantity: "4"
     ```
