@@ -227,10 +227,11 @@ advertises it in `NodeFeatures`.
 type NodeFeatures struct {
     // ... existing fields (e.g. SupplementalGroupsPolicy) ...
 
-    // SupportsCgroupOptions is set to true if the CRI implementation supports CgroupOptions.
+    // SupportsCgroupMountMode is set to true if the CRI implementation supports
+    // CgroupOptions.MountMode.
     // +featureGate=CgroupOptions
     // +optional
-    SupportsCgroupOptions *bool
+    SupportsCgroupMountMode *bool
 }
 ```
 
@@ -241,20 +242,42 @@ type NodeFeatures struct {
 message LinuxContainerSecurityContext {
     // ... existing fields ...
     
-    // cgroup_mount_mode controls how the cgroup filesystem is mounted.
-    // "ReadOnly" (default) or "Writable" (allows container to manage its cgroup subtree).
-    // Only effective with cgroup v2.
-    string cgroup_mount_mode = 18;
+    // cgroup_mount_mode controls how the cgroup filesystem is mounted in the
+    // container. Only effective with cgroup v2.
+    CgroupMountMode cgroup_mount_mode = 18;
+}
+
+// CgroupMountMode defines how the cgroup filesystem is mounted in a container.
+enum CgroupMountMode {
+    // CGROUP_MOUNT_MODE_READ_ONLY mounts the cgroup filesystem read-only.
+    CGROUP_MOUNT_MODE_READ_ONLY = 0;
+    // CGROUP_MOUNT_MODE_WRITABLE mounts the cgroup filesystem read-write, allowing
+    // the container to manage its own cgroup subtree. The runtime must only enable
+    // this when the host's cgroup filesystem is mounted with nsdelegate, which
+    // confines the container to its own subtree.
+    CGROUP_MOUNT_MODE_WRITABLE = 1;
 }
 
 // RuntimeFeatures (node-level, independent of runtime handlers) propagates to NodeFeatures.
 message RuntimeFeatures {
     // ... existing fields (e.g. supplemental_groups_policy) ...
 
-    // supports_cgroup_options is set to true if the CRI implementation supports CgroupOptions.
-    bool supports_cgroup_options = 2;
+    // supports_cgroup_mount_mode is set to true if the CRI implementation supports the
+    // cgroup_mount_mode field of LinuxContainerSecurityContext.
+    bool supports_cgroup_mount_mode = 4;
 }
 ```
+
+`cgroup_mount_mode` is an enum rather than a string so that the accepted values are carried by
+the CRI API itself, matching the `CgroupMountMode` enum on the Kubernetes side. Enum values are
+prefixed with the enum name because protobuf scopes them to the enclosing package rather than to
+their type. `CGROUP_MOUNT_MODE_READ_ONLY` is the zero value, so a runtime that predates the field
+behaves as it does today.
+
+Runtime support is advertised per option rather than as a single bit covering `CgroupOptions`
+as a whole. `CgroupOptions` is a struct so that it can grow, and a struct-wide bit would leave
+the kubelet unable to tell whether a runtime that set it also understands options added later.
+Each option added to `CgroupOptions` gets its own capability bit in `RuntimeFeatures`.
 
 ##### Descendant and Depth Limits (Pod-level, no CRI changes)
 
@@ -279,7 +302,7 @@ sequenceDiagram
     Note over Kubelet,Container Runtime: System & Runtime Validation
 
     Kubelet->>Kubelet: Validate system support
-    Note right of Kubelet: • Check cgroup v2: IsCgroup2UnifiedMode()<br/>• Check runtime support: nodeSupportsCgroupOptions() (node-level NodeFeatures)
+    Note right of Kubelet: • Check cgroup v2: IsCgroup2UnifiedMode()<br/>• Check runtime support: nodeSupportsCgroupMountMode() (node-level NodeFeatures)
 
     alt Runtime doesn't support CgroupOptions
         Kubelet->>Kubelet: Reject pod creation
@@ -321,7 +344,7 @@ func (m *kubeGenericRuntimeManager) startContainer(ctx context.Context, podSandb
         if c.SecurityContext != nil && c.SecurityContext.CgroupOptions != nil &&
            c.SecurityContext.CgroupOptions.MountMode != nil &&
            *c.SecurityContext.CgroupOptions.MountMode == v1.CgroupMountModeWritable {
-            if !m.nodeSupportsCgroupOptions() {
+            if !m.nodeSupportsCgroupMountMode() {
                 return fmt.Errorf("container %q requires CgroupOptions but the container runtime does not support it",
                     c.Name)
             }
@@ -332,11 +355,12 @@ func (m *kubeGenericRuntimeManager) startContainer(ctx context.Context, podSandb
 
 **File**: `pkg/kubelet/kubelet_pods.go`
 ```go
-// nodeSupportsCgroupOptions reports whether the CRI implementation advertised CgroupOptions
-// support via the node-level RuntimeFeatures (independent of the runtime handler).
-func (kl *Kubelet) nodeSupportsCgroupOptions() bool {
+// nodeSupportsCgroupMountMode reports whether the CRI implementation advertised
+// cgroup_mount_mode support via the node-level RuntimeFeatures (independent of the
+// runtime handler).
+func (kl *Kubelet) nodeSupportsCgroupMountMode() bool {
     features := kl.runtimeState.runtimeFeatures()
-    return features != nil && features.SupportsCgroupOptions
+    return features != nil && features.SupportsCgroupMountMode
 }
 ```
 
@@ -436,7 +460,7 @@ Coverage for new and existing packages:
   - cgroup v2 requirement validation
   - Containers not able to "escape" the resource limits set by the Pod
   - Runtime compatibility checks
-- `critest`: a CRI conformance test in [cri-tools](https://github.com/kubernetes-sigs/cri-tools) exercising `cgroup_mount_mode` and the `supports_cgroup_options` advertisement, so container runtimes implementing the CRI API can validate conformance independently of Kubernetes.
+- `critest`: a CRI conformance test in [cri-tools](https://github.com/kubernetes-sigs/cri-tools) exercising `cgroup_mount_mode` and the `supports_cgroup_mount_mode` advertisement, so container runtimes implementing the CRI API can validate conformance independently of Kubernetes.
 
 ### Graduation Criteria
 
@@ -551,7 +575,7 @@ This section complements [Feature Enablement and Rollback](#feature-enablement-a
 Possible rollout failure modes:
 
 - **Version skew (apiserver enabled, kubelet not)**: The apiserver accepts the field, but a kubelet running a version without the feature gate (or without the field) will not honor it. Pods schedule and start, but cgroups remain read-only, so workloads that need to create cgroups at runtime will not be able to.
-- **Runtime missing CRI support**: If the container runtime does not advertise `supports_cgroup_options` via the node-level `NodeFeatures`, the kubelet rejects the pod with a clear error and the pod stays in `ContainerCreating`. No impact on other pods.
+- **Runtime missing CRI support**: If the container runtime does not advertise `supports_cgroup_mount_mode` via the node-level `NodeFeatures`, the kubelet rejects the pod with a clear error and the pod stays in `ContainerCreating`. No impact on other pods.
 - **Host missing cgroup v2 or `nsdelegate`**: The kubelet rejects the pod with a validation error indicating the requirement. No impact on other pods.
 
 Rollback (disabling the feature gate):
@@ -606,10 +630,10 @@ From inside the container:
 - `mount | grep '^cgroup2'` should show `/sys/fs/cgroup` mounted with `rw`.
 - `mkdir /sys/fs/cgroup/test && rmdir /sys/fs/cgroup/test` should succeed.
 
-If the runtime does not advertise `supports_cgroup_options` via the node-level `NodeFeatures`, the kubelet emits a [`FailedNodeDeclaredFeaturesCheck`](https://github.com/kubernetes/kubernetes/blob/v1.36.0/pkg/kubelet/events/event.go#L42) event on the pod, the existing pattern for "pod requires a node feature that is not available." If the host is on cgroup v1 or lacks `nsdelegate`, pod startup fails with a kubelet validation error identifying the cause.
+If the runtime does not advertise `supports_cgroup_mount_mode` via the node-level `NodeFeatures`, the kubelet emits a [`FailedNodeDeclaredFeaturesCheck`](https://github.com/kubernetes/kubernetes/blob/v1.36.0/pkg/kubelet/events/event.go#L42) event on the pod, the existing pattern for "pod requires a node feature that is not available." If the host is on cgroup v1 or lacks `nsdelegate`, pod startup fails with a kubelet validation error identifying the cause.
 
 - [x] Events
-  - Event Reason: `FailedNodeDeclaredFeaturesCheck` when the container runtime does not advertise `supports_cgroup_options`.
+  - Event Reason: `FailedNodeDeclaredFeaturesCheck` when the container runtime does not advertise `supports_cgroup_mount_mode`.
 - [ ] API .status
 - [ ] Other (treat as last resort)
 
@@ -643,7 +667,7 @@ No new in-cluster services. The feature depends on:
 
 - A Linux kernel with cgroup v2 support.
 - The host's `/sys/fs/cgroup` mounted with the `nsdelegate` option (the default in modern systemd; required for safe operation, see [cpuset Isolation](#cpuset-isolation)).
-- A container runtime that supports the new CRI `cgroup_mount_mode` field and advertises `supports_cgroup_options` via the node-level `NodeFeatures`.
+- A container runtime that supports the new CRI `cgroup_mount_mode` field and advertises `supports_cgroup_mount_mode` via the node-level `NodeFeatures`.
 
 ### Scalability
 
@@ -665,7 +689,7 @@ Marginal. Pods opting in to the feature add a small nested object containing a s
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No measurable impact. The per-pod runtime-support check is a single read of the node-level `NodeFeatures.SupportsCgroupOptions` bool (sourced from the CRI `RuntimeFeatures` already returned by `Status()`), with no per-runtime-handler lookup.
+No measurable impact. The per-pod runtime-support check is a single read of the node-level `NodeFeatures.SupportsCgroupMountMode` bool (sourced from the CRI `RuntimeFeatures` already returned by `Status()`), with no per-runtime-handler lookup.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -692,7 +716,7 @@ No different from existing pod creation. If the apiserver is unavailable, no new
 
 | Failure | Detection | Mitigations | Diagnostics | Testing |
 |---|---|---|---|---|
-| Container runtime does not support the CRI field | Pod stuck in `ContainerCreating`; kubelet event indicates runtime does not support `CgroupOptions` | Use a runtime advertising `supports_cgroup_options`; or remove the field from the pod spec | kubelet logs; pod events | unit + integration tests |
+| Container runtime does not support the CRI field | Pod stuck in `ContainerCreating`; kubelet event indicates runtime does not support `CgroupOptions` | Use a runtime advertising `supports_cgroup_mount_mode`; or remove the field from the pod spec | kubelet logs; pod events | unit + integration tests |
 | Host is on cgroup v1 | Pod startup fails with kubelet validation error: `CgroupOptions.MountMode=Writable requires cgroup v2` | Migrate the node to cgroup v2; or remove the field from the pod spec | kubelet logs; pod events | e2e on cgroup v1 nodes |
 | Host's `/sys/fs/cgroup` is not mounted with `nsdelegate` | Container can write to its own root-of-namespace controller files, breaking the isolation guarantee this feature relies on | Mount `/sys/fs/cgroup` with `nsdelegate` on the host (the default in modern systemd); the runtime MUST refuse to enable writable cgroups otherwise | inspect mount options on the host with `findmnt /sys/fs/cgroup` | runtime contract; e2e validates `nsdelegate` is present |
 | Container creates excessive descendant cgroups | `mkdir` returns `EAGAIN` once `cgroup.max.descendants` is hit; node `Slab` and `MemAvailable` remain stable when the Pod-level defaults are in place | Kubelet-enforced `cgroup.max.descendants` and `cgroup.max.depth` defaults on the Pod-level cgroup; without these defaults, a container can drive the node into `NotReady` (see [Verified Behavior](#verified-behavior)) | container logs; node `/proc/meminfo` `Slab`; `cat /sys/fs/cgroup/cgroup.stat` | e2e for descendant bound |
@@ -702,7 +726,7 @@ No different from existing pod creation. If the apiserver is unavailable, no new
 No SLOs at alpha. If pod startup latency degrades after enabling the feature gate:
 
 1. Check kubelet logs for `CgroupOptions` validation errors.
-2. Confirm the node advertises `SupportsCgroupOptions: true` in `NodeFeatures` via `kubectl get node -o yaml` (under `status.features`).
+2. Confirm the node advertises `SupportsCgroupMountMode: true` in `NodeFeatures` via `kubectl get node -o yaml` (under `status.features`).
 3. Confirm the host has cgroup v2 with `nsdelegate` (`findmnt /sys/fs/cgroup`).
 4. Disable the feature gate as a rollback.
 
@@ -711,6 +735,7 @@ No SLOs at alpha. If pod startup latency degrades after enabling the feature gat
 - **2025-08-25**: KEP written and proposed
 - **2026-02-05**: KEP refined to focus strictly on `nsdelegate` for isolation and justify API opt-in requirements
 - **2026-06-08**: Per SIG-Node discussion, descendant/depth exhaustion is mitigated by the kubelet setting `cgroup.max.descendants`/`cgroup.max.depth` defaults on the Pod-level cgroup rather than via new CRI fields
+- **2026-07-24**: CRI `cgroup_mount_mode` changed from a string to an enum, and runtime support advertised per option (`supports_cgroup_mount_mode`) rather than for `CgroupOptions` as a whole
 - **TBD**: Alpha implementation targeting v1.37
 - **TBD**: Beta implementation targeting v1.38
 - **TBD**: GA implementation targeting v1.39
