@@ -1,0 +1,30 @@
+title: Dynamic Containers
+kep-number: 5972
+authors:
+  - "@tallclair"
+owning-sig: sig-node
+participating-sigs: []
+status: implementable
+creation-date: 2026-06-07
+reviewers:
+  - "@haircommander"
+approvers:
+  - "@dchen1107"
+see-also:
+  - "/keps/sig-node/1287-in-place-update-pod-resources"
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+  beta: "TBD"
+  stable: "TBD"
+
+feature-gates:
+  - name: DynamicContainers
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
