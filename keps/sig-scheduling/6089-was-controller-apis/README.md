@@ -230,12 +230,12 @@ spec:
   parallelism: 4
   completions: 4
   scheduling: # New API field - scheduling intent
-    policy:
+    schedulingPolicy:
       gang: {} # MinCount is omitted: Job defaults MinCount = parallelism (4)
-    constraints:
+    schedulingConstraints:
       topology:
         - level: "topology.kubernetes.io/zone"
-    disruption:
+    disruptionMode:
       all: {} # DisruptionMode resolves to All (entire group must be disrupted together)
   template:
     spec:
@@ -397,7 +397,7 @@ To keep this specification concise and focused, we only define the detailed Go A
 the leaf-level `PodGroup` specific types. An analogous set of types prefixed with
 `WorkloadCompositePodGroup...` is provided under the same API group.
 
-The Go definitions are structured as follows:
+The Go definitions are structured as follows. The shipped types carry declarative-validation (DV) markers and are declared as `+union` where exactly one member must be set:
 
 ```go
 // API Group: scheduling.k8s.io/v1alpha3
@@ -473,6 +473,22 @@ type WorkloadPodGroupResourceClaim struct {
     ResourceClaimTemplateName *string `json:"resourceClaimTemplateName,omitempty"`
 }
 ```
+
+The composite level provides the analogous `WorkloadCompositePodGroup...` set under the same API
+group, following the same shapes. Its policy building block
+(`WorkloadCompositePodGroupSchedulingPolicy`) uses `minGroupCount` (the minimum number of child
+groups, not pods) in place of the leaf's `minCount`.
+
+**Embedding the building blocks & immutability.**
+These structs are meant to be embedded verbatim into a controller's own API next to its other
+scheduling fields (for example, in a Job's `spec.scheduling`).
+
+The building blocks themselves are not marked `+k8s:immutable` because this would force that decision 
+on every embedder, but different controllers make different choices (one may recreate the 
+`Workload`/`PodGroup` on change; another may freeze it). Instead. The scheduling **policy** is a 
+special case as the variant (`basic`/`gang`) must be frozen while 
+`gang.minCount`/`gang.minGroupCount` stays mutable (to support scaling).
+
 ### Job Integration (batch/v1)
 
 To deliver native, typed Workload-aware Scheduling support in core Kubernetes, we propose
@@ -506,13 +522,13 @@ type JobSpec struct {
 
 // JobSchedulingConfiguration composes the reusable WAS building blocks.
 type JobSchedulingConfiguration struct {
-    // Policy defines the gang or basic scheduling rules for this Job.
+    // SchedulingPolicy defines the gang or basic scheduling rules for this Job.
     // +optional
-    Policy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy `json:"policy,omitempty"`
+    SchedulingPolicy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy `json:"schedulingPolicy,omitempty"`
 
-    // Constraints defines topology co-location constraints for the Job's pods.
+    // SchedulingConstraints defines topology co-location constraints for the Job's pods.
     // +optional
-    Constraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"constraints,omitempty"`
+    SchedulingConstraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints `json:"schedulingConstraints,omitempty"`
 
     // DisruptionMode specifies how the pods in this Job should be disrupted (Single vs All).
     // +optional
@@ -529,8 +545,8 @@ type JobSchedulingConfiguration struct {
 To prevent every workload controller (both core and out-of-tree) from writing custom, translation
 and validation logic, we propose providing a shared Go library: `workloadbuilder`.
 
-**Package placement:** The library ships from staging under 
-`k8s.io/component-helpers/scheduling/schedulingv1`. It is scoped as helpers shared by multiple
+**Package placement:** The library ships from staging as the `workloadbuilder` package under
+`k8s.io/component-helpers/scheduling/schedulingv1/workloadbuilder`. It is scoped as helpers shared by multiple
 core binaries, keeps a minimal dependency surface (no external deps), and is meant for this 
 kind of scheduling-API translation. `k8s.io/kube-scheduler` was considered but
 carries heavier dependencies and is a less natural import for out-of-tree controllers.
@@ -545,14 +561,16 @@ the library:
 * **Hierarchy-Agnostic Library IR:** The library defines its own internal, polymorphic structures
   (`workloadbuilder.SchedulingConfig`, `workloadbuilder.SchedulingPolicy`, etc.) that represent
   scheduling configurations in a hierarchy-agnostic way.
-* **Standard Mapping Helpers:** To prevent controllers from writing custom translation boilerplate
-  to bridge K8s API types to the library IR, the library provides standard, built-in conversion
-  functions (`MapPodGroupConfig` and `MapCompositeGroupConfig`). These helper adapters cleanly
-  translate public, level-specific schemas into polymorphic IR models at runtime.
+* **Standard Mapping:** To prevent controllers from writing custom translation boilerplate to bridge
+  K8s API types to the library IR, the library maps the public, level-specific building blocks into
+  its polymorphic IR internally. A controller records its user's intent on each node's `Input`: a
+  `WorkloadInput` that pairs each leaf-level building block with the field path (`PathElements`)
+  where it lives in the controller's API, so validation errors are reported at the exact field. The
+  composite level provides the analogous input for `CompositePodGroup` building blocks.
 
 Controller authors construct a logical tree using `WorkloadItem` representing their workload
-structure, populate `DefaultConfig` and the user's `UserConfig` (using the standard mapping
-helpers), and invoke the builder.
+structure, populate each node's `DefaultConfig` (the controller's sane defaults) and `Input` (the
+user's intent), and invoke the builder.
 
 The library encapsulates the following logic:
 1. **Policy Resolution:** Merges default configurations with user-provided overrides (e.g.,
@@ -579,22 +597,24 @@ and the library's validation helpers reject anything not explicitly allowed. Thi
 additions to the building-block API are **denied by default** until a controller explicitly updates
 its allow-list.
 
-The library provides per-field validation helpers that accept the supported options as arguments:
+A controller declares the policies and modes it supports on the builder's `BuildOptions`;
+`Builder.Validate` resolves the config and rejects anything outside the allow-list, reporting at the
+offending block's field path:
 
 ```go
 // In Job's API validation (pkg/apis/batch/validation):
-allErrs = append(allErrs,
-    workloadbuilder.ValidateSchedulingPolicy(
-        spec.Scheduling.Policy, fldPath.Child("policy"),
-        workloadbuilder.BasicPolicy, workloadbuilder.GangPolicy))
-allErrs = append(allErrs,
-    workloadbuilder.ValidateDisruptionMode(
-        spec.Scheduling.DisruptionMode, fldPath.Child("disruptionMode"),
-        workloadbuilder.SingleMode, workloadbuilder.AllMode))
+builder := workloadbuilder.NewBuilder(item, workloadbuilder.BuildOptions{
+    AllowedPolicies:        []workloadbuilder.SchedulingPolicyOption{workloadbuilder.BasicPolicy, workloadbuilder.GangPolicy},
+    AllowedDisruptionModes: []workloadbuilder.DisruptionModeOption{workloadbuilder.SingleMode, workloadbuilder.AllMode},
+    // The apiserver already runs declarative validation on the building blocks,
+    // so in-tree Validate performs only the complex controller-policy checks.
+    DisableDeclarativeValidation: true,
+})
+allErrs = append(allErrs, builder.Validate(ctx, fldPath, workloadbuilder.ValidationInput{})...)
 ```
 
 This gives controllers opt-in semantics: when a new policy is introduced in a future release,
-existing controllers (including `Job`) will reject it until their validation is explicitly updated
+existing controllers (including `Job`) will reject it until their allow-list is explicitly updated
 to include the new option. Out-of-tree controllers get the same guarantee by updating their vendored
 library version and extending their allow-list.
 
@@ -609,7 +629,8 @@ type JobSpec struct {
 }
 ```
 
-Until DV support is available, the library-provided validation helpers serve as a lightweight,
+The structural building-block constraints are already generated as DV validators; until subfield
+allow-list markers land in DV, the builder's allow-list checks in `Validate` serve as a lightweight,
 defensive bridge that keeps the overhead minimal for controller integrators.
 
 #### 3. Library API Definition
@@ -620,6 +641,7 @@ package workloadbuilder
 import (
     "context"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/util/validation/field"
     schedulingv1alpha3 "k8s.io/api/scheduling/v1alpha3"
 )
 
@@ -629,6 +651,10 @@ type SchedulingConfig struct {
     DisruptionMode *DisruptionMode
     Policy         *SchedulingPolicy
     ResourceClaims []ResourceClaim
+
+    // PriorityClassName is copied onto the compiled PodGroupTemplate so a PodGroup
+    // materialized from it inherits the group's priority.
+    PriorityClassName string
 }
 
 type SchedulingConstraints struct {
@@ -667,160 +693,264 @@ type ResourceClaim struct {
     ResourceClaimTemplateName *string
 }
 
-// WorkloadItemFunc mutates a single WorkloadItem during Build that is 
-// used for controller-specific defaulting.
-type WorkloadItemFunc func(*WorkloadItem)
+// SchedulingConfigFunc post-processes the merged SchedulingConfig after the
+// default/user merge. Controllers use it for defaulting (e.g. gang MinCount) but
+// it is general-purpose and may perform any controller-specific adjustment.
+type SchedulingConfigFunc func(*SchedulingConfig)
 
 // WorkloadItem represents a logical component of a workload (e.g., the whole JobSet,
 // a specific ReplicatedJob role, or a single standalone Job).
 type WorkloadItem struct {
-    // Name is the logical identifier of this component (e.g., "jobset-root", "driver").
+    // Name is the logical identifier of this component; it becomes the
+    // PodGroupTemplate name and must be non-empty.
     Name string
 
-    // DefaultConfig defines the complete set of "sane defaults" assigned by the controller
-    // based on its specific orchestration domain logic.
+    // DefaultConfig is the controller's "sane defaults" for any field the user
+    // left unset, based on its orchestration domain logic.
     DefaultConfig *SchedulingConfig
 
-    // UserConfig is the exact policy intent configured by the user at this specific level.
-    // Can be nil if the user left the scheduling block unconfigured.
-    UserConfig *SchedulingConfig
+    // Input holds the user's intent for this node as the versioned building blocks
+    // paired with the field paths where the controller embeds them. Nil sub-fields
+    // fall back to DefaultConfig field-by-field.
+    Input WorkloadInput
 
-    // Callbacks is a list of controller-supplied mutator functions that the
-    // controller can attach to this item. Callbacks are primarily intended
-    // as defaulting functions (e.g. MinCount), but they are general-purpose
-    //  and may perform any controller-specific adjustment.
-    Callbacks []WorkloadItemFunc
+    // Callbacks run in order against the resolved config after the default/user merge.
+    Callbacks []SchedulingConfigFunc
 
     // Children contains the logical sub-components of this workload.
-    // - If len(Children) > 0, the node is inferred as a structural group
-    //   (i.e., represents a CompositePodGroupTemplate).
-    // - If len(Children) == 0, the node is inferred as a leaf (i.e. represents a PodGroup)
+    // - If len(Children) > 0, the node is a structural group (CompositePodGroupTemplate).
+    // - If len(Children) == 0, the node is a leaf (PodGroup).
+    //
+    // Multi-level compilation (children -> CompositePodGroupTemplate) is the designed
+    // composite extension; the alpha library compiles a single leaf node into one
+    // PodGroupTemplate and gains composite-tree compilation in a fast-follow (see the
+    // note below).
     Children []*WorkloadItem
 }
 
-// WorkloadBuilder translates the logical WorkloadItem tree into a scheduler Workload object.
-type WorkloadBuilder interface {
-    // Build translates the tree, merges defaults, validates policies,
-    // and generates the Workload resource.
-    Build(
-        ctx context.Context,
-        name, namespace string,
-        owner *metav1.OwnerReference,
-    ) (*schedulingv1alpha3.Workload, error)
+// WorkloadInput bundles the leaf-level building blocks a controller embeds in its
+// own API, each paired with its field path. The zero value means "nothing set", so
+// callers only populate the blocks they care about. The composite level provides an
+// analogous input for the WorkloadCompositePodGroup* building blocks.
+type WorkloadInput struct {
+    Policy         PolicyInput
+    Constraints    ConstraintsInput
+    DisruptionMode DisruptionModeInput
+    ResourceClaims ResourceClaimsInput
 }
 
-// NewBuilder initializes a builder with a specific root node.
-func NewBuilder(root *WorkloadItem) WorkloadBuilder {
-    return &builderImpl{root: root}
+// PolicyInput pairs the scheduling policy building block with its field path.
+// PathElements is the path, relative to the WorkloadItem's rootPath, at which the
+// block is embedded: e.g. a rootPath of `spec.scheduling` with PathElements
+// []string{"schedulingPolicy"} reports errors at `spec.scheduling.schedulingPolicy`.
+type PolicyInput struct {
+    PodGroupData *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy
+    PathElements []string
 }
 
-// MapPodGroupConfig translates standard leaf building blocks into the library's polymorphic IR.
-func MapPodGroupConfig(
-    policy *schedulingv1alpha3.WorkloadPodGroupSchedulingPolicy,
-    constraints *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints,
-    disruption *schedulingv1alpha3.WorkloadPodGroupDisruptionMode,
-    claims []schedulingv1alpha3.WorkloadPodGroupResourceClaim,
-) *SchedulingConfig
+type ConstraintsInput struct {
+    PodGroupData *schedulingv1alpha3.WorkloadPodGroupSchedulingConstraints
+    PathElements []string
+}
 
-// MapCompositeGroupConfig translates standard composite building blocks into the library's polymorphic IR.
-func MapCompositeGroupConfig(
-    policy *schedulingv1alpha3.WorkloadCompositePodGroupSchedulingPolicy,
-    constraints *schedulingv1alpha3.WorkloadCompositePodGroupSchedulingConstraints,
-    disruption *schedulingv1alpha3.WorkloadCompositePodGroupDisruptionMode,
-) *SchedulingConfig
+type DisruptionModeInput struct {
+    PodGroupData *schedulingv1alpha3.WorkloadPodGroupDisruptionMode
+    PathElements []string
+}
+
+type ResourceClaimsInput struct {
+    PodGroupData []schedulingv1alpha3.WorkloadPodGroupResourceClaim
+    PathElements []string
+}
+
+// SchedulingPolicyOption and DisruptionModeOption enumerate the policies and modes
+// a controller opts into. Validate rejects anything outside the allow-list.
+type SchedulingPolicyOption int
+
+const (
+    BasicPolicy SchedulingPolicyOption = iota
+    GangPolicy
+)
+
+type DisruptionModeOption int
+
+const (
+    SingleMode DisruptionModeOption = iota
+    AllMode
+)
+
+// BuildOptions carries the identity of the compiled Workload plus the controller's
+// scheduling allow-lists.
+type BuildOptions struct {
+    Name      string
+    Namespace string
+    // Owner becomes the Workload's controllerRef, used for discovery and GC.
+    Owner *metav1.OwnerReference
+
+    AllowedPolicies        []SchedulingPolicyOption
+    AllowedDisruptionModes []DisruptionModeOption
+
+    // DisableDeclarativeValidation skips declarative validation on the input blocks.
+    // In-tree controllers set this because the apiserver already runs DV.
+    DisableDeclarativeValidation bool
+}
+
+// Builder turns a controller's WorkloadItem tree into scheduler-facing objects.
+// Construct it with NewBuilder (or NewBuilderFromExistingWorkload), then call
+// Validate, BuildWorkload, and NewPodGroup.
+type Builder struct { /* unexported fields */ }
+
+// NewBuilder returns a Builder for the given WorkloadItem tree and options.
+func NewBuilder(root *WorkloadItem, opts BuildOptions) *Builder
+
+// NewBuilderFromExistingWorkload returns a Builder that materializes PodGroups
+// from an already-persisted Workload rather than compiling one from a WorkloadItem
+// tree. Use it when a parent controller (or a hand-authored template) owns and
+// compiled the Workload. BuildWorkload is refused and Validate is a no-op; only
+// NewPodGroup is meaningful, using opts.Owner for the PodGroup's controller ownerRef.
+func NewBuilderFromExistingWorkload(workload *schedulingv1alpha3.Workload, opts BuildOptions) *Builder
+
+// ValidationInput carries the parameters Validate only consults when declarative
+// validation is enabled. Its zero value means a create with no previous object,
+// which is the common case; a caller running with DisableDeclarativeValidation can
+// always pass the zero value.
+type ValidationInput struct {
+    // OldRoot is the previously persisted WorkloadItem. It is nil for a create and
+    // non-nil for an update. Validate infers the operation from it, so the
+    // update-time declarative checks run exactly when OldRoot is set. Only
+    // OldRoot.Name (to correlate it with the new root) and OldRoot.Input (the
+    // previous versioned data) are consulted; DefaultConfig, Callbacks, and
+    // Input.*.PathElements are ignored because the resolved config and error paths
+    // always come from the new root.
+    OldRoot *WorkloadItem
+}
+
+// Validate runs declarative validation on the input blocks (unless disabled) plus
+// the controller-policy checks DV cannot express (allow-lists, and cross-field rules
+// such as rejecting `all` disruption with the Basic policy), reporting errors at each
+// block's field path. For a create, pass the zero ValidationInput; for an update, set
+// OldRoot to the previous tree, and Validate runs the update-time checks. A root name
+// mismatch between OldRoot and the new root is an invocation-contract bug and is
+// reported as an InternalError.
+func (b *Builder) Validate(ctx context.Context, rootPath *field.Path, input ValidationInput) field.ErrorList
+
+// BuildWorkload compiles the tree into a Workload, sets its identity and
+// controllerRef, and caches the result so PodGroups can be materialized from it.
+func (b *Builder) BuildWorkload() (*schedulingv1alpha3.Workload, error)
+
+// NewPodGroup materializes a runtime PodGroup from the named PodGroupTemplate of the
+// Builder's Workload (compiled via BuildWorkload or supplied via
+// NewBuilderFromExistingWorkload).
+func (b *Builder) NewPodGroup(podGroupName, templateName string) (*schedulingv1alpha3.PodGroup, error)
 ```
+
+The translation from the versioned building blocks (recorded in each node's `Input`) into the
+polymorphic IR is performed internally by the library while resolving the tree. A leaf node's 
+`WorkloadInput` maps the `WorkloadPodGroup...` blocks into the IR, and a composite node maps its analogous `WorkloadCompositePodGroup...` blocks.
+Keeping the mapping internal means there is a single, consistent translation path (exercised by both
+`Validate` and `BuildWorkload`) rather than a public helper each controller must call correctly.
+
 
 #### 4. Library Usage Example (Job)
 
-This example demonstrates how the core `Job` controller integrates with the `workloadbuilder`
-library to compile its flat `Workload` structure:
+This is how the core `Job` controller integrates with the `workloadbuilder` library to compile its
+flat `Workload` structure:
 
 ```go
 import (
-    "context"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    batchv1 "k8s.io/api/batch/v1"
+    batch "k8s.io/api/batch/v1"
     schedulingv1alpha3 "k8s.io/api/scheduling/v1alpha3"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    workloadbuilder "k8s.io/component-helpers/scheduling/schedulingv1/workloadbuilder"
     "k8s.io/utils/ptr"
 )
 
-func (r *JobReconciler) generateWorkload(
-    job *batchv1.Job,
-) (*schedulingv1alpha3.Workload, error) {
-    // A Job's context-aware sane default is Basic scheduling (standard Kubernetes pod-by-pod)
-    defaultConfig := &workloadbuilder.SchedulingConfig{
-        Policy: &workloadbuilder.SchedulingPolicy{
-            Basic: &workloadbuilder.BasicSchedulingPolicy{},
+// mapSchedulingInput translates the Job's user-facing spec.scheduling block into
+// a WorkloadInput, pairing each building block with the spec.scheduling sub-path
+// where it lives. It returns the zero value for a nil block so the builder falls
+// back to the controller's default config.
+func mapSchedulingInput(cfg *batch.JobSchedulingConfiguration) workloadbuilder.WorkloadInput {
+    if cfg == nil {
+        return workloadbuilder.WorkloadInput{}
+    }
+    return workloadbuilder.WorkloadInput{
+        Policy: workloadbuilder.PolicyInput{
+            PodGroupData: cfg.SchedulingPolicy,
+            PathElements: []string{"schedulingPolicy"},
+        },
+        Constraints: workloadbuilder.ConstraintsInput{
+            PodGroupData: cfg.SchedulingConstraints,
+            PathElements: []string{"schedulingConstraints"},
+        },
+        DisruptionMode: workloadbuilder.DisruptionModeInput{
+            PodGroupData: cfg.DisruptionMode,
+            PathElements: []string{"disruptionMode"},
+        },
+        ResourceClaims: workloadbuilder.ResourceClaimsInput{
+            PodGroupData: cfg.ResourceClaims,
+            PathElements: []string{"resourceClaims"},
         },
     }
-
-    // 2. Map the public Job.Spec.Scheduling wrapper directly using the library helper
-    var userConfig *workloadbuilder.SchedulingConfig
-    if job.Spec.Scheduling != nil {
-        userConfig = workloadbuilder.MapPodGroupConfig(
-            job.Spec.Scheduling.Policy,
-            job.Spec.Scheduling.Constraints,
-            job.Spec.Scheduling.DisruptionMode,
-            job.Spec.Scheduling.ResourceClaims,
-        )
-    }
-
-    // 3. Create the flat logical tree for Job (root node representing a single PodGroup).
-    //    A callback defaults gang MinCount to the Job's parallelism when the user opts
-    //    into Gang but leaves MinCount unset (see defaultMinCountForJob below).
-    rootNode := &workloadbuilder.WorkloadItem{
-        Name:          "job-root",
-        DefaultConfig: defaultConfig,
-        UserConfig:    userConfig,
-        Callbacks: []workloadbuilder.WorkloadItemFunc{
-            defaultMinCountForJob(job),
-        },
-    }
-
-    // 4. Let the workloadbuilder compile and generate the Workload object
-    builder := workloadbuilder.NewBuilder(rootNode)
-    workloadObj, err := builder.Build(
-        context.Background(),
-        job.Name,
-        job.Namespace,
-        metav1.NewControllerRef(job, jobKind),
-    )
-    if err != nil {
-        return nil, err
-    }
-
-    return workloadObj, nil
 }
-```
 
-The callbacks attached above are ordinary functions the controller can set on 
-a node. Their most common job is defaulting, but because they receive the whole node
-they can also apply arbitrary, controller-specific adjustments:
-
-```go
-// defaultMinCountForJob fills in a sane default for gang MinCount (the Job's
-// parallelism) when the resolved policy is Gang and MinCount was left unset.
-func defaultMinCountForJob(job *batchv1.Job) workloadbuilder.WorkloadItemFunc {
-    return func(item *workloadbuilder.WorkloadItem) {
-        if item.Policy.Gang != nil && 
-          item.Policy.Gang.MinCount == nil {  
-            item.Policy.Gang.MinCount = ptr.To(job.Spec.Parallelism)
+// defaultMinCountForJob returns a callback that defaults an unset gang MinCount
+// to the Job's parallelism, clamped to a minimum of 1 (parallelism may be 0 for
+// a suspended Job, but MinCount must be positive). It mutates only the resolved
+// config, never writing the derived value back onto the Job's spec.
+func defaultMinCountForJob(job *batch.Job) workloadbuilder.SchedulingConfigFunc {
+    return func(cfg *workloadbuilder.SchedulingConfig) {
+        if cfg == nil || cfg.Policy == nil || cfg.Policy.Gang == nil {
+            return
+        }
+        if cfg.Policy.Gang.MinCount == nil {
+            cfg.Policy.Gang.MinCount = new(max(int32(1), ptr.Deref(job.Spec.Parallelism, 1)))
         }
     }
 }
 
 // multiplyMinCountForAdjustedJob is an example of a non-defaulting adjustment: callbacks
 // are free to implement arbitrary, controller-specific logic when needed.
-func multiplyMinCountForAdjustedJob(job *batchv1.Job) workloadbuilder.WorkloadItemFunc {
-    return func(item *workloadbuilder.WorkloadItem) {
+func multiplyMinCountForAdjustedJob(job *batch.Job) workloadbuilder.SchedulingConfigFunc {
+    return func(cfg *workloadbuilder.SchedulingConfig) {
       if job.Annotations["isAdjustedJob.example.com"] == "true" {  
-        if item.Policy.Gang != nil {  
-            item.Policy.Gang.MinCount *= 42  
+        if cfg.Policy.Gang != nil {  
+            cfg.Policy.Gang.MinCount *= 42  
         }  
       }  
     }
 }
+
+// buildWorkloadItem assembles the single-node logical workload tree for a Job.
+// The Job defaults to Basic scheduling; the user's spec.scheduling overrides it.
+func buildWorkloadItem(job *batch.Job) *workloadbuilder.WorkloadItem {
+    return &workloadbuilder.WorkloadItem{
+        Name: podGroupTemplateName(job),
+        DefaultConfig: &workloadbuilder.SchedulingConfig{
+            Policy:            &workloadbuilder.SchedulingPolicy{Basic: &workloadbuilder.BasicSchedulingPolicy{}},
+            PriorityClassName: job.Spec.Template.Spec.PriorityClassName,
+        },
+        Input:     mapSchedulingInput(job.Spec.Scheduling),
+        Callbacks: []workloadbuilder.SchedulingConfigFunc{defaultMinCountForJob(job)},
+    }
+}
+
+// generateWorkload compiles the Job's spec.scheduling into a Workload via the
+// shared workloadbuilder library. BuildWorkload also sets the controller
+// ownerReference and spec.controllerRef pointing at the Job.
+func (jm *Controller) generateWorkload(job *batch.Job) (*schedulingv1alpha3.Workload, error) {
+    return workloadbuilder.NewBuilder(buildWorkloadItem(job), workloadbuilder.BuildOptions{
+        Name:      computeWorkloadName(job),
+        Namespace: job.Namespace,
+        Owner:     metav1.NewControllerRef(job, controllerKind),
+    }).BuildWorkload()
+}
 ```
+
+`Callbacks` are ordinary functions the controller sets on a node; `defaultMinCountForJob` is the
+defaulting one used here, but because a callback receives the resolved config it can apply any
+controller-specific adjustment. Note the allow-lists (`AllowedPolicies`/`AllowedDisruptionModes`)
+are not set on this compile path, they are an apiserver-validation concern applied where the Job's
+validation calls `Validate`.
 
 ### Reference Integration Examples: JobSet (Multi-Level)
 
@@ -847,7 +977,7 @@ apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
 spec:
   scheduling: # Global policy: applies to the entire JobSet
-    policy:
+    schedulingPolicy:
       basic: {} # ESCAPE HATCH: Disable global "gang of gangs" so components start independently
   replicatedJobs:
     - name: driver
@@ -863,7 +993,7 @@ spec:
       template:
         spec:
           scheduling: # Leaf-level policy declared inside the nested Job template
-            constraints:
+            schedulingConstraints:
               topology:
                 - level: "topology.kubernetes.io/rack" # Co-locate workers on same rack
           containers:
@@ -885,11 +1015,11 @@ apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
 spec:
   scheduling: # All scheduling policies are defined here at the root
-    policy:
+    schedulingPolicy:
       basic: {} # Global policy: components schedule independently
     replicatedJobPolicies:
       - targetReplicatedJob: "workers" # Policy target
-        constraints:
+        schedulingConstraints:
           topology:
             - level: "topology.kubernetes.io/rack" # Co-locate workers on same rack
   replicatedJobs:
@@ -914,8 +1044,28 @@ spec:
 
 #### 3. Controller Integration and workloadbuilder Mapping Go Code
 
-Regardless of which API model `JobSet` adopts, the controller can easily map its structural spec
-into the `workloadbuilder` logical tree. For more details, see [JobSet integration](https://github.com/kubernetes-sigs/jobset/pull/1068).
+Regardless of which API model `JobSet` adopts, the controller maps its structural spec into a
+`workloadbuilder.WorkloadItem` tree: the root is a composite node (its `Children` are the
+`ReplicatedJob` roles) carrying the composite scheduling policy, and each child leaf carries the
+leaf building blocks. The builder then compiles the tree into a `Workload` with a
+`CompositePodGroupTemplate` over the child `PodGroupTemplate`s:
+
+```go
+root := &workloadbuilder.WorkloadItem{
+    Name: "jobset-root",
+    // A composite node: the group-of-groups policy lives in the IR just like a leaf's.
+    DefaultConfig: &workloadbuilder.SchedulingConfig{
+        Policy: &workloadbuilder.SchedulingPolicy{Gang: &workloadbuilder.GangSchedulingPolicy{}},
+    },
+    // Input maps the JobSet's composite WorkloadCompositePodGroup* building block(s).
+    Input: mapJobSetSchedulingInput(jobSet),
+    Children: []*workloadbuilder.WorkloadItem{
+        leafItemForReplicatedJob(jobSet, "driver"),
+        leafItemForReplicatedJob(jobSet, "workers"),
+    },
+}
+workload, err := workloadbuilder.NewBuilder(root, opts).BuildWorkload()
+```
 
 ### Recommendations for Multi-Level Composite Controllers
 
@@ -971,11 +1121,16 @@ controller sets these annotations on each standard `Job` resource it creates):
   * **Annotation Key:** `scheduling.k8s.io/group-template-name`
   * **Value:** The unique name of the target `PodGroupTemplate` or `CompositePodGroupTemplate`
     defined inside the parent `Workload` resource (ensuring direct mapping, as all template
-    names inside a Workload are guaranteed to be unique).
+    names inside a Workload are guaranteed to be unique). For example, in a
+    `TrainJob -> JobSet -> Job` hierarchy this tells the child `Job` which template from the root
+    `Workload` to use to create its `PodGroup`.
 * **Parent Instance Linkage Annotation:**
-  * **Annotation Key:** `scheduling.k8s.io/parent-composite-podgroup`
+  * **Annotation Key:** `scheduling.k8s.io/parent-compositepodgroup`
   * **Value:** The exact resource name of the parent `CompositePodGroup` object in the same
-    namespace that the child's newly created group must connect to.
+    namespace that the child's newly created group must attach to. This is required only in the
+    delegated lifecycle model (the parent creates the `Workload` and `CompositePodGroup`, but the
+    child creates its own `PodGroup`); when the parent centrally manages both the `CompositePodGroup`
+    and the `PodGroup`s, this annotation is unnecessary.
 
 We strictly use **unstructured metadata annotations** rather than introducing new structural fields
 in the child's API schemas for this coordination. These mappings are transient, internal, and
@@ -1031,12 +1186,12 @@ Job-specific test plans are tracked in [KEP-5547].
     fills `gang.minCount` (e.g. from a Job's parallelism) when omitted
   - `workloadbuilder` `Validate` rejects semantically invalid configurations
   - Single-level `WorkloadItem` (flat, no children) produces a leaf `PodGroup` only
-  - Multi-level `WorkloadItem` tree (with children) produces a `CompositePodGroup` with correct
-    parent–child structure
-  - `MapPodGroupConfig` and `MapCompositeGroupConfig` correctly translate API types into the
-    library IR
-- Reference integration tests for multi-level controllers (e.g. `JobSet`) verify that the
-  `workloadbuilder` produces the expected `CompositePodGroup` and child `PodGroup` objects from
+  - the library correctly translates the leaf building blocks recorded in a `WorkloadItem.Input`
+    (`WorkloadInput`) into the library IR
+  - Multi-level `WorkloadItem` tree (with children) produces a `CompositePodGroup` with correct 
+    parent–child structure, translating the composite `WorkloadCompositePodGroupSchedulingPolicy` block into the IR
+- Reference integration tests for multi-level controllers (e.g. `JobSet`) verify that the 
+  `workloadbuilder` produces the expected `CompositePodGroup` and child `PodGroup` objects from 
   a composite `WorkloadItem` tree.
 
 ##### Integration tests
@@ -1322,6 +1477,11 @@ No. This feature operates entirely at the control-plane/API level and does not c
 ## Implementation History
 
 - 2026-06-03: KEP Created for alpha release
+- 2026-07-15: Synced the KEP with the implementation of the `workloadbuilder` library, the Job
+  building-block fields and the `workloadbuilder` API (`Validate` with a
+  `ValidationInput` and the `NewBuilderFromExistingWorkload` constructor).
+- 2026-07-18: Synced the `CompositePodGroup` design with the codebase and review feedback from the
+  building-blocks library.
 
 ## Drawbacks
 
