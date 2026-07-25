@@ -134,3 +134,55 @@ func TestPRRApproval_ApproverForStage(t *testing.T) {
 		)
 	}
 }
+
+func TestPRRApproval_Validate(t *testing.T) {
+	testcases := []struct {
+		name    string
+		prr     *api.PRRApproval
+		wantErr bool
+	}{
+		{
+			name:    "valid: alpha milestone set",
+			prr:     validAlphaPRR,
+			wantErr: false,
+		},
+		{
+			name:    "valid: beta milestone set",
+			prr:     validBetaPRR,
+			wantErr: false,
+		},
+		{
+			name:    "valid: stable milestone set",
+			prr:     validStablePRR,
+			wantErr: false,
+		},
+		{
+			name:    "valid: all milestones set",
+			prr:     &api.PRRApproval{Alpha: prrMilestoneWithApprover, Beta: prrMilestoneWithApprover, Stable: prrMilestoneWithApprover},
+			wantErr: false,
+		},
+		{
+			name:    "invalid: empty PRR (no milestone set)",
+			prr:     invalidPRR,
+			wantErr: true,
+		},
+		{
+			name: "invalid: milestone with empty approver",
+			prr: &api.PRRApproval{
+				Alpha: &api.PRRMilestone{Approver: ""},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.prr.Validate()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
