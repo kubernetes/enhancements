@@ -245,6 +245,8 @@ and managed as Kubernetes resources
     the same hostnames
   * Facilitate enrichment of log / event / metrics data with cluster id / set
     coordinates
+* Support expressing that a cluster belongs to multiple ClusterSets
+  simultaneously
 
 ### Non-Goals
 
@@ -257,7 +259,6 @@ and make progress.
 * Solve any problems without specific, tangible use cases (though we will leave
   room for extension).
 * In particular, this KEP explicitly does not consider 
-   * a cluster joining multiple ClusterSets
    * how or whether users should be able to specify aliases for cluster ids and
      what they could be used for
 
@@ -287,10 +288,12 @@ may be referenced by workloads within the cluster. The identifier must be a vali
 [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS subdomain, and should be less
 than 128 characters in total.
 
-While it is a member of a ClusterSet, a cluster must also have an additional
-`clusterset.k8s.io ClusterProperty` which describes its current membership. This
-property must be present as long as the cluster's membership in a
-ClusterSet lasts, and removed when the cluster is no longer a member.
+While it is a member of one or more ClusterSets, a cluster must also have an
+additional `clusterset.k8s.io ClusterProperty` which describes its current
+memberships as a comma-separated list of the names of every ClusterSet the
+cluster belongs to. This property must be present as long as the cluster is a
+member of at least one ClusterSet, and removed when the cluster is no longer a
+member of any ClusterSet.
 
 More detail and examples of the uniqueness, lifespan, immutability, and content
 requirements for both the `cluster.clusterset.k8s.io ClusterProperty` and
@@ -321,8 +324,9 @@ any interesting metadata about it, such as what cloud provider it is hosted on._
 
 #### Joining or moving between ClusterSets
 
-I want the ability to add a previously-isolated cluster to a ClusterSet, or to
-move a cluster from one ClusterSet to another and be aware of this change.
+I want the ability to add a previously-isolated cluster to a ClusterSet, to
+move a cluster from one ClusterSet to another, or to have a cluster belong to
+multiple ClusterSets at the same time, and be aware of these changes.
 
 #### Multi-Cluster Services
 
@@ -398,8 +402,8 @@ Contains a unique identifier for the containing cluster.
 
 ##### Uniqueness
 
-*   The identifier **must** be unique within the ClusterSet to which its cluster
-    belongs for the duration of the cluster’s membership.
+*   The identifier **must** be unique within every ClusterSet to which its
+    cluster belongs for the duration of the cluster’s membership.
 *   The identifier **may** be globally unique beyond the scope of its
     ClusterSet.
 *   The identifier **may** be unique beyond the span of its cluster’s membership
@@ -409,8 +413,8 @@ Contains a unique identifier for the containing cluster.
 ##### Lifespan
 
 *   The identifier **must** exist and not be changed for the duration of a
-    cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io`
-    property referring to that cluster in that ClusterSet exists.
+    cluster’s membership in any ClusterSet, and as long as a `clusterset.k8s.io`
+    property referring to that cluster in any of those ClusterSets exists.
 
 
 ##### Contents
@@ -427,7 +431,7 @@ Contains a unique identifier for the containing cluster.
 ##### Consumers
 
 *   **May** rely on the identifier existing, unmodified for the
-    entire duration of its membership in a ClusterSet.
+    entire duration of its membership in each ClusterSet it belongs to.
 *   **Should** watch the `cluster.clusterset.k8s.io` property to handle
     potential changes if they live beyond the ClusterSet membership.
 *   **May** rely on the existence of an identifier for clusters that do not
@@ -450,29 +454,31 @@ the same ClusterSet.
 
 #### Property: `clusterset.k8s.io`
 
-Contains an identifier that relates the containing cluster to the ClusterSet in
-which it belongs.
+Contains one or more identifiers that relate the containing cluster to the
+ClusterSet(s) in which it belongs.
 
 
 ##### Lifespan
 
-*   The identifier **must** exist and be immutable for the duration of a
-    cluster’s membership in a ClusterSet.
-*   The identifier **must not** exist when the cluster is not a member of a
+*   The identifier of each ClusterSet **must** be present in the value for the
+    duration of the cluster’s membership in that ClusterSet, and **must** be
+    removed from the value when that membership ends.
+*   The property **must not** exist when the cluster is not a member of any
     ClusterSet.
 
 
 ##### Contents
 
-*   The identifier **must** associate the cluster with a ClusterSet.
+*   The value **must** be a comma-separated list of the names of every
+    ClusterSet the cluster belongs to.
 
 
 ##### Consumers
 
-*   **May** rely on the identifier existing, unmodified for the
-    entire duration of its membership in a ClusterSet.
+*   **May** rely on a ClusterSet’s entry existing in the value, unmodified, for
+    the entire duration of the cluster’s membership in that ClusterSet.
 *   **Should** watch the clusterset property to detect the span of a cluster’s
-    membership in a ClusterSet.
+    membership in each ClusterSet.
 
 
 ### Additional Properties
@@ -613,10 +619,10 @@ ClusterSet, any dependent tooling explicitly *cannot* assume the
 `cluster.clusterset.k8s.io ClusterProperty` for a given cluster will stay
 constant on its own merit. For example, log aggregation of a given cluster id
 based on this property should only be trusted to be referring to the same
-cluster for as long as it has one ClusterSet membership; similarly, controllers
-whose logic depends on distinguishing clusters by cluster id can only trust this
-property to disambiguate the same cluster for as long as the cluster has one
-ClusterSet membership.
+cluster for as long as it remains a member of at least one ClusterSet;
+similarly, controllers whose logic depends on distinguishing clusters by
+cluster id can only trust this property to disambiguate the same cluster for as
+long as the cluster remains a member of at least one ClusterSet.
 
 Despite this flexibility in the KEP, cluster ids may still be useful before
 ClusterSet membership needs to be established; again, particularly if the
@@ -680,9 +686,9 @@ property.
 
 Because there are obligations of the `cluster.clusterset.k8s.io ClusterProperty`
 that are not meanigfully verifiable until a cluster tries to join a ClusterSet
-and set its `clusterset.k8s.io ClusterProperty`, the admission controller
-responsible for setting a `clusterset.k8s.io ClusterProperty` will need the
-ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]`
+and add it to its `clusterset.k8s.io ClusterProperty`, the admission controller
+responsible for setting or updating a `clusterset.k8s.io ClusterProperty` will
+need the ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]`
 or possibly affect changes to that cluster's `cluster.clusterset.k8s.io
 ClusterProperty` to make it valid `[/UNRESOLVED]`. Two symptomatic cases of this
 would be:
@@ -694,9 +700,9 @@ would be:
    ClusterProperty` tries to join a ClusterSet.
 
 In situations like these, the admission controller will need to fail to add the
-invalid cluster to the ClusterSet by refusing to set its `clusterset.k8s.io
-ClusterProperty`, and surface an error that is actionable to make the property
-valid.
+invalid cluster to the ClusterSet by refusing to set or update its
+`clusterset.k8s.io ClusterProperty`, and surface an error that is actionable to
+make the property valid.
 
 ```
 # An example object of `clusterset.k8s.io ClusterProperty`:
@@ -706,7 +712,7 @@ kind: ClusterProperty
 metadata:
   name: clusterset.k8s.io
 spec:
-  value: environ-1
+  value: environ-1,environ-2
 ```
 
 ### CRD upgrade path
