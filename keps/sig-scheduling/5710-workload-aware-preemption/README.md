@@ -487,9 +487,18 @@ Note that, for workload-aware preemption we will support the `preemptionPolicy` 
 of requestion `PriorityClass` - namely both currently existing modes: `PreemptLowerPriority`
 and `Never`.
 
+This field was not added as a part of the Alpha release of Workload Aware Preemption,
+thus it will lag one release behind the other fields. This means that it cannot be covered 
+by the `GenericWorkload` feature gate. We will introduce additional feature gate `PodGroupPreemptionPolicy` just for this field. 
+
 As the `preemptionPolicy` is also a field of the Pod, we will apply the same constraints as
 for the priority. Namely, all pods within `PodGroup` will have to share the same `preemptionPolicy`. 
 This will be enforced on the scheduler level.
+
+If the field is not present on the `PodGroup` object, the scheduler will behave as 
+if the PodGroup had `PreemptLowerPriority` set, unless one of the pods forming PodGroup has
+`PreemptNever` preemption policy, in which case the scheduler will behave as if the PodGroup
+had `PreemptNever` set.
 
 Given that components operate on integer priorities, we will introduce a corresponding fields
 that reflect priority of a PodGroup (similarly to how it's done in Pod API).
@@ -975,10 +984,14 @@ is not relevant for it.
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: GenericWorkload
   - Components depending on the feature gate: kube-apiserver, kube-scheduler
+  - Feature gate name: PodGroupPreemptionPolicy
+  - Components depending on the feature gate: kube-apiserver, kube-scheduler
 
 Note that for Alpha this feature was using `WorkloadAwarePreemption` feature gate.
 For Beta and GA we decided to merge it together with the `GenericWorkload` feature gate,
 with the rationale provided in the rest of the KEP. 
+There is also a separate `PodGroupPreemptionPolicy` feature gate that allows to set 
+the preemption policy on the group level.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -997,6 +1010,10 @@ in kube-scheduler. However, this will also disable a Gang Scheduling feature.
 The new API changes and admission can also be disabled by disabling the feature gate in
 kube-apiserver. However keep in mind that it doesn't result in clearing the new fields
 for objects that already have them set in the storage.
+
+The pod group level preemption policy field can be disabled by disabling `PodGroupPreemptionPolicy` 
+feature gate. When disabled, Workload Aware Preemption will deduct preemption policy from the
+pod spec of the pods belonging to PodGroup.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1023,6 +1040,10 @@ enablement/disablement tests - the logic will be covered by regular feature test
 The API fields related to Workload Aware Preemption are no longer hidden behind a separate
 feature gate and will be promoted with the whole API to beta. There is no need for the
 dedicated enablement/disablement tests at the kube-apiserver registry layer.
+
+The only exception is the pod group level preemption policy field that will be covered
+by the `PodGroupPreemptionPolicy` feature gate. Its enablement/disablement will be covered
+by unit tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
