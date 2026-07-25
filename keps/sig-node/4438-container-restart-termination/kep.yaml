@@ -46,3 +46,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
+  - kubelet_sidecar_restarts_during_termination_total

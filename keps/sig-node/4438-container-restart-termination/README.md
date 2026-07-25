@@ -216,9 +216,6 @@ The following behaviors should be maintained during pod termination:
 - service account token rotation
 - secret and configmap volume updates
 
-Also, container termination should be non-blocking, which will fix issue [#121398](https://github.com/kubernetes/kubernetes/issues/121398)
-a container cannot restart when there is any terminating container in the same pod.
-
 ### Non-Goals
 
 <!--
@@ -268,20 +265,41 @@ This might be a good place to talk about core concepts and how they relate.
 #### Alpha limitations
 
 The Alpha implementation (`SidecarsRestartableDuringPodTermination` v1.37) provides a scoped
-restart guarantee with the following known limitations to be addressed in Beta:
+restart guarantee. When a sidecar's ordered termination turn arrives, the instance that is
+currently live (which may be a restarted one) is gracefully terminated **in order with a
+`SIGTERM`** — the live container ID is resolved at kill time rather than reusing the snapshot
+taken before any restart. The following known limitations remain, to be addressed in Beta:
 
-- **SIGKILL on restart**: restarted sidecars receive SIGKILL (not an ordered SIGTERM), because
-  the termination ordering machinery is already in flight.
 - **Probes not re-attached**: liveness, readiness, and startup probes are not re-connected
   after a mid-termination restart.
-- **Pull secrets not re-resolved**: image pull secrets are not re-resolved at restart time.
-- **RestartCount inflated**: each mid-termination restart increments the container's
-  `RestartCount`, which may confuse monitoring tools.
+- **Pull secrets / image volumes not re-resolved**: image pull secrets and image volumes are
+  not re-resolved for the restarted instance.
+- **`preStop` not re-run on the restarted instance**: the `preStop` hook runs once, at the
+  start of termination, on the instance that was live when termination began; a restarted
+  instance is not given its own `preStop` invocation when its ordered turn arrives (its
+  `postStart` hook does run, via the normal container-start path). This includes an
+  already-exited sidecar restarted via the spec-driven dispatch path (see
+  [Design Details](#design-details)): its restarted instance still receives the ordered
+  `SIGTERM` at its turn, but no up-front `preStop` — the same class of limitation as above.
+- **Not observable via the API**: while the pod is terminating the kubelet does not refresh
+  pod status, so the restart is not reflected in the container's `RestartCount` or the
+  previous-logs endpoint. A `kubelet_sidecar_restarts_during_termination_total` metric is
+  exposed instead.
+- **No restart backoff**: a sidecar that keeps exiting is restarted each time it exits, for
+  the remainder of the grace period; there is no CrashLoopBackOff-style backoff.
 - **Short grace periods excluded**: pods with `terminationGracePeriodSeconds <= 1` are not
-  eligible for sidecar restart to avoid restarting a container that will be SIGKILL-ed
+  eligible for sidecar restart, to avoid restarting a container that will be SIGKILL-ed
   immediately anyway.
-- Container lifecycle hooks (`postStart`/`preStop`) are not invoked on the mid-termination
-  restart.
+- **Grace period is recomputed on kubelet restart**: if the kubelet restarts while a pod is
+  terminating, the remaining grace period is recomputed from the pod's
+  `DeletionGracePeriodSeconds` rather than resuming a precisely-tracked countdown. This is
+  pre-existing kubelet behavior for all terminating pods, not specific to sidecars.
+- **Restart-during-termination metric resets on kubelet restart**: like all kubelet metrics,
+  `kubelet_sidecar_restarts_during_termination_total` is held in memory and resets to zero
+  across a kubelet restart; this is generic to kubelet metrics, not specific to this feature.
+- **`preStop` may re-run after a kubelet restart**: this is the same pre-existing kubelet
+  behavior as for any container whose `preStop` was in flight when the kubelet restarted, not
+  specific to sidecars.
 
 #### Pod termination and In-Place Pod Restart interaction
 
@@ -317,6 +335,59 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+The feature is implemented entirely in the kubelet's container runtime manager and is gated by
+the `SidecarsRestartableDuringPodTermination` feature gate.
+
+When a pod is genuinely being terminated (`KillPod`, as opposed to sandbox replacement during
+`SyncPod`), `killContainersWithSyncResult` handles each running restartable init container
+(sidecar) with a dedicated goroutine, `killRestartableInitContainerWithSyncResult`, instead of
+the generic kill goroutine. This fits the existing KEP-753 per-container ordered-termination
+model (`terminationOrdering`). The feature only activates when the gate is enabled, the pod has
+at least one restartable init container, and `terminationGracePeriodSeconds > 1`.
+
+Each such goroutine:
+
+1. Runs the container's `preStop` hook up front (t=0), exactly as the generic kill path does,
+   so `preStop` timing is unchanged for sidecars.
+2. Waits for the sidecar's ordered termination turn, restarting it (via the normal
+   `startContainer` path) if it exits on its own so it keeps running until then. Both signals
+   are **event-driven**, not polled: premature exits are observed from the PLEG-maintained pod
+   status cache (`kubecontainer.Cache.GetNewerThan`, which blocks until PLEG reports a status
+   newer than the last one seen — so no extra runtime calls are issued from this path), and the
+   turn is observed from the termination ordering (`waitTurn`). The wait is **bounded by the
+   remaining grace period**, so a prerequisite container that never reports as terminated cannot
+   hang the pod.
+3. When the turn arrives, resolves the **currently-live** container instance (which may be a
+   restarted one) and terminates it in order with `SIGTERM` and the remaining grace budget.
+
+Restarts are **deduplicated per exited instance** (by container ID): a given exited instance is
+restarted at most once, because there is a visibility lag between `startContainer` and the new
+instance appearing in the pod cache. Without this, the loop would re-observe the same exited
+instance as "newest" and issue duplicate `CreateContainer` calls that collide on the
+container-name reservation.
+
+Dispatch of the per-sidecar goroutine is **spec-driven**, not limited to the containers
+`ConvertPodStatusToRunningPod` happened to observe as `Running`: `killContainersWithSyncResult`
+also walks `pod.Spec.InitContainers` for restartable init containers absent from
+`runningPod.Containers` and dispatches the same watcher goroutine for them. This closes two
+edge cases: a restartable init container that has already exited by the time
+`SyncTerminatingPod` builds its running-pod snapshot is still restarted for the remainder of
+the grace period (rather than being silently skipped, since it would otherwise carry no
+goroutine and no watch); and if the kubelet itself restarts mid-termination, a fresh
+`SyncTerminatingPod` call after the restart re-discovers the exited sidecar from the pod spec
+and restarts it via this same path, so the behavior self-heals across a kubelet restart.
+
+The `preStop` hook, the wait for the turn, and the final stop all draw from the same grace
+budget, so the pod stays within its `terminationGracePeriodSeconds`.
+
+To prevent conflicting lifecycle actions, the pod-wide In-Place Pod Restart path
+(`ShouldAllContainersRestart`) returns `false` once the pod is terminating
+(`DeletionTimestamp != nil`); see
+[Pod termination and In-Place Pod Restart interaction](#pod-termination-and-in-place-pod-restart-interaction).
+
+A `kubelet_sidecar_restarts_during_termination_total` counter is exposed for observability,
+because the restart is not reflected in the pod's API status during termination.
 
 ### Test Plan
 
@@ -375,14 +446,22 @@ The following unit tests were added for the Alpha implementation:
   to decide whether a sidecar's SIGTERM turn has arrived.
 
 `pkg/kubelet/kuberuntime/kuberuntime_termination_restart_test.go`:
-- `TestWatchAndRestartSidecar_ExitsBeforeTurn` — gate enabled, sidecar exits before its turn;
-  asserts `CreateContainer` is called within one ticker cycle.
-- `TestWatchAndRestartSidecar_PrereqsMet_NoRestart` — gate enabled, prereqs already met;
-  asserts the watcher exits cleanly without restarting.
+- `TestRestartSidecarDuringTermination_ExitsBeforeTurn` — gate enabled, sidecar exits before its
+  turn; asserts it is restarted (`CreateContainer` called) and that a repeat call for the same
+  exited instance does not restart it again (dedup).
+- `TestRestartSidecarDuringTermination_RunningNoRestart` — a still-running sidecar is not
+  restarted.
+- `TestKillRestartableInitContainer_RestartsThenKills` — full sequence: the sidecar exits before
+  its turn and is restarted, then once its turn arrives the live (restarted) instance is
+  gracefully stopped in order (and is not stopped before its turn).
+- `TestKillRestartableInitContainer_GraceBound` — if a prerequisite container never reports as
+  terminated, the wait is bounded by the grace period and the call returns rather than hanging.
+- `TestKillRestartableInitContainer_PrereqsMet` — prereqs already met; the sidecar is gracefully
+  stopped without being restarted.
 - `TestKillContainers_GateDisabled_NoRestart` — gate disabled; asserts no restart occurs even
   with `terminating=true`.
 - `TestKillContainers_NotTerminating_NoRestart` — gate enabled but `terminating=false`
-  (sandbox-replacement path); asserts no restart watcher is spawned.
+  (sandbox-replacement path); asserts no restart occurs.
 
 `pkg/kubelet/container/helpers_test.go`:
 - `TestShouldAllContainersRestart` — verifies that a pod-wide `RestartAllContainers` action is not triggered when the pod is in its termination phase (i.e. `DeletionTimestamp` is set), even if a container restart rule or the `v1.AllContainersRestarting` condition is present.
@@ -420,6 +499,27 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - <test>: <link to test coverage>
 -->
 
+###### Alpha (implemented)
+
+`test/e2e_node/sidecar_termination_restart_test.go`
+(`[FeatureGate:SidecarsRestartableDuringPodTermination]`):
+- "should restart the sidecar and still terminate the pod gracefully within its grace period" —
+  a pod with a restartable init container that exits on its own during termination (before the
+  main container finishes) is restarted, and the pod then terminates in order well within its
+  grace period.
+- "should restart an already-exited sidecar for the remainder of the grace period" — a
+  restartable init container that has already exited by the time `SyncTerminatingPod` builds
+  its running-pod snapshot (Edge A) is still restarted for the remainder of the grace period,
+  via the spec-driven dispatch path described in [Design Details](#design-details).
+- "should restart the sidecar and still terminate the pod in order after a kubelet restart
+  mid-termination" `[Serial][Disruptive]` — if the kubelet itself restarts while the pod is
+  terminating and the sidecar has already exited (Edge B), the sidecar is still restarted and
+  the pod terminates in order within its grace period, because a fresh `SyncTerminatingPod`
+  after the kubelet restart re-discovers and restarts the sidecar via the same spec-driven path.
+- "should terminate the pod faster when re-deleted with a smaller grace period" — re-terminating
+  an already-terminating pod with a smaller `terminationGracePeriodSeconds` override causes it
+  to terminate faster.
+
 ###### Existing tests
 
 - should respect termination grace period seconds
@@ -427,7 +527,16 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - should call the container's preStop hook and terminate it if its startup probe fails https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/container_lifecycle_test.go#L616
 - should call the container's preStop hook and terminate it if its liveness probe fails https://github.com/kubernetes/kubernetes/blob/fbb2e6293fb0c8c107ae48b8b8ae488325c59598/test/e2e_node/container_lifecycle_test.go#L683
 
-###### New tests
+###### Beta (planned)
+
+Alpha ships the node-e2e scenarios listed under [Alpha (implemented)](#alpha-implemented)
+above. The cases below remain deferred to Beta. **Obstacle:** probe re-attachment and
+`preStop`/`postStart`-on-restarted-instance assertions are not testable in Alpha, because the
+Alpha restart path does not re-attach liveness/readiness/startup probes and does not re-run
+the up-front `preStop` hook on the restarted instance (see [Alpha limitations](#alpha-limitations)).
+Those beta e2e scenarios therefore stay deferred until the Beta implementation
+(re-attaching probes and re-running `preStop` on the restarted instance) lands. The
+service-account-token items (#116481, #122568) are related but tracked separately.
 
 Probes:
 - Readiness probes are still running while in preStop
@@ -442,11 +551,7 @@ Not fully started containers:
 - postStart hook CONTINUE EXECUTE even if container started termination
 - postStart hook will stop once pod passed it’s graceful termination period
 
-Pod with some containers terminated:
-- BUGFIX, SIDECAR: Container can be restarted when there are terminating containers in the Pod A container cannot restart when there is any terminating container in the same pod · Issue #121398
-
 Re-terminating the Pod:
-- When the Pod is terminating, another call to terminate the pod with the smaller grace period will override the grace period to terminate Pod faster
 - When the Pod is terminating, another call to terminate the pod with the greater grace period will override the grace period to allow longer termination
 - BUGFIX: Service account token gets invalidated while terminating pod is re-deleted · Issue #122568
 
@@ -548,11 +653,14 @@ in back-to-back releases.
 
 #### Beta
 
-- Resolve alpha limitations:
-  - Re-attach liveness, readiness, and startup probes after a mid-termination restart.
-  - Invoke `preStop` hook before restarting a sidecar (ordered SIGTERM instead of SIGKILL).
-  - Re-resolve image pull secrets at restart time.
-- Enable container lifecycle hooks (`postStart`/`preStop`) for restarted sidecars.
+- Resolve remaining Alpha limitations:
+  - Re-attach liveness, readiness, and startup probes after a mid-termination restart,
+    addressing the restart-loop risk noted above.
+  - Run the `preStop` hook on a restarted instance when its ordered turn arrives. (In Alpha,
+    `preStop` runs once, on the instance that was live at the start of termination; the ordered
+    `SIGTERM` for the restarted instance is already delivered in Alpha.)
+  - Re-resolve image pull secrets and image volumes at restart time.
+  - Add restart backoff for a repeatedly-exiting sidecar.
 - e2e node tests added and passing in Testgrid without flakes for two consecutive releases.
 - Feedback from Alpha adopters addressed.
 
@@ -749,6 +857,10 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+The `kubelet_sidecar_restarts_during_termination_total` counter (per node) is incremented every
+time a sidecar is restarted during pod termination. A non-zero and increasing value indicates
+the feature is enabled and actively restarting sidecars for terminating pods.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -791,10 +903,9 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [X] Metrics
+  - Metric name: `kubelet_sidecar_restarts_during_termination_total`
+  - Components exposing the metric: kubelet
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -963,7 +1074,10 @@ Major milestones might include:
 
 - 2024-01-30: `Summary` and `Motivation` sections merged
 - 2024-02-08: `Proposal` section merged, KEP marked as `implementable`
-- v1.37: Alpha release (`SidecarsRestartableDuringPodTermination` feature gate, disabled by default)
+- v1.37: Alpha implementation ([kubernetes/kubernetes#140133]) behind the
+  `SidecarsRestartableDuringPodTermination` feature gate (disabled by default)
+
+[kubernetes/kubernetes#140133]: https://github.com/kubernetes/kubernetes/pull/140133
 
 ## Drawbacks
 
