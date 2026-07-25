@@ -1,0 +1,31 @@
+title: ReplicaSet Consolidation-Aware Scale-In Strategy
+kep-number: 5982
+authors:
+  - "@nathangeology"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-autoscaling
+  - sig-node
+  - sig-scheduling
+status: provisional
+creation-date: 2026-03-27
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-apps/2255-pod-cost"
+
+stage: alpha
+
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+
+feature-gates:
+  - name: ConsolidatingScaleDown
+    components:
+      - kube-controller-manager
+disable-supported: true
