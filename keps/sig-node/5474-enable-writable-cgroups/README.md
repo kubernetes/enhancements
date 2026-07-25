@@ -678,9 +678,9 @@ No SLOs at alpha. If pod startup latency degrades after enabling the feature gat
 - **2025-08-25**: KEP written and proposed
 - **2026-02-05**: KEP refined to focus strictly on `nsdelegate` for isolation and justify API opt-in requirements
 - **2026-06-08**: Per SIG-Node discussion, descendant/depth exhaustion is mitigated by the kubelet setting `cgroup.max.descendants`/`cgroup.max.depth` defaults on the Pod-level cgroup rather than via new CRI fields
-- **TBD**: Alpha implementation targeting v1.37
-- **TBD**: Beta implementation targeting v1.38
-- **TBD**: GA implementation targeting v1.39
+- **TBD**: Alpha implementation targeting v1.38
+- **TBD**: Beta implementation targeting v1.39
+- **TBD**: GA implementation targeting TBD
 
 ## Drawbacks
 
