@@ -348,7 +348,7 @@ As it was decided in [SIG Node meeting discussing static CPU policy support](htt
 * Must ensure reserved CPUs from [Kubelet CPU reservation](#kubelet-cpu-reservation) are kept during resize
 * Must work for all [Supported CPU Static Policy Options Combination matrix](#supported-cpu-static-combination-matrix)
 
-[CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) `CPUManagerCheckpoint` struct to store exclusive cpu/pod assignments, will be used by `InPlacePodVerticalScalingExclusiveCPUs`, to checkpoint per-container data embedded in `CPUManagerCheckpoint`. More specifically introduction of the inner map item `Originals` to checkpoint the corresponding _historical data_ of original CPUs exclusively allocated to a _running container_ ( `ContainerCPUs Checkpoint` for sort ), is meant to make internal upgrade and adaptation easier as we need to track the original CPU set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP. The corresponding _current_ set of CPUs exclusively allocated to a _running container_ will be checkpointed to `Entries` field embedded in `CheckpointData` section in `CPUManageCheckpoint` structure keeping the same structure used as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
+[CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102) `CPUManagerCheckpoint` struct to store exclusive cpu/pod assignments, will be used by `InPlacePodVerticalScalingExclusiveCPUs`, to checkpoint per-container data embedded in `CPUManagerCheckpoint`. More specifically introduction of the inner map item `AdmittedEntries` to checkpoint the corresponding _historical data_ of original CPUs exclusively allocated to a _running container_ ( `ContainerCPUs Checkpoint` for sort ), is meant to make internal upgrade and adaptation easier as we need to track the original CPU set allocated at admission and grant that set never be decreasing. Set must be explicit and recorded clearly in CPUManager checkpoint so it's always simple and safe to derive it. Final naming in the implementation can change a bit without changing concepts as expressed in this KEP. The corresponding _current_ set of CPUs exclusively allocated to a _running container_ will be checkpointed to `Entries` field embedded in `CheckpointData` section in `CPUManageCheckpoint` structure keeping the same structure used as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
 
 When the CPU Manager, under a static policy, generates a NUMA Topology hint for a Guaranteed pod undergoing an in place CPU pod-resize, it follows these rules to determine the new affinity:
 
@@ -621,7 +621,7 @@ The PodResizePending condition should set as Infeasible if CPU static policy res
 
    * the resize attempts to reduce container's exclusively allocated pool below container's exclusively pool allocated when container was created, with `prohibitedCPUAllocationError` as reason.
    * the resize attempts to either move a container from exclusively allocated pool to shared pool or move a container from shared pool to exclusively allocated pool, with `inconsistentCPUAllocationError` as reason
-   * kubelet fail to GetOriginalCPUSet from CPU Manager state file, thus not making it possible to perform a feasibility check, with `getOriginalCPUSetError` as reason
+   * kubelet fail to GetAdmittedEntryCPUSet from CPU Manager state file, thus not making it possible to perform a feasibility check, with `getAdmittedEntryCPUSetError` as reason
    * [allocateCPUs](https://github.com/kubernetes/kubernetes/blob/bfafa32d90958a8fe7a2ce09ed553fdfef4edd98/pkg/kubelet/cm/cpumanager/policy_static.go#L444) fails with topology.EmptyAllocation and err, with `resizeAllocateCPUsError` as reason including associated Topology Error.
 
 The PoDResizeInProgress condition should be set to Error with the error message, if there is an error during the actuation step,
@@ -646,7 +646,7 @@ structure, more specifically:
 
 * `Entries` field will store the _current_ set of CPUs allocated to a _container_ keeping the same structure used
    as in `Entries` field in embedded `CPUManagerCheckpointV2` section.
-* `Originals` field will store the _historical data_ of original CPUs exclusively allocated to a _container_
+* `AdmittedEntries` field will store the _historical data_ of original CPUs exclusively allocated to a _container_
    ( for alpha it will be the original CPUset only stored ) with the necessary format.
 
 Final naming in the implementation can change slightly without changing concepts as expressed in this KEP.
@@ -656,7 +656,7 @@ For `InPlacePodVerticalScalingExclusiveCPUs` embedded `CPUManagerCheckpointV2` f
 // ContainerCPUs struct is used in a checkpoint in v4 format,
 // to support In place update pod resouces alongside Static CPU Manager policy
 type ContainerCPUs struct {
-        Original  string `json:"original"`
+        AdmittedEntry  string `json:"original"`
 }
 
 // CPUManagerCheckpoint struct is used to store cpu/pod assignments in a checkpoint in v4 format
@@ -677,13 +677,13 @@ type CPUManagerCheckpointData struct {
        // the _current_ set of CPUs exclusively allocated to a _container_
        Entries       map[string]map[string]string        `json:"entries,omitempty"`
        // extra information required by this feature such us any _historical data_ of original CPUs exclusively allocated to a _container_
-       Originals     map[string]map[string]ContainerCPUs `json:"entries,omitempty"`
+       AdmittedEntries     map[string]map[string]ContainerCPUs `json:"entries,omitempty"`
 } 
 ```
 
 In addition to above the following list of functions must be added : 
 * Upgrade support function(s) as needed. An example case is if upgrading from an older version with unsupported/disabled feature, cater when the checkpointed structures will be empty.
-* GetOriginalCPUSet
+* GetAdmittedEntryCPUSet
 
 Last
 * GetCPUSet and SetCPUSet where modified accordingly.
@@ -900,7 +900,7 @@ enhancement:
 keeping the same user experience introduced with [CPUManager V4 format](https://github.com/kubernetes/kubernetes/pull/139102)
 
 The `Entries` field in embedded `CPUManagerCheckpointV2` section must be filled with currently allocated CPU sets
-( Original if there was no resize, Resized if there was a resize ) when `InPlacePodVerticalScalingExclusiveCPUs` feature is enabled.
+( AdmittedEntry if there was no resize, Resized if there was a resize ) when `InPlacePodVerticalScalingExclusiveCPUs` feature is enabled.
 
 This will allow the assignnment to be read properly if the checkpoint file is saved in a newer kubelet and loaded
 by the old kubelet, thus file reading will succeed without needed to drain the node or remove the file anymore.
@@ -1083,7 +1083,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 No to both.
 
-The introduction of `Originals` embedded in `CPUManagerCheckpointData` entry in `CPUManagerCheckpointData` struct in [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102), will be tested during alpha.
+The introduction of `AdmittedEntries` embedded in `CPUManagerCheckpointData` entry in `CPUManagerCheckpointData` struct in [CPU Manager State generalization checkpoint file version v4](https://github.com/kubernetes/kubernetes/pull/139102), will be tested during alpha.
 
 Running pods will be unaffected by any change.
 
@@ -1134,8 +1134,8 @@ When usage metrics and/or podresources API (or any other suitable APIs) and/or s
 Until those metrics/API/statuses are implemented ( planned for Beta ), it is possible to determine the feature if functioning properly as follows:
 
 - User should create a guaranteed QoS Pod with integer CPU requests.
-- Inspect the `/var/lib/kubelet/cpu_manager_state` and check `Original` and `Entries` CPU set, for the created Pods running container.
-- Upon creation `Original` should be equal to `Entries`, the currently set of CPUs exclusively allocated checkpointed. If `Original` exist and is not nil, it means the feature is enabled and working.
+- Inspect the `/var/lib/kubelet/cpu_manager_state` and check `AdmittedEntry` and `Entries` CPU set, for the created Pods running container.
+- Upon creation `AdmittedEntry` should be equal to `Entries`, the currently set of CPUs exclusively allocated checkpointed. If `AdmittedEntry` exist and is not nil, it means the feature is enabled and working.
 - The user can also check the CPU affinitity of the created Pod, from within the running container to confirm.
 - Afterwards the user should attempt to increase the number of CPUs, within the limits of the node, patching the created guaranteed QoS Pod.
 - Upon success, the user can check the CPU affinity of the resized Pod, from within the running container to confirm assigned CPU set is increased keeping original CPU set.
@@ -1380,7 +1380,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-For the problems solved by the proposed `Original` introduction in checkpoint, the following options have been cosidered and presented in sig-node meetings. 
+For the problems solved by the proposed `AdmittedEntry` introduction in checkpoint, the following options have been cosidered and presented in sig-node meetings. 
 
 More info can be read at [129719 comment](https://github.com/kubernetes/kubernetes/pull/129719#issuecomment-2715258098) , [March 11th 2025, sig node meeting minutes](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.0#heading=h.g56cg3xshw40), [SIG Node meeting recording discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg) and [6170 comment](https://github.com/kubernetes/enhancements/pull/6170#discussion_r3403684470)
 
