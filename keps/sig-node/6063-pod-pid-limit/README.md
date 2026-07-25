@@ -142,9 +142,8 @@ spec:
 
 
 ### Valid Values
-Following the same constraints as node-level `podPidsLimit`:
 
- - **Minimum**: 1024 (conservative lower bound)
+ - **Minimum**: 128
  - **Maximum**: 16384 (maximum supported in managed environments)
  - **Default**: If not specified, inherits kubelet's `podPidsLimit`
 
@@ -232,7 +231,7 @@ Node Declared Features: This feature integrates with the Node Declared Features 
 
 2. **Interaction with existing PID exhaustion protections**
    - Risk: A Pod could set a very low PID limit, making itself non-functional.
-   - Mitigation: API validation enforces a minimum of 1024 and a maximum of 16384, so extremely low or high values are rejected. Even at the minimum (1024), the pod has sufficient PIDs to function.
+   - Mitigation: API validation enforces a minimum of 128 and a maximum of 16384, so extremely low or high values are rejected. Even at the minimum (128), the pod has sufficient PIDs to function.
 
 3. **Version skew: apiserver accepts but kubelet ignores**
    - Risk: If only apiserver enables the gate, users think their limit is enforced but kubelet applies the node default.
@@ -257,7 +256,7 @@ When the feature gate is disabled:
 #### API Validation
 Add `pid` to the list of valid resource types
 
-Validate that `pid` values are integers within the allowed range (1024-16384)
+Validate that `pid` values are integers within the allowed range (128-16384)
 
 #### Kubelet Implementation
 Parse Pod specification: The kubelet reads `spec.resources.limits.pid` from the Pod spec during Pod admission.
@@ -267,7 +266,7 @@ Limit enforcement: When creating the Pod cgroup, the kubelet sets effective PID 
 - If Pod `spec.resources.limits.pid` is set: `min(podPidsLimit, pod.spec.resources.limits.pid)`
 - If Pod `spec.resources.limits.pid` is not set: `podPidsLimit` (current behavior)
 
-Validation: The kubelet validates that the PID limit is within acceptable bounds (1024 to 16384).
+Validation: The kubelet validates that the PID limit is within acceptable bounds (128 to 16384).
 
 cgroupsv2 requirement: The kubelet checks the cgroup version and only applies Pod-level limits on cgroupsv2 systems. On cgroupsv1 systems, the kubelet rejects pods that specify `spec.resources.limits.pid` during admission.
 
@@ -334,7 +333,7 @@ in `test/e2e_node/pids_test.go` (`PodPidsLimit` suite) cover the node-level
 
 This feature touches API validation, field stripping, and kubelet cgroup enforcement. For Alpha, unit test coverage for the following packages is added:
 
-* `pkg/apis/core/validation` will be updated with validation rules for the `pid` resource (range 1024-16384, container-level rejection, `requests.pid` forbidden).
+* `pkg/apis/core/validation` will be updated with validation rules for the `pid` resource (range 128-16384, container-level rejection, `requests.pid` forbidden).
 * `pkg/api/pod` will be updated with field stripping logic when the `PerPodPIDLimit` gate is disabled (`requests.pid` is always stripped).
 * `pkg/kubelet/cm` will be updated with `getPodPIDLimit` logic (pod limit lower/higher than node, no pod limit fallback), cgroupsv1 rejection error message, `PIDLimitCapped` event emission when the effective limit is capped, and static pod PID limit enforcement (kubelet applies `getPodPIDLimit` uniformly for both regular and static pods).
 * `pkg/apis/core/helper` will be updated to exclude `ResourcePID` from `standardContainerResources`.
