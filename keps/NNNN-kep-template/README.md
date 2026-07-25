@@ -375,6 +375,8 @@ functionality is accessed.
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 
+For detailed guidance on graduation readiness expectations, see the [Graduation Readiness](/docs/graduation-readiness.md) document.
+
 #### Alpha
 
 - Feature implemented behind a feature flag
