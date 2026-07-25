@@ -65,6 +65,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [User Stories](#user-stories)
     - [Story 1: SaaS Application Scaling on Queue Depth](#story-1-saas-application-scaling-on-queue-depth)
     - [Story 2: E-commerce Site with Multiple External Metrics](#story-2-e-commerce-site-with-multiple-external-metrics)
+    - [Story 3: Cost-Sensitive Workload with Performance Floor](#story-3-cost-sensitive-workload-with-performance-floor)
+    - [Story 4: Rate-Limited Service with Cost Ceiling](#story-4-rate-limited-service-with-cost-ceiling)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -191,14 +193,15 @@ A duration-based threshold provides consistent, predictable behavior regardless 
 
 The duration is measured from the first consecutive failure, ensuring consistent and understandable semantics: "activate fallback if the metric has been failing for at least X minutes."
 
-This enhancement allows users to specify a desired replica count that the HPA should use after a configurable number of consecutive failures to retrieve an external metric. The fallback replica count is treated as the desired replica count from that metric and combined with other metrics using the HPA's standard multi-metric algorithm (taking the maximum), respecting all configured constraints (min/max replicas, behavior policies, etc.), ensuring predictable and safe scaling decisions even when external metrics are unavailable.
+This enhancement allows users to specify a desired replica count and a strategy that the HPA should use after a configurable duration of consecutive failures to retrieve an external metric. The strategy determines how the fallback replica count interacts with the current replica count: `Static` (default) uses the configured value directly, `UseMax` ensures a performance floor, and `UseMin` enforces a cost ceiling. The resulting desired replica count is combined with other metrics using the HPA's standard multi-metric algorithm (taking the maximum), respecting all configured constraints (min/max replicas, behavior policies, etc.), ensuring predictable and safe scaling decisions even when external metrics are unavailable.
 
 The community has previously expressed interest in addressing this limitation [#109214](https://github.com/kubernetes/kubernetes/issues/109214).
 
 ### Goals
 
-- Allow users to optionally define a fallback, static pod replica count value when retrieval of external metrics fails
+- Allow users to optionally define a fallback replica count and strategy when retrieval of external metrics fails
 - Provide per-metric failure tracking and fallback behavior
+- Support multiple fallback strategies (`Static`, `UseMax`, `UseMin`) to cover different operational needs
 - Maintain the HPA's scaling algorithm and respect min/max replica constraints
 - Ensure users can determine which specific metrics are using fallback values
 
@@ -217,10 +220,23 @@ Add optional fallback configuration to the existing [ExternalMetricSource](https
 
 1. A failure duration (how long the metric must be continuously failing before activating fallback)
 2. A desired replica count to use when the failure duration threshold is exceeded
+3. A strategy that controls how the fallback replica count interacts with the current replica count
+
+**Fallback Strategies:**
+
+The `strategy` field determines how the desired replica count is computed when fallback is active:
+
+| Strategy | Behavior |
+|----------|----------|
+| `Static` (default) |
+| `UseMax` | `max(currentReplicas, fallback.replicas)` |
+| `UseMin` | `min(currentReplicas, fallback.replicas)` |
+
 
 This approach:
 - **Works with the HPA algorithm**: Fallback provides a desired replica count for that metric, which is combined with other metrics using the standard HPA multi-metric approach (taking the maximum)
 - **Is per-metric**: Each external metric can have its own fallback configuration
+- **Is flexible**: Three strategies cover the common operational needs (fixed value, floor, ceiling)
 - **Provides visibility**: Status shows which metrics are in fallback state
 - **Is conservative**: Only applies to external metrics, which are inherently out-of-cluster
 - **Is consistent**: Duration-based thresholds behave the same across different Kubernetes configurations and reconciliation frequencies
@@ -231,11 +247,19 @@ This approach:
 
 As an operator, I run a SaaS application that scales based on a cloud provider's message queue depth (external metric). Occasionally, the cloud provider's metrics API experiences brief outages (5-10 minutes). During these outages, I would like my HPA fallback to a manual configuration, ensuring sufficient capacity to handle the presumed backlog safely.
 
-When the external API fails, the HPA treats this metric as requesting 10 replicas, ensuring sufficient capacity to handle the presumed backlog safely.
+When the external API fails, the HPA treats this metric as requesting 10 replicas (using the default `Static` strategy), ensuring sufficient capacity to handle the presumed backlog safely.
 
 #### Story 2: E-commerce Site with Multiple External Metrics
 
 As an operator, I want to configure different fallback replica counts for each external metric so my e-commerce site can continue autoscaling when one monitoring provider fails.
+
+#### Story 3: Cost-Sensitive Workload with Performance Floor
+
+As an operator, I run a workload that scales based on an external latency metric. During monitoring provider outages, I want to ensure the workload never drops below 5 replicas (for SLA reasons) but also preserves the current scale if it had already scaled up to handle load. I use `strategy: UseMax` with `replicas: 5` so that the fallback acts as a performance floor.
+
+#### Story 4: Rate-Limited Service with Cost Ceiling
+
+As an operator, I run a rate-limited service that scales based on an external request-rate metric. During monitoring provider outages, I want to cap the replica count at 20 to control costs, even if the service had scaled higher before the outage. I use `strategy: UseMin` with `replicas: 20` to enforce a cost ceiling during the outage.
 
 ### Risks and Mitigations
 
@@ -248,14 +272,33 @@ As an operator, I want to configure different fallback replica counts for each e
 - Risk: Users configure failureDurationSeconds too long, delaying necessary scaling during outages
   - Mitigation: Documentation provides guidance on balancing between avoiding false positives and responding quickly to genuine outages; recommend 180-300 seconds (3-5 minutes) for most use cases
   
+- Risk: Users choose a strategy that doesn't match their operational intent
+  - Mitigation: `Static` is the default and covers the most common case; documentation explains each strategy with concrete examples; the `strategy` field is optional so users who don't need advanced behavior get safe defaults
+
 - Risk: Complexity in understanding which metric is in fallback and why
-  - Mitigation: Per-metric status clearly shows fallback state, `firstFailureTime` timestamp, and current `fallbackStatus` value; events are generated when fallback activates with clear messaging including duration and timestamp
+  - Mitigation: Per-metric status clearly shows fallback state via `fallback.firstFailureTime` timestamp and `fallback.status` value; events are generated when fallback activates with clear messaging including duration, strategy, and timestamp
 
 ## Design Details
 
-Introduce a new `ExternalMetricFallback` type and add a new `fallback` field to the existing `ExternalMetricSource` struct. Additionally, add new `fallbackStatus` and `firstFailureTime` fields to the existing `ExternalMetricStatus` struct.
+Introduce a new `FallbackStrategy` type, a new `ExternalMetricFallback` type, and add a new `fallback` field to the existing `ExternalMetricSource` struct. Additionally, add a new `FallbackStatusType` type, a new `ExternalMetricFallbackStatus` struct, and a new `fallback` field to the existing `ExternalMetricStatus` struct.
 
 ```golang
+// FallbackStrategy specifies how the fallback replica count interacts with the
+// current replica count when an external metric cannot be retrieved.
+type FallbackStrategy string
+
+const (
+  // FallbackStrategyStatic always uses the configured fallback replicas value.
+  // This is the default strategy.
+  FallbackStrategyStatic FallbackStrategy = "Static"
+
+  // FallbackStrategyUseMax uses max(currentReplicas, fallback.replicas).
+  FallbackStrategyUseMax FallbackStrategy = "UseMax"
+
+  // FallbackStrategyUseMin uses min(currentReplicas, fallback.replicas).
+  FallbackStrategyUseMin FallbackStrategy = "UseMin"
+)
+
 // ExternalMetricFallback defines fallback behavior when an external metric cannot be retrieved
 type ExternalMetricFallback struct {
   // failureDurationSeconds is the duration in seconds for which the external metric must be
@@ -267,12 +310,19 @@ type ExternalMetricFallback struct {
   FailureDurationSeconds *int64 `json:"failureDurationSeconds,omitempty"`
 
   // replicas is the desired replica count to use when the external metric cannot be retrieved.
-  // This value is treated as the desired replica count from this metric.
-  // When multiple metrics are configured, the HPA controller uses the maximum of all
-  // desired replica counts (standard HPA multi-metric behavior).
+  // How this value is applied depends on the strategy field.
   // Must be greater than 0.
   // +required
   Replicas int32 `json:"replicas"`
+
+  // strategy specifies how the fallback replicas value interacts with the current
+  // replica count when fallback is active. Possible values:
+  // - "Static" (default): Always use fallback.replicas as the desired replica count.
+  // - "UseMax": Use max(currentReplicas, fallback.replicas)
+  // - "UseMin": Use min(currentReplicas, fallback.replicas)
+  // +optional
+  // +default="Static"
+  Strategy *FallbackStrategy `json:"strategy,omitempty"`
 }
 
 // ExternalMetricSource indicates how to scale on a metric not associated with
@@ -295,6 +345,30 @@ type ExternalMetricSource struct {
 Update `MetricStatus` to include per-metric fallback information:
 
 ```golang
+// FallbackStatusType indicates the current fallback state of an external metric.
+type FallbackStatusType string
+
+const (
+  // FallbackStatusNormal indicates the metric is being retrieved successfully.
+  FallbackStatusNormal FallbackStatusType = "Normal"
+
+  // FallbackStatusFallback indicates the metric is using a fallback value
+  // due to retrieval failures exceeding the configured duration.
+  FallbackStatusFallback FallbackStatusType = "Fallback"
+)
+
+// ExternalMetricFallbackStatus describes the current fallback state for an external metric.
+type ExternalMetricFallbackStatus struct {
+  // status indicates whether this metric is operating normally or in fallback mode.
+  // +required
+  Status FallbackStatusType `json:"status"`
+
+  // firstFailureTime is the timestamp of the first consecutive failure retrieving this metric.
+  // Reset to nil on successful retrieval. Used to calculate if failureDurationSeconds has been exceeded.
+  // +optional
+  FirstFailureTime *metav1.Time `json:"firstFailureTime,omitempty"`
+}
+
 // ExternalMetricStatus indicates the current value of a global metric not associated
 // with any Kubernetes object.
 type ExternalMetricStatus struct {
@@ -303,33 +377,12 @@ type ExternalMetricStatus struct {
 
 	// current contains the current value for the given metric
 	Current MetricValueStatus `json:"current" protobuf:"bytes,2,name=current"`
-    
-  // fallbackStatus indicates whether this metric is operating normally or in fallback mode.
-  // Possible enum values:
-  // - "Normal" indicates the metric is being retrieved successfully
-  // - "Fallback" indicates the metric is using a fallback value due to retrieval failures
+
+  // fallback describes the current fallback state for this metric.
+  // Only present when fallback is configured in the spec.
   // +optional
-  FallbackStatus string `json:"fallbackStatus,omitempty"`
-  
-  // firstFailureTime is the timestamp of the first consecutive failure retrieving this metric.
-  // Reset to nil on successful retrieval. Used to calculate if failureDurationSeconds has been exceeded.
-  // +optional
-  FirstFailureTime *metav1.Time `json:"firstFailureTime,omitempty"`
+  Fallback *ExternalMetricFallbackStatus `json:"fallback,omitempty"`
 }
-```
-
-Add a new `HorizontalPodAutoscalerConditionType`:
-
-```golang
-const (
-  // ExternalMetricFallbackActive indicates that one or more external metrics
-  // are currently using fallback values due to retrieval failures.
-  // Status will be:
-  // - "True" if any external metric is in fallback state
-  // - "False" if no external metrics are in fallback state
-  // - "Unknown" if the controller cannot determine the state
-  ExternalMetricFallbackActive ConditionType = "ExternalMetricFallbackActive"
-)
 ```
 
 ### Test Plan
@@ -380,18 +433,22 @@ extending the production code to implement this enhancement.
 -->
 
 - Tests for Fallback Configuration:
-  - Verify failureDurationSeconds validation (must be > 180)
+  - Verify failureDurationSeconds validation (must be >= 180)
   - Verify replicas validation (must be > 0)
+  - Verify strategy validation (must be one of `Static`, `UseMax`, `UseMin`)
+  - Verify strategy defaults to `Static` when not specified
 - Tests for Failure Tracking and Activation:
-  - Verify `firstFailureTime` is set on first failure and persists through consecutive failures
-  - Verify `firstFailureTime` is cleared on successful metric retrieval
-  - Verify fallback activates when current time exceeds `firstFailureTime` + `failureDurationSeconds`
-  - Verify fallbackStatus field updates correctly
-- Tests for Replica Calculation:
-  - Verify fallback returns the configured replica count when threshold is exceeded
-  - Verify fallback replica count is combined with other metrics using max() (standard multi-metric behavior)
-  - Verify replica calculations respect min/max constraints with fallback replica counts
-  - Verify correct behavior with multiple external metrics (independent failure tracking and max selection)
+  - Verify `fallback.firstFailureTime` is set on first failure and persists through consecutive failures
+  - Verify `fallback.firstFailureTime` is cleared on successful metric retrieval
+  - Verify fallback activates when current time exceeds `fallback.firstFailureTime` + `failureDurationSeconds`
+  - Verify `fallback.status` field updates correctly
+- Tests for Replica Calculation per Strategy:
+  - `Static`: Verify fallback returns the configured replica count regardless of current replicas
+  - `UseMax`: Verify fallback returns `max(currentReplicas, fallback.replicas)` — test both directions (current > fallback and current < fallback)
+  - `UseMin`: Verify fallback returns `min(currentReplicas, fallback.replicas)` — test both directions (current > fallback and current < fallback)
+  - Verify fallback replica count is combined with other metrics using max() (standard multi-metric behavior) for all strategies
+  - Verify replica calculations respect min/max constraints with fallback replica counts for all strategies
+  - Verify correct behavior with multiple external metrics using different strategies (independent failure tracking and max selection)
   
 - `/pkg/controller/podautoscaler`: 05 Nov 2025 - 89.1%
 - `/pkg/controller/podautoscaler/metrics`: 05 Nov 2025 - 89.9%
@@ -429,13 +486,16 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 We will add the following e2e autoscaling tests:
 
-- External metric failure triggers fallback after threshold is reached, using configured replica count
-- HPA status condition `ExternalMetricFallbackActive` is set to True when fallback activates
+- External metric failure triggers fallback after threshold is reached, using configured replica count (default `Static` strategy)
+- HPA status shows `fallback.status: Fallback` for the affected metric when fallback activates
 - Success in retrieving external metric resets the failure count and resumes normal scaling
 - HPA uses max() of healthy metric calculations and fallback replica counts
 - Fallback respects HPA min/max replica constraints
-- Status correctly reflects which metrics are in fallback state and shows `firstFailureTime`
+- Status correctly reflects which metrics are in fallback state via `fallback.status` and `fallback.firstFailureTime`
 - With multiple external metrics in fallback, HPA uses the maximum fallback replica count
+- `UseMax` strategy preserves higher current replicas and boosts to fallback replicas when current is lower
+- `UseMin` strategy caps replicas at fallback value when current is higher
+- Multiple external metrics with different strategies compute their desired replicas independently
 
 ### Graduation Criteria
 
@@ -529,25 +589,25 @@ When the feature gate is enabled:
 - Existing HPAs continue to work unchanged
 - External metrics without `fallback` configuration behave as they do today (no scaling when unavailable)
 - Users can add `fallback` configuration to external metrics in their HPAs
-- The controller begins tracking per-metric `firstFailureTime` for external metrics with fallback configured
-  - On the first failure, `firstFailureTime` is set to the current timestamp
+- The controller begins tracking per-metric failure time via `fallback.firstFailureTime` for external metrics with fallback configured
+  - On the first failure, `fallback.firstFailureTime` is set to the current timestamp
   - On subsequent failures, the timestamp is preserved to track failure duration
-  - On success, `firstFailureTime` is cleared (set to nil)
-- The `fallbackStatus` and `firstFailureTime` status fields are populated for external metrics with fallback configured
-- Fallback activates when `(current time - firstFailureTime) >= failureDurationSeconds`
+  - On success, `fallback.firstFailureTime` is cleared (set to nil)
+- The `fallback` status field is populated for external metrics with fallback configured
+- Fallback activates when `(current time - fallback.firstFailureTime) >= failureDurationSeconds`
 
 #### Downgrade
 
 When the feature gate is disabled:
 - The `fallback` field in `ExternalMetricSource` is ignored by the controller
-- The `fallbackStatus` and `firstFailureTime` status fields are not updated (remain at last values but are not used)
+- The `fallback` status field is not updated (remains at last value but is not used)
 - All external metrics revert to current behavior: HPA cannot scale based on them when they're unavailable
 - Any HPAs currently using fallback values will:
   - Maintain their current replica count
   - Stop using fallback values
   - Resume normal metric-based scaling when external metrics become available again
 - No disruption to running workloads (pods are not restarted)
-- The `firstFailureTime` timestamp remains in the status but is not evaluated or updated
+- The `fallback` field remains in the status but is not evaluated or updated
 
 All logic related to fallback evaluation, failure counting, and status updates is gated by the `HPAExternalMetricFallback` feature gate.
 
@@ -622,14 +682,14 @@ This section must be completed when targeting alpha to a release.
 
 No. By default, HPAs will continue to behave as they do today. The feature only activates when users explicitly configure the `fallback` field on external metrics in their HPA specifications. 
 External metrics without fallback configuration will continue to prevent scaling when unavailable, which is the current behavior.
-When fallback is configured and activated, the failing metric contributes its configured replica count to the HPA's decision, which is then combined with other metrics using the standard max() approach.
+When fallback is configured and activated, the failing metric contributes a desired replica count to the HPA's decision based on the configured strategy (defaulting to `Static`), which is then combined with other metrics using the standard max() approach.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. If the feature gate is disabled:
 - All `fallback` configurations in HPA specs are ignored by the controller
 - External metrics revert to current behavior: HPA cannot scale based on them when they're unavailable
-- The `fallbackStatus` and `firstFailureTime` status fields stop being updated
+- The `fallback` status field stops being updated
   - These fields remain in the HPA status at their last values but are not evaluated or modified
 - HPAs maintain their current replica count at the time of rollback
 - No pods are restarted or disrupted
@@ -640,13 +700,13 @@ To disable, restart `kube-controller-manager` and `kube-apiserver` with the feat
 
 When the feature is re-enabled:
 - Any HPAs with `fallback` configured on external metrics will resume fallback behavior
-- The controller clears any stale `firstFailureTime` timestamps and starts fresh
+- The controller clears any stale `fallback.firstFailureTime` timestamps and starts fresh
 - If external metrics are failing at re-enablement:
-  - On the first failure, `firstFailureTime` is set to the current timestamp
-  - The failure duration is calculated as `(current time - firstFailureTime)`
+  - On the first failure, `fallback.firstFailureTime` is set to the current timestamp
+  - The failure duration is calculated as `(current time - fallback.firstFailureTime)`
   - Once the configured `failureDurationSeconds` has elapsed, fallback values are used
-  - The `fallbackStatus` field is set to "Fallback" for affected metrics
-- HPAs resume using the static replicas stanza for scaling decisions when external metrics are unavailable and thresholds are exceeded
+  - The `fallback.status` field is set to "Fallback" for affected metrics
+- HPAs resume using the configured fallback strategy and replicas for scaling decisions when external metrics are unavailable and thresholds are exceeded
 
 Existing HPAs without `fallback` configuration are not affected by re-enabling the feature and continue with default behavior.
 
@@ -701,7 +761,7 @@ that might indicate a serious problem?
 -->
 - Unexpected scaling events after enabling the feature
 - Increased error rate in horizontal_pod_autoscaler_controller_metric_computation_total
-- High percentage of HPAs showing fallbackStatus: "Fallback" unexpectedly
+- High percentage of HPAs showing `fallback.status: Fallback` unexpectedly
 - Increased latency in horizontal_pod_autoscaler_controller_reconciliation_duration_seconds
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -748,12 +808,11 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 Users can confirm that the feature is active and functioning by inspecting the status fields exposed by the controller. Specifically:
-- Check the HPA condition to verify if `ExternalMetricFallbackActive` is currently active
-- Check `.status.currentMetrics[].external.fallbackStatus` to verify if fallback is currently active (value will be "Fallback")
-- Check `.status.currentMetrics[].external.firstFailureTime` to see when failures started
+- Check `.status.currentMetrics[].external.fallback.status` to verify if fallback is currently active (value will be "Fallback")
+- Check `.status.currentMetrics[].external.fallback.firstFailureTime` to see when failures started
 
 Moreover, users can verify the feature is working properly through events on the HPA object:
-- When fallback activates: Normal `ExternalMetricFallbackActivated` "Fallback activated for external metric 'queue_depth' after 3m0s of consecutive failures, using fallback replica count: 10"
+- When fallback activates: Normal `ExternalMetricFallbackActivated` "Fallback activated for external metric 'queue_depth' after 3m0s of consecutive failures (strategy: Static), using fallback replica count: 10"
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -854,7 +913,8 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
-No. The feature only adds new fields to existing API types:
+No. The feature only adds new fields and types to existing API types:
+- New `FallbackStrategy` string type with four constants
 - New `ExternalMetricFallback` struct within `ExternalMetricSource`
 - New status fields in `ExternalMetricStatus`
 
@@ -876,12 +936,13 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 Yes, `HorizontalPodAutoscaler` objects will increase in size when fallback is configured:
-- Spec increase: ~50 bytes per external metric with fallback configured:
+- Spec increase: ~80 bytes per external metric with fallback configured:
   - `failureDurationSeconds`: ~30 bytes (field name + int64 value)
   - `replicas`: ~20 bytes (int32)
-- Status increase: ~110 bytes per external metric:
-  - `fallbackStatus`: ~40 bytes (string field with "Normal" or "Fallback" value)
-  - `firstFailureTime`: ~70 bytes (timestamp field + RFC3339 string like "2024-01-15T10:23:45Z")
+  - `strategy`: ~30 bytes (field name + string value like "Static", "UseMax")
+- Status increase: ~110 bytes per external metric (when fallback is configured):
+  - `fallback.status`: ~40 bytes (string field with "Normal" or "Fallback" value)
+  - `fallback.firstFailureTime`: ~70 bytes (timestamp field + RFC3339 string like "2024-01-15T10:23:45Z")
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -896,9 +957,10 @@ Think about adding additional work or introducing new steps in between
 
 No. The feature adds minimal computational overhead to the existing HPA reconciliation loop. The fallback logic is integrated into the existing metric retrieval and evaluation process:
 1. Attempt to retrieve external metric (already happens)
-2. On failure: check/update `firstFailureTime` (new, minimal overhead)
+2. On failure: check/update `fallback.firstFailureTime` (new, minimal overhead)
 3. Evaluate if fallback should activate (new, simple comparison)
-4. Return either real metric or fallback replica count (already happens for other metric types)
+4. Apply the configured strategy to compute the desired replica count (new, simple arithmetic — max/min/identity)
+5. Return either real metric or fallback replica count (already happens for other metric types)
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -944,12 +1006,12 @@ details). For now, we leave it here.
 If the API server and/or etcd becomes unavailable, the entire HPA controller functionality will be impacted, not just this feature. The HPA controller will not be able to:
 - Retrieve HPA objects
 - Get external metrics (or any metrics)
-- Update HPA status (including `fallbackStatus` and `firstFailureTime` fields)
+- Update HPA status (including `fallback` status fields)
 - Apply scaling decisions
 
 Therefore, no autoscaling decisions can be made during this period, regardless of whether fallback is configured. The feature itself doesn't introduce any new failure modes with respect to API server or etcd availability - it's dependent on these components being available just like the rest of the HPA controller's functionality.
 
-Once API server and etcd access is restored, the HPA controller will resume normal operation. The in-memory failure counts will reset, if external metrics are still failing and `firstFailureTime` is preserved the controller will use that timestamp to calculate whether the fallback should remain active.
+Once API server and etcd access is restored, the HPA controller will resume normal operation. The in-memory failure counts will reset, if external metrics are still failing and `fallback.firstFailureTime` is preserved the controller will use that timestamp to calculate whether the fallback should remain active.
 
 ###### What are other known failure modes?
 
@@ -978,7 +1040,7 @@ For problematic HPAs, you can:
 
 - Temporarily remove the fallback field to revert to default behavior (HPA holds current scale on metric failure)
 - Adjust `failureDurationSeconds` to prevent premature fallback activation
-- Review and adjust fallback values if scaling behavior is inappropriate
+- Review and adjust fallback replicas or strategy if scaling behavior is inappropriate
 
 ## Implementation History
 
