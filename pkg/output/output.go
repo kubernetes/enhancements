@@ -162,7 +162,7 @@ func (o *TableOutput) PrintProposals(proposals []*api.Proposal) {
 
 type CSVOutput columnOutput
 
-// PrintProposals prins KEPs array in CSV format
+// PrintProposals prints KEPs array in CSV format
 func (o *CSVOutput) PrintProposals(proposals []*api.Proposal) {
 	w := csv.NewWriter(o.Out)
 	defer w.Flush()

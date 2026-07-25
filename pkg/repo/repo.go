@@ -86,7 +86,7 @@ func NewRepo(repoPath string, fetcher api.GroupFetcher) (*Repo, error) {
 	if repoPath == "" {
 		repoPath, err = os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("unable to determine enhancements repo path: %s", err)
+			return nil, fmt.Errorf("unable to determine enhancements repo path: %w", err)
 		}
 	}
 
@@ -212,11 +212,11 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 	err := filepath.Walk(
 		sigPath,
 		func(path string, info os.FileInfo, err error) error {
-			logrus.Debugf("processing filename %s", info.Name())
-
 			if err != nil {
 				return err
 			}
+
+			logrus.Debugf("processing filename %s", info.Name())
 
 			// true if the file is a symlink
 			if info.Mode()&os.ModeSymlink != 0 {
@@ -468,7 +468,7 @@ func (r *Repo) loadKEPFromYaml(repoPath, kepPath string) (*api.Proposal, error) 
 	var p api.Proposal
 	err = yaml.UnmarshalStrict(b, &p)
 	if err != nil {
-		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
+		return nil, fmt.Errorf("unable to load KEP metadata: %w", err)
 	}
 
 	p.Name = filepath.Base(filepath.Dir(kepPath))

@@ -54,7 +54,7 @@ func Promote(opts *PromoteOpts) error {
 
 	p, err := r.LoadLocalKEP(opts.SIG, opts.Name)
 	if err != nil {
-		return fmt.Errorf("unable to load KEP for promotion: %s", err)
+		return fmt.Errorf("unable to load KEP for promotion: %w", err)
 	}
 
 	p.Stage = api.Stage(opts.Stage)
@@ -63,7 +63,7 @@ func Promote(opts *PromoteOpts) error {
 
 	err = r.WriteKEP(p)
 	if err != nil {
-		return fmt.Errorf("unable to write updated KEP: %s", err)
+		return fmt.Errorf("unable to write updated KEP: %w", err)
 	}
 
 	// TODO: Implement ticketing workflow artifact generation

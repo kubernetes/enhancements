@@ -128,21 +128,25 @@ func findMarkdownFiles(dirPath *string) ([]string, error) {
 func parseFiles(parser *api.KEPHandler, files []string) (api.Proposals, error) {
 	var proposals api.Proposals
 	for _, filename := range files {
-		file, err := os.Open(filename)
-		if err != nil {
-			return nil, fmt.Errorf("could not open file: %v", err)
+		if err := func() error {
+			file, err := os.Open(filename)
+			if err != nil {
+				return fmt.Errorf("could not open file: %v", err)
+			}
+			defer file.Close()
+
+			kep, err := parser.Parse(file)
+			// if error is nil we can move on
+			if err != nil {
+				return fmt.Errorf("%v has an error: %q", filename, kep.Error.Error())
+			}
+
+			fmt.Printf(">>>> parsed file successfully: %s\n", filename)
+			proposals.AddProposal(kep)
+			return nil
+		}(); err != nil {
+			return nil, err
 		}
-
-		defer file.Close()
-
-		kep, err := parser.Parse(file)
-		// if error is nil we can move on
-		if err != nil {
-			return nil, fmt.Errorf("%v has an error: %q", filename, kep.Error.Error())
-		}
-
-		fmt.Printf(">>>> parsed file successfully: %s\n", filename)
-		proposals.AddProposal(kep)
 	}
 
 	return proposals, nil

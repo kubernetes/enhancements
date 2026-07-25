@@ -31,7 +31,7 @@ import (
 func (r *Repo) WriteKEP(kep *api.Proposal) error {
 	b, err := yaml.Marshal(kep)
 	if err != nil {
-		return fmt.Errorf("KEP is invalid: %s", err)
+		return fmt.Errorf("KEP is invalid: %w", err)
 	}
 
 	sig := kep.OwningSIG
