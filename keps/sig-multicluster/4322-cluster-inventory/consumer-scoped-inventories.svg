@@ -1,0 +1,49 @@
+<svg version="1.1" viewBox="0 0 960 450" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#595959"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="960" height="450" fill="#ffffff"/>
+
+  <!-- hub cluster -->
+  <rect x="170" y="40" width="650" height="145" fill="#eeeeee" stroke="#595959" stroke-width="1"/>
+  <text x="495" y="68" font-family="Arial, sans-serif" font-size="13" fill="#000000" text-anchor="middle">Hub cluster</text>
+
+  <!-- inventory: ns "argocd" -->
+  <rect x="195" y="92" width="332" height="70" rx="6" fill="none" stroke="#674ea7" stroke-width="1.5" stroke-dasharray="6.0,3.0"/>
+  <rect x="203" y="85.5" width="61" height="13" fill="#eeeeee"/>
+  <text x="207" y="95.5" font-family="Arial, sans-serif" font-size="10" font-style="italic" fill="#674ea7">ns &#8220;argocd&#8221;</text>
+  <rect x="210" y="107" width="95" height="35" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="257.5" y="128.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ClusterProfile</text>
+  <rect x="312" y="107" width="95" height="35" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="359.5" y="128.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ClusterProfile</text>
+  <rect x="414" y="107" width="95" height="35" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="461.5" y="128.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ClusterProfile</text>
+
+  <!-- inventory: ns "kueue" -->
+  <rect x="575" y="92" width="230" height="70" rx="6" fill="none" stroke="#674ea7" stroke-width="1.5" stroke-dasharray="6.0,3.0"/>
+  <rect x="583" y="85.5" width="56" height="13" fill="#eeeeee"/>
+  <text x="587" y="95.5" font-family="Arial, sans-serif" font-size="10" font-style="italic" fill="#674ea7">ns &#8220;kueue&#8221;</text>
+  <rect x="590" y="107" width="95" height="35" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="637.5" y="128.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ClusterProfile</text>
+  <rect x="695" y="107" width="95" height="35" fill="#f4cccc" stroke="#595959" stroke-width="1"/>
+  <text x="742.5" y="128.5" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">ClusterProfile</text>
+
+  <!-- member clusters -->
+  <rect x="175" y="350" width="120" height="60" fill="#d9ead3" stroke="#595959" stroke-width="1"/>
+  <text x="235" y="384" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Dev cluster</text>
+  <rect x="325" y="350" width="120" height="60" fill="#fff2cc" stroke="#595959" stroke-width="1"/>
+  <text x="385" y="384" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Staging cluster</text>
+  <rect x="475" y="350" width="120" height="60" fill="#c9daf8" stroke="#595959" stroke-width="1"/>
+  <text x="535" y="384" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Prod cluster</text>
+  <rect x="625" y="350" width="120" height="60" fill="#f4cccc" stroke="#595959" stroke-width="1"/>
+  <text x="685" y="384" font-family="Arial, sans-serif" font-size="12" fill="#000000" text-anchor="middle">Batch cluster</text>
+
+  <!-- arrows from ClusterProfiles to member clusters -->
+  <line x1="257.5" y1="142" x2="235" y2="347" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="359.5" y1="142" x2="385" y2="347" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="461.5" y1="142" x2="525" y2="347" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="637.5" y1="142" x2="545" y2="347" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+  <line x1="742.5" y1="142" x2="685" y2="347" stroke="#595959" stroke-width="1" marker-end="url(#arrow)"/>
+</svg>

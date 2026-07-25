@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-2149: ClusterId for ClusterSet identification
+# KEP-2149: ClusterId for cluster identification
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -92,7 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Multi-tenant controllers](#multi-tenant-controllers)
   - [<code>ClusterProperty</code> CRD](#clusterproperty-crd)
   - [Well known properties](#well-known-properties)
-    - [Property: <code>cluster.clusterset.k8s.io</code>](#property-clusterclustersetk8sio)
+    - [Property: <code>id.k8s.io</code>](#property-idk8sio)
       - [Uniqueness](#uniqueness)
       - [Lifespan](#lifespan)
       - [Contents](#contents)
@@ -109,7 +109,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Rationale behind the <code>ClusterProperty</code> CRD](#rationale-behind-the-clusterproperty-crd)
   - [Implementing the <code>ClusterProperty</code> CRD and its admission controllers](#implementing-the-clusterproperty-crd-and-its-admission-controllers)
-    - [<code>cluster.clusterset.k8s.io ClusterProperty</code>](#clusterclustersetk8sio-clusterproperty)
+    - [<code>id.k8s.io ClusterProperty</code>](#idk8sio-clusterproperty)
     - [<code>clusterset.k8s.io ClusterProperty</code>](#clustersetk8sio-clusterproperty)
   - [CRD upgrade path](#crd-upgrade-path)
     - [To CRD or not to CRD?](#to-crd-or-not-to-crd)
@@ -274,18 +274,19 @@ nitty-gritty.
 -->
 
 ### Overview
-This proposal defines a new cluster-scoped`ClusterProperty` resource for storing
+This proposal defines a new cluster-scoped `ClusterProperty` resource for storing
 cluster-level metadata. The primary justification is to enable identification of
 a cluster and its relevant properties within a cluster set, but there is no
 intention to limit general use of `ClusterProperty` to multi-cluster scenarios.
 
-Each cluster in a ClusterSet must be assigned a unique identifier, that lives at
-least as long as that cluster is a member of the given ClusterSet, and must not
-be changed for that same lifetime. This identifier will be stored in a
-`ClusterProperty` CR with the well known name `cluster.clusterset.k8s.io` that
-may be referenced by workloads within the cluster. The identifier must be a valid
-[RFC-1123](https://tools.ietf.org/html/rfc1123) DNS subdomain, and should be less
-than 128 characters in total.
+Each cluster may be assigned a globally unique identifier, stored in a
+`ClusterProperty` CR with the well known name `id.k8s.io` that may be
+referenced by workloads within the cluster. A cluster must have one, unchanged
+for at least as long as it is a member of a ClusterSet or represented in a
+[cluster inventory](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/4322-cluster-inventory).
+The identifier must be a valid
+[RFC-1123](https://tools.ietf.org/html/rfc1123) DNS subdomain, and should be
+less than 128 characters in total.
 
 While it is a member of a ClusterSet, a cluster must also have an additional
 `clusterset.k8s.io ClusterProperty` which describes its current membership. This
@@ -293,9 +294,9 @@ property must be present as long as the cluster's membership in a
 ClusterSet lasts, and removed when the cluster is no longer a member.
 
 More detail and examples of the uniqueness, lifespan, immutability, and content
-requirements for both the `cluster.clusterset.k8s.io ClusterProperty` and
+requirements for both the `id.k8s.io ClusterProperty` and
 `clusterset.k8s.io ClusterProperty` are described further below. The goal of
-these requirements are to provide to the MCS API a cluster id of viable
+these requirements is to provide to the MCS API a cluster id of viable
 usefulness to address known user stories without being too restrictive or
 prescriptive.
 
@@ -330,7 +331,7 @@ I have a headless multi-cluster service deployed across clusters in my
 ClusterSet with similarly named pods in each cluster. I need a way to
 disambiguate each backend pod via DNS.
 
-_For example, an exported headless service of services name `myservice` in
+_For example, an exported headless service named `myservice` in
 namespace `test`,  backed by pods in two clusters with cluster ids `clusterA`
 and `clusterB`, could be disambiguated by different DNS names following the
 pattern `<clusterid>.<svc>.<ns>.svc.clusterset.local`:
@@ -369,7 +370,7 @@ following information:
 
 *   **Name** - a well known or custom name to identify the property. This is the
     metadata.Name of the resource.
-*   **Value** - a property-dependent string, up 128k Unicode code points (see
+*   **Value** - a property-dependent string, up to 128k Unicode code points (see
     _Notes/Constraints/Caveats_ section). This is the one and only field in this
     Kind.
 
@@ -382,7 +383,7 @@ described in the next section.
 ### Well known properties
 
 The `ClusterProperty` CRD will support two specific properties under the well
-known names `cluster.clusterset.k8s.io` and `clusterset.k8s.io`. Being "well
+known names `id.k8s.io` and `clusterset.k8s.io`. Being "well
 known" means that they must conform to the requirements described below, and
 therefore can be depended on by multi-cluster implementations to achieve use
 cases dependent on knowledge of a cluster's id or ClusterSet membership.
@@ -391,26 +392,24 @@ The requirements below use the keywords **must, should,** and **may**
 purposefully in accordance with [RFC-2119](https://tools.ietf.org/html/rfc2119).
 
 
-#### Property: `cluster.clusterset.k8s.io`
+#### Property: `id.k8s.io`
 
 Contains a unique identifier for the containing cluster.
 
 
 ##### Uniqueness
 
-*   The identifier **must** be unique within the ClusterSet to which its cluster
-    belongs for the duration of the cluster’s membership.
-*   The identifier **may** be globally unique beyond the scope of its
-    ClusterSet.
-*   The identifier **may** be unique beyond the span of its cluster’s membership
-    and lifetime.
+*   The identifier **must** be globally unique.
 
 
 ##### Lifespan
 
+*   The identifier **should** not be changed for the lifetime of the cluster.
 *   The identifier **must** exist and not be changed for the duration of a
     cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io`
     property referring to that cluster in that ClusterSet exists.
+*   The identifier **must** exist and not be changed while the cluster is
+    represented in a cluster inventory.
 
 
 ##### Contents
@@ -418,7 +417,7 @@ Contains a unique identifier for the containing cluster.
 *   The identifier **must** be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123)
     DNS subdomain and should be less than 128 characters in total. This may be
     used to compose larger DNS names (e.g. in the case of multi-cluster
-    services), so care should be take to ensure that the final names fit into the
+    services), so care should be taken to ensure that the final names fit into the
     limit of 253 characters.
 *   The identifier **may** be used as a component in MCS DNS.
 *   The identifier **may** be a human readable description of its cluster.
@@ -426,27 +425,25 @@ Contains a unique identifier for the containing cluster.
 
 ##### Consumers
 
-*   **May** rely on the identifier existing, unmodified for the
-    entire duration of its membership in a ClusterSet.
-*   **Should** watch the `cluster.clusterset.k8s.io` property to handle
-    potential changes if they live beyond the ClusterSet membership.
+*   **May** rely on the identifier being globally unique.
+*   **May** rely on the identifier existing, unmodified for the entire duration
+    of its membership in a ClusterSet, and while it is represented in a
+    cluster inventory.
+*   **Should** watch the `id.k8s.io` property to handle changes outside of
+    these guarantees.
 *   **May** rely on the existence of an identifier for clusters that do not
-    belong to a ClusterSet so long as the implementation provides one.
+    belong to a ClusterSet or a cluster inventory so long as the implementation
+    provides one.
 
 
 ##### Notable scenarios
 
-**Reusing cluster names**: Since an `cluster.clusterset.k8s.io ClusterProperty`
-has no restrictions on whether or not a ClusterProperty can be repeatable, if a
-cluster unregisters from a ClusterSet it is permitted under this standard to
-rejoin later with the same `cluster.clusterset.k8s.io ClusterProperty` it had
-before. Similarly, a *different* cluster could join a ClusterSet with the same
-`cluster.clusterset.k8s.io ClusterProperty` that had been used by another
-cluster previously, as long as both do not have membership in the same
-ClusterSet at the same time. Finally, two or more clusters may have the same
-`cluster.clusterset.k8s.io ClusterProperty` concurrently (though they **should**
-not; see "Uniqueness" above) *as long as* they both do not have membership in
-the same ClusterSet.
+**Reusing identifiers**: A cluster that unregisters from a ClusterSet or is
+removed from a cluster inventory **may** rejoin later with the same
+`id.k8s.io ClusterProperty` it had before. Two
+clusters **must not** carry the same identifier concurrently, and an
+identifier **should not** be reused for a different cluster even after the
+cluster it identified ceases to exist.
 
 #### Property: `clusterset.k8s.io`
 
@@ -582,46 +579,44 @@ utilizing different `spec.Type`s (as `Service` objects do e.g.
 as a different `Kind`.  The former provides no specific advantages since
 multiple differently named properties for the same fact are unnecessary, and is
 less expressive to query (it is easier to query by name directly like `kubectl
-get clusterproperties cluster.clusterset.k8s.io`). The latter would result in
+get clusterproperties id.k8s.io`). The latter would result in
 the proliferation of cluster-wide singleton `Kind` resources, and be burdensome
 for users to create their own custom properties.
 
 
 ### Implementing the `ClusterProperty` CRD and its admission controllers
 
-#### `cluster.clusterset.k8s.io ClusterProperty`
+#### `id.k8s.io ClusterProperty`
 
 The actual implementation to select and store the identifier of a given cluster
 could occur local to the cluster. It does not necessarily ever need to be
 deleted, particularly if the identifier selection mechanism chooses an
-identifier that is compliant with this specification's most broad restrictions
--- namely, being immutable for a cluster's lifetime and unique beyond just the
-scope of the cluster's membership. A recommended option that meets these broad
-restrictions is a cluster's kube-system.uuid. 
+identifier that is immutable for a cluster's lifetime. A recommended option
+that meets this restriction is a cluster's
+kube-system.uuid.
 
-That being said, for less stringent identifiers, for example a user-specified
-and human-readable value, a given `cluster.clusterset.k8s.io ClusterProperty`
-may need to change if an identical identifier is in use by another member of the
-ClusterSet it wants to join. It is likely this would need to happen outside the
-cluster-local boundary; for example, whatever manages memberships would likely
-need to deny the incoming cluster, and potentially assign (or prompt the cluster
-to assign itself) a new id.
+That being said, for a user-specified and human-readable value, global
+uniqueness is harder to guarantee, and a given `id.k8s.io ClusterProperty`
+must change when an identical identifier is found to be in use by another
+cluster, for example when joining a ClusterSet. It is likely this would need to
+happen outside the cluster-local boundary; for example, whatever manages
+memberships would likely need to deny the incoming cluster, and potentially
+assign (or prompt the cluster to assign itself) a new id.
 
 Since this KEP does not formally mandate that the cluster id *must* be immutable
-for the lifetime of the cluster, only for the lifetime of its membership in a
-ClusterSet, any dependent tooling explicitly *cannot* assume the
-`cluster.clusterset.k8s.io ClusterProperty` for a given cluster will stay
+for the lifetime of the cluster, only while a ClusterSet membership or a
+cluster inventory registration depends on it, any dependent tooling explicitly
+*cannot* assume the `id.k8s.io ClusterProperty` for a given cluster will stay
 constant on its own merit. For example, log aggregation of a given cluster id
 based on this property should only be trusted to be referring to the same
-cluster for as long as it has one ClusterSet membership; similarly, controllers
-whose logic depends on distinguishing clusters by cluster id can only trust this
-property to disambiguate the same cluster for as long as the cluster has one
-ClusterSet membership.
+cluster for as long as one of these guarantees holds; similarly, controllers
+whose logic depends on distinguishing clusters by cluster id can only trust
+this property to disambiguate the same cluster for that same span.
 
-Despite this flexibility in the KEP, cluster ids may still be useful before
-ClusterSet membership needs to be established; again, particularly if the
-implementation chooses the broadest restrictions regarding immutability and
-uniqueness. Therefore, having a controller that initializes it early in the
+Despite this flexibility in the KEP, cluster ids are useful independent of any
+ClusterSet membership; again, particularly if the
+implementation keeps the identifier immutable for the cluster's lifetime.
+Therefore, having a controller that initializes it early in the
 lifecycle of the cluster, and possibly as part of cluster creation, may be a
 useful place to implement it, though within the bounds of this KEP that is not
 strictly necessary.
@@ -632,32 +627,32 @@ it comes to DNS. Since DNS names are originally intended to be a human readable
 technique of address, clunky DNS names composed from long UUIDs seems like an
 anti-pattern, or at least unfinished. While some extensions to this spec have
 been discussed as ways to leverage the best parts of both (ex. using labels on
-the `cluster.clusterset.k8s.io ClusterProperty` to store aliases for DNS), an
+the `id.k8s.io ClusterProperty` to store aliases for DNS), an
 actual API specification to allow for this is outside the scope of this KEP at
 this time (see the Non-Goals section).
 
 ```
-# An example object of `cluster.clusterset.k8s.io ClusterProperty` 
+# An example object of `id.k8s.io ClusterProperty`
 # using a kube-system ns uuid as the id value (recommended above):
 
 apiVersion: about.k8s.io/v1
 kind: ClusterProperty
 metadata:
-  name: cluster.clusterset.k8s.io
+  name: id.k8s.io
 spec:
   value: 721ab723-13bc-11e5-aec2-42010af0021e
 ```
 
 ```
-# An example object of `cluster.clusterset.k8s.io ClusterProperty` 
+# An example object of `id.k8s.io ClusterProperty`
 # using a human-readable string as the id value:
 
 apiVersion: about.k8s.io/v1
 kind: ClusterProperty
 metadata:
-  name: cluster.clusterset.k8s.io
+  name: id.k8s.io
 spec:
-  value: cluster-1
+  value: cluster-1.example.com
 ```
 
 #### `clusterset.k8s.io ClusterProperty`
@@ -678,19 +673,19 @@ KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluste
 will act as an admission controller to verify individual objects of this
 property.
 
-Because there are obligations of the `cluster.clusterset.k8s.io ClusterProperty`
-that are not meanigfully verifiable until a cluster tries to join a ClusterSet
+Because there are obligations of the `id.k8s.io ClusterProperty`
+that are not meaningfully verifiable until a cluster tries to join a ClusterSet
 and set its `clusterset.k8s.io ClusterProperty`, the admission controller
 responsible for setting a `clusterset.k8s.io ClusterProperty` will need the
 ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]`
-or possibly affect changes to that cluster's `cluster.clusterset.k8s.io
+or possibly affect changes to that cluster's `id.k8s.io
 ClusterProperty` to make it valid `[/UNRESOLVED]`. Two symptomatic cases of this
 would be:
 
-1. When a cluster with a given `cluster.clusterset.k8s.io ClusterProperty` tries
-   to join a ClusterSet, but a cluster with that same `cluster.clusterset.k8s.io
+1. When a cluster with a given `id.k8s.io ClusterProperty` tries
+   to join a ClusterSet, but a cluster with that same `id.k8s.io
    ClusterProperty` appears to already be in the set.
-2. When a cluster that does not have a `cluster.clusterset.k8s.io
+2. When a cluster that does not have an `id.k8s.io
    ClusterProperty` tries to join a ClusterSet.
 
 In situations like these, the admission controller will need to fail to add the
@@ -718,8 +713,7 @@ _That is the question._
 While this document has thus far referred to the `ClusterProperty` resource as
 being implemented as a CRD, another implementation point of debate has been
 whether this belongs in the core Kubernetes API, particularly the
-`cluster.clusterset.k8s.io ClusterProperty` and especially while it being
-discussed under the more general naming convention of `id.k8s.io`. A dependable
+`id.k8s.io ClusterProperty`, given its general naming convention. A dependable
 cluster ID or cluster name has previously been discussed in other forums (such
 as [this SIG-Architecture
 thread](https://groups.google.com/g/kubernetes-sig-architecture/c/mVGobfD4TpY/m/nkdbkX1iBwAJ)
@@ -794,7 +788,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-This KEP proposes and out-of-tree CRD that is not expected to integrate with any
+This KEP proposes an out-of-tree CRD that is not expected to integrate with any
 of the Kubernetes CI infrastructure. In addition, it explicitly provides only
 the CRD definition and generated clients for use by third party implementers,
 and does not provide a controller or any other binary with business logic to
@@ -807,8 +801,8 @@ However, similar to other out-of-tree CRDs that serve third party implementers,
 such as Gateway API and MCS API, there is rationale for the project to provide
 conformance tests for implementers to use to confirm they adhere to the
 restrictions set forth in this KEP that are not otherwise enforced by the CRD
-definition; in thise case, the constraints defined on the well-known properties
-`clusterset.k8s.io` and `cluster.clusterset.k8s.io`. Providing these tests are
+definition; in this case, the constraints defined on the well-known properties
+`clusterset.k8s.io` and `id.k8s.io`. Providing these tests are
 not considered blocking graduation requirements for the maturity level of this
 API.
 
@@ -822,7 +816,7 @@ properties](#well-known-properties).
 
 #### Alpha -> Beta Graduation
 
-- Determine if an `cluster.clusterset.k8s.io ClusterProperty` be strictly a
+- Determine if an `id.k8s.io ClusterProperty` be strictly a
   valid DNS label, or is allowed to be a subdomain.
 - To CRD or not to CRD (see section above)
 - Determine if CRD implementation should use CEL validation to limit byte length
@@ -1013,19 +1007,19 @@ _This section must be completed when targeting beta graduation to a release._
 determine the health of the service?**
 
   N/A: This KEP does not propose a service, only leverages the existing
-  Kuebernetes API service and CRD extension mechanism.
+  Kubernetes API service and CRD extension mechanism.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above
   SLIs?**
 
   N/A: This KEP does not propose a service, only leverages the existing
-  Kuebernetes API service and CRD extension mechanism.
+  Kubernetes API service and CRD extension mechanism.
 
 * **Are there any missing metrics that would be useful to have to improve
 observability of this feature?**
   
   Default metrics for CRDs in general for number of requests by workload source
-  would improve 
+  would improve observability of this feature.
 
 ### Dependencies
 
