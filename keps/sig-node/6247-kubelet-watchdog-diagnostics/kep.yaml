@@ -1,0 +1,33 @@
+title: Kubelet Systemd Watchdog Diagnostic Guardrails
+kep-number: 6247
+authors:
+  - "@googs1025"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: "2026-07-19"
+
+reviewers:
+  - TBD
+approvers:
+  - "@dchen1107"
+
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/135449"
+replaces: []
+
+stage: alpha
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+  beta: ""
+  stable: ""
+
+feature-gates:
+  - name: KubeletWatchdogDiagnostics
+    components:
+      - kubelet
+disable-supported: true
+
+metrics: []
