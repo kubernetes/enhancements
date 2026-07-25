@@ -64,6 +64,8 @@ SIG Architecture for cross-cutting KEPs).
     - [ResourceClaim's request](#resourceclaims-request)
     - [ResourceClaim's status](#resourceclaims-status)
     - [ResourceClaim with distinctAttribute](#resourceclaim-with-distinctattribute)
+  - [Fractional Quantity](#fractional-quantity)
+    - [Implementation details](#implementation-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -563,6 +565,7 @@ type AllocatedDeviceStatus struct {
 ```
 
 ### Scheduling enhancement
+
 - When the scheduler invokes the `Allocate` function in the allocator, 
   the total allocated capacity is calculated by aggregating the consumedCapacity from all resource claims's `DeviceRequestAllocationResult` that have already been allocated.
 - Before allocation proceeds, existing selection criteria (defined by `alloc.isSelectable`) are evaluated. 
@@ -689,6 +692,50 @@ spec:
       distinctAttribute: interfaceName
 ```
 
+### Fractional Quantity
+
+Until Kubernetes v1.36, the DRAConsumableCapacity feature did not support fractional quantities when evaluating CapacityRange requests.
+The implementation assumed integer quantities (`.Value()`) in several parts of the API validation and matching logic,
+causing valid fractional values to be rejected or handled incorrectly.
+
+Specifically, the issue affected:
+
+- **Range policy evaluation**: fractional values were not correctly compared against the requested minimum and maximum capacity.
+- **API validation**: incorrectly rejected fractional quantities even though `resource.Quantity` itself supports them.
+
+To address these issues while preserving compatibility for existing deployments, the `DRAFractionalCapacityRange` feature gate has been introduced.
+When enabled, both API validation and CapacityRange evaluation support fractional quantities.
+
+#### Implementation details
+
+When the `DRAFractionalCapacityRange` feature gate is enabled, the implementation first determines whether any of `min`, `max`, or `step` contains a fractional value.
+If all quantities are integers, comparisons continue to use `resource.Quantity.Value()`, preserving the existing fast path with no behavioral or performance changes.
+
+If at least one quantity is fractional, the implementation switches to milli-unit arithmetic using `resource.Quantity.MilliValue()`.
+This provides support for quantities with up to three decimal places (for example, 100m = 0.1)
+while avoiding the complexity of arbitrary-precision calculations.
+
+API Description change:
+
+```go
+// CapacityRequestPolicyRange defines a valid range for consumable capacity values.
+//
+// If the DRAFractionalCapacityRange feature gate is
+// enabled and at least one of Min, Max, or Step is a fractional quantity (i.e.
+// its value is not an integer), milli-unit arithmetic is used instead,
+// supporting values with up to 3 decimal places (e.g. 100m = 0.1).
+// The largest supported value then is 1000 times smaller compared to using 64-bit integers.
+// Otherwise, all comparisons use 64-bit integer arithmetic via resource.Quantity.Value().
+```
+
+In addition to `ValidRange` evaluation, the same behavior applies to `ValidValues` validation.
+Prior to this feature gate, validation compared quantities using `resource.Quantity.Value()`, which truncates fractional quantities to their integer component.
+As a result, distinct fractional values such as 100m (0.1) and 200m (0.2) were both converted to 0 and incorrectly treated as equal,
+causing duplicate-value validation to reject valid configurations.
+
+When the `DRAFractionalCapacityRange` feature gate is enabled, validation instead compares quantities using `resource.Quantity.AsDec()`.
+This preserves the full decimal precision of the quantities, ensuring that fractional values are compared correctly and that only numerically equal quantities are considered duplicates.
+
 ### Test Plan
 
 <!--
@@ -781,15 +828,15 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ###### Coverage
 
-- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `4/2/2026` - `93.1`
-- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `4/2/2026` - `93.1`
-- `k8s.io/kubernetes/pkg/apis/resource/validation`: `4/2/2026` - `96.8`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `4/2/2026` - `72.0`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `4/2/2026` - `87.1`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `4/2/2026` - `77.7`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `4/2/2026` - `83.5`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `4/2/2026` - `83.5`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `4/2/2026` - `44.2`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `21/7/2026` - `94.7`
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `21/7/2026` - `93.9`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `21/7/2026` - `96.9`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `21/7/2026` - `69.2`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `21/7/2026` - `83.2`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `21/7/2026` - `77.4`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `21/7/2026` - `84.7`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `21/7/2026` - `92.6`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `21/7/2026` - `44.2`
 
 ##### Integration tests
 
@@ -1344,6 +1391,19 @@ Beta 1.36:
 
 - [Fix 136734 - missing GetSharedDeviceIDs bug in GatherAllocatedState](https://github.com/kubernetes/kubernetes/pull/136734) has been pushed on 2025-02-04
 - [Promote DRAConsumableCapacity to Beta PR 136611](https://github.com/kubernetes/kubernetes/pull/136611) has been pushed on 2026-01-29
+
+Beta 1.37:
+
+- [Update scheduler_perf integration test cases of ConsumableCapacity](https://github.com/kubernetes/kubernetes/pull/139511) has been merged on 2026-06-13
+  - Partially address [#135058 - DRA: measure and track performance of "experimental" allocator](https://github.com/kubernetes/kubernetes/issues/135058)
+- [Fix 139653 - ResourceSlice validation panics on zero validRange.step](https://github.com/kubernetes/kubernetes/pull/139698) has been merged on 2026-06-26
+- [Fix 140436 - allocator leaks reserved counters and constraints when it rejects or backtracks a candidate device](https://github.com/kubernetes/kubernetes/pull/140431) has been merged on 2026-07-15
+- [Fix 140160 - CapacityRequestPolicyRange not support fractional quantities](https://github.com/kubernetes/kubernetes/pull/140161) has been merged on 2026-07-20
+  - Introduce a new feature gate `DRAFractionalCapacityRange` to support fractional quantities in milli-scale.
+- [Fix 140433 - allocator double-counts a shared counter for a persisted allow-multiple device recorded only by share ID](https://github.com/kubernetes/kubernetes/pull/140437) has been merged on 2026-07-21
+- [Fix 140472 - ResourceSlice validRange.step of 2^64 re-panics with integer divide by zero](https://github.com/kubernetes/kubernetes/pull/140666) has been merged on 2026-07-21
+- [Fix 140441 - consumable-capacity roundUpRange overflows int64 for a large capacity request, allocating a device it cannot satisfy](https://github.com/kubernetes/kubernetes/pull/140442) has been pushed on 2026-07-11
+- [Fix 140650 - validate as fully qualified name in capacity requests](https://github.com/kubernetes/kubernetes/pull/140563) has been pushed on 2026-07-15
 
 ## Drawbacks
 
