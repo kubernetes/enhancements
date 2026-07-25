@@ -45,6 +45,7 @@
   - [Alternative 1: Runtime-specific Annotations](#alternative-1-runtime-specific-annotations)
   - [Alternative 2: Boolean Field Instead of Struct](#alternative-2-boolean-field-instead-of-struct)
   - [Alternative 3: Runtime Auto-Detection (Implicit Behavior)](#alternative-3-runtime-auto-detection-implicit-behavior)
+  - [Alternative 4: Node-Level Configuration (NRI Plugin or CRI Config)](#alternative-4-node-level-configuration-nri-plugin-or-cri-config)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -765,6 +766,19 @@ Instead of a new API field, container runtimes could automatically detect if the
 - **Lack of Visibility**: Cluster administrators cannot easily identify which workloads are using this capability.
 - **Policy Enforcement**: Admission controllers and security policies cannot restrict usage since it's not in the Pod spec.
 - **Defense in Depth**: It removes a layer of defense. Even if `nsdelegate` is safe, keeping the default restricted protects against potential kernel bugs or implementation flaws.
+
+### Alternative 4: Node-Level Configuration (NRI Plugin or CRI Config)
+
+Instead of a Kubernetes API change, administrators could enable writable cgroups opaquely at the node level. This could be done globally via a CRI configuration (e.g., containerd's `cgroup_writable = true`) or selectively via an NRI plugin (e.g., the experimental [writable-cgroups plugin](https://github.com/containerd/nri/pull/269)) that modifies the OCI spec during container creation.
+
+**Pros**:
+- No Kubernetes API changes required.
+- Functionality is either available today (CRI config) or deployable out-of-band (NRI plugin).
+
+**Cons**:
+- **Pod Security Standards (PSS) Bypass**: Expanding access to a core control knob like cgroups is a security change. It must be visible to and enforceable by native PSS so it can be blocked in the Restricted profile. Node-level configurations apply opaquely, bypassing native PSS enforcement.
+- **Violation of Least Privilege**: Cgroups and namespaces are control tools, not sandbox tools. 99% of workloads do not need writable access. Changing the default via CRI config silently over-privileges workloads, risking subtle and hard-to-troubleshoot behavior changes depending on the node a pod lands on.
+- **Obscured Workload Intent**: Even if an NRI plugin selectively enables access based on custom annotations or labels, the requirement isn't captured as a first-class field in the Pod Spec. A native API field provides clear defense-in-depth, making the workload's privileges explicit, auditable, and governed directly by the control plane.
 
 ## Infrastructure Needed (Optional)
 
