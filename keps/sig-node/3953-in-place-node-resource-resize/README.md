@@ -24,8 +24,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 3: Reducing Operational Complexity (Scale-Up vs. Scale-Out)](#story-3-reducing-operational-complexity-scale-up-vs-scale-out)
     - [Story 4: Instant Capacity Utilization](#story-4-instant-capacity-utilization)
     - [Story 5: Zero-Disruption Operations](#story-5-zero-disruption-operations)
-    - [Story 6: Safe Resource Reclaim (Downscaling)](#story-6-safe-resource-reclaim-downscaling)
+    - [Story 6: Emergency Hardware Removal (Self-Protection)](#story-6-emergency-hardware-removal-self-protection)
     - [Story 7: Dynamic Storage Expansion](#story-7-dynamic-storage-expansion)
+    - [Story 8: Orchestrated Capacity Downscale](#story-8-orchestrated-capacity-downscale)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [OOMScoreAdjust Drift for Existing Pods](#oomscoreadjust-drift-for-existing-pods)
@@ -34,14 +35,15 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Application-Level Hardware Assumptions](#application-level-hardware-assumptions)
     - [Coordination with External NRI/Runtime Plugins](#coordination-with-external-nriruntime-plugins)
 - [Design Details](#design-details)
-  - [Baseline Assumptions and Pre-requisite Validation](#baseline-assumptions-and-pre-requisite-validation)
-  - [Impact on Existing Behaviors](#impact-on-existing-behaviors)
-  - [Pre-requisite Tests to be Added](#pre-requisite-tests-to-be-added)
+  - [API Changes](#api-changes)
+  - [Node Conditions for State Dissemination](#node-conditions-for-state-dissemination)
+  - [Admission Control Contract](#admission-control-contract)
+  - [Resource-Specific Validation Rules](#resource-specific-validation-rules)
+  - [Security Considerations](#security-considerations)
   - [Architecture Flow](#architecture-flow)
-  - [Architecture Flow](#architecture-flow-1)
-    - [Hardware Trigger and Validation](#hardware-trigger-and-validation)
-    - [Path A: Declarative HotPlug / External Trigger](#path-a-declarative-hotplug--external-trigger)
-    - [Path B: Emergency Hardware Hot-UnPlug](#path-b-emergency-hardware-hot-unplug)
+    - [Path A1: Orchestrated Configuration-Driven Upscale](#path-a1-orchestrated-configuration-driven-upscale)
+    - [Path A2: Orchestrated Configuration-Driven Downscale](#path-a2-orchestrated-configuration-driven-downscale)
+    - [Path B: Emergency Hardware-Driven Fallback (Ungraceful Downscale)](#path-b-emergency-hardware-driven-fallback-ungraceful-downscale)
     - [Flow Control: Container Swap Limit Recalculation](#flow-control-container-swap-limit-recalculation)
     - [Flow Control: Hardware Degradation and Capacity Starvation](#flow-control-hardware-degradation-and-capacity-starvation)
     - [Compatibility with Cluster Autoscaler](#compatibility-with-cluster-autoscaler)
@@ -106,12 +108,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 * **In-Place Resource Resize:** Dynamically increasing or decreasing compute resources (CPU, Memory, Swap Capacity, and HugePages) on a node without requiring a node reboot or kubelet restart.
 * **Node Compute Resource:** CPU, Memory, Swap Capacity, and HugePages.
+* **Physical Capacity:** The raw hardware capacity of a node as reported by the integrated `cAdvisor` subsystem, reflecting the true underlying machine resources (e.g., number of CPU cores).
+* **Configured Capacity:** The desired logical capacity declared by an administrator or external controller via `Node.Spec.ConfiguredCapacity`. This is the Kubelet's target and may be less than the Physical Capacity (e.g., to under-report resources intentionally). For Alpha, Configured Capacity must not exceed Physical Capacity.
+* **CapacityConfigured Condition:** A `Node.Status.Condition` of type `CapacityConfigured` that the Kubelet uses to expose the current reconciliation state of a capacity resize request. Possible reasons are `Accepted`, `InProgress`, `Infeasible`, and `EmergencyReduced`.
 
 ## Summary
 
 This proposal facilitates dynamic native resource resizing (increases and decreases in capacity) on a node to streamline cluster capacity updates, offering a seamless alternative to adding or removing nodes from an existing cluster. The revised node configurations automatically propagate at both the node and cluster levels.
 
-This KEP introduces the ability for the Kubelet to dynamically monitor and reconcile changes to the node's native hardware capacity. When a change is detected via cAdvisor, the Kubelet will seamlessly update its internal sub-managers, top-level kubepods cgroups, eviction thresholds, container swap limits, and the Node API object's Capacity and Allocatable fields—all without requiring a Kubelet restart.
+This KEP introduces a new declarative API field, `Node.Spec.ConfiguredCapacity`, allowing external controllers or administrators to declare the node's desired **logical** capacity. The Kubelet is the **sole owner** of `Node.Status.Capacity` and `Node.Status.Allocatable`; external actors write only to `Node.Spec.ConfiguredCapacity`. Driven by this API-first model and validated against physical hardware metrics via cAdvisor, the Kubelet will seamlessly update its internal sub-managers, top-level kubepods cgroups, eviction thresholds, container swap limits, and the Node API object's Capacity and Allocatable fields — all without requiring a Kubelet restart.
+
+The trigger for a capacity change is intentionally decoupled from the physical hardware layer. Both **hardware-driven** events (e.g., a hypervisor hot-plugging additional RAM, detected by cAdvisor) and **configuration-driven** events (e.g., an administrator explicitly setting `ConfiguredCapacity` to 20Gi on a 32Gi machine) are first-class triggers. The Kubelet's reconciliation loop treats both identically: compare `Node.Spec.ConfiguredCapacity` against the physical upper bound from cAdvisor, validate, then actuate.
 
 ## Motivation
 
@@ -155,6 +162,15 @@ Therefore, it is necessary to handle capacity updates gracefully across the clus
 
 - Stability: Avoids the aforementioned historical bugs and disruption risks associated with forced Kubelet restarts.
 
+**A declarative API-driven model is essential for safe capacity downscaling.** Without an API, cluster administrators have no safe way to coordinate a hot-unplug operation. The desired workflow is:
+
+1. An external controller invokes the API to reduce logical node capacity.
+2. The Kubelet actuates that reduction (graceful eviction, updates cgroups).
+3. The external controller observes the Kubelet's completion signal (`CapacityConfigured: Accepted`).
+4. The external controller proceeds to physically remove hardware via the hypervisor.
+
+This coordination is impossible with a purely reactive, hardware-first model. If the hypervisor forcefully reclaims RAM (e.g., balloon deflation) without prior API coordination, the kernel OOM killer may fire before the Kubelet can react. By making the API the primary trigger, operators gain deterministic control over the timing and safety of capacity removal.
+
 Implementing this KEP will empower nodes to recognize and adapt to changes in their native configurations instantly, facilitating the safe, efficient, and uninterrupted deployment of workloads.
 
 ### Goals
@@ -163,9 +179,13 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 * Component Sync: Re-initialize internal Kubelet managers (CPU, Memory, Eviction) to safely align with the altered hardware capacity.
 
-* Cgroup Enforcement: Update the host's top-level /kubepods and QoS cgroup boundaries to physical enforce the resized limits.
+* Cgroup Enforcement: Update the host's top-level /kubepods and QoS cgroup boundaries to physically enforce the resized limits.
 
 * Container Swap: Recalculate and update swap memory limits for actively running containers via the CRI.
+
+* Configured Capacity: Allow the logical capacity of a node to be dynamically configured via `Node.Spec.ConfiguredCapacity`, decoupling the cluster's view of the node from strict physical hardware events. Both hardware-triggered and purely configuration-driven changes (e.g., under-reporting a 32Gi machine as 20Gi) are in-scope.
+
+* Bootstrap Parity: Upon Kubelet restart, the Kubelet reads `Node.Spec.ConfiguredCapacity` as its primary target before falling back to raw cAdvisor hardware discovery. This ensures that a Kubelet restart on a node with an existing `ConfiguredCapacity` spec behaves identically to a live-resize event.
 
 ### Non-Goals
 
@@ -181,17 +201,19 @@ Implementing this KEP will empower nodes to recognize and adapt to changes in th
 
 * Pod Resizing: Dynamically resizing individual Pod resource requests and limits (covered independently by KEP-1287).
 
-* Node Capacity Overcommit: Configuring the Kubelet to report a logical capacity to the API Server that exceeds the raw, physical underlying hardware capacity (e.g., reporting 48Gi on a 32Gi machine relying on swap). For Alpha, logical capacity is strictly bounded by physical reality to preserve Eviction Manager stability.
+* Node Capacity Overcommit: Configuring the Kubelet to report a logical capacity to the API Server that exceeds the raw, physical underlying hardware capacity (e.g., reporting 48Gi on a 32Gi machine relying on swap). For the Alpha phase, `ConfiguredCapacity` is strictly bounded by physical reality (CPU and Memory). This will be explored in Future Work.
+
+* Admission Webhook on Node.Spec: This KEP does not introduce a new admission webhook specifically for capacity changes. Standard Kubernetes `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` can be deployed by cluster administrators to intercept mutations to `Node.Spec.ConfiguredCapacity` without any KEP-specific mechanism.
 
 ## Proposal
 
 This KEP introduces a declarative, event-driven reconciliation architecture to handle native resource reconfiguration safely. To align with Kubernetes core principles, the reconciliation is decoupled into three distinct phases:
 
-    Baseline API Validation: Establishing formal support and upstream testing for mutating a Node object's capacity dynamically.
+1. Baseline API Validation: Establishing formal support and upstream testing for mutating a Node object's capacity dynamically.
 
-    Declarative Reconciliation: Updating the Kubelet to gracefully handle discrepancies between its internal hardware cache and the API Server's Node.Status.
+2. Declarative Reconciliation: Updating the Kubelet to gracefully handle discrepancies between `Node.Spec.ConfiguredCapacity` (the desired logical capacity declared via the API) and the physical hardware bounds reported by cAdvisor. `Node.Status.Capacity` is the **output** of this reconciliation — it is written by the Kubelet after validation, not used as an input.
 
-    Metrics-Based Trigger: Implementing an automated cAdvisor trigger that updates the Node.Status when hardware changes, kicking off the declarative reconciliation loop.
+3. Metrics-Based Trigger: Implementing an automated cAdvisor hardware-drift trigger that fires the reconciliation loop when physical capacity changes. The loop re-validates `Node.Spec.ConfiguredCapacity` against the new physical bounds and, only upon successful validation, writes the resolved capacity to `Node.Status`.
 
 By reacting to the difference between what the API states and what the Kubelet knows, the system natively supports webhook admission control, external declarative triggers, and graceful Kubelet restarts across resized hardware.
 
@@ -217,16 +239,27 @@ As a Cluster Administrator, I want the Kubernetes control plane to instantly rec
 
 As an Application Owner, I expect my running workloads to experience zero downtime or disruption when the infrastructure administrator adds capacity to the underlying node, entirely avoiding the historical risks and bugs associated with forced Kubelet restarts or node reboots.
 
-#### Story 6: Safe Resource Reclaim (Downscaling)
+#### Story 6: Emergency Hardware Removal (Self-Protection)
 
-As a Cluster Administrator, I want to dynamically reclaim (hot-unplug) underutilized memory or CPU from a node without restarting the Kubelet, with the confidence that the Kubelet will automatically adjust its cgroups and eviction thresholds to protect the node from kernel panics or Out-Of-Memory (OOM) crashes.
+As a Node Operator, when my hypervisor unexpectedly reclaims physical memory from a running node (e.g., due to a balloon driver deflation or host pressure), I want the Kubelet to automatically detect the reduced capacity and immediately shrink its cgroup boundaries and eviction thresholds — protecting the node from kernel OOM panics — without requiring any manual intervention or Kubelet restart.
 
 #### Story 7: Dynamic Storage Expansion
 
 As a Storage Administrator, I want to dynamically expand the root block volume of a worker node on the fly, so that the Kubelet instantly recognizes the increased Ephemeral Storage capacity and allows pods to utilize the new space without triggering false disk-pressure evictions.
 
+> **Note:** Ephemeral storage resize follows the same declarative API model as CPU and Memory. The Kubelet's capacity reconciliation loop updates `Node.Status.Capacity[ephemeral-storage]` and the corresponding eviction thresholds when `Node.Spec.ConfiguredCapacity` includes an updated ephemeral storage value. Physical block-device expansion (e.g., resizing the underlying volume via a cloud provider) remains an external operation outside the scope of this KEP.
+
+#### Story 8: Orchestrated Capacity Downscale
+
+As a Cluster Administrator, I want to dynamically reclaim (hot-unplug) underutilized memory or CPU from a node without restarting the Kubelet. I want to orchestrate this via the Kubernetes API first, so workloads are gracefully evicted and the scheduler stops sending pods before I physically remove the hardware, avoiding node crashes and workload scheduling races.
 
 ### Notes/Constraints/Caveats (Optional)
+
+* **Linux and cgroup v2:** This feature targets Linux nodes running cgroup v2. On nodes still using cgroup v1, CPU and Memory resize are supported; however, the container swap limit recalculation (which relies on the cgroup v2 `memory.swap.max` interface) is silently skipped. No errors are emitted and node stability is preserved — swap-enabled resize simply has no effect on cgroup v1 nodes.
+
+* **Linux Only:** This feature has no effect on Windows nodes. The Kubelet's capacity reconciliation loop short-circuits immediately on non-Linux platforms.
+
+* **NUMA Topology Lazy Reconciliation:** When a resize changes the available memory or CPU cores per NUMA zone, the Topology Manager's view of NUMA boundaries is updated in its internal state machine. However, **running pods retain their original NUMA pinning** — they are not remapped mid-flight. Only newly admitted pods use the updated NUMA layout. Operators should account for this when sizing a downscale target on NUMA-pinned workloads.
 
 ### Risks and Mitigations
 
@@ -242,7 +275,7 @@ This introduces severe latency, high CPU overhead, and dangerous race conditions
 
    **Risk**: The proportional swap limit for a container relies on the node's total memory capacity. Upon a resize, ignoring this math leads to stranded swap space (during upscaling) or immediate host kernel panics (during downscaling). However, recalculating and applying this to all active pods introduces overhead to the Container Runtime Interface (CRI).
 
-   **Mitigation**: The Kubelet will leverage the existing, generic `UpdateContainerResources` CRI RPC to push these changes. The Kubelet safely iterates over the active pod cache in memory, recalculates the swap boundary, and issues the update solely for containers currently in a `Running` state. Furthermore, if the node operates with Swap disabled, this entire loop short-circuits instantly, resulting in zero CRI overhead.
+   **Mitigation**: The Kubelet will leverage the existing, generic `UpdateContainerResources` CRI RPC to push these changes. The Kubelet safely iterates over the active pod cache in memory, recalculates the swap boundary, and issues the update solely for containers currently in a `Running` state. Furthermore, if the node operates with Swap disabled, this entire loop short-circuits instantly, resulting in zero CRI overhead. CRI calls within the loop are best-effort and serialised per-pod: a failure on an individual container is logged and increments `kubelet_node_resize_errors_total{subsystem="container_swap_resize"}`, but does not abort the loop — the remaining containers are still updated. This prevents a single unhealthy container from blocking all swap recalculations across the node.
 
 3. #### Kubelet Sub-Manager Synchronization Failure
 
@@ -265,8 +298,8 @@ This introduces severe latency, high CPU overhead, and dangerous race conditions
 6. #### Coordination with External NRI/Runtime Plugins
 
    **Risk**: External Node Resource Interface (NRI) plugins or custom runtime wrappers may cache node capacity independently of the Kubelet, leading to split-brain resource tracking after a resize event.
-   
-   **Mitigation**: Updating external plugins is explicitly listed as a Non-Goal. Plugin maintainers will be responsible for subscribing to the Kubelet's Node API updates or utilizing future NRI specification enhancements to react to host-level capacity changes.
+
+   **Mitigation**: No new CRI or NRI notification call is introduced by this KEP. The runtime implicitly learns of the new capacity boundaries when the Kubelet pushes updated cgroup limits for each running container via the existing `UpdateContainerResources` CRI RPC — the same mechanism used by In-Place Pod Resource Resize (KEP-1287). This means the container runtime and any NRI plugins that subscribe to cgroup changes will see the updated limits without a dedicated capacity-change event. Direct notification of NRI plugins via a new API is explicitly deferred to Future Work (see NRI Integration).
 
 7. #### Capacity Detection Latency (Downscale Risk)
 
@@ -282,86 +315,143 @@ This introduces severe latency, high CPU overhead, and dangerous race conditions
 
 ## Design Details
 
-### Baseline Assumptions and Pre-requisite Validation
+### API Changes
 
-Currently, Kubernetes operates under the unspoken assumption that a Node object's capacity is immutable. Before implementing dynamic metric-based triggers, the impacted behaviors must be formally documented, and upstream test coverage must be added to prove the core control plane can gracefully survive a Node capacity mutation.
+To support dynamic configuration of node capacity without requiring a Kubelet restart, a new declarative structure is introduced to the NodeSpec API. This field allows external controllers or administrators to declare the desired logical capacity target for the node.
 
-### Impact on Existing Behaviors
+```go
+// 1. New field added to NodeSpec
+type NodeSpec struct {
+    // ... existing fields ...
 
-1. Static Capacity Assumption: Node.Status.Capacity and Allocatable will transition from static, boot-time fields to dynamically mutable fields.
+    // ConfiguredCapacity defines the desired logical capacity of the node.
+    // On startup, the Kubelet checks this field first; if set, it is treated as
+    // the desired target and validated against the physical upper bound reported
+    // by cAdvisor. If unset, the Kubelet uses self-discovered cAdvisor capacity
+    // as both the physical upper bound and the initial target.
+    // For Alpha, ConfiguredCapacity must not exceed physical capacity (CPU/Memory).
+    // +optional
+    ConfiguredCapacity ResourceList `json:"configuredCapacity,omitempty"`
+}
 
-2. Kubelet Restart Admission: Currently, if a Kubelet is restarted on a machine whose hardware was reduced while offline, the Kubelet may blindly fail pod admission. This behavior will shift to a graceful reconciliation and eviction model.
+// 2. New Condition Type constant
+const (
+    // ... existing conditions (e.g., NodeReady, NodeMemoryPressure) ...
 
-3. Autoscaler Homogeneity: Nodes within a single NodeGroup will no longer be guaranteed to have identical capacities, meaning the Autoscaler cannot blindly select any node as a provisioning template.
+    // NodeCapacityConfigured indicates the status of the Kubelet's reconciliation 
+    // of the desired Node.Spec.ConfiguredCapacity against the physical hardware.
+    NodeCapacityConfigured NodeConditionType = "CapacityConfigured"
+)
+```
 
-4. External Controller Caches: Third-party operators that cache node sizes indefinitely will become stale. (This is an accepted operational constraint).
+### Node Conditions for State Dissemination
 
+To prevent Kubelet reconciliation loops and provide standard Kubernetes observability, the Kubelet exposes its validation and actuation state via a new Node Condition: **CapacityConfigured**. We intentionally mirror the state vocabulary established by In-Place Pod Resource Resize (KEP-1287).
 
-### Pre-requisite Tests to be Added
+Condition: **CapacityConfigured**
 
-To validate that the API and Control Plane can handle these broken assumptions natively, the following tests will be added
+**Status: True**
 
-* **Test 1: API Server Mutation Acceptance**
+**Reason Accepted**: The requested `ConfiguredCapacity` is valid, bounded by physical hardware constraints, and has been fully applied to local cgroups and `Node.Status`. The Kubelet considers the node stable and will not retry.
 
-    **Action**: Manually patch .status.capacity and .status.allocatable on a Ready Node object.
+**Status: False**
 
-    **Validation**: Verify the API Server accepts the patch without systemic webhook rejections or validation failures.
+**Reason InProgress**: The Kubelet has accepted a downscale request and is actively shrinking cgroups or gracefully evicting starved pods. The final `Node.Status` update is pending.
 
+**Reason Infeasible**: The requested `ConfiguredCapacity` exceeds physical hardware limits (overcommit is disallowed in Alpha). The Kubelet has clamped the target to the physical limits, set this condition, and will **not retry** the oversized request. This provides explicit `lockSize` semantics: the Kubelet treats the `Infeasible` state as terminal for the current Spec value. An external controller or administrator must patch `Node.Spec.ConfiguredCapacity` to a valid, in-bounds value to resume normal reconciliation. A dedicated `lockSize` boolean field on `NodeSpec` was considered but rejected in favour of this condition reason — it provides the same terminal semantics without adding a new API field, and remains observable via standard `kubectl get node` condition output.
 
-* **Test 2: Scheduler Cache Invalidation (HotPlug)**
-
-    **Action**: Create a pending Pod that requires 8Gi of memory on a cluster where the only node has 4Gi. Manually patch the Node object's capacity to 10Gi.
-
-    **Validation**: Verify the Scheduler detects the mutated Node object, updates its internal cache, and successfully schedules the pending Pod.
-
-
-* **Test 3: Scheduler Cache Invalidation (Hot-Unplug)**
-
-    **Action**: Manually patch an empty Node's capacity from 10Gi down to 4Gi. Attempt to schedule a Pod requiring 8Gi.
-
-    **Validation**: Verify the Scheduler respects the mutated smaller capacity and rejects the Pod (leaves it Pending).
+**Reason EmergencyReduced**: Physical hardware was forcefully removed (e.g., hypervisor-forced reclaim), falling below the current `Node.Spec.ConfiguredCapacity`. The Kubelet bypassed the API and clamped the node to the new physical reality to protect the kernel. Normal reconciliation is suspended until an external actor patches the Spec down to match the new physical bounds.
 
 
-* **Test 4: Kubelet Restart on Resized Hardware (Unified Reconciliation)**
+### Admission Control Contract
 
-    **Action**: Schedule a Pod. Stop the Kubelet. Mock the underlying machine info to reflect a smaller capacity. Start the Kubelet.
+**Source of Truth:**
+The `Node.Spec.ConfiguredCapacity` field is the authoritative declaration of desired logical capacity. `Node.Status.Capacity` and `Node.Status.Allocatable` are **read-only outputs** of the Kubelet's reconciliation — no external controller or webhook should patch them directly. The Kubelet is the sole component that writes to `Node.Status.Capacity`. This separation of Spec from Status follows the standard Kubernetes controller pattern.
 
-    **Validation**: Verify the Kubelet boots successfully, recognizes the discrepancy between the API and physical hardware, and handles the change gracefully (e.g., evicting the pod if starved) rather than crashing or permanently locking pod admission.
+**Path A (Orchestrated):** External controllers or administrators patch `Node.Spec.ConfiguredCapacity`. This mutation is intercepted by the cluster's standard Validating and Mutating Webhooks. If a webhook rejects the resize request, the API Server denies the PATCH, and the Kubelet's informer never receives the event — the node's effective capacity does not change.
 
-### Architecture Flow
+**Path B (Emergency):** When physical hardware is forcefully reclaimed (e.g., hypervisor-forced deflation), the Kubelet reacts to cAdvisor directly and patches `Node.Status.Capacity` and `Node.Status.Conditions`. This path utilizes the standard Node Authorizer RBAC, bypassing Spec webhooks to ensure the control plane is immediately notified of physical degradation without needing an external controller to be available.
+
+**Bootstrap Behavior:** Upon restart, the Kubelet reads `Node.Spec.ConfiguredCapacity` from the API Server as the primary capacity target *before* reading the raw cAdvisor hardware data. If a valid `ConfiguredCapacity` exists in the Spec, the Kubelet treats it as the desired state and validates it against live physical hardware. This ensures that a Kubelet restart on a pre-configured node does not accidentally override the declared configuration.
+
+### Resource-Specific Validation Rules
+
+The Alpha constraint (`ConfiguredCapacity <= Physical Capacity`) applies per-resource. The Kubelet validates the Spec against the host using the following resource-specific rules:
+
+**CPU & Memory:** Strictly bounded by the physical hardware limits reported by cAdvisor. The `ConfiguredCapacity` for these resources must not exceed the raw physical quantity.
+
+**Swap:** The `ConfiguredCapacity` for swap is validated against the total swap space currently allocated and active on the host's underlying OS (e.g., via `/proc/swaps`). It is not bounded by the physical RAM quantity. Note: configuring a logical memory capacity that *exceeds* physical RAM by relying on swap (overcommit) is explicitly out of scope for Alpha and is deferred to Future Work.
+
+**Hugepages:** Validated against the pre-allocated hugepage pools configured at the OS kernel level (e.g., via `/sys/kernel/mm/hugepages`), not the total raw memory.
+
+**Ephemeral Storage:** Validated against the available disk capacity as reported by the host OS. The `ConfiguredCapacity` for `ephemeral-storage` must not exceed the actual available disk space on the node's root filesystem.
+
+**Unknown resource types:** Any resource type present in `ConfiguredCapacity` that the Kubelet does not recognise (e.g., custom extended resources) is silently ignored by the validation loop. Only well-known resource types (CPU, Memory, Swap, Hugepages, Ephemeral Storage) are validated and actioned.
+
+### Security Considerations
+
+This section explicitly addresses the security properties of this feature in response to the concern that a compromised node could over-report its capacity to the control plane in order to attract Pod scheduling and gain access to secrets it should not receive.
+
+**Capacity Inflation Attack is Prevented by Design (Alpha):**
+The Alpha enforcement rule (`ConfiguredCapacity <= Physical Capacity`) is the primary defense. The Kubelet's `calculateValidatedCapacity()` function enforces this bound locally by reading raw capacity from `cAdvisor`, which reads directly from the host kernel (`/sys`, `/proc`). For a node to successfully inflate its reported capacity above its physical reality, an attacker would need to compromise either:
+1. The Kubelet binary itself, or
+2. The kernel-level data sources that `cAdvisor` reads.
+
+Both represent a full node compromise, which is already outside the Kubernetes threat model. A cluster-level actor patching `Node.Spec.ConfiguredCapacity` to an inflated value will have that spec clamped by the Kubelet and the `CapacityConfigured` condition set to `False (Reason: Infeasible)` — the API Server will store the spec, but the Kubelet will not act on it.
+
+**Node Authorizer Governs Write Access:**
+Mutations to `Node.Spec.ConfiguredCapacity` are governed by the standard Kubernetes Node Authorizer RBAC rules. Only identities with explicit write access to the Node object can set this field. Cluster administrators can additionally deploy a `ValidatingWebhookConfiguration` to restrict which controllers are permitted to set `ConfiguredCapacity` values and within what bounds.
+
+**NRI/Runtime Boundary:**
+The Kubelet does not introduce a new trust boundary between itself and the container runtime for capacity data. The runtime's view of resource limits is updated via the existing `UpdateContainerResources` CRI call — the same path used by In-Place Pod Resource Resize (KEP-1287) — which carries no new elevation of privilege.
 
 ### Architecture Flow
 
 To safely support both external declarative triggers and physical hardware constraints, the Kubelet utilizes a dual-path reconciliation architecture based on the direction of the capacity change.
 
-#### Hardware Trigger and Validation
-The Kubelet monitors both the API (`Node.Status.Capacity`) and local hardware (`cAdvisor`). When `cAdvisor` detects a capacity drift, the `ContainerManager` intercepts the event and applies a **Validation and Jitter Tolerance Filter** before acting:
-* **Sanity Bounds:** The new capacity is checked against impossible values. Negative values, `0`, or capacities mathematically smaller than the node's static `--kube-reserved`/`--system-reserved` limits are rejected and logged as errors.
-* **Jitter Threshold:** To prevent infinite reconciliation storms from harmless kernel memory fluctuations, the delta must exceed a sensible threshold (e.g., memory differences `< 100Mi` are ignored, CPU differences must be full integer cores).
+#### Path A1: Orchestrated Configuration-Driven Upscale
 
-If the capacity drift passes the validation filter, the execution path diverges based on whether it is an upscale or a downscale.
+Spec mutation occurs before physical actuation, consistent with the API-first model.
 
-#### Path A: Declarative HotPlug / External Trigger
+**1. Spec Mutation:** The external controller patches `Node.Spec.ConfiguredCapacity` to the new higher target value. At this point, cAdvisor has not yet detected new hardware, so the Kubelet's validation check (`ConfiguredCapacity <= Physical Capacity`) will temporarily fail. The Kubelet sets the `CapacityConfigured` condition to `False` (Reason: `Infeasible`) and holds the pending event in the reconciliation channel.
 
-When capacity is added, the Kubelet utilizes a declarative, API-driven approach. Instead of blindly enforcing new hardware boundaries locally, the Kubelet delegates policy control to the API Server, allowing cluster administrators to limit or reject hotplug via standard admission control mechanisms.
+**2. Physical Actuation:** The external controller proceeds to physically increase capacity via the hypervisor hotplug. Once the hardware is online, cAdvisor detects the new physical capacity on its next poll cycle (default: 5 minutes, or triggered immediately by the cAdvisor hardware-change path).
 
-1. **Trigger:** `cAdvisor` detects new hardware metrics (passing the validation filter).
-2. **API Update:** If triggered locally by hardware, the Kubelet attempts to patch `Node.Status.Capacity` and `Node.Status.Allocatable`.
-3. **Admission / Webhooks:** If an API webhook declines the patch, the Kubelet aborts. The physical hardware remains larger than the Kubelet's logical view, which is completely safe.
-4. **Host & Runtime Reconciliation:** Once the API is successfully updated (or if the Kubelet detects an approved external patch), a dedicated Goroutine executes the host integration sequence:
-    * **Cache Refresh:** The Kubelet's global `MachineInfo` cache is refreshed to reflect the new boundaries.
-    * **Sub-Manager Sync:** Sub-managers (CPU Manager, Memory Manager) are re-initialized with the new capacity via a new `ResourceResizer` interface.
-    * **Cgroup Expansion:** Top-level host boundaries (`/kubepods`) and QoS cgroups are rewritten to expose the new limits to the system.
-    * **CRI Swap Update:** Proportional Swap limits are recalculated and pushed to running pods via the standard `UpdateContainerResources` CRI RPC.
+**3. Kubelet Reconciliation:** The cAdvisor drift triggers the reconciliation goroutine. The validation check now passes: `ConfiguredCapacity <= new Physical Capacity`. The Kubelet clears the `Infeasible` hold.
 
-#### Path B: Emergency Hardware Hot-UnPlug
-When physical hardware (e.g., Memory) is dynamically removed, physics dictates the timeline. The Kubelet acts immediately to secure the host, treating the API update as a mandatory notification rather than a request for permission.
-1. **Trigger:** `cAdvisor` detects a critical drop in physical hardware metrics (passing the validation filter).
-2. **API Dissemination (Anti-Thrash):** The Kubelet immediately patches `Node.Status.Capacity` and `Node.Status.Allocatable` to reflect the reduced capacity. Updating the API *before* evictions ensures the Scheduler knows the node has shrunk and will not attempt to backfill pods.
-3. **Immediate Host Enforcement:** The `ContainerManager` locks its state, updates its internal cache, and instantly shrinks the `/kubepods` cgroups to physically secure the Linux kernel.
-4. **Eviction Synchronization:** The Eviction Manager's absolute memory and disk thresholds are recalculated based on the new total capacity.
-5. **Graceful Degradation:** The Kubelet evaluates active workloads against the newly reduced capacity. If a strict request contract can no longer be met, starved pods are gracefully evicted with `Reason: NodeCapacityExceeded`.
-6. **Sub-manager & CRI Sync:** Sub-managers are re-initialized to reflect the smaller boundaries, and container swap limits are proportionally reduced.
+**4. Host Enforcement:** The `ContainerManager` re-initializes sub-managers via the `ResourceResizer` interface, expands the host `/kubepods` cgroups, and updates CRI swap boundaries.
+
+**5. Status Dissemination:** The Kubelet patches `Node.Status.Capacity` and transitions the `CapacityConfigured` condition to `True` (Reason: `Accepted`), advertising the new capacity to the Scheduler.
+
+#### Path A2: Orchestrated Configuration-Driven Downscale
+
+Logical API changes occur prior to physical hardware removal.
+
+**1. Spec Mutation:** The external controller patches `Node.Spec.ConfiguredCapacity` to a lower value before making any physical alterations to the host VM.
+
+**2. Status Dissemination (Scheduler Block):** The Kubelet detects the change. It immediately updates `Node.Status.Capacity` and `Node.Status.Allocatable` to reflect the downscale, physically preventing the Scheduler from assigning new pods to the node. It simultaneously sets the `CapacityConfigured` condition to `False` (Reason: `InProgress`), signaling to external controllers that the node is actively in a transient shrinking state.
+
+**3. Immediate Logic Enforcement:** The `ContainerManager` instantly locks internal state, shrinks the `/kubepods` host cgroups, and recalculates absolute Eviction Manager thresholds against the new logical baseline.
+
+**4. Graceful Workload Degradation:** The Kubelet evaluates active workloads against the newly reduced capacity. If strict request contracts can no longer be met, starved pods are gracefully evicted with `Reason: NodeCapacityExceeded`.
+
+**5. State Transition (Accepted):** Once evictions are complete and the node's boundaries are fully secured, the Kubelet transitions the `CapacityConfigured` condition to `True` (Reason: `Accepted`) and pushes the final status update.
+
+**6. Physical Reclaim:** The external controller observes the `Accepted` condition and safely executes the physical hardware hot-unplug via the hypervisor.
+
+#### Path B: Emergency Hardware-Driven Fallback (Ungraceful Downscale)
+
+When physical hardware (e.g., Memory) is forcefully yanked by a hypervisor without prior API synchronization, physics dictates the timeline. The Kubelet acts as an emergency circuit breaker to secure the host.
+
+**1. Hardware Trigger:** `cAdvisor` detects a drop in physical metrics that falls below the current `Node.Spec.ConfiguredCapacity` value.
+
+**2. Immediate Host Enforcement:** The `ContainerManager` bypasses the API state and instantly shrinks the `/kubepods` cgroups to match the raw physical limits.
+
+**3. Emergency Eviction:** The Kubelet evaluates active workloads against the raw physical bounds and immediately evicts starved pods.
+
+**4. State Override & Alerting:** The Kubelet calculates the clamped target and patches `Node.Status.Capacity`. It transitions the `CapacityConfigured` Condition to `False` (Reason: `EmergencyReduced`) and emits a `Warning` Event (`EmergencyCapacityReduced`). To prevent infinite API loops, the Kubelet caches this clamped target locally and safely ignores the oversized Spec **until the Spec is updated by an external actor to match or fall below the new physical reality**.
+
+**5. Divergence Resolution:** The external controller watches for the `EmergencyReduced` condition. Upon seeing it, the controller is responsible for patching `Node.Spec.ConfiguredCapacity` down to match reality, which clears the split-brain state and resumes normal Kubelet reconciliation behavior.
 
 #### Flow Control: Container Swap Limit Recalculation
 
@@ -393,6 +483,8 @@ During a hot-unplug (downscale) event, the node's physical capacity may drop bel
 
 In these starvation scenarios, the Kubelet's eviction manager will gracefully terminate the affected pods with a `Failed` status (Reason: `NodeCapacityExceeded`). This explicitly forces the cluster-wide controllers (e.g., Deployments, StatefulSets) to immediately reschedule the workload onto a capable, healthy node.
 
+**Note on Static Pods:** Static pods are managed directly by the Kubelet via local manifest files and are not subject to eviction manager decisions. They will **not** be evicted during a capacity downscale. Cluster operators must manually account for the resource footprint of any static pods when setting a downscale target in `Node.Spec.ConfiguredCapacity`, ensuring the declared target leaves sufficient headroom above the aggregate static pod requests.
+
 #### Compatibility with Cluster Autoscaler
 
 The Cluster Autoscaler (CA) presently anticipates uniform allocatable values among nodes within the same NodeGroup, using existing nodes as templates for newly provisioned nodes. With In-Place Node Resource Resize, nodes within a single group may horizontally drift in capacity.
@@ -405,7 +497,7 @@ To ensure the Cluster Autoscaler remains stable, we will Capture the Node's Init
 
 * This baseline annotation remains immutable during dynamic resize events.
 
-* The Cluster Autoscaler will be updated to read this annotation (if present) to construct reliable templates for new node provisioning, ignoring the dynamically shifting Node.Status.Capacity fields for template generation.
+* The Cluster Autoscaler will be updated to read this annotation (if present) to construct reliable templates for new node provisioning, ignoring the dynamically shifting Node.Status.Capacity fields for template generation. (The corresponding CA changes are tracked separately and are out of scope for this KEP.)
 
 ### Step 1: Baseline Assumptions and Pre-requisite Validation
 
@@ -435,36 +527,64 @@ To validate that the API and Control Plane can handle these broken assumptions n
 * **Test 4: Kubelet Restart on Resized Hardware (Unified Reconciliation)**
     * *Action:* Schedule a Pod. Stop the Kubelet. Mock the underlying machine info to reflect a smaller capacity (simulate offline hot-unplug). Start the Kubelet.
     * *Validation:* Verify the Kubelet boots successfully, recognizes the discrepancy between the API and physical hardware, and handles the change gracefully (e.g., evicting the pod if starved) rather than crashing or permanently locking pod admission.
-    * 
 #### Proposed Core Code Changes
 
 1. **The Dedicated Kubelet Listener** (`pkg/kubelet/kubelet.go`)
 
    Instead of hijacking the main syncLoopIteration, capacity updates are handled cleanly in the Kubelet's asynchronous `Run()` method:
 ```go
-// Listen for dynamic node capacity changes if the feature gate is enabled.
-if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
-    go wait.Until(func() {
-        for range kl.containerManager.NodeCapacityUpdates() {
-			// 1. Refresh internal cache to prevent Status Manager clamping
-            if info, err := kl.cadvisor.MachineInfo(); err == nil {
-                info.Timestamp = time.Time{}
-                kl.setCachedMachineInfo(info)
-            }
-            currentCapacity := kl.containerManager.GetCapacity(kl.supportLocalStorageCapacityIsolation())
+// 1. Wire up the Node Informer to trigger the reconciliation loop
+kl.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+    UpdateFunc: func(oldObj, newObj interface{}) {
+        oldNode := oldObj.(*v1.Node)
+        newNode := newObj.(*v1.Node)
+        if !apiequality.Semantic.DeepEqual(oldNode.Spec.ConfiguredCapacity, newNode.Spec.ConfiguredCapacity) {
+            kl.capacityReconciliationCh <- struct{}{}
+        }
+    },
+})
 
-            // 2. Disseminate updates to the API Server FIRST to prevent scheduling thrash
-            kl.syncNodeStatus(ctx)
+// 2. Listen for dynamic node capacity changes if the feature gate is enabled
+if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
+    go wait.Until(func(ctx context.Context) {
+        // capacityReconciliationCh fires on Node.Spec updates OR cAdvisor hardware drift
+        for range kl.capacityReconciliationCh {
             
-            // 3. Evict pods that are starved by the downscale
-            kl.evictStarvedPods(ctx, currentCapacity)
-            
-            // 4. Sync Eviction Thresholds for safe downscaling
-            kl.evictionManager.SynchronizeThresholds(currentCapacity)
-            
-            // 5. Update active container Swap boundaries via standard CRI RPC
-            for _, pod := range kl.GetActivePods() {
-                kl.syncContainerSwapLimits(ctx, pod, currentCapacity, totalSwap)
+            configuredCapacity := kl.getNodeSpecConfiguredCapacity()
+            physicalInfo, err := kl.cadvisor.MachineInfo()
+            if err != nil { continue }
+
+            // Determine Target Capacity (Alpha rule: Configured <= Physical)
+            targetCapacity, condition := kl.calculateValidatedCapacity(configuredCapacity, physicalInfo)
+
+            // Anti-Thrash Guard: Break infinite loops if Spec > Physical
+            if kl.requiresReconciliation(targetCapacity) {
+                
+                // Refresh internal cache to the validated target capacity
+                kl.setCachedMachineInfo(targetCapacity)
+                
+                // CRITICAL DOWNSCALE FIX: Update Status and Allocatable FIRST 
+                // to prevent Scheduler livelocks during the eviction window.
+                kl.updateNodeCondition(InProgress)
+                kl.syncNodeStatus(ctx) 
+                
+                // Enforce Host Boundaries (cgroups, sub-managers)
+                kl.containerManager.SyncCapacity(targetCapacity)
+
+                // Sync Eviction Thresholds for safe downscaling
+                kl.evictionManager.SynchronizeThresholds(targetCapacity)
+
+                // Gracefully evict pods starved by the new bounds
+                kl.evictStarvedPods(ctx, targetCapacity)
+
+                // Update active container Swap boundaries via standard CRI RPC
+                for _, pod := range kl.GetActivePods() {
+                    kl.syncContainerSwapLimits(ctx, pod, targetCapacity)
+                }
+
+                // Disseminate final resolved state (Accepted, Infeasible, or EmergencyReduced)
+                kl.updateNodeCondition(condition)
+                kl.syncNodeStatus(ctx)
             }
         }
     }, 0, wait.NeverStop)
@@ -477,8 +597,8 @@ if utilfeature.DefaultFeatureGate.Enabled(features.InPlaceNodeResourceResize) {
 ```go
 // ResourceResizer defines the interface for sub-managers to accept dynamic capacity changes
 type ResourceResizer interface {
-    // SyncCapacity safely re-evaluates the sub-manager's internal state against the new hardware
-    SyncCapacity(machineInfo *cadvisorapi.MachineInfo) error
+    // SyncCapacity safely re-evaluates the sub-manager's internal state against the new boundaries
+    SyncCapacity(capacity ResourceList) error
 }
 ```
 
@@ -491,9 +611,9 @@ When the `ContainerManager` detects a capacity drift, it invokes the `SyncCapaci
   
   Newly added CPUs are instantly detected and added to the "shared pool" (the default cpuset). They immediately become available for pods in the Burstable and BestEffort QoS classes, or for new Guaranteed pods requesting exclusive cores.
 
-  * **Downscale (Hot-unplug):** 
+  * **Downscale (Hot-unplug):**
 
-  Downscale (Hot-unplug):  If CPUs are removed, the CPU Manager removes them from the shared pool. If the new total CPU core count falls below what is required to fulfill the strict, exclusive core allocations of existing Guaranteed pods, the Kubelet's capacity reconciliation loop intercepts this scheduling contract violation. It proactively instructs the PodWorker to gracefully terminate the starved pod with a Failed status (Reason: NodeCapacityExceeded) to force the workload to reschedule onto a capable node.
+  If CPUs are removed, the CPU Manager removes them from the shared pool. If the new total CPU core count falls below what is required to fulfill the strict, exclusive core allocations of existing Guaranteed pods, the Kubelet's capacity reconciliation loop intercepts this scheduling contract violation and evicts the affected pods with a `Failed` status (Reason: `NodeCapacityExceeded`). Additionally, if the removed CPU IDs directly overlap with the exclusive cpuset already pinned to a running Guaranteed pod — even if the total remaining core count appears sufficient — those pods are also evicted, because the specific hardware they were guaranteed no longer exists. The CPU Manager validates both the total count and cpuset membership before clearing the violation.
 
 - **Memory Manager:**
 
@@ -534,6 +654,8 @@ Before dynamic hardware triggers are implemented, upstream test coverage must be
 4. **Eviction Threshold Sync** (`eviction_manager_test.go`): Verify that `SynchronizeThresholds` correctly recalculates absolute byte values (e.g., < `100Mi` vs `10%`) when the underlying capacity increases or decreases.
 
 5. **CRI Swap Limit Recalculation** (`kubelet_test.go`): Verify the math for proportional swap limits. Ensure the capacity reconciliation loop correctly iterates over active pods and invokes the mock CRI `UpdateContainerResources` interface with the newly calculated boundaries.
+
+6. **Bootstrap Parity** (`kubelet_test.go`): Verify that when the Kubelet starts and finds a pre-existing `Node.Spec.ConfiguredCapacity` in the API Server, it uses that value as the desired target rather than silently overwriting it with the raw cAdvisor-discovered capacity. Specifically confirm that if `ConfiguredCapacity` is set to 20Gi on a 32Gi physical node, the Kubelet reports 20Gi in `Node.Status.Capacity` after startup, not 32Gi.
 
 ##### e2e tests
 
@@ -616,6 +738,8 @@ The interaction between the Kubelet and the control plane (specifically the Sche
 
 Because this leverages pre-existing API contracts, no special coordination or version skew mitigation is required between the Kubelet and the control plane. Similarly, no updates are required for CRI, CNI, or CSI plugins prior to enabling this Kubelet feature.
 
+**Scheduler-Kubelet Race Window:** A capacity change, like a node going `NotReady`, can invalidate an in-flight scheduling decision. This race window is inherent to the Kubernetes scheduler's optimistic concurrency model and is not unique to this KEP. Specifically, for systems using Workload Aware Scheduling (WAS), a capacity downscale occurring between the scheduler's binding decision and the Kubelet's admission check may cause a pod rejection. The Kubelet will return an admission failure, and the pod will be rescheduled by its controlling workload controller. This behavior is consistent with existing failure handling in the scheduler and does not require changes to the scheduler for Alpha.
+
 ## Production Readiness Review Questionnaire
 
 <!--
@@ -651,12 +775,8 @@ This section must be completed when targeting alpha to a release.
 - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: `InPlaceNodeResourceResize`
     - Components depending on the feature gate: `kubelet`
-- [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node?
+    - Will enabling / disabling the feature require downtime of the control plane? **No.** The feature gate is Kubelet-only; the API Server and Scheduler require no changes and no restart.
+    - Will enabling / disabling the feature require downtime or reprovisioning of a node? **Yes, a Kubelet restart is required** to toggle the feature gate. However, a Kubelet restart does not disrupt running pods; it only briefly interrupts the Kubelet process itself while existing cgroups and container state are preserved by the container runtime.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -776,7 +896,11 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-For each dynamically resized node, the `kubelet_node_resize_errors_total` counter is expected to remain strictly at 0.
+For each dynamically resized node:
+
+- **Error rate:** The `kubelet_node_resize_errors_total` counter is expected to remain strictly at `0` during normal operations.
+- **Latency (Spec-driven):** For `Node.Spec.ConfiguredCapacity`-triggered resize events, the time from Spec patch to `CapacityConfigured: Accepted` condition should complete within **30 seconds** under normal conditions, bounded by informer propagation latency and cgroup write time.
+- **Latency (Hardware-driven):** For physical hardware events detected via cAdvisor polling, the reconciliation completes within one cAdvisor polling cycle (default: **5 minutes**). Operators who require lower latency should configure a shorter cAdvisor polling interval.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -851,14 +975,11 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+Yes.
 
-Yes, but with strictly negligible throughput.
+The Kubelet's existing NodeInformer will now actively process and react to UPDATE events on the `Node.Spec.ConfiguredCapacity` field.
 
-- **API Call**: PATCH `/api/v1/nodes/<node-name>/status`
-
-- **Throughput**: Extremely low. This call is only triggered at the exact moment a physical hardware capacity change is detected on the host. It does not introduce a periodic polling load on the API Server.
-
-- **Originating Component**: Kubelet
+During a resize event, the Kubelet will issue PATCH calls to the Node status subresource to update `.status.capacity`, `.status.allocatable`, and `.status.conditions`. To prevent API thrashing during emergency hardware fluctuations, the Kubelet uses a jitter tolerance filter and caches the clamped state locally.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -868,7 +989,8 @@ Describe them, providing:
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
-No 
+Yes. This introduces a new optional field `ConfiguredCapacity` within `Node.Spec`, and a new Node Condition type `CapacityConfigured` to track the reconciliation state (Accepted, InProgress, Infeasible, EmergencyReduced).
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -888,7 +1010,7 @@ Describe them, providing:
 Yes.
 
 - API type(s): `Node`
-- Estimated increase in size: ~200-500 bytes per Node object. This is due to the addition of the `resize.node.kubernetes.io/initial-capacity` annotation, which stores a JSON representation of the node's baseline hardware capacity to assist the Cluster Autoscaler.
+- Estimated increase in size: ~200-500 bytes per Node object. This is due to the addition of the `Node.Spec.ConfiguredCapacity` field, the `CapacityConfigured` Status Condition, and the initial-capacity annotation for the Autoscaler.
 - Estimated amount of new objects: 0 (No new objects are created; only the existing Node object is annotated).
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
@@ -973,25 +1095,32 @@ For each of them, fill in the following information by copying the below templat
 
 * **CRI Swap Update Failure**
 
-    Detection: Spike in `kubelet_node_resize_errors_total` with the label `subsystem="container_swap_resize"`.
+  - **Detection**: Spike in `kubelet_node_resize_errors_total` with the label `subsystem="container_swap_resize"`.
 
-    Mitigations: Verify the Container Runtime (containerd/CRI-O) is healthy and accepting RPC calls.
+  - **Mitigations**: Verify the Container Runtime (containerd/CRI-O) is healthy and accepting RPC calls.
+
+* **Downscale Stuck in InProgress (Eviction Stall)**
+
+  - **Scenario**: A downscale was initiated via `Node.Spec.ConfiguredCapacity`. The Kubelet set the `CapacityConfigured` condition to `False (Reason: InProgress)` and began evicting starved pods. However, the eviction never completes — for example, because affected pods have `PodDisruptionBudgets` that block eviction, or the pods are `Guaranteed` QoS with no safe eviction path, or the Kubelet crashed mid-eviction.
+
+  - **Detection**: The `CapacityConfigured` condition remains `False (Reason: InProgress)` for longer than expected. No `kubelet_node_resize_requests_total` increment is observed for the direction `decrease`. The external controller's watch on the `Accepted` condition never fires.
+
+  - **Mitigations**:
+    1. Temporarily patch `Node.Spec.ConfiguredCapacity` back to the previous (higher) value to cancel the downscale and unblock the node. The Kubelet will detect the spec revert, restore the cgroup boundaries, and transition the condition to `Accepted`.
+    2. Identify and resolve the blocking condition (e.g., adjust PodDisruptionBudgets, force-delete the stalled pod) and re-issue the downscale spec patch.
+    3. As a last resort, disable the feature gate and restart the Kubelet to freeze capacity evaluation.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 Examine Kubelet logs for errors emitted by `container_manager_linux`.go. Disable the feature gate to freeze capacity evaluation until the host-level conflict is resolved.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
+- **2023-04-17**: Initial KEP PR ([#3955](https://github.com/kubernetes/enhancements/pull/3955)) opened as *KEP-3953: Dynamic Node Resize* — original scope covering both scale-up and scale-down via cAdvisor polling.
+- **2024-01-31**: Scope narrowed to scale-up only (*Node Resource Hot Plug*) following community feedback that a separate CRI-based hardware discovery mechanism was needed before scale-down could be safely addressed.
+- **2025-01-13**: KEP retitled to *KEP-3953: Node Resource Hot Plug* to reflect the updated focus on upscaling; Production Readiness Review Questionnaire updated.
+- **2025-02-12**: PRR approved for Alpha. Key design additions: swap limit recalculation for existing containers via `UpdateContainerResources`, OOMScoreAdj drift accepted as a known limitation, hot-unplug emergency path outlined in Future Work.
+- **2026-02-10**: KEP retitled to *KEP-3953: In-place Node Resource Resize* to reflect the full bidirectional resize scope introduced by the declarative `Node.Spec.ConfiguredCapacity` API field — a major design pivot driven by reviewer feedback.
 
 ## Drawbacks
 
@@ -1002,6 +1131,7 @@ Why should this KEP _not_ be implemented?
 If dynamically removed resources (specifically CPUs or NUMA Memory zones) were exclusively pinned and allocated to specific containers via the CPU Manager or Topology Manager, the underlying hardware backing their strict isolation guarantees no longer exists on the motherboard.
 
 Because the node can no longer fulfill the Pod's strict Requests contract, those affected pods must be forcefully evicted by the Kubelet with a `Failed` status (Reason: `NodeCapacityExceeded`). While this protects the node, it does introduce a disruptive pod termination that would not occur if the node capacity remained static.
+
 ## Alternatives
 <!--
 What other approaches did you consider, and why did you rule them out? These do
@@ -1022,6 +1152,22 @@ information to express the idea and why it was not acceptable.
 
   * _Why it was rejected:_ This is highly inefficient, complex to manage at the hypervisor level, and confuses the Kubernetes Scheduler, which relies on accurate, native cgroup boundaries.
 
+* **Node Annotation as Configuration Mechanism** (`resize.node.kubernetes.io/configured-capacity`): Using a Node annotation instead of a first-class `NodeSpec` field to carry the desired capacity declaration.
+
+  * _Why it was rejected:_ Annotations are unstructured strings with no API validation, no admission webhook targeting support, and no defaulting semantics. They are effectively a workaround for the absence of a proper API field. Cluster administrators wanting to restrict who can set capacity would have to write brittle label-matching admission webhooks rather than using structured `ValidatingWebhookConfiguration` field selectors. A formal `NodeSpec` field provides schema validation, clean `kubectl diff` output, and correct versioning/defaulting via the API machinery. An annotation is a hack around the right answer.
+
+* **Local Kubelet Configuration File (Static Config):** Expressing the desired logical capacity via a local file on the node host (e.g., a `KubeletConfiguration` field), requiring a Kubelet restart to apply.
+
+  * _Why it was rejected:_ Local configuration fundamentally cannot be driven by external controllers. A cluster-level controller managing capacity across many nodes cannot atomically write a file to a remote node's filesystem and then restart its Kubelet. This approach breaks the API-driven operational model of Kubernetes, makes orchestration of downscale workflows impossible without SSH/node access, and requires a Kubelet restart — defeating the core goal of this KEP.
+
+* **CRI-Based Hardware Discovery (Alternative Trigger):** Using a Container Runtime Interface (CRI) extension to deliver hardware capacity events to the Kubelet instead of relying on cAdvisor polling.
+
+  * _Why it was not chosen for Alpha:_ A CRI-based discovery mechanism would require new CRI API additions and runtime support across containerd, CRI-O, and other runtimes — a multi-org coordination effort that is orthogonal to the Kubelet reconciliation logic this KEP introduces. The cAdvisor-based polling approach is available today on all supported runtimes and platforms. This alternative is tracked as a future evolution path via **KEP-5224** (Node Resource Discovery) and is explicitly called out in the Future Work section.
+
+* **Physical Hot-Unplug as a Considered-But-Deferred Trigger:** Having the Kubelet proactively orchestrate or initiate physical hardware removal (i.e., calling a hypervisor API to perform hot-unplug) as part of a downscale flow.
+
+  * _Why it was deferred:_ The Kubelet has no knowledge of the hypervisor or infrastructure layer. Introducing such a call would violate the single-responsibility principle and couple the Kubelet to provider-specific infrastructure APIs. The correct model is for an external controller (which _does_ understand the infrastructure) to coordinate the physical hot-unplug after observing that the Kubelet has completed its graceful downscale (i.e., `CapacityConfigured` condition reaches `Accepted`). The KEP's Path A2 flow explicitly documents this coordination contract.
+
 ## Infrastructure Needed (Optional)
 
 For standard Kubernetes CI (e2e_node tests), no special infrastructure is needed because the tests will utilize a mocked cAdvisor client to simulate hardware capacity events.
@@ -1041,3 +1187,7 @@ However, for provider-specific end-to-end integration testing in the future, und
 * **Event-Driven Hardware Detection ([Node Resource Discovery](https://github.com/kubernetes/enhancements/pull/5319))**
 
     * Currently, this KEP relies on `cAdvisor` and lightweight host polling to detect physical hardware changes. In the future, as **KEP-5224** matures, the responsibility of hardware discovery will shift toward the Container Runtime Interface (CRI) and external resource plugins. Once the CRI is capable of natively broadcasting dynamic hardware capacity events to the Kubelet, this KEP's capacity reconciliation loop will be updated to subscribe directly to those CRI events.
+
+* **Node Capacity Overcommit (Logical > Physical)**
+
+    * This KEP explicitly defers support for configuring `Node.Spec.ConfiguredCapacity` to a value greater than the raw physical hardware capacity (e.g., reporting 48Gi of memory on a 32Gi machine backed by swap). This is a compelling use-case — particularly for swap-overcommit scenarios where the OS's swap space provides a meaningful backing store for workloads that tolerate memory latency. However, enabling this in Alpha would break the Eviction Manager's absolute threshold math and OOM-killer assumptions, which rely on the invariant that logical ≤ physical. Future work will define how the Eviction Manager, cgroup limits, and memory accounting interact when logical capacity exceeds physical, and will specify per-resource rules (e.g., Swap may be the first resource exempt from the Alpha overcommit restriction, while CPU and raw Memory remain bounded by physical reality).
