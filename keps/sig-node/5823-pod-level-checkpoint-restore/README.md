@@ -261,7 +261,7 @@ The implementation consists of three layers:
    Pod sandbox configuration from the checkpoint, assigns a new Pod UID, updates cgroup parent
    paths, and delegates to the container runtime.
 
-3. **API objects** in the `checkpoint.k8s.io` API group that provide declarative management of
+3. **API objects** in the `node.k8s.io` API group that provide declarative management of
    checkpoint operations. `PodCheckpoint` is a namespace-scoped standalone object. The owning
    kubelet finds the object by watching `PodCheckpoint`s and matching `spec.sourcePodName` against
    the Pods it runs, so no control-plane-to-kubelet call is needed. (Node-scoped field-selector
@@ -574,9 +574,12 @@ when it observes the field, so no imperative restore call to the kubelet is need
 ### PodCheckpoint Objects
 
 To provide declarative management of checkpoint operations, this KEP introduces a new
-built-in Kubernetes API type, `PodCheckpoint`, in the `checkpoint.k8s.io/v1alpha1` API group.
+built-in Kubernetes API type, `PodCheckpoint`, in the `node.k8s.io/v1alpha1` API group.
 `PodCheckpoint` is a first-class Kubernetes resource (not a CRD); it is served by the API
-server alongside core types such as `Pod` and `Node`. The design follows the Kubernetes
+server alongside `RuntimeClass`. The existing Node API group is used because the resource
+describes a SIG Node-owned operation performed by the kubelet and container runtime on the
+node where the source Pod runs; a separate API group for this single resource is unnecessary.
+The design follows the Kubernetes
 [volume snapshots] pattern: a checkpoint is a standalone object with its own lifecycle that
 can outlive the source Pod and be used to create multiple new Pods. The restore side makes
 use of a new `restoreFrom` field on Pod spec described below.
@@ -589,12 +592,12 @@ checkpoint, and records the result on the status (see
 [Asynchronous checkpoint flow](#asynchronous-checkpoint-flow)).
 
 `PodCheckpoint` supports two field selectors so checkpoints can be listed by the objects they
-relate to: `spec.sourcePodName` (all checkpoints of a given source Pod) and `status.nodeName` (all
+relate to: `spec.sourcePod.name` (all checkpoints of a given source Pod) and `status.nodeName` (all
 checkpoints whose data resides on a given node). These are registered as selectable fields on the
 REST storage, the same way `Pod` exposes `spec.nodeName`/`status.phase`. Adding a selectable field
 is backward-compatible, so further selectors can be added later without an incompatible change.
 
-The Go types (served from `staging/src/k8s.io/api/checkpoint/v1alpha1/types.go`):
+The Go types (served from `staging/src/k8s.io/api/node/v1alpha1/types.go`):
 
 ```go
 // PodCheckpoint represents a request to checkpoint a running Pod, together
@@ -799,7 +802,7 @@ const (
 Example object:
 
 ```yaml
-apiVersion: checkpoint.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1alpha1
 kind: PodCheckpoint
 metadata:
   name: my-checkpoint
@@ -1065,7 +1068,7 @@ with its `Ready` condition set to `True`, recording the node on which the source
 checkpointed and the on-node archive path:
 
 ```yaml
-apiVersion: checkpoint.k8s.io/v1alpha1
+apiVersion: node.k8s.io/v1alpha1
 kind: PodCheckpoint
 metadata:
   name: myapp-snapshot-01
@@ -1865,7 +1868,7 @@ No.
 
 Yes. By disabling the `PodLevelCheckpointRestore` feature gate.
 
-While the gate is off the API server stops serving the `checkpoint.k8s.io`
+While the gate is off the API server stops serving the `node.k8s.io`
 group, so any `PodCheckpoint` objects created while it was on are **stranded**:
 they remain in etcd but are not served (`get`/`list`/`delete` return 404), the
 controller and kubelet ignore them, and on-disk checkpoint archives stay until
@@ -1885,7 +1888,7 @@ cleaned up. They consume no node or runtime resources while inert. Two caveats:
 The feature keeps no in-memory state across the gate flip, so re-enabling starts
 from a clean slate. Per component:
 
-- `kube-apiserver`: serves the `checkpoint.k8s.io` group and the Pod
+- `kube-apiserver`: serves the `node.k8s.io` group and the Pod
   `spec.restoreFrom` field again. Any `PodCheckpoint` objects that survived the
   rollback (they remain stored, just inert) become readable and a `restoreFrom`
   reference to one is honored again.
@@ -1930,13 +1933,13 @@ coverage is per-component:
 - `kube-controller-manager`. The pod-snapshot-controller is registered behind the gate via its
   `ControllerDescriptor` `requiredFeatureGates`, so it does not run when the gate is off (no
   restore-lock finalizers are reconciled). An integration test in `test/integration/podcheckpoint`
-  asserts that with the gate disabled the `checkpoint.k8s.io` group is not served, so a
+  asserts that with the gate disabled the `node.k8s.io` group is not served, so a
   `PodCheckpoint` cannot be created, and that with the gate enabled a `PodCheckpoint` can be
   created and the controller adds and later removes the restore-lock finalizer as a Pod restores
   from it.
 
 Disablement does not affect running workloads. Existing `PodCheckpoint` objects remain stored in
-etcd but unserved while the gate is off (the `checkpoint.k8s.io` group is not served); a Pod's
+etcd but unserved while the gate is off (the `node.k8s.io` group is not served); a Pod's
 `restoreFrom` field is likewise inert. See [Can the feature be disabled](#can-the-feature-be-disabled-once-it-has-been-enabled-ie-can-we-roll-back-the-enablement) for how these stranded objects are drained on re-enable.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -2134,7 +2137,7 @@ that already occurs in the existing Pod lifecycle.
 
 Yes:
 
-- `PodCheckpoint` in the `checkpoint.k8s.io/v1alpha1` API group, namespace-scoped. One object
+- `PodCheckpoint` in the `node.k8s.io/v1alpha1` API group, namespace-scoped. One object
   per checkpoint operation. Its `status.checkpointedPodTemplate` embeds a sanitized
   `PodTemplateSpec` captured from the source Pod; this is bounded by the size of a single Pod
   template (kilobyte-scale, well within the etcd per-object limit) and is written once when
