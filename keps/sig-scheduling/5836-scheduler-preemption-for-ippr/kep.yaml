@@ -33,7 +33,7 @@ milestone:
   stable: "v1.39"
 
 feature-gates:
-  - name: SchedulerPreemptionForPodResize
+  - name: InPlacePodVerticalScalingSchedulerPreemption
     components:
       - kube-apiserver
       - kube-scheduler
