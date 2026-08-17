@@ -41,3 +41,6 @@ feature-gates:
 disable-supported: true
 
 metrics:
+  - preemption_attempts_total
+  - preemption_victims
+  - deferred_resizing_pods

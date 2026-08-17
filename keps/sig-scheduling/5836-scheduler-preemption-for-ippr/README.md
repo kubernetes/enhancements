@@ -125,6 +125,12 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Failures and Reconsideration of Deferred pods](#failures-and-reconsideration-of-deferred-pods)
     - [Failure Handler Adjustments for Deferred Pods](#failure-handler-adjustments-for-deferred-pods)
   - [Scope of Interaction with Workload-Aware Preemption](#scope-of-interaction-with-workload-aware-preemption)
+  - [Metrics and Events](#metrics-and-events)
+    - [Metrics](#metrics)
+      - [Extending existing metrics with a new <code>operation</code> label](#extending-existing-metrics-with-a-new-operation-label)
+      - [Extending metrics with a new <code>AssignedPodResize</code> event](#extending-metrics-with-a-new-assignedpodresize-event)
+      - [Metrics skipped for deferred resizing pods](#metrics-skipped-for-deferred-resizing-pods)
+    - [Events](#events)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -693,6 +699,57 @@ With workload-aware preemption, there are two scenarios to consider:
    * **Alpha Scope**: The resizing pod is evaluated individually for preemption victim selection on its assigned node. The scheduler does not proactively trigger group-wide rescheduling or preemption of other members of the workload group.
    * **Beta Graduation**: Co-existence mechanics, including group-wide coordinated preemption (e.g., preempting other members of the same workload to balance resource usage or preventing preemption if the workload's group-wide health is already degraded), will be fully designed and finalized prior to Beta.
 
+### Metrics and Events
+
+#### Metrics
+
+`kube-scheduler` exports a significant number of metrics. We extend existing metrics and clarify skipped metrics to provide observability into scheduler behavior for in-place pod resizing.
+
+##### Extending existing metrics with a new `operation` label
+
+We update the following existing metrics to include a new `operation` label:
+
+* `scheduler_pending_pods`
+* `scheduler_queued_entities`
+* `scheduler_scheduling_algorithm_duration_seconds`
+* `scheduler_preemption_attempts_total`
+* `scheduler_preemption_victims`
+* `scheduler_preemption_evaluation_duration_seconds`
+* `scheduler_preemption_execution_duration_seconds`
+* `scheduler_preemption_pdb_violations_total`
+* `scheduler_preemption_goroutines_execution_total`
+
+To distinguish between in-place resize workflows and initial placement workflows, the `operation` label has possible values of `initial_placement` or `pod_resize`.
+
+##### Extending metrics with a new `AssignedPodResize` event
+
+The following metrics already expose an `event` label:
+
+* `scheduler_event_handling_duration_seconds`
+* `scheduler_queue_incoming_pods_total`
+* `scheduler_queue_incoming_entities_total`
+
+When an assigned pod transitions to a deferred resize and enters the scheduling queue, the scheduler currently records `event="UnscheduledPodAdd"`. We introduce a new cluster event value `AssignedPodResize` so incoming queue metrics and event handling durations accurately reflect resize queueing rather than new pod arrivals.
+
+##### Metrics skipped for deferred resizing pods
+
+Because resizing pods are already bound to a node and actuated by Kubelet rather than bound by the scheduler, the following metrics are **skipped entirely** for deferred resize evaluation cycles:
+
+* `scheduler_schedule_attempts_total`
+* `scheduler_scheduling_attempt_duration_seconds`
+* `scheduler_pod_scheduling_sli_duration_seconds` 
+* `scheduler_pod_scheduling_attempts`
+* `scheduler_pod_scheduled_after_flush_total`
+* `scheduler_unschedulable_pods`
+* `scheduler_permit_wait_duration_seconds`
+
+#### Events
+
+Preemption events for in-place resize follow existing scheduler preemption conventions:
+
+* **Preemptor Pod**: Emits a `FailedScheduling` warning event when preemption cannot proceed, such as when node preemption policy disables preemption (`0/1 nodes are available: 1 node had resize preemption disabled.`) or when available victims cannot satisfy the resize deficit (`0/1 nodes are available: 1 Insufficient cpu.`).
+* **Victim Pods**: Emits a `Preempted` normal event indicating the victim was evicted to accommodate the resizing pod (`Preempted by pod <namespace>/<name> on node <node-name>`), and sets the `DisruptionTarget` pod condition with reason `PreemptionByScheduler`.
+
 ### Test Plan
 
 <!--
@@ -788,6 +845,10 @@ Integration tests in `test/integration/scheduler/preemption/deferred_resize_pree
   - Ensure that pods transitioning to a `Deferred` resize are automatically enqueued in the scheduling queue.
   - Ensure that pods are removed from the queue when their `Deferred` resize condition is cleared or resolved.
   - Ensure that deleting a deferred pod removes it from both the scheduler cache and scheduling queue.
+
+- **Metrics Verification**:
+  - Ensure `scheduler_pending_pods` and `scheduler_preemption_attempts_total` emit `operation="pod_resize"` labels during deferred resize processing.
+  - Verify that `scheduler_schedule_attempts_total` is not incremented for deferred resize cycles.
 
 ##### e2e tests
 
