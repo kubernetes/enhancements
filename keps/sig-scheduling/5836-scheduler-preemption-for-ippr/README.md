@@ -429,6 +429,8 @@ The primary risk with this approach is ensuring that no existing or future sched
 2. No downstream scheduling or preemption logic relies on strict pointer equality of pod objects across the cache and queue boundaries.
 3. Resource double-counting is avoided on the target node by excluding the pod's additional resources during resource fit calculations as described in the section below.
 
+Even with these considerations in mind, asynchronous event delivery and concurrent pod updates mean that the pod snapshot popped from the scheduling queue can occasionally carry resource requests that temporarily diverge from the cache's snapshot. In Alpha, `NodeResourcesFit` amortized this discrepancy at runtime by assuming the pod's resources as the maximum between the queued and cached snapshots. For Beta, we eliminate this divergence at the source by refreshing the queued pod snapshot directly from the node's cache snapshot at the start of the scheduling cycle, ensuring all plugins evaluate the exact same immutable pod instance.
+
 *See alternative considerations for how to handle this without dual representation (such as using a dynamic `PodGetter` interface) [here](#conflicting-sources-of-truth-for-the-pod-1).*
 
 ### Processing Deferred Resizes in the Scheduling Cycle
@@ -467,11 +469,7 @@ The `NodeName` plugin is adjusted to implement the `PreFilter` phase. Because th
 
 The `NodeResourcesFit` plugin will run its `PreFilter` and `Filter` phases for deferred resize pods. It runs a modified resource-fit check to specially handle `Deferred` pods.
 
-To prevent the double-counting of resources when a deferred-resize pod is evaluated for scheduling or preemption fit on its assigned node, the `NodeResourcesFit` plugin is adjusted to leverage the scheduler cache's existing resource accounting logic. 
-
-If the pod is already assigned to the node being evaluated, the scheduler's cache has already factored the pod's resource footprint into the node's aggregated requested resources (`nodeInfo.Requested`), so the plugin uses `nodeInfo.Requested` directly in most cases.
-
-However, in the event that the pod taken from the queue has resource requests diverging from the pod taken from the cache (which can happen due to some race conditions), the plugin will look up the pod in `NodeInfo` and adjust the node's requested resources by adding the difference, assuming the pod's resources to be the maximum of the two.
+To prevent the double-counting of resources when a deferred-resize pod is evaluated for scheduling or preemption fit on its assigned node, the `NodeResourcesFit` plugin is adjusted to leverage the scheduler cache's existing resource accounting logic. If the pod is already assigned to the node being evaluated, the scheduler's cache has already factored the pod's resource footprint into the node's aggregated requested resources (`nodeInfo.Requested`), so the plugin uses `nodeInfo.Requested` directly, without adding the pod's resource requests again.
 
 ##### Handling Node Evaluation Results
 
@@ -513,7 +511,8 @@ For in-place resize pods, the pod is already bound and `NominatedNodeName` is no
 Taking all the above into account, the logic for processing a `Deferred` resize is as follows:
 
 1. **Identify Deferred Status**: Confirm the pod has a `Deferred` resize and is already bound to a node. Enqueue it in the Scheduling queue.
-1. **Evaluate Fit**: Perform node evaluation restricted to the current node. 
+1. **Queued Pod Refresh**: Refresh the queued pod snapshot directly from the node cache snapshot to eliminate divergence.
+1. **Evaluate Fit**: Perform node evaluation restricted to the current node.
     * The node evaluation logic should run only the logic for the resource-fit and preemption policy check, skipping filters that are relevant only to initial scheduling, such as affinity/anti-affinity rules and topology spread constraints.
     * The resource-fit logic is adjusted to specially handle the deferred pod's resources, as described in [`NodeResourcesFit` Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase).
     * If preemption is disabled on the node, `DeferredPodScheduling.Filter` returns `UnschedulableAndUnresolvable`, skipping preemption.
