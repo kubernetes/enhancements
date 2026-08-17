@@ -107,6 +107,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Scheduler Restart and State Recovery](#scheduler-restart-and-state-recovery)
     - [Conflicting Sources of Truth for the Pod](#conflicting-sources-of-truth-for-the-pod)
   - [Processing Deferred Resizes in the Scheduling Cycle](#processing-deferred-resizes-in-the-scheduling-cycle)
+    - [Bypassing Irrelevant Constraints via <code>ResponsibilityPlugin</code>](#bypassing-irrelevant-constraints-via-responsibilityplugin)
     - [<code>NodeName</code> Plugin: Node Restriction via the PreFilter Phase](#nodename-plugin-node-restriction-via-the-prefilter-phase)
     - [<code>NodeResourcesFit</code> Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase)
       - [Handling Node Evaluation Results](#handling-node-evaluation-results)
@@ -450,14 +451,31 @@ The primary risk with this approach is ensuring that no existing or future sched
 
 ### Processing Deferred Resizes in the Scheduling Cycle
 
-When processing a pod with a `Deferred` resize, the scheduler runs it through a modified scheduling cycle. Rather than evaluating the pod as if it were brand-new to the cluster, the cycle is restricted exclusively to resource capacity checks and preemption logic. This differs from standard scheduling in two key ways:
+When processing a pod with a `Deferred` resize, the scheduler runs it through a modified scheduling cycle. Historically, the scheduler operated under the fundamental assumption that every pod in the scheduling pipeline was an unbound pod seeking initial placement across the cluster. With in-place pod resize, this assumption no longer holds: the scheduler must now also process already-bound, running pods to evaluate capacity expansion and preemption limited to only their assigned node.
 
-* **Targeted Node Search**: Candidate node evaluation is restricted solely to the node the deferred pod is already running on.
-* **Bypassing Irrelevant Constraints**: All scheduling plugins irrelevant to direct resource capacity fitting (such as node affinity, pod anti-affinity, and topology spread constraints) are bypassed.
+#### Bypassing Irrelevant Constraints via `ResponsibilityPlugin`
 
-To achieve this cleanly and without hardcoding specific plugin names on the framework side, we adjust all irrelevant plugins to be skipped when processing `Deferred` pods.
+To bypass plugins that are irrelevant to deferred pods without hardcoding plugin lists or scattering ad-hoc bypass checks across individual plugins, we introduce the `ResponsibilityPlugin` extension point interface in the scheduling framework:
 
-Only **`NodeName`**, **`NodeResourcesFit`**, **`DeferredPodScheduling`**, and **`DefaultPreemption`** plugins implement handling for processing `Deferred` pods. All other plugins are modified to implement the `PreFilter`, `Filter`, or `PostFilter` interface and return `Skip` for `Deferred` pods, which results in the plugin being bypassed for deferred resize scheduling cycles. Out-of-tree plugin developers are advised to align their implementation for handling of `Deferred` pods.
+```go
+// ResponsibilityPlugin allows a scheduling plugin to declare whether it is
+// responsible for evaluating a given pod during its scheduling cycle.
+type ResponsibilityPlugin interface {
+    Plugin
+    // IsResponsible returns a Status indicating whether this plugin is responsible
+    // for evaluating the given pod. If it returns fwk.Skip, the framework skips all
+    // extension points for this plugin during the scheduling cycle.
+    IsResponsible(ctx context.Context, cycleState *CycleState, pod *v1.Pod) *fwk.Status
+}
+```
+
+At the beginning of each scheduling cycle, `IsResponsible` is evaluated so the scheduling framework runtime knows which plugins should participate in evaluating the pod.
+
+If a plugin does not implement `ResponsibilityPlugin`, the framework considers it as only handling standard unscheduled pods (no node assigned). For an already-bound pod, un-scoped plugins automatically default to being skipped (`fwk.Skip`) across all extension points (`PreFilter`, `Filter`, `Score`, `Reserve`, `Permit`, `PreBind`, `PostFilter`). Wake-up events and Queueing Hints for plugins are also filtered based on the applicability check, preventing placement plugins from waking up deferred pods on unrelated node updates.
+
+Only the plugins responsible for evaluating deferred resize pods (`NodeName`, `NodeResourcesFit`, `DeferredPodScheduling`, and `DefaultPreemption`) implement `ResponsibilityPlugin` to return success for already-bound pods.
+
+This eliminates the need to add resize checks to plugins irrelevant to deferred pods. Furthermore, custom third-party plugins do not need to be updated to ignore deferred pods, as they will only be invoked for bound pods if they explicitly implement `ResponsibilityPlugin`.
 
 #### `NodeName` Plugin: Node Restriction via the PreFilter Phase
 
@@ -485,7 +503,7 @@ The necessity of keeping the pod in the `Unschedulable` queue and using QHints f
 
 #### `DefaultPreemption` Plugin: Preemption Mechanism Adjustments in the PostFilter Phase
 
-Only the `DefaultPreemption` plugin runs during the PostFilter phase for deferred resize pods; other PostFilter plugins will be modified to skip processing for deferred resize pods.
+Only the `DefaultPreemption` plugin runs during the PostFilter phase for deferred resize pods; other PostFilter plugins are bypassed via `IsResponsible(pod)`.
 
 The modifications to the `NodeName`, `NodeResourcesFit`, and `DeferredPodScheduling` plugins ensure three important components of the desired behavior:
 
