@@ -98,7 +98,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Performance impact](#performance-impact)
     - [Interaction with workload-aware preemption](#interaction-with-workload-aware-preemption)
     - [Race between a Deferred resize and a new higher-priority pod](#race-between-a-deferred-resize-and-a-new-higher-priority-pod)
-      - [Risk of Additional Preemption](#risk-of-additional-preemption)
 - [Design Details](#design-details)
   - [How Deferred Resizes Integrate into the Scheduling Queue](#how-deferred-resizes-integrate-into-the-scheduling-queue)
     - [Detecting Deferred Resizes in UpdatePod](#detecting-deferred-resizes-in-updatepod)
@@ -111,6 +110,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [<code>NodeResourcesFit</code> Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase)
       - [Handling Node Evaluation Results](#handling-node-evaluation-results)
     - [<code>DefaultPreemption</code> Plugin: Preemption Mechanism Adjustments in the PostFilter Phase](#defaultpreemption-plugin-preemption-mechanism-adjustments-in-the-postfilter-phase)
+    - [Preventing Unnecessary Victim Preemption](#preventing-unnecessary-victim-preemption)
     - [Preventing Additional Preemption Across Grace Periods and Restarts](#preventing-additional-preemption-across-grace-periods-and-restarts)
     - [Summary of Scheduling Cycle Flow](#summary-of-scheduling-cycle-flow)
   - [Scheduler Resource Reservation](#scheduler-resource-reservation)
@@ -349,43 +349,6 @@ From the scheduler's view, once the spec is updated, the resources are already r
 
 This means that if a new, higher-priority pod comes in and the only way to fit it is by taking the space the Deferred pod is trying to grow into, the standard preemption logic applies. This might mean the resizing pod itself gets evicted if it’s the best victim candidate. While we would rather not kill pods unnecessarily, this behavior is consistent with the rest of the scheduler's logic.
 
-##### Risk of Additional Preemption
-
-The Scheduler (via the `NodeResourcesFit` plugin) assumes the resources of pods to be `max(desired, allocated, actual)`. This ensures that the node does not end up overcommitted in the event that Kubelet actuates a resize while the new pod is being scheduled. This behavior is correct for scheduling of newly created pods.
-
-However, this logic results in potentially unnecessary preemption during scheduler-evaluation of `Deferred` pods. 
-
-The Kubelet determines resource fit in the event of a resize by assuming resources as: 
-- For the pod that is being resized, use `max(desired, allocated, actual)`. 
-- For all other pods on the node, use `max(allocated, actual)` (ignoring desired). 
-
-Consider this case with 4 pods, all `Deferred`:
-
-- Pod1 (high priority): desired=X, allocated=X/2, actuated=X/2
-- Pod2,3,4 (low priority): desired=2X, allocated=X/2, actuated=X/2
-- Node allocatable=2X
-
-If we use `max(desired, allocated, actual)` for all pods, then: 
-
-1. Preemption logic first removes all candidate pods, so it sees node is using X (Pod 1's max). 
-2. The Scheduler first tries to reprieve pod 2 which is assumed to have max(2X, X/2, X/2) resources. 2X + X = 3X, which is more than node allocatable 2X. The Scheduler determines this pod cannot be reprieved.
-3. The Scheduler goes through the same process for pods 3 and 4, and determines that they cannot be reprieved.
-
-All 3 pods (Pod 2, 3, and 4) would be preempted, even though it was only necessary to preempt one of them.
-
-To prevent unnecessary preemption, the `NodeResourcesFit` plugin would need to likewise assume resources in the same way as the Kubelet when evaluating deferred pods, while maintaining its existing behavior for scheduling new pods.
-
-If we use our modified logic, where only the resizing pod uses `max(desired, allocated, actual)` and the remaining pods use `max(allocated, actual)`, then:
-
-1. Preemption logic first removes all candidate pods, so it sees node is using X (Pod 1's max).
-2. The Scheduler first tries to reprieve pod 2, which assumed to have max(X/2, X/2) resources.  X/2 + X = 1.5X, which is less than node allocatable 2X, so pod 2 is reprieved.
-3. The Scheduler tries to reprieve pod 3, which assumes to have max(X/2, X/2) resources. X/2 + 1.5X = 2X, which still fits within the node allocatable 2X, so pod 3 is reprieved.
-4. The Scheduler tries to reprieve pod 4, which assumes to have max(X/2, X/2) resources. X/2 + 2X = 2.5X, which is more than node allocatable 2X, so pod 4 is not reprieved.
-
-This results in only 1 pod (Pod 4) being preempted.
-
-Such a modification to the `NodeResourceFit` plugin is out of scope for alpha due to its wide ranging implications across the scheduler. However, we will reconsider this decision prior to beta.
-
 ## Design Details
 
 <!--
@@ -535,6 +498,81 @@ The modifications to the `NodeName`, `NodeResourcesFit`, and `DeferredPodSchedul
 * **Resource Accounting Adjustment**: During the preemption evaluation, the fit plugin is adjusted to specially handle the deferred pod's resources, as described in [`NodeResourcesFit` Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase).
 
 Similar to the Filter phase, the preemption and reprieve logic runs only the resource-fit checks, skipping irrelevant constraints like affinity and topology spread constraints.
+
+#### Preventing Unnecessary Victim Preemption
+
+When evaluating resource availability, the scheduler and Kubelet use different
+accounting models today:
+* The Kubelet determines resource fit in the event of a resize by evaluating
+  `max(desired, allocated, actual)` only for the pod undergoing admission or
+  resize, while evaluating `max(allocated, actual)` for all other pods on the
+  node (ignoring their unfulfilled desired requests).
+* The scheduler assumes the resources of all pods on the node to be `max(desired, allocated, actual)`.
+  This ensures the node does not end up overcommitted in the event that Kubelet
+  actuates a resize while a new pod is being scheduled.
+
+However, this divergence in accounting can result in unnecessary preemption
+during scheduler evaluation of `Deferred` pods when multiple pods on the same
+host have pending resizes.
+
+Consider a scenario with 4 pods on a node with allocatable capacity $2X$, all in
+a `Deferred` resize state:
+- Pod 1 (high priority): desired = X, allocated = X/2, actual = X/2 (needs $+X/2$ additional capacity)
+- Pods 2, 3, 4 (low priority): desired = 2X, allocated = X/2, actual = X/2
+
+From the node's physical allocation standpoint, the current allocated usage is
+ X/2 + X/2 + X/2 + X/2 = 2X. Evicting just one low-priority pod frees X/2 of
+allocated capacity, which is physically sufficient for Pod 1 to expand from
+X/2 to X (total 2X <= 2X).
+
+If the scheduler evaluated all pods using `max(desired, allocated, actual)`
+during preemption reprieve:
+
+1. Preemption logic first removes all candidate pods, so it sees the node is
+   using X (Pod 1's max).
+2. The scheduler first tries to reprieve Pod 2, which is assumed to have
+   `max(2X, X/2, X/2)` resources. `2X + X = 3X`, which is more than node
+   allocatable `2X`. The scheduler determines this pod cannot be reprieved.
+3. The scheduler goes through the same process for Pods 3 and 4, and determines
+   that they cannot be reprieved.
+
+All 3 pods (Pod 2, 3, and 4) would be preempted, even though it was only
+necessary to preempt one of them.
+
+To prevent unnecessary victim preemption when evaluating a `Deferred` resize
+pod, we adjust how candidate victim pods are added back to
+copy during the reprieve phase:
+* First, preemption logic removes all candidate victim pods
+* During reprieve, when adding candidate victim pods back to the `NodeInfo`
+  copy, the scheduler adds each candidate victim back with its resource requests set to `max(allocated, actual)` (ignoring unfulfilled `desired` requests).
+
+With this adjustment, only the resizing preemptor pod uses
+`max(desired, allocated, actual)` and candidate victim pods use
+`max(allocated, actual)` during reprieve (similar to Kubelet's calculations). The above scenario now results in:
+
+1. Preemption logic first removes all candidate pods, so it sees the node is
+   using X (Pod 1's max).
+2. The scheduler first tries to reprieve Pod 2, which is added back to the
+   `NodeInfo` copy with `max(X/2, X/2)` resources. `X/2 + X = 1.5X`, which is
+   less than node allocatable `2X`, so Pod 2 is reprieved.
+3. The scheduler tries to reprieve Pod 3, which is added back with
+   `max(X/2, X/2)` resources. `X/2 + 1.5X = 2X`, which still fits within the
+   node allocatable `2X`, so Pod 3 is reprieved.
+4. The scheduler tries to reprieve Pod 4, which is added back with
+   `max(X/2, X/2)` resources. `X/2 + 2X = 2.5X`, which is more than node
+   allocatable `2X`, so Pod 4 is not reprieved.
+
+This results in only 1 pod (Pod 4) being preempted.
+
+If reprieve determines that no victims need to be preempted (all candidate
+victims are reprieved because the resizing pod fits alongside their
+`max(allocated, actual)` resources), the scheduler treats the deferred resize as
+fitting on the node without preemption and removes the pod from the scheduling
+queue. If the Kubelet actuates a reprieved lower-priority pod's resize in the
+meantime and consumes the available headroom before the higher-priority
+preemptor's resize is actuated, the reconsideration mechanism (see
+[Reconsideration Race Conditions](#reconsideration-race-conditions)) re-inserts
+the deferred pod into the scheduling queue when the other pod updates.
 
 #### Preventing Additional Preemption Across Grace Periods and Restarts
 
