@@ -41,3 +41,15 @@ feature-gates:
 disable-supported: true
 
 metrics:
+  - scheduler_pending_resize_pods
+  - scheduler_resize_scheduling_algorithm_duration_seconds
+  - scheduler_resize_preemption_attempts_total
+  - scheduler_resize_preemption_victims
+  - scheduler_queued_entities
+  - scheduler_preemption_evaluation_duration_seconds
+  - scheduler_preemption_execution_duration_seconds
+  - scheduler_preemption_pdb_violations_total
+  - scheduler_preemption_goroutines_execution_total
+  - scheduler_event_handling_duration_seconds
+  - scheduler_queue_incoming_pods_total
+  - scheduler_queue_incoming_entities_total
