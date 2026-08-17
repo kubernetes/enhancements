@@ -131,6 +131,9 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Extending metrics with a new <code>AssignedPodResize</code> event](#extending-metrics-with-a-new-assignedpodresize-event)
       - [Metrics skipped for deferred resizing pods](#metrics-skipped-for-deferred-resizing-pods)
     - [Events](#events)
+    - [Pod Status &amp; Conditions](#pod-status--conditions)
+      - [External controllers](#external-controllers)
+      - [End-user observability](#end-user-observability)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -749,6 +752,26 @@ Preemption events for in-place resize follow existing scheduler preemption conve
 
 * **Preemptor Pod**: Emits a `FailedScheduling` warning event when preemption cannot proceed, such as when node preemption policy disables preemption (`0/1 nodes are available: 1 node had resize preemption disabled.`) or when available victims cannot satisfy the resize deficit (`0/1 nodes are available: 1 Insufficient cpu.`).
 * **Victim Pods**: Emits a `Preempted` normal event indicating the victim was evicted to accommodate the resizing pod (`Preempted by pod <namespace>/<name> on node <node-name>`), and sets the `DisruptionTarget` pod condition with reason `PreemptionByScheduler`.
+
+#### Pod Status & Conditions
+
+We decided not to expose a dedicated pod status condition surfacing the results of the preemption cycle for resizing pods. There is currently no concrete use case requiring this condition, and omitting it avoids bloating the already complex pod status and generating unnecessary API churn. This is analogous to how scheduler preemption behaves today for initial pod placement, where the scheduler does not write a preemption-specific status condition on pending pods.
+
+There are two primary actors that may be interested in the results of the preemption cycle for resizing pods: external controllers and users; both are discussed below.
+
+##### External controllers
+
+The current recommended pattern for external controller integration with this feature is to utilize the existing `PodResizePending` condition and the node-level `podPreemptionPolicy` field. For example, if a controller can scale down another pod to free up capacity or increase capacity of the node itself, these alternative actions should be attempted first as they are less disruptive and generally preferred over eviction. The controller can use `podPreemptionPolicy` to disable resize preemption, perform its own autoscaling actions to free up capacity based on the `PodResizePending` condition, and dynamically reenable resize preemption only when it needs help from the scheduler as a last resort to free up capacity.
+
+The `podPreemptionPolicy` field covers the currently known integration needs for external controllers. That said, one can imagine a controller wanting the scheduler to proactively preempt for a resize, and react accordingly. However, we do not currently have a concrete use-case requiring this, so we leave it out of scope for the initial beta and may consider introducing such a condition in a future release if a clear requirement arises that is not addressed by our existing mechanisms.
+
+##### End-user observability
+
+For user observability, users can inspect preemption blockers via standard `kubectl describe pod` event streams, where `FailedScheduling` warning events detail why preemption was blocked or could not find sufficient capacity. Users can also observe the `PodResizePending` condition to infer the current pod resize status. 
+
+This is analogous to user-observability today for initial pod placement, where users can inspect `FailedScheduling` events to see why a pod couldn't be scheduled and the `PodScheduled` condition to infer if the pod is still pending. Initial pod placement does not expose any additional conditions to surface the results of the preemption cycle, and we do not believe that the same is necessary for resizing pods.
+
+Should we receive feedback that users want more fine-grained observability into the preemption cycle for resizing pods, we can consider introducing a new pod status condition in a future enhancement, but we consider it out of scope for the initial beta.
 
 ### Test Plan
 
