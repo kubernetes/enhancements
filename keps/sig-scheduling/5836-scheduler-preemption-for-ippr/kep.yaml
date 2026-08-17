@@ -22,6 +22,8 @@ approvers:
 see-also:
   - "/keps/sig-scheduling/268-priority-preemption"
   - "/keps/sig-node/1287-in-place-update-pod-resources"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/4671-gang-scheduling"
 
 stage: beta
 
