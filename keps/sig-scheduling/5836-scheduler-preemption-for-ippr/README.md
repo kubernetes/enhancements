@@ -98,7 +98,6 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Performance impact](#performance-impact)
     - [Interaction with workload-aware preemption](#interaction-with-workload-aware-preemption)
     - [Race between a Deferred resize and a new higher-priority pod](#race-between-a-deferred-resize-and-a-new-higher-priority-pod)
-    - [Shifting Preemption Victims during Scheduler Restart](#shifting-preemption-victims-during-scheduler-restart)
       - [Risk of Additional Preemption](#risk-of-additional-preemption)
 - [Design Details](#design-details)
   - [How Deferred Resizes Integrate into the Scheduling Queue](#how-deferred-resizes-integrate-into-the-scheduling-queue)
@@ -112,6 +111,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [<code>NodeResourcesFit</code> Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase)
       - [Handling Node Evaluation Results](#handling-node-evaluation-results)
     - [<code>DefaultPreemption</code> Plugin: Preemption Mechanism Adjustments in the PostFilter Phase](#defaultpreemption-plugin-preemption-mechanism-adjustments-in-the-postfilter-phase)
+    - [Preventing Additional Preemption Across Grace Periods and Restarts](#preventing-additional-preemption-across-grace-periods-and-restarts)
     - [Summary of Scheduling Cycle Flow](#summary-of-scheduling-cycle-flow)
   - [Scheduler Resource Reservation](#scheduler-resource-reservation)
   - [Kubelet-Scheduler Preemption Interaction](#kubelet-scheduler-preemption-interaction)
@@ -162,10 +162,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Conflicting Sources of Truth for the Pod](#conflicting-sources-of-truth-for-the-pod-1)
   - [Kubelet-Scheduler Preemption Interaction](#kubelet-scheduler-preemption-interaction-1)
   - [Tracking Preemption Nominations to Avoid Double Preemption](#tracking-preemption-nominations-to-avoid-double-preemption)
-    - [Option 1: Accept Double Preemption (Alpha Decision)](#option-1-accept-double-preemption-alpha-decision)
-    - [Option 2: Internal Nomination Tracking (In-Memory struct)](#option-2-internal-nomination-tracking-in-memory-struct)
-    - [Option 3: Reuse NominatedNodeName (NNN)](#option-3-reuse-nominatednodename-nnn)
-    - [Option 4: Check Pod spec.nodeName in DefaultPreemption](#option-4-check-pod-specnodename-in-defaultpreemption)
+    - [Option 1: Accept Double Preemption (Rejected)](#option-1-accept-double-preemption-rejected)
+    - [Option 2: Internal Nomination Tracking (Rejected)](#option-2-internal-nomination-tracking-rejected)
+    - [Option 3: Reuse <code>status.nominatedNodeName</code> (Rejected)](#option-3-reuse-statusnominatednodename-rejected)
   - [Node-Level Preemption Policy API Options](#node-level-preemption-policy-api-options)
     - [1. Node Annotations (Rejected)](#1-node-annotations-rejected)
     - [2. Pod-Level Preemption Disabled Condition (Rejected)](#2-pod-level-preemption-disabled-condition-rejected)
@@ -349,21 +348,6 @@ From the scheduler's view, once the spec is updated, the resources are already r
 
 This means that if a new, higher-priority pod comes in and the only way to fit it is by taking the space the Deferred pod is trying to grow into, the standard preemption logic applies. This might mean the resizing pod itself gets evicted if it’s the best victim candidate. While we would rather not kill pods unnecessarily, this behavior is consistent with the rest of the scheduler's logic.
 
-#### Shifting Preemption Victims during Scheduler Restart
-
-If a `Deferred` resize was mid-preemption when the scheduler crashed or restarted, the new scheduler instance might select a different victim pod than the original instance did. This can happen due to:
-
-*   Changes in cluster state (new pods, node updates) during the scheduler's downtime.
-*   Non-deterministic tie-breaking when multiple low-priority pods satisfy the resource requirement equally well.
-
-In specific edge cases, this leads to redundant preemption. "Victim A" (targeted by the first scheduler) and "Victim B" (targeted by the second scheduler) may both be terminated to satisfy a single resize request.
-
-Mitigations:
-*   **Idempotency:** The `Delete` API is already idempotent. If the scheduler picks the same victim upon restart, the API server simply acknowledges the request without further disruption.
-*   **Acceptable Waste:** In the Kubernetes priority model, ensuring the success of a higher-priority workload (the resizing pod) justifies the potential loss of multiple lower-priority victims during a rare control-plane failure.
-
-To address double preemption risks across scheduler restarts and long graceful termination periods, we are exploring tracking mechanisms (such as using the pod's nominated node name). We will fully evaluate these options and finalize the approach for Beta; see details in [Tracking Preemption Nominations to Avoid Double Preemption](#tracking-preemption-nominations-to-avoid-double-preemption).
-
 ##### Risk of Additional Preemption
 
 The Scheduler (via the `NodeResourcesFit` plugin) assumes the resources of pods to be `max(desired, allocated, actual)`. This ensures that the node does not end up overcommitted in the event that Kubelet actuates a resize while the new pod is being scheduled. This behavior is correct for scheduling of newly created pods.
@@ -435,8 +419,6 @@ the scheduler must proactively re-identify them upon startup.
 *   **Cold-Start Re-Queueing:** As part of initialization, the scheduler adds deferred pods to the scheduling queue in the `AddPod` event handler.
 *   **Re-evaluation:** Once in the queue, these pods undergo the standard evaluation flow
 (Node Fit -> Preemption).
-
-*See risk considerations for shifting victims [here](#shifting-preemption-victims-during-scheduler-restart) and alternative considerations for double preemption mitigation [here](#tracking-preemption-nominations-to-avoid-double-preemption).*
 
 #### Conflicting Sources of Truth for the Pod
 
@@ -514,6 +496,17 @@ The modifications to the `NodeName`, `NodeResourcesFit`, and `DeferredPodSchedul
 * **Resource Accounting Adjustment**: During the preemption evaluation, the fit plugin is adjusted to specially handle the deferred pod's resources, as described in [`NodeResourcesFit` Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase).
 
 Similar to the Filter phase, the preemption and reprieve logic runs only the resource-fit checks, skipping irrelevant constraints like affinity and topology spread constraints.
+
+#### Preventing Additional Preemption Across Grace Periods and Restarts
+
+When an in-place pod resize triggers preemption, lower-priority victim pods on the assigned node are scheduled for deletion. Because pods typically have a termination grace period and termination cleanup hooks, victim pods remain present on the node in a terminating state for a non-trivial duration. During this window, two scenarios could in theory trigger additional preemption, where the scheduler evicts redundant victim pods to satisfy the same resize deficit:
+
+* **Long Grace Periods**: While a victim pod is terminating, cluster activity triggers the scheduler to re-evaluate the resizing pod. Because the terminating victim's resources are still accounted for on the node until full deletion, the scheduler encounters a fit error again and re-invokes preemption.
+* **Scheduler Restarts**: The scheduler crashes or restarts while a victim pod is terminating. Upon startup, the scheduler re-evaluates the deferred resizing pod before the victim has finished terminating.
+
+In standard initial pod placement, the scheduler prevents duplicate preemption via a two-stage mechanism in `DefaultPreemption`. When an unscheduled pod preempts victims on a node, the scheduler records the pod's `status.NominatedNodeName`. On subsequent scheduling attempts, the default preemption plugin inspects `NominatedNodeName`. If it finds any lower-priority pod on the nominated node that is marked as terminating due to scheduler preemption (recorded by the `DisruptionTarget` condition), it suppresses further preemption. Because `NominatedNodeName` and the victim's `DisruptionTarget` condition are persisted in etcd, a newly restarted scheduler reads them from cache and immediately suppresses duplicate preemptions.
+
+For in-place resize pods, the pod is already bound and `NominatedNodeName` is not set. To prevent double preemption for resizing pods, we modify the default preemption plugin to instead evaluate the pod's `spec.NodeName` when `NominatedNodeName` is empty. If there exists an already-terminating lower-priority pod on the node that the pod is bound to, the default preemption plugin safely suppresses duplicate preemption cycles across long victim termination grace periods and scheduler restarts.
 
 #### Summary of Scheduling Cycle Flow
 
@@ -872,6 +865,8 @@ Integration tests in `test/integration/scheduler/preemption/deferred_resize_pree
   - Ensure that pods with `preemptionPolicy: PreemptNever` do not trigger preemption when deferred.
   - Ensure that when a deferred resize fits without preemption, the pod is parked in `unschedulablePods` (waiting for Kubelet actuation) without triggering binding or victim preemption.
   - Ensure that when a node disables resize preemption via `spec.podPreemptionPolicy.disableResizePreemption`, preemption is bypassed and the deferred pod remains parked without victim eviction.
+  - Ensure that double preemption is prevented during long graceful termination periods (a terminating victim pod suppresses further preemption for the resizing pod).
+  - Ensure that restarting the scheduler while a victim is terminating preserves preemption suppression until the victim is completely deleted.
 
 - **Queueing Hints**:
   - Ensure that relevant events on the same node (pod deletion, pod downsize, node allocatable capacity increase, target pod spec downsize) trigger QueueingHints to move deferred pods from `unschedulablePods` back to the `activeQ`.
@@ -1499,33 +1494,21 @@ For example, if a higher-priority resize is requested while room is being made b
 
 ### Tracking Preemption Nominations to Avoid Double Preemption
 
-If a `Deferred` resize triggers preemption, there is a risk of "double preemption" (where the scheduler terminates a different set of victims for the same resize request) in two scenarios:
-1. **Scheduler Restart**: The scheduler restarts mid-preemption, clearing its in-memory preemption state, and selects a new victim pod upon recovery.
-2. **Long Grace Periods**: A victim has a long graceful termination period. While it is terminating, other node activity (such as pod deletion) triggers the scheduler to re-evaluate the `Deferred` pod. If the cluster state has changed or selection is non-deterministic, the preemption logic might select a new victim instead of recognizing the existing termination process.
+If a `Deferred` resize triggers preemption, there is a risk of double preemption (where the scheduler terminates a different set of victims for the same resize request) during long graceful termination periods or across scheduler restarts.
 
-To mitigate this, the scheduler needs a way to track which pod is preempting what via resource nominations so it does not retry preemption while the initial victim is still terminating. We considered four potential options to address this, and will finalize the approach during the Beta phase:
+We considered several alternative options for addressing this risk before settling on having the preemption plugin evaluate `spec.nodeName` for pods that are already bound. The alternative options were:
 
-#### Option 1: Accept Double Preemption (Alpha Decision)
-*   **Description**: Treat double preemption as an acceptable edge-case behavior, relying on the API server's delete idempotency to avoid duplicate evictions of the same victim.
-*   **Pros**: Zero implementation complexity; keeps the scheduler stateless.
-*   **Cons**: Can lead to redundant preemption of additional low-priority workloads in rare scenarios, generating unnecessary load and workload disruption.
+#### Option 1: Accept Double Preemption (Rejected)
+* **Description**: Treat double preemption as an acceptable edge-case behavior, relying on API server delete idempotency.
+* **Why Rejected**: Evicting additional workloads while a previous victim is terminating leads to unnecessary workload disruption in production clusters.
 
-#### Option 2: Internal Nomination Tracking (In-Memory struct)
-*   **Description**: Maintain an internal, scheduler-private map/struct that tracks active preemption nominations for `Deferred` resizes without persisting or exposing this data outside the scheduler.
-*   **Pros**: Restricts the state strictly within the scheduler; does not affect other API clients.
-*   **Cons**: Does not survive scheduler restarts, meaning it only resolves the long grace period scenario and leaves the scheduler restart scenario unmitigated.
+#### Option 2: Internal Nomination Tracking (Rejected)
+* **Description**: Maintain an internal scheduler map tracking active preemption nominations for deferred resizes without persisting state to the API server.
+* **Why Rejected**: In-memory state is wiped on scheduler crashes and restarts, leaving the restart scenario unmitigated.
 
-#### Option 3: Reuse NominatedNodeName (NNN)
-*   **Description**: Reuse the existing `status.nominatedNodeName` field on the Pod object to nominate the node where preemption is occurring, allowing the scheduler to recognize existing nominations across restarts and grace periods.
-*   **Pros**: Resolves both scheduler restart and long grace period scenarios cleanly by leveraging standard preemption structures.
-*   **Cons**: Semantically changes the meaning of `nominatedNodeName` (which is traditionally used only for unscheduled/unplaced pods, whereas the `Deferred` resizing pod is already bound to a node). This could break downstream assumptions in external components that monitor this field.
-
-#### Option 4: Check Pod spec.nodeName in DefaultPreemption
-*   **Description**: Modify the preemption logic in `DefaultPreemption` to treat `spec.nodeName` as the nomination node for already-bound pods with deferred resize requests.
-*   **Pros**: Avoids mutating `status.nominatedNodeName` (preventing breaking downstream clients) and naturally survives scheduler restarts since `spec.nodeName` and the `Deferred` resize state are persisted.
-*   **Cons**: Requires modifying `DefaultPreemption` to check both `nominatedNodeName` (for unscheduled pods) and `spec.nodeName` (for bound resizing pods) when evaluating active nominations.
-
-We plan to evaluate the implications of Option 3 and Option 4 on the Kubernetes ecosystem and decide on the final design for Beta.
+#### Option 3: Reuse `status.nominatedNodeName` (Rejected)
+* **Description**: Reuse `pod.Status.NominatedNodeName` on the resizing pod to record the assigned node during preemption.
+* **Why Rejected**: Adds two unnecessary API status writes per resize (setting and clearing the field) and breaks downstream assumptions for external controllers (such as cluster autoscaler or monitoring dashboards) that treat `nominatedNodeName` as indicating an unscheduled pod waiting to bind.
 
 ### Node-Level Preemption Policy API Options
 
