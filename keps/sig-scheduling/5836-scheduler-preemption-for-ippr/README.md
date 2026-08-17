@@ -766,13 +766,28 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-In alpha, we will create integration test(s) to ensure basic functionalities:
+Integration tests in `test/integration/scheduler/preemption/deferred_resize_preemption_test.go` cover the following scenarios:
 
-- A lower-priority pod can be preempted by a higher-priority `Deferred` resize.
-- Several lower-priority pods can be preempted by a higher-priority `Deferred` resize.
-- Non-preempting pods according to the `preemptionPolicy` do not trigger preemption.
+- **Preemption Evaluation**:
+  - Ensure that a single lower-priority pod can be preempted on the assigned node by a higher-priority pod with a `Deferred` resize.
+  - Ensure that multiple lower-priority pods can be preempted to satisfy the resource deficit of a `Deferred` resize.
+  - Ensure that pods with `preemptionPolicy: PreemptNever` do not trigger preemption when deferred.
+  - Ensure that when a deferred resize fits without preemption, the pod is parked in `unschedulablePods` (waiting for Kubelet actuation) without triggering binding or victim preemption.
+  - Ensure that when a node disables resize preemption via `spec.podPreemptionPolicy.disableResizePreemption`, preemption is bypassed and the deferred pod remains parked without victim eviction.
 
-For beta, we will add additional, more comprehensive integration test. The list here will be finalized here prior to beta graduation.
+- **Queueing Hints**:
+  - Ensure that relevant events on the same node (pod deletion, pod downsize, node allocatable capacity increase, target pod spec downsize) trigger QueueingHints to move deferred pods from `unschedulablePods` back to the `activeQ`.
+  - Ensure that irrelevant events (pod deletion or downsize on other nodes, non-resource label changes) are filtered out and do not wake the queue.
+
+- **Node Preemption Policy Events**:
+  - Ensure that updating a node's preemption policy to enable preemption (clearing `disableResizePreemption`) wakes up deferred pods on that node.
+  - Ensure that disabling preemption policy or updating policies on unrelated nodes does not wake the queue.
+
+- **Scheduling Queue Handlers**:
+  - Ensure that existing deferred pods in the cluster are enqueued upon scheduler startup and informer synchronization.
+  - Ensure that pods transitioning to a `Deferred` resize are automatically enqueued in the scheduling queue.
+  - Ensure that pods are removed from the queue when their `Deferred` resize condition is cleared or resolved.
+  - Ensure that deleting a deferred pod removes it from both the scheduler cache and scheduling queue.
 
 ##### e2e tests
 
