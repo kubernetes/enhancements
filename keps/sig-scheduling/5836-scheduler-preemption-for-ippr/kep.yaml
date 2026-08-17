@@ -23,14 +23,14 @@ see-also:
   - "/keps/sig-scheduling/268-priority-preemption"
   - "/keps/sig-node/1287-in-place-update-pod-resources"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"
   beta: "v1.38"
-  stable: "v1.39"
+  stable: "TBD"
 
 feature-gates:
   - name: InPlacePodVerticalScalingSchedulerPreemption
