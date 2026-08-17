@@ -165,6 +165,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Option 1: Accept Double Preemption (Rejected)](#option-1-accept-double-preemption-rejected)
     - [Option 2: Internal Nomination Tracking (Rejected)](#option-2-internal-nomination-tracking-rejected)
     - [Option 3: Reuse <code>status.nominatedNodeName</code> (Rejected)](#option-3-reuse-statusnominatednodename-rejected)
+  - [Handling Successfully Fitted Deferred Resizes](#handling-successfully-fitted-deferred-resizes)
+    - [1: Parking in Unschedulable Queue via <code>Permit</code> Rejection (Alpha Decision - Rejected for Beta)](#1-parking-in-unschedulable-queue-via-permit-rejection-alpha-decision---rejected-for-beta)
+    - [2: Status Condition Transition in <code>Bind</code> (Rejected)](#2-status-condition-transition-in-bind-rejected)
   - [Node-Level Preemption Policy API Options](#node-level-preemption-policy-api-options)
     - [1. Node Annotations (Rejected)](#1-node-annotations-rejected)
     - [2. Pod-Level Preemption Disabled Condition (Rejected)](#2-pod-level-preemption-disabled-condition-rejected)
@@ -465,13 +468,13 @@ To prevent the double-counting of resources when a deferred-resize pod is evalua
 
 ##### Handling Node Evaluation Results
 
-In most cases, this restricted search results in a resource fit error, naturally triggering the scheduler's preemption pathway. In this case, the pod will be kept in the `Unschedulable` queue.
+In most cases, this restricted search results in a resource fit error, naturally triggering the scheduler's preemption pathway to identify victims on the assigned node.
 
-However, if the resize fits without needing preemption (e.g., if cluster topology shifts or other workloads exit, freeing up capacity on the host), the **`DeferredPodScheduling`** plugin implements the `Permit` phase and returns a status of `UnschedulableAndUnresolvable` (with a message like `"pod resize fits, waiting for Kubelet actuation"`). This ensures the scheduler skips the preemption and binding phases, but keeps the deferred pod in the `Unschedulable` queue to await Kubelet actuation.
+However, if the resize fits without needing preemption (either because cluster topology shifted or because victim pods have finished terminating), the pod progresses through the `Permit` and `Bind` phases to complete the scheduling cycle. During `Bind`, because the pod is already bound to the node, the scheduler skips binding the pod and removes the pod from the scheduling queue.
 
-Because a parked pod's capacity can be consumed by other workloads before the Kubelet actuates it, the scheduler registers `NodeResourcesFit` QHints to watch for pod upsize events on the same node. If another pod on the node scales up, the QHint moves the parked pod back to the `activeQ` for re-evaluation.
+Because the scheduler cache accounts for the pod using `max(desired, allocated, actual)`, the required capacity remains reserved in `nodeInfo.Requested`. However, race conditions can cause the Kubelet to resize a different pod than the one that triggered the eviction. When an assigned pod scales up on a node, the scheduler's `updatePod` event handler detects the scale-up and checks for any `Deferred` pods running on that same host. To prevent cluster-wide pod iterations and maintain scalability, the scheduler utilizes the pod informer indexer with a secondary index keyed by `spec.nodeName` to look up only the pods bound to that specific node, immediately re-enqueuing any lingering `Deferred` pods back into `activeQ` for re-evaluation and preemption.
 
-The necessity of keeping the pod in the `Unschedulable` queue and using QHints for requeuing is explained further in [Reconsideration Race Conditions](#reconsideration-race-conditions).
+The necessity of requeueing in such cases is detailed in [Reconsideration Race Conditions](#reconsideration-race-conditions).
 
 #### `DefaultPreemption` Plugin: Preemption Mechanism Adjustments in the PostFilter Phase
 
@@ -508,7 +511,7 @@ Taking all the above into account, the logic for processing a `Deferred` resize 
     * The node evaluation logic should run only the logic for the resource-fit and preemption policy check, skipping filters that are relevant only to initial scheduling, such as affinity/anti-affinity rules and topology spread constraints.
     * The resource-fit logic is adjusted to specially handle the deferred pod's resources, as described in [`NodeResourcesFit` Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase).
     * If preemption is disabled on the node, `DeferredPodScheduling.Filter` returns `UnschedulableAndUnresolvable`, skipping preemption.
-    * If the resize fits on the node, `DeferredPodScheduling.Permit` returns `UnschedulableAndUnresolvable`, moving the pod into the `Unschedulable` queue and skipping victim selection (see [Reconsideration Race Conditions](#reconsideration-race-conditions) for more details).
+    * If the resize fits on the node, the pod proceeds through the `Bind` phase, though it skips the actual `Bind` step, and is removed from the scheduling queue (see [Reconsideration Race Conditions](#reconsideration-race-conditions) for more details).
 1. **Trigger Preemption**: If a `FitError` occurs, initiate the Scheduler preemption logic.
 1. **Calculate Victims**: Identify suitable preemption victims, with the search restricted to the current node. The resource-fit logic is adjusted to specially handle the deferred pod's resources, as described in [`NodeResourcesFit` Plugin: Calculating Resource Fit in the Filter Phase](#noderesourcesfit-plugin-calculating-resource-fit-in-the-filter-phase), and irrelevant constraints such as affinity and topology spread are skipped.
 1. **Reevaluation**: When the victim pod is removed, the `Deferred` resize pod is triggered and moved from `Unschedulable` pods into the scheduling queue, resulting in reevaluation.
@@ -523,45 +526,28 @@ The Kubelet monitors pod removals, including evictions, and automatically retrie
 
 #### Reconsideration Race Conditions
 
-It is possible that the Kubelet chooses to resize a different pod than the one that triggered the eviction. Consider
-the case where Pod A has a deferred resize and triggers the eviction of Pod B. In the meantime, a higher-priority resize of 
-Pod C is requested. In this case, the kubelet correctly prioritizes the resize of Pod C over the resize of Pod A.
-In this case, we ensure that Pod A stays in the scheduling queue until its resize can complete successfully, 
-including any additional evictions it may trigger.
+It is possible that the Kubelet chooses to resize a different pod than the one that triggered the eviction. Consider the case where Pod A has a deferred resize and triggers the eviction of Pod B. In the meantime, a higher-priority resize of Pod C is requested. The Kubelet prioritizes the resize of Pod C over the resize of Pod A.
 
-We can model deferred resize retries analogous to the way standard scheduling already works today. 
-For standard pods, if a pod cannot be scheduled:
-1. The new pod triggers preemption.
-2. The pod gets moved to the `Unschedulable` queue.
-3. When the preemption victim is finally removed, pods that were previously unschedulable but may now become schedulable are moved back to the active (or backoff) queue.
+When Pod B is evicted and removed, the scheduler evaluates Pod A again:
+1. Pod A fits on the node and completes the scheduling cycle through `Bind`, exiting the scheduling queue.
+2. The Kubelet actuates Pod C's scale-up instead of Pod A's, consuming the freed headroom.
+3. When the informer processes Pod C's scale-up event, the scheduler's `updatePod` event handler is modified to detect an assigned pod scale-up on that node, checks for any deferred pods on the node, and automatically re-enqueues Pod A back into the `activeQ`.
+4. Upon re-evaluation, the scheduler detects that Pod A no longer fits and initiates a new preemption cycle to clear space for Pod A.
 
-With deferred resize, we can follow a parallel path:
-1. The resize request triggers preemption.
-2. The pod gets moved to the `Unschedulable` queue.
-3. When the preemption victim is removed, the deferred resize pod is moved back to the active (or backoff) queue.
-
-However, a notable race condition arises: the Kubelet may not finish resizing either Pod A or Pod C before the scheduler evaluates Pod A again. During this reevaluation, the scheduler observes that the resize now 'fits' on the node during its node fit checks. 
-
-To protect against this race, we park the resize back into the `Unschedulable` queue. The lifecycle then resolves via one of three eventualities:
-- **Pod A is correctly resized**: It loses its deferred condition. The scheduler observes this through watches and discards it from tracking.
-- **Pod C is resized**: (Even though the scheduler preempted for Pod A). There is now no longer enough room for Pod A's resize. The scale-up event of Pod C triggers the `NodeResourcesFit` QHint, which moves Pod A back to the `activeQ` so it can trigger another preemption (as explained in [Handling Node Evaluation Results](#handling-node-evaluation-results)).
-- **Both Pod A and Pod C get resized**: Both lose deferred conditions and are removed from scheduling queue tracking entirely.
-
-The following diagram illustrates the flow:
 
 ```mermaid
 graph TD
-    A[Pod A Enters Queue] --> B{Does Resize Fit?}
+    A[Pod A Enters activeQ] --> B{Does Resize Fit?}
     B -- No --> C[Calculate Preemption Victims]
-    C --> D[Evict Pod B]
+    C --> D[Evict Victim Pod B]
     D --> E[Victim Pod B Removed]
+    E --> A
     
-    E --> F{Did Kubelet actuate Pod A?}
-    F -- Yes --> G[Remove Pod A from Tracking]
-    F -- No: Space consumed by competing Pod C --> H[Return Pod A to Unschedulable Queue]
-    
-    B -- Yes: Space cleared but Kubelet hasn't actuated --> I[Park Pod A in Unschedulable Queue]
-    I -- Pod C upsized: QHint triggers --> A
+    B -- Yes --> F[Complete Bind & Pop from Queue]
+    F --> G{Kubelet Actuation}
+    G -- Pod A Resized --> H[Resize Completed]
+    G -- Competing Pod C Scaled Up --> I[updatePod Event Handler Detects Scale-Up]
+    I --> A
 ```
 
 *See alternative considerations for the deferred resize lifecycle [here](#kubelet-scheduler-preemption-interaction-1).*
@@ -854,7 +840,7 @@ Integration tests in `test/integration/scheduler/preemption/deferred_resize_pree
   - Ensure that a single lower-priority pod can be preempted on the assigned node by a higher-priority pod with a `Deferred` resize.
   - Ensure that multiple lower-priority pods can be preempted to satisfy the resource deficit of a `Deferred` resize.
   - Ensure that pods with `preemptionPolicy: PreemptNever` do not trigger preemption when deferred.
-  - Ensure that when a deferred resize fits without preemption, the pod is parked in `unschedulablePods` (waiting for Kubelet actuation) without triggering binding or victim preemption.
+  - Ensure that when a deferred resize fits without preemption, the pod completes the scheduling cycle through `Bind` and exits the scheduling queue without creating a `Binding` object or triggering victim preemption.
   - Ensure that when a node disables resize preemption via `spec.podPreemptionPolicy.disableResizePreemption`, preemption is bypassed and the deferred pod remains parked without victim eviction.
   - Ensure that double preemption is prevented during long graceful termination periods (a terminating victim pod suppresses further preemption for the resizing pod).
   - Ensure that restarting the scheduler while a victim is terminating preserves preemption suppression until the victim is completely deleted.
@@ -870,6 +856,7 @@ Integration tests in `test/integration/scheduler/preemption/deferred_resize_pree
 - **Scheduling Queue Handlers**:
   - Ensure that existing deferred pods in the cluster are enqueued upon scheduler startup and informer synchronization.
   - Ensure that pods transitioning to a `Deferred` resize are automatically enqueued in the scheduling queue.
+  - Ensure that when an assigned pod scales up on a node, any deferred pods on that node are automatically re-enqueued into `activeQ`.
   - Ensure that pods are removed from the queue when their `Deferred` resize condition is cleared or resolved.
   - Ensure that deleting a deferred pod removes it from both the scheduler cache and scheduling queue.
 
@@ -1500,6 +1487,20 @@ We considered several alternative options for addressing this risk before settli
 #### Option 3: Reuse `status.nominatedNodeName` (Rejected)
 * **Description**: Reuse `pod.Status.NominatedNodeName` on the resizing pod to record the assigned node during preemption.
 * **Why Rejected**: Adds two unnecessary API status writes per resize (setting and clearing the field) and breaks downstream assumptions for external controllers (such as cluster autoscaler or monitoring dashboards) that treat `nominatedNodeName` as indicating an unscheduled pod waiting to bind.
+
+### Handling Successfully Fitted Deferred Resizes
+
+When a deferred resize pod fits on its assigned node (either initially or after preemption victims have cleared), the scheduler must handle its lifecycle while awaiting Kubelet actuation. We considered two alternatives before settling on the current approach:
+
+#### 1: Parking in Unschedulable Queue via `Permit` Rejection (Alpha Decision - Rejected for Beta)
+* **Description**: The `DeferredPodScheduling.Permit` plugin returns `UnschedulableAndUnresolvable` when a deferred resize fits, parking the pod in `unschedulablePods`. To wake the pod if another workload consumed the space before Kubelet actuation, `NodeResourcesFit` registered cluster-wide `UpdatePodScaleUp` QueueingHints (`isSchedulableAfterAssignedPodScaleUp`).
+* **Why Rejected**:
+  1. **Queue Pollution**: Successfully fitted pods sat in `unschedulablePods` in memory indefinitely until Kubelet actuation, consuming queue resources.
+  2. **QHint Overhead**: `UpdatePodScaleUp` QHints ran on every pod scale-up event across the entire cluster, iterating over all unschedulable pods to check matching node names.
+
+#### 2: Status Condition Transition in `Bind` (Rejected)
+* **Description**: When a deferred resize fits, the scheduler executes `Bind` and writes a status update (such as clearing `PodResizePending` or setting a condition `PodResizeFeasible: True`), popping the pod from the queue. If a competing pod consumed the space, Kubelet admission would fail and reset the status to `Reason: Deferred`, firing an `UpdatePod` event to re-enqueue.
+* **Why Rejected**: Requires introducing a new two-way status handshake between the Scheduler and Kubelet, adding API server write load on every successful resize evaluation and additionally introducing potential for race-conditions and version skew issues and complex state reconciliation across the Scheduler and Kubelet.
 
 ### Node-Level Preemption Policy API Options
 
