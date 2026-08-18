@@ -1,0 +1,48 @@
+title: Expanded X.509 client certificate authentication options
+kep-number: 6285
+authors:
+  - "@liggitt"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: 2026-08-18
+reviewers:
+  - "@deads2k"
+  - "@enj"
+approvers:
+  - "@deads2k"
+  - "@enj"
+
+see-also:
+  - "/keps/sig-auth/3331-structured-authentication-configuration"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  # beta: "v1.20"
+  # stable: "v1.22"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: MyFeature
+    components:
+      - kube-apiserver
+      - kube-scheduler
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+# metrics:
+#   - my_feature_metric
