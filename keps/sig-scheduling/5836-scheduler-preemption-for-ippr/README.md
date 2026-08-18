@@ -125,7 +125,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Kubelet Preemption Bypass for Resize Requests](#kubelet-preemption-bypass-for-resize-requests)
   - [Failures and Reconsideration of Deferred pods](#failures-and-reconsideration-of-deferred-pods)
     - [Failure Handler Adjustments for Deferred Pods](#failure-handler-adjustments-for-deferred-pods)
-  - [Scope of Interaction with Workload-Aware Preemption](#scope-of-interaction-with-workload-aware-preemption)
+  - [Interaction with Workload-Aware Scheduling (WAS) and Gang Scheduling](#interaction-with-workload-aware-scheduling-was-and-gang-scheduling)
   - [Metrics and Events](#metrics-and-events)
     - [Metrics](#metrics)
       - [New ALPHA metrics for deferred resize pods](#new-alpha-metrics-for-deferred-resize-pods)
@@ -169,6 +169,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Handling Successfully Fitted Deferred Resizes](#handling-successfully-fitted-deferred-resizes)
     - [1: Parking in Unschedulable Queue via <code>Permit</code> Rejection (Alpha Decision - Rejected for Beta)](#1-parking-in-unschedulable-queue-via-permit-rejection-alpha-decision---rejected-for-beta)
     - [2: Status Condition Transition in <code>Bind</code> (Rejected)](#2-status-condition-transition-in-bind-rejected)
+  - [WAS Integration Alternatives](#was-integration-alternatives)
+    - [Coordinated Group-Level Resize Preemption (Deferred)](#coordinated-group-level-resize-preemption-deferred)
   - [Node-Level Preemption Policy API Options](#node-level-preemption-policy-api-options)
     - [1. Node Annotations (Rejected)](#1-node-annotations-rejected)
     - [2. Pod-Level Preemption Disabled Condition (Rejected)](#2-pod-level-preemption-disabled-condition-rejected)
@@ -846,18 +848,27 @@ When a deferred resize scheduling cycle fails (i.e., there is a fit error and pr
 *   **Skipping `PodScheduled` Condition Updates**: The standard failure handler sets the pod's `PodScheduled` status condition to `False` (with reason `Unschedulable`). For a `Deferred` pod, updating this condition is skipped. For beta, we will implement emitting events to surface the results of the scheduling cycle for observability.
 *   **No Nominated Node Name (NNN) Assignment**: Standard scheduling failures can record a `NominatedNodeName` on the pod status to reserve space on a target candidate node. For a `Deferred` pod, no nominated node is set or updated. The pod is already bound to its host, and its resize can only be evaluated and satisfied on that specific host; nominating another node is invalid.
 
-### Scope of Interaction with Workload-Aware Preemption
+### Interaction with Workload-Aware Scheduling (WAS) and Gang Scheduling
 
-With workload-aware preemption, there are two scenarios to consider:
+When operating in clusters with Workload-Aware Scheduling (WAS / gang
+scheduling):
 
-1. **The selected victim pod is part of a workload**:
-   The scheduler preempts the entire workload. Since the preempted workload's priority is strictly lower than that of the resizing pod, this behaves as designed.
+* **Resizing Preemptor Pods**: `Deferred` resize pods belonging to a `PodGroup`
+  are evaluated and preempted individually (as standard single pods). We have no
+  established use cases yet for coordinated gang-resizing of pods; if concrete
+  use cases emerge in the future, we can reevaluate adding group-level resize
+  coordination.
+* **Candidate Victim Pods**: Because deferred resize preemption reuses
+  `DefaultPreemption` (`SelectVictimsOnNode`), victim selection automatically
+  inherits [KEP-5710: Workload-Aware Preemption](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5710-workload-aware-preemption)
+  behavior. If a candidate victim on the node belongs to a `PodGroup` with
+  `DisruptionMode: All`, evicting it disrupts the entire victim `PodGroup` across
+  nodes; the scheduler's victim ordering (`MoreImportantVictim`) and reprieval
+  logic account for this by prioritizing standalone pods for eviction over
+  disrupting `PodGroup` workloads.
 
-2. **The resizing pod itself is part of a workload**:
-   * **High-Level Direction**: When a resizing pod belongs to a workload group (e.g., a PodGroup scheduled atomically), resize-induced preemption must evaluate the impact on the entire workload group. The scheduler must verify if the resize violates any workload-wide invariants (such as minimum member availability or atomic group scheduling rules).
-   * **Queueing Behavior for Group Members**: A running pod that requests a resize must be queued and retried individually. If the pod belongs to a `PodGroup`, the scheduling queue instead treats the deferred pod as an independent individual pod. In Alpha, this will be implemented by having `isPodGroupMember` return `false` for deferred resize pods, allowing them to follow the standard individual queueing and backoff pathways.
-   * **Alpha Scope**: The resizing pod is evaluated individually for preemption victim selection on its assigned node. The scheduler does not proactively trigger group-wide rescheduling or preemption of other members of the workload group.
-   * **Beta Graduation**: Co-existence mechanics, including group-wide coordinated preemption (e.g., preempting other members of the same workload to balance resource usage or preventing preemption if the workload's group-wide health is already degraded), will be fully designed and finalized prior to Beta.
+*(See [WAS Integration Alternatives](#was-integration-alternatives) for a
+summary of coordinated gang-resize approaches considered and deferred.)*
 
 ### Metrics and Events
 
@@ -1813,6 +1824,27 @@ the current approach:
   resize evaluation and additionally introducing potential for race-conditions
   and version skew issues and complex state reconciliation across the Scheduler
   and Kubelet.
+
+### WAS Integration Alternatives
+
+#### Coordinated Group-Level Resize Preemption (Deferred)
+
+* **Description**: When an assigned pod belonging to a `PodGroup` transitions to
+  `Deferred`, enqueue the entire `PodGroup` into `scheduleOnePodGroup`. Enforce
+  a readiness guard in `PreFilter` comparing the number of `Deferred` members
+  against `spec.schedulingPolicy.gang.minCount` (with a 5s settling window to
+  account for sequential multi-pod `PATCH` skew), and execute atomic all-or-nothing
+  multi-node preemption across all resizing members of the gang.
+* **Why Deferred**:
+  1. **Lack of Established Use Cases**: Real-world distributed training workloads
+     typically run in a pod-per-node topology or scale individual pods
+     independently; there is no concrete production demand yet for coordinated
+     in-place resizing across an entire gang.
+  2. **Coordination Complexity & Edge Cases**: Obeying `minCount` for an already
+     running `PodGroup` introduces subtle edge cases (e.g., active pods dropping
+     below `minCount`, mixed `Deferred` and unscheduled pods sharing the same
+     parent group, and timer management for sequential patches) that are not
+     justified without proven user demand.
 
 ### Node-Level Preemption Policy API Options
 
