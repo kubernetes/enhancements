@@ -125,7 +125,13 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Kubelet Preemption Bypass for Resize Requests](#kubelet-preemption-bypass-for-resize-requests)
   - [Failures and Reconsideration of Deferred pods](#failures-and-reconsideration-of-deferred-pods)
     - [Failure Handler Adjustments for Deferred Pods](#failure-handler-adjustments-for-deferred-pods)
-  - [Scope of Interaction with Workload-Aware Preemption](#scope-of-interaction-with-workload-aware-preemption)
+  - [Interaction with Workload-Aware Scheduling (WAS) and Gang Scheduling](#interaction-with-workload-aware-scheduling-was-and-gang-scheduling)
+    - [1. Group-Level Scheduling Queue Enqueuing](#1-group-level-scheduling-queue-enqueuing)
+    - [2. Node-Locked Placement Invariant](#2-node-locked-placement-invariant)
+    - [3. Gang Resize Readiness Guard (Mitigating Controller Patch Skew)](#3-gang-resize-readiness-guard-mitigating-controller-patch-skew)
+    - [4. Workload-Level Resource Fit Checks](#4-workload-level-resource-fit-checks)
+    - [5. Workload-Aware Victim Selection and Reprieval](#5-workload-aware-victim-selection-and-reprieval)
+    - [6. Atomic Multi-Node Preemption](#6-atomic-multi-node-preemption)
   - [Metrics and Events](#metrics-and-events)
     - [Metrics](#metrics)
       - [Extending existing metrics with a new <code>operation</code> label](#extending-existing-metrics-with-a-new-operation-label)
@@ -168,6 +174,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Handling Successfully Fitted Deferred Resizes](#handling-successfully-fitted-deferred-resizes)
     - [1: Parking in Unschedulable Queue via <code>Permit</code> Rejection (Alpha Decision - Rejected for Beta)](#1-parking-in-unschedulable-queue-via-permit-rejection-alpha-decision---rejected-for-beta)
     - [2: Status Condition Transition in <code>Bind</code> (Rejected)](#2-status-condition-transition-in-bind-rejected)
+  - [WAS Integration Alternatives](#was-integration-alternatives)
+    - [Alternative 1: Independent Per-Pod Resizing for Gangs (Rejected)](#alternative-1-independent-per-pod-resizing-for-gangs-rejected)
+    - [Alternative 2: Unguarded Atomic Group Preemption (Rejected)](#alternative-2-unguarded-atomic-group-preemption-rejected)
   - [Node-Level Preemption Policy API Options](#node-level-preemption-policy-api-options)
     - [1. Node Annotations (Rejected)](#1-node-annotations-rejected)
     - [2. Pod-Level Preemption Disabled Condition (Rejected)](#2-pod-level-preemption-disabled-condition-rejected)
@@ -677,18 +686,56 @@ When a deferred resize scheduling cycle fails (i.e., there is a fit error and pr
 *   **Skipping `PodScheduled` Condition Updates**: The standard failure handler sets the pod's `PodScheduled` status condition to `False` (with reason `Unschedulable`). For a `Deferred` pod, updating this condition is skipped. For beta, we will implement emitting events to surface the results of the scheduling cycle for observability.
 *   **No Nominated Node Name (NNN) Assignment**: Standard scheduling failures can record a `NominatedNodeName` on the pod status to reserve space on a target candidate node. For a `Deferred` pod, no nominated node is set or updated. The pod is already bound to its host, and its resize can only be evaluated and satisfied on that specific host; nominating another node is invalid.
 
-### Scope of Interaction with Workload-Aware Preemption
+### Interaction with Workload-Aware Scheduling (WAS) and Gang Scheduling
 
-With workload-aware preemption, there are two scenarios to consider:
+When in-place pod resizing operates in clusters running Workload-Aware Scheduling (WAS / WAP), the scheduler coordinates resizing and preemption at the group level to preserve workload invariants.
 
-1. **The selected victim pod is part of a workload**:
-   The scheduler preempts the entire workload. Since the preempted workload's priority is strictly lower than that of the resizing pod, this behaves as designed.
+#### 1. Group-Level Scheduling Queue Enqueuing
+When an assigned pod belonging to a `PodGroup` transitions to `Deferred`, the scheduler's informer event handlers identify its parent `PodGroup` (and root `CompositePodGroup` if nested) and enqueue the entire group into the scheduling queue. This ensures that multi-pod resize requests are evaluated collectively within `scheduleOnePodGroup` rather than as isolated, decoupled per-pod scheduling cycles.
 
-2. **The resizing pod itself is part of a workload**:
-   * **High-Level Direction**: When a resizing pod belongs to a workload group (e.g., a PodGroup scheduled atomically), resize-induced preemption must evaluate the impact on the entire workload group. The scheduler must verify if the resize violates any workload-wide invariants (such as minimum member availability or atomic group scheduling rules).
-   * **Queueing Behavior for Group Members**: A running pod that requests a resize must be queued and retried individually. If the pod belongs to a `PodGroup`, the scheduling queue instead treats the deferred pod as an independent individual pod. In Alpha, this will be implemented by having `isPodGroupMember` return `false` for deferred resize pods, allowing them to follow the standard individual queueing and backoff pathways.
-   * **Alpha Scope**: The resizing pod is evaluated individually for preemption victim selection on its assigned node. The scheduler does not proactively trigger group-wide rescheduling or preemption of other members of the workload group.
-   * **Beta Graduation**: Co-existence mechanics, including group-wide coordinated preemption (e.g., preempting other members of the same workload to balance resource usage or preventing preemption if the workload's group-wide health is already degraded), will be fully designed and finalized prior to Beta.
+#### 2. Node-Locked Placement Invariant
+In gang scheduling, member pods are already placed and bound to specific nodes. The scheduler enforces that resizing pods are evaluated strictly on their assigned hosts through two mechanisms:
+* **Placement Short-Circuiting**: The workload placement engine detects that all member pods already have `spec.nodeName` populated, bypassing expensive cluster-wide candidate placement combinatorics and restricting evaluation directly to the pods' current nodes.
+* **Filtering Invariant**: Within candidate node evaluation, the `NodeName` plugin's `PreFilter` and `Filter` phases strictly reject any node other than the pod's assigned `spec.nodeName`. The scheduler never attempts to migrate or reschedule bound pods to other hosts during an in-place resize.
+
+#### 3. Gang Resize Readiness Guard (Mitigating Controller Patch Skew)
+In Kubernetes, there is no transactional multi-pod `PATCH` API. External autoscalers patch worker pods sequentially (e.g. patching Worker 0, then Worker 1, then Worker 2). This means that the scheduler may see the first worker in a gang transition to `Deferred`, while the other workers are still in the process of being patched. This can lead to the scheduler preempting for only the first worker, rather than for the entire gang.
+
+The `PodGroup` API already defines `spec.schedulingPolicy.gang.minCount`, which represents the minimum number of member pods that must be schedulable concurrently to satisfy the gang's all-or-nothing quorum. To prevent the scheduler from prematurely executing preemption on the first patched worker while the remaining workers are still awaiting API updates, the `DeferredPodScheduling` plugin implements a readiness check during `PreFilter`:
+
+* **Quorum Evaluation**: The plugin inspects the gang's snapshot. It counts the number of member pods currently in `Deferred` state (`deferredCount`) and compares it to the gang's configured `minCount`. If `deferredCount >= minCount`, the `DeferredPodScheduling` plugin allows the pod to proceed to the next phase.
+
+* **Settling Window**: If `deferredCount < minCount`, the plugin calculates the elapsed time since the latest member transitioned to `Deferred`. If the time elapsed exceeds a settling window, the `DeferredPodScheduling` plugin assumes the partial resize attempt is intended and allows the pod to proceed to the next phase. The settling window is hardcoded to 5 seconds in the initial beta; we can consider making it configurable in a future release. This can be implemented by maintaining a debounced timer per `PodGroup` that reactivates the group for scheduling once the settling window has elapsed.
+
+#### 4. Workload-Level Resource Fit Checks
+During `scheduleOnePodGroup`, the scheduler evaluates resource availability for each resizing pod on its assigned node using the scheduler cache snapshot:
+* **Tentative In-Memory Reservation**: As each resizing pod passes its filter checks, the scheduler tentatively assumes the pod at its requested spec on the `NodeInfoSnapshot`.
+* **Mock-Bind Completion**: Resizing pods that successfully fit pass the `Permit` phase. The scheduler runs the binding cycle, skips the binding call, and the pods exit the queue, similar to how normal pods exit the queue after binding.
+* **Preemption Trigger**: If any resizing pod fails its fit check, which is expected for `Deferred` pods, the scheduler invokes `PodGroupPostFilter` to evaluate multi-node preemption.
+
+#### 5. Workload-Aware Victim Selection and Reprieval
+When evaluating candidate victims across the nodes hosting the gang, preemption respects [KEP-5710: Workload-Aware Preemption](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5710-workload-aware-preemption):
+* If a candidate victim belongs to a `PodGroup` configured with `DisruptionMode: All`, evicting that pod cascades eviction across the entire victim gang across the cluster.
+* The preemption engine factors this collective disruption cost into candidate ranking, strictly preferring standalone pods or `DisruptionMode: Single` pods over disrupting entire gangs.
+* During the reprieve phase, victim groups are reprieved atomically.
+
+#### 6. Atomic Multi-Node Preemption
+When multiple pods in a `PodGroup` require preemption across different nodes, the preemption engine executes an atomic, all-or-nothing preemption cycle:
+* **All-or-Nothing Preemption Dry Run**: The preemption algorithm dry-runs victim candidate selection across all nodes assigned to the resizing gang members.
+* **Atomic Dispatch**: If and only if **all** resizing pods find sufficient victim capacity on their respective nodes, the scheduler commits the preemption cycle and dispatches eviction calls across all affected nodes simultaneously.
+* **Zero-Disruption Rollback**: If even a single resizing pod cannot satisfy its deficit on its node, the entire preemption attempt fails atomically. Tentative state is cleared in memory, and **zero victims are evicted on any node**.
+
+This atomic behavior is necessary for several reasons:
+1. In synchronous distributed training, all workers must execute symmetric compute steps before synchronizing via collective operations. If only a subset of workers scales up, the entire distributed run is bottlenecked by the slowest un-resized worker, wasting the additional resources granted to the resized pods.
+2. Asymmetric resource allocations across workers in a gang can lead to communication timeouts or out-of-memory errors on the worker that could not be resized.
+3. If an autoscaler (such as the Vertical Pod Autoscaler) fails to resize a worker in-place, it may fall back to evicting the pod to recreate it with larger requests. For a `PodGroup` configured with `DisruptionMode: All`, evicting that single pod will trigger the cascaded termination of the entire gang.
+4. Evicting lower-priority victim workloads on nodes where the gang cannot fully scale up causes unnecessary disruption without providing any throughput benefit to the resizing job.
+
+While preemption dispatch by the scheduler is atomic, physical resize actuation by Kubelet remains node-local and asynchronous. Each node's Kubelet admits and actuates the resize once its local victims finish graceful termination.
+
+To prevent duplicate preemption while victims are gracefully terminating or across scheduler restarts, the preemption evaluator checks `spec.nodeName` across all resizing members of the gang (analogous to the single-pod mechanism described in [Preventing Additional Preemption Across Grace Periods and Restarts](#preventing-additional-preemption-across-grace-periods-and-restarts)). If any assigned node contains lower-priority terminating victims, ongoing preemption is recognized and further preemption for the gang is suppressed until the victims have cleared.
+
+*(See [WAS Integration Alternatives](#was-integration-alternatives) for an analysis of rejected per-pod and unguarded group preemption approaches.)*
 
 ### Metrics and Events
 
@@ -863,6 +910,11 @@ Integration tests in `test/integration/scheduler/preemption/deferred_resize_pree
 - **Metrics Verification**:
   - Ensure `scheduler_pending_pods` and `scheduler_preemption_attempts_total` emit `operation="pod_resize"` labels during deferred resize processing.
   - Verify that `scheduler_schedule_attempts_total` is not incremented for deferred resize cycles.
+
+- **Workload-Aware & Gang Preemption**:
+  - Ensure that when a resizing pod in a `PodGroup` requires preemption, candidate victims are evaluated across all gang nodes atomically.
+  - Ensure zero-victim rollback: if even one gang member cannot find preemption victims on its assigned host, no victims are evicted on any node.
+  - Ensure the Gang Resize Readiness Guard respects `minCount`: if `deferredCount < minCount`, verify the gang waits for the settling window (5s) before preemption evaluation.
 
 ##### e2e tests
 
@@ -1501,6 +1553,31 @@ When a deferred resize pod fits on its assigned node (either initially or after 
 #### 2: Status Condition Transition in `Bind` (Rejected)
 * **Description**: When a deferred resize fits, the scheduler executes `Bind` and writes a status update (such as clearing `PodResizePending` or setting a condition `PodResizeFeasible: True`), popping the pod from the queue. If a competing pod consumed the space, Kubelet admission would fail and reset the status to `Reason: Deferred`, firing an `UpdatePod` event to re-enqueue.
 * **Why Rejected**: Requires introducing a new two-way status handshake between the Scheduler and Kubelet, adding API server write load on every successful resize evaluation and additionally introducing potential for race-conditions and version skew issues and complex state reconciliation across the Scheduler and Kubelet.
+
+### WAS Integration Alternatives
+
+#### Alternative 1: Independent Per-Pod Resizing for Gangs (Rejected)
+
+* **Description**: Each resizing pod within a `PodGroup` is enqueued and evaluated individually. If Node 1, Node 2, and Node 3 have preemption victims, Workers 0, 1, and 2 resize in-place, while Worker 4 on Node 4 remains in a `Deferred` state if Node 4 has no available victims.
+* **Why Rejected**:
+  1. In synchronous distributed training, all workers must execute symmetric compute steps before synchronizing via collective all-reduce operations. If a subset of workers scales up while others remain bottlenecked, the entire distributed run is throttled by the slowest worker, completely wasting the upgraded resources on the resized nodes.
+  2. Asymmetric resource allocations across workers in a gang can lead to communication timeouts or out-of-memory crashes on the un-resized worker.
+  3. Autoscalers (such as VPA) that cannot fulfill an in-place resize will eventually fall back to evicting and recreating the un-resized worker. For a `PodGroup` configured with `DisruptionMode: All`, evicting a single worker triggers the cascaded termination of the entire gang, destroying training state.
+  4. Evicting lower-priority victim workloads on nodes where the gang cannot achieve its full scaled state wastes cluster capacity and causes avoidable disruption without providing throughput benefits to the resizing job.
+
+#### Alternative 2: Unguarded Atomic Group Preemption (Rejected)
+
+* **Description**: Enqueue the `PodGroup` immediately upon the first pod transitioning to `Deferred` and execute atomic preemption in `scheduleOnePodGroup` without a settling window or readiness check.
+* **Why Rejected (The Sequential Patch Trap)**:
+  * Because Kubernetes lacks an atomic multi-pod patch API, autoscalers send sequential `PATCH` requests for each pod in a gang.
+  * **Failure Scenario**:
+    1. A 4-worker gang needs to scale from 4 CPUs to 8 CPUs.
+    2. The autoscaler patches Worker 0. Kubelet defers it.
+    3. The scheduler immediately enqueues the `PodGroup` and evaluates before the autoscaler can send patches for Workers 1, 2, and 3.
+    4. The scheduler inspects the gang: Worker 0 requests 8 CPUs (needs preemption). Workers 1, 2, and 3 still have their un-patched specs of 4 CPUs.
+    5. The scheduler finds that Workers 1, 2, and 3 fit at their current 4 CPU spec, and Node 0 has victims for Worker 0. Believing the entire gang is satisfied, the scheduler commits preemption **only on Node 0**.
+    6. Milliseconds later, patches arrive for Workers 1, 2, and 3. If Node 1 has no victims, Worker 1 is stuck in `Deferred`.
+  * **Outcome**: Without the readiness guard, unguarded group preemption silently degrades into partial, single-node preemption, failing to prevent gang asymmetry.
 
 ### Node-Level Preemption Policy API Options
 
