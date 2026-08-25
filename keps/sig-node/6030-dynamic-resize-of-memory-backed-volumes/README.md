@@ -97,7 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [OOM-kills](#oom-kills)
 - [Design Details](#design-details)
   - [API Changes](#api-changes)
-    - [New Status Fields and State Mapping](#new-status-fields-and-state-mapping)
+    - [State Mapping and Status Tracking](#state-mapping-and-status-tracking)
     - [API Validation and Restrictions](#api-validation-and-restrictions)
     - [Resize Restart Policy](#resize-restart-policy)
     - [Atomic Resize Principle](#atomic-resize-principle)
@@ -219,6 +219,7 @@ This enhancement builds directly on the foundation laid by **In-Place Pod Vertic
 *   Resizing non-memory-backed `emptyDir` volumes (disk-backed).
 *   Resizing other volume types (such as PVCs, CSI ephemeral volumes etc.) through this mechanism.
 *   Supporting this feature on nodes running with cgroup v1 (due to limitations in memory accounting and tracking for shared `tmpfs` volumes).
+*   Supporting this feature on Windows nodes (in-place memory-backed volume resize is Linux-only, just like `InPlacePodVerticalScaling`).
 
 ## Proposal
 
@@ -246,11 +247,11 @@ The mitigation for this risk is that the API server can emit a warning when it s
 
 ### API Changes
 
-#### New Status Fields and State Mapping
+#### State Mapping and Status Tracking
 
 To support dynamic resizing, the `Pod.Spec.Volumes[].EmptyDir.SizeLimit` field is made **mutable** when modified via the `/resize` subresource for existing Pods (when `medium` is `Memory`). This represents the **Desired State**.
 
-We introduce a new sub-structure under `corev1.VolumeStatus` (in `Pod.Status`) to track the actual resize state of the volume:
+This enhancement builds upon the resource state tracking model established in [In-Place Pod Vertical Scaling (KEP-1287)](/keps/sig-node/1287-in-place-update-pod-resources#resource-states), extending the lifecycle progression to memory-backed volumes:
 
 *   **Desired State**: Represented by the mutable `Pod.Spec.Volumes[].EmptyDir.SizeLimit`.
 *   **Allocated State**: Checkpointed and maintained by the Kubelet's `AllocationManager` for local resource accounting, but **not exposed** in `Pod.Status`.
@@ -258,28 +259,12 @@ We introduce a new sub-structure under `corev1.VolumeStatus` (in `Pod.Status`) t
     *   *Initial Admission*: Admitted and checkpointed locally by the Kubelet once the initial resource admission phase completes.
     *   *Admission during Resize*: Upon admitting a resize update, the `AllocationManager` updates the Kubelet's local checkpoint with the newly acknowledged capacity.
     *   *Scope*: Maintained only for memory-backed `emptyDir` volumes.
-*   **Actual State**: Represented by the new `VolumeStatus.EmptyDir.SizeLimit`.
-    *   *Definition*: Represents the actual mounted filesystem capacity reported by the mount/remount call.
-    *   *Pod Creation*: Remains unpopulated (`nil`) until Kubelet completes the initial volume mount setup and receives capacity confirmation from the mounter.
-    *   *Pod Resize*: During an active resize operation, this field retains the *old* mounted size until the Kubelet successfully actuates the `tmpfs` remount, at which point it is updated to the new actual capacity.
-    *   *Default/Fallback*: Remains unpopulated (`nil`) for all non-memory-backed volumes.
-
-The new status field `Pod.Status.ContainerStatuses[].VolumeMounts[].VolumeStatus.EmptyDir.SizeLimit` is only populated for memory-backed volumes, and remains unpopulated for other types of volumes. The `VolumeStatus` Go struct is updated as follows:
-
-```go
-type VolumeStatus struct {
-    ...
-    // emptyDir represents the status of an emptyDir volume.
-    // +optional
-    EmptyDir *EmptyDirVolumeStatus `json:"emptyDir,omitempty" protobuf:"bytes,2,opt,name=emptyDir"`
-}
-type EmptyDirVolumeStatus struct {
-    // sizeLimit represents the actual mounted capacity of the emptyDir volume.
-    // This is only populated for memory-backed emptyDir.
-    // +optional
-    SizeLimit *resource.Quantity `json:"sizeLimit,omitempty" protobuf:"bytes,1,opt,name=sizeLimit"`
-}
-```
+*   **Actuated State**: Checkpointed and maintained locally by `KuberuntimeManager` to track the volume capacity passed to the volume plugin to actuate.
+    *   *Definition*: Represents the target size that the Kubelet successfully actuated via `ResizeEphemeralVolume`.
+    *   *Scope*: Not reported in the API.
+*   **Actual State**: Represents the actual mounted filesystem capacity of the `tmpfs` volume on the node.
+    *   *Definition*: Represents the actual mounted capacity reported by the mount/remount call.
+    *   *Scope*: Unlike container resources, actual volume capacity is **not exposed** in `Pod.Status`. Users can inspect the actual mount size on the node or within the container via `df` command on the volume mount point.
 
 #### API Validation and Restrictions
 
@@ -335,7 +320,7 @@ graph TD
     KRT -->|8b. Updates Cgroups| CRI
     KRT -->|"8c. Remounts Volume (Upsize)"| VM
     VM -->|9. Executes Remount System Call| Kernel
-    KRT -->|"10. Updates Status (Volume Mount Actual State)"| API
+    KRT -->|"10. Clears PodResizeInProgress Condition"| API
 ```
 
 The following steps elaborate on this flow:
@@ -353,12 +338,11 @@ The following steps elaborate on this flow:
 *   The `KuberuntimeManager` reads the `AllocatedSizeLimit` from the local checkpointed state maintained by `AllocationManager`.
 *   It acts as the central orchestrator for the actuation phase to enforce strict ordering. See [Resource Coordination: Volume and Cgroup Ordering of Updates](#resource-coordination-volume-and-cgroup-ordering-of-updates) for the detailed rationale behind this ordering.
 *   The `KuberuntimeManager` checks the direction of the volume resize (upsize vs. downsize) by comparing the newly allocated size with the checkpointed **Actuated State** (the target size that the Kubelet last attempted to apply, which is maintained in Kuberuntime's internal checkpoint). Comparing against the *actuated* state rather than the live kernel state avoids unnecessary remount requests caused by kernel rounding differences.
-* The `KuberuntimeManager` directly calls a new interface on the Volume Manager (see [Volume Manager interface](#volume-manager-interface)) to perform the remount at the correct time, bypassing the async reconciler loop. The Volume Manager executes the remount: `mount -o remount,size=<limit> -t tmpfs tmpfs <path>`. Once this actuation completes, the `KuberuntimeManager` checkpoints this sizeLimit in its own **Actuated State**. This Actuated State represents what the Kubelet tries to actuate, which may diverge slightly from what is read directly from the kernel (`Actual State`).
-* **Note**: Bypassing the async reconciler loop is both safe and inconsequential. The `emptyDir` reconciler today never remounts because `RequiresRemount` is hardcoded to always return false; this means that the `KuberuntimeManager` is the only component that makes this change. We considered alternatives such as relying on the `emptyDir` reconciler to detect changes asynchronously or moving `emptyDir` handling entirely to `KuberuntimeManager`, but they are ruled out. See [Alternatives](#alternatives) for more details.
+*   The `KuberuntimeManager` directly calls a new interface on the Volume Manager (see [Volume Manager interface](#volume-manager-interface)) to perform the remount at the correct time, bypassing the async reconciler loop. The Volume Manager executes the remount: `mount -o remount,size=<limit> -t tmpfs tmpfs <path>`. Once this actuation completes, the `KuberuntimeManager` checkpoints this sizeLimit in its own **Actuated State**. This Actuated State represents what the Kubelet tries to actuate, which may diverge slightly from what is read directly from the kernel (`Actual State`).
+*   **Note**: Bypassing the async reconciler loop is both safe and inconsequential. The `emptyDir` reconciler today never remounts because `RequiresRemount` is hardcoded to always return false; this means that the `KuberuntimeManager` is the only component that makes this change. We considered alternatives such as relying on the `emptyDir` reconciler to detect changes asynchronously or moving `emptyDir` handling entirely to `KuberuntimeManager`, but they are ruled out. See [Alternatives](#alternatives) for more details.
 
 ### 4. Observation & Feedback Loop
 *   Upon successful remount and cgroup update, the `KuberuntimeManager` checkpoints the new target values as the current 'actuated resources' (the baseline for future resizes).
-*   The Kubelet updates `Pod.Status.ContainerStatuses[].VolumeMounts[].VolumeStatus.EmptyDir.SizeLimit` to reflect the successful resize.
 *   Once the actual size matches the allocated size checkpoint (and container resource updates are complete), the Kubelet clears the `PodResizeInProgress` condition.
 
 ### Resource Coordination: Volume and Cgroup Ordering of Updates
@@ -449,7 +433,7 @@ The `KuberuntimeManager` serves as the coordination layer that understands the n
 
 To support direct resizing from the `KuberuntimeManager` while maintaining separation of concerns, this proposal extends the Volume Manager and Volume Plugin interfaces:
 
-*   **VolumeManager Extension**: The `VolumeManager` interface is extended with `ResizeEphemeralVolume(pod *v1.Pod, volumeName string, newSize *resource.Quantity) error` and `GetVolumeSize(pod *v1.Pod, volumeName string) (*resource.Quantity, error)`. This allows the `KuberuntimeManager` to query the current size and trigger volume operations synchronously at the correct time in its sync loop.
+*   **VolumeManager Extension**: The `VolumeManager` interface is extended with `ResizeEphemeralVolume(pod *v1.Pod, volumeName string, newSize *resource.Quantity) error`. This allows the `KuberuntimeManager` to trigger volume operations synchronously at the correct time in its sync loop.
 *   **ResizableEphemeralVolumePlugin Interface**: A new optional interface `ResizableEphemeralVolumePlugin` is introduced in `pkg/volume/plugins.go`. Volume plugins that support online, synchronous resizing (in this case, the `emptyDir` plugin for memory-backed volumes) can implement this interface. The `VolumeManager` checks if the plugin for the volume implements this interface and delegates the call to it.
 
 This design allows `KuberuntimeManager` to act as the central orchestrator for resource updates (ensuring strict ordering with cgroups) while leaving the actual filesystem manipulation logic encapsulated within the volume plugins.
@@ -465,7 +449,11 @@ On startup, the container runtime helps to bind the Kubelet's host path into the
 In the existing `InPlacePodVerticalScaling` feature, a best-effort safety logic ensures that container memory limits are not decreased below usage.
 
 #### Alpha
-For Alpha, shrinkage safety checks for memory-backed volumes are out of scope. If a user attempts to shrink a volume below its current usage, the `tmpfs` remount fails at the kernel level with an `EINVAL` error. This error is propagated back to the Kubelet and surfaced in the `PodResizeInProgress` condition as `mount point not mounted or bad option`. The Kubelet will periodically retry the resize operation until it succeeds, is cancelled, or the Pod terminates.
+For Alpha, shrinkage safety checks for memory-backed volumes are out of scope. If a user attempts to shrink a volume below its current usage, `/bin/mount` fails at the kernel level:
+* On modern Linux kernels (>= 5.2, util-linux >= 2.36) using the `fsconfig` tmpfs mount API, `/bin/mount` fails with exit status 32, returning `fsconfig() failed: tmpfs: Too small a size for current use.`.
+* On older Linux kernels (< 5.2) using legacy `mount(2)` with `MS_REMOUNT`, the syscall fails with `EINVAL` or `ENOSPC`, surfaced by `/bin/mount` as `mount point not mounted or bad option`.
+
+In all Linux kernel versions, the kernel rejects the downsize operation without modifying the mount or corrupting in-use pages. This error is propagated back to the Kubelet and surfaced in the `PodResizeInProgress` condition. The Kubelet will periodically retry the resize operation until it succeeds, is cancelled, or the Pod terminates.
 
 #### Beta
 For Beta, we will leverage and align with the Kubelet's existing resource validation framework to prevent OOMs:
@@ -473,16 +461,16 @@ For Beta, we will leverage and align with the Kubelet's existing resource valida
     *   **Container-level Validation**: Ensures the proposed container memory limit is not decreased below its current container cgroup usage. Note that this check is insufficient if dynamic kernel-level page charge migration has temporarily shifted memory charges to another container (see [Memory Attribution & cgroup Limits](#memory-attribution--cgroup-limits)).
     *   **Pod-level Validation**: For pods with enforced Pod-level cgroup limits (e.g., pods with pod-level limits specified, Guaranteed pods, or Burstable pods where all containers specify limits), the Kubelet validates the proposed aggregate Pod limit against the Pod-level cgroup usage. This acts as a reliable backstop since it compares against the aggregate memory footprint regardless of charge migration.
 *   **Volume-level Safety Options**: For shrinking the volume `sizeLimit` itself, we will consider one of two options (to be finalized prior to Beta):
-    1.  **Error Reporting Enhancement**: Assume the generic kernel `EINVAL` error implies that the volume size limit shrink failed because the volume usage exceeds the new desired limit, and improve the error message accordingly.
+    1.  **Error Reporting Enhancement**: Assume the generic kernel error implies that the volume size limit shrink failed because the volume usage exceeds the new desired limit, and provide a custom error message in the `PodResizeInProgress` condition.
     2.  **Active Pre-Resize Validation**: Actually add an additional validation check in `KuberuntimeManager` that compares the actual bytes stored in the volume against the new desired `sizeLimit` before attempting the remount. If this check fails, the Kubelet will block the resize. This check is subject to a TOCTOU (time-of-check to time-of-use) race condition.
 
 The Kubelet will periodically retry the resize operation until it succeeds, is cancelled, or the Pod terminates.
 
 #### emptyDir Size Limit Monitoring and Eviction
 
-The Kubelet runs a local storage capacity monitoring system (part of the eviction manager) to ensure that the space usage of `emptyDir` volumes does not exceed their volume size limits, and triggers evictions when necessary. The eviction manager currently checks the `sizeLimit` defined in the Pod spec and compares it to the volume usage of the Pod.
+The Kubelet runs a local storage capacity monitoring system (part of the eviction manager) to ensure that the space usage of `emptyDir` volumes does not exceed their volume size limits, and triggers evictions when necessary.
 
-For memory-backed volumes, the eviction manager is updated to instead inspect the actual `sizeLimit` by reading the actual capacity from the pod volume stats. This ensures that the eviction manager does not trigger evictions due to changes in the desired `sizeLimit`, but only when the actual `sizeLimit` is exceeded.
+For memory-backed `emptyDir` volumes (`medium: Memory`), the eviction manager skips size limit eviction when `InPlacePodVerticalScalingMemoryBackedVolumes` is enabled. Because memory-backed volumes are backed by `tmpfs`, their size limit is enforced directly by the Linux kernel, returning `ENOSPC` when the volume size limit is reached. Eviction manager enforcement is not needed.
 
 ### Interaction with Ephemeral Storage: Resource Accounting and Eviction
 
@@ -521,20 +509,26 @@ None.
 ##### Unit tests
 
 Unit tests in the following packages are added or extended to cover the new logic:
-- `pkg/kubelet/kuberuntime`: Test `computeVolumeResizeAction` to ensure it correctly detects size differences, and `doPodResizeAction` to verify the strict ordering of cgroup and volume updates.
-- `pkg/kubelet/volumemanager`: Test `ResizeEphemeralVolume` and `GetVolumeSize` to ensure correct delegation to supporting plugins.
-- `pkg/volume/emptydir`: Test `DirectResize` (remount execution) and `GetVolumeSize` (parsing mount options).
-- `pkg/kubelet/eviction`: Test `emptyDirLimitEviction` to ensure it correctly reads from stats capacity instead of spec.
+- `pkg/apis/core/validation`: Test `ValidatePodResize` to verify that `sizeLimit` of memory-backed volumes is mutable on resize, and that adding/removing/renaming volumes or modifying size limits of non-memory volumes is forbidden.
+- `pkg/registry/core/pod`: Test `dropNonResizeUpdates` to verify that volume size limit updates are preserved on resize when the feature gate is enabled, and reverted when disabled.
+- `pkg/kubelet/allocation`: Test allocation manager to verify that `sizeLimit` of memory-backed volumes is checkpointed as allocated resources, and that cgroups v1 nodes reject resize requests as `Infeasible`.
+- `pkg/kubelet/kuberuntime`: Test `computeVolumeResizeAction` to ensure it detects size differences, `doPodResizeAction` to verify the strict ordering of cgroup and volume updates, and `IsPodResizeInProgress` to check volume resize progress.
+- `pkg/kubelet/volumemanager`: Test `ResizeEphemeralVolume` to ensure correct delegation to supporting plugins.
+- `pkg/volume/emptydir`: Test `ResizeEphemeralVolume` (remount execution on Linux and stubs for unsupported OSes).
+- `pkg/kubelet/eviction`: Test `emptyDirLimitEviction` to ensure that memory-backed `emptyDir` volumes are skipped.
 
 ##### Integration tests
 
-Unit and E2E tests provide sufficient coverage for Alpha. For Beta, the testing plan re-evaluates whether integration tests are required.
+Integration tests in `test/integration/pods/pods_test.go` (`TestNodeDeclaredFeatureAdmission`) verify API server admission behavior when `InPlacePodVerticalScalingMemoryBackedVolumes` is declared or missing on the destination node.
 
 ##### e2e tests
 
-A new E2E test case is added (or existing In-Place Pod Resize tests are extended) in `test/e2e/`:
-- **Successful Upsize Test**: Creates a pod with a memory volume (e.g., 100Mi), patches the size limit to 200Mi via the `resize` subresource, and verifies that the mount inside the container reflects the new size (e.g., checking `mount` output via exec) and that the `PodResizeInProgress` condition clears.
-- **Failure on Shrink Test**: Verifies that attempting to shrink a volume below its current data usage results in a remount failure, and that the error is surfaced in the pod status condition.
+E2E tests in the following suites verify end-to-end functionality:
+- `test/e2e/common/node/pod_resize.go`: Verifies online upsize and downsize of memory-backed `emptyDir` volumes alone and concurrently with container resource updates, asserting mount capacity inside the container and verifying that `PodResizeInProgress` clears.
+- `test/e2e/node/pod_resize.go`: Serial E2E tests verifying deferred resize behavior for memory-backed volumes under resource pressure.
+- `test/e2e_node/pod_resize_criproxy_linux_test.go`: Node E2E tests using CRI proxy interception to verify actuation ordering and error handling/retry loops.
+
+For Beta, we plan to add failure on shrink tests for both pod-level and container-level.
 
 ### Graduation Criteria
 
@@ -693,7 +687,7 @@ will rollout across nodes.
 **Rollout Failure Scenarios and Impact:**
 *   **Node-Declared Feature Gating (Skew Prevention):** If a client attempts to mutate `emptyDir.sizeLimit` on a Pod scheduled on a Kubelet that does not support the feature (or does not have the feature gate enabled), the API Server automatically rejects the patch via Node Declared Features. This prevents skew issues where a spec is modified but cannot be actuated by the Kubelet.
 *   **Kubelet Crash or Restart Mid-Actuation:** If the Kubelet restarts or crashes after writing the local `AllocationManager` checkpoint but before executing the dynamic `tmpfs` remount syscall, the Kubelet's startup reconciliation loop automatically discovers the discrepancy between the checkpointed state (allocated limit) and the actual host mount parameters, and it will safely re-attempt and complete the remount.
-*   **Actuation Failure:** If the mounter's `remount` syscall fails, the volume stays at its previous size limit. The Pod's actual volume status will remain out-of-sync with the desired spec, but the running workload continues to execute safely at the old size.
+*   **Actuation Failure:** If the mounter's `remount` syscall fails, the volume stays at its previous size limit. The actual mounted volume capacity remains out-of-sync with the desired spec (surfaced via the `PodResizeInProgress` condition with `Reason: Error`), but the running workload continues to execute safely at the old size.
 
 **Rollback Failure Scenarios and Impact:**
 *   **Pending Resize State Mismatch (Disablement Skew):** If the feature gate is disabled while a Pod has an active, pending resize operation (i.e., the Pod spec has been updated to a new `sizeLimit` but the Kubelet has not yet completed the mount/remount actuation):
@@ -730,7 +724,7 @@ The following manual verification plan will validate the behavior during develop
     1.  Deploy a cluster with the `InPlacePodVerticalScalingMemoryBackedVolumes` feature gate disabled.
     2.  Create a Pod with a memory-backed `emptyDir` volume configured with a static `sizeLimit: 128Mi`.
     3.  Enable the feature gate and restart the control plane and Kubelet components.
-    4.  Submit a dynamic resize request targeting `256Mi`. Verify that the Kubelet successfully remounts the `tmpfs` filesystem, the host mount reflects `256Mi` via `df`, and the Pod status reports `256Mi` under `VolumeStatus.EmptyDir.SizeLimit`.
+    4.  Submit a dynamic resize request targeting `256Mi`. Verify that the Kubelet successfully remounts the `tmpfs` filesystem, the host mount reflects `256Mi` via `df`, and the `PodResizeInProgress` condition clears.
 *   **Downgrade/Rollback Path Test:**
     1.  With the feature gate active, create a Pod with a memory-backed volume of `128Mi` and dynamically resize it to `256Mi`.
     2.  Write `200Mi` of files to the volume to confirm active capacity utilization.
@@ -873,7 +867,7 @@ Focusing mostly on:
 -->
 
 Yes.
-* **API call type**: One new `PATCH /status` call on the `Pod` resource per successful pod volume resize to update the actual volume status.
+* **API call type**: Standard `PATCH /status` calls during Pod status reconciliation to reflect the transition of the `PodResizeInProgress` condition.
 * **Estimated throughput**: Extremely low. Resizing memory-backed volumes is an infrequent, on-demand event triggered manually by cluster administrators or periodically by vertical autoscalers. It is not a standard high-frequency workload operation.
 * **Originating component(s)**: Kubelet (via `PodStatus` updates).
 * **Listing / Watching**: No new listing or watching of resources is introduced.
@@ -908,12 +902,10 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-Yes.
-* **API Type**: `Pod` (Spec and Status).
-* **Estimated increase in size**:
-  - `Pod.Spec`: None. The existing `sizeLimit` field under `EmptyDirVolumeSource` is simply made mutable.
-  - `Pod.Status`: One new `*resource.Quantity` field (`EmptyDir.SizeLimit` inside `VolumeStatus`) is added. This status field remains empty by default, until the Kubelet populates it for memory-backed volumes.
-  - **Net Overhead**: These fields are only populated for memory-backed volumes (`medium: Memory`), which represent a tiny fraction of volumes in a standard cluster. Pods without memory-backed volumes experience zero size increase.
+No.
+* **API Type(s)**: None.
+* **Estimated increase in size**: None. No new fields are added to `Pod.Spec` or `Pod.Status`. The existing `sizeLimit` field under `EmptyDirVolumeSource` is simply made mutable.
+* **Estimated amount of new objects**: None.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -944,7 +936,7 @@ This through this both in small and large cases, again with respect to the
 -->
 
 No.
-* **Kubelet**: The memory and CPU overhead for tracking the actual volume status is negligible. The local Kubelet checkpoint footprint increases by a negligible amount (a few bytes) to store the internal allocated state.
+* **Kubelet**: The memory and CPU overhead for tracking the actuated volume state is negligible. The local Kubelet checkpoint footprint increases by a negligible amount (a few bytes) to store the internal allocated state.
 * **kube-apiserver / etcd**: The etcd storage footprint increases negligibly. No additional CPU or memory overhead is introduced.
 * **Node RAM/CPU**: Physical memory consumption remains governed entirely by the container/pod memory cgroups and standard kernel-level `tmpfs` quota enforcement.
 
@@ -1010,6 +1002,7 @@ Major milestones might include:
 -->
 
 - **2026-04-30**: Initial alpha KEP submitted.
+- **2026-08-25**: Correct the alpha KEP based on what was actually implemented.
 
 ## Drawbacks
 
