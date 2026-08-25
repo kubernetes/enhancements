@@ -1,0 +1,53 @@
+title: Workload API Integration with StatefulSet
+kep-number: 6277
+authors:
+  - "@sairameshv"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-scheduling
+status: provisional
+creation-date: 2026-08-25
+reviewers:
+  - "@kannon92"
+  - "@helayoty"
+  - "@soltysh"
+approvers:
+  - "@soltysh"
+see-also:
+  - "/keps/sig-apps/5547-integrate-workload-with-job"
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5832-decouple-podgroup-api"
+  - "/keps/sig-scheduling/6089-was-controller-apis"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+replaces: []
+superseded-by: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.XX"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.XX"
+  beta: "v1.XX"
+  stable: "v1.XX"
+
+# The following PRR answers are required during alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: WorkloadWithStatefulSet
+    components:
+      - kube-controller-manager
+      - kube-apiserver
+disable-supported: true
+
+# Metrics
+metrics:
+  - statefulset_workload_creation_duration_seconds
+  - statefulset_workload_creation_errors_total
+  - statefulset_workload_recreation_total
