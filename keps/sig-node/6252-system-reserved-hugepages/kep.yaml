@@ -15,6 +15,7 @@ approvers:
 see-also:
   - "/keps/sig-node/1769-memory-manager"
   - "/keps/sig-node/1539-hugepages"
+  - "/keps/sig-node/5894-node-system-partition"
 
 stage: alpha
 
