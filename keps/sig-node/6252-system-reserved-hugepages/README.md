@@ -168,6 +168,15 @@ Kubelet does not allocate hugepages from the kernel. The host must still
 pre-allocate the pool through sysfs before kubelet can reserve or schedule
 against it.
 
+When [KEP-5894 Node System Partition](/keps/sig-node/5894-node-system-partition)
+is enabled, `--system-reserved` and `--kube-reserved` continue to cover host
+processes (kubelet, container runtime, OS services) - not system partition
+Pods. The hugepages reserved through this KEP are subtracted from the
+node-wide `Allocatable`. This KEP does not add any configuration under
+`systemPartition`, since that section deals with system Pods whereas this
+KEP reserves hugepages for host services. This KEP does not depend on or
+modify KEP-5894.
+
 ### Risks and Mitigations
 
 **Risk:** Misconfiguration — an administrator reserves more hugepages than
