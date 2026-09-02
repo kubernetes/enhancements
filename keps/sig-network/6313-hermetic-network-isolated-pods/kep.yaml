@@ -1,0 +1,56 @@
+title: Hermetic Pods (network-isolated pod sandboxes)
+kep-number: 6313
+authors:
+  - "@aojea"
+  - "@MikeZappa87"
+owning-sig: sig-network
+participating-sigs:
+  - sig-network
+  - sig-node
+status: provisional
+creation-date: 2026-09-02
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@liggitt"
+  - "@mrunalp"
+  - "@dchen1107"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@mrunalp"
+  - "@dchen1107"
+
+see-also:
+  - "/keps/sig-node/5328-node-declared-features"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PodNetworkMode
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - kubelet_pod_start_duration_seconds
+  - kubelet_started_pods_errors_total
