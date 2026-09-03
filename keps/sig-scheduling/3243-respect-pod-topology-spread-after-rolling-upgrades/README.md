@@ -91,6 +91,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [The update to labels specified at <code>matchLabelKeys</code> isn't supported](#the-update-to-labels-specified-at-matchlabelkeys-isnt-supported)
 - [Design Details](#design-details)
   - [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path)
+  - [[v1.38] GA design](#v138-ga-design)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -135,7 +136,7 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
@@ -147,7 +148,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -188,8 +189,8 @@ This KEP proposes a complementary field to LabelSelector named `MatchLabelKeys` 
 At a pod creation, kube-apiserver will use those keys to look up label values from the incoming pod 
 and those key-value labels will be merged with existing `LabelSelector` to identify the group of existing pods over 
 which the spreading skew will be calculated.
-Note that in case `MatchLabelKeys` is supported in the cluster-level default constraints 
-(see https://github.com/kubernetes/kubernetes/issues/129198), kube-scheduler will also handle it separately.
+Cluster-level default constraints in the scheduler configuration do not support
+`matchLabelKeys`; adding that support is outside the scope of this KEP.
 
 
 The main case that this new way for identifying pods will enable is constraining 
@@ -246,6 +247,9 @@ know that this has succeeded?
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- Adding `matchLabelKeys` to cluster-level default constraints in the
+  kube-scheduler configuration.
 
 ## Proposal
 
@@ -398,31 +402,55 @@ kube-apiserver modifies the `labelSelector` like the following:
     - app
 ```
 
-In addition, kube-scheduler will handle `matchLabelKeys` within the cluster-level default constraints 
-in the scheduler configuration in the future (see https://github.com/kubernetes/kubernetes/issues/129198).
+Cluster-level default constraints in the scheduler configuration do not support
+`matchLabelKeys`. Adding that support is outside the scope of this KEP and was
+discussed separately in [kubernetes/kubernetes#129198].
 
-Finally, the feature will be guarded by a new feature flag `MatchLabelKeysInPodTopologySpread`. If the feature is 
-disabled, the field `matchLabelKeys` and corresponding `labelSelector` are preserved 
-if it was already set in the persisted Pod object, otherwise new Pod with the field 
-creation will be rejected by kube-apiserver.
-Also kube-scheduler will ignore `matchLabelKeys` in the cluster-level default constraints configuration.
+During Alpha and Beta, the feature is guarded by the
+`MatchLabelKeysInPodTopologySpread` feature gate. If the feature is disabled,
+the `matchLabelKeys` field and corresponding `labelSelector` are preserved when
+they already exist in a persisted Pod object; otherwise, kube-apiserver rejects
+creation of a Pod that sets the field. At GA, the feature gate is locked on.
+
+[kubernetes/kubernetes#129198]: https://github.com/kubernetes/kubernetes/issues/129198
 
 ### [v1.34] design change and a safe upgrade path
 Previously, kube-scheduler just internally handled `matchLabelKeys` before the calculation of scheduling results.
 But, we changed the implementation design to the current form to make the design align with PodAffinity's `matchLabelKeys`. 
 (See the detailed discussion in [the alternative section](#implement-matchlabelkeys-in-only-either-the-scheduler-plugin-or-kube-apiserver))
 
-However, this implementation change could break `matchLabelKeys` of unscheduled pods created before the upgrade
-because kube-apiserver only handles `matchLabelKeys` at pods creation, that is,
-it doesn't handle `matchLabelKeys` at existing unscheduled pods.	
-So, for a safe upgrade path from v1.33 to v1.34, kube-scheduler would handle not only `matchLabelKeys` 
-from the default constraints, but also all incoming pods during v1.34. 
-We're going to change kube-scheduler to only concern `matchLabelKeys` from the default constraints at v1.35 for efficiency, 
-assuming kube-apiserver handles `matchLabelKeys` of all incoming pods.
+However, this implementation change could break `matchLabelKeys` for
+unscheduled Pods created before the upgrade because kube-apiserver only applies
+the mutation at Pod creation. For a safe upgrade from v1.33 to v1.34,
+kube-scheduler retained its legacy merge for all incoming Pods. That
+compatibility path was originally planned for removal in v1.35, but remained in
+place throughout the Beta period.
 
 Also, in case of bugs in this new design, users can disable this feature through a new feature flag, 
 `MatchLabelKeysInPodTopologySpreadSelectorMerge` (enabled by default).
 (See more details in [Feature Enablement and Rollback](#feature-enablement-and-rollback))
+
+### [v1.38] GA design
+
+Both `MatchLabelKeysInPodTopologySpread` and
+`MatchLabelKeysInPodTopologySpreadSelectorMerge` graduate to GA together and
+are locked on. The API behavior introduced in v1.34 is the stable behavior:
+kube-apiserver resolves `matchLabelKeys` once, when a Pod is created, and
+persists the resulting requirements in `labelSelector`.
+
+The scheduler-side compatibility merge for explicit Pod constraints is removed
+at GA. The scheduler consumes the persisted `labelSelector` and does not
+re-resolve `matchLabelKeys` from the Pod's current labels. This completes the
+transition to the API-server-owned behavior and avoids adding a second,
+potentially different requirement if a label named by `matchLabelKeys` is
+updated after Pod creation. Label updates still do not rewrite the persisted
+selector, as described in [Risks and Mitigations](#risks-and-mitigations).
+
+The compatibility path has been enabled by default since v1.34. A cluster using
+the supported upgrade order upgrades kube-apiserver before kube-scheduler, so
+new Pods have persisted selectors before a GA scheduler relies on them. The
+handling of older pending Pods and explicitly disabled Beta gates is described
+in [Version Skew Strategy](#version-skew-strategy).
 
 ### Test Plan
 
@@ -469,9 +497,22 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread`: `2025-01-14 JST (The commit hash: ccd2b4e8a719dabe8605b1e6b2e74bb5352696e1)` - `87.5%`
-- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread/plugin.go`: `2025-01-14 JST (The commit hash: ccd2b4e8a719dabe8605b1e6b2e74bb5352696e1)` - `84.8%`
-- `k8s.io/kubernetes/pkg/registry/core/pod/strategy.go`: `2025-01-14 JST (The commit hash: ccd2b4e8a719dabe8605b1e6b2e74bb5352696e1)` - `65%`
+Existing unit tests cover:
+
+- API-server mutation and the behavior when either Beta feature gate is
+  disabled in
+  [`pkg/registry/core/pod/strategy_test.go`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/pkg/registry/core/pod/strategy_test.go#L2733-L3147).
+- dropping the field when disabled, and selecting the validation behavior for
+  old Pods, in
+  [`pkg/api/pod/util_test.go`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/pkg/api/pod/util_test.go#L2550-L3131).
+- old and new validation rules in
+  [`pkg/apis/core/validation/validation_test.go`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/pkg/apis/core/validation/validation_test.go#L26123-L26640).
+- filter and score behavior in
+  [`pkg/scheduler/framework/plugins/podtopologyspread`](https://github.com/kubernetes/kubernetes/tree/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/pkg/scheduler/framework/plugins/podtopologyspread).
+
+The GA implementation will update the scheduler unit tests to verify that
+explicit Pod constraints use the persisted selector without re-resolving
+`matchLabelKeys` from current Pod labels.
 
 ##### Integration tests
 
@@ -482,14 +523,24 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
 https://storage.googleapis.com/k8s-triage/index.html
 -->
-- These cases will be added in the existed integration tests:
-  - Feature gate enable/disable tests
-  - `MatchLabelKeys` in `TopologySpreadConstraint` works as expected
-  - Verify no significant performance degradation
+Existing integration tests cover `matchLabelKeys` in both filtering and
+scoring:
 
-- `k8s.io/kubernetes/test/integration/scheduler/filters/filters_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadFilter
-- `k8s.io/kubernetes/test/integration/scheduler/scoring/priorities_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadScoring
-- `k8s.io/kubernetes/test/integration/scheduler_perf/scheduler_perf_test.go`: https://storage.googleapis.com/k8s-triage/index.html?test=BenchmarkPerfScheduling
+- [`TestPodTopologySpreadFilter`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/test/integration/scheduler/filters/filters_test.go#L2190-L2234):
+  [triage results](https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadFilter)
+- [`TestPodTopologySpreadScoring`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/test/integration/scheduler/scoring/priorities_test.go#L1073-L1126):
+  [triage results](https://storage.googleapis.com/k8s-triage/index.html?test=TestPodTopologySpreadScoring)
+
+Before GA, an integration test will create a scheduling-gated Pod, verify that
+kube-apiserver persisted the selector derived from `matchLabelKeys`, update the
+corresponding Pod label, remove the scheduling gate, and verify that scheduling
+continues to use the selector persisted at creation time. This test covers the
+removal of the scheduler-side compatibility merge.
+
+The GA change removes per-cycle selector construction from kube-scheduler and
+does not add a new scheduling operation. Existing
+[`scheduler_perf`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf)
+results will be monitored for regression.
 
 ##### e2e tests
 
@@ -502,12 +553,12 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
-- These cases will be added in the existed e2e tests:
-  - Feature gate enable/disable tests
-  - `MatchLabelKeys` in `TopologySpreadConstraint` works as expected
-
-- `k8s.io/kubernetes/test/e2e/scheduling/predicates.go`: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling
-- `k8s.io/kubernetes/test/e2e/scheduling/priorities.go`: https://storage.googleapis.com/k8s-triage/index.html?sig=scheduling
+A conformance test will be added to
+[`test/e2e/scheduling/predicates.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/scheduling/predicates.go).
+It will create an intentionally skewed old revision, then create Pods for a new
+revision using `matchLabelKeys` and verify that the new revision is spread
+independently across two topology domains. The test must run for at least two
+weeks without a non-infrastructure flake before GA code freeze.
 
 ### Graduation Criteria
 
@@ -583,8 +634,24 @@ in back-to-back releases.
 - Update documents to reflect the changes.
 
 #### GA
-- No negative feedback.
-- Update documents to reflect the changes.
+- Both `MatchLabelKeysInPodTopologySpread` and
+  `MatchLabelKeysInPodTopologySpreadSelectorMerge` have been enabled by default
+  for at least two releases; the selector-merge behavior has been enabled by
+  default since v1.34.
+- Remove the scheduler-side compatibility merge for explicit Pod constraints
+  and verify that the persisted selector is the single source of truth.
+- Unit and integration tests cover API-server mutation, validation, Beta gate
+  transitions, and scheduling after a label named by `matchLabelKeys` changes.
+- A conformance test covers spreading each rollout revision independently and
+  has no non-infrastructure flakes for at least two weeks.
+- No unresolved correctness or scalability regressions attributable to this
+  feature. In particular, monitor the fix for empty non-nil selectors from
+  [kubernetes/kubernetes#141340] for at least two weeks.
+- Production Readiness Review is approved for GA.
+- User-facing documentation is updated for the stable behavior and removal of
+  the Beta feature-gate opt-out.
+
+[kubernetes/kubernetes#141340]: https://github.com/kubernetes/kubernetes/pull/141340
 
 ### Upgrade / Downgrade Strategy
 
@@ -600,11 +667,25 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-In the event of an upgrade, kube-apiserver will start to accept and store the field `MatchLabelKeys`.
+**Upgrade**
 
-In the event of a downgrade, kube-apiserver will reject pod creation with `matchLabelKeys` in `TopologySpreadConstraint`. 
-But, regarding existing pods, we leave `matchLabelKeys` and generated `LabelSelector` even after downgraded.
-kube-scheduler will ignore `MatchLabelKeys` if it was set in the cluster-level default constraints configuration.
+No action is required for clusters that use the default feature-gate settings.
+Both gates are enabled by default in all supported source releases. Follow the
+standard control-plane order and upgrade kube-apiserver before kube-scheduler.
+
+If either Beta gate was explicitly disabled, enable both gates on every
+kube-apiserver before upgrading kube-scheduler to the GA release. Recreate any
+still-pending Pod whose `matchLabelKeys` values have not been materialized as
+`In` requirements in its persisted `labelSelector`.
+
+**Downgrade**
+
+A downgrade to a supported Beta release preserves `matchLabelKeys` and the
+generated `labelSelector`; both gates are enabled by default in that release.
+An older scheduler may merge the same key-value requirements again, which is
+idempotent. If an administrator disables the feature after downgrade, new Pods
+that set `matchLabelKeys` are rejected, while existing Pods retain both the
+field and the selector that was persisted at creation time.
 
 ### Version Skew Strategy
 
@@ -621,10 +702,21 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-There's no version skew issue.
+The supported order requires kube-apiserver to be upgraded before
+kube-scheduler and does not allow kube-scheduler to be newer than
+kube-apiserver. Therefore, when a GA scheduler stops resolving
+`matchLabelKeys`, every supported kube-apiserver version has already persisted
+the generated selector by default.
 
-We changed the implementation design between v1.34 and v1.35, but we designed the change not to involve any version skew issue
-as described at [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path).
+A Beta scheduler running with a GA kube-apiserver remains compatible. It may
+merge requirements that are already in the persisted selector, but identical
+requirements are idempotent and do not change the selected Pods.
+
+Pods created by a pre-v1.34 kube-apiserver, or while either Beta gate was
+disabled, may not contain the generated requirements. Such Pods can live longer
+than the supported component-skew window. Administrators using those
+configurations must enable both gates and recreate any affected pending Pods
+before upgrading kube-scheduler to the GA version. Running Pods are unaffected.
 
 ## Production Readiness Review Questionnaire
 
@@ -656,18 +748,21 @@ you need any help or guidance.
 This section must be completed when targeting alpha to a release.
 -->
 
-- `MatchLabelKeysInPodTopologySpread` feature flag enables the `MatchLabelKeys` feature in `TopologySpreadConstraint`.
-- `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag enables the new design described at 
-   [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path). 
-  - If `MatchLabelKeysInPodTopologySpreadSelectorMerge` is disabled while `MatchLabelKeysInPodTopologySpread` is enabled, 
-    Kubernetes handles `MatchLabelKeys` with the classic design, kube-scheduler handles it. 
-    However, that's basically not recommended unless you encounter a bug in a new design behavior.
-  - This flag cannot be enabled on its own, and has to be enabled together with `MatchLabelKeysInPodTopologySpread`. 
-    Enabling `MatchLabelKeysInPodTopologySpreadSelectorMerge` alone has no effect, and `matchLabelKeys` will be ignored.
+- `MatchLabelKeysInPodTopologySpread` enables the `matchLabelKeys` field in
+  `TopologySpreadConstraint`.
+- `MatchLabelKeysInPodTopologySpreadSelectorMerge` enables the API-server
+  mutation and validation behavior described in
+  [[v1.34] design change and a safe upgrade path](#v134-design-change-and-a-safe-upgrade-path).
+  During Beta, disabling this gate while leaving
+  `MatchLabelKeysInPodTopologySpread` enabled selects the legacy scheduler-owned
+  behavior. Enabling the selector-merge gate alone has no effect.
 
 The `MatchLabelKeysInPodTopologySpreadSelectorMerge` feature flag has been added in v1.34 and enabled by default.
 This flag can be disabled to revert [the implementation design change in v1.34](#v134-design-change-and-a-safe-upgrade-path) 
 and go back to the previous behavior in case of bug.
+
+At GA, both feature gates are locked on and the legacy scheduler-owned behavior
+is removed. Users opt out by omitting `matchLabelKeys` from their Pod template.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -683,7 +778,7 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MatchLabelKeysInPodTopologySpread`
-  - Components depending on the feature gate: `kube-scheduler`, `kube-apiserver`
+  - Components depending on the feature gate: `kube-apiserver`
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `MatchLabelKeysInPodTopologySpreadSelectorMerge`
   - Components depending on the feature gate: `kube-apiserver`
@@ -694,7 +789,9 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-No.
+There is no change for clusters using the default settings because both gates
+were enabled by default before GA. A cluster that explicitly disabled either
+Beta gate will no longer be able to keep it disabled after upgrading to GA.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -708,17 +805,18 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-The feature can be disabled in Alpha and Beta versions by restarting 
-kube-apiserver and kube-scheduler with feature-gate off.
-One caveat is that pods that used the feature will continue to have the 
-MatchLabelKeys field set and the corresponding LabelSelector even after 
-disabling the feature gate.
-In terms of Stable versions, users can choose to opt-out by not setting 
-the matchLabelKeys field.
+The feature can be disabled in Alpha and Beta versions by restarting
+kube-apiserver and kube-scheduler with the feature gates off. Pods that already
+used the feature retain `matchLabelKeys` and the corresponding
+`labelSelector`.
+
+The feature cannot be disabled after GA because both feature gates are locked
+on. Users can opt out for new Pods by not setting `matchLabelKeys`.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
-Newly created pods need to follow this policy when scheduling. Old pods will 
-not be affected.
+In Alpha and Beta, newly created Pods use the feature again. Existing Pods are
+not remutated. This question is not applicable after GA because the gates are
+locked on.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -734,7 +832,13 @@ feature gate after having objects written with the new field) are also critical.
 You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
-No. The unit tests that are exercising the `switch` of feature gate itself  will be added.
+Yes. Unit tests cover mutation with both gates enabled and disabled, retaining
+persisted data across gate transitions, field dropping, and validation of old
+Pods:
+
+- [`pkg/registry/core/pod/strategy_test.go`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/pkg/registry/core/pod/strategy_test.go#L2733-L3147)
+- [`pkg/api/pod/util_test.go`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/pkg/api/pod/util_test.go#L2550-L3131)
+- [`pkg/apis/core/validation/validation_test.go`](https://github.com/kubernetes/kubernetes/blob/ca0942e6fbf0b562bd230c9fff6f7048439d0e65/pkg/apis/core/validation/validation_test.go#L26123-L26640)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -753,12 +857,17 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-It won't impact already running workloads because it is an opt-in feature in kube-apiserver 
-and kube-scheduler.
-But during a rolling upgrade, if some apiservers have not enabled the feature, they will not
-be able to accept and store the field "MatchLabelKeys" and the pods associated with these 
-apiservers will not be able to use this feature. As a result, pods belonging to the 
-same deployment may have different scheduling outcomes.
+The feature and selector-merge behavior have been enabled by default since
+v1.27 and v1.34 respectively, so a default-configured rolling upgrade does not
+change behavior for existing or new workloads.
+
+The GA scheduler stops performing the legacy merge for explicit Pod
+constraints. In the supported upgrade order, all kube-apiservers are upgraded
+first and have persisted the selector before the scheduler sees a new Pod. If
+either gate was explicitly disabled on a Beta kube-apiserver, the administrator
+must follow the additional steps in
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy). Already running
+Pods are unaffected in either case.
 
 
 ###### What specific metrics should inform a rollback?
@@ -778,7 +887,7 @@ Describe manual testing that was done and the outcomes.
 Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
-Yes, it was tested manually by following the steps below, and it was working at intended.
+The v1.26 to v1.27 upgrade and rollback path was tested manually as follows:
 1. create a kubernetes cluster v1.26 with 3 nodes where `MatchLabelKeysInPodTopologySpread` feature is disabled.
 2. deploy a deployment with this yaml
 ```yaml
@@ -826,12 +935,20 @@ spec:
 16. update the deployment nginx image to `nginx:1.15.0`
 17. pods spread across nodes as 4/4/4
 
+Before GA, the integration test described in [Test Plan](#test-plan) will cover
+the v1.34 transition boundary: the API server persists the selector, a label is
+updated while scheduling is gated, and the scheduler uses the persisted value
+after the gate is removed. The conformance test will cover independent spreading
+across rollout revisions.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
-No.
+Yes. Both feature gates graduate to GA and are locked on, and the temporary
+scheduler-side merge for explicit Pod constraints is removed. No API type,
+field, or user-facing capability is removed.
 
 ### Monitoring Requirements
 
@@ -846,7 +963,10 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Operator can query pods that have the `pod.spec.topologySpreadConstraints.matchLabelKeys` field set to determine if the feature is in use by workloads. 
+An operator can query Pods whose
+`spec.topologySpreadConstraints[*].matchLabelKeys` field is non-empty. No
+feature-specific metric is needed because usage is explicitly recorded in each
+Pod spec.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -860,7 +980,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [x] Other (treat as last resort)
-  - Details: We can determine if this feature is being used by checking pods that have only `MatchLabelKeys` set in `TopologySpreadConstraint`.
+  - Details: Get the created Pod and verify that each key present in both the
+    Pod labels and `matchLabelKeys` also appears as an `In` requirement in the
+    persisted `labelSelector`. The user can then compare the distribution of
+    matching Pods across the topology domains.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -878,7 +1001,9 @@ high level (needs more precise definitions) those may be things like:
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
-Metric plugin_execution_duration_seconds{plugin="PodTopologySpread"} <= 100ms on 90-percentile.
+The 90th percentile of
+`plugin_execution_duration_seconds{plugin="PodTopologySpread"}` should remain
+below 100ms.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -897,8 +1022,11 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
-Yes, [there were](https://github.com/kubernetes/kubernetes/issues/110643), and it's been implemented in 
-[#115082](https://github.com/kubernetes/kubernetes/pull/115082) and [#118025](https://github.com/kubernetes/kubernetes/pull/118025).
+No feature-specific metric is missing. General PodTopologySpread observability
+improvements were tracked in
+[#110643](https://github.com/kubernetes/kubernetes/issues/110643) and
+implemented by [#115082](https://github.com/kubernetes/kubernetes/pull/115082)
+and [#118025](https://github.com/kubernetes/kubernetes/pull/118025).
 
 ### Dependencies
 
@@ -979,7 +1107,10 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-No.
+Yes. For every key in `matchLabelKeys` that is present on the incoming Pod,
+kube-apiserver persists one additional `In` requirement in that Pod's
+`labelSelector`. The size increase is proportional to the total length of the
+matched label keys and values. No additional API objects are created.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -991,12 +1122,12 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-Yes. there is an additional work:
-kube-apiserver uses the keys in `matchLabelKeys` to look up label values from the pod, 
-and change `LabelSelector` according to them. 
-kube-scheduler also handles matchLabelKeys if the cluster-level default constraints has it.
-The impact in the latency of pod creation request in kube-apiserver and the scheduling latency 
-should be negligible.
+Yes. On Pod creation, kube-apiserver looks up each key in `matchLabelKeys` and
+adds the corresponding requirement to `labelSelector`. This work is linear in
+the number of specified keys and only occurs once per Pod. At GA,
+kube-scheduler performs no additional `matchLabelKeys` processing and evaluates
+the persisted selector through the existing PodTopologySpread path. The impact
+on Pod creation and scheduling latency is expected to be negligible.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1052,17 +1183,29 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
-N/A
+- A pending Pod created before v1.34, or while either Beta gate was disabled,
+  may have `matchLabelKeys` without the corresponding requirements in its
+  persisted `labelSelector`.
+  - Detection: inspect the Pod spec and compare the Pod labels and
+    `matchLabelKeys` with the persisted selector requirements.
+  - Mitigation: recreate the pending Pod after all kube-apiservers have both
+    gates enabled. Already running Pods are unaffected.
+  - Diagnostics: scheduler events show the result of the effective
+    PodTopologySpread constraint; there is no dedicated log message because
+    the scheduler intentionally treats the persisted selector as authoritative.
+  - Testing: the GA integration test described in [Test Plan](#test-plan)
+    covers the persisted-selector boundary.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
-- Check the metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` to determine 
-  if the latency increased. If increased, it means this feature may increased scheduling latency. 
-  You can disable the feature `MatchLabelKeysInPodTopologySpread` to see if it's the cause of the 
-  increased latency.
-- Check the metric `schedule_attempts_total{result="error|unschedulable"}` to determine if the number 
-  of attempts increased. If increased, You need to determine the cause of the failure by the event of 
-  the pod. If it's caused by plugin `PodTopologySpread`, You can further analyze this problem by looking 
-  at the kube-scheduler log.
+- Check `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` for a
+  latency increase correlated with newly created Pods that use the feature.
+  During Beta, an administrator can disable the gates to compare behavior. At
+  GA, test with a newly created equivalent workload that omits
+  `matchLabelKeys`; do not edit immutable constraints on an existing Pod.
+- Check `schedule_attempts_total{result="error|unschedulable"}` and the events
+  of affected Pods. If PodTopologySpread rejected a Pod, inspect the persisted
+  selector, the labels of matching Pods, and their topology-domain
+  distribution, then review kube-scheduler logs if necessary.
 
 
 ## Implementation History
@@ -1082,6 +1225,7 @@ Major milestones might include:
  - 2023-01-16: Graduate to Beta
  - 2025-01-23: Change the implementation design to be aligned with PodAffinity's `matchLabelKeys`
  - 2025-04-07: Add a new feature flag `MatchLabelKeysInPodTopologySpreadSelectorMerge` and update milestone
+ - 2026-09-02: Target both feature gates for GA in v1.38
 
 ## Drawbacks
 
@@ -1110,14 +1254,16 @@ within the plugin before calculating the scheduling results.
 This is the actual implementation up to 1.33.
 But, it may confuse users because this behavior would be different from PodAffinity's `MatchLabelKeys`.
 
-Also, we cannot implement this feature only within kube-apiserver because it'd make it
-impossible to handle `MatchLabelKeys` within the cluster-level default constraints 
-in the scheduler configuration in the future (see https://github.com/kubernetes/kubernetes/issues/129198).
+From v1.34, kube-apiserver also resolves the keys and persists the resulting
+selector. The scheduler implementation was retained temporarily so that pending
+Pods created before that transition continued to work during an upgrade.
 
-So we decided to go with the design that implements this feature within both 
-the PodTopologySpread plugin and kube-apiserver.
-Although the final design has a downside requiring us to maintain two implementations handling `MatchLabelKeys`,
-each implementation is simple and we regard the risk of increased maintenance overhead as fairly low.
+At GA, kube-apiserver is the only component that resolves `matchLabelKeys` for
+explicit Pod constraints. The scheduler consumes the persisted selector. This
+keeps PodTopologySpread aligned with PodAffinity and avoids maintaining two
+sources of truth. Supporting `matchLabelKeys` in cluster-level default
+constraints would require separate scheduler behavior and is outside the scope
+of this KEP.
 
 ## Infrastructure Needed (Optional)
 
