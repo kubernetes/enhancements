@@ -1,4 +1,4 @@
-title: Hermetic Pods (network-isolated pod sandboxes)
+title: Network-Isolated Pod Sandboxes
 kep-number: 6313
 authors:
   - "@aojea"
@@ -43,7 +43,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: PodNetworkMode
+  - name: PodDefaultNetwork
     components:
       - kube-apiserver
       - kube-controller-manager
