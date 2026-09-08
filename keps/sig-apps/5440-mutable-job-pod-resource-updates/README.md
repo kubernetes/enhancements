@@ -177,9 +177,10 @@ priority and cluster load.
 
 This is a proposal to relax update validation on suspended jobs to allow mutating
 resource specifications in the job's pod template, specifically CPU, memory, GPU,
-and other extended resource requests and limits. This enables a higher-level
-controller to optimize resource allocation before un-suspending a job based on
-current cluster conditions and resource availability.
+other extended resource requests and limits, and container references to resource
+claims. This enables a higher-level controller to optimize resource allocation
+before un-suspending a job based on current cluster conditions and resource
+availability.
 
 ## Motivation
 
@@ -202,7 +203,9 @@ appropriately for current capacity constraints.
 
 ### Goals
 
-- Allow mutating CPU, memory, GPU, and extended resource requests and limits of a container within a PodTemplate of a suspended jobs.
+- Allow mutating CPU, memory, GPU, and extended resource requests and limits, as
+  well as resource claim references, for containers and init containers within
+  the PodTemplate of a suspended Job.
 - Enable queue controllers to optimize resource allocation based on cluster conditions.
 - Improve cluster resource utilization through dynamic resource sizing, especially for expensive GPU and specialized hardware.
 
@@ -215,12 +218,14 @@ appropriately for current capacity constraints.
 - Allow mutating other job specifications beyond container resource requirements.
 - Support in-place pod resource updates (this is covered by separate KEPs).
 - Allow mutating of Pod Resources.
-- Allow mutating of ResourceClaims.
+- Allow mutating ResourceClaim or ResourceClaimTemplate objects, or the
+  PodTemplate's `spec.resourceClaims` entries.
 
 ## Proposal
 
 The proposal is to relax update validation for container resource specifications
-(CPU, memory, GPU, and extended resource requests and limits) in the pod template of suspended jobs.
+(CPU, memory, GPU, and extended resource requests and limits) and resource claim
+references in the pod template of suspended Jobs.
 
 This change has minimal impact on the job-controller, as the job controller will
 use the updated resource specifications when creating new pods for the job.
@@ -274,22 +279,27 @@ Right now, the best approach would be to make sure controllers look at suspended
 
 The pod template validation logic in the API server needs to be updated to relax the validation
 of the Job's Template field. Currently the template is immutable, but we need to make
-container resource specifications (CPU, memory, GPU, and extended resources requests and limits) mutable for suspended jobs.
+container resource specifications (CPU, memory, GPU, and extended resources requests and limits)
+and resource claim references mutable for suspended Jobs.
 
 The condition we will check to verify that the job is suspended is `Job.Spec.Suspend=true`.
 
-We will allow updates to the following fields in container specifications within the pod template:
+We will allow updates to the following fields in container and init container specifications within the pod template:
 - `resources.requests`
 - `resources.limits`
+- `resources.claims`
 
 ### DRA Support
 
 DRA does not allow changing ResourceClaimTemplates once they are created.
-At the moment, relaxing mutability constraints of ResourceClaimTemplates or ResourceClaims is not in scope.
-To add support for this feature with DRA, the recommendation is to recreate ResourceClaimTemplates that match the
-desired resources.
+Relaxing mutability constraints of ResourceClaimTemplates, ResourceClaims, or the
+PodTemplate's `spec.resourceClaims` entries is not in scope. To change those
+objects or entries, users must create replacements with the desired resources.
 
-One does not have to modify claims in the PodTemplate so one can still assume claims are immutable also.
+This feature does allow changing a container's `resources.claims` entries while
+the Job is suspended. These entries are references to claims defined in the
+PodTemplate's `spec.resourceClaims`; changing them selects which existing claim a
+container uses without mutating the claim itself.
 
 ### Resuming on running workloads
 
@@ -463,8 +473,9 @@ disable them.
 
 Yes, it relaxes validation of updates to Jobs while they are suspended. Specifically, it will allow
 mutating the container resource specifications (CPU, memory, GPU, and extended resource
-requests and limits) in the pod template of suspended Jobs, and it allows
-scheduling-directive mutations for safely suspended Jobs.
+requests and limits) and resource claim references in the pod template of
+suspended Jobs, and it allows scheduling-directive mutations for safely suspended
+Jobs.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -582,9 +593,9 @@ No.
 
 The feature itself doesn't generate API calls, but it allows the
 apiserver to accept update requests to mutate container resource specifications
-(CPU, memory, GPU, and extended resources) and scheduling directives in Job pod
-templates. External controllers using this feature may send these update
-requests.
+(CPU, memory, GPU, and extended resources), resource claim references, and
+scheduling directives in Job pod templates. External controllers using this
+feature may send these update requests.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
