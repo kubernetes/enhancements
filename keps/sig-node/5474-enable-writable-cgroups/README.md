@@ -134,7 +134,7 @@ Another example is, [KubeVirt](https://github.com/kubevirt/kubevirt) runs a hype
 - **Linux Only**: The field is only valid on Linux containers and will be validated accordingly
 - **Runtime Support**: Requires container runtime support
 - **Node Configuration**: The host's cgroup v2 filesystem must be mounted with `nsdelegate`, and the kubelet must manage a cgroup per Pod (`--cgroups-per-qos`).
-- **Descendant Limits**: When `mountMode: Writable` is enabled, the kubelet sets conservative `cgroup.max.descendants` and `cgroup.max.depth` defaults directly on the Pod-level cgroup it already manages, bounding the entire Pod cgroup subtree. The kubelet applies conservative defaults at alpha; user-tunable overrides via the Pod spec can be considered at beta. This prevents unbounded cgroup creation from exhausting node resources; see [Verified Behavior](#verified-behavior).
+- **Descendant Limits**: When `mountMode: Writable` is enabled, the kubelet applies descendant and depth limits to the Pod cgroup on a best-effort basis; see [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes).
 - **Security Context Integration**: Must work cohesively with other SecurityContext fields
 
 ### Risks and Mitigations
@@ -146,7 +146,7 @@ Another example is, [KubeVirt](https://github.com/kubevirt/kubevirt) runs a hype
 | **Pod Security Policy Bypass**: Feature being used in restricted environments | Integration with Pod Security Standards to block in restricted profiles |
 | **Runtime Incompatibility**: Feature not working with older runtimes | The scheduler excludes unsupported nodes, and kubelet admission rejects Pods requesting writable cgroups on those nodes. |
 | **cpuset Isolation**: Containers could modify `cpuset.cpus` to access CPUs allocated to other workloads by CPU Manager. | The `nsdelegate` mount option for cgroup v2 prevents containers from modifying their own resource limits (like `cpuset.cpus`). They can only create and manage sub-cgroups within their allocated constraints. |
-| **Cgroup Descendant Exhaustion**: A container could create many descendant cgroups, exhausting node-level resources (memory and `inotify` watches were observed in the experiment) that are not counted against the container's `memory.max` limit, driving the node into `NotReady`. | When writable cgroups is enabled for a Pod, the kubelet sets `cgroup.max.descendants` and `cgroup.max.depth` on the Pod-level cgroup it already manages, bounding the whole Pod subtree. The kubelet applies conservative defaults at alpha (descendants on the order of hundreds, depth on the order of tens; specific values TBD during implementation); optional Pod-spec overrides can be considered at beta. See [Verified Behavior](#verified-behavior). |
+| **Cgroup Descendant Exhaustion**: A container could create many descendant cgroups, exhausting node-level resources (memory and `inotify` watches were observed in the experiment) that are not counted against the container's `memory.max` limit, causing the node to become `NotReady`. | The kubelet applies per-Pod limits on the number and depth of live descendants; see [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes) for scope and failure behavior. |
 
 ### cpuset Isolation
 
@@ -172,7 +172,7 @@ During the test:
 - Before `NotReady`, the node raised a `ResourceExhausted` condition for `inotify-pressure` (100% of one user's watch quota, 12,288 watches).
 - The node entered `NotReady`.
 
-The container stayed within its own `memory.max` while the node ran out of memory and exhausted the inotify watch quota of one user, so the container's memory limit alone does not bound node-level resource consumption from descendant cgroups. To enforce a bound, the kubelet sets `cgroup.max.descendants` and `cgroup.max.depth` on the Pod-level cgroup it already manages when writable cgroups is enabled for the Pod.
+The container stayed within its own `memory.max` while the node ran out of memory and exhausted the inotify watch quota of one user, so the container's memory limit alone does not bound node-level resource consumption from descendant cgroups. To bound live descendants, the kubelet applies `cgroup.max.descendants` and `cgroup.max.depth` on the Pod-level cgroup it already manages when writable cgroups is enabled for the Pod.
 
 ## Design Details
 
@@ -270,13 +270,17 @@ of future `CgroupOptions` fields.
 
 ##### Descendant and Depth Limits (Pod-level, no CRI changes)
 
-The descendant-exhaustion mitigation (see [Verified Behavior](#verified-behavior)) is handled
-entirely by the kubelet on the Pod-level cgroup and is currently not part of the CRI
-surface. When a Pod opts into writable cgroups, the kubelet sets `cgroup.max.descendants` and
-`cgroup.max.depth` on the Pod cgroup it already creates and manages, which bounds the entire Pod
-cgroup subtree (including any containers and their descendants).
+When a Pod opts into writable cgroups, the kubelet applies `cgroup.max.descendants`
+of 250 and `cgroup.max.depth` of 50 to the Pod cgroup it manages. These limits cover
+live descendants throughout the Pod subtree, including container cgroups. No CRI
+changes are required.
 
-The kubelet applies conservative defaults at alpha.
+The limits apply separately to each Pod and cover live descendant cgroups. After a
+cgroup directory is removed, its kernel resources can remain allocated until
+cleanup completes.
+
+Applying the limits is best effort: a failure to write them is logged and does not
+block container startup.
 
 ### Implementation Details
 
@@ -301,7 +305,7 @@ sequenceDiagram
         Note over Kubelet,Container Runtime: Pod Cgroup Setup
 
         Kubelet->>Kubelet: EnsureExists(pod): create Pod-level cgroup
-        Note right of Kubelet: Set cgroup.max.descendants and cgroup.max.depth defaults<br/>on the Pod cgroup via the cgroup v2 unified params
+        Note right of Kubelet: Apply cgroup.max.descendants and cgroup.max.depth defaults<br/>on the Pod cgroup; write failures do not block startup
 
         Note over Kubelet,Container Runtime: Container Creation
         
@@ -344,24 +348,10 @@ Before requesting a writable mount, the kubelet also checks cgroup v2,
 
 **Pod-Level Descendant and Depth Limits**
 
-When a Pod opts into writable cgroups, the kubelet sets conservative `cgroup.max.descendants` and
-`cgroup.max.depth` defaults on the Pod-level cgroup it already manages. This is done through the
-existing cgroup v2 `Unified` parameters on the Pod's `ResourceConfig`, which are written when the
-Pod cgroup is created in `podContainerManagerImpl.EnsureExists`. No CRI changes are required, and
-the bound applies to the whole Pod cgroup subtree.
-
-**File**: `pkg/kubelet/cm/pod_container_manager_linux.go`
-```go
-// In EnsureExists / ResourceConfigForPod, when the pod opts into writable cgroups:
-if podRequestsWritableCgroups(pod) && libcontainercgroups.IsCgroup2UnifiedMode() {
-    if containerConfig.ResourceParameters.Unified == nil {
-        containerConfig.ResourceParameters.Unified = map[string]string{}
-    }
-    // Conservative defaults; exact values finalized during implementation.
-    containerConfig.ResourceParameters.Unified["cgroup.max.descendants"] = defaultMaxDescendants
-    containerConfig.ResourceParameters.Unified["cgroup.max.depth"] = defaultMaxDepth
-}
-```
+The kubelet includes the descendant and depth limits in the cgroup v2 `Unified`
+parameters when creating the Pod cgroup. See
+[Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes)
+for the values and failure behavior.
 
 ### Test Plan
 
@@ -380,6 +370,7 @@ Coverage for new and existing packages:
 
 - `k8s.io/kubernetes/pkg/apis/core/validation`:  Unit tests for CgroupOptions validation logic, Linux-only constraints, and ephemeral-container exclusion
 - `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: Security context conversion tests including CgroupOptions mapping
+- `k8s.io/kubernetes/pkg/kubelet/cm`: Pod cgroup limit configuration and best-effort failure behavior
 - `k8s.io/pod-security-admission/policy`: Pod Security Standards policy enforcement tests
 - `k8s.io/kubernetes/pkg/apis/core/v1`:  API defaulting and conversion tests
 - `k8s.io/component-helpers/nodedeclaredfeatures/features/cgroupoptions`: Node feature discovery and Pod requirement inference
@@ -400,6 +391,7 @@ Coverage for new and existing packages:
   - Node support requirements during kubelet admission
   - Containers not able to "escape" the resource limits set by the Pod
   - Runtime compatibility checks
+  - Pod descendant and depth limits
 - `critest`: a CRI conformance test in [cri-tools](https://github.com/kubernetes-sigs/cri-tools) exercising `cgroup_mount_mode` and its `RuntimeFeatures` advertisement, so container runtimes implementing the CRI API can validate conformance independently of Kubernetes.
 
 ### Graduation Criteria
@@ -645,16 +637,15 @@ The scheduler filters nodes using Node Declared Features, and kubelet admission 
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No new background controllers, watchers, or periodic work. Resource consumption from cgroups created inside an opted-in container is bounded by the kubelet-enforced descendant and depth limits set on the Pod-level cgroup (see resource exhaustion discussion below).
+No new background controllers, watchers, or periodic work. The scope of the Pod descendant limits is described under [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes).
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-Yes, without mitigation. A misbehaving or malicious container with writable cgroups can create many descendant cgroups; the resulting node-level resource consumption is not counted against the container's `memory.max` limit, so the container's own memory limit does not bound it (see [Verified Behavior](#verified-behavior)).
+Yes. The Pod limits apply to live descendants, with the scope and failure behavior described under [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes).
 
 Mitigations:
 
-- The kubelet sets `cgroup.max.descendants` and `cgroup.max.depth` on the Pod-level cgroup it already manages when `mountMode: Writable` is enabled for the Pod, bounding the whole Pod cgroup subtree.
-- The kubelet uses conservative defaults at alpha; optional Pod-spec overrides can be considered at beta.
+- The kubelet applies `cgroup.max.descendants` and `cgroup.max.depth` on the Pod-level cgroup when `mountMode: Writable` is enabled for the Pod.
 - The feature is opt-in via `cgroupOptions.mountMode: Writable`, so cluster administrators can restrict usage via Pod Security Standards or admission policies.
 
 
@@ -671,7 +662,7 @@ No different from existing pod creation. If the apiserver is unavailable, no new
 | Container runtime does not support the CRI field | The scheduler excludes the node | Use a runtime advertising `cgroup_mount_mode`; or remove the field from the pod spec | `node.status.declaredFeatures`; scheduler events | unit + integration tests |
 | Host is on cgroup v1 | The scheduler excludes the node | Migrate the node to cgroup v2; or remove the field from the pod spec | `node.status.declaredFeatures`; scheduler events | node support tests |
 | Host's `/sys/fs/cgroup` is not mounted with `nsdelegate` | The scheduler excludes the node; the runtime refuses writable mounts if `nsdelegate` is removed after kubelet startup | Mount `/sys/fs/cgroup` with `nsdelegate` and restart kubelet after changing the mount options | `findmnt /sys/fs/cgroup`; runtime logs | runtime contract; node support tests |
-| Container creates excessive descendant cgroups | `mkdir` returns `EAGAIN` once `cgroup.max.descendants` is hit; node `Slab` and `MemAvailable` remain stable when the Pod-level defaults are in place | Kubelet-enforced `cgroup.max.descendants` and `cgroup.max.depth` defaults on the Pod-level cgroup; without these defaults, a container can drive the node into `NotReady` (see [Verified Behavior](#verified-behavior)) | container logs; node `/proc/meminfo` `Slab`; `cat /sys/fs/cgroup/cgroup.stat` | e2e for descendant bound |
+| Pod reaches its descendant limit | `mkdir` returns `EAGAIN` when `cgroup.max.descendants` is reached | Per-Pod descendant and depth limits; see [Descendant and Depth Limits](#descendant-and-depth-limits-pod-level-no-cri-changes) | container logs; Pod cgroup `cgroup.stat` | e2e for descendant bound |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
