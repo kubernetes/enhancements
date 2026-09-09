@@ -358,22 +358,13 @@ func (kl *Kubelet) nodeSupportsCgroupOptions() bool {
 
 **System Validation**:
 
-**File**: `pkg/apis/core/validation/validation.go`
-```go
-func ValidateSecurityContext(sc *core.SecurityContext, fldPath *field.Path) field.ErrorList {
-    allErrs := field.ErrorList{}
-    
-    if sc.CgroupOptions != nil {
-        // CgroupOptions is Linux-only
-        if sc.WindowsOptions != nil {
-            allErrs = append(allErrs, field.Invalid(fldPath.Child("cgroupOptions"), 
-                sc.CgroupOptions, "cannot be set when WindowsOptions is specified"))
-        }
-    }
-    
-    return allErrs
-}
-```
+`cgroupOptions.mountMode` accepts `ReadOnly` and `Writable`. The API rejects
+`cgroupOptions` when `spec.os.name` is `windows`, following the other Linux-only
+securityContext fields.
+
+Ephemeral containers cannot set `cgroupOptions`. Allowing them to request writable
+cgroups would require applying descendant limits to an existing Pod cgroup when
+the Pod did not initially request them.
 
 **File**: `pkg/kubelet/kuberuntime/security_context.go`
 ```go
@@ -430,16 +421,16 @@ to implement this enhancement.
 
 Coverage for new and existing packages:
 
-- `k8s.io/kubernetes/pkg/apis/core/validation`:  Unit tests for CgroupOptions validation logic, Linux-only constraints
+- `k8s.io/kubernetes/pkg/apis/core/validation`:  Unit tests for CgroupOptions validation logic, Linux-only constraints, and ephemeral-container exclusion
 - `k8s.io/kubernetes/pkg/kubelet/kuberuntime`: Security context conversion tests including CgroupOptions mapping
 - `k8s.io/pod-security-admission/policy`: Pod Security Standards policy enforcement tests
 - `k8s.io/kubernetes/pkg/apis/core/v1`:  API defaulting and conversion tests
 
 ##### Integration tests
 
-- `TestCgroupOptionsSecurityContextValidation`: API server validation integration test ensuring Linux-only enforcement
-- `TestPodSecurityStandardsCgroupOptions`: Pod Security Standards admission controller integration test
-- `TestKubeletSecurityContextConversion`: Kubelet CRI conversion integration test
+- API server validation, including Linux-only enforcement and ephemeral-container exclusion
+- Feature gate handling: field removal on create and preservation on existing Pods
+- Pod Security Standards admission controller integration
 
 ##### e2e tests
 
@@ -488,7 +479,7 @@ Enable/disable the feature gate
 - Existing workloads continue to function without modification
 
 **Update Flow**:
-- `CgroupOptions` field is **immutable** after pod creation.
+- `CgroupOptions` field is **immutable** after pod creation. Ephemeral containers cannot set it.
 - Changes to `CgroupOptions` require pod recreation (delete + create)
 
 **Downgrade**:
@@ -496,9 +487,9 @@ Enable/disable the feature gate
 *Two scenarios depending on downgrade type:*
 
 **Feature Gate Disabled (same Kubernetes version):**
-- New pods with `cgroupOptions.mountMode: Writable` will have the field silently dropped to `nil`
-- Existing pods with `cgroupOptions` continue to work
-- No errors occur - field is accepted but ignored
+
+- Disabling the gate on kube-apiserver drops `cgroupOptions` from new Pods and preserves it on existing Pods.
+- Existing running containers continue with their current cgroup permissions until restart.
 
 **True Version Downgrade (to Kubernetes version without CgroupOptions field):**
 - Pods with `cgroupOptions` field will be **rejected** with strict decoding error: `unknown field "spec.containers[0].securityContext.cgroupOptions"`
@@ -539,9 +530,9 @@ The feature can be controlled via:
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 **Yes**. Disabling the feature gate will:
-- Prevent new pods with `cgroupOptions.mountMode: Writable` from being created
+
+- Disabling the gate on kube-apiserver drops `cgroupOptions` from new Pods and preserves it on existing Pods.
 - Existing running containers continue with their current cgroup permissions until restart
-- API server will reject new pods with the field set
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -549,8 +540,9 @@ New pods with `cgroupOptions.mountMode: Writable` can be created again. No data 
 
 ###### Are there any tests for feature enablement/disablement?
 
-**Yes**. E2E tests will verify:
-- Feature gate disabled: API rejects pods with cgroupOptions field
+Tests will verify:
+
+- Feature gate disabled: the apiserver drops `cgroupOptions` from new Pods and preserves it on existing Pods
 - Feature gate enabled: API accepts and kubelet processes the field correctly
 - Runtime compatibility testing with and without feature support
 
@@ -570,7 +562,7 @@ Possible rollout failure modes:
 
 Rollback (disabling the feature gate):
 
-- New pods with `cgroupOptions.mountMode: Writable` are rejected by the apiserver.
+- Disabling the gate on kube-apiserver drops `cgroupOptions` from new Pods, which then use read-only cgroups. Operations that require writable cgroups fail.
 - Existing running containers with writable cgroups continue to run with their current mount until the container restarts. After restart, if the gate is off, the container starts with read-only cgroups (which may break workloads that depend on writability).
 
 No impact on workloads that do not opt in to the feature.
@@ -590,7 +582,7 @@ Whether to add a feature-specific dimension to existing counters is deferred to 
 TODO: requires the alpha implementation in kubernetes/kubernetes and a container runtime supporting the new CRI field. Plan: implement in kubernetes and containerd, then exercise the upgrade -> downgrade -> upgrade flow in `kind` (cheap to swap node images and flip feature gates). Cases to cover:
 
 - Enable feature gate, create pod with `cgroupOptions.mountMode: Writable`, confirm container has writable `/sys/fs/cgroup`.
-- Disable feature gate, confirm apiserver rejects new pods with the field, confirm previously-running pods continue until restart.
+- Disable the gate on kube-apiserver, confirm it drops the field from new Pods and preserves it on existing Pods.
 - Re-enable feature gate, confirm new pods can be created again.
 
 True version downgrade behavior (to a kubernetes version without the field) is described under [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
