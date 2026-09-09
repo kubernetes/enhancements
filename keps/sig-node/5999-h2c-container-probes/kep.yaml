@@ -15,11 +15,11 @@ approvers:
   - "@mrunalp"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/125599
-replaces: 
+replaces:
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 milestone:
   alpha: "v1.37"
   beta: "v1.38"
