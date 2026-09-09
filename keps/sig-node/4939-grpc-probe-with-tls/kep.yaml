@@ -17,9 +17,9 @@ see-also:
   - "/keps/sig-node/2727-grpc-probe"
 replaces:
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"
