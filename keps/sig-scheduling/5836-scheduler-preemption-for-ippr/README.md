@@ -1377,7 +1377,17 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-If users already have PriorityClasses defined in their cluster, and are already using In-Place Pod Resize, `Deferred` resizes will now trigger preemption of lower-priority pods. 
+Yes:
+
+1. `Deferred` resizes will trigger preemption of lower-priority pods. 
+InPlacePodVerticalScaling is GA and enabled by default, and PriorityClasses are widely 
+used.
+2. The Kubelet critical admission handler will no longer run on resizing pods.
+Previously, if there was not enough room for the upsize of a system-critical pod,
+the Kubelet critical admission handler would evict other pods to free up resources.
+With this KEP, it instead allows the pod to be marked as `Deferred` and relies on
+scheduler preemption to free up space. See
+[Kubelet Preemption Bypass for Resize Requests](#kubelet-preemption-bypass-for-resize-requests) for the relevant section.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -1435,12 +1445,38 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+This feature effectively consists of two parts:
+1. **Preemption triggered by `Deferred` resize updates**: Implemented purely
+   in-memory inside `kube-scheduler`. Component rollout order does not affect
+   this part.
+   - **Failure Modes**: Bugs in scheduler resource accounting, queue handling,
+     or `QueueingHints` could cause either unnecessary/duplicate preemptions
+     (evicting more victims than needed) or excessive queue churn degrading
+     scheduling throughput.
+2. **The per-node API (`node.spec.podPreemptionPolicy`) to enable/disable resize
+   preemption**: Component rollout order matters here. If `kube-scheduler`
+   enables the feature before `kube-apiserver`, the API server will drop
+   `node.spec.podPreemptionPolicy` on write. Controllers managing resizable
+   nodes will fail to disable resize preemption, causing the scheduler to evict
+   lower-priority pods on nodes intended to be protected from preemption.
+
+**Impact on running workloads**: Enabling the feature directly impacts running
+workloads: running lower-priority pods can now be preempted and evicted as a
+result of in-place scale-up requests on higher-priority pods—an action that
+previously never triggered pod eviction.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- Abnormal spike in `scheduler_resize_preemption_attempts_total`
+  without a corresponding increase in successful Kubelet resizes.
+- Unexpected increase in
+  `scheduler_resize_scheduling_algorithm_duration_seconds`
+  causing queue starvation.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1450,11 +1486,57 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Integration tests verify that disabling the feature gate stops queueing deferred
+pods and ignores resize events without affecting initial pod placement.
+
+For manual testing we followed the following steps:
+
+1. Pre-Upgrade Baseline (Feature Gate Disabled):
+
+- Start the cluster with InPlacePodVerticalScalingSchedulerPreemption=false.
+- Deploy low-priority workloads on a worker node until allocatable capacity is
+  nearly saturated.
+- Deploy a high-priority pod on the same node and issue a resource resize patch
+  that exceeds remaining node capacity.
+- Verify that the high-priority pod transitions to PodResizePending with reason
+  Deferred. Confirm that the scheduler does not trigger preemption and
+  low-priority pods remain uninterrupted.
+
+2. Upgrade Step (Feature Gate Enabled):
+
+- Enable the feature gate InPlacePodVerticalScalingSchedulerPreemption=true on
+  kube-apiserver first
+- Set node.spec.podPreemptionPolicy.disableResizePreemption = ["test-owner"] on
+  the test node
+- Enable the feature gate InPlacePodVerticalScalingSchedulerPreemption=true on
+  kube-scheduler and kubelet.
+- Trigger a deferred resize on that node; verify kube-scheduler skips preemption
+  and logs 0/1 nodes available: 1 node had resize preemption disabled.
+- Dynamically clear the node.spec.podPreemptionPolicy.disableResizePreemption on
+  the test node 
+- Verify that the scheduler evaluates the node, identifies lower-priority
+  victims, and initiates eviction (victims receive Preempted events and
+  DisruptionTarget condition).
+- Verify that once victims terminate, Kubelet actuates the resize and clears
+  Deferred.
+
+3. Rollback / Downgrade Step (Feature Gate Disabled):
+
+- Disable the feature gate InPlacePodVerticalScalingSchedulerPreemption=false on
+  kube-scheduler and restart the component.
+- Trigger a new resize on a saturated node resulting in Deferred status.
+- Verify that kube-scheduler ignores the deferred resize and does not evict
+  lower-priority pods.
+- Verify that existing workloads (including previously resized pods) continue
+  running normally.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -1473,6 +1555,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Inspect the gauge metric `scheduler_pending_resize_pods > 0` or
+counter `scheduler_resize_preemption_attempts_total > 0`.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -1484,11 +1569,14 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
+- [x] Events
+  - Event Reason: `Preempted` on the victim pod and `ResizeStarted` or
+    `ResizeCompleted` on the preempting pod.
+- [x] API .status
+  - Condition name: The preempting pod has its `PodResizePending` condition
+    cleared.
+  - Other field: The preempting pod's `status.Resources` matches its
+    `spec.Resources`.
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -1509,18 +1597,20 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Pod resize preemption evaluation duration
+(`scheduler_preemption_evaluation_duration_seconds{operation="pod_resize"}`)
+completes within 1s for 99% of cases.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Metrics
+  - Metric name: scheduler_resize_preemption_attempts_total
+  - Components exposing the metric: kube-scheduler
+
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1528,6 +1618,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+None.
 
 ### Dependencies
 
@@ -1551,6 +1643,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+None.
 
 ### Scalability
 
@@ -1680,6 +1774,12 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server and/or etcd are unavailable, kube-scheduler will not be
+informed of any new resize requests, and thus will not be able to process new
+resize requests, resulting in pods remaining in `PodResizePending: Reason=Deferred`.
+Existing resized pods will continue to run, but no new preemptions would be
+triggered.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1695,7 +1795,66 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- Preemption Victim Stuck in Terminating
+    - Description: The scheduler selects a lower-priority victim and issues a
+      delete call. However, the victim has a hanging finalizer, an unresponsive
+      CSI volume detachment, or a stuck graceful termination process. Because the
+      scheduler's double-preemption prevention logic detects an already-terminating
+      victim on `spec.NodeName`, it correctly suppresses further preemption, but
+      the deferred pod(s) remains stuck waiting for capacity that never frees up.
+    - Detection: The resizing pod remains in `PodResizePending: Reason=Deferred`.
+      A lower-priority pod on the same node has `metadata.deletionTimestamp != nil`
+      and a `DisruptionTarget` condition with reason `PreemptionByScheduler` for
+      longer than its expected termination grace period.
+    - Mitigations: Operator inspects the stuck victim pod, resolves the finalizer
+      or volume unmount blocker, or force-deletes the victim
+      (`kubectl delete pod <victim> --force --grace-period=0`).
+    - Diagnostics: Inspect victim pod conditions and events:
+      `kubectl describe pod <victim>` to check for unmount or finalizer errors.
+    - Testing: Integration tests verify that a terminating victim suppresses
+      duplicate preemption until fully removed from the cache.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+If scheduling latency or preemption SLOs are degraded (e.g.,
+`scheduler_scheduling_algorithm_duration_seconds` or
+`scheduler_preemption_evaluation_duration_seconds` exceed targets), operators
+should follow this diagnostic procedure:
+
+1. Isolate the source of latency:
+   - Compare `scheduler_resize_scheduling_algorithm_duration_seconds`
+     against `scheduler_scheduling_algorithm_duration_seconds`.
+   - Compare `scheduler_pending_resize_pods` against
+     `scheduler_pending_pods`.
+   - If initial placement latency is elevated while resize counts are
+     negligible, the degradation is unrelated to resize preemption (investigate
+     general cluster load, API server latency, or placement plugins).
+   - If `scheduler_preemption_evaluation_duration_seconds{operation="pod_resize"}`
+     is elevated, proceed to investigate preemption evaluation bottlenecks.
+
+2. Check for Queue Flooding and QHint Churn:
+   - Inspect `scheduler_queue_incoming_pods_total{event="AssignedPodResize"}`.
+   - A high rate of incoming resize events indicates that deferred pods are
+     repeatedly waking from `unschedulablePods` back into `activeQ`.
+   - Check if a misconfigured `QueueingHint` in `NodeResourcesFit` or
+     `DeferredPodScheduling` is waking deferred pods on unrelated node events
+     (such as pod additions or deletions on other nodes) rather than strictly
+     filtering to events on the pod's assigned host.
+
+3. Inspect Preemption Thrashing and PDB Deadlocks:
+   - Compare `scheduler_resize_preemption_attempts_total`
+     against `scheduler_resize_preemption_victims`.
+   - A high ratio of preemption attempts to actual victims evicted indicates that
+     preemption is repeatedly evaluating nodes but failing to clear capacity.
+   - Inspect `scheduler_preemption_pdb_violations_total{operation="pod_resize"}`:
+     if elevated, preemption cycles are spending time repeatedly dry-running
+     candidate victim sets only to be blocked by strict `PodDisruptionBudgets`.
+
+4. Mitigation Actions:
+   - To stop preemption immediately on problematic nodes without cluster
+     downtime, patch the affected nodes to disable resize preemption.
+   - If scheduling throughput cluster-wide is severely impacted, disable the
+     feature gate on kube-scheduler.
 
 ## Implementation History
 
