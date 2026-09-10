@@ -10,28 +10,28 @@ updates.
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [x] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [x] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [x] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -214,9 +214,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -264,8 +264,14 @@ with higher-level autoscaling controllers such as VPA's new `InPlaceOrRecreate` 
 way to control scale-up behavior when a node lacks the capacity to fulfill the request. Consequently, workloads may face 
 disruptions such as being moved to a larger node, or suffering an OOM-kill because memory could not be scaled up in-place.
 
-Scheduler preemption eliminates the gap by introducing an configurable ability to free up capacity on a fully-utilized
+Scheduler preemption eliminates the gap by introducing a configurable ability to free up capacity on a fully-utilized
 node to allow the scale up to succeed in-place.
+
+In production Kubernetes environments, cluster administrators strive to maximize resource utilization and efficiency. A common strategy is to bin-pack unused capacity on not-yet-full nodes with lower-priority workloads, such as batch jobs, background data processing, or best-effort tasks.
+
+Without scheduler preemption for in-place resizing, this created a major operational dilemma. If lower-priority workloads consumed the remaining headroom on a node, higher-priority applications running on that same node would become blocked (`Deferred`) when they needed to scale up to handle sudden traffic surges or memory spikes. Operators were forced to choose between running low-utilization clusters with idle buffer capacity or risking that critical workloads could not resize when needed.
+
+With scheduler preemption for in-place Pod resize, you can confidently bin-pack unused space across your clusters with lower-priority workloads without worrying about them degrading higher-priority Pods or blocking their scale-up requests. If a high-priority workload requires an in-place resize that exceeds available node capacity, the scheduler automatically preempts the lower-priority Pods to clear headroom. You achieve high cluster utilization and cost efficiency while preserving the responsiveness and reliability of critical services.
 
 ### Goals
 
@@ -1012,25 +1018,27 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature and API implemented behind a feature flag
-- Initial unit, integration, and e2e tests completed and enabled
+- [x] Feature and API implemented behind a feature flag
+- [x] Initial unit, integration, and e2e tests completed and enabled
 
 #### Beta
 
-- Gather feedback from alpha
-- Metrics and events are defined and implemented
-- Additional integration tests are defined, implemented and linked in KEP
-- Interaction with workload aware scheduling is clarified
-- Address scenarios where a preemption victim's grace period exceeds the time window allocated for executing the resize operation (such as VPA's fallback time limit).
-- Evaluate using nominated node name to prevent double preemption (specifically for the [shifting preemption victims](#shifting-preemption-victims-during-scheduler-restart) scenario); see alternatives in [Tracking Preemption Nominations to Avoid Double Preemption](#tracking-preemption-nominations-to-avoid-double-preemption).
-- Evaluate whether we need to solve the additional preemption risk (see [Risk of Additional Preemption](#risk-of-additional-preemption)).
-- If [KEP-5517 Alpha2](https://github.com/kubernetes/enhancements/pull/6082/changes) is implemented, ensure that the Deferred resize scheduling cycle includes resources from `pod.status.nodeAllocatableResourceClaimStatuses`.
+- [ ] Gather feedback from alpha; specifically:
+  - [x] validation of primary user stories and motivation
+  - [x] validation of `podPreemptionPolicy` API usage
+  - [ ] no significant issues or gaps reported by users (to be evaluated at Beta promotion time)
+- [ ] Metrics and events are defined and implemented
+- [x] Additional integration tests are defined, implemented and linked in KEP
+- [x] Interaction with workload aware scheduling is clarified
+- [x] Address scenarios where a preemption victim's grace period exceeds the time window allocated for executing the resize operation (such as VPA's fallback time limit).
+- [x] Evaluate using nominated node name to prevent double preemption
+- [x] Evaluate whether we need to solve the additional preemption risk
+- [ ] If [KEP-5517 Alpha2](https://github.com/kubernetes/enhancements/pull/6082/changes) is implemented, ensure that the Deferred resize scheduling cycle includes resources from `pod.status.nodeAllocatableResourceClaimStatuses`.
 
 #### GA
 
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
-- Additional GA requirements TBD at Beta release
+- [ ] Allowing time for feedback, with at least 2 releases have passed with the feature default-on
+- [ ] All GA-blocking issues and gaps identified as feedback during beta are resolved
 
 ### Upgrade / Downgrade Strategy
 
@@ -1448,6 +1456,7 @@ Major milestones might include:
 
 2026-02-23: KEP Created for alpha release
 2026-08-17: KEP updated to align with actual alpha implementation
+2026-09-10: KEP beta update
 
 ## Drawbacks
 
