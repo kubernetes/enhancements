@@ -125,7 +125,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Export via annotation](#export-via-annotation)
   - [Other conflict resolution algorithms](#other-conflict-resolution-algorithms)
   - [Exporting labels/annotations from the Service/ServiceExport objects](#exporting-labelsannotations-from-the-serviceserviceexport-objects)
-  - [Sharing services without a clusterset](#sharing-services-without-a-clusterset)
+  - [Requiring one clusterset for all services](#requiring-one-clusterset-for-all-services)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -259,7 +259,10 @@ nitty-gritty.
   Within a clusterset, [namespace sameness] applies and all namespaces with a
   given name are considered to be the same namespace. Implementations of this
   API are responsible for defining and tracking membership in a clusterset. The
-  specific mechanism is out of scope of this proposal.
+  specific mechanism is out of scope of this proposal. An implementation may
+  define a clusterset per service, as the clusters that export the service or
+  that it is exported to (see [Exporting Services](#exporting-services)). Within
+  such a clusterset, namespace sameness applies only to the service's namespace.
 - **mcs-controller** - A controller that syncs services across clusters and
   makes them available for multi-cluster service discovery and connectivity.
   There may be multiple implementations, this doc describes expected common
@@ -408,6 +411,11 @@ absent (see [Exporting Services](#exporting-services)).
 Consumers that assume every cluster in the clusterset imports every exported
 service may look for a `ServiceImport` or endpoints that do not exist.
 
+Consumers that assume namespace sameness beyond the clusterset of a service may
+treat two unrelated services with the same name as one service.
+`ServiceImport.Status.Clusters` lists the exporting clusters from which a
+`ServiceImport` was derived.
+
 ## Design Details
 
 <!--
@@ -422,8 +430,19 @@ Services will not be visible to other clusters in the clusterset by default.
 They must be explicitly marked for export by the user. This allows users to
 decide exactly which services should be visible outside of the local cluster.
 
-A service may be exported to all other clusters in the clusterset or only to
-some of them. Which clusters it is exported to is implementation-defined.
+A service may be exported to any set of other clusters. Which clusters it is
+exported to is implementation-defined. In the figure below, exporting every
+service to all other clusters makes A, B, C and D one clusterset. Exporting
+each service only to the clusters that use it makes a clusterset per service,
+spanning A and B for `foo`, A, B and C for `invoices`, and C and D for
+`ledger`.
+
+![four clusters and three exported services, exported to every other cluster as one clusterset and only to the clusters that use them as a clusterset per service](./one-clusterset-or-one-per-service.svg)
+
+In the figure below, `web` and `api` are exported to the same clusters and
+share one clusterset, while `db` is exported to B only and has its own.
+
+![four clusters where three services exported by cluster A form two clustersets](./three-services-two-clustersets.svg)
 
 Tooling may (and likely will, in the future) be built on top of this to simplify
 the user experience. Some initial ideas are to allow users to specify that all
@@ -527,7 +546,13 @@ same namespaced name._
 This requires that within a clusterset, a given namespace is governed by a
 single authority across all clusters. It is that authority’s responsibility to
 ensure that a name is shared by multiple services within the namespace if and
-only if they are instances of the same service.
+only if they are instances of the same service. In the figure, cluster B
+exports to cluster C an unrelated service with the same name and namespace as
+the billing team's `ledger`. B, C and D are then the clusterset of `ledger`,
+and without namespace sameness among them the `ServiceImport` in C combines
+two unrelated services.
+
+![four clusters where cluster B exports an unrelated service named ledger to cluster C, whose ServiceImport combines it with the billing team's ledger](./unrelated-services-with-the-same-name.svg)
 
 Most information about the service, including ports, backends, topology and
 session affinity, internal traffic policy, and traffic distribution
@@ -589,6 +614,17 @@ missing namespaces automatically, that behavior is out of scope of this spec._
 
 A cluster's `ServiceImport` combines only the local `ServiceExport`, if any, and
 the `ServiceExport`s in other clusters that export the service to it.
+
+In the figure below, A and D export their services to every other member of
+the clusterset, and every member imports both.
+
+![six clusters in one clusterset, each importing the services exported by A and D](./imports-in-one-clusterset.svg)
+
+The importing clusters may differ from service to service. In the figure
+below, each dashed circle is the clusterset of the services exported by one
+cluster. G and L are in other clusters' clustersets as well as their own.
+
+![sixteen clusters with seven overlapping clustersets, each containing an exporting cluster and the clusters that import its services](./a-clusterset-per-exporting-cluster.svg)
 
 Because of the potential wide impact a `ServiceImport` may have within a
 cluster, non-cluster-admin users should not be allowed to create or modify
@@ -836,6 +872,9 @@ ready endpoint of the headless service. `<service>.<ns>.svc.clusterset.local`
 will resolve to the entire set or the subset of ready pod IPs, depending on the
 implementation and endpoint count.
 
+Only the clusters that import a service resolve its clusterset domain name
+(see [Importing Services](#importing-services)).
+
 In addition, other resource records are included to conform to in-cluster
 Service DNS behavior. SRV records are included to support known use cases such
 as VOIP, Active Directory, and etcd cluster bootstrapping. Pods backing a
@@ -926,13 +965,12 @@ provide routing to each single backend for the application's purposes.
 
 In both cases, this restriction seeks to preserve the MCS position on [namespace
 sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md).
-Services of the same name/namespace exported in the multicluster environment are
-considered to be the same by definition, and thus their backends are safe to
-'merge' in each importing cluster. If these backends need to be addressed
-differently based on other properties than name and namespace, they lose their
-fungible nature which the MCS API depends on. In these situations, those
-backends should instead be fronted by a Service with a different name and/or
-namespace.
+Services of the same name/namespace exported within a clusterset are considered
+to be the same by definition, and thus their backends are safe to 'merge' in
+each importing cluster. If these backends need to be addressed differently based
+on other properties than name and namespace, they lose their fungible nature
+which the MCS API depends on. In these situations, those backends should instead
+be fronted by a Service with a different name and/or namespace.
 
 For example, say an application wishes to target the backends for a
 `ClusterSetIP ServiceExport` called `special/prod` in `<clusterid>=cluster-east`
@@ -1427,12 +1465,13 @@ from the `Service` and `ServiceExport` metadata. More flexibility could also be
 achieved with CEL expression on the `ServiceExport` at the cost of greater
 complexity (managing CEL expressions on potentially many `ServiceExport` across clusters).
 
-### Sharing services without a clusterset
+### Requiring one clusterset for all services
 
-Services could be shared between individual clusters without a clusterset, so
-that no namespace sameness would be assumed. This was ruled out in favor of
-exporting a service to a subset of the clusterset, which keeps namespace
-sameness and the single authority per namespace.
+Each cluster could be required to be in a single clusterset, used for all the
+services it exports or imports. This was ruled out because membership in a
+clusterset is symmetric and transitive, so a cluster that shares services with
+clusters in two clustersets makes them one clusterset, and namespace sameness
+would then apply between clusters that share no service.
 
 ## Infrastructure Needed
 <!--
