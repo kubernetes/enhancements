@@ -52,7 +52,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) (N/A: this KEP introduces no Kubernetes API endpoints.)
   - [x] (R) Minimum Two Week Window for [GA e2e tests](https://testgrid.k8s.io/sig-windows-signal#windows-e2e-node-master) to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA (N/A: this KEP introduces no Kubernetes API endpoints.)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -236,11 +236,15 @@ Since Windows does not have an API to directly assign NUMA nodes, the kubelet us
 - Memory Manager is enabled and CPU Manager has not allocated exclusive CPUs: kubelet looks up all CPUs associated with the NUMA nodes selected by Memory Manager and assigns them to the CPU Group affinity. For example, if Memory Manager selects NUMA node 0 and its first four CPUs are in Windows CPU group 0, the result is `cpu affinity: 0000001111, group 0`.
 - CPU Manager has allocated exclusive CPUs: kubelet always uses exactly the CPU Manager allocation for CPU Group affinity. Memory Manager derives its NUMA affinity from those CPUs and uses that affinity without extending it to additional NUMA nodes. The CPU Manager allocation is authoritative because it has already considered Topology Manager hints; expanding it could include CPUs exclusively assigned to other containers. See [#139684](https://github.com/kubernetes/kubernetes/pull/139684).
 
-Using Memory manager's internal mapping this should provide the desired behavior in most cases. Since memory affinity is not guaranteed, a CPU can access memory from a different NUMA
-node and experience decreased performance. The kubelet emits V(4)/V(5) diagnostic logs for CPU-derived topology-affinity fallbacks and differences from the stored topology hint. Configuration guidance and the best-effort limitation are documented in the Kubernetes website. If access from CPUs different from the assigned NUMA node is undesirable, `single-numa-node`
-and the CPU manager should be configured in the Topology Manager policy setting which would force Kubelet to only select a Numa node if it will have enough memory 
-and CPU's available.  In the future, in the case of workloads that span multiple Numa nodes, it may be desirable for Topology manager to have a new policy specific 
-for Windows. This would require a separate KEP to add a new policy.
+This NUMA-node-to-CPU mapping steers the container toward memory local to its assigned CPUs. However, Windows does not guarantee NUMA-local memory allocation, so a container can still access memory from a remote NUMA node and experience
+reduced performance. Windows does not expose reliable per-container NUMA memory placement information, so kubelet cannot determine whether a container's memory is physically allocated on a remote NUMA node.
+
+Kubelet's logical CPU and memory allocation decisions are retained in the manager checkpoint state and exposed through the Pod Resources API. Kubelet emits V(4) diagnostic logs when exclusive CPUs cannot be mapped to NUMA nodes and it falls back to the stored Topology Manager hint, or when the CPU-derived NUMA affinity differs from the stored hint. It emits V(5) logs when no
+exclusive CPUs are assigned or when the CPU-derived and stored hints match. These logs describe kubelet's allocation decisions; they do not indicate physical memory placement or misalignment.
+
+No metric or Pod condition for physical memory misalignment is proposed for beta because kubelet cannot observe that condition reliably on Windows. Additional persistent observability for kubelet-detectable allocation-plan differences may be evaluated based on feedback during beta.
+
+Operators that want to minimize cross-NUMA memory access should configure the Topology Manager `single-numa-node` policy together with CPU Manager. This restricts admission to workloads for which sufficient CPU and memory resources are available on one NUMA node, but it does not change the best-effort nature of physical memory placement on Windows. A Windows-specific policy for workloads spanning multiple NUMA nodes may be considered in a separate KEP.
 
 #### Kubelet memory management 
 
@@ -294,7 +298,7 @@ Kubernetes integration tests do not run on Windows. Windows functionality is cov
 - [ ] Complete security review and resolve identified security issues. Security review details: `TBD`.
 - [x] Provide the CPU, memory, and topology manager metrics documented in this KEP through kubelet metrics.
 - [x] Windows `e2e_node` tests for CPU affinity, memory manager metrics, topology manager coordination, and topology manager metrics run regularly and are green in [Testgrid](https://testgrid.k8s.io/sig-windows-signal#windows-e2e-node-master?include-filter-by-regex=Feature%3A(CPUManager%7CMemoryManager%7CTopologyManager)).
-- [ ] Complete testing requirements, including upgrade, downgrade, and re-upgrade validation. Test results: `TBD`.
+- [x] Complete testing requirements, including upgrade, downgrade, and re-upgrade validation.
 - [ ] Provide beta-level documentation for configuration, supported runtime versions, monitoring, and recovery from manager state changes. Website PR: `TBD`.
   - Update the `WindowsCPUAndMemoryAffinity` feature-gate reference for beta and default-on in v1.38.
   - Update the Windows support sections for CPU Manager, Memory Manager, and Topology Manager to describe the v1.38 beta behavior, supported container runtime, and rollback through the feature gate.
@@ -380,7 +384,7 @@ well as the [existing list] of feature gates.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. In v1.38, `WindowsCPUAndMemoryAffinity` will be beta and enabled by default. The default CPU and Memory Manager policies remain `None`, so the gate alone does not change workload behavior. CPU or memory affinity is applied only when an administrator configures a supported non-default manager policy.
+No. In v1.38, `WindowsCPUAndMemoryAffinity` will be beta and enabled by default. The default CPU and Memory Manager policies remain `None`, so the gate alone does not change workload behavior. CPU or memory affinity is applied only when an administrator configures a supported non-default manager policy.
 
 See feature details in:
 
@@ -458,24 +462,7 @@ that might indicate a serious problem?
 
 The pod may fail with the admission error because the kubelet can not provide all resources. You can see the error messages under the pod events.
 
-There are existing metrics provided by Managers that can be monitored:
-
-```golang
-// Metrics to track the CPU manager behavior
-CPUManagerPinningRequestsTotalKey         = "cpu_manager_pinning_requests_total"
-CPUManagerPinningErrorsTotalKey           = "cpu_manager_pinning_errors_total"
-CPUManagerSharedPoolSizeMilliCoresKey     = "cpu_manager_shared_pool_size_millicores"
-CPUManagerExclusiveCPUsAllocationCountKey = "cpu_manager_exclusive_cpu_allocation_count"
-
-// Metrics to track the Memory manager behavior
-MemoryManagerPinningRequestsTotalKey = "memory_manager_pinning_requests_total"
-MemoryManagerPinningErrorsTotalKey   = "memory_manager_pinning_errors_total"
-
-// Metrics to track the Topology manager behavior
-TopologyManagerAdmissionRequestsTotalKey = "topology_manager_admission_requests_total"
-TopologyManagerAdmissionErrorsTotalKey   = "topology_manager_admission_errors_total"
-TopologyManagerAdmissionDurationKey      = "topology_manager_admission_duration_ms"
-```
+Monitor the CPU, memory, and topology manager metrics listed in the Monitoring Requirements section.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -485,28 +472,31 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-`TBD`: document the tested upgrade, downgrade, and re-upgrade path, including the Kubernetes and containerd versions used and the observed results.
+The following node-local upgrade, downgrade, and state-recovery sequence was manually validated for beta.
+It is not included in the periodic Windows `e2e_node` suite because the suite does not currently support
+replacing the running kubelet binary, restarting it with different feature-gate configurations, or modifying
+manager state files on the node.
 
-The beta validation must cover the following node-local sequence:
+1. Start a Windows node running kubelet v1.37.0 with CPU Manager `static`, Memory Manager `BestEffort`, and `WindowsCPUAndMemoryAffinity=true`, using containerd `v2.3.5` or later and its paired runhcs release. Verify a
+  Guaranteed pod receives the expected CPU affinity.
+2. Upgrade the kubelet to v1.38.0 without changing the manager policies or feature-gate configuration. Verify existing workloads continue running and a newly created Guaranteed pod receives the expected CPU affinity.
+3. Downgrade the kubelet to v1.37.0 without changing the manager policies or feature-gate configuration. Verify existing workloads continue running and a newly created Guaranteed pod receives the expected CPU affinity.
+4. Re-upgrade the kubelet to v1.38.0 without changing the manager policies or feature-gate configuration. Verify existing workloads continue running and a newly created Guaranteed pod receives the expected CPU affinity.
+5. Disable `WindowsCPUAndMemoryAffinity` and restart the kubelet. Verify existing workloads continue running and newly created Guaranteed pods do not receive exclusive CPU affinity.
+6. Re-enable `WindowsCPUAndMemoryAffinity` and restart the kubelet. Verify a newly created Guaranteed pod receives the expected CPU affinity.
+7. When changing a CPU or memory manager policy, drain the node and remove the corresponding manager state file before restarting the kubelet. Verify the kubelet starts successfully and workloads receive the expected affinity.
 
-1. Start a Windows node with CPU Manager `static`, Memory Manager `BestEffort`, and `WindowsCPUAndMemoryAffinity=true`, using containerd `v2.3.0` or later and its paired runhcs release. Verify a Guaranteed pod receives the expected CPU affinity.
-2. Upgrade the kubelet to the v1.38 beta version without changing the manager policies or feature-gate configuration. Verify existing workloads continue running and a newly created Guaranteed pod receives the expected CPU affinity.
-3. Disable `WindowsCPUAndMemoryAffinity` and restart the kubelet. Verify existing workloads continue running and newly created Guaranteed pods do not receive exclusive CPU affinity.
-4. Re-enable `WindowsCPUAndMemoryAffinity` and restart the kubelet. Verify a newly created Guaranteed pod receives the expected CPU affinity.
-5. When changing a CPU or memory manager policy, drain the node and remove the corresponding manager state file before restarting the kubelet. Verify the kubelet starts successfully and workloads receive the expected affinity.
-
-`TBD`: record the results for this sequence.
 
 | Evidence | Result |
 | --- | --- |
 | Kubernetes version | `v1.38.0` |
 | containerd version | `2.3.5` |
-| runhcs version | `v0.15.0-rc.4.` |
+| runhcs version | `v0.15.0-rc.4` |
 | Windows Server version and build | `Windows Server 2022 Datacenter   10.0.20348.5256 (amd64)` |
 | Test date | `2026-09-09` |
 | Test job or Testgrid link | `Manual` |
-| Upgrade, downgrade, and re-upgrade result | `Pass, upgraded kubelet from v1.37.x to v1.38.0, downgraded it to v1.37.x, then re-upgraded to v1.38.0. Existing Pods continued running across each transition, and newly scheduled Guaranteed Pods showed the expected affinity behavior for the active feature-gate state.` |
-| State-file recovery result | `Pass,  after draining the node and removing the CPU and Memory Manager state files, kubelet restarted successfully and a new Guaranteed Pod received the expected CPU affinity` |
+| Upgrade, downgrade, and re-upgrade result | `Pass, upgraded kubelet from v1.37.0 to v1.38.0, downgraded it to v1.37.0, then re-upgraded to v1.38.0. Existing Pods continued running across each transition, and newly scheduled Guaranteed Pods showed the expected affinity behavior for the active feature-gate state.` |
+| State-file recovery result | `Pass. After draining the node and removing the CPU and Memory Manager state files, kubelet restarted successfully and a new Guaranteed Pod received the expected CPU affinity` |
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -525,10 +515,26 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-We will use the existing Metrics provided by CPU/Memory Manager.
+The kubelet exposes the following metrics for CPU, memory, and topology manager behavior:
 
-https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/3570-cpumanager#monitoring-requirements
-https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1769-memory-manager#monitoring-requirements
+```text
+# CPU Manager
+cpu_manager_pinning_requests_total
+cpu_manager_pinning_errors_total
+cpu_manager_shared_pool_size_millicores
+cpu_manager_exclusive_cpus_allocation_count
+
+# Memory Manager
+memory_manager_pinning_requests_total
+memory_manager_pinning_errors_total
+
+# Topology Manager
+topology_manager_admission_requests_total
+topology_manager_admission_errors_total
+topology_manager_admission_duration_ms
+```
+
+These metrics are also listed in `kep.yaml` for beta PRR validation.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
