@@ -72,10 +72,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
 -->
 
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
+
 
 ## Summary
 
@@ -417,7 +414,7 @@ Placements based on distinct values of the designated node label (TAS).
 Placements to maximize utilization (tightest fit) and minimize fragmentation.
 
 **PodGroupPodsCount (New)** Implements `PlacementScorePlugin`. Scores
-Placements based on the number of pods fiting into each Placement.
+Placements based on the number of pods fitting into each Placement.
 
 ### Beta Extensions
 
@@ -426,31 +423,30 @@ introduced to improve the throughput, efficiency, and flexibility of Topology-Aw
 Scheduling:
 
 1. Multiple PlacementGeneratePlugins
-   
-   The beta version supports defining multiple PlacementGeneratePlugins. When multiple
-   such plugins are configured, the scheduler framework runs them independently. It then
-   merges their results by calculating non-empty intersections of the placements returned
-   by the different plugins, allowing the system to easily handle complex placement
-   requirements.
+
+  The scheduler framework can now configure multiple `PlacementGeneratePlugin`s. It runs 
+  them independently and merges their results by calculating non-empty intersections 
+  of the placements returned by the different plugins, allowing the system to handle 
+  composed placement requirements (e.g. topology plus a resource-driven generator).
 
 2. Early Rejection of Placements
 
-  To optimize the scheduling cycle, the scheduler will abort placement evaluation early
+  To optimize the scheduling cycle, the scheduler aborts placement evaluation early
   if there are not enough remaining pods to satisfy a PodGroup's minCount. Previously,
   all pods were evaluated, which missed an opportunity for optimization. This capability
-  is implemented via a new "pseudo extension point" called PlacementFeasiblePlugin
+  is implemented via a new "pseudo extension point" called `PlacementFeasiblePlugin`
   (similar to PodGroupPostFilter) to break out of the pod group scheduling cycle.
-  
-  More details on this optimization can be found in [KEP-4671: Workload API](https://kep.k8s.io/4671).
+
+  More details on this optimization can be found in [KEP-4671](https://kep.k8s.io/4671).
 
 3. Limit on the Number of Checked Placements
 
   To ensure high pod throughput, especially in large clusters, the beta version
-  introduces a limit on the number of scored placements, similar to how the scheduler
-  limits the number of scored nodes in non-TAS scenarios. This limit is controlled via
-  a new scheduler parameter PercentageOfPlacementsToScore.
+  introduces a limit on the number of scored placements, similar to how the scheduler 
+  limits the number of scored nodes in non-TAS scenarios. This limit is controlled via 
+  a new scheduler parameter `PercentageOfPlacementsToScore`.
 
-  By default, an adaptive limit will be applied based on the total number of nodes to
+  By default, an adaptive limit is applied based on the total number of nodes to
   evaluate across all generated placements. The limit interpolates from 100% for very
   small clusters to 10% for clusters with 5000 nodes, with a hard lower bound of 5%.
   
@@ -458,21 +454,21 @@ Scheduling:
 
 4. Respecting NominatedNodeName in Placement Selection
 
-  To align with standard pod-by-pod scheduling behavior, the TAS algorithm now
+  To align with standard pod-by-pod scheduling behavior, the TAS algorithm
   supports a pod's NominatedNodeName (NNN). When selecting placements, the scheduler
-  prioritizes evaluating placements containing the previously nominated nodes first.
+  evaluates the placement containing the previously nominated nodes first.
   This ensures that a workload whose pods were nominated to specific nodes does not
   arbitrarily land elsewhere, preventing the scheduler from undoing work performed
   in previous nominating cycles.
 
 5. Integration with Workload Aware Preemption
 
-  To ensure parity with a default pod group scheduling cycle, the TAS is now integrated
-  with [Workload Aware Preemption](https://kep.k8s.io/5710). In the WAP, after potential
-  victims are removed, the scheduler will run a podGroupSchedulingAlgorithm with TAS which
-  might potentially generate new placements. The best placement will be selected and the WAP
-  logic will try to reprieve as many victims as possible while assuming that preemptors pods
-  are assigned to the selected placement.
+  To ensure parity with a default pod group scheduling cycle, TAS is integrated
+  with [KEP-5710](https://kep.k8s.io/5710). WAP calls the pod group scheduling algorithm 
+  as a callback; when the `TopologyAwareWorkloadScheduling` gate is enabled that callback 
+  is the placement algorithm, so after potential victims are removed new placements are 
+  generated, the best one is selected, and WAP reprieves as many victims as possible while
+  assuming the preemptor pods are assigned to the selected placement.
 
 ### Future Extensions
 
@@ -560,17 +556,36 @@ Topology Aware Scheduling With Basic Policy:
 - Dynamic Updates: Successfully resumes scheduling pending pods once blocked
   resources become available again.
 
-Those tests are located at [tas_test.go‎](https://github.com/kubernetes/kubernetes/blob/eb01d62d2676cfe009382cadd5d65c2ad654998d/test/integration/scheduler/podgroup/topology_aware_scheduling/tas_test.go‎).
+Nominated Node Handling:
 
-Apart from those integration tests with promoting to beta performance tests
-for basic scenario of Topology Aware Scheduling With Gang Policy have been
-added. Those tests are located at [tas_test.go]
-(https://github.com/kubernetes/kubernetes/tree/42d9ed9c47706cb04457410e387e07889203b888/test/integration/scheduler_perf/tas).
+- Placements containing the pods' `NominatedNodeName` are evaluated first and
+  a PodGroup nominated to a placement is not moved elsewhere while it still fits.
+
+Composite PodGroups ([KEP-6012](https://kep.k8s.io/6012)) with topology constraints,
+including the interaction with workload-aware preemption.
+
+- Test (tas): https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler/podgroup/topology_aware_scheduling/tas_test.go
+- Test (composite-tas): https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler/podgroup/topology_aware_scheduling/cpg_tas_test.go
+
+We also added benchmarks to measure the performance impact of topology-aware
+scheduling, in particular the scheduling throughput of the workload scheduling
+with gang policy and a topology constraint:
+
+- Test: https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler_perf/podgroup/tas/performance-config.yaml
 
 #### e2e tests
 
 - End-to-End Workload Scheduling: Submit a Workload with TopologyConstraint
   (e.g., Rack) and verify all pods land on the same rack.
+
+The API surface of this KEP (the `schedulingConstraints` field) is exercised by
+the `Workload` and `PodGroup` API e2e tests added by [KEP-4671](https://kep.k8s.io/4671):
+
+- Test: https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/e2e/scheduling/workload.go
+
+With promoting to beta we'll add an e2e test for the topology-aware scheduling
+behavior itself, next to the existing gang scheduling and workload-aware
+preemption e2e tests in `test/e2e/scheduling/`.
 
 ### Graduation Criteria
 
@@ -584,6 +599,7 @@ added. Those tests are located at [tas_test.go]
 #### Beta
 
 - Scalability tests on large clusters with high placement counts.
+- Performance tests are created and are being run in CI to protect against regressions.
 - Comprehensive e2e testing.
 - Cluster autoscaling components are aware of workload topology constraints.
 
@@ -693,7 +709,7 @@ active scheduler instance has the feature disabled, it will schedule pods using 
 standard non-TAS method, falling back to a default workload scheduling algorithm.
 
 This results in a fallback to the status quo behavior, meaning that pods will be
-still scheduled, but PodGroup-level toplogy scheduling constraints won't be applied.
+still scheduled, but PodGroup-level topology scheduling constraints won't be applied.
 If the feature gate is subsequently enabled, existing pods belonging to this
 PodGroup will continue to run, but the scheduler may be unable to place any
 new pods within the same PodGroup due to the newly enforced topology constraints.
@@ -711,30 +727,31 @@ new pods within the same PodGroup due to the newly enforced topology constraints
 
 We'll perform manual testing of the upgrade -> downgrade -> upgrade path using the following sequence:
 
-1. Start a local Kubernetes v1.37 cluster with `TopologyAwareWorkloadScheduling` feature
+1. Start a local Kubernetes v1.38 cluster with `TopologyAwareWorkloadScheduling` feature
    gate disabled and `GenericWorkload` feature gate enabled.
-2. Attempt to create a PodGroup object with `spec.schedulingConstraints.topologyConstraints[0].level`
+2. Attempt to create a PodGroup object with `spec.schedulingConstraints.topology[0].key`
    set to `kubernetes.io/hostname`.
 3. The `spec.schedulingConstraints` field is dropped by the API server. The PodGroup is created
-   successfully but without the `spec.schedulingConstraints` reference.
+   successfully but without the `spec.schedulingConstraints` field.
 4. Restart API Server and Scheduler with `TopologyAwareWorkloadScheduling` feature gate enabled.
 5. Create five PodGroup objects: `tas-test-A` to `tas-test-E` all with `minCount`
-   set to 2 and `spec.schedulingConstraints.topologyConstraints[0].level` set to `kubernetes.io/hostname`.
+   set to 2 and `spec.schedulingConstraints.topology[0].key` set to `kubernetes.io/hostname`.
 6. Create `test-pod-1` and `test-pod-2` Pods with `spec.schedulingGroup` pointing to `tas-test-A`
    and node affinities pointing to two different nodes.
-7. The Pod stays in `Pending` state (waiting for the TAS scheduling). Verify that
+7. The Pods stay in `Pending` state (no single-node placement fits both). Verify that
    `scheduler_pending_entities{type="podgroup", queue="gated"}` metric is incremented.
 8. Create `test-pod-3` and `test-pod-4` Pods with `spec.schedulingGroup` pointing to `tas-test-B`
    and node affinities pointing to the same node.
-9. Both pods are scheduled successfully (TAS works). 
+9. Both pods are scheduled successfully (TAS works).
 10. Restart API Server and Scheduler with `TopologyAwareWorkloadScheduling` feature gate disabled.
 11. Create `test-pod-5` and `test-pod-6` Pods with `spec.schedulingGroup` pointing to `tas-test-C`
     and node affinities pointing to two different nodes. Note: We use a pod group created in step 5
-    because creating new PodGroup objects with schedulingConstraints is disabled.
-13. The pods are scheduled successfully (schedulingConstraints logic is ignored because the schedulingGroup
-    field is dropped by the v1.36 API server).
-15. Restart API Server and Scheduler with `TopologyAwareWorkloadScheduling` feature gate enabled.
-16. Repeat steps 6 to 9 with `tas-test-D` and `tas-test-E`.
+    because creating new PodGroup objects with `schedulingConstraints` is disabled.
+12. The pods are scheduled successfully on two different nodes: with the gate disabled the
+    scheduler falls back to the default workload scheduling algorithm and ignores the
+    `schedulingConstraints` still stored on `tas-test-C`.
+13. Restart API Server and Scheduler with `TopologyAwareWorkloadScheduling` feature gate enabled.
+14. Repeat steps 6 to 9 with `tas-test-D` and `tas-test-E`.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -744,8 +761,8 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Operators can check the new `plugin_execution_duration_seconds{plugin="TopologyPlacementGenerator", extension_point="GeneratePlacements"}`
-metric. A value greater than zero indicates that the scheduler is using TAS .
+Operators can check the `scheduler_plugin_execution_duration_seconds{plugin="TopologyPlacementGenerator", extension_point="PlacementGenerate"}`
+metric, or `scheduler_generated_placements_total`. A value greater than zero indicates that the scheduler is using TAS.
 
 Alternatively, checking for the existence of `PodGroup` via `kubectl get podgroups`,
 and checking the `PodGroup.spec.schedulingConstraints` field confirms that users
@@ -755,7 +772,7 @@ are actively using the feature.
 
 - [X] API .status
   - Object: PodGroup
-  - `spec.schedulingConstrains` field is not empty.
+  - `spec.schedulingConstraints` field is not empty.
   - Condition Name: `PodGroupInitiallyScheduled`
 - [X] Metrics
   - Metric: `scheduler_generated_placements_total`
@@ -764,7 +781,7 @@ are actively using the feature.
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 Since there are no formal SLOs for the kube-scheduler apart from scalability SLOs, we define the objectives for this
-feature primarily in terms of non-regression to ensure the toplogy aware scheduling does not degrade the performance
+feature primarily in terms of non-regression to ensure the topology aware scheduling does not degrade the performance
 of the standard scheduling loop.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
@@ -827,16 +844,16 @@ Although the proposed algorithm was designed with performance in mind, the sched
 latency / Pod Startup SLO may potentially increase especially for large clusters and
 fine grained topology constraints.
 
-We will measure the exact impact using performance benchmarks and scalability tests and
-update the section based on the results. The complexity of scheduling of a single worklaod
-is O(#pods * #nodes), which is comparable to the algorithm not using topology constraints,
-so the benchmarks are primarily to validate the potential inefficiencies of the implementation.
+The complexity of scheduling of a single workload is O(#pods * #nodes), which is comparable 
+to the algorithm not using topology constraints, so the benchmarks are primarily to validate 
+the potential inefficiencies of the implementation. The impact is tracked by the scheduler_perf `TopologyAwareScheduling` benchmark.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-For large clusters and fine grained toplogy constraints we may observe some increase in CPU
-and RAM usage for kube-scheduler. The exact scale of this increase will be confirmed by
-scalability tests.
+For large clusters and fine grained topology constraints we may observe some increase in CPU
+and RAM usage for kube-scheduler, since each candidate placement is evaluated against a
+placement-scoped snapshot. The scale of this increase is tracked by the scheduler_perf
+`TopologyAwareScheduling` benchmark.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -879,11 +896,13 @@ retried with standard exponential backoff once connectivity is restored.
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
 1. Analyze Latency Metrics: Check `scheduler_podgroup_scheduling_attempt_duration_seconds` and 
-   `scheduler_podgroup_scheduling_algorithm_duration_seconds`. High values here indicate that the Toplogy Aware
-   Schedling logic itself is computationally expensive and causing the regression.
-3. Inspect Logs: Enable scheduler logging at `-v=6` (or `-v=10` for deep tracing) to trace the execution time of
-   individual Workload Scheduling Cycles and identify if specific PodGroups which are blocking the queue. 
-4. Disable Feature: If the regression is critical and impacting cluster health, disable the
+   `scheduler_podgroup_scheduling_algorithm_duration_seconds`. High values here indicate that the Topology Aware
+   Scheduling logic itself is computationally expensive and causing the regression.
+   `scheduler_placement_evaluations_total` and `scheduler_placement_evaluation_duration_seconds`
+   show how many placements are evaluated per cycle and how expensive each one is.
+2. Inspect Logs: Enable scheduler logging at `-v=6` (or `-v=10` for deep tracing) to trace the execution time of
+   individual Workload Scheduling Cycles and identify if specific PodGroups which are blocking the queue.
+3. Disable Feature: If the regression is critical and impacting cluster health, disable the
    TopologyAwareWorkloadScheduling feature gate. This will revert the scheduler to the standard Workload Scheduling
    logic, restoring baseline performance (at the cost of losing topology semantics).
 
@@ -893,6 +912,7 @@ retried with standard exponential backoff once connectivity is restored.
 - 2026-02: KEP-5732 created for TAS alpha release.
 - 2026-02: KEP-5732 updated to sync with decoupling of PodGroup/Workload API.
 - 2026-05: KEP updated to promote to beta in v1.37.
+- 2026-09: KEP updated to promote to beta in v1.38.
 
 ## Drawbacks
 
@@ -934,3 +954,7 @@ Users can run a secondary scheduler like Volcano or Yunikorn.
 ## Infrastructure Needed (Optional)
 
 N/A
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/website]: https://git.k8s.io/website
