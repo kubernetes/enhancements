@@ -10,7 +10,7 @@ creation-date: 2026-09-08
 reviewers:
   - "@rthallisey"
 approvers:
-  - TBD  # SIG Node approvers to be identified during review (per WG lead, 2026-09-08)
+  - mrunalp  # proposed — SIG Node tech lead on parent KEP-5683; pending confirmation from WG lead
 
 see-also:
   - "/keps/sig-node/5683-lifecycle-conditions"
