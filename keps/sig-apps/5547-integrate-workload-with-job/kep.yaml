@@ -25,12 +25,13 @@ see-also:
   - "/keps/sig-apps/2232-suspend-jobs"
   - "/keps/sig-scheduling/2926-job-mutable-scheduling-directives"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.36"
+  beta: "v1.38"
 
 feature-gates:
   - name: WorkloadWithJob
@@ -39,5 +40,7 @@ feature-gates:
       - kube-controller-manager
 disable-supported: true
 
+# The following PRR answers are required at beta release
 metrics:
-  -
+  - job_scheduling_object_syncs_total
+  - job_scheduling_object_sync_duration_seconds
