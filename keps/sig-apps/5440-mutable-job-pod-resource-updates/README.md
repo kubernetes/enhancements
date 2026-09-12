@@ -399,8 +399,8 @@ The current e2e coverage is for `MutablePodResourcesForSuspendedJobs`:
   starts a Job, suspends it, updates container resources, resumes the Job, and
   verifies that new Pods use the updated resources.
 
-No e2e test for `MutableSchedulingDirectivesForSuspendedJobs` was identified in
-the Kubernetes tree at the commit checked for this KEP update. The GA e2e,
+Integration tests provide the required coverage for
+`MutableSchedulingDirectivesForSuspendedJobs`. The GA e2e,
 conformance, and two-week stability checklist items remain pending until the
 release requirements are satisfied and verified.
 
