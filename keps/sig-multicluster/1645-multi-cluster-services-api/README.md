@@ -607,10 +607,10 @@ includes 3 scenarios:
    cluster(s) as well.
 
 A multi-cluster service will be imported only by clusters in which the service's
-namespace exists. All clusters containing the service's namespace will import
-the service if it is exported to them. Exporting clusters always import the
-multi-cluster service. _An implementation may or may not decide to create
-missing namespaces automatically, that behavior is out of scope of this spec._
+namespace exists. A service may be imported by any set of the clusters it is
+exported to. Which clusters import it is implementation-defined. _An
+implementation may or may not decide to create missing namespaces
+automatically, that behavior is out of scope of this spec._
 
 A cluster's `ServiceImport` combines only the local `ServiceExport`, if any, and
 the `ServiceExport`s in other clusters that export the service to it.
