@@ -12,6 +12,7 @@ reviewers:
   - "@helayoty"
 approvers:
   - "@soltysh"
+  - "@janetkuo"
 
 see-also:
   - "/keps/sig-apps/5547-integrate-workload-with-job"
