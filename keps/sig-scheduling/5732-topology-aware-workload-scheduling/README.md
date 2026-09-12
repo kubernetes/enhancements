@@ -27,6 +27,7 @@
     - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
+    - [Performance tests](#performance-tests)
     - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -566,6 +567,8 @@ including the interaction with workload-aware preemption.
 
 - Test (tas): https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler/podgroup/topology_aware_scheduling/tas_test.go
 - Test (composite-tas): https://github.com/kubernetes/kubernetes/blob/1b2ebe523cdc23272f02130599f2c378fbf3ea8a/test/integration/scheduler/podgroup/topology_aware_scheduling/cpg_tas_test.go
+
+#### Performance tests
 
 We also added benchmarks to measure the performance impact of topology-aware
 scheduling, in particular the scheduling throughput of the workload scheduling
