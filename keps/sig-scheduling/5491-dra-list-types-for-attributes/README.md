@@ -462,50 +462,52 @@ type DeviceAttribute struct {
 
 	// IntValues is a non-empty list of numbers.
 	//
-	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
 	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
 	// +featureGate=DRAListTypeAttributes
 	IntValues []int64 `json:"ints,omitempty" protobuf:"varint,6,opt,name=ints"`
 
 	// BoolValues is a non-empty list of true/false values.
 	//
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
+	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
 	// +featureGate=DRAListTypeAttributes
 	BoolValues []bool `json:"bools,omitempty" protobuf:"varint,7,opt,name=bools"`
 
 	// StringValues is a non-empty list of strings.
 	// Each string must not be longer than 64 characters.
 	//
-	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
 	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
-	// +k8s:alpha(since: "1.37")=+k8s:eachVal=+k8s:maxBytes=64
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:eachVal=+k8s:maxBytes=64
 	// +featureGate=DRAListTypeAttributes
 	StringValues []string `json:"strings,omitempty" protobuf:"bytes,8,opt,name=strings"`
 
 	// VersionValues is a non-empty list of semantic versions according to semver.org spec 2.0.0.
 	// Each version string must not be longer than 64 characters.
 	//
-	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
 	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
 	// +featureGate=DRAListTypeAttributes
 	VersionValues []string `json:"versions,omitempty" protobuf:"bytes,9,opt,name=versions"`
 }
@@ -514,6 +516,8 @@ type DeviceAttribute struct {
 ### Implementation (for evaluating constraints)
 
 Since _non-empty intersection_ constraint is _monotonic_, we would not need updating [`Allocator.Allocate()` algorithm](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L135) and can keep using [`constraint` interface](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L703-L712). We will just extend the current [`matchAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L721C6-L728) and [`distinctAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/constraint.go#L34-L41) instances. Or, we could introduce `constraint` instances for proposed modes (e.g., `nonEmptyIntersectionMatchAttributeConstraint`, etc.).
+
+**Update (Beta):** at Alpha, list-attribute constraint evaluation is implemented only in the `structured/internal/experimental` allocator variant; at Beta, it also rotates into `internal/incubating`, following the standard [alpha/beta/GA allocator rotation model](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/README.md).
 
 ### Test Plan
 
