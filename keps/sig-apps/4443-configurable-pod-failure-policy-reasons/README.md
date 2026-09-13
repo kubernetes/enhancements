@@ -1,80 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-4443: More granular Job failure reasons for PodFailurePolicyRule
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -83,15 +7,17 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-    - [Defaulting](#defaulting)
-    - [Validation](#validation)
-    - [Business logic](#business-logic)
+  - [API changes](#api-changes)
+  - [Defaulting](#defaulting)
+  - [Validation](#validation)
+  - [Business logic](#business-logic)
+  - [Metrics](#metrics)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -113,107 +39,112 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in
+  [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and
+  SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) Ensure GA e2e tests meet requirements for
+    [Conformance Tests]
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+  - [ ] (R) [all GA Endpoints] must be hit by
+    [Conformance Tests] within one minor version of promotion to GA
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] User-facing documentation has been created in [kubernetes/website], for
+  publication to [kubernetes.io]
+- [ ] Supporting documentation -- e.g. additional design documents, links to
+  mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
+[all GA Endpoints]: https://github.com/kubernetes/community/pull/1806
+[Conformance Tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
-This KEP proposes to extend the Job API by adding an optional `Name` field to `PodFailurePolicyRule`. If unset, it would default to the index of
-the rule in the `podFailurePolicy.rules` slice. 
+This KEP proposes adding an optional `name` field to `PodFailurePolicyRule` in
+the Job API. When a rule with `action: FailJob` matches a failed Pod, the Job
+controller will set the Job `Failed` condition reason to
+`PodFailurePolicy_<ruleName>`. If the field is unset, the controller derives the
+suffix from the rule index, preserving a deterministic machine-readable reason
+without requiring users to name every rule.
 
-The purpose of giving the rule a name is to expose more detailed failure information inside the
-`JobFailed` condition reason. When a pod failure policy rule triggers a Job failure, the rule name would be appended as a suffix to the `JobFailed` condition reason, in the
-format: `PodFailurePolicy_{ruleName}`. This will allow users to set multiple pod failure policy rules
-and distinguish which one (if any) triggered a Job failure.
+The purpose of naming rules is to expose more detailed failure information in
+the Job status condition. This lets users configure multiple pod failure policy
+rules and lets higher-level controllers distinguish which rule, if any, caused a
+Job failure.
 
 ## Motivation
 
-Higher level K8s APIs are built via a composition of features, using primitive K8S APIs as building blocks to implement more advanced features.
-These higher level APIs using the Job API as a building block need to be able to distinguish between different types of Job failures in order to
-make informed decisions about how to react to these failures.
+Higher-level Kubernetes APIs are often built by composing lower-level APIs. APIs
+such as JobSet use Jobs as building blocks and need to distinguish different
+types of Job failures so they can make informed decisions about how to react.
 
-Currently, no mechanism exists in the Job API to propagate granular failure reason information (e.g., container exit codes) up to be 
-programmatically consumed by higher level software managing Jobs. A `PodFailurePolicy` can be configured to add a condition reason of `PodFailurePolicy`
-to the `JobFailed` condition added to the Job when it fails, but different pod failure policies targeting different container exit codes all use the
-same condition reason of `PodFailurePolicy`. This prevents higher level APIs like JobSet from distinguishing them and being able to take different
-actions depending on the type of Job failure that occurred.
+Today, the Job API does not propagate granular failure reason information, such
+as container exit codes, in a way higher-level controllers can consume
+programmatically. A `PodFailurePolicy` can cause a failed Job to receive a
+generic `PodFailurePolicy` condition reason, but different rules targeting
+different failure modes all use the same reason. This prevents controllers such
+as JobSet from applying different actions for different failure causes.
 
-For a concrete use case, see the JobSet [Configurable Failury Policy KEP](https://github.com/kubernetes-sigs/jobset/blob/main/keps/262-ConfigurableFailurePolicy/README.md) which illuminated the need for more granular pod failure policy reasons.
+For a concrete use case, see the JobSet
+[Configurable Failure Policy KEP], which highlighted the need for more granular
+pod failure policy reasons.
+
+[Configurable Failure Policy KEP]: https://github.com/kubernetes-sigs/jobset/blob/main/keps/262-ConfigurableFailurePolicy/README.md
 
 ### Goals
 
-For pod failure policies to be able communicate different failure types to higher level APIs.
+- Allow pod failure policy rules to communicate distinct failure types to
+  higher-level APIs and controllers.
+- Provide a stable, machine-readable Job failure condition reason for the
+  matching `FailJob` rule.
+- Preserve the existing pod failure policy matching and action semantics.
+- Keep observability bounded by avoiding user-provided rule names in metric
+  label values.
 
 ### Non-Goals
 
-- Modifying PodFailurePolicy behavior
-- The Job controller using this new field for any purpose not explicitly defined in the proposal.
+- Changing `PodFailurePolicy` matching, ordering, or actions.
+- Allowing users to set arbitrary Job condition reasons directly.
+- Having the Job controller use the new field for any purpose other than the
+  Job failure condition reason described in this KEP.
+- Adding new Job APIs or new Job controller metrics.
 
 ## Proposal
 
-The proposal is to add an optional `Name` field to the `PodFailurePolicyRule`. If unset, it will default to the index of the  `PodFailurePolicyRule` in the `PodFailurePolicy.Rules` slice.
+Add an optional `name` field to `PodFailurePolicyRule`. When a
+`PodFailurePolicyRule` matches a Pod failure and the rule action is `FailJob`,
+the Job controller will append the rule name to the Job `Failed` condition
+reason using the format `PodFailurePolicy_<ruleName>`.
 
-When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job
-controller will append the name of the pod failure policy rule which triggered the failure
-to the JobFailed [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816)
-reason. The exact format of the JobFailed condition reason will be `PodFailurePolicy_{ruleName}`.
+If `name` is unset, the controller will use the zero-based index of the matching
+rule in `podFailurePolicy.rules` as the suffix. For example, if the first rule
+is unnamed and causes the Job to fail, the condition reason will be
+`PodFailurePolicy_0`.
 
-### User Stories (Optional)
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+### User Stories
 
 #### Story 1
-As a user, I am using a JobSet to manage a group of jobs, and I want to be able to decide whether to fail the
-JobSet or not, based on the exact container exit code that caused a child job failure.
 
-**Example JobSet for this use case**:
+As a user, I am using a JobSet to manage a group of Jobs, and I want to decide
+whether to fail the JobSet based on the exact container exit code that caused a
+child Job failure.
+
+Example JobSet:
 
 ```yaml
 apiVersion: jobset.x-k8s.io/v1alpha2
@@ -223,12 +154,13 @@ metadata:
 spec:
   failurePolicy:
     rules:
-    # If Job fails due to a pod failing with exit code 2, fail the JobSet immediately, without attempting any restarts.
+    # If the Job fails due to a Pod failing with exit code 2, fail the JobSet
+    # immediately without attempting restarts.
     - action: FailJobSet
       targetReplicatedJobs:
       - workers
       onJobFailureReasons:
-      - PodFailurePolicy_ExitCode2 # Job failure reason format: PodFailurePolicy_{ruleName}
+      - PodFailurePolicy_ExitCode2
     maxRestarts: 10
   replicatedJobs:
   - name: workers
@@ -238,10 +170,9 @@ spec:
         parallelism: 1
         completions: 1
         backoffLimit: 0
-        # If a pod fails with exit code 2, fail the job with the user-defined reason.
         podFailurePolicy:
           rules:
-          - name: "ExitCode2"  # Will be added as a suffix to the reason "PodFailurePolicy" condition reason.
+          - name: ExitCode2
             action: FailJob
             onExitCodes:
               containerName: main
@@ -258,21 +189,20 @@ spec:
 
 #### Story 2
 
-As a user, I am using a JobSet to manage a group of jobs, each running a HPC simulation.
-Each job runs a simulation with different random initial parameters. When a simulation ends, the
-application will exit with one of two exit codes:
+As a user, I am using a JobSet to manage a group of Jobs, each running an HPC
+simulation. Each Job runs a simulation with different random initial parameters.
+When a simulation ends, the application exits with one of two exit codes:
 
-- Exit code 2, which indicates the simulation produced an invalid result due to bad starting parameters, and should
-not be retried.
-- Exit code 3, which indicates the simulation produced an invalid result but the initial parameters were reasonable,
-so the simulation should be restarted.
+- Exit code 2 indicates the simulation produced an invalid result due to bad
+  starting parameters and should not be retried.
+- Exit code 3 indicates the simulation produced an invalid result, but the
+  initial parameters were reasonable, so the simulation should be restarted.
 
-When a Job fails due to a pod failing with exit code 2, I want my job management software to leave the Job in
-a failed state.
+When a Job fails due to exit code 2, I want my job management software to leave
+the Job in a failed state. When a Job fails due to exit code 3, I want my job
+management software to restart the Job.
 
-When a Job fails due to a pod failing with exit code 3, I want my job management software to to restart the Job.
-
-**Example JobSet for this use case**:
+Example JobSet:
 
 ```yaml
 apiVersion: jobset.x-k8s.io/v1alpha2
@@ -280,22 +210,23 @@ kind: JobSet
 metadata:
   name: restart-job-example
   annotations:
-    alpha.jobset.sigs.k8s.io/exclusive-topology: {{topologyDomain}} # 1:1 job replica to topology domain assignment
+    alpha.jobset.sigs.k8s.io/exclusive-topology: {{topologyDomain}}
 spec:
   failurePolicy:
     rules:
-    # If Job fails due to a pod failing with exit code 2, leave it in a failed state.
+    # If the Job fails due to a Pod failing with exit code 2, leave it in a
+    # failed state.
     - action: FailJob
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - PodFailurePolicy_ExitCode2  # Job failure reason format: PodFailurePolicy_{ruleName}
-    # If Job fails due to a pod failing with exit code 3, restart that Job.
+      - PodFailurePolicy_ExitCode2
+    # If the Job fails due to a Pod failing with exit code 3, restart that Job.
     - action: RestartJob
       targetReplicatedJobs:
       - simulations
       onJobFailureReasons:
-      - PodFailurePolicy_ExitCode3  # Job failure reason format: PodFailurePolicy_{ruleName}
+      - PodFailurePolicy_ExitCode3
     maxRestarts: 10
   replicatedJobs:
   - name: simulations
@@ -305,7 +236,6 @@ spec:
         parallelism: 1
         completions: 1
         backoffLimit: 0
-        # Pod failure policy rules, the names of which are referenced in the JobSet failure policy.
         podFailurePolicy:
           rules:
           - name: ExitCode2
@@ -329,675 +259,472 @@ spec:
               command: ["..."]
 ```
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
-It should be noted that upon pod failure, the Job's pod failure policy rules
-are evaluated in order, and only the first matching rule is executed, even
-if multiple rules match a pod failure.
+Pod failure policy rules are evaluated in order when a Pod fails. Only the first
+matching rule is executed, even if multiple rules match the same Pod failure.
+The emitted reason therefore reflects the first matching `FailJob` rule.
+
+The new reason format is feature-gated. While the feature gate is disabled, Jobs
+continue to use the existing `PodFailurePolicy` condition reason.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-Validate all pod failure policy rule names are unique
-How will security be reviewed, and by whom?
+The main compatibility risk is that enabling the feature changes the condition
+reason observed by clients when a pod failure policy rule fails a Job. Clients
+that read Job failure reasons will need to handle both the legacy
+`PodFailurePolicy` reason and the new `PodFailurePolicy_<ruleName>` format
+during rollout, rollback, and version skew. The feature gate limits this change
+to clusters that opt in during alpha.
 
-How will UX be reviewed, and by whom?
+The main API risk is that a user-provided value becomes part of a
+machine-readable status reason. Validation mitigates malformed or colliding
+inputs by checking uniqueness, generated reason syntax, generated reason length,
+and conflicts with Job controller reasons.
 
-Consider including folks who also work outside the SIG or subproject.
--->
-There is a risk to making a field that was previously exclusively managed by the controller,
-to now being configurable by the user. However, as described in the validation section below,
-we are validating against malformed/invalid inputs.
-
+The main observability risk is metric cardinality. The Job controller's
+`jobs_finished_total` metric has a `reason` label. Implementations of this KEP
+must not use user-provided rule names as metric label values. Any granular
+`PodFailurePolicy_<ruleName>` condition reason must be normalized back to the
+bounded `PodFailurePolicy` label value before recording `jobs_finished_total`.
 
 ## Design Details
 
-#### Defaulting
+### API changes
 
-There will be no defaulting for the new pod failure policy `Name` field.
-When `Name` is unset, the Job controller will set the reason suffix to the index of the rule in the `podFailurePolicy.rules` slice (e.g. `PodFailurePolicy_{index}`).
+Add an optional `name` field to `PodFailurePolicyRule`.
 
-#### Validation
-- Validate all pod failure policy rule names are unique.
-- Validate pod failure policy rule names do not have integer values of any of the existing indexes
-(unless the value is the rule's own index).
-- We will validate the Job failure condition reason that would be generated from a given
-PodFailurePolicy rule name (i.e., `PodFailurePolicy_{ruleName}`) will be a valid reason (CamelCase, max length of 128 characters, and matches the regex defined [here](https://github.com/kubernetes/kubernetes/blob/dd301d0f23a63acc2501a13049c74b38d7ebc04d/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L1559)).
-- We will also validate the pod failure policy rule does not conflict with any [K8s internal reasons used by the Job controller](https://github.com/kubernetes/kubernetes/blob/862ff187baad9373d59d19e5d736dcda1e25e90d/staging/src/k8s.io/api/batch/v1/types.go#L542-L553). 
+```go
+type PodFailurePolicyRule struct {
+    // Name is an optional name for this rule. When the rule matches a Pod
+    // failure and the action is FailJob, the Job controller appends this name to
+    // the Job Failed condition reason as "PodFailurePolicy_<name>".
+    Name string
 
-#### Business logic
-When a `PodFailurePolicyRule` matches a pod failure and the `Action` is `FailJob`, the Job controller will
-set the JobFailed condition reason deterministically in the format `PodFailurePolicy_{ruleName}`. This 
-suffix will be added to the condition [condition](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) here.
+    // Existing fields omitted.
+}
+```
 
-Note: If the PodFailurePolicy feature gate is disabled, but the `PodFailurePolicyName` feature gate is enabled, there will be 
-no adverse effect and neither feature will actually be used, since the only place the proposed new field `Name` will be
-used is inside of a [code block](https://github.com/kubernetes/kubernetes/blob/6a4e93e776a35d14a61244185c848c3b5832621c/pkg/controller/job/job_controller.go#L816) protected by the PodFailurePolicy feature gate.
+### Defaulting
+
+There is no API defaulting for `PodFailurePolicyRule.name`. If `name` is unset,
+the stored Job spec remains unchanged. At reconciliation time, the Job
+controller derives the reason suffix from the zero-based index of the matching
+rule in `podFailurePolicy.rules`.
+
+### Validation
+
+- Validate that all non-empty pod failure policy rule names are unique within a
+  Job.
+- Validate that a rule name does not collide with an index-generated reason for
+  another rule. For example, `name: "0"` is only allowed on rule index 0.
+- Validate that the generated Job condition reason
+  `PodFailurePolicy_<ruleName>` is a valid Kubernetes condition reason, including
+  syntax and the 128-character maximum length.
+- Validate that the generated Job condition reason does not conflict with the
+  Job controller's internal failure reasons.
+
+### Business logic
+
+When a `PodFailurePolicyRule` matches a Pod failure and `action` is `FailJob`,
+the Job controller will set the Job `Failed` condition reason deterministically:
+
+- `PodFailurePolicy_<name>` when the rule has `name` set.
+- `PodFailurePolicy_<index>` when the rule has `name` unset.
+
+Rules with `Count` or `Ignore` actions do not set the Job `Failed` condition and
+therefore do not use the new reason format.
+
+If the `PodFailurePolicyName` feature gate is disabled, the API server will not
+preserve the new field and the Job controller will continue to use the legacy
+`PodFailurePolicy` reason. If `PodFailurePolicyName` is enabled but the
+underlying `PodFailurePolicy` behavior is disabled, the new field has no effect
+because the Job controller only evaluates it as part of pod failure policy
+handling.
+
+### Metrics
+
+This KEP does not add new metrics.
+
+The Job controller already records finished Jobs in `jobs_finished_total` with a
+bounded `reason` label. To preserve that bounded cardinality, the implementation
+must record granular pod failure policy reasons as `PodFailurePolicy` in this
+metric instead of recording the full `PodFailurePolicy_<ruleName>` condition
+reason.
+
+The existing `pod_failures_handled_by_failure_policy_total` metric remains
+unchanged and continues to report the matched action (`FailJob`, `Ignore`, or
+`Count`).
 
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+existing tests to make this code solid enough prior to committing the changes
+necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+No prerequisite testing updates are required.
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
+Unit tests will cover:
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
+- API validation for duplicate rule names, generated reason syntax, generated
+  reason length, index collisions, and conflicts with internal Job failure
+  reasons.
+- API strategy behavior with the feature gate enabled and disabled.
+- Controller handling for named and unnamed `FailJob` rules matching
+  `onExitCodes`.
+- Controller handling for named and unnamed `FailJob` rules matching
+  `onPodConditions`.
+- Controller behavior when the feature gate is disabled after a Job already has
+  a granular failure reason.
+- Metric recording that keeps `jobs_finished_total` reason labels bounded by
+  using `PodFailurePolicy` rather than user-provided rule names.
 
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
+Current coverage for packages expected to be touched:
 
-- `k8s.io/kubernetes/pkg/controller/job`: `02/05/2024` - `91.5%`
-- `k8s.io/kubernetes/pkg/apis/batch/v1`: `06/05/2024` - `87.3%`
-- `k8s.io/kubernetes/pkg/apis/batch/v1beta1`: `06/05/2024` - `78.3%`
-- `k8s.io/kubernetes/pkg/apis/batch/validation`: `06/05/2024` - `87.7%`
+- `k8s.io/kubernetes/pkg/controller/job`: `2024-05-02` - `91.5%`
+- `k8s.io/kubernetes/pkg/apis/batch/v1`: `2024-05-06` - `87.3%`
+- `k8s.io/kubernetes/pkg/apis/batch/v1beta1`: `2024-05-06` - `78.3%`
+- `k8s.io/kubernetes/pkg/apis/batch/validation`: `2024-05-06` - `87.7%`
 
 ##### Integration tests
 
-<!--
-Integration tests are contained in k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
--->
+Integration tests will cover:
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-<!-- - <test>: <link to test coverage> -->
-- Test that when the feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a matching PodFailurePolicyRule, check that the `JobFailed` condition has a reason of `PodFailurePolicy_{Name}`.
-
-- Test that when the feature flag is off, but when it was previously enabled, there is an existing Job
-which already had the `JobFailed` condition reason set with the new suffix (i.e., `PodFailurePolicy_{Name}`), that the Job controller does not overwrite the reason to `PodFailurePolicy`, and that it remains set to the existing value.
-
-- Add test cases for both onPodConditions and onExitCodes to ensure the `Name` or the rule's index (when `Name` is empty) is properly added.
+- When the feature gate is enabled and a Job's pod failure policy triggers a Job
+  failure through a named rule, the Job `Failed` condition reason is
+  `PodFailurePolicy_<name>`.
+- When the feature gate is enabled and a Job's pod failure policy triggers a Job
+  failure through an unnamed rule, the Job `Failed` condition reason is
+  `PodFailurePolicy_<index>`.
+- When the feature gate is disabled, the API server does not preserve the new
+  field and Job failures continue to use the legacy `PodFailurePolicy` reason.
+- When the feature gate is disabled after a Job already has a granular failure
+  condition reason, the Job controller does not rewrite that existing condition
+  reason.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+An e2e test will create a Job with `podFailurePolicy.rules[*].name`, trigger a
+Pod failure that matches the named `FailJob` rule, and verify that the Job
+`Failed` condition has the expected `PodFailurePolicy_<name>` reason.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-<!-- - <test>: <link to test coverage> -->
-We will a test case similar to the integration test case:
-
-- When the feature flag is enabled and a Job's PodFailurePolicy triggers a Job failure, due to a
-matching PodFailurePolicyRule, check that the `JobFailed` condition has the `PodFailurePolicy_{Reason}` reason set correctly.
+An additional e2e test will cover an unnamed rule and verify the
+`PodFailurePolicy_<index>` fallback.
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Feature implemented behind the `PodFailurePolicyName` feature gate, disabled
+  by default.
+- API validation, API strategy, Job controller unit tests, and Job controller
+  integration tests implemented.
+- `jobs_finished_total` continues to use bounded reason label values.
+- User-facing documentation updated.
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
+- Address feedback and bug reports from Alpha users.
+- Feature is stable in Alpha for one release cycle.
+- Feature gate enabled by default.
+- e2e tests are implemented, running regularly, and linked in this KEP.
+- Upgrade, downgrade, and rollback behavior is tested.
+- All functional, security, monitoring, and testing gaps identified during Alpha
+  are resolved.
 
 #### GA
 
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
-#### Alpha
-
-- Feature implemented behind a feature flag
-- Initial unit and integration tests are implemented
-- Documentation is updated
-
-#### Beta
-- Address reviews and bug reports from Alpha users
-- Feature is stable in Alpha for 1 release cycle
-- Feature flag enabled by default
-
-#### GA
-- Address reviews and bug reports from Beta users
-- Feature is stable in Beta for 2 full release cycles
+- Address feedback and bug reports from Beta users.
+- Feature is stable in Beta for two full release cycles.
+- Feature gate graduated according to the feature gate lifecycle.
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
+On upgrade to a Kubernetes version that supports this feature, no changes are
+required for existing Jobs. Users can opt in to granular reasons by enabling the
+`PodFailurePolicyName` feature gate and setting
+`.spec.podFailurePolicy.rules[*].name` on new Jobs.
 
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
-After a user upgrades their cluster to a k8s version which supports this feature, 
-the user can use this feature by simply specifying the new field in their podFailurePolicy
-config.
+On downgrade, or when the feature gate is disabled:
 
-When a user downgrades from a k8s version that supports this field to one that does
-not support this field:
-- for existing Jobs, this new field will be ignored by the Job controller,
-resulting in the condition reason being set to the previous default of `PodFailurePolicy`
-for any Job failures triggered by a pod failure policy.
-- for new Jobs, the kube-apiserver would remove this field when the Job is submitted.
+- New Jobs cannot rely on `PodFailurePolicyRule.name`; older API servers or API
+  servers with the gate disabled will not preserve the field.
+- Existing Jobs that already have the field may be reconciled by a Job
+  controller that ignores it, causing new pod-failure-policy-triggered Job
+  failures to use the legacy `PodFailurePolicy` reason.
+- Existing terminal Job conditions are not rewritten solely because the feature
+  is disabled or the control plane is downgraded.
+
+Controllers that consume Job failure reasons should tolerate both
+`PodFailurePolicy` and `PodFailurePolicy_<ruleName>` during upgrade, downgrade,
+and rollback.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+This feature is limited to the control plane. It does not require kubelet,
+kube-proxy, CRI, CNI, or CSI changes.
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+In an HA control plane with skewed kube-apiserver versions or feature-gate
+configuration, requests that include `PodFailurePolicyRule.name` may be accepted
+by some API servers and pruned or rejected by others until rollout is complete.
 
-This feature is limited to control plane, so the version skew with kubelet does
-not matter.
-
-In case kube-apiserver is running in HA mode, and the versions are skewed, then
-the old version of kube-apiserver (from before this change) may not handle
-the the new `Name` field if it is set in a Job PodFailurePolicy spec.
-
-In case the version of the kube-controller-manager leader is skewed (old), the
-built-in Job controller would reconcile the Jobs with the new `Name` field and
-simply drop the field, thereby not using it when setting the `JobFailed` condition
-reason.
+If the kube-controller-manager leader is an older version or has
+`PodFailurePolicyName` disabled, the built-in Job controller ignores the new
+field and continues to set the legacy `PodFailurePolicy` condition reason. When
+a new controller-manager with the gate enabled becomes leader, subsequent
+pod-failure-policy-triggered Job failures use the granular reason format.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
-
 ### Feature Enablement and Rollback
-
-<!--
-This section must be completed when targeting alpha to a release.
--->
-- Upgrade to k8s version 1.31+
-- Enable feature flag `PodFailurePolicyName`
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
-
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
-
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [X] Feature gate (also fill in values in `kep.yaml`)
+- [X] Feature gate
   - Feature gate name: `PodFailurePolicyName`
   - Components depending on the feature gate:
-    - kube-controller-manager
     - kube-apiserver
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+    - kube-controller-manager
+
+The feature can be enabled by setting
+`--feature-gates=PodFailurePolicyName=true` on kube-apiserver and
+kube-controller-manager. It can be disabled by setting the feature gate to
+`false` and restarting those components.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
-No
+Yes. For Jobs whose pod failure policy has a matching `FailJob` rule, enabling
+the feature changes the Job `Failed` condition reason from `PodFailurePolicy` to
+`PodFailurePolicy_<name>` or `PodFailurePolicy_<index>`. Pod failure policy
+matching, ordering, and actions are unchanged.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
-Yes, by disabling the feature flag `PodFailurePolicyName`.
+Yes. Disable the `PodFailurePolicyName` feature gate on kube-apiserver and
+kube-controller-manager. New writes will not preserve the new field, and the Job
+controller will resume using the legacy `PodFailurePolicy` reason for subsequent
+Job failures.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-For new Jobs, the apiserver will stop wiping out the new field (`Name`).
-For existing Jobs, the Job controller will stop ignoring the new field, and begin
-using it as described in previous sections.
+For new Jobs, the API server will preserve `PodFailurePolicyRule.name` again.
+For existing Jobs that still contain the field, the Job controller will resume
+using it for subsequent pod-failure-policy-triggered Job failures.
 
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
+The implementation will add unit and integration tests for:
 
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
-We can add unit tests for:
-- feature enabled and field set
-- feature disabled and field set
-- feature disabled after Jobs have `JobFailed` condition with reason set using the
-new format
+- Feature gate enabled with `PodFailurePolicyRule.name` set.
+- Feature gate enabled with `PodFailurePolicyRule.name` unset.
+- Feature gate disabled with the field set on incoming objects.
+- Feature gate disabled after Jobs already have granular Job failure condition
+  reasons.
 
 ### Rollout, Upgrade and Rollback Planning
 
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+Partial rollout can result in mixed behavior while different API servers or
+controller-manager instances run with different versions or feature-gate values.
+Some requests may preserve `PodFailurePolicyRule.name` while others prune or
+reject it, and the active Job controller may emit either the legacy or granular
+condition reason.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-If any component has not yet rolled out, or fails to rollout, the existing
-default behavior will continue to apply, but there is no downtime during partial
-rollout or rollback.
-
+This does not stop already running Pods or Jobs. The impact is limited to Job
+spec persistence for the new field and the failure reason observed when a pod
+failure policy fails a Job.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-A substantial increase in the `job_sync_duration_seconds` metric may suggest the
-processing of the configured job pod failure policy rules consumes too much time.
+A substantial increase in `job_sync_duration_seconds` may indicate the Job
+controller is spending more time reconciling Jobs after the feature is enabled.
 
-An operator can also observe `job_pods_finished_total` to check if the reason count
-of taken actions (`FailJob`, `Count` or `Ignore`) correlates with the expected
-changes based on the Job workload specificity.
-
-Additionally, an operator should check if the failed Jobs have the correct condition
-reason set on the `JobFailed` reason, as described in the [design details](#design-details).
+Operators should also monitor `jobs_finished_total{reason="PodFailurePolicy"}`
+and `pod_failures_handled_by_failure_policy_total{action="FailJob"}` to check
+whether Jobs are failing through pod failure policy at the expected rate. The
+`jobs_finished_total` metric must keep the bounded `PodFailurePolicy` reason
+label even when Job conditions use granular reasons.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Feature is not implemented yet so we cannot test these paths.
+Not yet. The feature implementation is pending. Before Beta, the
+upgrade->downgrade->upgrade path will be tested to verify field preservation,
+field pruning, legacy reason fallback, granular reason restoration, and
+non-rewriting of existing terminal Job conditions.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-`PodFailurePolicy` reason format will be deprecated in GA and replaced by `PodFailurePolicy_{RuleName}`.
-Until then, we will maintain both based on conditional logic behind a feature flag.
+No APIs, fields, feature gates, or flags are removed. The legacy unsuffixed
+`PodFailurePolicy` Job condition reason remains the rollback and version-skew
+behavior during Alpha and Beta.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+An operator can inspect Job specs for `.spec.podFailurePolicy.rules[*].name`.
+For aggregate observation, a non-zero
+`pod_failures_handled_by_failure_policy_total{action="FailJob"}` value indicates
+that pod failure policy is failing Jobs, and `jobs_finished_total` indicates how
+many Jobs finished with the bounded `PodFailurePolicy` reason label.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] Job API `.status`
+  - Condition name: `Failed`
+  - Other field: `reason` is set to `PodFailurePolicy_<name>` or
+    `PodFailurePolicy_<index>`
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+This feature does not introduce a new SLO. Existing Job controller SLOs should
+not be negatively affected.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [x] Metrics
+- [X] Metrics
   - Metric name:
-    - `job_sync_duration_seconds` (existing): can be used to see how much the
-feature enablement increases the time spent in the sync job
+    - `job_sync_duration_seconds` (existing): indicates Job controller sync
+      latency.
+    - `jobs_finished_total` (existing): indicates completed and failed Jobs with
+      bounded reason labels.
+    - `pod_failures_handled_by_failure_policy_total` (existing): indicates
+      failed Pods handled by pod failure policy by action.
   - Components exposing the metric: kube-controller-manager
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
-
-No.
+No. The feature intentionally does not add a metric containing rule names because
+rule names are user-provided and could create unbounded metric cardinality.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No. The feature only depends on kube-apiserver and kube-controller-manager.
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
-No
+No. The Job controller already updates Job status when a Job fails. This feature
+only changes the condition reason used in that existing update.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
 No.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
-No
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
-If the optional `name` field is specified, the podFailurePolicy object size will increase by 1 byte per
-character in the `name` string. The name field will be no longer than 128 characters, thus the max size
-increase of the PodFailurePolicy object will be 128 bytes.
-Otherwise, if unset, it will default to the index of the rule, and thus increase by 1 byte per digit in
-the index number.
+Yes, only for Jobs that set `PodFailurePolicyRule.name` or Jobs that later
+receive a granular failure condition reason.
+
+- API type: Job
+- Estimated spec size increase: up to the validated length of each configured
+  rule name.
+- Estimated status size increase: one Job condition `reason` value grows from
+  `PodFailurePolicy` to `PodFailurePolicy_<name>` or
+  `PodFailurePolicy_<index>` when a pod failure policy fails the Job.
+- Estimated object count increase: none.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
-No
+No. Validation adds bounded checks over the existing
+`podFailurePolicy.rules` slice, and reconciliation adds only bounded string
+construction for a Job that is already failing.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
-No
+No. The additional validation and string construction are negligible. Metrics
+must not include user-provided rule names as labels, so the feature does not add
+metric-cardinality-driven resource usage.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
-No
+No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
-
 ###### How does this feature react if the API server and/or etcd is unavailable?
+
+If kube-apiserver or etcd is unavailable, users cannot create or update Jobs
+with the new field and the Job controller cannot persist updated Job status.
+Running Pods are not directly affected. The Job controller will retry status
+updates when the API server and etcd become available.
 
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- Invalid rule name
+  - Detection: Job creation or update is rejected by kube-apiserver validation.
+  - Mitigation: Change the rule name so the generated
+    `PodFailurePolicy_<ruleName>` reason is valid, unique, within length limits,
+    and non-conflicting.
+  - Diagnostics: The API validation error identifies the invalid field.
+  - Testing: Covered by API validation unit and integration tests.
+- Feature gate disabled or old controller-manager leader
+  - Detection: Jobs fail with the legacy `PodFailurePolicy` reason even though
+    rule names are configured.
+  - Mitigation: Confirm `PodFailurePolicyName=true` on kube-apiserver and
+    kube-controller-manager, and complete the control-plane rollout.
+  - Diagnostics: Inspect component feature-gate configuration and Job
+    conditions.
+  - Testing: Covered by feature-gate unit and integration tests.
+- Skewed kube-apiserver rollout
+  - Detection: Writes that include `PodFailurePolicyRule.name` behave
+    differently depending on which API server handles the request.
+  - Mitigation: Complete the kube-apiserver rollout or temporarily disable use of
+    the new field until all API servers are consistent.
+  - Diagnostics: Compare API server versions and feature-gate configuration.
+  - Testing: Covered by upgrade and rollback testing before Beta.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+Check `job_sync_duration_seconds` for increased Job controller sync latency,
+then inspect whether the affected Jobs use pod failure policy and whether they
+are failing through `FailJob` rules. Confirm that `jobs_finished_total` retains
+bounded reason labels and does not contain user-provided rule names. If the
+problem appears related to this feature, disable `PodFailurePolicyName` and
+verify that Job sync latency returns to its previous level.
+
 ## Implementation History
 
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-- 2024-05-24: KEP Published
-- 2026-06-09: Update the milestone to v1.38
+- 2024-05-24: KEP published.
+- 2026-06-09: Updated the target milestone to v1.38.
+- 2026-09-06: Modernized KEP text, PRR answers, and metrics-cardinality
+  requirements for the v1.38 Alpha target.
 
 ## Drawbacks
 
-It is a less intuitive user experience to have the PodFailurePolicy rule name be appended
-as a suffix to the Job failure reason, rather than 
+The prefixed `PodFailurePolicy_<ruleName>` format is less direct than allowing
+users to set the entire Job condition reason themselves. The prefix is
+intentional: it preserves Job controller ownership of the reason namespace while
+still exposing the specific matching rule.
+
+Clients that consume Job failure reasons need to handle both the legacy
+`PodFailurePolicy` reason and granular reasons during rollout, rollback, and
+version skew.
 
 ## Alternatives
 
-We discussed the idea of having a new optional `PodFailurePolicyRule` field `SetConditionReason`, which will enable
-the user to explicitly set the condition reason they want on the JobFailed condition set on the Job when that pod failure
-policy rule triggers a Job failure. However, ultimately it was decided we didn't want to open up the reason field to be
-explicitly set by the user to any arbitrary value, as this would be tricky to validate, and would diverge from the current
-paradigm of having only machine set reasons which are determined programatically.
+One alternative was to add an optional `reason` or `setConditionReason` field to
+`PodFailurePolicyRule` and use that value directly as the Job failure condition
+reason. This was rejected because it would let users set arbitrary Job condition
+reasons, making validation and reason ownership less clear.
 
+Another alternative was to derive more specific reasons automatically, such as
+`PodFailurePolicy_ExitCode143` for `onExitCodes` rules. This does not generalize
+well to `onPodConditions`, and it gives users less control over the stable
+machine-readable value consumed by higher-level controllers.
 
-## Infrastructure Needed (Optional)
+## Infrastructure Needed
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+No new infrastructure is needed.
