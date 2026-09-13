@@ -92,7 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [API Changes](#api-changes)
     - [Introduce typed-<code>list</code> in <code>DeviceAttribute</code>](#introduce-typed-list-in-deviceattribute)
-    - [Introduce <code>.include</code> function in CEL](#introduce-include-function-in-cel)
+    - [Introduce <code>.includes</code> function in CEL](#introduce-includes-function-in-cel)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Hardware Topological Aligned CPUs &amp; GPUs &amp; NICs](#story-1-hardware-topological-aligned-cpus--gpus--nics)
     - [Story 2](#story-2)
@@ -273,7 +273,7 @@ spec:
       list-of-version:
         versions: ["1.0.0", "1.0.1"]
 ```
-#### Introduce `.include` function in CEL
+#### Introduce `.includes` function in CEL
 
 When the attribute type was changed from scalar to list. Existing CEL won't compile due to type mismatch. 
 
@@ -284,15 +284,21 @@ attributes["foo"] == 1
 
 To maintain backward compatibility for existing CEL expressions, it _might_ be possible to override comparison operators (`==`, etc.) that allows for a list type where `attributes["foo"] == 1` is equivalent to `attributes["foo"] == [1]`. But we don't do this way because it wouldn't be idiomatic and would diverge from normal CEL type system expectations and feels confusing to anyone that already has an understanding of how the CEL type system is suppose to work.
 
-Instead, although user needs to rewrite the existing CEL expressions, it plans to provide a helper function, say `.include`, which can work in type-agnostic way to make the CEL migration easier:
+Instead, although user needs to rewrite the existing CEL expressions, we provide a helper function, `.includes`, which works in a type-agnostic way to make the CEL migration easier:
 
 ```
 // assume attribute["foo"] is 1
-attribute["foo"].include(1) --> true
+attribute["foo"].includes(1) --> true
 
 // assume attribute["foo"] is [1]
-attribute["foo"].include(1) --> true
+attribute["foo"].includes(1) --> true
 ```
+
+`.includes` (`<dyn>.includes(<dyn>)`) has since been implemented not as a DRA-specific helper, but migrated into the shared, versioned CEL extension library `k8s.io/apiserver/pkg/cel/library` (`library.Lists(library.ListsVersion(1))`, available in the CEL environment from version 1.37 onward: [kubernetes/kubernetes#140016](https://github.com/kubernetes/kubernetes/pull/140016)). This means the function is reusable by any CEL-consuming API in Kubernetes, not just DRA device selectors.
+
+During Alpha it was proposed to restrict `.includes` to the `attributes[x]` target only ([kubernetes/kubernetes#137901](https://github.com/kubernetes/kubernetes/issues/137901)). That was decided against and the issue closed: once the function is scoped under the versioned lists library it is a legitimate generic helper whose availability is governed by that library's version, so a scalar receiver such as `1.includes(1)` is acceptable and no DRA-specific restriction is applied.
+
+Additionally, when re-evaluating a CEL expression that was already persisted (e.g. a selector saved before a downgrade, or evaluated by an n-1 component), list-typed attributes and `.includes` remain usable even if `DRAListTypeAttributes` is disabled at evaluation time: [kubernetes/kubernetes#139395](https://github.com/kubernetes/kubernetes/pull/139395). This closes a version-skew gap identified during alpha (a previously-saved selector referencing list attributes could otherwise fail to re-evaluate on a gate-disabled or older component).
 
 ### User Stories (Optional)
 
