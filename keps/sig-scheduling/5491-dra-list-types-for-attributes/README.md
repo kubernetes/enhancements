@@ -713,15 +713,18 @@ in back-to-back releases.
 
 - Feature implemented behind a feature flag (`DRAListTypeAttributes`). The Feature gate is disabled by default.
 - Documentation provided
-- Initial unit, integration and e2e tests completed and enabled.
-- All the issues (https://github.com/kubernetes/kubernetes/issues/137905) which was identified in the initial implementation should be resolved.
+- Initial unit and integration tests
 
 #### Beta
 
-- Feature Gates are enabled by default.
+- Feature Gate `DRAListTypeAttributes` is enabled by default.
+- List-typed `matchAttribute`/`distinctAttribute` allocation is implemented in the `incubating` allocator, which is the default implementation (see [Implementation](#implementation-for-evaluating-constraints)).
+- Integration and e2e tests for list-typed `matchAttribute`/`distinctAttribute` allocation are in place (see [Test Plan](#test-plan)).
+- All the issues (https://github.com/kubernetes/kubernetes/issues/137905) which was identified in the initial implementation should be resolved.
 - No major outstanding bugs.
 - 1 example of real-world use case.
 - Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
+- All Beta PRR questions answered.
 
 #### GA
 
@@ -742,6 +745,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+- **Upgrade**: All fields introduced by this KEP are optional, so existing `ResourceSlice` and `ResourceClaim` objects are unaffected. Drivers can start publishing list-typed attributes at any time; until one does, `matchAttribute`/`distinctAttribute` behave as before, because a scalar is treated as a single-element set.
+- **Downgrade**: Disabling `DRAListTypeAttributes` prevents writing new list-typed attribute values. Already-stored values are preserved, but are not considered by `matchAttribute`/`distinctAttribute` evaluation, so claims constraining on such an attribute fail to allocate.
+
 ### Version Skew Strategy
 
 <!--
@@ -757,9 +763,11 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-For upgrade, existing `ResourceClaim`/`ResourceSlice` will still work as expected, as the new fields are missing there.
+For upgrade, existing `ResourceClaim`/`ResourceSlice` will still work as expected, as the new list-typed attribute fields are missing there.
 
-For downgrade, when there exists `ResourceClaim` with `matchSemantics`/`distinctSemantics` field or `ResourceSlice` with `list` type attribute values, there need to be caution. Although the already allocated claim does not affect, but when re-allocating, `matchSemantics`/`distinctSemantics` will be ignored. And, specified attribute in `matchAttribute`/`distinctAttribute` is `list` type, then allocation will be failed.
+For downgrade/skew: `list`-typed attribute values already stored in a `ResourceSlice` remain in etcd and are served as-is by kube-apiserver; they are not deleted or rewritten. However, if kube-scheduler is n-1 (or the gate is disabled on it) and a `ResourceClaim`'s `constraints[].{matchAttribute,distinctAttribute}` references an attribute that is `list`-typed, that scheduler does not read the list-typed values for constraint evaluation, so it cannot find a device satisfying the constraint. Allocation simply fails for that claim, leaving its pod `Pending`/unschedulable — no error, crash, or data loss, just an allocation that can't succeed until the scheduler is upgraded (or the gate is re-enabled).
+
+For version skew specifically involving CEL device selectors: `.includes` and list-typed attributes remain usable when re-evaluating an already-persisted CEL expression, regardless of the `DRAListTypeAttributes` gate state at evaluation time. So a selector expression referencing a list-typed attribute, once compiled while the gate was enabled, remains re-evaluable by an n-1 kube-apiserver or kube-scheduler that has the gate disabled, avoiding a hard failure on a previously-saved selector during a rolling downgrade.
 
 ## Production Readiness Review Questionnaire
 
