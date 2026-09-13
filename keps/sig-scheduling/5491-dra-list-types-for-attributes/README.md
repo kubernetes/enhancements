@@ -543,6 +543,8 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
+None.
+
 ##### Unit tests
 
 <!--
@@ -564,7 +566,28 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- API validation:
+  - valid and invalid list-typed `DeviceAttribute` values (`ints`/`bools`/`strings`/`versions`)
+  - exactly one value field is set per attribute, and every list is non-empty
+  - the per-device limit on the total number of attribute values, and the maximum length of string and version values
+  - feature gate transition behavior for the new fields on create and update
+- CEL:
+  - compilation and evaluation of device selectors over list-typed attributes
+  - `.includes` applied to both scalar and list-typed attributes
+  - expressions referencing list-typed attributes stay evaluable in the stored expressions environment while the feature gate is disabled
+- Scheduler allocator:
+  - `matchAttribute` allocates devices whose attribute values have a non-empty intersection, and rejects devices whose values are disjoint
+  - `distinctAttribute` allocates devices whose attribute values are pairwise disjoint, and rejects devices whose values overlap
+  - scalar and list-typed values match against each other, a scalar being treated as a single-element set
+  - the intersection is restored when the allocator backtracks
+
+- `k8s.io/dynamic-resource-allocation/cel`: `2026-09-13` - `93.2%`
+- `k8s.io/apiserver/pkg/cel/environment`: `2026-09-13` - `76.8%`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `2026-09-13` - `94.9%`
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `<TBD date>` - `<TBD coverage>`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `2026-09-13` - `97.0%`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `2026-09-13` - `88.4%`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `2026-09-13` - `86.9%`
 
 ##### Integration tests
 
@@ -590,7 +613,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- [`test/integration/dra`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/dra): the feature gate is exercised as part of the aggregate feature gate test group. Add allocation tests for list-typed `matchAttribute` and `distinctAttribute` constraints, including device sets that mix scalar and list-typed values.
 
 ##### e2e tests
 
@@ -609,7 +632,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- [`test/e2e/dra`](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra): add tests that a pod is scheduled or stays pending according to list-typed `matchAttribute` (non-empty intersection) and `distinctAttribute` (pairwise disjoint) constraints, including device sets that mix scalar and list-typed values.
 
 ### Graduation Criteria
 
