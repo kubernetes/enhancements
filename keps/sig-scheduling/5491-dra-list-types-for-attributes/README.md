@@ -95,7 +95,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Introduce <code>.includes</code> function in CEL](#introduce-includes-function-in-cel)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Hardware Topological Aligned CPUs &amp; GPUs &amp; NICs](#story-1-hardware-topological-aligned-cpus--gpus--nics)
-    - [Story 2](#story-2)
+    - [Story 2: Cross-driver NUMA Co-placement via a Standard Attribute](#story-2-cross-driver-numa-co-placement-via-a-standard-attribute)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -401,9 +401,17 @@ spec:
     matchAttribute: k8s.io/pcieRoot
 ```
 
-#### Story 2
+#### Story 2: Cross-driver NUMA Co-placement via a Standard Attribute
 
-T.B.D.
+[KEP-6072](/keps/sig-node/6072-dra-standard-numanode), which defines the standard device attribute `resource.kubernetes.io/numaNode` and is **stable as of v1.37**, is the first in-tree consumer of the list types proposed here. It shows the intended usage pattern end to end:
+
+- A driver publishes `resource.kubernetes.io/numaNode` as an `ints` list: the device's physical NUMA node (from the kernel's `numa_node` sysfs entry) first, followed by the same-socket NUMA nodes at the minimum ACPI SLIT distance. A driver that cannot compute the SLIT-based set may publish the physical node alone as a scalar `int`.
+- A workload asks for a GPU and a NIC served by two different drivers, and ties them together with a single `matchAttribute: resource.kubernetes.io/numaNode`.
+- Because `matchAttribute` is evaluated as non-empty set intersection and a scalar is treated as a single-element set, the two devices match whenever their NUMA sets overlap: a scalar `4` from one driver matches a list `[4, 5, 6, 7]` from another. Mixed scalar/list forms across drivers need no special handling from the user or from either driver.
+
+Without list types, every driver would have to agree on one encoding for "the set of acceptable NUMA nodes" (for example a formatted string), and `matchAttribute` could only compare those encodings for exact equality -- which fails precisely in the mixed scalar/list case that occurs while drivers are being rolled out.
+
+[KEP-6080](/keps/sig-scheduling/6080-dra-derived-attributes) (`derivedAttributes`, targeting Beta in v1.38) is a second consumer: its CEL expressions read and return list-typed attributes and inherit the intersection semantics defined here.
 
 ### Notes/Constraints/Caveats (Optional)
 
