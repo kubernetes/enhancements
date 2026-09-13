@@ -151,17 +151,17 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -1200,11 +1200,19 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2025-11-14: KEP created.
+- Kubernetes 1.36: Alpha implementation merged behind the `DRAListTypeAttributes` feature gate.
+- Kubernetes 1.37: `.includes` migrated from the DRA-specific CEL library into the shared, versioned CEL lists library; list-typed attributes made evaluable in the StoredExpressions CEL environment regardless of the feature gate state; scheduler_perf coverage added for list-typed `matchAttribute`.
+- Kubernetes 1.38: promotion to Beta.
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+- It adds complexity to the scheduler: the allocator's constraint evaluation and the CEL type system both have to handle an attribute that may be either a scalar or a list.
+- The type of an attribute is no longer determined by its name alone. The same name can be a scalar on one driver's device and a list on another's, so a device selector has to use `.includes` rather than `==`, and existing selectors break when a driver switches an attribute from scalar to list.
 
 ## Alternatives
 
