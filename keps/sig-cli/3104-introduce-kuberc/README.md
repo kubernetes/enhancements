@@ -87,10 +87,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
     - [Story 3](#story-3)
-    - [Story 4](#story-4)
-    - [Story 5](#story-5)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Open Questions](#open-questions)
+    - [Questions](#questions)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Kubectl Kuberc Management Command (kubectl kuberc)](#kubectl-kuberc-management-command-kubectl-kuberc)
@@ -270,16 +268,6 @@ https://github.com/kubernetes/kubectl/issues/524
 
 #### Story 3
 
-[UNRESOLVED] As a user I would like to use different preferences per context.
-
-#### Story 4
-
-As a user I would like to be able to opt out of deprecation warnings.
-
-https://github.com/kubernetes/kubectl/issues/1317
-
-#### Story 5
-
 As a user I would like to be able to prevent the execution of untrusted binaries by the client-go credential plugin system.
 
 ### Notes/Constraints/Caveats (Optional)
@@ -291,13 +279,32 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-#### Open Questions
+#### Questions
 
 1. [How are subcommands indicated for command overrides?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r896174406)
+
+   Subcommands are matched based on the full command string without `kubectl` prefix, 
+   for example `get pods`.
+
 1. [How are subcommand aliases indicated?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r896179267)
+
+   Subcommands are matched based on the full command string without `kubectl` prefix, 
+   for example `get pods`.
+
 1. [How do we handle tying these settings to cluster contexts?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898239057)
+
+   We are not planning to support cluster context-based settings.
+
 1. [Do we want this file to live elsewhere i.e. XDG_CONFIG?](https://github.com/kubernetes/enhancements/pull/3392#discussion_r896177353)
+
+   We are not planning to support XDG_CONFIG. This was discussed in 
+   [KEP 2229](https://github.com/kubernetes/enhancements/issues/2229) and 
+   the conclusion was that this would break entire ecosystem build around 
+   currently supported configuration paths.
+
 1. [How do we execute subcommands and do we want to support variable substitution i.e. `$1`](https://github.com/kubernetes/enhancements/pull/3392#discussion_r898227148)
+
+   We are not planning to support variable substitution in subcommands.
 
 ### Risks and Mitigations
 
@@ -620,7 +627,8 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 -->
 
-- [test-cmd.run_kuberc_tests](https://github.com/kubernetes/kubernetes/blob/fd15e3fd5566fb0a65ded1883fbf51ce7a68fe28/test/cmd/kuberc.sh): [integration cmd-master](https://testgrid.k8s.io/sig-release-master-blocking#cmd-master)
+- [test-cmd.run_kuberc_tests](https://github.com/kubernetes/kubernetes/blob/b4b4a788790ed13563d7f48a187e32cc7f2ffd89/test/cmd/kuberc.sh): [integration cmd-master](https://testgrid.k8s.io/sig-release-master-blocking#cmd-master)
+- [test-cmd.run_exec_credentials_tests](https://github.com/kubernetes/kubernetes/blob/b4b4a788790ed13563d7f48a187e32cc7f2ffd89/test/cmd/authentication.sh): [integration cmd-master](https://testgrid.k8s.io/sig-release-master-blocking#cmd-master)
 
 ##### e2e tests
 
@@ -634,7 +642,7 @@ https://storage.googleapis.com/k8s-triage/index.html
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
 -->
 
-- <test>: <link to test coverage>
+- [kubectl kuberc](https://github.com/kubernetes/kubernetes/blob/b4b4a788790ed13563d7f48a187e32cc7f2ffd89/test/e2e/kubectl/kuberc.go): https://storage.googleapis.com/k8s-triage/index.html?sig=apps&test=kubectl%20kuberc
 
 ### Graduation Criteria
 
@@ -723,6 +731,7 @@ in back-to-back releases.
 #### GA
 
 - Address feedback.
+- Promote config types to v1.
 
 
 ### Upgrade / Downgrade Strategy
@@ -757,7 +766,7 @@ enhancement:
 This feature will follow the [version skew policy of kubectl](https://kubernetes.io/releases/version-skew-policy/#kubectl).
 
 Furthermore, kubectl will be equipped with a mechanism which will allow it to
-read all past versions of the kuberc file, and pick the latest known one.
+read all past versions of the kuberc file, and pick the first known one.
 This mechanism will ensure that users can continue using whatever version of
 kuberc they started with, unless they are interested in newer feature available
 only in newer releases.
@@ -980,6 +989,8 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+Not applicable.
+
 ### Dependencies
 
 <!--
@@ -1162,6 +1173,7 @@ Major milestones might include:
 * 2022-06-13: This KEP created.
 * 2024-06-07: Update KEP with new env var name and template.
 * 2025-05-13: Update KEP for beta promotion.
+* 2026-09-11: Update KEP for stable promotion.
 
 ## Drawbacks
 
