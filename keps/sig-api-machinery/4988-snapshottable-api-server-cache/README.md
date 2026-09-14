@@ -15,7 +15,7 @@
     - [Consistency checking overhead](#consistency-checking-overhead)
 - [Design Details](#design-details)
   - [Snapshotting algorithm](#snapshotting-algorithm)
-    - [Hasing algorithm](#hasing-algorithm)
+    - [Hashing algorithm](#hashing-algorithm)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -204,7 +204,7 @@ The results are promising:
 
 Periodic execution of consistency checking will introduce additional overhead.
 This load is not negligible, as it requires downloading and decoding data from etcd.
-For saftly we still think it's important that feature is enabled by default,
+For safety we still think it's important that feature is enabled by default,
 however we want to leave an option to disable it.
 For that we will introduce `DetectCacheInconsistency` feature gate in Beta.
 
@@ -240,7 +240,7 @@ At that point disabling inconsistency checks will no longer be needed.
 
 [Clone()]: https://pkg.go.dev/github.com/google/btree#BTree.Clone
 
-#### Hasing algorithm
+#### Hashing algorithm
 
 Every 5 minutes, for each resource, we calculate hash for each resource.
 A non-consistent `LIST` request (`RV=0`) is sent to the watch cache to retrieve its latest available RV.
