@@ -1,0 +1,31 @@
+title: Weighted Load Balancing for Kube-Apiserver
+kep-number: 6315
+authors:
+  - "@serathius"
+  - "@mborsz"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-scalability
+status: provisional
+creation-date: 2026-09-02
+reviewers:
+  - TBD
+approvers:
+  - "@wojtek-t"
+  - "@liggitt"
+
+stage: alpha
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+
+feature-gates:
+  - name: RequestCostAggregation
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics:
+  - apiserver_load_balancing_cpu_utilization
+  - apiserver_load_balancing_memory_utilization
