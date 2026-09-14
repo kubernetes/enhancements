@@ -449,6 +449,21 @@ None.
 - Any additional e2e tests implemented and running in Testgrid canaries.
 - Verify scheduler performance and latency overhead with large device counts
   using the `scheduler_perf` test cases.
+- Revisit CEL compilation and evaluation caching strategy during performance
+  benchmarking (e.g., evaluating whether using compiled CEL expression pointers
+  as map keys offers benefits over exact expression strings; see
+  [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3636503040)).
+- Revisit `valToDeviceAttribute` conversion logic in CEL package with CEL
+  experts to check type handling (e.g., considering `val.Value().(type)`,
+  `traits.Lister`, or `ConvertToNative`; see
+  [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3630068626)).
+- Revisit sharing derived attribute evaluation cache across parallel node Filter
+  operations to evaluate expressions once per claim rather than once per node
+  (see [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3638735028)).
+- Discuss CEL cost limit enforcement options for derived attributes with CEL
+  maintainers (e.g., static cost validation vs. aggregate runtime evaluation vs.
+  cost sampling; see
+  [PR #140029 discussion](https://github.com/kubernetes/kubernetes/pull/140029#discussion_r3629395631)).
 
 #### GA
 - Proven adoption in deployment manifests and user documentation for real-world DRA drivers (e.g., dra-driver-cpu,
