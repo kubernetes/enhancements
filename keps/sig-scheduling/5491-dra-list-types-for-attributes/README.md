@@ -92,10 +92,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [API Changes](#api-changes)
     - [Introduce typed-<code>list</code> in <code>DeviceAttribute</code>](#introduce-typed-list-in-deviceattribute)
-    - [Introduce <code>.include</code> function in CEL](#introduce-include-function-in-cel)
+    - [Introduce <code>.includes</code> function in CEL](#introduce-includes-function-in-cel)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1: Hardware Topological Aligned CPUs &amp; GPUs &amp; NICs](#story-1-hardware-topological-aligned-cpus--gpus--nics)
-    - [Story 2](#story-2)
+    - [Story 2: Cross-driver NUMA Co-placement via a Standard Attribute](#story-2-cross-driver-numa-co-placement-via-a-standard-attribute)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -151,17 +151,17 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -273,7 +273,7 @@ spec:
       list-of-version:
         versions: ["1.0.0", "1.0.1"]
 ```
-#### Introduce `.include` function in CEL
+#### Introduce `.includes` function in CEL
 
 When the attribute type was changed from scalar to list. Existing CEL won't compile due to type mismatch. 
 
@@ -284,15 +284,21 @@ attributes["foo"] == 1
 
 To maintain backward compatibility for existing CEL expressions, it _might_ be possible to override comparison operators (`==`, etc.) that allows for a list type where `attributes["foo"] == 1` is equivalent to `attributes["foo"] == [1]`. But we don't do this way because it wouldn't be idiomatic and would diverge from normal CEL type system expectations and feels confusing to anyone that already has an understanding of how the CEL type system is suppose to work.
 
-Instead, although user needs to rewrite the existing CEL expressions, it plans to provide a helper function, say `.include`, which can work in type-agnostic way to make the CEL migration easier:
+Instead, although user needs to rewrite the existing CEL expressions, we provide a helper function, `.includes`, which works in a type-agnostic way to make the CEL migration easier:
 
 ```
 // assume attribute["foo"] is 1
-attribute["foo"].include(1) --> true
+attribute["foo"].includes(1) --> true
 
 // assume attribute["foo"] is [1]
-attribute["foo"].include(1) --> true
+attribute["foo"].includes(1) --> true
 ```
+
+`.includes` (`<dyn>.includes(<dyn>)`) has since been implemented not as a DRA-specific helper, but migrated into the shared, versioned CEL extension library `k8s.io/apiserver/pkg/cel/library` (`library.Lists(library.ListsVersion(1))`, available in the CEL environment from version 1.37 onward: [kubernetes/kubernetes#140016](https://github.com/kubernetes/kubernetes/pull/140016)). This means the function is reusable by any CEL-consuming API in Kubernetes, not just DRA device selectors.
+
+During Alpha it was proposed to restrict `.includes` to the `attributes[x]` target only ([kubernetes/kubernetes#137901](https://github.com/kubernetes/kubernetes/issues/137901)). That was decided against and the issue closed: once the function is scoped under the versioned lists library it is a legitimate generic helper whose availability is governed by that library's version, so a scalar receiver such as `1.includes(1)` is acceptable and no DRA-specific restriction is applied.
+
+Additionally, when re-evaluating a CEL expression that was already persisted (e.g. a selector saved before a downgrade, or evaluated by an n-1 component), list-typed attributes and `.includes` remain usable even if `DRAListTypeAttributes` is disabled at evaluation time: [kubernetes/kubernetes#139395](https://github.com/kubernetes/kubernetes/pull/139395). This closes a version-skew gap identified during alpha (a previously-saved selector referencing list attributes could otherwise fail to re-evaluate on a gate-disabled or older component).
 
 ### User Stories (Optional)
 
@@ -395,9 +401,17 @@ spec:
     matchAttribute: k8s.io/pcieRoot
 ```
 
-#### Story 2
+#### Story 2: Cross-driver NUMA Co-placement via a Standard Attribute
 
-T.B.D.
+[KEP-6072](/keps/sig-node/6072-dra-standard-numanode), which defines the standard device attribute `resource.kubernetes.io/numaNode` and is **stable as of v1.37**, is the first in-tree consumer of the list types proposed here. It shows the intended usage pattern end to end:
+
+- A driver publishes `resource.kubernetes.io/numaNode` as an `ints` list: the device's physical NUMA node (from the kernel's `numa_node` sysfs entry) first, followed by the same-socket NUMA nodes at the minimum ACPI SLIT distance. A driver that cannot compute the SLIT-based set may publish the physical node alone as a scalar `int`.
+- A workload asks for a GPU and a NIC served by two different drivers, and ties them together with a single `matchAttribute: resource.kubernetes.io/numaNode`.
+- Because `matchAttribute` is evaluated as non-empty set intersection and a scalar is treated as a single-element set, the two devices match whenever their NUMA sets overlap: a scalar `4` from one driver matches a list `[4, 5, 6, 7]` from another. Mixed scalar/list forms across drivers need no special handling from the user or from either driver.
+
+Without list types, every driver would have to agree on one encoding for "the set of acceptable NUMA nodes" (for example a formatted string), and `matchAttribute` could only compare those encodings for exact equality -- which fails precisely in the mixed scalar/list case that occurs while drivers are being rolled out.
+
+[KEP-6080](/keps/sig-scheduling/6080-dra-derived-attributes) (`derivedAttributes`, targeting Beta in v1.38) is a second consumer: its CEL expressions read and return list-typed attributes and inherit the intersection semantics defined here.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -448,50 +462,52 @@ type DeviceAttribute struct {
 
 	// IntValues is a non-empty list of numbers.
 	//
-	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
 	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
 	// +featureGate=DRAListTypeAttributes
 	IntValues []int64 `json:"ints,omitempty" protobuf:"varint,6,opt,name=ints"`
 
 	// BoolValues is a non-empty list of true/false values.
 	//
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
+	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
 	// +featureGate=DRAListTypeAttributes
 	BoolValues []bool `json:"bools,omitempty" protobuf:"varint,7,opt,name=bools"`
 
 	// StringValues is a non-empty list of strings.
 	// Each string must not be longer than 64 characters.
 	//
-	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
 	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
-	// +k8s:alpha(since: "1.37")=+k8s:eachVal=+k8s:maxBytes=64
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:eachVal=+k8s:maxBytes=64
 	// +featureGate=DRAListTypeAttributes
 	StringValues []string `json:"strings,omitempty" protobuf:"bytes,8,opt,name=strings"`
 
 	// VersionValues is a non-empty list of semantic versions according to semver.org spec 2.0.0.
 	// Each version string must not be longer than 64 characters.
 	//
-	// This is an alpha field and requires enabling the DRAListTypeAttributes feature gate.
+	// This is a beta field and requires enabling the DRAListTypeAttributes feature gate.
 	//
 	// +optional
 	// +listType=atomic
 	// +k8s:listType=atomic
-	// +k8s:alpha(since: "1.36")=+k8s:optional
-	// +k8s:alpha(since: "1.36")=+k8s:unionMember
+	// +k8s:beta(since: "1.38")=+k8s:optional
+	// +k8s:beta(since: "1.38")=+k8s:unionMember
 	// +featureGate=DRAListTypeAttributes
 	VersionValues []string `json:"versions,omitempty" protobuf:"bytes,9,opt,name=versions"`
 }
@@ -500,6 +516,8 @@ type DeviceAttribute struct {
 ### Implementation (for evaluating constraints)
 
 Since _non-empty intersection_ constraint is _monotonic_, we would not need updating [`Allocator.Allocate()` algorithm](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L135) and can keep using [`constraint` interface](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L703-L712). We will just extend the current [`matchAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/allocator_experimental.go#L721C6-L728) and [`distinctAttributeConstraint`](https://github.com/kubernetes/kubernetes/blob/v1.34.2/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/experimental/constraint.go#L34-L41) instances. Or, we could introduce `constraint` instances for proposed modes (e.g., `nonEmptyIntersectionMatchAttributeConstraint`, etc.).
+
+**Update (Beta):** at Alpha, list-attribute constraint evaluation is implemented only in the `structured/internal/experimental` allocator variant; at Beta, it also rotates into `internal/incubating`, following the standard [alpha/beta/GA allocator rotation model](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/dynamic-resource-allocation/structured/internal/README.md).
 
 ### Test Plan
 
@@ -525,6 +543,8 @@ Based on reviewers feedback describe what additional tests need to be added prio
 implementing this enhancement to ensure the enhancements have also solid foundations.
 -->
 
+None.
+
 ##### Unit tests
 
 <!--
@@ -546,7 +566,28 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `<package>`: `<date>` - `<test coverage>`
+- API validation:
+  - valid and invalid list-typed `DeviceAttribute` values (`ints`/`bools`/`strings`/`versions`)
+  - exactly one value field is set per attribute, and every list is non-empty
+  - the per-device limit on the total number of attribute values, and the maximum length of string and version values
+  - feature gate transition behavior for the new fields on create and update
+- CEL:
+  - compilation and evaluation of device selectors over list-typed attributes
+  - `.includes` applied to both scalar and list-typed attributes
+  - expressions referencing list-typed attributes stay evaluable in the stored expressions environment while the feature gate is disabled
+- Scheduler allocator:
+  - `matchAttribute` allocates devices whose attribute values have a non-empty intersection, and rejects devices whose values are disjoint
+  - `distinctAttribute` allocates devices whose attribute values are pairwise disjoint, and rejects devices whose values overlap
+  - scalar and list-typed values match against each other, a scalar being treated as a single-element set
+  - the intersection is restored when the allocator backtracks
+
+- `k8s.io/dynamic-resource-allocation/cel`: `2026-09-13` - `93.2%`
+- `k8s.io/apiserver/pkg/cel/environment`: `2026-09-13` - `76.8%`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `2026-09-13` - `94.9%`
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `<TBD date>` - `<TBD coverage>`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `2026-09-13` - `97.0%`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `2026-09-13` - `88.4%`
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: `2026-09-13` - `86.9%`
 
 ##### Integration tests
 
@@ -572,7 +613,7 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- [`test/integration/dra`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/dra): the feature gate is exercised as part of the aggregate feature gate test group. Add allocation tests for list-typed `matchAttribute` and `distinctAttribute` constraints, including device sets that mix scalar and list-typed values.
 
 ##### e2e tests
 
@@ -591,7 +632,7 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
+- [`test/e2e/dra`](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/dra): add tests that a pod is scheduled or stays pending according to list-typed `matchAttribute` (non-empty intersection) and `distinctAttribute` (pairwise disjoint) constraints, including device sets that mix scalar and list-typed values.
 
 ### Graduation Criteria
 
@@ -672,15 +713,18 @@ in back-to-back releases.
 
 - Feature implemented behind a feature flag (`DRAListTypeAttributes`). The Feature gate is disabled by default.
 - Documentation provided
-- Initial unit, integration and e2e tests completed and enabled.
-- All the issues (https://github.com/kubernetes/kubernetes/issues/137905) which was identified in the initial implementation should be resolved.
+- Initial unit and integration tests
 
 #### Beta
 
-- Feature Gates are enabled by default.
+- Feature Gate `DRAListTypeAttributes` is enabled by default.
+- List-typed `matchAttribute`/`distinctAttribute` allocation is implemented in the `incubating` allocator, which is the default implementation (see [Implementation](#implementation-for-evaluating-constraints)).
+- Integration and e2e tests for list-typed `matchAttribute`/`distinctAttribute` allocation are in place (see [Test Plan](#test-plan)).
+- All the issues (https://github.com/kubernetes/kubernetes/issues/137905) which was identified in the initial implementation should be resolved.
 - No major outstanding bugs.
 - 1 example of real-world use case.
 - Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
+- All Beta PRR questions answered.
 
 #### GA
 
@@ -701,6 +745,9 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+- **Upgrade**: All fields introduced by this KEP are optional, so existing `ResourceSlice` and `ResourceClaim` objects are unaffected. Drivers can start publishing list-typed attributes at any time; until one does, `matchAttribute`/`distinctAttribute` behave as before, because a scalar is treated as a single-element set.
+- **Downgrade**: Disabling `DRAListTypeAttributes` prevents writing new list-typed attribute values. Already-stored values are preserved, but are not considered by `matchAttribute`/`distinctAttribute` evaluation, so claims constraining on such an attribute fail to allocate.
+
 ### Version Skew Strategy
 
 <!--
@@ -716,9 +763,11 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-For upgrade, existing `ResourceClaim`/`ResourceSlice` will still work as expected, as the new fields are missing there.
+For upgrade, existing `ResourceClaim`/`ResourceSlice` will still work as expected, as the new list-typed attribute fields are missing there.
 
-For downgrade, when there exists `ResourceClaim` with `matchSemantics`/`distinctSemantics` field or `ResourceSlice` with `list` type attribute values, there need to be caution. Although the already allocated claim does not affect, but when re-allocating, `matchSemantics`/`distinctSemantics` will be ignored. And, specified attribute in `matchAttribute`/`distinctAttribute` is `list` type, then allocation will be failed.
+For downgrade/skew: `list`-typed attribute values already stored in a `ResourceSlice` remain in etcd and are served as-is by kube-apiserver; they are not deleted or rewritten. However, if kube-scheduler is n-1 (or the gate is disabled on it) and a `ResourceClaim`'s `constraints[].{matchAttribute,distinctAttribute}` references an attribute that is `list`-typed, that scheduler does not read the list-typed values for constraint evaluation, so it cannot find a device satisfying the constraint. Allocation simply fails for that claim, leaving its pod `Pending`/unschedulable — no error, crash, or data loss, just an allocation that can't succeed until the scheduler is upgraded (or the gate is re-enabled).
+
+For version skew specifically involving CEL device selectors: `.includes` and list-typed attributes remain usable when re-evaluating an already-persisted CEL expression, regardless of the `DRAListTypeAttributes` gate state at evaluation time. So a selector expression referencing a list-typed attribute, once compiled while the gate was enabled, remains re-evaluable by an n-1 kube-apiserver or kube-scheduler that has the gate disabled, avoiding a hard failure on a previously-saved selector during a rolling downgrade.
 
 ## Production Readiness Review Questionnaire
 
@@ -779,9 +828,9 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Basically, no. Just introducing new API fields in `ResourceClaim` and `ResourceSlice` which does NOT change the default behavior when any device attribute type was NOT changed.
+Basically, no. Just introducing new API fields in `ResourceSlice` which does NOT change the default behavior when any device attribute type was NOT changed.
 
-However, please note that `ResourceClaim`'s `matchAttribute/distinctAttribute` semantics are CHANGED when some device attribute type are changed from scalar to list.
+However, please note that `ResourceClaim`'s `matchAttribute/distinctAttribute` semantics are CHANGED when some device attribute type are changed from scalar to list: `matchAttribute` requires a non-empty intersection and `distinctAttribute` requires pairwise disjointness. And, existing CEL device selectors comparing such an attribute with `==` will NOT compile any more. They need to be rewritten with `.includes` (see [API Changes](#introduce-includes-function-in-cel)).
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -796,11 +845,13 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes. When disabled, you can not create `DeviceAttribute` with `list`-type values. And, existing `list`-type attribute values are just ignored. But, if specified attribute in `matchAttribute`/`distinctAttribute` is `list` type, allocation will be failed.
+Yes. When disabled, `DeviceAttribute` with `list`-type values can no longer be created. Already-stored `list`-type attribute values are not deleted and are still served via the API as-is; they are simply not read by `matchAttribute`/`distinctAttribute` constraint evaluation while the gate is disabled. So if the attribute referenced by `matchAttribute`/`distinctAttribute` is `list`-typed, allocation for claims using that constraint will fail (see [Version Skew Strategy](#version-skew-strategy)).
+
+This differs from CEL-based device selectors (e.g. `DeviceClassSelector`): a selector already referencing a list-typed attribute via `.includes` continues to evaluate correctly even after the gate is disabled, since list-typed attributes and `.includes` remain usable when re-evaluating an already-persisted CEL expression regardless of gate state. Only *new* selectors referencing a list-typed attribute cannot be created while the gate is disabled, symmetric to `DeviceAttribute` itself.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-`list`-type attribute values in `DeviceAttribute` and `matchSemantics`/`distinctAttribute` in `ResourceClaim` will be available again.
+`DeviceAttribute` with `list`-type values can be created again, and the non-empty-intersection/pairwise-disjoint semantics for `matchAttribute`/`distinctAttribute` in `ResourceClaim` are available again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -837,12 +888,20 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+This feature is implemented only in kube-apiserver and kube-scheduler. There is no node/kubelet component.
+
+During a rollout of an HA control plane, some `kube-apiserver` instances may have the gate enabled while others do not. Then, a `ResourceSlice` write carrying `list`-typed attribute values is rejected when it lands on a gate-disabled instance, until the rollout completes cluster-wide. Values which are already stored are kept as-is.
+
+Already running workloads are NOT impacted. Already allocated `ResourceClaim`s are not affected by flipping the gate. Only re-allocation is affected, and only for claims whose constraints reference a `list`-typed attribute.
+
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Operators should watch for an increase in:
+- `scheduler_unschedulable_pods{plugin="DynamicResources"}` — an unexpected rise may indicate `matchAttribute`/`distinctAttribute` constraints over list-typed attributes are failing to allocate as expected.
+- `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` — a latency increase may indicate the additional list/set-intersection computation in the allocator's constraint evaluation is more expensive than anticipated for the cluster's attribute-list sizes.
+- `apiserver_request_total{resource="resourceslices"}`/`apiserver_request_total{resource="resourceclaims"}` with non-2xx response codes — an increase may indicate validation/admission issues with list-typed attribute fields.
+
+If any of these metrics show a sustained regression after enabling the feature, disabling the `DRAListTypeAttributes` feature gate is the expected rollback action.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -852,11 +911,17 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+This will be done manually before the Beta release by bringing up a KinD cluster and changing the feature gate for kube-apiserver and kube-scheduler individually, and the results will be documented here.
+
+Handling of the new fields when the feature gate gets disabled is covered by unit tests in `pkg/registry/resource/resourceslice` and `k8s.io/dynamic-resource-allocation/cel`.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No. This feature is purely additive: new optional fields on `DeviceAttribute`, and a semantics extension (not a field rename) for the existing `matchAttribute`/`distinctAttribute` constraint fields. No existing API, field, or flag is deprecated or removed.
 
 ### Monitoring Requirements
 
@@ -875,6 +940,8 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+Check for `ResourceSlice` objects whose devices set one of the list-typed `DeviceAttribute` fields (`ints`/`bools`/`strings`/`versions`), or `ResourceClaim` objects whose `constraints[].{matchAttribute,distinctAttribute}` reference such an attribute. There is no dedicated "feature in use" gauge metric; this is a reasonable API-inspection fallback since the fields themselves are the signal of use.
+
 ###### How can someone using this feature know that it is working for their instance?
 
 <!--
@@ -888,9 +955,9 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [ ] Events
   - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
+- [x] API .status
+  - Condition name: N/A
+  - Other field: `ResourceClaim.Status.Allocation` is populated once a claim with `matchAttribute`/`distinctAttribute` constraints over a list-typed attribute is successfully allocated; the claim stays `Pending` (unschedulable) if no device combination satisfies the constraint.
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -911,16 +978,20 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Existing DRA and scheduler SLOs continue to apply; this feature does not introduce new latency-sensitive control loops. Since the added constraint evaluation (set intersection/pairwise-disjoint check) is bounded by the per-device attribute-value limit (`ResourceSliceMaxAttributeValuesPerDevice` = 48), it is not expected to measurably change `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` p99 relative to the scalar-only case.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
+- [x] Metrics
+  - Metric names:
+    - `apiserver_request_total{resource="resourceslices"}` / `apiserver_request_total{resource="resourceclaims"}` — non-2xx rates indicate validation/admission problems with list-typed attribute fields.
+    - `scheduler_unschedulable_pods{plugin="DynamicResources"}` — indicates constraint-evaluation allocation failures.
+    - `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` (`extension_point="Filter"`) — indicates allocator performance for constraint evaluation.
+  - Components exposing the metric: kube-apiserver, kube-scheduler
 - [ ] Other (treat as last resort)
   - Details:
 
@@ -930,6 +1001,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No dedicated per-feature metric (e.g., a gauge counting list-typed-attribute usage) is planned; the existing DRA/scheduler metrics above are considered sufficient signal, consistent with other DRA scheduling features (e.g. KEP-5075).
 
 ### Dependencies
 
@@ -953,6 +1026,8 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 -->
+
+This feature depends on DRA structured parameters ([KEP-4381](/keps/sig-node/4381-dra-structured-parameters)) being enabled (it is GA as of v1.34), and on DRA drivers publishing list-typed `DeviceAttribute` values for it to be observable. It does not depend on any additional cluster-level service or node-level agent beyond the existing DRA dependencies (kube-apiserver, kube-scheduler, and a DRA driver implementing the `resourceslice` publishing library).
 
 ### Scalability
 
@@ -1012,9 +1087,12 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
-Yes and no. It does add new fields, which increase the worst case size of `ResourceSlice` and `ResourceClaim` object. However, the increase size is bounded for most cases:
-- `ResourceClaim`: linear to the number of constraints specified in the resource.
-- `ResourceSlice`: linear to the number of devices defined in the resource. And, the number of list items is also bounded.
+Yes and no. It does add new fields, which increase the worst case size of the `ResourceSlice` object. However, the increase is bounded, and the worst case actually gets smaller:
+
+- Per device, the total number of attribute values is bounded by `ResourceSliceMaxAttributeValuesPerDevice` (=48) instead of 32, i.e. at most 16 more values. List elements share a single key, so the key bytes do NOT multiply.
+- Per slice, a slice using this feature is limited to `ResourceSliceMaxDevicesWithAdvancedFeatures` (=64) devices instead of 128.
+
+`ResourceClaim` is NOT affected. This KEP adds no field to it, it just extends the semantics of the existing `constraints[].{matchAttribute,distinctAttribute}`.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1072,6 +1150,8 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+This feature adds no additional interaction with etcd beyond the existing `ResourceSlice`/`ResourceClaim` storage paths. If the API server or etcd is unavailable, this feature behaves the same as core DRA: no `ResourceSlice`/`ResourceClaim` reads/writes succeed, and kube-scheduler cannot allocate new claims (existing running workloads are unaffected). See also the general DRA troubleshooting guidance in [KEP-4381](/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable), which still applies.
+
 ###### What are other known failure modes?
 
 <!--
@@ -1087,7 +1167,25 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+- **A `ResourceClaim`'s `matchAttribute`/`distinctAttribute` constraint references a list-typed attribute, but the allocation cannot be satisfied**
+  - Detection: The claim's pod stays `Pending`/unschedulable; `scheduler_unschedulable_pods{plugin="DynamicResources"}` increases. `kubectl describe pod` shows a scheduling failure event from the `DynamicResources` plugin.
+  - Mitigations: Verify the intended device set actually has a non-empty intersection (for `matchAttribute`) or is pairwise disjoint (for `distinctAttribute`) by inspecting the relevant `ResourceSlice` attribute values (`kubectl get resourceslice -o yaml`).
+  - Diagnostics: kube-scheduler logs at `-v=7` show per-device constraint evaluation (`Allocating one device`, similar to existing DRA allocator logging).
+  - Testing: Covered by allocator unit tests (see [Unit tests](#unit-tests)); e2e coverage planned before v1.38 freeze (see [e2e tests](#e2e-tests)).
+- **A driver publishes an attribute that changed from scalar to list-typed, breaking an existing CEL device selector**
+  - Detection: `ResourceClaim`/`DeviceClass` CEL selector compilation or evaluation errors surfaced via API validation errors or scheduler logs.
+  - Mitigations: Rewrite the CEL expression to use `.includes(...)` instead of direct equality, per [API Changes](#introduce-includes-function-in-cel).
+  - Diagnostics: kube-apiserver validation error messages on write; kube-scheduler logs for evaluation-time errors.
+  - Testing: Covered by CEL compiler unit tests (`compile_test.go`).
+- **Version skew: an n-1 component (gate disabled) encounters a stored CEL expression referencing a list-typed attribute**
+  - Detection: Would previously have surfaced as an evaluation error on the older/gate-disabled component; now avoided by design (see [Version Skew Strategy](#version-skew-strategy)).
+  - Mitigations: N/A during normal operation; if encountered, complete the rollout of the gate across all control-plane instances.
+  - Diagnostics: kube-apiserver/kube-scheduler logs would show CEL evaluation errors if this guarantee were violated.
+  - Testing: Covered by CEL compiler unit tests (`compile_test.go`), which run in the `StoredExpressions` environment with the feature disabled.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` to confirm whether allocator latency (rather than some unrelated scheduling bottleneck) is the source of the regression, then inspect the size of the `ResourceSlice` attribute lists and the number of `matchAttribute`/`distinctAttribute` constraints involved in the slow requests — both are bounded (`ResourceSliceMaxAttributeValuesPerDevice` = 48) but a cluster using values near that bound combined with many constraints is the most likely source of elevated latency.
 
 ## Implementation History
 
@@ -1102,11 +1200,19 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2025-11-14: KEP created.
+- Kubernetes 1.36: Alpha implementation merged behind the `DRAListTypeAttributes` feature gate.
+- Kubernetes 1.37: `.includes` migrated from the DRA-specific CEL library into the shared, versioned CEL lists library; list-typed attributes made evaluable in the StoredExpressions CEL environment regardless of the feature gate state; scheduler_perf coverage added for list-typed `matchAttribute`.
+- Kubernetes 1.38: promotion to Beta.
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+- It adds complexity to the scheduler: the allocator's constraint evaluation and the CEL type system both have to handle an attribute that may be either a scalar or a list.
+- The type of an attribute is no longer determined by its name alone. The same name can be a scalar on one driver's device and a list on another's, so a device selector has to use `.includes` rather than `==`, and existing selectors break when a driver switches an attribute from scalar to list.
 
 ## Alternatives
 
