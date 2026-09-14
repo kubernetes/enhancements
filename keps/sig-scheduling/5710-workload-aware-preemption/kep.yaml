@@ -49,6 +49,9 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - scheduler_podgroup_preemption_attempts_total
-  - scheduler_podgroup_preemption_attempt_duration_seconds
-  - scheduler_podgroup_preemption_victims
+  - scheduler_workload_preemption_attempts_total
+  - scheduler_workload_preemption_victims
+  - scheduler_preemption_workload_disruptions
+  - scheduler_preemption_evaluation_duration_seconds
+  - scheduler_preemption_execution_duration_seconds
+  - scheduler_preemption_pdb_violations_total
