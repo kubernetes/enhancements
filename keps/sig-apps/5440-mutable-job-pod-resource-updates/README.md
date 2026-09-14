@@ -142,13 +142,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -177,9 +177,10 @@ priority and cluster load.
 
 This is a proposal to relax update validation on suspended jobs to allow mutating
 resource specifications in the job's pod template, specifically CPU, memory, GPU,
-and other extended resource requests and limits. This enables a higher-level
-controller to optimize resource allocation before un-suspending a job based on
-current cluster conditions and resource availability.
+other extended resource requests and limits, and container references to resource
+claims. This enables a higher-level controller to optimize resource allocation
+before un-suspending a job based on current cluster conditions and resource
+availability.
 
 ## Motivation
 
@@ -202,7 +203,9 @@ appropriately for current capacity constraints.
 
 ### Goals
 
-- Allow mutating CPU, memory, GPU, and extended resource requests and limits of a container within a PodTemplate of a suspended jobs.
+- Allow mutating CPU, memory, GPU, and extended resource requests and limits, as
+  well as resource claim references, for containers and init containers within
+  the PodTemplate of a suspended Job.
 - Enable queue controllers to optimize resource allocation based on cluster conditions.
 - Improve cluster resource utilization through dynamic resource sizing, especially for expensive GPU and specialized hardware.
 
@@ -215,12 +218,14 @@ appropriately for current capacity constraints.
 - Allow mutating other job specifications beyond container resource requirements.
 - Support in-place pod resource updates (this is covered by separate KEPs).
 - Allow mutating of Pod Resources.
-- Allow mutating of ResourceClaims.
+- Allow mutating ResourceClaim or ResourceClaimTemplate objects, or the
+  PodTemplate's `spec.resourceClaims` entries.
 
 ## Proposal
 
 The proposal is to relax update validation for container resource specifications
-(CPU, memory, GPU, and extended resource requests and limits) in the pod template of suspended jobs.
+(CPU, memory, GPU, and extended resource requests and limits) and resource claim
+references in the pod template of suspended Jobs.
 
 This change has minimal impact on the job-controller, as the job controller will
 use the updated resource specifications when creating new pods for the job.
@@ -274,26 +279,32 @@ Right now, the best approach would be to make sure controllers look at suspended
 
 The pod template validation logic in the API server needs to be updated to relax the validation
 of the Job's Template field. Currently the template is immutable, but we need to make
-container resource specifications (CPU, memory, GPU, and extended resources requests and limits) mutable for suspended jobs.
+container resource specifications (CPU, memory, GPU, and extended resources requests and limits)
+and resource claim references mutable for suspended Jobs.
 
 The condition we will check to verify that the job is suspended is `Job.Spec.Suspend=true`.
 
-We will allow updates to the following fields in container specifications within the pod template:
+We will allow updates to the following fields in container and init container specifications within the pod template:
 - `resources.requests`
 - `resources.limits`
+- `resources.claims`
 
 ### DRA Support
 
 DRA does not allow changing ResourceClaimTemplates once they are created.
-At the moment, relaxing mutability constraints of ResourceClaimTemplates or ResourceClaims is not in scope.
-To add support for this feature with DRA, the recommendation is to recreate ResourceClaimTemplates that match the
-desired resources.
+Relaxing mutability constraints of ResourceClaimTemplates, ResourceClaims, or the
+PodTemplate's `spec.resourceClaims` entries is not in scope. To change those
+objects or entries, users must create replacements with the desired resources.
 
-One does not have to modify claims in the PodTemplate so one can still assume claims are immutable also.
+This feature does allow changing a container's `resources.claims` entries while
+the Job is suspended. These entries are references to claims defined in the
+PodTemplate's `spec.resourceClaims`; changing them selects which existing claim a
+container uses without mutating the claim itself.
 
 ### Resuming on running workloads
 
-When mutable pod scheduling requirements KEP was implemented, Jobs can only have their scheduling contraints changed on Job that is created in a suspended state.
+The original mutable scheduling directives KEP only allowed scheduling
+directives to be changed on a Job that was created in a suspended state.
 
 If a workload is resumed, then the workload is assumed to be immutable from then on. So users are not able to change scheduling constraints or update resources after a Job starts.
 
@@ -316,62 +327,82 @@ need to clean the field explicitly in the Kueue project.
 
 ### Test Plan
 
-The following unit and integrations tests will be added.
+The implementation includes unit, integration, and e2e coverage for the current
+Beta behavior. The source links below are pinned to Kubernetes commit
+`23d989a4ba78d4bffec52a573cc70b672c66e991`.
 
-- Container resource specifications are not mutable for active (non-suspended) jobs.
-- Container resource specifications (CPU, memory, GPU, extended resources) are mutable only for suspended jobs.
-- Job controller observes the resource updates and creates pods with the new resource specifications.
-- Resource validation still applies (e.g., limits >= requests) for all resource types including extended resources.
-- A job that is suspended once it went running is still able to change resources while it is suspended.
+The tests cover these behaviors:
+
+- container resource specifications are rejected for active Jobs and accepted
+  only when the Job is suspended or safely suspended;
+- scheduling directives are rejected for active Jobs and accepted only when the
+  Job is suspended or safely suspended;
+- initially suspended Jobs can be updated before the job controller has set the
+  `JobSuspended` condition;
+- Jobs that start running and are subsequently suspended can be updated after
+  active Pods are gone;
+- replacement Pods are created with the updated container resources and
+  scheduling configuration;
+- normal Job and Pod template validation still rejects invalid or unrelated
+  template changes.
 
 #### Unit tests
 
-- `k8s.io/kubernetes/pkg/registry/batch/job/`: `9/30/2025` - `93.6%`
-- `k8s.io/kubernetes/pkg/apis/batch/job/`: `9/30/2025` - `86.3%`
+- `k8s.io/kubernetes/pkg/registry/batch/job/`
+  - [`TestJobStrategy_ValidateUpdate_MutablePodResources`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/pkg/registry/batch/job/strategy_test.go#L988)
+    verifies feature-gate on/off behavior, rejection for active or not safely
+    suspended Jobs, started-then-suspended Jobs, initially suspended Jobs, and
+    rejection of unrelated template changes.
+  - [`TestJobStrategy_ValidateUpdate_MutableSchedulingDirectives`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/pkg/registry/batch/job/strategy_test.go#L3693)
+    verifies equivalent behavior for scheduling-directive mutations.
+- `k8s.io/kubernetes/pkg/apis/batch/validation/`
+  - [`TestValidateJobUpdate`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/pkg/apis/batch/validation/validation_test.go#L1465)
+    includes cases for mutable container and init-container resources, feature
+    gate off behavior, and rejection of non-resource Pod template changes.
 
 #### Integration tests
 
 #### MutablePodResourcesForSuspendedJobs
 
-Test grid does not provide information on each test case. 
-Due to this, we will link to the job and show that the job 
-
-We will add the following test scenarios to kubernetes/test/integration/jobs.
-
-- When a job is suspended with feature gate enabled, resources are able to be mutated.
-- When a job is not suspended and feature gate enabled, resources should not be mutated.
-- When feature gate is disabled and a job is suspended, mutations are not allowed.
-- When a running job is suspended, mutations will be allowed.
-
-The test cases are implemented as part of the [TestUpdateJobPodResources](https://github.com/kubernetes/kubernetes/blob/a66a59fc6fc0e7393e0f7e65f1bbbafd32f29ebe/test/integration/job/job_test.go#L4291).
-This function covers the following use cases:
-- suspended job, feature gate enabled, update resources
-- non-suspended job, feature gate enabled, update resources
-- suspended job, feature gate disabled, update resources
-- started then suspended job, feature gate enabled, update resources
-An integration test will be added to verify the behavior of PodReplacementPolicy with `Failed` and this feature.
-In this case, a running job will be suspended and the pods will go to a terminating state. If `PodReplacementPolicy` is set to `False`, a user should be able to change the resources on the Job but a pod will only be created once the terminating pods are removed. The new pods should have the resized resource.
-
-The PodReplacementPolicy tests have been implemented as part of the [TestMutablePodResourcesWithPodReplacementPolicyFailed](https://github.com/kubernetes/kubernetes/blob/a66a59fc6fc0e7393e0f7e65f1bbbafd32f29ebe/test/integration/job/job_test.go#L5301)
-
-
-Job integration tests can be found in [integration master test grid]([integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master). 
-
-Triage shows no issues with the job integration tests[triage search](https://storage.googleapis.com/k8s-triage/index.html?date=2026-01-20&job=ci-kubernetes-integration-master).
+- [`TestUpdateJobPodResources`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/test/integration/job/job_test.go#L3833)
+  covers suspended Jobs with the feature gate enabled, active Jobs with the
+  feature gate enabled, suspended Jobs with the feature gate disabled, and Jobs
+  that started and were then suspended.
+- [`TestMutablePodResourcesForSuspendedJobsNotYetStarted`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/test/integration/job/job_test.go#L4295)
+  covers updates to an initially suspended Job before the `JobSuspended`
+  condition is set.
+- [`TestMutablePodResourcesWithPodReplacementPolicyFailed`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/test/integration/job/job_test.go#L4980)
+  verifies that, with `podReplacementPolicy: Failed`, resource updates are
+  accepted while old Pods are terminating and replacement Pods use the updated
+  resources after the old Pods are removed.
 
 #### MutableSchedulingDirectivesForSuspendedJobs
 
-There was a second feature gate introduced for this feature and integration tests were also covered.
-
-This test covers the updating scheduling directives on jobs that were suspended and resumed.
-The test is covered under [TestMutableSchedulingDirectivesForSuspendedJobs](https://github.com/kubernetes/kubernetes/blob/a66a59fc6fc0e7393e0f7e65f1bbbafd32f29ebe/test/integration/job/job_test.go#L4610C6-L4610C53).
+- [`TestMutableSchedulingDirectivesForSuspendedJobs`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/test/integration/job/job_test.go#L4149)
+  covers rejection for unsuspended Jobs, successful mutation after a running Job
+  is suspended and active Pods are gone, and creation of replacement Pods using
+  the updated scheduling directives after the Job resumes.
+- [`TestMutableSchedulingDirectivesForSuspendedJobsNotYetStarted`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/test/integration/job/job_test.go#L4261)
+  covers updates to an initially suspended Job before the `JobSuspended`
+  condition is set. This test was added with the fix for the v1.36 Beta
+  regression reported in
+  [kubernetes/kubernetes#139281](https://github.com/kubernetes/kubernetes/issues/139281).
 
 #### e2e tests
 
-These will be implemented on beta promotion and will be linked 
+The current e2e coverage is for `MutablePodResourcesForSuspendedJobs`:
 
-- When a job is suspended with feature gate enabled, resources are able to be mutated.
-- When a running job is suspended, mutations are also allowed.
+- [`should allow updating pod resources for a suspended job`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/test/e2e/apps/job.go#L1631)
+  creates an initially suspended Job, updates container resources, resumes the
+  Job, and verifies that Pods use the updated resources.
+- [`should allow updating pod resources for a job that started and then was suspended`](https://github.com/kubernetes/kubernetes/blob/23d989a4ba78d4bffec52a573cc70b672c66e991/test/e2e/apps/job.go#L1723)
+  starts a Job, suspends it, updates container resources, resumes the Job, and
+  verifies that new Pods use the updated resources.
+
+Integration tests provide the required coverage for
+`MutableSchedulingDirectivesForSuspendedJobs`. The GA e2e,
+conformance, and two-week stability checklist items remain pending until the
+release requirements are satisfied and verified.
 
 ### Graduation Criteria
 
@@ -383,11 +414,29 @@ These will be implemented on beta promotion and will be linked
 #### Beta
 
 - Enable feature by default
-- Verify behavior in external controllers like Kueue or JobSet
+- Evaluate behavior in external controllers. MultiKueue usage exposed the
+  scheduling-directive regression described below during Beta.
 
 #### GA
 
-- Fix any potentially reported bugs
+- Both `MutablePodResourcesForSuspendedJobs` and
+  `MutableSchedulingDirectivesForSuspendedJobs` have been enabled by default
+  during Beta.
+- Unit and integration tests cover the intended behavior for both feature gates.
+- e2e tests cover resource mutations for initially suspended Jobs and Jobs that
+  start running and are subsequently suspended.
+- Mutations are rejected when the Job is active or not safely suspended.
+- Replacement Pods use the updated resources and scheduling configuration.
+- Real external-controller usage has been evaluated. In particular, MultiKueue
+  exposed a Beta regression where scheduling-directive mutation was rejected for
+  newly created suspended Jobs before the job controller set the `JobSuspended`
+  condition. The regression was fixed by
+  [kubernetes/kubernetes#139287](https://github.com/kubernetes/kubernetes/pull/139287).
+- Beta regressions and reported bugs found before GA have been addressed. A
+  search for open Kubernetes and enhancements issues using both feature-gate
+  names and related suspended Job mutation terms did not identify additional
+  open blockers for this KEP update.
+- Before GA, no unresolved release-blocking issues remain.
 
 ### Upgrade / Downgrade Strategy
 
@@ -407,7 +456,7 @@ N/A. This feature doesn't impact nodes.
   - Feature gate name: MutablePodResourcesForSuspendedJobs
     - Components depending on the feature gate: kube-apiserver
   - Feature gate name: MutableSchedulingDirectivesForSuspendedJobs
-    - Components depending on the faeture gate: kube-apiserver, kube-controller-manager
+    - Components depending on the feature gate: kube-apiserver, kube-controller-manager
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
@@ -415,24 +464,37 @@ N/A. This feature doesn't impact nodes.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node?
 
+During Beta, these feature gates can be enabled or disabled through component
+feature-gate configuration. For GA, both gates are expected to be enabled and
+locked to their default value, so administrators will no longer be able to
+disable them.
+
 ###### Does enabling the feature change any default behavior?
 
-Yes, it relaxes validation of updates to jobs while they are suspended. Specifically, it will allow
+Yes, it relaxes validation of updates to Jobs while they are suspended. Specifically, it will allow
 mutating the container resource specifications (CPU, memory, GPU, and extended resource
-requests and limits) in the pod template of suspended jobs.
+requests and limits) and resource claim references in the pod template of
+suspended Jobs, and it allows scheduling-directive mutations for safely suspended
+Jobs.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. If disabled, kube-apiserver will start rejecting updates to container resource
-specifications in job pod templates.
+During Beta, yes. If disabled, kube-apiserver rejects the additional Job pod
+template resource updates and scheduling-directive updates. At GA, both feature
+gates are expected to be locked to their default value and disabling them is not
+supported.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-kube-apiserver will accept container resource specification updates for suspended jobs.
+During Beta, kube-apiserver will again accept the additional updates for
+suspended Jobs. This is not applicable after GA once the gates are locked to
+their default value.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. We have unit tests and integration tests verifying behavior with feature gate on and off.
+Yes. Unit tests and integration tests verify behavior with the feature gates on
+and off. The core GA implementation PR must update the feature-gate lifecycle to
+GA and locked-to-default.
 
 See [integration-tests](#integration-tests) for more details.
 
@@ -440,17 +502,22 @@ See [integration-tests](#integration-tests) for more details.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The change is opt-in and only affects suspended jobs, so it doesn't impact already
-running workloads. However, problems with the updated validation logic may cause
-crashes in the apiserver.
+The behavior has been enabled by default since Beta and only accepts mutations
+when a Job is suspended or safely suspended. Suspending a running Job terminates
+its active Pods, which is existing Job behavior; this KEP does not mutate
+already-running Pods in place. A validation regression could incorrectly reject
+valid suspended Job updates or accept updates that should remain immutable.
 
 ###### What specific metrics should inform a rollback?
 
-If the SLOs for apiserver `apiserver_request_sli_duration_seconds` and `apiserver_request_duration_seconds` are performing poorly,
-one can rollback this feature.
+If the SLOs for apiserver `apiserver_request_sli_duration_seconds` and
+`apiserver_request_duration_seconds` are performing poorly during Beta, the
+feature gates can be disabled while investigating.
 
-Another metric is `apiserver_request_total[resource=job, group=batch, verb=UPDATE, code=400].
-This could also be used to monitor the rollout of this feature.
+Another metric is
+`apiserver_request_total[resource=job, group=batch, verb=UPDATE, code=400]`.
+This can be used to watch for rejected Job update requests. At GA, disabling the
+feature gates is not a supported rollback path.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -462,6 +529,9 @@ The following scenarios were verified on a Kind 1.35 cluster.
 - create a kind cluster with feature gate on
   - verify suspend and patching of resources is allowed.
 
+Stable PRR should confirm whether additional GA upgrade and downgrade evidence
+is required.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 No.
@@ -470,7 +540,10 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-N/A. This is not a feature that workloads use directly.
+There is no dedicated status field for this behavior. Operators can inspect
+Job update requests through apiserver audit logs and request metrics, and
+controllers using the feature can observe whether their Job updates are accepted
+or rejected by the API server.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -481,7 +554,10 @@ N/A. This is not a feature that workloads use directly.
   - Condition name:
   - Other field:
 - [X] Other (treat as last resort)
-  - Details: Create a suspended job then update the container resource specifications (CPU/memory/GPU/extended resource requests/limits) of the pod template.
+  - Details: Create a suspended Job, then update the pod template container
+    resource specifications or scheduling directives and verify that the API
+    server accepts the update only when the Job is suspended or safely
+    suspended.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -502,9 +578,8 @@ Pick one more of these and delete the rest.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No, there are no missing metrics. A metric is not necessary for this feature as users can patch workloads to resize.
-
-This would be a one time request and monitoring provides little value.
+No dedicated metric is proposed. Existing apiserver request metrics and audit
+logs can be used to observe rejected Job update requests.
 
 ### Dependencies
 
@@ -516,10 +591,11 @@ No.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-The feature itself doesn't generate API calls. But it will allow the
+The feature itself doesn't generate API calls, but it allows the
 apiserver to accept update requests to mutate container resource specifications
-(CPU, memory, GPU, and extended resources) in job pod templates, which will
-encourage implementing controllers that do this.
+(CPU, memory, GPU, and extended resources), resource claim references, and
+scheduling directives in Job pod templates. External controllers using this
+feature may send these update requests.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -555,18 +631,30 @@ Update requests will be rejected.
 
 ###### What are other known failure modes?
 
-In a multi-master setup, when the cluster has skewed apiservers, some update requests
-may get accepted and some may get rejected.
+In a multi-master setup with skewed apiservers during upgrade or downgrade,
+some Job update requests may get accepted and some may get rejected until all
+apiservers agree on the feature-gate state and validation behavior.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-N/A.
+Inspect apiserver request latency and rejection metrics, audit logs for Job
+update requests, and the API validation errors returned to clients.
 
 ## Implementation History
 
-- July 3rd, 2025: draft of KEP
-- For 1.35, KEP went in for alpha and the implementation also made it into 1.35.
-- 1.36, promote to beta.
+- v1.35: KEP approved for Alpha and implementation merged.
+- v1.36: Promoted to Beta and enabled by default.
+- v1.36: A MultiKueue workflow exposed a Beta regression where scheduling
+  directives could not be mutated on newly created suspended Jobs before the
+  job controller set the `JobSuspended` condition. The regression was tracked in
+  [kubernetes/kubernetes#139281](https://github.com/kubernetes/kubernetes/issues/139281)
+  and fixed in
+  [kubernetes/kubernetes#139287](https://github.com/kubernetes/kubernetes/pull/139287).
+- v1.38: Target Stable graduation for
+  `MutablePodResourcesForSuspendedJobs` and
+  `MutableSchedulingDirectivesForSuspendedJobs`. Keep `status: implementable`
+  until the Kubernetes core GA promotion PR merges; update the KEP to
+  `status: implemented` after that implementation merges.
 
 ## Drawbacks
 
