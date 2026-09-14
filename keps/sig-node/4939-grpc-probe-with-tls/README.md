@@ -204,23 +204,29 @@ When `GRPCContainerProbeTLS` is **disabled**:
 
 - The `mode` field is **silently dropped** from new and updated pods by
   `dropDisabledGRPCContainerProbeTLS` during the strategy phase (PrepareForCreate /
-  PrepareForUpdate). Users do not see an error, the pod is created without the field.
-- Validation acts as a defense-in-depth safety net: if the field somehow survives
-  the drop (e.g., due to a code bug), validation rejects the pod with a `Forbidden`
-  error. In normal operation this path is never hit.
-- If an existing pod already has `mode` set (created while the gate was enabled),
-  the field is **preserved** in etcd for backward compatibility so that
-  read-modify-write cycles do not lose data.
+  PrepareForUpdate). The pod is created without the field, no error is shown.
+  Validation (`validateGRPCAction`) is not gate-aware; it only rejects
+  unsupported enum values (e.g. `"Verify"`). Gating is enforced by the drop
+  step, not validation.
+- If an object (e.g. a Pod or Deployment) already has `mode` set, the field is
+  **preserved** across further updates to that same object.
 
 ### Kubelet Probe Execution
 
-In `pkg/kubelet/prober/prober.go`, the kubelet reads the `Mode` field:
+In `pkg/kubelet/prober/prober.go`, the kubelet checks the feature gate live,
+on every probe execution, in addition to reading the `Mode` field:
 
 ```go
-useTLS := p.GRPC.Mode != nil && *p.GRPC.Mode == v1.GRPCProbeModeTLS
+useTLS := utilfeature.DefaultFeatureGate.Enabled(features.GRPCContainerProbeTLS) &&
+    p.GRPC.Mode != nil && *p.GRPC.Mode == v1.GRPCProbeModeTLS
 ```
 
-This boolean is passed to the gRPC prober.
+This boolean is passed to the gRPC prober. Feature gates are read once at
+kubelet startup, not hot-reloaded, so a gate change takes effect on the next
+kubelet restart. Once that restart happens, it applies immediately to every
+already-running pod on that node, not just newly created ones. See
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) for tested
+implications.
 
 ### gRPC Transport Credentials
 
@@ -254,11 +260,10 @@ to implement this enhancement.
 The following unit tests have been added:
 
 - **`pkg/api/pod`**
-  - `TestDropGRPCContainerProbeTLS`: Verifies that `mode` is stripped from all container types (regular, init, ephemeral) when the feature gate is disabled, and preserved when enabled or when the field is already persisted on an existing pod.
-  - `TestGRPCContainerProbeTLSValidationOptions`: Verifies that `AllowGRPCContainerProbeTLS` is set correctly based on gate state and old pod spec.
+  - `TestDropGRPCContainerProbeTLS`: Verifies that `mode` is stripped from all container types (regular, init, ephemeral) when the feature gate is disabled, and preserved when enabled or when the field is already persisted on the same, existing object.
 
 - **`pkg/apis/core/validation`**
-  - `TestValidateGRPCAction`: Verifies that `mode: TLS` and `mode: Plaintext` are accepted when the gate is enabled, rejected with `Forbidden` when disabled, and unsupported values like `"Verify"` are rejected with `NotSupported`.
+  - `TestValidateGRPCAction`: Verifies that `mode: TLS` and `mode: Plaintext` pass validation, and unsupported values like `"Verify"` are rejected with `NotSupported`. Validation is not gate-aware (see [Feature Gate Behavior](#feature-gate-behavior)); gating is enforced entirely by the drop step, not validation.
 
 - **`pkg/apis/core/v1`**
   - `TestSetDefaultProbeGRPCMode`: Verifies that `mode: TLS`, `mode: Plaintext`, and `nil` mode are all preserved through round-trip defaulting with no unwanted mutation.
@@ -269,7 +274,22 @@ The following unit tests have been added:
 
 ##### Integration tests
 
-Integration tests will be added.
+Integration tests exercise the full REST path (strategy + validation + storage)
+against a real kube-apiserver and etcd, in `test/integration/pods`:
+
+- Create a pod with `grpc.mode: TLS` (and, as an additional table case,
+  `mode: Plaintext`) when `GRPCContainerProbeTLS` is enabled -> field is
+  accepted and persisted.
+- Create a pod with `grpc.mode: TLS` when `GRPCContainerProbeTLS` is disabled
+  -> field is silently dropped, pod is created without it.
+- Create a pod with `grpc.mode` set to an unsupported value (e.g. `"Verify"`)
+  -> rejected during validation, independent of gate state.
+- Update a Deployment whose pod template already has `grpc.mode: TLS` after
+  the gate is disabled -> field is preserved on the existing template
+  (`grpcProbeModeInUse(oldPodSpec)`), while a brand-new Deployment created in
+  the same disabled state cannot set the field at all. (This preservation
+  does not extend to ReplicaSets created from that template, see the Known
+  Issue under [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).)
 
 ##### e2e tests
 
@@ -292,8 +312,13 @@ All tests are gated by `framework.WithFeatureGate(features.GRPCContainerProbeTLS
 
 #### Beta
 
-- No major bugs reported during alpha
-- Gather feedback from users
+- `GRPCContainerProbeTLS` feature gate defaults to `true`.
+- Integration tests added covering create/drop/validation/preserve-on-update
+  behavior against a real kube-apiserver and etcd.
+- e2e tests stable with the gate on by default.
+- Upgrade/downgrade and feature-gate enable/disable manually verified on a
+  live cluster, see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+- No major bugs reported against this KEP's own implementation.
 
 #### GA
 
@@ -307,13 +332,18 @@ No special upgrade steps are required. The `mode` field defaults to `nil`,
 which preserves the existing plaintext behavior. Existing pods are unaffected
 on upgrade.
 
-On downgrade (or if the `GRPCContainerProbeTLS` feature gate is disabled):
+On downgrade (or if the `GRPCContainerProbeTLS` feature gate is disabled),
+manually verified on a live cluster:
 
 - The API server drops the `mode` field from new or updated pods.
-- Existing pods that had `mode` set retain the field in etcd, but the kubelet
-  on the older version ignores it and falls back to plaintext.
-- Pods relying on `mode: TLS` to reach a TLS-only server will begin failing
-  probes, which is the same behavior that existed before this feature.
+- A pod that is already running and not touched again is not affected by the
+  gate change alone; the kubelet keeps using the spec it already has cached.
+  The change only takes effect once the kubelet process itself restarts. Once
+  it restarts, every already-running pod using `mode: TLS` on that node
+  immediately starts dialing plaintext and begins failing its probe, without
+  needing the pod itself to be recreated.
+- Pods relying on `mode: TLS` to reach a TLS-only server begin failing probes
+  and restarting, the same behavior that existed before this feature.
 
 No data migration is needed. The feature is purely additive and opt-in.
 
@@ -322,21 +352,22 @@ No data migration is needed. The feature is purely additive and opt-in.
 This feature requires the `GRPCContainerProbeTLS` feature gate on both
 kube-apiserver and kubelet.
 
-- **API server newer than kubelet:** The API server accepts `mode: TLS`,
-  but the older kubelet ignores the field and dials plaintext. TLS-only
-  servers will fail probes, identical to pre-feature behavior.
-- **Kubelet newer than API server:** The older API server drops the `mode`
-  field, so the kubelet never sees it and dials plaintext.
+- **API server newer than kubelet:** An older kubelet predating this KEP has
+  no `Mode` field in its vendored API types, so it dials plaintext. TLS-only
+  servers fail probes, identical to pre-feature behavior. (A kubelet that has
+  the code but its own gate set to `false` behaves the same way, see below,
+  though that is a distinct case from a genuinely older binary.)
+- **Kubelet newer than API server:** The older API server also has no `Mode`
+  field, so it drops the field the same way a gate-disabled current-version
+  apiserver would; the kubelet never sees it and dials plaintext.
 
 Both components must have the gate enabled for TLS probes to function.
-Partial enablement degrades gracefully to plaintext with no crashes or
-unexpected behavior.
+Partial enablement degrades gracefully to plaintext with no crashes.
 
-Note: the kubelet intentionally does **not** check the feature gate at probe
-execution time. It relies on the apiserver as the source of truth, if `mode`
-is present in the pod spec, it was persisted by an apiserver that had the gate
-enabled. This avoids a confusing state where the field is set in the spec but
-silently ignored at runtime.
+The kubelet checks the feature gate on every probe (see
+[Kubelet Probe Execution](#kubelet-probe-execution)), confirmed by manual
+testing: disabling the gate and restarting kubelet made an already-running
+pod with `mode: TLS` still in its spec immediately start failing probes.
 
 ## Production Readiness Review Questionnaire
 
@@ -358,11 +389,11 @@ behavior. Only pods that explicitly set `mode: TLS` are affected.
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Disabling the `GRPCContainerProbeTLS` feature gate and restarting
-kube-apiserver and kubelet will cause the `mode` field to be dropped from new
-or updated pods. Existing pods that had `mode` set retain the field in etcd,
-but the kubelet will ignore it and fall back to plaintext. Pods relying on
-`mode: TLS` to reach a TLS-only server will begin failing probes, which is
-the same behavior that existed before this feature.
+kube-apiserver and kubelet drops the `mode` field from new or updated pods. A
+pod that is not touched again keeps `mode: TLS` in its spec and is unaffected
+until the kubelet on its node restarts, at which point it immediately starts
+failing its probe. Confirmed by manual testing, see
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 **Recommended rollback procedure for workloads already using `mode: TLS`:**
 
@@ -384,18 +415,46 @@ probes again. New pods can set `mode: TLS` as expected.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. `TestDropGRPCContainerProbeTLS` verifies the `mode` field is dropped
-when the gate is disabled and preserved when enabled or when the old pod
-already uses it. `TestGRPCContainerProbeTLSValidationOptions` verifies
-validation allows or rejects the field based on gate state.
+Yes. `TestDropGRPCContainerProbeTLS` (unit) verifies the field is dropped
+when the gate is disabled and preserved across updates to the same existing
+object. Integration tests cover the same behavior against a real apiserver
+and etcd. Manual testing on a live cluster additionally verified the
+kubelet-restart-dependent runtime behavior, see
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
+Rollout: Enabling the gate adds a new optional field. Existing workloads are
+unaffected since `mode` defaults to nil (plaintext). The only risk is if a
+user sets `mode: TLS` against a server that does not actually serve TLS, in
+which case probes will fail and the container will restart, this is
+user-misconfiguration, not a rollout failure.
+
+Rollback: Disabling the gate causes the `mode` field to be dropped from new
+and updated pods. An already-running pod is unaffected until the kubelet on
+its node restarts, at which point it immediately falls back to plaintext and
+starts failing probes against a TLS-only server, until the user reconfigures
+their services or re-enables the gate.
+
 ###### What specific metrics should inform a rollback?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+Yes, manually tested on a live kind cluster ahead of beta:
+
+- Baseline `mode: TLS` behavior confirmed working, with a plaintext probe
+  against the same TLS server correctly failing as a negative control.
+- Disable-while-running: a pod is unaffected until its node's kubelet
+  restarts, then immediately fails probes.
+- Re-enable: pods with `mode: TLS` still persisted resume TLS probing once
+  the gate is re-enabled and kubelet restarted.
+- Version skew (older kubelet against a newer apiserver) was reasoned about
+  but not exercised against a genuinely older kubelet binary.
+
+Unit tests (`TestDropGRPCContainerProbeTLS`) additionally verify the field
+drop/preserve behavior at the API level across gate transitions.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -409,15 +468,41 @@ Query pods for `.spec.containers[*].livenessProbe.grpc.mode`,
 
 ###### How can someone using this feature know that it is working for their instance?
 
+The probe result is visible the same way any other liveness/readiness/startup
+probe result is: `kubectl describe pod` shows probe failure events if the TLS
+handshake or health check fails, and the container's restart count reflects
+liveness probe failures. There is no feature-specific status field beyond the
+existing probe machinery.
+
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+None beyond the existing SLOs for gRPC probes in general. This feature
+changes the transport used by an existing probe type rather than introducing
+a new subsystem.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
+The existing `prober_probe_total` and `prober_probe_duration_seconds` metrics,
+filtered to `probe_type` values covering gRPC probes, apply unchanged. A
+sustained increase in `prober_probe_total{result="failure"}` for pods newly
+configured with `mode: TLS` indicates a misconfigured TLS backend or, after a
+rollback, the gate-disabled fallback-to-plaintext behavior described in
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No new metrics are added or deemed necessary. The existing prober metrics do
+not currently distinguish TLS from plaintext gRPC probes; that granularity
+was not required for alpha or beta and can be revisited post-GA if operators
+request it.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
+
+No. The gRPC server being probed is provided by the workload itself (the
+container being probed); the feature adds no dependency on any additional
+in-cluster service.
 
 ### Scalability
 
@@ -471,13 +556,35 @@ the maximum number of concurrent probes.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+No different from any other probe: the kubelet executes probes based on the
+last pod spec it has locally cached, so a transient apiserver/etcd outage does
+not stop already-scheduled probes from running. New pods, or updates that
+would change `mode`, cannot be created until the apiserver is available again,
+consistent with normal Kubernetes behavior.
+
 ###### What are other known failure modes?
 
+- **Misconfigured `mode: TLS` against a plaintext-only server:** the TLS
+  handshake fails, the probe fails, and the container restarts. This is user
+  misconfiguration, not a feature bug.
+- **Gate disabled while pods are running with `mode: TLS`:** probes fail once
+  the node's kubelet restarts and picks up the new gate value, see
+  [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Check `kubectl describe pod` for probe failure events and `prober_probe_total`
+for a spike in gRPC probe failures. Confirm whether the backend actually
+serves TLS on the configured port, whether `mode` matches the backend's
+actual protocol, and whether the feature gate state on kube-apiserver and the
+node's kubelet agree (mismatched gate state between the two degrades to
+plaintext rather than erroring, per [Version Skew Strategy](#version-skew-strategy)).
 
 ## Implementation History
 
 - 2026-05-21: KEP created
+- 2026-09-09: Beta graduation testing on a live cluster; corrected design
+  details around kubelet's feature-gate check and validation behavior.
 
 ## Drawbacks
 
