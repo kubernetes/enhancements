@@ -3,6 +3,7 @@ kep-number: 3386
 authors:
   - "@haircommander"
   - "@harche"
+  - "@HirazawaUi"
 owning-sig: sig-node
 status: implementable
 creation-date: 2022-06-13
@@ -19,11 +20,12 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.36"
+latest-milestone: "v1.38"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.26"
+  beta: "v1.38"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -35,4 +37,7 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - "N/A"
+  - kubelet_evented_pleg_connection_error_count
+  - kubelet_evented_pleg_connection_success_count
+  - kubelet_evented_pleg_connection_latency_seconds
+  - kubelet_pleg_pod_relist_duration_seconds

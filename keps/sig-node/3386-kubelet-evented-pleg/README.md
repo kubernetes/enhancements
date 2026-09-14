@@ -2,33 +2,24 @@
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
-- [Acknowledgements](#acknowledgements)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories](#user-stories)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1 (Optional)](#story-1-optional)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Feature Gate](#feature-gate)
-  - [Timestamp of the Pod Status](#timestamp-of-the-pod-status)
-  - [Runtime Service Changes](#runtime-service-changes)
-  - [Pod Status Update in the Cache](#pod-status-update-in-the-cache)
-  - [Compatibility Check](#compatibility-check)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
-      - [Stress Test](#stress-test)
-      - [Recovery Test](#recovery-test)
-      - [Retries with Backoff Logic](#retries-with-backoff-logic)
-      - [Generic PLEG Continuous Validation](#generic-pleg-continuous-validation)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -41,178 +32,93 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-Items marked with (R) are required *prior to targeting to a milestone / release*.
+Items marked with (R) are required prior to targeting a milestone or release.
 
-- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://git.k8s.io/enhancements
-[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
-[kubernetes/website]: https://git.k8s.io/website
-
-## Acknowledgements
-
-This proposal is heavily based off of [this community enhancement][1], as the problem was never addressed. The purpose of this document is to modernize the proposal: both in the sense of process--updating the doc to meet the new KEP guidelines, as well as in the sense of implementation--updating the proposal to be about changing the CRI instead of the now dropped dockershim.
-
-A lot of credit goes to the authors of the previous proposal.
-
-[1]: https://github.com/kubernetes/community/blob/4026287dc3a2d16762353b62ca2fe4b80682960a/contributors/design-proposals/node/pod-lifecycle-event-generator.md#leverage-upstream-container-events
+- [x] (R) Enhancement issue in the release milestone links to this KEP.
+- [x] (R) KEP approvers have approved the KEP as `implementable`.
+- [x] (R) Design details are documented.
+- [ ] (R) The test plan covers stream failure, recovery, and concurrent relist requests.
+- [ ] (R) Graduation criteria are satisfied.
+- [ ] (R) Production Readiness Review is completed and approved.
+- [x] Implementation history is current.
+- [ ] User-facing documentation is published, if required.
 
 ## Summary
 
-The purpose of this KEP is to outline changes to the Kubelet and Container Runtime Interface (CRI) that update the way the Kubelet updates changes to pod state to a List/Watch model that polls less frequently reducing overhead. Specifically, the Kubelet will listen for [gRPC server streaming](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc) events from the CRI implementation for events required for generating pod lifecycle events.
+> **Important:** This KEP has been substantially refactored. Before the refactor, Evented PLEG acted as a second source of kubelet state: it used CRI event payloads to update the pod cache and emit lifecycle events, and changed Generic PLEG polling and fallback behavior. After the refactor, Evented PLEG only uses stopped container events to request a targeted relist. Generic PLEG keeps its normal global relist period and remains the only component that reads runtime state, updates the pod cache, and emits lifecycle events.
 
-The overarching goal of this effort is to reduce the Kubelet and CRI implementation's steady state CPU usage.
+When `EventedPLEG` is enabled, kubelet watches the CRI `GetContainerEvents` stream. Each valid `CONTAINER_STOPPED_EVENT` asks `GenericPLEG` to relist the affected pod immediately.
+
+`GenericPLEG` remains the only source of pod lifecycle events. It continues to relist all pods at the normal interval, reads the current runtime state, updates the kubelet pod cache, and emits `PodLifecycleEvent` objects. Evented PLEG does not update kubelet state directly.
+
+The CRI event stream is an optimization, not a source of truth. If the stream is unavailable, delayed, or delivers duplicate or stale events, kubelet may lose the latency improvement, but Generic PLEG continues to reconcile runtime state.
 
 ## Motivation
 
-In Kubernetes, Kubelet is a per-node daemon that manages the pods on the node, driving the pod states to match their pod specifications (specs). To achieve this, Kubelet needs to react to changes in both (1) pod specs and (2) the container states. For the former, Kubelet watches the pod specs changes from multiple sources; for the latter, Kubelet polls the container runtime [periodically](https://github.com/kubernetes/kubernetes/blob/release-1.24/pkg/kubelet/kubelet.go#L162) for the latest states for all containers. the current hardcoded default value is 1s.
+Kubelet needs to detect container state changes that it did not initiate, such as a normal exit, a failure, or an OOM kill. `GenericPLEG` detects these changes by polling the runtime. This level-driven reconciliation is reliable, but pod processing does not begin until the next relist.
 
-Polling incurs non-negligible overhead as the number of pods/containers increases, and is exacerbated by Kubelet's parallelism -- one worker (goroutine) per pod, which queries the container runtime individually. Periodic, concurrent, large number of requests causes high CPU usage spikes (even when there is no spec/state change), poor performance, and reliability problems due to overwhelmed container runtime. Ultimately, it limits Kubelet's scalability.
+This KEP adds the server-streaming `GetContainerEvents` RPC to CRI. A stopped container event identifies the affected pod and triggers an immediate relist of that pod. The relist reads the current runtime state and follows the same reconciliation path as a global relist.
+
+Earlier versions of this KEP treated Evented PLEG as a second source of kubelet state. That design wrote directly to the cache, emitted lifecycle events from the stream, increased the Generic PLEG relist period, and switched Generic PLEG configuration when the stream failed. This revision removes those behaviors so that kubelet state does not depend on an edge-triggered stream.
 
 ### Goals
 
-- Reduce unnecessary work during inactivty (no spec/state changes)
-	- In other words, reduce steady-state CPU usage of Kubelet and CRI implementation by reducing frequent polling of the container statuses.
+- Reduce the latency between a CRI container termination and kubelet pod reconciliation.
+- Preserve one authoritative path for runtime observation, cache mutation, and pod lifecycle event generation.
+- Preserve Generic PLEG's normal global relist behavior whether Evented PLEG is enabled, disconnected, or unsupported by the runtime.
+- Recover automatically from arbitrary-duration stream interruptions without requiring a kubelet restart.
+- Coalesce relist requests received while a pod's relists are suspended, and bound the remaining on-demand queue.
+- Make loss of the fast path observable without making it a kubelet health failure.
 
 ### Non-Goals
 
-- Completely eliminate polling altogether.
-    - This proposal does not advocate completely removing the polling. We cannot solely rely on the upstream container events due to the possibility of missing events. PLEG should relist at reduced frequency to ensure no events are missed.
-- Addressing container image relisting via CRI events is out of scope for this enhancement at this point in time.
+- Reducing the Generic PLEG global relist frequency or promising lower steady-state polling CPU usage. Generic PLEG continues at its normal period.
+- Replacing polling or making CRI events a durable, ordered, exactly-once log.
+- Updating the pod cache, running-pod/container metrics, or `PodLifecycleEvent` objects directly from a CRI event payload.
+- Accelerating `CONTAINER_CREATED_EVENT`, `CONTAINER_STARTED_EVENT`, or `CONTAINER_DELETED_EVENT`. Those events are observed for stream metrics but do not request a relist in this KEP.
+- Reconstructing every intermediate container transition that occurred while both the stream and runtime's queryable state were unavailable. Recovery converges to current runtime state and retains the same transient-state limitations as Generic PLEG with the feature disabled.
+- Addressing container image relisting.
 
 ## Proposal
 
-This proposal aims to replace the periodic polling with a pod lifecycle event watcher. Currently, the Kubelet calls into three CRI calls of the form `List*`: [ListContainers](https://github.com/kubernetes/kubernetes/blob/6efd6582df2011f1ec8c146ef711b3348ae07d60/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L78), [ListPodSandbox](https://github.com/kubernetes/kubernetes/blob/6efd6582df2011f1ec8c146ef711b3348ae07d60/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L60). Each of these is used to populate the Kubelet's perspective
-of the state of the node.
+Evented PLEG watches the CRI event stream. For each valid stopped container event, it calls `GenericPLEG.RequestRelist(podUID)`.
 
-As the number of pods on a node increases, the amount of time the Kubelet and CRI implementation takes in generating and reading this list increases linearly. What is needed is a way of the Kubelet being notified when a container changes state in a way it did not trigger.
+Generic PLEG continues to run with its normal relist period and health threshold. It remains the only component that reads runtime state, updates PLEG records and the pod cache, and emits `PodLifecycleEvent` objects. Evented PLEG does not use status fields from the event as kubelet state. It only uses the event type and pod UID to request a fresh read from the runtime.
 
-There should only be two such cases, and in normal operation, only one would happen frequently:
+CRI events are best effort and may be delayed, duplicated, reordered, or lost. Generic PLEG continues its periodic relist regardless of stream state, so event delivery does not affect correctness.
 
-- The first, and most clear case of a container changing state without the Kubelet triggering that state change is when a container stops. Containers can exit gracefully, or be OOM killed, and the Kubelet would not know.
-   - We will also introduce events when the container is created as well as is started. This will help us reduce the relisting that takes placed while the kubelet waits for the container to start.
-   - Although kubelet initiates the container deletion, for sake of increased validation we are also introducing the event to denote that from the runtime.
-- The second, and less likely case is when another entity comes and changes the state of the node.
-	- For container related events (such as a container creating, starting, stopping or being killed), this can appear as a user calling [crictl](https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/crictl.md) manually, or even using the runtime directly.
+### User Stories (Optional)
 
-The Kubelet currently covers each of thse cases quite easily: by listing all of the resources on the node, it will have an accurate picture after the amount of time of its [poll interval](https://github.com/kubernetes/kubernetes/blob/release-1.24/pkg/kubelet/kubelet.go#L162). For each of these cases, a new CRI-based events API can be made, using [gRPC server streaming](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc). This way, the entity closest to the activity of the containers and pods (the CRI implementation) can be responsible for informing the Kubelet of their behavior directly.
+#### Story 1 (Optional)
 
-### User Stories
-
-- As a cluster administrator I want to enable `Evented PLEG` feature of the kubelet for better performance with as little infrastructure overhead as possible.
+As an operator running distributed AI/ML training or inference workloads, I want kubelet to detect a failed worker container quickly so pod reconciliation and workload recovery can begin without waiting for the next global relist.
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+The CRI event stream is a best-effort latency hint. It has no replay or resume mechanism, and kubelet does not assume that events are ordered or delivered exactly once. A runtime needs to populate `pod_sandbox_status.metadata.uid` on stopped container events for kubelet to request a targeted relist. An older or incompatible runtime may return `Unimplemented`, close the stream, or omit the required metadata; in each case, only the fast path is unavailable and Generic PLEG continues normally.
 
 ### Risks and Mitigations
 
-- PLEG is very core to the container status handling in the kubelet. Hence any miscalculation there would result in unpredictable behaviour not just for the node but for an entire cluster.
-  - To reduce the risk of regression, this feature initially will be available only as an opt-in.
-  - Users can disable this feature to make kubelet use existing relisting based PLEG.
-- Another risk is the CRI implementation could have a buggy event emitting system, and miss pod lifecycle events.
-  - A mitigation is a `kube_pod_missed_events` metric, which the Kubelet could report when a lifecycle event is registered that wasn't triggered by an event, but rather by changes of state between lists.
-  - While using the Evented implementation, the periodic relisting functionality would still be used with an increased interval which should work as a fallback mechanism for missed events in case of any disruptions.
-- During the state transition of a pod, the execution time of the podWorker code is slower than the event reporting speed of the container runtime. As a result, when calling `GetNewerThan()`, the timestamp in the PLEG cache is newer than `lastSyncTime`, ultimately causing the podWorker to enter a blocking state.
-  - We use real-time container events to determine the container's state, rather than relying on the cached timestamp to decide whether the container's state is up to date. This is because, in the case of `EventedPLEG`, real-time container events always represent the latest container state, which also aligns with the design where the container lifecycle is driven by container events.
+- **Termination storms can create excessive per-pod relists.** Requests received while a pod's relists are suspended are coalesced into one pending relist. Outside that window, the on-demand queue remains bounded. One Generic PLEG dispatcher serializes global and per-pod relists and gives the periodic global relist priority.
+- **A stream interruption can lose events.** Generic PLEG continues its normal global relist throughout the interruption. A successful global relist after reconnection is the recovery boundary.
+- **A runtime can deliver stale or duplicate events after reconnection.** Each event only requests a fresh read. It cannot overwrite the cache with event payload data, although duplicate events may cause redundant relist requests.
+- **The runtime may not implement the stream.** Reconnection is rate-limited; Generic PLEG remains active and healthy. The feature's fast path remains unavailable until a compatible runtime is installed or the gate is disabled.
+- **A full on-demand queue can drop latency hints.** Queue capacity is bounded, and dropped requests are observable. The next global relist still reconciles the current state.
 
 ## Design Details
 
-Kubelet generates [PodLifecycleEvent](https://github.com/kubernetes/kubernetes/blob/release-1.24/pkg/kubelet/pleg/pleg.go#L41) using [relisting](https://github.com/kubernetes/kubernetes/blob/050f930f8968874855eb215f0c0f0877bcdaa0e8/pkg/kubelet/pleg/generic.go#L150). These `PodLifecycleEvents` get [used](https://github.com/kubernetes/kubernetes/blob/050f930f8968874855eb215f0c0f0877bcdaa0e8/pkg/kubelet/kubelet.go#L2060) in kubelet's sync loop to infer the state of the container. e.g. to determine if the [container has died](https://github.com/kubernetes/kubernetes/blob/050f930f8968874855eb215f0c0f0877bcdaa0e8/pkg/kubelet/kubelet.go#L2118).
+This KEP adds the following API to CRI:
 
- The idea behind this enhancment is, kubelet will receive the [CRI events](#Runtime-Service-Changes) mentioned above from the CRI runtime and generate the corresponding `PodLifecycleEvent`. This will reduce kubelet's dependency on relisting to generate `PodLifecycleEvent` and that event will be immediately available within sync loop instead of waiting for relisting to finish. Kubelet will still do relisting but with a reduced frequency.
-### Feature Gate
-This feature can only be used when `EventedPLEG` feature gate is enabled.
+```protobuf
+// GetContainerEvents gets container events from the CRI runtime
+rpc GetContainerEvents(GetEventsRequest) returns (stream ContainerEventResponse) {}
 
-### Timestamp of the Pod Status
-![Existing Generic PLEG](./existing-generic-pleg.png)
+message GetEventsRequest {}
 
-Kubelet cache saves the [pod status with the timestamp](https://github.com/kubernetes/kubernetes/blob/c012d901d8bee86ef3e3c9472a1a4a0368a34775/pkg/kubelet/pleg/generic.go#L426). The value of this timestamp is calculated [within the kubelet process](https://github.com/kubernetes/kubernetes/blob/c012d901d8bee86ef3e3c9472a1a4a0368a34775/pkg/kubelet/pleg/generic.go#L399). This works fine when there is only Generic PLEG at work as it will calculate the timestamp first and then fetch the `PodStatus` to save it in the cache.
-
-As of today, the `PodStatus` is saved in the cache without any validation of the existing status against the current timestamp. This works well when there is only `Generic PLEG` setting the `PodStatus` in the cache.
-
-If we have multiple entities, such as `Evented PLEG`, while trying to set the `PodStatus` in the cache we may run into the racy timestamps given each of them were to calculate the timestamps in their respective execution flow. While `Generic PLEG` calculates this timestamp and gets the `PodStatus`, we can only calculate the corresponding timestamp in `Evented PLEG` after the event has been received by the Kubelet. Any disruptions in getting the events, such as errors in the grpc connection, might skew our calculation of the time in the kubelet for the `Evented PLEG`.
-
-In order to address the issues above, we propose that existing `Generic PLEG` as well as `Evented PLEG` should rely on the CRI Runtime for the timestamp of the `PodStatus`. This way the `PodStatus` would also be a bit more closer to the actual time when the statuses of the `Sandboxes` and `Containers` where provided by the CRI Runtime. It will enable us to correctly compare the timestamps before saving them in the cache, to avoid the erroneous behaviour. This should also prevent any old buffered `PodStatus` (consolidated during any disruptions or failures) from overriding the newer entry in the cache.
-
-![Modified Generic PLEG](./modified-generic-pleg.png "Existing Generic PLEG")
-
-![Evented PLEG](./evented-pleg.png)
-
-
-### Runtime Service Changes
-
-Instead of getting the `Sandbox` and `Container` statuses independently and using the timestamp calculated from the kubelet process, `Generic PLEG` can fetch the `PodStatus` directly from the CRI Runtime using the modified [PodSandboxStatus](https://github.com/kubernetes/kubernetes/blob/4a894be926adfe51fd8654dcceef4ece89a4259f/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L58) rpc of the RuntimeService.
-
-The modified `PodSandboxStatusRequest` will have a field `includeContainer` to indicate if `PodSandboxStatusResponse` should have `ContainerStatuses` and the corresponding timestamp.
-
-```protobuf=
-message PodSandboxStatusRequest {
-    // ID of the PodSandbox for which to retrieve status.
-    string pod_sandbox_id = 1;
-    // Verbose indicates whether to return extra information about the pod sandbox.
-    bool verbose = 2;
-    // IncludeContainers indicates whether to include ContainerStatuses and timestamp in the PodSandboxStatusResponse
-    bool includeContainers = 3;
-}
-```
-
-```protobuf=
-message PodSandboxStatusResponse {
-    // Status of the PodSandbox.
-    PodSandboxStatus status = 1;
-
-    // Info is extra information of the PodSandbox. The key could be arbitrary string, and
-    // value should be in json format. The information could include anything useful for
-    // debug, e.g. network namespace for linux container based container runtime.
-    // It should only be returned non-empty when Verbose is true.
-    map<string, string> info = 2;
-
-    // ContainerStatus needs to be included if includeContainers is set true PodSandboxStatusRequest
-    repeated ContainerStatus containerStatues = 3;
-
-    // Timestamp needs to be included if includeContainers is set true in PodSandboxStatusRequest
-    int64 timestamp = 4;
-
-}
-```
-
-Another RPC will be introduced in the [CRI Runtime Service](https://github.com/kubernetes/kubernetes/blob/6efd6582df2011f1ec8c146ef711b3348ae07d60/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L34),
-
-```protobuf=
-    // GetContainerEvents gets container events from the CRI runtime
-    rpc  GetContainerEvents(GetEventsRequest) returns (stream ContainerEventResponse) {}
-```
-
-```protobuf=
 message ContainerEventResponse {
     // ID of the container
     string container_id = 1;
@@ -223,20 +129,13 @@ message ContainerEventResponse {
     // Creation timestamp of this event
     int64 created_at = 3;
 
-    // Metadata of the pod sandbox
-    PodSandboxMetadata pod_sandbox_metadata = 4;
+    // Sandbox status
+    PodSandboxStatus pod_sandbox_status = 4;
 
-    // Sandbox status of the pod
-    PodSandboxStatus pod_sandbox_status = 5;
-
-    // Container statuses of the pod
-    repeated ContainerStatus containers_statuses = 6;
+    // Container statuses
+    repeated ContainerStatus containers_statuses = 5;
 }
 
-```
-Creation timestamp of the event will be used when saving the `PodStatus` in the kubelet cache.
-
-```protobuf=
 enum ContainerEventType {
     // Container created
     CONTAINER_CREATED_EVENT = 0;
@@ -251,373 +150,197 @@ enum ContainerEventType {
     CONTAINER_DELETED_EVENT = 3;
 }
 ```
-### Pod Status Update in the Cache
 
-While using `Evented PLEG`, the existing `Generic PLEG` is set to relist with the increased period. But in case `Evented PLEG` faces temporary disruptions in the grpc connection with the runtime, there is a chance that when the normalcy is restored the incoming buffered events (which are outdated now) might end up overwriting the latest pod status in the cache updated by the `Generic PLEG`. Having a cache setter that only updates if the pod status in the cache is older than the current pod status helps in mitigating this issue.
+The earlier design proposed `PodSandboxStatusRequest.includeContainers` so that Generic PLEG could request container statuses and a timestamp through `PodSandboxStatus`. That field was never added to the CRI API and is not part of this design. Generic PLEG continues to obtain current state through its normal CRI queries, so no replacement request field is needed.
 
-At present kubelet updates the cache using the [Set function](https://github.com/kubernetes/kubernetes/blob/7f129f1c9af62cc3cd4f6b754dacdf5932f39d5c/pkg/kubelet/container/cache.go#L101).
+The event path and the existing reconciliation path interact as follows:
 
-Pod status should be updated in the cache only if the new status update has timestamp newer than the timestamp of the already present in the cache.
-
-![Modified Cache Setter](./modified-cache-setter.png)
-
-```go
-func (c *cache) Set(id types.UID, status *PodStatus, err error, timestamp time.Time) (updated bool) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	// Set the value in the cache only if it's not present already
-	// or the timestamp in the cache is older than the current update timestamp
-	if val, ok := c.pods[id]; !ok || val.modified.Before(timestamp) {
-		c.pods[id] = &data{status: status, err: err, modified: timestamp}
-		c.notify(id, timestamp)
-		return true
-	}
-	return false
-}
+```text
+CRI GetContainerEvents stream
+        |
+        | CONTAINER_STOPPED_EVENT + pod UID
+        v
+EventedPLEG watcher ---- RequestRelist(pod UID) ----+
+                                                     |
+successful SyncPod ---- RequestRelist(pod UID) ------+--> bounded on-demand queue
+                                                     |    in GenericPLEG
+normal global timer ---------------------------------+
+                                                          |
+                                                          v
+                                              query current CRI state
+                                                          |
+                                                          v
+                                            reconcile GenericPLEG records
+                                                          |
+                                      +-------------------+------------------+
+                                      v                                      v
+                              update pod cache                   emit PodLifecycleEvent
 ```
 
-This has no impact on the existing `Generic PLEG` when used without `Evented PLEG` because its the only entity that sets the cache and it does so every second (if needed) for a given pod.
+Neither request source performs the relist. Both enqueue work for Generic PLEG, so global and on-demand relists use the same state comparison, cache update, event filtering, error handling, and pod reinspection logic.
 
-### Compatibility Check
+Kubelet always constructs `GenericPLEG` with the normal relist period and health threshold. The existing `PLEG` health check continues to report Generic PLEG health. When the `EventedPLEG` feature gate is enabled, kubelet also starts the stream watcher. Evented PLEG has no separate lifecycle event channel, cache reference, health check, relist period, or fallback mode. Disabling the feature gate and restarting kubelet stops the watcher without changing Generic PLEG.
 
-For this feature to work Kubelet needs to be used with a compatible CRI Runtime that is capable of generating CRI Events. During the Kubelet start up if it detects that CRI Runtime doesn't support generating and streaming CRI Events, it should automatically fall back to using `Generic PLEG`
+For each `ContainerEventResponse`, Evented PLEG validates that `pod_sandbox_status` and its metadata are present and that `pod_sandbox_status.metadata.uid` is non-empty. Without a pod UID, a targeted relist cannot be requested, so the event is logged and ignored. The watcher records event creation-to-receipt latency, ignores event types other than `CONTAINER_STOPPED_EVENT`, and calls `RequestRelist` for every stopped event regardless of exit code, reason, or whether a `ContainerStatus` is attached.
 
+Evented PLEG does not distinguish between a clean exit, a failure, and an OOM kill. It also does not treat `containers_statuses` or `pod_sandbox_status` as a complete snapshot. Generic PLEG determines the current state through its normal `GetPod` and `GetPodStatus` calls. If the pod is deleted before the targeted query, the request is a no-op and the next global relist removes any remaining record. If Generic PLEG has already observed the stopped container, the targeted relist finds no state change and does not emit another lifecycle event.
+
+Generic PLEG uses a bounded queue for per-pod relist requests. One dispatcher handles shutdown, due global relists, and targeted pod relists, in that order. Global and targeted relists use the same synchronization boundary to prevent races in `podRecords`, cache updates, and lifecycle event generation. Each request records its enqueue time. Generic PLEG may skip a request if a newer global relist has already covered it. When the queue is full, Generic PLEG may drop a request; this only delays detection until the next global relist.
+
+Evented PLEG and the post-`SyncPod` path both call `RequestRelist`. Requests received while relists for a pod are suspended are coalesced into one pending relist. Outside suspension, requests enter the bounded queue normally and are not deduplicated by pod UID. Global relists retain priority.
+
+Some stopped events result from runtime calls made by `SyncPod`, for example when kubelet restarts a container after a liveness probe fails. Relisting on each event would add unnecessary work and could observe an intermediate state. Kubelet therefore suspends relists for a pod while `SyncPod` is running for that pod. Requests received during the sync are retained and coalesced. When `SyncPod` returns, including after an error or cancellation, kubelet releases the hold and queues one relist if necessary. A global relist may continue processing other pods, but does not publish an intermediate state for the suspended pod. Lock ordering between the pod worker and Generic PLEG needs to avoid deadlocks.
+
+`GetContainerEvents` does not support replay or resumption, so events may be lost while the stream is disconnected. Generic PLEG continues its normal global relist and recovers the current runtime state. Event payloads are never replayed into the kubelet cache. The watcher retries for the lifetime of the kubelet: the first reconnect attempt is immediate, later attempts use exponential backoff with jitter capped at 60 seconds, and retries continue at the cap instead of permanently disabling the fast path. EOF and a stream that closes without an error are handled like other connection failures. A connection needs to remain healthy for 60 seconds before the backoff is reset, which avoids a tight loop when the runtime is flapping. Kubelet shutdown cancels the active RPC and any pending retry timer.
+
+If the runtime returns `Unimplemented`, the watcher continues retrying at the maximum interval. This allows a runtime upgrade to make the stream available without a kubelet restart. Repeated errors are logged at low verbosity or are rate-limited. A delayed event received after reconnection only triggers a fresh runtime read. If Generic PLEG has already observed the stop, the relist emits no lifecycle event. The `created_at` field is used only to measure latency; it does not affect event ordering or cache updates.
+
+Existing metrics retained by the implementation include:
+
+- `kubelet_evented_pleg_connection_error_count`
+- `kubelet_evented_pleg_connection_success_count`
+- `kubelet_evented_pleg_connection_latency_seconds`
+- `kubelet_pleg_pod_relist_duration_seconds`
+- the existing Generic PLEG relist interval, duration, last-seen, and discarded event metrics
+
+The implementation also needs to expose stream connection state, reconnect attempts, and the number of relist requests queued, coalesced, or dropped. Metric names and stability levels will be reviewed with SIG Instrumentation. Pod UID, container ID, error text, and runtime endpoint need to be excluded from metric labels.
 
 ### Test Plan
 
-[X] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
-
-##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
+- [x] We understand that the owners of the affected components may require updates to existing tests before this enhancement is implemented.
 
 ##### Unit tests
 
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
+- `k8s.io/kubernetes/pkg/kubelet/pleg`: `2026-09-01` - `84.8%`
 
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `kubernetes/kubernetes/tree/master/pkg/kubelet` : `15-Jun-2022` - `64.5`
 ##### Integration tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
--->
-
-- Ensure the `PodLifecycleEvent` is generated by the kubelet when the CRI events are received.
-- Verify the Pod status is updated correctly when the CRI events are received.
+No test under `test/integration` is currently planned because the behavior is local to kubelet, Generic PLEG, and the CRI runtime. Cross-component behavior is covered by kubelet unit tests and node e2e tests with a real CRI runtime.
 
 ##### e2e tests
 
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
+Existing Evented PLEG e2e jobs:
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+- [`pull-kubernetes-e2e-kind-evented-pleg`](https://testgrid.k8s.io/presubmits-kubernetes-nonblocking#pull-kubernetes-e2e-kind-evented-pleg)
+- [`pull-node-crio-evented-pleg`](https://testgrid.k8s.io/sig-node-cri-o#pull-node-crio-evented-pleg)
+- [`pull-kubernetes-node-containerd-evented-pleg-e2e`](https://testgrid.k8s.io/sig-node-presubmits#pr-containerd-evented-pleg-gce-e2e)
 
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
--->
-
-- Existing Pod Lifecycle tests must pass fine even after increasing the relisting frequency.
-- E2E Node Conformance non-blocking [presubmit job](https://testgrid.k8s.io/sig-node-presubmits#pr-crio-cgrpv1-evented-pleg-gce-e2e)
-- E2E Node Conformance non-blocking [periodic job](https://testgrid.k8s.io/sig-node-cri-o#ci-crio-cgroupv1-evented-pleg)
-
+Existing general-purpose e2e tests will also be run with an Evented PLEG configuration.
 
 ### Graduation Criteria
+
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Existing `node e2e` tests around pod lifecycle must pass
+- The feature is disabled by default and guarded by `EventedPLEG`.
+- Generic PLEG runs at its normal global period and is the sole cache and lifecycle-event writer.
+- Only stopped events request targeted relists.
+- Existing node e2e pod-lifecycle tests pass.
 
 #### Beta
-- Add E2E Node Conformance presubmit job in CI 
-- Add E2E Node Conformance periodic job in CI
 
-##### Stress Test
-To test the performance and scalability of Evented PLEG, it is necessary to generate a large number of CRI Events by creating and deleting a significant number of containers within a short period of time. The following steps outline the stress test:
+- The watcher reconnects indefinitely with capped, jittered backoff and recovers after a runtime restart without restarting kubelet.
+- Per-pod relist suspension and request merging prevent Evented PLEG from relisting a pod in the middle of `SyncPod`.
 
-Since this is a disruptive stress test, it should be part of a node e2e `Serial` job. CRI Events are generated per container, and therefore, the test should create a substantial number of containers within a single pod. After creation, these containers should run to completion and then be removed by the kubelet. This process will ensure the generation of CONTAINER_CREATED_EVENT, CONTAINER_STARTED_EVENT, CONTAINER_STOPPED_EVENT, and CONTAINER_DELETED_EVENT.
+#### GA
 
-The test should continue to create these containers until the histogram metric `evented_pleg_connection_latency_seconds` begins to show distinct latency values in its 1-second bucket. This indicates that it is taking 1 second or longer for an event to be observed by the kubelet after getting generated by the runtime. Typical values for this latency are around 0.001 seconds, so it is safe to assume 1 second as a measure indicates that the system is under stress.
-
-Once the `evented_pleg_connection_latency_seconds` is observed to be greater than 1 second, new container creation is halted, and the rest of the already created containers are run to completion. At this point, `kubelet_evented_pleg_connection_latency_seconds_count` can be used to determine the total number of CRI Events generated during this test.
-
-##### Recovery Test
-To test the ability of the Kubelet to recover the latest state of a container after a restart, a disruption test should be included in the node e2e Serial job. The test should involve creating a container with a sufficient time to completion (e.g. sleep 20), and then immediately stopping the Kubelet once the container enters the `Running` state. The CRI runtime should emit CRI events indicating the change in container state, but the Kubelet will miss the `CONTAINER_STOPPED_EVENT` for that container.
-
-To validate the Kubelet's ability to recover the latest state of the container, the test should query the CRI endpoint to confirm that the container has ran to completion successfully. Once the Kubelet is started again, it should be able to query the CRI runtime and update its cache with the latest state of the container. If the Kubelet accurately reports the state of the container as `Completed`, the test will be considered passed.
-
-##### Retries with Backoff Logic
-Currently, the Kubelet attempts to reconnect five times before falling back on Generic PLEG in the event of errors encountered during the streaming connection with CRI Runtime. However, in situations where the CRI Runtime is taken down for maintenance purposes, the Kubelet may exhaust all of its reconnection attempts and never try again, resulting in the usage of `Generic PLEG` despite the CRI Runtime's compatibility with `Evented PLEG`. To address this issue, a backoff logic with exponentially increasing sequence and an upper limit should be implemented to retry re-establishing the connection. Once the upper limit is reached, it should periodically try with that value. By doing so, the Kubelet will be able to reconnect to the CRI Runtime even after multiple attempts have failed, and it will be able to utilize `Evented PLEG` when possible. e.g.
-
-```
-Retry immediately
-Retry after 1 second
-Retry after 2 seconds
-Retry after 4 seconds
-Retry after 8 seconds
-Retry after 16 seconds
-Retry after 32 seconds
-Retry after 64 seconds
-Retry after every 60 seconds indefinitely
-```
-
-##### Generic PLEG Continuous Validation
-Make sure existing jobs in following test grid tabs that use `Generic PLEG` continue to use it by making sure that `Evented PLEG` is disabled for them. 
-
-https://testgrid.k8s.io/sig-node-release-blocking
-https://testgrid.k8s.io/sig-node-kubelet
-https://testgrid.k8s.io/sig-node-containerd
-https://testgrid.k8s.io/sig-node-cri-o
-https://testgrid.k8s.io/sig-node-presubmits
+- Beta criteria have remained satisfied for at least two releases.
+- Upgrade, downgrade, runtime restart, and feature disablement are continuously tested.
+- Operational documentation is published and SIG Node agrees that field experience justifies graduation.
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+The runtime may be upgraded before or after kubelet. Generic PLEG remains active in either order. If kubelet is upgraded before the runtime supports `GetContainerEvents`, the watcher retries with backoff until the RPC becomes available.
+
+Disabling `EventedPLEG` requires a kubelet restart. The restarted kubelet runs only Generic PLEG at the same normal period it used while the feature was enabled. There is no persisted Evented PLEG state to migrate or roll back.
 
 ### Version Skew Strategy
 
-N/A.
-
-Since this feature alters only the way kubelet determines the container statuses, this section is irrelevant to this feature.
+Version skew only applies between kubelet and its local CRI runtime. A new kubelet with an old runtime continues using Generic PLEG and rate-limits stream retries. An old kubelet ignores `GetContainerEvents`. This feature does not introduce Kubernetes API or control-plane version skew.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
 ### Feature Enablement and Rollback
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: EventedPLEG
+- [x] Feature gate
+  - Feature gate name: `EventedPLEG`
   - Components depending on the feature gate: kubelet
-- [X] CRI runtime must enable/disable this feature as well for it to work properly.
+
+A kubelet restart is required after changing the gate.
 
 ###### Does enabling the feature change any default behavior?
 
-This feature does not introduce any user facing changes. Although users should notice increased performance of the kubelet which should result in reduced overhead of kubelet and the CRI runtime after enabling this feature.
+It adds a low-latency targeted relist after container-stop notifications. It does not change Generic PLEG's global relist period, health check, cache ownership, or lifecycle-event ownership.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, kubelet needs to be restarted to disable this feature.
+Yes. Restart kubelet with `EventedPLEG=false`. Generic PLEG continues with the same normal configuration.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If reenabled, kubelet will again start updating container statuses using CRI events instead of relisting. Everytime this feature is enabled or disabled, the kubelet will need to be restarted. Hence, the kubelet will start from a clean state.
+The watcher opens a new stream. Generic PLEG's next successful normal global relist establishes the recovery boundary without coordination from the watcher. No prior stream state is required.
 
 ###### Are there any tests for feature enablement/disablement?
 
-These [unit test](https://github.com/kubernetes/kubernetes/blob/ca70940ba8c375bc69091822a9d52bcb7925de3b/pkg/kubelet/pleg/evented_test.go#L47) performs a health check on Evented PLEG.
-### Rollout, Upgrade and Rollback Planning
+Unit and node e2e tests need to cover enablement, disablement, unsupported runtimes, stream disconnection, restart, and re-enablement.
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+The stream may be unsupported, unavailable, malformed, or slow. These conditions only affect termination-detection latency. Generic PLEG continues polling and remains the source of pod status and lifecycle events. Kubelet and runtime outages have the same node-level impact as they do when this feature is disabled.
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
-
-This feature relies on the CRI runtime events to determine the container statuses. If the CRI runtime is not upgraded to the version which emits those CRI events before enabling this feature, the kubelet will not be able to determine the container statuses immediately. However, we aren't getting rid of the exiting relisting altogether. So the kubelet should eventually reconcile the container statuses using relisting abeit rather more infrequently due to [increased relisting period](https://github.com/kubernetes/kubernetes/blob/release-1.24/pkg/kubelet/kubelet.go#L162) that comes with this feature.
+The main feature-specific load risk is a burst of stopped container events. Coalescing while a pod's relists are suspended, a bounded queue, global relist priority, and queue metrics limit and expose the additional work.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-
-If users observe incosistancy in the container statuses reported by the kubelet and the CRI runtime (e.g. using a tool like `crictl`) after enabling this feature, they should consider rolling back the feature.
-
-Apart from that cluster admins can monitor the state of evented PLEG's connection with the CRI runtime using following metrics, 
-
-* `evented_pleg_connection_error_count` - The count of errors encountered during the establishment of streaming connection with the CRI runtime.
-* `evented_pleg_connection_success_count` - The count of successful streaming connections with the CRI runtime.
-* `evented_pleg_connection_latency_seconds` - The latency of streaming connection with the CRI runtime, measured in seconds.
-* `evented_pleg_notifications_received` - The number of notifications received through streaming connection with the CRI runtime.
+Operators should monitor connection failures, disconnected time, dropped relist requests, Generic PLEG relist latency, and kubelet and runtime CPU usage. A stream failure is not a correctness failure while Generic PLEG is healthy. Disabling the feature removes stream retries and targeted relists during an investigation.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Automated tests need to cover a new kubelet with old and new runtimes, runtime restart while the stream is active, downgrade to a kubelet without the watcher, and re-upgrade. Generic PLEG needs to converge in every case.
 
-Following scenarios were tested in manual tests, 
-
-Scenario 1: Kubelet Upgrade without Corresponding CRI Runtime Upgrade
-
-Step 1: Kubelet is upgraded but CRI runtime remains unchanged. Kubelet falls back to using the Generic PLEG as the CRI runtime does not emit any CRI events.
-Step 2: Kubelet is downgraded, but the CRI runtime version remains the same. Kubelet continues to work with the existing Generic PLEG.
-Step 3: If the Kubelet is upgraded again, it behaves similarly to step 1.
-
-Scenario 2: Kubelet and CRI Runtime Upgrade Together
-
-Step 1: Both the Kubelet and CRI runtime are upgraded. Since the CRI runtime emits CRI events, Kubelet uses the Evented PLEG with an increased relisting period for the Generic PLEG.
-Step 2: Kubelet and CRI runtime are downgraded. Kubelet defaults to using the Generic PLEG.
-Step 3: If the Kubelet is upgraded again, it behaves similarly to Scenario 1, Step 1.  
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
 No.
-
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
-- Add a metric `kube_pod_missed_events` that describes when a pod changed state between relisting periods without a corresponding event.
-  - This is to catch situations where a CRI implementation is buggy and is not properly emitting events.
-
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
-
-This feature is not directly going to be used by the workloads. This is an optimization for the kubelet to determine the container statuses.
-
-However, users can use existing pod lifecycle related pod metrics such as, `kube_pod_start_time` or `kube_pod_completion_time` and compare the timestamps reported in the CRI runtime (e.g. `CRI-O` or `containerd`) logs. The time difference must always be lesser than the relisting frequency.
+The feature gate or configuration shows whether the feature is enabled. The required connection-state metric will show whether the fast path is currently usable. Generic PLEG last-seen and health remain separate correctness-path signals.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason:
-- [ ] API .status
-  - Condition name:
-  - Other field:
-- [X] Other (treat as last resort)
-  - Details: In the kubelet logs look for `PodLifecycleEvent` getting generated from the received CRI runtime event. This is a good indicator that the feature is working.
+The final metric set needs to make it possible to correlate connection success, relist requests from Evented PLEG, and per-pod relist latency to determine whether stopped container events are reaching Generic PLEG. Evented PLEG does not emit lifecycle events directly.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
-
-- The time between pod status change and Kubelet reporting the pod status change must decrease on average from the current polling interval of 1 second.
-- The number listed in the `kube_pod_missed_events` metric should remain low (ideally zero or at least near-zero).
+With a healthy stream, kubelet should normally detect a container termination before the next global relist. Without a healthy stream, detection latency returns to the Generic PLEG baseline. Reconnect traffic needs to remain bounded, and a stream outage does not fail the PLEG health check.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
+Relevant signals include stream connection state, reconnect attempts, per-pod relist duration, dropped relist requests, and the existing Generic PLEG relist and last-seen metrics. End-to-end tests need to measure the time from container exit to the pod status update.
 
-- [X] Metrics
-  - Metric name: `kube_pod_start_time`
-  - Aggregation method: Compare against the start time reported in the CRI runtime logs.
-  - Components exposing the metric: Kubelet
-- Metric name: `kube_pod_completion_time`
-  - Aggregation method: Compare against the container exit time reported in the CRI runtime logs.
-  - Components exposing the metric: Kubelet
-- [X] Other (treat as last resort)
-  - Details: Admins can also look for the `PodLifecycleEvent` getting generated from the received CRI runtime event in the kubelet logs. This is a good indicator that the feature is working.
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
-Kubelet already has the metrics for the pod status update times (e.g `kube_pod_start_time` and `kube_pod_completion_time`). But there is no standard metric emitted by the various CRI runtime implementations for the pod statuses update times. It would be ideal if we had a standard metrics for the container statuses emitted by all the CRI implementations.
+Yes. Kubelet needs metrics for connection state, retries, and relist request outcomes.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
+- **CRI runtime with `GetContainerEvents` support**
+  - Usage: supplies optional stop-event latency hints.
+  - Impact of an outage or incompatibility: the fast path is unavailable and reconnects are rate-limited; Generic PLEG continues normally.
+  - Impact of degraded performance: delayed events may cause redundant relists, but fresh runtime reads and periodic global relists preserve correctness.
 
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
-- CRI Runtime
-  - CRI runtimes that are capable of emitting CRI events must be installed and running.
-    - Impact of its outage on the feature: Kubelet will detect the outage and fall back on the `Generic PLEG` with the default relisting period to make sure the pod statuses are updated correctly.
-    - Impact of its degraded performance or high-error rates on the feature:
-        - Any instability with the CRI runtime events stream that results in an error can be detected by the kubelet. Such an error will result in the kubelet falling back to the `Generic PLEG` with default relisting period to make sure the pod statuses are updated in time.
-        - If the instability is only of the form degraded performance but does not result in an error then the kubelet will not be able to fall back to the `Generic PLEG` with default relisting period and will continue to use the CRI runtime events stream. With the changes proposed in the section [Pod Status update in the Cache](#pod-status-update-in-the-cache) should help in handling this scenario.
-    - Kubelet should emit a metric `kube_pod_missed_events` when it detects pods changing state between relist periods not caught by an event.
 ### Scalability
+
 ###### Will enabling / using this feature result in any new API calls?
 
-No.
+No Kubernetes API calls are added. The feature adds one long-lived local CRI stream and targeted local CRI queries after container stops.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -633,64 +356,87 @@ No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-No.
+No control-plane operation covered by an existing Kubernetes SLI or SLO gains additional work. Kubelet performs an additional local runtime query after a valid stopped-container event; that work is bounded and does not block the periodic global relist.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No.
+High container termination rates may increase CPU and I/O in kubelet and the local CRI runtime. While a pod's relists are suspended, requests for that pod are coalesced into one pending relist. Outside suspension, queue capacity bounds pending work, and the dispatcher gives global relists priority. Stress tests and queue metrics need to validate these bounds.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No.
+A faulty reconnect loop could churn sockets or goroutines. A single watcher, context cancellation, and capped jittered backoff prevent unbounded retries. Tests need to verify that goroutines and streams do not accumulate.
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Since it's a kubelet specific feature, it has no effect of unavailibility of either API server and/or etcd.
+Stream watching and PLEG reconciliation are local to kubelet and the CRI runtime. API server or etcd unavailability affects kubelet status reporting as usual but does not change stream recovery.
 
 ###### What are other known failure modes?
 
-- Incorrect container statuses
-  - Detection: If the user notices that the container statuses reported by the kubelet are not consistent with the container statuses reported by the CRI runtime (i.e. using say, `crictl`) then we are running into the failure of this feature.
-  - Mitigations: They will have to disable this feature and open an issue for further investigation.
-  - Diagnostics: CRI Runtime logs (such as, `cri-o` or `containerd`) may not be consistent with the kubelet logs on container statuses.
-- Missed events
-  - Detection: If there's a bug in the CRI implementation, it may miss events or not send them correctly. Kubelet will see this when the statuses are listed. It should emit a metric `kube_pod_missed_events` to quantify.
-  - Mitigations: The feature could be disabled or relist frequency could be increased until CRI fixes.
-  - Diagnostics: Increasing value of `kube_pod_missed_events` metric coming from Kubelet.
-
+- **Disconnected or flapping stream**
+  - Detection: connection state, reconnect attempts, and connection-error metrics.
+  - Mitigation: Generic PLEG continues normally; disable `EventedPLEG` if stream handling contributes to node pressure.
+  - Diagnostics: rate-limited kubelet logs and CRI runtime logs.
+  - Testing: unit and node e2e tests need to interrupt and restore the stream.
+- **Event without a pod UID**
+  - Detection: kubelet logs show that the event was ignored; the fast-path relist count does not increase.
+  - Mitigation: upgrade or correct the runtime; Generic PLEG continues normally.
+  - Diagnostics: inspect the runtime version and event metadata.
+  - Testing: unit tests need to cover missing sandbox status, metadata, and UID.
+- **Delayed or duplicate events**
+  - Detection: relist requests may increase without a corresponding lifecycle transition.
+  - Mitigation: no immediate action is required unless redundant work creates sustained load; fresh runtime reads prevent stale cache writes.
+  - Diagnostics: compare event latency and relist metrics with runtime logs.
+  - Testing: unit and node e2e tests need to inject delayed and duplicate events.
+- **Full relist queue**
+  - Detection: dropped-request metrics increase.
+  - Mitigation: investigate kubelet or runtime saturation; the normal global relist still provides convergence.
+  - Diagnostics: inspect queue, relist-duration, kubelet CPU, and runtime-operation metrics.
+  - Testing: stress tests need to verify bounded work and continued global relists.
+- **Unhealthy Generic PLEG**
+  - Detection: existing PLEG health, last-seen, and runtime-operation signals.
+  - Mitigation: investigate the runtime and kubelet independently of the event stream.
+  - Diagnostics: use existing PLEG and runtime logs.
+  - Testing: existing Generic PLEG coverage remains applicable.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Disabling this feature in the kubelet will revert to the existing relisting PLEG.
+First check Generic PLEG health, then inspect stream state, reconnect attempts, the relist queue, and runtime logs. If stream handling or targeted relists are contributing to the problem, disable `EventedPLEG` and restart kubelet. This does not change Generic PLEG behavior.
 
 ## Implementation History
 
-- Alpha(1.25)
+- v1.26: initial Alpha implementation, disabled by default
   - <https://github.com/kubernetes/kubernetes/pull/111642>
   - <https://github.com/kubernetes/kubernetes/pull/111384>
-- Beta(default false, 1.27)
+- v1.27: Beta, default disabled
   - <https://github.com/kubernetes/kubernetes/pull/115967>
-  - PR for presubmit Node e2e job - <https://github.com/kubernetes/test-infra/pull/28366>
-  - PR for periodic Node e2e job - <https://github.com/kubernetes/test-infra/pull/28592>
-  - v1.29 bugfix: <https://github.com/kubernetes/kubernetes/pull/120942>
-- Revert to Alpha(1.30): backported to v1.27.9, v1.28.6, v1.29.1, as there is a known issue <https://github.com/kubernetes/kubernetes/issues/121349> and <https://github.com/kubernetes/kubernetes/issues/121003> that will make static pod failed to start.
-  - revert PR <https://github.com/kubernetes/kubernetes/pull/122697>
-  - v1.30 bugfix: <https://github.com/kubernetes/kubernetes/pull/122475>
+  - <https://github.com/kubernetes/test-infra/pull/28366>
+  - <https://github.com/kubernetes/test-infra/pull/28592>
+- v1.29: bug fix
+  - <https://github.com/kubernetes/kubernetes/pull/120942>
+- v1.30: reverted to Alpha and backported because of static-pod failures
+  - <https://github.com/kubernetes/kubernetes/issues/121349>
+  - <https://github.com/kubernetes/kubernetes/issues/121003>
+  - <https://github.com/kubernetes/kubernetes/pull/122697>
+  - <https://github.com/kubernetes/kubernetes/pull/122475>
+- v1.36: introduce Generic PLEG on-demand relisting
+  - <https://github.com/kubernetes/kubernetes/pull/137362>
+- v1.37: narrow Evented PLEG to the container-termination hint path
+  - <https://github.com/kubernetes/kubernetes/pull/139262>
 
 ## Drawbacks
 
-This KEP introduces changes to the [kubelet PLEG](https://github.com/kubernetes/kubernetes/tree/master/pkg/kubelet/pleg), which is very core to the kubelet operation.
+- Generic PLEG keeps its normal polling cost, so this narrower design does not deliver the original KEP's steady-state CPU reduction goal.
+- A termination adds a targeted CRI query that may be followed soon by a global relist. Coalescing during `SyncPod` and skipping requests already covered by a newer global relist reduce but cannot eliminate this duplicate work.
+- The event stream remains operationally complex even though it is no longer a correctness dependency.
+- Without a CRI replay cursor, recovery can converge current state but cannot guarantee reconstruction of every unobservable intermediate transition.
 
 ## Alternatives
 
-The Kubelet PLEG can be made to utilize the events from cadvisor as well. But we are trying to reduce the kubelet's dependency on cadvisor so that option is not viable. This is also discussed in the older [enhancement](https://github.com/kubernetes/community/blob/4026287dc3a2d16762353b62ca2fe4b80682960a/contributors/design-proposals/node/pod-lifecycle-event-generator.md#leverage-upstream-container-events) in detail.
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+- **Replace Generic PLEG with Evented PLEG.** Rejected because the CRI event stream is edge-triggered and has no durable replay. Without Generic PLEG, a disconnect, runtime restart, or missed event could leave the kubelet cache stale indefinitely. Generic PLEG provides the level-driven reconciliation needed to recover current runtime state.
+- **Retain Evented PLEG as a second state producer.** Rejected because writing event payloads directly to the cache would introduce multiple writers, timestamp races, and the risk that a stale event overwrites newer state. It would also make correctness depend on stream delivery.
+- **Increase Generic PLEG's relist period while connected.** Rejected because a longer period would increase reconciliation latency when events are lost or the runtime silently stops sending them. It would also require kubelet to switch modes based on stream health. Keeping the normal period provides a consistent reconciliation baseline.
+- **Trigger targeted relists for every CRI event type.** Rejected because container stops are the relevant state changes that kubelet commonly does not initiate. Relisting on created, started, and deleted events would add runtime load without a demonstrated correctness or latency benefit.
+- **Stop reconnecting after a fixed number of failures.** Rejected because a runtime can be unavailable longer than a fixed retry window or be upgraded in place. Capped indefinite backoff restores the optimization without kubelet restart and keeps retry load bounded.
+- **Add durable CRI event replay.** Not required. A cursor and replay protocol could preserve events across a disconnect, but would substantially expand the CRI contract. Generic PLEG already reconciles kubelet with the current runtime state.
