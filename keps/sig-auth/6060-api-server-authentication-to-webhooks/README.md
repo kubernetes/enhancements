@@ -42,6 +42,8 @@
     - [Recommendations for permissions](#recommendations-for-permissions)
   - [New types of BoundObjectRef](#new-types-of-boundobjectref)
   - [Audience](#audience)
+    - [URL-Configured Webhooks](#url-configured-webhooks)
+    - [Service-Configured Webhooks](#service-configured-webhooks)
   - [New JWT Private Claims](#new-jwt-private-claims)
   - [Token Verification](#token-verification)
   - [Token Review](#token-review)
@@ -116,7 +118,7 @@ verification library will be introduced for use by webhook maintainers.
 
 This KEP augments the `TokenRequest` API to allow for the client to request
 claims in the JWT token to which `kube-apiserver` attests. In addition, tokens
-intended for admission webhooks will be bound to an webhook configuration
+intended for admission webhooks will be bound to a webhook configuration
 object (either validating or mutating). The specifics of these changes are
 discussed in detail in the [design details](#design-details) section.
 
@@ -144,7 +146,7 @@ actor setting up the webhook are not the same, as is usually the case with
 There are existing out-of tree solutions, such as
 [generic-admission-server](https://github.com/openshift/generic-admission-server).
 However, they require manual setup. This KEP posits that an
- opinionated, on-by-default solution is needed to reduce the friction
+opinionated, on-by-default solution is needed to reduce the friction
 to adoption. It is designed to make it possible to transition in phases. First,
 [webhook authentication client](#webhook-authentication-client) libraries are
 configured to use them by default (except in cases where it would break an
@@ -204,7 +206,7 @@ API calls should be required of webhooks to verify tokens.
   and easy.
 * The token is scoped to a subset of resources about which its bearer may
   contact the webhook.
-* Tokens may alternatively be scoped per-webhook (by audience).
+* Tokens may alternatively be scoped per-webhook (by [audience](#audience)).
 * The design is backward compatible: existing kubeconfig-based webhook
   authentication setups continue to work without modification.
 * Defining the webhook-side verification go library.
@@ -258,7 +260,7 @@ the full term will always be used.
 
 [Webhook authentication clients](#webhook-authentication-client) may request
 service account tokens with a narrow scope, indicating to the webhook that
-it is only valid for its audience and for `AdmissionReview` requests about
+it is only valid for its [audience](#audience) and for `AdmissionReview` requests about
 resources with a particular `APIGroup`. Because the number of per-webhook,
 per-`APIGroup` tokens can quickly get out of hand for `kube-apiserver`, tokens
 may alternatively be requested that are valid per-webhook, but which authorize
@@ -281,16 +283,16 @@ these claims must be coherent with the resources the webhook expects. Further
 details are described in the [design details](#changes-to-tokenrequestspec)
 section. Second, it must specify either a `ValidatingWebhookConfiguration`
 or a `MutatingWebhookConfiguration` as the `BoundObjectRef`. Third, it must
-specify an audience that is coherent for that `*WebhookConfiguration`. The
-exact specification of the derivation of the audience is deferred until
-implementation time, and is at the moment subject to change. Fourth and
-finally, the `ServiceAccount` for which the `TokenRequest` is being made
-must have sufficient permission to obtain the token. This is accomplished by
-means of a synthetic authorization check at token issuance, and is described
+specify an [audience](#audience) that is coherent for that `*WebhookConfiguration`. The exact
+composition of a "coherent" [audience](#audience) for a webhook configuration is described in
+detail in the [design details](#audience) section.
+Fourth and finally, the `ServiceAccount` for which the `TokenRequest` is being
+made must have sufficient permission to obtain the token. This is accomplished
+by means of a synthetic authorization check at token issuance, and is described
 in greater detail in the [design details](#authorization-checks) section.
 
 When the `TokenRequest` caller wants a token authorizing the bearer to inquire
-about resources in any `APIGroup`, it will request that `kube-apiserver` attest
+about resources in *any* `APIGroup`, it will request that `kube-apiserver` attest
 to a claim on the `"*" APIGroup`. This requires that the token acquisition
 service account have broader permissions, described further in the [design
 details](#authorization-checks) section.
@@ -298,7 +300,7 @@ details](#authorization-checks) section.
 This broad permission should only be granted to `kube-apiserver`, and its use by
 principals representing aggregated API servers is strongly discouraged. Instead,
 aggregated API servers should request that `kube-apiserver` attest to the
-`APIGroup` corresponding to the server's `APIService`(s) (there may be multiple
+`APIGroup` corresponding to the aggregated API server's `APIService`(s) (there may be multiple
 `APIService`s to express multiple `APIVersion`s of a single `APIGroup`). This
 indicates to the webhook that it should deny `AdmissionReview` requests
 that do not pertain to objects within that `APIGroup`. This is recommended
@@ -318,9 +320,8 @@ the following steps:
 
 1. Verify the token's signature via the OIDC discovery endpoint.
 1. Verify that the token's audience matches the expected audience. This audience
-   is derived deterministically from the webhook configuration. Several
-   alternatives have been discussed including the url, but the tradeoffs
-   are still being evaluated.
+   is derived deterministically from the webhook configuration, as described in
+   the [design details](#audience) section.
 1. Verify that the resource named in the `AdmissionReview` request body is
    a member of the `APIGroup`(s) named in the private claims. The `*`
    `APIGroup` is a superset of all `APIGroup`s. When the `APIGroup` is `*`,
@@ -483,7 +484,7 @@ sequenceDiagram
         Note over Webhook: Verify JWT
         Webhook->>Webhook: Signature (OIDC discovery)? - OK
         Webhook->>Webhook: Audience? - OK
-        Webhook-->>Webhook: APIGroup/AdmissionReview coherence?<br/>"ninja.turtles.ai" ≠ "" - NO
+        Webhook-->>Webhook: APIGroup/AdmissionReview coherence?<br/>"ninja.turtles.ai" =/= "" - NO
 
         Webhook-->>AAS: 403 Forbidden
     end
@@ -532,7 +533,7 @@ specially authorized service accounts may create webhook authentication tokens.
 #### Token replay across webhooks
 
 A JWT obtained for one webhook could be presented to another webhook if they
-serve overlapping resources. The per-webhook audience scoping prevents this:
+serve overlapping resources. The per-webhook [audience](#audience) scoping prevents this:
 each token is only valid for the specific webhook audience for which it
 was minted.
 
@@ -589,6 +590,10 @@ within the purview of each key (claim name) must be well-defined.
 type TokenRequestSpec struct {
     // NOTE: Newly added: AttestationClaims (described above)
     AttestationClaims map[string][]string
+
+    // NOTE: When requesting a token for authenticating API Servers to webhooks,
+    // the audience must match the pattern described in the design details
+    //  section below.
 
 	// Audiences are the intended audiences of the token. A recipient of a
 	// token must identify themself with an identifier in the list of
@@ -659,7 +664,8 @@ to the Kubernetes API Server. The request includes:
 1. The name of a [token acquisition service
    account](#token-acquisition-service-account) with `attest` permission on
    the `APIGroup` named in the required corresponding `AttestationClaim`.
-1. An audience derived from the webhook's url.
+1. An audience derived from the webhook's URL or service reference, as described
+   in the [design details](#audience) section.
 1. An `AttestationClaim` with the key `"webhook-authentication.k8s.io/allowedAPIGroup"`,
    and a value indicating which `APIGroup`s the resulting token should authorize
    its bearer to ask webhooks about.
@@ -680,13 +686,13 @@ doing so for a resource (or custom resource) it serves directly. The
 `BoundObjectRef` in the `TokenRequest` must be the one corresponding to the
 `ValidatingWebhookConfiguration` or `MutatingWebhookConfiguration` of the
 webhook it seeks to consult. The audience must be coherent with the bound
-object.  Because this is `kube-apiserver`, this request is a request for a token
+object, as in the [design details](#audience) section.  Because this is `kube-apiserver`, this request is a request for a token
 is valid for **a specific webhook** but for **all `APIGroup`s**. As such,
 it should make the claim `"webhook-authentication.k8s.io/allowedAPIGroup":
 ["*"]`.
 
 The requester will only receive the JWT token when the authorization checks
-(described below) succeed. When the principal is `kube-apiserver`, this
+(described in a later section) succeed. When the principal is `kube-apiserver`, this
 will always succeed unless the request happens to occur after the deletion
 of its service account but before it can be recreated.
 
@@ -705,7 +711,8 @@ aggregated API servers is:
 1. It sends a `TokenRequest` for its dedicated service account, with all of the following:
      a. A `BoundObjectRef` pointing to the `ValidatingWebhookConfiguration` or
    `MutatingWebhookConfiguration` for the webhook it wishes to contact.
-     a. An audience coherent with the webhook's configuration.
+     a. An audience coherent with the webhook's configuration, as
+     described in the [design details](#audience) section.
      a. The `"webhook-authentication.k8s.io/allowedAPIGroup" AttestationClaim`
         with a value of length 1, containing as its first and only
         element the name of the `APIGroup` containing the resource that
@@ -855,11 +862,162 @@ with name `"webhook-authentication.k8s.io/allowedAPIGroup"`.
 
 The token's audience is derived from the webhook configuration. Client and
 `kube-apiserver` will perform the same derivation, and both will derive the
-same value. The exact format of the value has not yet been determined and
-various alternatives are being weighed.
+same value. Below are the relevant fields of a `ValidatingWebhookConfiguration`
+(a `MutatingWebhookConfiguration` shares an identical structure once the
+`ClientConfig` field of a `MutatingWebhook` is reached):
 
-The webhook verifies that the token's `aud` claim matches its configured
-identity before accepting the request.
+```go
+// ValidatingWebhookConfiguration describes the configuration of an admission webhook that accepts or rejects and object without changing it.
+type ValidatingWebhookConfiguration struct {
+    // <...>
+
+	Webhooks []ValidatingWebhook
+
+    // <...>
+}
+
+// ValidatingWebhook describes an admission webhook and the resources and operations it applies to.
+type ValidatingWebhook struct {
+    // <...>
+
+	// ClientConfig defines how to communicate with the hook.
+	// Required
+	ClientConfig WebhookClientConfig
+
+    // <...>
+}
+
+// WebhookClientConfig contains the information to make a TLS
+// connection with the webhook
+type WebhookClientConfig struct {
+	// `url` gives the location of the webhook, in standard URL form
+	// (`scheme://host:port/path`). Exactly one of `url` or `service`
+	// must be specified.
+    // <...>
+
+	URL *string
+	Service *ServiceReference
+}
+
+// ServiceReference holds a reference to Service.legacy.k8s.io
+type ServiceReference struct {
+
+	// Required
+	Namespace string
+
+	// Required
+	Name string
+
+	// +optional
+	Path *string
+
+	// +optional
+	Port int32
+}
+```
+
+There are two possible field paths for audience derivation from a
+`ValidatingWebhookConfiguration` or `MutatingWebhookConfiguration`:
+
+a. `ValidatingWebhookConfiguration.Webhooks.[n].ClientConfig.URL`
+a. `ValidatingWebhookConfiguration.Webhooks.[n].ClientConfig.Service`
+
+These are mutually exclusive fields (providing both is a validation error).
+There are two sets of rules for audiences, one for URL-configured webhooks and
+one for service-configured webhooks.
+
+#### URL-Configured Webhooks
+
+When the webhook is configured by URL, the audience specified in the
+`TokenRequest` for a webhook authentication token must be an exact string match.
+There are no equivalents; either a mismatched length, or a single character mismatch
+is considered a total mismatch. Therefore, it is critical to check that both
+match, especially when considering a trailing path separator (e.g.
+`https://foo.com/my-webhook/` vs `https://foo.com/my-webhook`)
+
+#### Service-Configured Webhooks
+
+When the webhook is configured by reference to a Service, it must match the
+pattern `https://$name.$namespace.svc:$port[$path]`.
+
+When a webhook is configured as a service, and is matched against the above
+pattern, `$name` and `$namespace` are required in the webhook's client
+configuration, whereas `$port` and `$path` are optional. When `$port` is not
+provided, its default is the standard TLS port `443`. When `$path` is not
+provided, it defaults to the path separator (i.e. the string `"/"`).
+
+`$path` may be provided with or without a leading path separator (e.g.
+`/path/to/endpoint`, vs `path/to/endpoint`). When provided without a leading
+path separator, one will be prepended to the path using the following logic:
+
+```go
+vwc := ValidatingWebhookConfiguration{
+    // <...>
+
+    Webhooks: []ValidatingWebhook{
+        {
+            // <...>
+
+            ClientConfig: WebhookClientConfig{
+                Service: &ServiceReference{
+                    Name: "fooname",
+                    Namespace: "barspace",
+                    Port: int32(443),
+                    // Path not provided
+                },
+            },
+
+            // <...>
+        },
+    },
+
+    // <...>
+}
+
+// Default value for path, when none is provided.
+path := "/"
+
+if cc.Service.Path != nil {
+    path = *cc.Service.Path
+    if !strings.HasPrefix(path, "/") {
+        // NOTE: If *cc.Service.Path is "", it now becomes "/" with the full
+        // audience resolving to "https://fooname.barspace.svc:443/".
+        // If instead *cc.Service.Path was something else without a leading
+        // separator, such as "path/to/hook", the full audience resolves to
+        // "https://fooname.barspace.svc:443/path/to/hook".
+        path = "/" + path
+    } else {
+        // cc.Service.Path already has a leading separator, e.g.
+        // "/path/to/hook", so none is added. The full audience in this case
+        // resolves to "https://fooname.barspace.svc:443/path/to/hook"
+    }
+} else {
+    // cc.Service.Path is not provided, so path is "/" and the full audience
+    // resolves to "https://fooname.barspace.svc:443/"
+}
+
+svcAud := fmt.Sprintf("https://%s.%s.svc:%d%s", cc.Service.Name, cc.Service.Namespace, port, path)
+```
+
+A table of examples will make this logic crystal clear.
+
+| `cc.Service.Name` | `cc.Service.Namespace` | `cc.Service.Port` (type `*string` ) | `cc.Service.Path` | Audience |
+| --------- | ---------- | -------------- | ---------------------------- |----------|
+| "fooname" | "barspace" | 0 (default when not provided) | nil | "https://fooname.barspace.svc:443/" |
+| "fooname" | "barspace" | 0 | new("") | "https://fooname.barspace.svc:443/" |
+| "fooname" | "barspace" | 0 | new("/") | "https://fooname.barspace.svc:443/" |
+| "fooname" | "barspace" | 0 | new("path/to/webhook") | "https://fooname.barspace.svc:443/path/to/webhook" |
+| "fooname" | "barspace" | 0 | new("/path/to/webhook") | "https://fooname.barspace.svc:443/path/to/webhook" |
+| "fooname" | "barspace" | 0 | new("path/to/webhook/") | "https://fooname.barspace.svc:443/path/to/webhook/" |
+| "fooname" | "barspace" | 0 | new("/path/to/webhook/") | "https://fooname.barspace.svc:443/path/to/webhook/" |
+| "fooname" | "barspace" | 8443 | nil | "https://fooname.barspace.svc:8443/" |
+| "fooname" | "barspace" | 8443 | &"" | "https://fooname.barspace.svc:8443/" |
+| "fooname" | "barspace" | 8443 | &"path/////with//iregular///separators" | "https://fooname.barspace.svc:8443/path/////with//iregular///separators" |
+| "" | "barspace" | 8443 | &"" | N/A (invalid Name) |
+| "fooname" | "" | 8443 | &"" | N/A (invalid Namespace) |
+
+The webhook must perform the same derivation in order to guarantee correct
+authentication of API Servers wishing to communicate with it.
 
 ### New JWT Private Claims
 
@@ -909,7 +1067,8 @@ The webhook may verify these tokens by taking the following steps:
 
 1. Verify the token's signature via the OIDC discovery endpoint.
 1. Verify that the token's audience matches the expected audience. This audience
-   is derived deterministically from the webhook's configuration.
+   is derived deterministically from the webhook's configuration as described in
+   the [design details](#audience) section.
 1. Verify that the JWT is bound to either a `ValidatingWebhookConfiguration`
    or a `MutatingWebhookConfiguration`, but not both.
 1. Verify that the value of the
