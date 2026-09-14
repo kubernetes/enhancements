@@ -1,0 +1,24 @@
+title: "Per-container memory pressure eviction"
+kep-number: 5986
+authors:
+  - "@sohankunkerkar"
+  - "@QiWang19"
+owning-sig: sig-node
+status: implementable
+creation-date: "2026-05-28"
+reviewers:
+  - "@haircommander"
+approvers:
+  - "@mrunalp"
+  - "@SergeyKanzhelev"
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.37"
+feature-gates:
+  - name: MemoryHighEviction
+    components:
+      - kubelet
+disable-supported: true
+metrics:
+  - kubelet_memory_high_relaxed_total
