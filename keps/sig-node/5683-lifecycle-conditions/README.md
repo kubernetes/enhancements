@@ -1,4 +1,4 @@
-# KEP-NNNN: Node Lifecycle Conditions
+# KEP-5683: Node Lifecycle Conditions
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -21,6 +21,9 @@
   - [GracefulNodeShutdownInProgress Condition](#gracefulnodeshutdowninprogress-condition)
   - [Lifecycle Conditions](#lifecycle-conditions)
   - [Writer Ownership](#writer-ownership)
+  - [Kubectl Drain Condition Writer](#kubectl-drain-condition-writer)
+    - [Permissions](#permissions)
+    - [Signal Handling](#signal-handling)
   - [Feature Gate](#feature-gate)
   - [Future Extension Points](#future-extension-points)
   - [Test Plan](#test-plan)
@@ -30,7 +33,7 @@
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha - Introduce Well-Known Conditions](#alpha---introduce-well-known-conditions)
-    - [Alpha2 - Consume Conditions in Controllers](#alpha2---consume-conditions-in-controllers)
+    - [Alpha2 - Publish Drain Conditions from kubectl](#alpha2---publish-drain-conditions-from-kubectl)
     - [Beta](#beta)
     - [GA](#ga)
     - [Deprecation](#deprecation)
@@ -100,7 +103,10 @@ core behavior to react to those condition values.
 
 The first version is intentionally narrow. It does not define a general node
 maintenance protocol. It establishes the pattern: a well-known condition
-consumable on the Node, providing a foundation for future work.
+consumable on the Node, providing a foundation for future work. The second
+alpha introduces `kubectl drain` the first in-tree writer of `DrainInProgress`
+and `Drained`, establishing how a lifecycle tool publishes these observations
+without changing drain behavior.
 
 ## Motivation
 
@@ -123,7 +129,8 @@ Kubernetes already uses well-known Node conditions for shared Node state such as
 `Ready`, `MemoryPressure`, `DiskPressure`, `PIDPressure`, and
 `NetworkUnavailable`. This KEP extends that model by proposing new Node
 conditions for Node Lifecycle. First, publish well-known Node lifecycle signals,
-then make core controllers use those signals for better status reporting.
+then follow up KEPs can make core controllers use those signals for better
+status reporting.
 
 ### Goals
 
@@ -136,6 +143,7 @@ then make core controllers use those signals for better status reporting.
   ecosystem tools can consume.
 - Provide an asynchronous building block that can be extended without changing
   the initial condition.
+- alpha2: Publish `kubectl drain` progress through `DrainInProgress` and `Drained`.
 
 ### Non-Goals
 
@@ -167,6 +175,12 @@ For this KEP, the new Node conditions are admin managed. An admin, or an
 admin-authorized maintenance controller, sets the condition status to `True`
 when appropriate. Clearing the lifecycle state is done by setting the condition
 status to `False` or removing the condition.
+
+In Alpha2, `kubectl drain` becomes the first in-tree lifecycle condition
+writer. With condition reporting enabled, it sets `DrainInProgress=True` when
+it begins processing a Node and sets `Drained=True` when the drain criteria
+selected by that invocation have been met. Reporting is informational and does
+not change the existing drain operation.
 
 ### User Stories
 
@@ -245,6 +259,7 @@ nodes can be shared under `status.unavailable`.
 #### Story 5: Taints are Insufficient for Signaling Node Drain
 
 Tracking Issues:
+- [kubernetes/enhancements#6251](https://github.com/kubernetes/enhancements/issues/6251)
 - [kubernetes/kubernetes#25625](https://github.com/kubernetes/kubernetes/issues/25625)
 - [kubernetes-sigs/cluster-api#3365](https://github.com/kubernetes-sigs/cluster-api/issues/3365)
 - [kubernetes/autoscaler#8157](https://github.com/kubernetes/autoscaler/issues/8157)
@@ -260,7 +275,6 @@ There are many solutions that can be implemented for this one, so will focus on
 condition `DrainInProgress=True`. When `kubectl drain` completes,
 `Drained=True` can be set. It will be up to the admin to clear the
 state.
-
 
 #### Story 6: Reactive vs Proactive Drain
 
@@ -324,6 +338,13 @@ When the autoscaler sees a node with `MaintenanceInProgress=True` or
   condition that can carry an admin-provided state, be consumed by core
   Kubernetes controllers, and later be extended by
   [Specialized Lifecycle Management](https://github.com/kubernetes/enhancements/issues/5683).
+- A client-side writer can disappear while `DrainInProgress=True`. Kubectl
+  attempts a terminal update for handled interrupts, but cannot recover from
+  `SIGKILL`, process failure, host failure, or loss of API connectivity.
+  Administrators remain responsible for correcting stale state.
+- Publishing drain conditions requires `patch` permission on `nodes/status`.
+  This KEP does not change default RBAC roles, and condition reporting remains
+  best-effort if the user lacks that permission.
 
 ## Design Details
 
@@ -429,6 +450,74 @@ CamelCase.
 Any authorized actor can write the Lifecycle Conditions. This avoids introducing
 lifecycle ownership or coordination semantics for now.
 
+### Kubectl Drain Condition Writer
+
+Alpha2 adds an opt-in `--report-node-conditions` flag to `kubectl drain`.
+When enabled, kubectl publishes drain observations through the Node `status`
+subresource.
+
+`Drained=True` means that the criteria selected by that invocation were met. It
+does not mean that the Node has zero Pods, that another drain implementation
+would select the same Pods, or that Pods cannot be created afterward.
+
+Kubectl uses these reasons:
+
+| Reason | Definition |
+|---|---|
+| `KubectlDrainStarted` | Kubectl started processing the Pods selected for drain on the Node. |
+| `KubectlDrainCompleted` | Kubectl observed that its selected drain criteria were met. |
+| `KubectlDrainFailed` | Kubectl could not meet its selected drain criteria because the operation failed or timed out. |
+| `KubectlDrainInterrupted` | Kubectl handled an interrupt before its selected drain criteria were met. |
+
+The two conditions are updated together:
+
+| Event | `DrainInProgress` | `Drained` | Reason |
+|---|---|---|---|
+| Kubectl starts processing the Node | `True` | `False` | `KubectlDrainStarted` |
+| Selected criteria are met | `False` | `True` | `KubectlDrainCompleted` |
+| Drain fails or times out | `False` | `False` | `KubectlDrainFailed` |
+| Kubectl handles an interrupt | `False` | `False` | `KubectlDrainInterrupted` |
+
+For a multi-Node invocation, kubectl publishes `DrainInProgress=True`
+immediately before processing each individual Node. It does not publish that
+condition for every selected Node when the initial cordon operation begins.
+
+Starting a new drain resets `Drained=False` before processing the Node.
+Concurrent drain actors are not coordinated. Any authorized actor can patch
+the lifecycle conditions, and the latest successful update determines the
+observed value.
+
+Kubectl uses a strategic merge patch containing only `DrainInProgress` and
+`Drained`. `NodeCondition` is a merge list keyed by condition type, so unrelated
+Node conditions and status fields are preserved. A reporting failure is
+printed as a warning and does not change the drain command's result.
+
+#### Permissions
+
+Condition reporting adds one permission to `kubectl drain`: `patch` on the
+core `nodes/status` subresource. This KEP does not change default RBAC roles.
+Administrators who want condition reporting must grant that permission to
+their drain users.
+
+The `k8s.io/kubectl/pkg/drain` package is used by projects other than the
+kubectl command. Condition reporting remains disabled by default in the
+library, so updating the dependency does not change downstream behavior or
+permissions.
+
+#### Signal Handling
+
+Today, `kubectl drain` does not install a signal handler for the drain
+operation. The operating system terminates the process immediately after
+`SIGINT`, `SIGTERM`, or `SIGHUP`, without a final API request.
+
+With condition reporting enabled, the first of those signals cancels the
+active drain and stops processing additional Nodes. Kubectl prints that it is
+updating the Node conditions, then makes one best-effort strategic merge patch
+for the current Node using a new five-second context. After the patch completes
+or times out, kubectl delivers the original signal and preserves signal-based
+termination. A second signal terminates immediately. Unhandled process or host
+failure can still leave `DrainInProgress=True`.
+
 ### Feature Gate
 
 Add the `NodeLifecycleConditions` feature gate.
@@ -467,17 +556,31 @@ None.
 
 - Unit tests for reading `GracefulNodeShutdownInProgress=True` from Nodes.
 - Unit tests for reading lifecycle condition type/status values from Nodes.
+- Unit tests in `k8s.io/kubectl/pkg/cmd/drain` and
+  `k8s.io/kubectl/pkg/drain` cover:
+  - condition reporting disabled
+  - successful single-Node and multi-Node drains
+  - start, completion, failure, and interruption patch payloads
+  - client and server dry-run
+  - forbidden and transient status updates
+  - repeated drains
+  - existing library consumers with no condition reporter
 
 ##### Integration tests
 
 - Verify that the Node has `GracefulNodeShutdownInProgress`,
   `DrainInProgress`, `Drained`, `MaintenancePlanned`, and
   `MaintenanceInProgress` conditions.
+- Verify that kubectl patches only the drain conditions through
+  `nodes/status`, preserves unrelated status, and treats authorization failures
+  as non-fatal to the drain operation.
 
 ##### e2e tests
 
-This KEP defines well-known conditions. These conditions do not introduce
-a behavior change, so there is e2e tests to add.
+- Drain a Node with condition reporting enabled and verify the start and
+  completion conditions.
+- Interrupt an active drain and verify that both conditions become `False`
+  with reason `KubectlDrainInterrupted`.
 
 ### Graduation Criteria
 
@@ -492,15 +595,27 @@ a behavior change, so there is e2e tests to add.
 - `NodeLifecycleConditions` feature gate is added.
 - Unit tests cover condition reading and feature-gate behavior.
 
-#### Alpha2 - Consume Conditions in Controllers
+#### Alpha2 - Publish Drain Conditions from kubectl
 
-- Define DaemonSet behavior when Node is Graceful Node Shutdown state.
-- Define DaemonSet and Job behavior when Node is undergoing maintenance
-- Define kubelet recovery behavior for lost Graceful Node Shutdown state.
+- Add the opt-in `--report-node-conditions` flag to `kubectl drain`.
+- Publish the start, completion, failure, and interruption transitions defined
+  in this KEP.
+- Keep condition reporting disabled by default for drain library consumers.
+- Document the additional `nodes/status` permission.
+- Add unit, integration, and initial e2e coverage.
+
+Changes that consume lifecycle conditions in core controllers remain separate
+enhancements so their behavioral and production-readiness implications can be
+reviewed independently.
 
 #### Beta
 
 - Gather feedback from rollout tooling and large-cluster operators.
+- Enable kubectl condition reporting by default, with
+  `--report-node-conditions=false` as an opt-out.
+- Keep condition reporting opt-in for drain library consumers.
+- Resolve known issues with stale observations, concurrent writers, and
+  selected drain criteria.
 - Decide whether additional lifecycle condition types should be standardized.
 - Feature gate defaults to enabled.
 
@@ -523,16 +638,27 @@ On upgrade, clusters that enable the feature gate may see new
 `GracefulNodeShutdownInProgress`, `DrainInProgress`, `Drained`,
 `MaintenancePlanned`, and `MaintenanceInProgress` conditions on Nodes.
 
-On downgrade or feature disablement, nothing changes from the current
-behavior. Admins are in control of these conditions.
+During Alpha2, upgrading kubectl adds the opt-in
+`--report-node-conditions` flag without changing existing invocations. At
+beta, reporting becomes the default and users can retain the previous behavior
+with `--report-node-conditions=false`.
+
+Downgrading to a kubectl version without the feature stops new drain condition
+updates but does not otherwise affect drain. Existing conditions remain on the
+Node until an authorized actor updates or removes them.
 
 ### Version Skew Strategy
 
-If a future controller-manager version supports consuming these conditions but
-the current controller-manager does not, the conditions are not consumed.
+A kubectl version that supports condition reporting can publish the conditions
+to any supported API server when the user has `patch` permission on
+`nodes/status`.
 
-If `kube-controller-manager` supports the feature but the feature gate is not
-enabled, behavior remains unchanged.
+Older kubectl versions and other drain implementations may not publish the
+conditions. Consumers must interpret an absent condition as "no observation
+was reported", not as proof that the Node is not being drained.
+
+Future components that consume lifecycle conditions must define their own
+version skew behavior in their enhancements.
 
 ## Production Readiness Review Questionnaire
 
@@ -545,39 +671,46 @@ enabled, behavior remains unchanged.
   - Components depending on the feature gate:
     - `kube-apiserver`
     - `kube-controller-manager`
+- [x] Other
+  - During Alpha2, users enable kubectl reporting with
+    `kubectl drain --report-node-conditions`.
+  - Starting at beta, users can disable kubectl reporting with
+    `--report-node-conditions=false`.
 
 ###### Does enabling the feature change any default behavior?
 
-No scheduling or rollout behavior changes. Enabling the feature adds an
-observability signal.
+No scheduling or rollout behavior changes. During Alpha2, kubectl reporting is
+opt-in. Enabling it adds best-effort Node status writes.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes.
+Yes. Disable the feature gate and stop passing
+`--report-node-conditions`. Existing conditions remain until an authorized
+actor clears or replaces them.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-No change in behavior. It would be the same as if the admin was already
-using these Conditions.
+The next condition update or drain invocation publishes the current
+observation using the normal transition rules.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests to cover turning on/off the feature-gate.
+Unit tests cover feature-gate enablement and both enabled and disabled kubectl
+reporting paths.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-The feature is informational and does not affect running workloads. If the Node
-already has these conditions, there's still no affect because the admins controls
-the values.
-
-Rollout or rollback failures can result in missing or stale conditions.
+The feature is informational and does not directly affect running workloads.
+A status update can be forbidden, rejected by admission, conflict, or time out.
+Kubectl warns and preserves the drain operation's original result. Rollout or
+rollback failures can result in missing or stale conditions.
 
 ###### What specific metrics should inform a rollback?
 
-Unexpected increases in Node status updates or API server write latency should
-inform rollback.
+Unexpected increases in Node status update failures, API server write latency,
+or stale lifecycle condition reports should inform rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -593,7 +726,8 @@ No.
 
 Operators can inspect Nodes for the `GracefulNodeShutdownInProgress`,
 `DrainInProgress`, `Drained`, `MaintenancePlanned`, and
-`MaintenanceInProgress` conditions.
+`MaintenanceInProgress` conditions. A `KubectlDrain*` reason identifies a
+condition published by kubectl.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -629,7 +763,10 @@ No external services are required.
 ###### Will enabling / using this feature result in any new API calls?
 
 Yes. Admins or admin-authorized maintenance controllers may issue Node status
-updates when these conditions change.
+updates when these conditions change. With kubectl reporting enabled, each
+Node normally receives one patch when drain processing starts and one terminal
+patch on completion, failure, or a handled interrupt. Retries can add a bounded
+number of requests.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -665,12 +802,24 @@ etcd availability returns.
 ###### What are other known failure modes?
 
 - Stale `DrainInProgress` condition:
-  - Detection: check if the Node is Tainted as `Unschedulable`. If not, it's
-    likely the condition is stale.
+  - Detection: inspect the condition timestamps, active administration, and
+    Pods remaining on the Node.
+  - Mitigation: an authorized administrator corrects or clears the condition.
+  - Testing: handled interrupts are tested; uncatchable process or host failure
+    cannot be cleaned up automatically.
+- The kubectl user lacks `nodes/status` permission:
+  - Detection: kubectl prints a forbidden warning and audit logs record the
+    denied request.
+  - Mitigation: grant the permission or run without condition reporting.
+- Concurrent writers publish conflicting observations:
+  - Detection: inspect condition timestamps, reasons, messages, and audit logs.
+  - Mitigation: stop concurrent drain actors and have an administrator publish
+    the observed state.
 
 ## Implementation History
 
 - 2026-06-04: Initial provisional KEP draft.
+- 2026-08-10: Added the Alpha2 kubectl drain condition writer design.
 
 ## Drawbacks
 
