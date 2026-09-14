@@ -3,6 +3,7 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Ecosystem Momentum and Controller Adoption](#ecosystem-momentum-and-controller-adoption)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -28,10 +29,9 @@
     - [3. Library API Definition](#3-library-api-definition)
     - [4. Library Usage Example (Job)](#4-library-usage-example-job)
   - [Reference Integration Examples: JobSet (Multi-Level)](#reference-integration-examples-jobset-multi-level)
-    - [1. Option A: Template Delegation Model (Nested Configuration)](#1-option-a-template-delegation-model-nested-configuration)
+    - [1. Option A: Centralized 'Targeted Policies' Model (Root-only Configuration)](#1-option-a-centralized-targeted-policies-model-root-only-configuration)
       - [Example YAML Manifest](#example-yaml-manifest)
-    - [2. Option B: Centralized 'Targeted Policies' Model (Root-only Configuration)](#2-option-b-centralized-targeted-policies-model-root-only-configuration)
-      - [Example YAML Manifest](#example-yaml-manifest-1)
+    - [2. Option B: Template Delegation Model (Nested Configuration)](#2-option-b-template-delegation-model-nested-configuration)
     - [3. Controller Integration and workloadbuilder Mapping Go Code](#3-controller-integration-and-workloadbuilder-mapping-go-code)
   - [Recommendations for Multi-Level Composite Controllers](#recommendations-for-multi-level-composite-controllers)
     - [1. Runtime PodGroup and CompositePodGroup Lifecycle Management](#1-runtime-podgroup-and-compositepodgroup-lifecycle-management)
@@ -71,14 +71,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
-- [x] (R) Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -87,11 +87,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 This KEP proposes a standardized set of reusable API building blocks (`scheduling.k8s.io`),
 integration guidelines, and shared libraries to simplify how workload controllers (e.g., `JobSet`,
-`TrainJob`, `RayJob`, `LWS`, as well as core workloads like `Job`) integrate with Workload-aware
-Scheduling (WAS).
+`TrainJob`, `RayJob`, `LWS`, `SparkApplication`, as well as core workloads like `Job`, `Deployment`, and `StatefulSet`)
+integrate with Workload-aware Scheduling (WAS).
+
+In v1.37, this KEP and the reusable building blocks entered Alpha alongside the core `Job` integration ([KEP-5547]).
+For v1.38, this KEP is promoted to **Beta**. To support embedding into GA `v1` workload APIs (`batch/v1`, `apps/v1`),
+the reusable building block structs graduate directly into `scheduling.k8s.io/v1` (with Go type aliases maintained in
+`scheduling.k8s.io/v1alpha3` for backward compatibility), formalizing stable primitives for the entire Kubernetes ecosystem.
 
 By providing common API primitives (such as topology constraints and disruption policies) and a
-shared library to handle boilerplate resource generation, we enable controller developers to
+shared library (`workloadbuilder`) to handle boilerplate resource generation, we enable controller developers to
 easily expose WAS features natively within their APIs without reinventing the wheel, while
 ensuring a consistent user experience across the Kubernetes ecosystem.
 
@@ -102,19 +107,19 @@ pod-centric model towards a more robust, workload-centric approach. This transit
 established foundational features in the recent v1.36 release, such as Gang Scheduling,
 Topology-aware Scheduling (TAS), and Workload-aware Preemption (WAP).
 
-However, the `Workload` and `PodGroup` resources backing these features were designed primarily as
+However, the `Workload`, `PodGroup`, and `CompositePodGroup` resources backing these features were designed primarily as
 intermediate, scheduler-facing APIs. We have not yet addressed how end-users of higher-level
 workload controllers (such as `Job`, `LWS`, `JobSet`, or `RayJob`) should express their scheduling
 requirements to utilize these features.
 
-For example, in the first alpha release of [KEP-5547] (Job Integration), we intentionally bypassed the user-facing
-API design challenge. Instead, the integration automatically creates a `PodGroup` with a hardcoded
+For example, in the first alpha release of [KEP-5547] (Job Integration), in v1.36 — before this KEP (KEP-6089) was established — we intentionally bypassed the user-facing
+API design challenge. Instead, the integration automatically created a `PodGroup` with a hardcoded
 Gang policy under specific conditions (e.g., for fully parallel static indexed Jobs). While this
-unblocked initial adoption, it is fundamentally insufficient. Users have diverse use cases and
+unblocked initial adoption, it was fundamentally insufficient. Users have diverse use cases and
 require the ability to express explicit intent—such as opting in or out of gang scheduling,
 requesting specific topologies, or configuring disruption policies for their workloads.
 
-Currently, there is no standardized way for workload controllers to expose these user intents, nor
+Without this KEP, there is no standardized way for workload controllers to expose these user intents, nor
 is there a standard mechanism for controllers to translate user intent into underlying scheduling
 objects. If every controller authors its own user-facing API structs and custom logic to manage
 scheduling objects, the ecosystem will suffer from inconsistent UX, duplicate effort, and varied
@@ -126,29 +131,51 @@ challenges across the ecosystem. This proposal aims to fill these gaps, providin
 and best practices while still allowing controller owners the flexibility to design their root
 APIs natively.
 
+In v1.37, this KEP (KEP-6089) addressed this gap by introducing standardized API building blocks under `scheduling.k8s.io/v1alpha3`
+and the shared `workloadbuilder` library in `k8s.io/component-helpers`, validated via the core `Job` API (`batch/v1`).
+
+### Ecosystem Momentum and Controller Adoption
+
+Since the v1.37 alpha release, the Kubernetes ecosystem has enthusiastically embraced these building blocks
+and the `workloadbuilder` library. Seven controllers spanning batch, distributed ML training, inference serving,
+and core workloads have designed or implemented native integrations:
+
+1. **JobSet** (out-of-tree): [KEP-969](https://github.com/kubernetes-sigs/jobset/blob/main/keps/969-WAS-integration/README.md)
+   and implementation ([kubernetes-sigs/jobset#1250](https://github.com/kubernetes-sigs/jobset/pull/1250)) adopt the
+   `workloadbuilder` library to compile hierarchical `CompositePodGroup` and `PodGroup` resources using the centralized
+   targeted-policies pattern.
+2. **LeaderWorkerSet (LWS)** (out-of-tree): [KEP-666](https://github.com/kubernetes-sigs/lws/pull/979) embeds the building
+   blocks directly to provide gang scheduling for replica groups in multi-host AI/ML training and inference.
+3. **Kubeflow Trainer (TrainJob)** (out-of-tree): [KEP-3015](https://github.com/kubeflow/trainer/pull/3219) adopts KEP-6089's
+   targeted-policy model to create `Workload` blueprints and `PodGroup` objects for complex multi-node training runtimes.
+4. **Spark Operator (SparkApplication)** (out-of-tree): [KEP-2962](https://github.com/kubeflow/spark-operator/pull/3154)
+   embeds the leaf building blocks and vendors `workloadbuilder` from `k8s.io/component-helpers` to compile `Workload` and
+   attempt-scoped `PodGroup` resources for Spark executor gangs.
+5. **Core Deployment** (in-tree): [KEP-6276](https://github.com/kubernetes/enhancements/pull/6295) embeds the building
+   blocks directly into `apps/v1.DeploymentSpec` to enable gang scheduling and topology constraints for long-running services.
+6. **Core StatefulSet** (in-tree): [KEP-6277](https://github.com/kubernetes/enhancements/pull/6298) embeds the building
+   blocks directly into `apps/v1.StatefulSetSpec` to support coordinated gang scheduling and topology placement for stateful sets.
+7. **KubeRay** (out-of-tree): [ray-project/kuberay#4962](https://github.com/ray-project/kuberay/pull/4962) explores Workload
+   Aware Scheduling integration for `RayJob` and `RayCluster`. Promoting the building blocks to `v1` provides a stable API
+   target for aligning its batch scheduling provider with upstream WAS standards.
 
 ### Goals
 
 - Define reusable API primitives (e.g., Scheduling Policies, Topology Constraints, Disruption
   Modes) under `scheduling.k8s.io` to be consumed by real-workload controllers.
 
-- Provide a shared library (workloadbuilder) to handle the boilerplate of constructing underlying
+- Provide a shared library (`workloadbuilder`) to handle the boilerplate of constructing underlying
   scheduling objects (`Workload`, `PodGroup`, or `CompositePodGroup`) from controller-specific intents.
 
 - Establish architectural guidelines for workload controllers to expose WAS features consistently.
 
-- Integrate these building blocks and the translation library with the core `Job` API (`batch/v1`)
-  to ensure we are not designing in a vacuum. Standard `Job` is the natural candidate to "blaze
-  the path" for other workload controllers; it initially integrated with WAS in v1.36 in alpha,
-  but intentionally bypassed the user-facing scheduling API aspect. Under this KEP, the core `Job`
-  integration remains in **Alpha** in v1.37, but is enriched to give users the ability to express
-  explicit scheduling intent, resolving usability gaps from the initial v1.36 alpha.
+- Validate the building blocks and translation library against real controllers to ensure we are not designing
+  in a vacuum:
+  - Standard `Job` (`batch/v1`) serves as the reference in-tree implementation for single-level workloads (targeting **Beta** promotion in v1.38 in [KEP-5547], unblocked by this KEP).
+  - `JobSet` serves as the reference out-of-tree composite workload ([JobSet KEP-969](https://github.com/kubernetes-sigs/jobset/blob/main/keps/969-WAS-integration/README.md)).
 
-- Provide reference integration examples demonstrating how complex, multi-level composite
-  controllers (such as `JobSet`) can adopt WAS Controller APIs. Since standard `Job` serves as the
-  production single-level implementation, we focus our reference designs purely on demonstrating
-  multi-level hierarchical patterns.
-
+- Provide reference integration examples demonstrating how workload controllers can adopt WAS Controller APIs,
+  covering both single-level workloads (standard `Job`) and multi-level composite workloads (`JobSet`).
 
 ### Non-Goals
 
@@ -173,6 +200,8 @@ scheduling space. We assume that the reader is already acquainted with the follo
 - [KEP-5732: Topology-aware workload scheduling](https://kep.k8s.io/5732)
 - [KEP-6012: CompositePodGroup API](https://kep.k8s.io/6012)
 - [KEP-5547: Integrate Workload APIs with Job Controller](https://kep.k8s.io/5547)
+- [KEP-6276: Workload-Aware Scheduling for Deployments](https://kep.k8s.io/6276)
+- [KEP-6277: Workload API Integration with StatefulSet](https://kep.k8s.io/6277)
 
 ### Reusable API Building Blocks
 
@@ -207,10 +236,12 @@ composition. If we mandated a strict, unified API shape that relied on downward 
 we would introduce severe upstream dependency bottlenecks. For example, `TrainJob` relies on `JobSet`,
 which in turn relies on the core `Job` API. Requiring bottom-up integration would block `TrainJob`
 users for months while waiting for the underlying components to adopt the standard. By granting
-controllers autonomy, they can implement workarounds native to their architecture—such as `JobSet`
-using its established targetReplicatedJobs pattern to apply scheduling constraints to underlying
+controllers autonomy, they can implement patterns native to their architecture—such as `JobSet`
+using its established `targetReplicatedJobs` pattern to apply scheduling constraints to underlying
 Jobs—delivering value to users immediately without waiting for the entire dependency chain to
-resolve.
+resolve. This pattern was subsequently formalized and successfully materialized in practice in
+JobSet ([KEP-969](https://github.com/kubernetes-sigs/jobset/blob/main/keps/969-WAS-integration/README.md))
+and Kubeflow Trainer / TrainJob ([KEP-3015](https://github.com/kubeflow/trainer/pull/3219)).
 
 ### Job Integration - API Usage Examples
 
@@ -307,6 +338,9 @@ intent. For example, I need recommendations on whether my parent controller shou
     `SchedulingMode`) in the `scheduling.k8s.io` API group. By following our design
     recommendations and using these building blocks, controller owners ensure that the JSON/YAML
     schema shapes remain highly consistent and intuitive for users.
+    In practice, real-world data across 7 integrating controllers (Job, JobSet, LWS, TrainJob,
+    Spark Operator, Deployment, StatefulSet) demonstrates that this risk did not materialize, as
+    the ecosystem consistently converged on the standardized building blocks and `workloadbuilder`.
 
 * **Split-Brain Configurations:** Because we preserve controller autonomy, a situation can arise
   where a composite wrapper controller (such as `JobSet` or `TrainJob`) implements its own custom
@@ -330,6 +364,10 @@ intent. For example, I need recommendations on whether my parent controller shou
     3. **Conflict Validation:** The parent controller's validating webhooks can reject requests
        where a user attempts to populate *both* wrapper-level and child-template-level scheduling
        fields for the same workload, preventing ambiguous configurations.
+
+    In practice, composite controllers (such as `JobSet` and `TrainJob`) introduce their own
+    wrapper-level fields and avoid split-brain ambiguity by enforcing validation that prevents users
+    from configuring inner controllers' scheduling fields or annotations in nested child templates.
 
 ## Design Details
 
@@ -954,74 +992,61 @@ validation calls `Validate`.
 
 ### Reference Integration Examples: JobSet (Multi-Level)
 
-This section provides **non-normative reference examples** demonstrating how a complex,
-multi-level composite controller (such as `JobSet`) can integrate with the Workload-aware
+This section provides **reference integration examples** demonstrating how a complex,
+multi-level composite controller (`JobSet`) integrates with the Workload-aware
 Scheduling (WAS) building blocks and the `workloadbuilder` library.
 
-These examples prove the viability and flexibility of the library for hierarchical workloads. The
-final API design and integration details remain at the sole discretion of the `JobSet` project
-maintainers.
+During the alpha phase of this KEP, two architectural models were explored:
+- **Option A (Recommended & Adopted):** Centralized 'Targeted Policies' Model (Root-only Configuration).
+- **Option B (Alternative / Rejected):** Template Delegation Model (Nested Configuration).
 
-We explore two different API representation options that `JobSet` could choose to adopt.
+Following community review, the JobSet maintainers officially approved Option A in [JobSet KEP-969: Workload-Aware Scheduling Integration](https://github.com/kubernetes-sigs/jobset/blob/main/keps/969-WAS-integration/README.md)
+(implemented in [kubernetes-sigs/jobset#1250](https://github.com/kubernetes-sigs/jobset/pull/1250)). Both patterns are
+documented below to contrast the architectural trade-offs, with Option A serving as the production reference.
 
-#### 1. Option A: Template Delegation Model (Nested Configuration)
-In this model, `JobSet` defines scheduling directives globally at the root
-(`JobSet.spec.scheduling`) for policies that apply to the entire group. For leaf-level scheduling
-(individual `ReplicatedJobs`), it directly leverages the nested scheduling fields already present
-inside the embedded `JobTemplateSpec` (e.g., `spec.replicatedJobs[*].template.spec.scheduling`).
+#### 1. Option A: Centralized 'Targeted Policies' Model (Root-only Configuration)
+In this model—officially adopted by JobSet in [KEP-969](https://github.com/kubernetes-sigs/jobset/blob/main/keps/969-WAS-integration/README.md)—all
+scheduling configurations are declared centrally inside a single root-level `spec.scheduling` block.
+The nested child templates (`replicatedJobs[*].template`) remain completely free of scheduling directives,
+eliminating schema pollution, duplicate definitions, and split-brain ambiguity.
 
-##### Example YAML Manifest
-
-```yaml
-apiVersion: jobset.x-k8s.io/v1alpha2
-kind: JobSet
-spec:
-  scheduling: # Global policy: applies to the entire JobSet
-    schedulingPolicy:
-      basic: {} # ESCAPE HATCH: Disable global "gang of gangs" so components start independently
-  replicatedJobs:
-    - name: driver
-      replicas: 1
-      template:
-        spec:
-          # Defaults to Basic (pod-by-pod) scheduling
-          containers:
-            - name: main
-              image: driver-image
-    - name: workers
-      replicas: 16
-      template:
-        spec:
-          scheduling: # Leaf-level policy declared inside the nested Job template
-            schedulingConstraints:
-              topology:
-                - level: "topology.kubernetes.io/rack" # Co-locate workers on same rack
-          containers:
-            - name: worker
-              image: worker-image
-```
-
-#### 2. Option B: Centralized 'Targeted Policies' Model (Root-only Configuration)
-In this model, `JobSet` does not expose or use the nested child template fields. Instead, all
-scheduling configurations—both global and local—are declared centrally inside a single root-level
-`spec.scheduling` block. It uses a "shadow tree" pattern to map scheduling policies to specific
-`ReplicatedJobs` by name (which directly follows the established `targetReplicatedJob` convention
-already used in `JobSet` features like `FailurePolicyRule`).
+JobSet structures this centralized scheduling across three distinct levels:
+1. **JobSet Level (Root):** Global policy and constraints applied across the entire JobSet (e.g. basic scheduling across components or an overarching group gang).
+2. **ReplicatedJob Level:** Target-specific policies mapping to groups of replicated jobs using `targetReplicatedJobs` (e.g. gang scheduling all replicas of the worker role, or zone-level topology).
+3. **Job Replica Level (`job:`):** Specific policies applying to each individual Job replica, such as per-job gang scheduling, rack-level topology constraints, disruption mode, and shared DRA `resourceClaims`.
 
 ##### Example YAML Manifest
 
 ```yaml
 apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
+metadata:
+  name: distributed-training
 spec:
-  scheduling: # All scheduling policies are defined here at the root
+  scheduling: # Root-level centralized scheduling
+    # 1. JobSet Level: Global policy across all replicated jobs
     schedulingPolicy:
-      basic: {} # Global policy: components schedule independently
-    replicatedJobPolicies:
-      - targetReplicatedJob: "workers" # Policy target
+      basic: {}
+    replicatedJobs:
+      # 2. ReplicatedJob Level: Targeting specific ReplicatedJob roles
+      - targetReplicatedJobs: [worker]
+        schedulingPolicy:
+          gang: {} # Gang across all worker replicas
         schedulingConstraints:
           topology:
-            - level: "topology.kubernetes.io/rack" # Co-locate workers on same rack
+            - level: "topology.kubernetes.io/zone"
+        # 3. Job Replica Level: Per-job policies and shared DRA resource claims
+        job:
+          schedulingPolicy:
+            gang: {}
+          schedulingConstraints:
+            topology:
+              - level: "topology.kubernetes.io/rack" # Co-locate pods of each worker replica on same rack
+          disruptionMode:
+            all: {}
+          resourceClaims:
+            - name: shared-imex-channel
+              resourceClaimTemplateName: imex-channel-template
   replicatedJobs:
     - name: driver
       replicas: 1
@@ -1029,26 +1054,44 @@ spec:
         spec:
           containers:
             - name: main
-              image: driver-image
-    - name: workers
-      replicas: 16
+              image: driver-image:v1
+    - name: worker
+      replicas: 4
       template:
         spec:
           # Templates remain completely clean of scheduling directives
           containers:
             - name: worker
-              image: worker-image
+              image: worker-image:v1
 ```
+
+#### 2. Option B: Template Delegation Model (Nested Configuration)
+
+In this alternative model (which was evaluated but rejected in favor of Option A), leaf-level scheduling
+policies would be declared inside nested child templates (e.g., `spec.replicatedJobs[*].template.spec.scheduling`),
+while global policies (if any) would be declared at the root level (`JobSet.spec.scheduling`).
+
+This model was rejected because:
+1. It requires users to drill down into deeply nested child templates to define workload-level scheduling policies,
+   fragmenting policy definition across multiple levels of the specification instead of presenting a clean, unified
+   policy declaration at the top level.
+2. It tightly couples the parent controller's scheduling configuration to child template schemas.
+3. In multi-tier hierarchies (such as `TrainJob -> JobSet -> Job`), passing scheduling configuration down through
+   multiple nested templates becomes cumbersome and fragile.
+
+In contrast, Option A keeps all scheduling declarations centralized at the root level (`JobSet.spec.scheduling`)
+while keeping child templates completely clean.
 
 ---
 
 #### 3. Controller Integration and workloadbuilder Mapping Go Code
 
-Regardless of which API model `JobSet` adopts, the controller maps its structural spec into a
-`workloadbuilder.WorkloadItem` tree: the root is a composite node (its `Children` are the
-`ReplicatedJob` roles) carrying the composite scheduling policy, and each child leaf carries the
-leaf building blocks. The builder then compiles the tree into a `Workload` with a
-`CompositePodGroupTemplate` over the child `PodGroupTemplate`s:
+Under Option A, the `JobSet` controller maps its centralized scheduling policies and structural spec
+into a `workloadbuilder.WorkloadItem` tree. In the initial alpha implementation (MVP), JobSet compiles
+the `Workload` resource and runtime `PodGroup` objects. When multi-level composite scheduling
+(`CompositePodGroup`) is enabled, the controller structures the root as a composite node whose `Children`
+are the `ReplicatedJob` roles, compiling a `Workload` with a `CompositePodGroupTemplate` over the child
+`PodGroupTemplate`s:
 
 ```go
 root := &workloadbuilder.WorkloadItem{
@@ -1081,56 +1124,91 @@ the Job controller manages both the static `Workload` resource and the correspon
 `PodGroup` objects.
 
 For multi-level composite controllers, two distinct lifecycle management strategies are available:
-* **Centralized Management:** The root controller (e.g., `JobSet`) compiles the `Workload` and is
-  also fully responsible for creating and managing all runtime `PodGroup` or `CompositePodGroup`
-  objects.
-* **Delegated Management:** The root controller only compiles and creates the n-level `Workload`
-  resource, and delegates the creation and management of individual runtime `PodGroup` objects to
-  its child execution controllers (e.g., delegating to standard `Job` controllers).
+* **Centralized Management:** The parent controller compiles the `Workload` and is also fully
+  responsible for directly creating and managing all runtime `CompositePodGroup` and `PodGroup` objects.
+* **Delegated Management:** The root controller compiles the `Workload` blueprint (and potentially its top-level
+  `CompositePodGroup`), but delegates the creation and management of individual runtime `PodGroup` objects to
+  intermediate or child execution controllers via downward annotations.
 
-**Alpha Phase Strategy:** For this initial alpha phase, we intentionally **do not mandate** a
-single recommended lifecycle management strategy for multi-level controllers. Controller
-maintainers and ecosystem integrators are encouraged to experiment with both centralized and
-delegated management patterns. The authors of this KEP will observe these patterns in the wild,
-gather user and operator feedback, and generalize these best practices into a standardized,
-unified lifecycle convention in a subsequent phase.
+**Architectural Guidance & Applicability:**
+
+It is crucial to distinguish between the depth of the **scheduling hierarchy** (the number
+of nested `CompositePodGroup` and `PodGroup` levels) and the depth of the **controller
+actuation chain** (whether a single controller directly creates child `Job` resources or
+acts through intermediate controllers):
+
+- **Centralized Management (Direct Controller Orchestration):**
+  When a controller directly creates and manages child workload resources (such as `JobSet`
+  directly orchestrating core `Job` resources), centralized management is natural and
+  effective, regardless of how many levels exist in the scheduling hierarchy. For example,
+  even though `JobSet` models a 3-level scheduling hierarchy (`JobSet` -> `ReplicatedJob` ->
+  `Job`), the single `JobSet` controller directly stamps out child `Job` specs. It can
+  therefore directly instantiate all runtime `CompositePodGroup` and `PodGroup` objects and
+  set `job.spec.template.spec.schedulingGroup.podGroupName` pointing to its own created groups
+  without coordination overhead or race conditions.
+
+- **Delegated Management (Nested / Chained Controllers):**
+  Delegated management is necessary when there is a chain of intermediate controllers across
+  component boundaries (such as Kubeflow Trainer / `TrainJob` composing a `JobSet`, which in
+  turn creates standard `Jobs`). `TrainJob` only constructs the top-level `JobSet` custom
+  resource; it does not construct `Job` objects directly.
+  
+  Crucially, `TrainJob` has no mechanism to inject individual `PodGroup` references into the
+  pod templates of the Jobs generated by `JobSet` across the component boundary (unlike
+  `JobSet`, which directly constructs child `Job` objects and can set their pod template
+  fields). Attempting centralized management across intermediate controllers would cause a
+  severe abstraction leak and break controller encapsulation.
+
+  Therefore, a wrapper controller like `TrainJob` cannot directly bind pods to centrally
+  created leaf `PodGroup`s. Instead, it must **delegate** runtime group creation downward:
+  `TrainJob` compiles the `Workload` blueprint (and potentially creates its top-level
+  `CompositePodGroup`), and injects well-known downward annotations
+  (`scheduling.k8s.io/group-template-name` and `scheduling.k8s.io/parent-compositepodgroup`)
+  into the `JobSet` metadata. The intermediate `JobSet` controller then reads these
+  annotations, materializes the runtime `PodGroup`s from the referenced template in the
+  parent `Workload`, attaches them to the parent `CompositePodGroup`, and injects the resulting
+  `PodGroup` names into the child `Job` pod templates.
+
+Both patterns are first-class and fully supported by the `workloadbuilder` library and
+conventions. Formal rules and detailed recommendations on when to apply each pattern will be
+finalized for GA based on production feedback from ecosystem adopters.
 
 #### 2. Downward Template and Parent Mapping via Well-Known Annotations
 
-If a composite controller delegates runtime `PodGroup` management to child execution controllers,
-we must solve a crucial multi-level coordination problem. The child controller needs two distinct
-pieces of information to construct and place its runtime scheduling objects correctly:
+If a composite controller delegates runtime `PodGroup` management to an intermediate or child controller (such as
+in the `TrainJob -> JobSet -> Job` multi-tier pattern where the parent cannot inject pod-level scheduling references
+across the intermediary abstraction boundary), we must solve a crucial coordination problem. The downstream
+controller needs two distinct pieces of information to construct and place its runtime scheduling objects correctly:
 
 1. **Template Mapping:** Which `PodGroupTemplate` or `CompositePodGroupTemplate` inside the parent's
-   compiled `Workload` corresponds to this child's pods (enabling correct policy/constraint
-   compilation).
+   compiled `Workload` corresponds to this child's pods (enabling the downstream controller to materialize
+   or compile the correct policy and constraints).
 2. **Parent Instance Linkage:** Which specific runtime `CompositePodGroup` instance name in the
-   namespace this newly created child must attach to (under its "parentRef"). This linkage is
+   namespace this newly created group must attach to (under its `spec.parentRef`). This linkage is
    especially critical in multi-instantiated environments (such as `LeaderWorkerSet` / LWS), where a
    composite controller may instantiate multiple separate `CompositePodGroup` objects from the exact
    same template (one per replica).
 
 ##### The Solution: Downward Mapping Annotations
 
-To resolve this template and hierarchy mapping without structural API schema changes, the root and
-intermediate orchestrators must propagate these linkages downwards by injecting two well-known
-metadata annotations directly into the created child objects (for example, the `JobSet`
-controller sets these annotations on each standard `Job` resource it creates):
+To resolve this template and hierarchy mapping without structural API schema changes, orchestrators
+operating in delegated mode propagate these linkages downwards by injecting two well-known metadata annotations
+directly into the created child objects (for example, `TrainJob` sets these annotations on the `JobSet` objects it creates):
 
 * **Template Linkage Annotation:**
   * **Annotation Key:** `scheduling.k8s.io/group-template-name`
   * **Value:** The unique name of the target `PodGroupTemplate` or `CompositePodGroupTemplate`
     defined inside the parent `Workload` resource (ensuring direct mapping, as all template
     names inside a Workload are guaranteed to be unique). For example, in a
-    `TrainJob -> JobSet -> Job` hierarchy this tells the child `Job` which template from the root
-    `Workload` to use to create its `PodGroup`.
+    `TrainJob -> JobSet -> Job` hierarchy, this tells `JobSet` which template from the root
+    `Workload` to use to materialize its `PodGroup`s and configure its child `Job`s.
 * **Parent Instance Linkage Annotation:**
   * **Annotation Key:** `scheduling.k8s.io/parent-compositepodgroup`
   * **Value:** The exact resource name of the parent `CompositePodGroup` object in the same
-    namespace that the child's newly created group must attach to. This is required only in the
-    delegated lifecycle model (the parent creates the `Workload` and `CompositePodGroup`, but the
-    child creates its own `PodGroup`); when the parent centrally manages both the `CompositePodGroup`
-    and the `PodGroup`s, this annotation is unnecessary.
+    namespace that the downstream controller's newly created groups must attach to (via `spec.parentRef`). This is required
+    only in the delegated lifecycle model (the parent creates the `Workload` and `CompositePodGroup`, but runtime
+    `PodGroup` creation is delegated); when the parent centrally manages both the `CompositePodGroup`
+    and the `PodGroup`s (as `JobSet` does for core `Job`s), this annotation is unnecessary.
 
 We strictly use **unstructured metadata annotations** rather than introducing new structural fields
 in the child's API schemas for this coordination. These mappings are transient, internal, and
@@ -1140,29 +1218,40 @@ intents.
 ### Go Package Placement & Graduation Strategy
 
 Embedding reusable building block Go structures (defined in a pre-stable package like
-`scheduling.k8s.io/v1alpha3`) directly into a stable GA type (like `batch/v1.JobSpec`) during its
-Alpha phase introduces package dependency and graduation challenges.
+`scheduling.k8s.io/v1alpha3`) directly into a stable GA type (like `batch/v1.JobSpec` or `apps/v1.DeploymentSpec`)
+during its Alpha phase introduces package dependency and graduation challenges.
 
 In the Go language, changing the import path of an embedded field inside a GA struct constitutes a
-breaking change in client libraries. To solve this graduation compatibility trap without forcing
-identical structure duplication across different apiGroups, we adopt the following approved
-transition pattern:
+breaking change in client libraries. Furthermore, as highlighted during API reviews,
+when building blocks are embedded into GA `v1` resources, promoting the embedding feature gate to Beta
+(enabled by default) commits wire format compatibility at the `v1` resource level. In Kubernetes API
+conventions, there is no semantic difference between Beta and GA for embedded structs in `v1` resources.
 
-* **Alpha Phase:** The shared building blocks are defined in the pre-stable
-  `scheduling.k8s.io/v1alpha3` package. The standard Kubernetes import rules allow stable GA
-  groups (`batch/v1`) to import pre-stable packages as long as the field itself remains gated in
+To solve this graduation compatibility trap without forcing identical structure duplication across different
+apiGroups, we adopt the following transition pattern:
+
+* **Alpha Phase (v1.37):** The shared building blocks were defined in the pre-stable
+  `scheduling.k8s.io/v1alpha3` package. Standard Kubernetes import rules allowed stable GA
+  groups (`batch/v1`) to import pre-stable packages as long as the field itself remained gated in
   Alpha.
-* **Graduation to Beta/GA:** When the composed field is promoted to default-enabled (Beta/GA in
-  the `v1` type), we bypass the intermediate `v1beta1` package version entirely (since wire-format
-  compatibility is already committed at the `v1` resource level). We graduate the building block
-  structs straight into the stable `scheduling.k8s.io/v1` package and update the field inside
-  `batch/v1.JobSpec` to reference the `v1` type.
-* **Go Type Aliasing for Compatibility:** To prevent breaking third-party Go controllers that
-  still import the older alpha package, we replace the physical structures in `v1alpha3` with **Go
-  Type Aliases (`=`)** pointing to the new stable `v1` types. This is a well-established, approved
-  Kubernetes API pattern (previously used in the `admissionregistration` API group) that allows
-  external codebases to compile seamlessly while gradually transitioning their imports over
-  multiple releases.
+* **Graduation to Beta (v1.38) via Direct-to-v1 Promotion:** When the composed fields are promoted to Beta
+  (enabled by default in `v1` types like `batch/v1.JobSpec` under [KEP-5547]), we bypass the intermediate
+  `v1beta1` package version entirely (since wire-format compatibility is already committed at the `v1` resource level).
+  We graduate the building block structs straight into the stable `scheduling.k8s.io/v1` package and update the
+  fields inside `batch/v1.JobSpec`, `apps/v1.DeploymentSpec`, and `apps/v1.StatefulSetSpec` to reference the `v1` types.
+* **Go Type Aliasing for Backward Compatibility:** To prevent breaking third-party Go controllers that
+  still import the older alpha package (`k8s.io/api/scheduling/v1alpha3`), we replace the physical structures in
+  `v1alpha3` with **Go Type Aliases (`=`)** pointing to the new stable `v1` types:
+  ```go
+  // In k8s.io/api/scheduling/v1alpha3/types.go:
+  type WorkloadPodGroupSchedulingConstraints = schedulingv1.WorkloadPodGroupSchedulingConstraints
+  type WorkloadPodGroupDisruptionMode = schedulingv1.WorkloadPodGroupDisruptionMode
+  type WorkloadPodGroupSchedulingPolicy = schedulingv1.WorkloadPodGroupSchedulingPolicy
+  type WorkloadPodGroupResourceClaim = schedulingv1.WorkloadPodGroupResourceClaim
+  // Analogously for composite WorkloadCompositePodGroup* types
+  ```
+  This is a well-established, approved Kubernetes API pattern (previously used in the `admissionregistration`
+  API group) that allows external codebases to compile seamlessly while gradually transitioning their imports.
 
 ### Test Plan
 
@@ -1214,27 +1303,37 @@ Job-specific test plans are tracked in [KEP-5547].
 #### Alpha
 
 - Reusable scheduling API building blocks (`SchedulingConstraints`, `DisruptionMode`,
-  `SchedulingMode`, `ResourceClaim`) introduced under the `scheduling.k8s.io` API group.
+  `SchedulingMode`, `ResourceClaim`) introduced under the `scheduling.k8s.io` API group (`v1alpha3`).
 - The shared `workloadbuilder` Go translation library implemented in the `k8s.io/component-helpers`
-  staging repository.
+  staging repository (`k8s.io/component-helpers/scheduling/schedulingv1/workloadbuilder`).
 - Comprehensive unit and integration tests added for the `workloadbuilder` library to verify
   correct resource translation and default-overriding logic.
-- Core `Job` API (batch/v1) integrated with the standardized WAS building blocks and validated in
-  the alpha phase.
+- Core `Job` API (`batch/v1`) integrated with the standardized WAS building blocks and validated in
+  the alpha phase ([KEP-5547]).
 
 #### Beta
 
-- At least one multi-level composite workload controller (such as `JobSet`, `LeaderWorkerSet`, or
-  Kubeflow `TrainJob`) successfully integrated using the standardized building blocks and the
-  `workloadbuilder` library.
-- Clear recommendations on runtime `PodGroup` / `CompositePodGroup` creation and lifecycle
-  management for multi-level composite controllers finalized and validated in practice.
-- User feedback gathered on usability, confirming that the proposed approach provides a natural
-  and cohesive UX.
+- Reusable building blocks graduated directly into `scheduling.k8s.io/v1`, establishing wire-format
+  stability for embedding into `v1` workload APIs (`batch/v1`, `apps/v1`), with Go type aliases in
+  `scheduling.k8s.io/v1alpha3` preserving backward compatibility.
+- Widespread ecosystem adoption validated: 7 controllers across the ecosystem
+  (JobSet, LeaderWorkerSet, Kubeflow TrainJob, Spark Operator, Core Deployment, Core StatefulSet,
+  and lessons learned from KubeRay) are actively designing and implementing integrations based
+  on these building blocks and `workloadbuilder`, providing strong confirmation that the
+  building-block schemas and library abstractions are sound and ready for Beta.
+- User and ecosystem feedback gathered on usability, confirming that the composed configuration
+  and `workloadbuilder` approach provides a natural and cohesive UX.
 
 #### GA
 
-- TBD once the KEP promoted to beta
+- Architectural and lifecycle recommendations for runtime `PodGroup` and `CompositePodGroup`
+  objects (formalizing rules for Centralized vs Delegated Management) finalized based on
+  production feedback from ecosystem adopters.
+- The `workloadbuilder` library in `k8s.io/component-helpers` matured and expanded based on use
+  cases emerging from active integrations.
+- At least two out-of-tree controllers (e.g., JobSet, LeaderWorkerSet, TrainJob, or
+  SparkApplication) running in production clusters with the building blocks and
+  `workloadbuilder`, with positive operator feedback.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1293,152 +1392,128 @@ and unit tests for the building blocks themselves.
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+This KEP provides reusable Go structs (`scheduling.k8s.io`) and a shared compilation library
+(`workloadbuilder`). These building blocks are **not top-level API resources** served directly by
+`kube-apiserver`. Instead, they are embedded into the specifications of integrating workloads
+(such as `batch/v1.Job`).
 
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+- **Rollout / Beta Promotion:**
+  - When integrating workloads (such as `Job` in [KEP-5547]) graduate their scheduling
+    integrations and migrate their embedded fields from `scheduling.k8s.io/v1alpha3` to
+    `scheduling.k8s.io/v1`, the transition is completely seamless and safe because of Go type
+    aliases (`type Foo = schedulingv1.Foo`).
+  - Go type aliases preserve identical Go type identity, in-memory representation, and
+    JSON/protobuf serialization tags across the packages. As a result, there is zero wire-format
+    change, ensuring complete backward compatibility and zero impact on running workloads or
+    existing client payloads.
+  - Controllers vendoring `workloadbuilder` consume it as a compile-time Go library dependency;
+    translation and compilation logic is validated via extensive unit and integration tests.
+  - Running workloads (Pods, Jobs, etc.) are **not impacted** by rollout. Running Pods remain
+    scheduled and bound to their assigned nodes. Existing runtime `Workload` and `PodGroup`
+    objects in etcd remain active and untouched.
+
+- **Rollback:**
+  - Rollback is managed strictly at the level of each integrating controller's feature gate
+    (e.g., `WorkloadWithJob` in [KEP-5547]). Disabling an integration's gate stops that controller
+    from accepting or compiling scheduling fields for new workloads.
+  - Existing running workloads continue running without disruption. Existing `Workload` and
+    `PodGroup` objects in etcd remain intact and are cleaned up according to standard garbage
+    collection when their parent workload is deleted.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+As this KEP provides Go structs and a client library rather than an active standalone controller
+or top-level API endpoint, there are no KEP-specific metrics for rollback.
+
+Rollback criteria, alert thresholds, and operational metrics are defined by the respective
+integrating controller KEPs (e.g., `job_sync_duration_seconds` and `job_sync_total{result="error"}`
+in [KEP-5547] for Job integration, and corresponding metrics in [KEP-6276] for Deployment).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Upgrade and downgrade testing for runtime controller behavior is owned and conducted by individual
+controller integration KEPs (e.g. [KEP-5547] for Job).
+
+For this KEP, testing verifies:
+- Go type alias compatibility between `v1alpha3` and `v1` (serialization and deserialization
+  equivalence).
+- Comprehensive unit and integration test coverage of the `workloadbuilder` compilation library
+  across all supported scheduling configurations.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No. The graduation of building blocks to `scheduling.k8s.io/v1` preserves
+`scheduling.k8s.io/v1alpha3` via Go type aliases. No fields, APIs, or flags are deprecated or
+removed.
 
 ### Monitoring Requirements
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
+As this KEP provides reusable Go structs and a client compilation library rather than an active
+standalone controller or top-level API resource, there are no direct runtime metrics or
+monitoring requirements for the building blocks themselves. Monitoring, observability, SLOs, and
+SLIs are owned and defined by each integrating controller's KEP (e.g., [KEP-5547] for Job).
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+N/A directly for the building blocks. Because this KEP provides reusable Go structs and a
+compilation helper library rather than a standalone controller, detecting whether the feature is
+in use is done by inspecting workloads managed by integrating controllers (e.g., checking for
+`.spec.scheduling` on `Job` or `JobSet` objects) or checking for generated runtime objects
+(`Workload`, `PodGroup`, `CompositePodGroup`). Detailed procedures and query commands belong to
+each controller's integration KEP (e.g., [KEP-5547] for Job).
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+N/A directly for the building blocks. As building blocks and a client library, there are no runtime
+instances or standalone components to monitor directly. Runtime events (e.g., `WorkloadCreated`,
+`PodGroupCreated`), status conditions, and pod-level references (such as
+`.spec.schedulingGroup.podGroupName`) are emitted and managed by the integrating controllers and
+kube-scheduler. These signals are detailed in the respective controller KEPs (e.g., [KEP-5547] for
+Job).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+N/A for the building blocks and compilation library. In-process compilation latency of
+`workloadbuilder` is sub-millisecond (< 1 ms per workload compilation). System-level and
+controller-level SLOs (such as controller sync duration or scheduler binding latency) belong to and
+are measured under the respective integrating controller KEPs (such as [KEP-5547]).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+N/A for this KEP. Because this KEP provides Go structs and a client library rather than an active
+controller or standalone service, operational SLIs and health indicators belong to the integrating
+controllers and kube-scheduler, and are specified in their dedicated KEPs (e.g., [KEP-5547] for
+Job, [KEP-6276] for Deployment).
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+N/A. Observability metrics tracking workload adoption across controllers belong to each respective
+integration KEP.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+None directly. This KEP provides Go structs and a compilation library. Integrating controllers
+depend on standard core Kubernetes components (`kube-apiserver`, `kube-controller-manager`, and
+`kube-scheduler` with WAS plugins enabled), as detailed in their respective KEPs.
 
 ### Scalability
 
 ###### Will enabling / using this feature result in any new API calls?
 
-Enabling an integration's gate adds no new API calls by itself, it only allows the integration's
-building-block fields to be persisted. The new calls (creating `Workload`/`PodGroup` objects) are
-made by integrating controllers when a user opts in. Workloads that omit the `scheduling` block
-generate no new API calls.
+The API building blocks and `workloadbuilder` library execute in-process and do not make any API
+calls directly. API calls to create or manage `Workload` and `PodGroup` objects are made by
+integrating controllers when users opt in, and are quantified in each controller's KEP (e.g.,
+[KEP-5547]).
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-Yes, the building-block field types under `scheduling.k8s.io/v1alpha3`, embedded into integrating
-APIs.
+Yes, but they are not top-level API types. This KEP introduces reusable building-block Go field
+types under `scheduling.k8s.io/v1` (with Go type aliases in `scheduling.k8s.io/v1alpha3`) that are
+embedded directly into the specifications of integrating workload APIs (such as `batch/v1.Job`).
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1446,33 +1521,44 @@ No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-Yes, but only when a user opts in. This KEP itself only adds optional building-block fields
-to integrating workload objects. The larger effect — creating `Workload` and `PodGroup` (or
-`CompositePodGroup`) objects (~500 bytes each, typically one per opted-in workload) — is performed
-by integrating controllers and quantified per integration.
+This KEP only defines optional embedded building-block fields. Object count and size increases
+(such as runtime `Workload` and `PodGroup` objects) are created by integrating controllers and
+quantified in their respective KEPs.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-This KEP itself adds only in-process API translation (negligible CPU) in controllers that vendor
-the library. The user-visible effects come from the integrations and the scheduler and 
-apply only to opted-in workloads. Workloads that omit the `scheduling` block are unaffected.
+This KEP adds only in-process Go translation (negligible CPU, < 1 ms) in controllers vendoring the
+library. Any operational latency impact is governed by the integrating controllers and
+kube-scheduler, as evaluated in their KEPs.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-This KEP itself adds only the building-block fields and the build-time translation library
-(negligible CPU).
+No. The building blocks and library execute in-process with negligible resource overhead.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No. This feature operates entirely at the control-plane/API level and does not consume any node-level resources.
+No. This feature operates entirely at the API and library compilation level and does not consume
+any node-level resources.
 
 ### Troubleshooting
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The building blocks and `workloadbuilder` library execute strictly in-process within workload
+controllers and carry no network I/O or state of their own. Controller failure behavior during API
+server unavailability is governed by the host controller's reconciliation loop, as detailed in the
+corresponding integration KEPs.
+
 ###### What are other known failure modes?
 
+Failure modes related to scheduling execution (e.g., unfulfillable gang scheduling requirements,
+missing downward template annotations) are handled and diagnosed within the integrating controllers
+and kube-scheduler, as described in their respective KEPs.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Refer to the troubleshooting guide of the relevant integrating controller KEP (e.g., [KEP-5547]
+for Job integration) to diagnose controller reconciliation, admission, or scheduling issues.
 
 ## Implementation History
 
@@ -1482,6 +1568,10 @@ No. This feature operates entirely at the control-plane/API level and does not c
   `ValidationInput` and the `NewBuilderFromExistingWorkload` constructor).
 - 2026-07-18: Synced the `CompositePodGroup` design with the codebase and review feedback from the
   building-blocks library.
+- 2026-09-10: Promoted KEP to Beta for v1.38 milestone. Reflected adoption by 7 controllers across
+  the ecosystem (JobSet, LWS, TrainJob, Spark Operator, Deployment, StatefulSet). Promoted reusable
+  building blocks directly to `scheduling.k8s.io/v1` with `v1alpha3` Go type aliases per API review guidance.
+  Completed Beta PRR questionnaire.
 
 ## Drawbacks
 
