@@ -1,0 +1,40 @@
+title: DRA Node Allocatable Capacity Reservation
+kep-number: 6352
+authors:
+  - "@pravk03"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+
+creation-date: "2026-09-11"
+reviewers:
+  - '@johnbelamaric'
+  - '@dom4ha'
+  - '@tallclair'
+  - '@mortent'
+approvers:
+  - '@johnbelamaric'
+  - '@dom4ha'
+  - '@tallclair'
+
+see-also:
+  - "/keps/sig-scheduling/5517-dra-node-allocatable-resources"
+
+status: provisional
+stage: alpha
+latest-milestone: "v1.38"
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+feature-gates:
+  - name: DRANodeAllocatableReservation
+    components:
+      - kube-scheduler
+      - kube-apiserver
+disable-supported: true
+metrics:
+  - scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}
+  - scheduler_unschedulable_pods{plugin="DynamicResources"}
+  - scheduler_pending_pods
