@@ -515,7 +515,7 @@ We should cover below scenarios:
 - PVC preservation: PersistentVolumeClaims are not deleted during Recreate (only pods are deleted)
 - Stuck pod handling: Pods stuck in any state are forcibly deleted (ImagePullBackOff, Pending, CrashLoopBackOff, etc.)
 - Validation: API validation accepts `type: Recreate` on StatefulSet
-- For alpha, Add test to verify that we cannot switch strategies from Recreate to RollingUpdate or OnDelete. Later on beta, we will need to add a test to verify that we can switch strategies
+- For beta, we will add integration tests to verify that we can switch strategies to and from recreate strategy.
 
 ##### e2e tests
 
@@ -535,12 +535,12 @@ The following e2e tests will be added to `test/e2e/apps/statefulset.go`:
 
 - Feature implemented behind a feature flag.
 - Unit and integration tests passed as designed in [TestPlan](#test-plan).
+- Users are able to switch strategies from and to Recreate strategy.
 
 #### Beta
 
 - Feature is enabled by default
 - Address reviews and bug reports from Alpha users
-- Users are able to switch strategies from Recreate to RollingUpdate or OnDelete
 - e2e tests:
   - Add links to testgrid results
   - Verify zero flakes over 2+ weeks
@@ -668,7 +668,7 @@ No, unit and integration tests will be added to cover feature gate enablement/di
 
 ###### What specific metrics should inform a rollback?
 
-- `statefulset_unavailable_replicas` shows how many Statefulset replicas are unavailable
+- `statefulset_controller_statefulset_unavailable_replicas` shows how many StatefulSet replicas are unavailable
 - `workqueue_depth{name="statefulset"}` shows the current depth of the StatefulSet controller queue
 - `workqueue_queue_duration_seconds{name="statefulset"}` shows how long items wait in queue before processing
 - `workqueue_retries_total{name="statefulset"}` shows retry counts which may indicate processing failures
@@ -725,7 +725,7 @@ kubectl get statefulsets -A -o json | \
     - `kube_statefulset_status_replicas_current`
     - Components exposing the metric: kube-state-metrics
   - Metric name: 
-    - `statefulset_unavailable_replicas`
+    - `statefulset_controller_statefulset_unavailable_replicas`
     - Components exposing the metric: kube-controller-manager
   - These metrics reflect the StatefulSet `.status` (availableReplicas, readyReplicas, currentReplicas). They have labels `statefulset` and `namespace`, so operators can filter by StatefulSet to monitor a specific StatefulSet during Recreate
   - During Recreate updates, the values show the transition from all pods deleted (0 available) to all new pods created and ready
