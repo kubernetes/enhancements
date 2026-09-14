@@ -372,8 +372,8 @@ N/A
 ###### How can this feature be enabled / disabled in a live cluster?
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `PodInfoAPI` is a new feature gate to
-  enable / disable PodInfo API.
+  - Feature gate name: `PodsAPI` is a new feature gate to
+  enable / disable the Pods API.
   - Components depending on the feature gate: Kubelet
 
 ###### Does enabling the feature change any default behavior?
@@ -400,11 +400,11 @@ Since the feature is implemented as a new gRPC service within Kubelet, Kubelet c
 
 ###### What specific metrics should inform a rollback?
 
-`pod_info_endpoint_errors_get` - but only with feature gate `PodInfoAPI` enabled.
+The `status_code` label on `kubelet_pod_requests_total` (and its per-endpoint counterparts) - but only with feature gate `PodsAPI` enabled.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Upgrade and rollback have been tested manually during the Alpha phase by enabling and disabling the `PodInfoAPI` feature gate on Kubelet across cluster restarts. The gRPC server correctly starts serving on `/var/lib/kubelet/pods/kubelet.sock` when enabled, and gracefully shuts down/removes the socket when disabled. Existing workloads continued running without disruption during these transitions. Manual upgrade->downgrade->upgrade tests confirmed no resource leaks or socket conflicts.
+Upgrade and rollback have been tested manually during the Alpha phase by enabling and disabling the `PodsAPI` feature gate on Kubelet across cluster restarts. The gRPC server correctly starts serving when enabled, and gracefully shuts down/removes the socket when disabled. Existing workloads continued running without disruption during these transitions. Manual upgrade->downgrade->upgrade tests confirmed no resource leaks or socket conflicts.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -414,7 +414,7 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Look at the `pod_info_endpoint_requests_list`, `pod_info_endpoint_requests_get`, `pod_info_endpoint_requests_watch` metric exposed by the Kubelet.
+Look at the `kubelet_pod_requests_list_total`, `kubelet_pod_requests_get_total`, `kubelet_pod_requests_watch_total` metrics exposed by the Kubelet.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -428,7 +428,7 @@ Log entry indicating that API is ready to receive the traffic will be added.
   - Condition name:
   - Other field:
 - [X] Other (treat as last resort)
-  - Details: An operator can verify the Kubelet log which prints an entry when the PodInfo gRPC server is successfully started (e.g., `Starting Kubelet PodInfo gRPC server...`). In addition, querying the socket `/var/lib/kubelet/pods/kubelet.sock` via a gRPC tool (like `grpcurl`) should return a list of pods.
+  - Details: An operator can verify the Kubelet log which prints an entry when the Pods API gRPC server is successfully started. In addition, querying the socket via a gRPC tool (like `grpcurl`) should return a list of pods.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -439,12 +439,12 @@ Since this is a node-local gRPC API served directly from the Kubelet cache, we t
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
-  - Metric name:  `pod_info_endpoint_requests_total`, `pod_info_endpoint_requests_list` and `pod_info_endpoint_requests_get`.
+  - Metric name:  `kubelet_pod_requests_total`, `kubelet_pod_requests_list_total`, `kubelet_pod_requests_get_total` and `kubelet_pod_requests_watch_total`.
   - Components exposing the metric: Kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-As part of this feature enhancement, per-API-endpoint resources metrics are being added; `pod_info_endpoint_requests_get`, `pod_info_endpoint_requests_list` add `pod_info_endpoint_errors_get`.
+As part of this feature enhancement, per-API-endpoint request metrics are being added; `kubelet_pod_requests_get_total`, `kubelet_pod_requests_list_total`, and `kubelet_pod_requests_watch_total`, each broken down by `status_code`.
 
 ### Dependencies
 
@@ -492,10 +492,10 @@ The Kubelet might be in init phase when client call the API. The API should retu
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-1. Monitor the `pod_info_endpoint_errors_get` and `pod_info_endpoint_requests_total` metrics to see error rates and request counts.
+1. Monitor the `kubelet_pod_requests_total` metric (and its `status_code` label) to see error rates and request counts.
 2. Check the Kubelet logs for errors related to socket permission, client connection handling, or cache synchronization.
 3. If the Kubelet exhibits high CPU or RAM usage due to excessive local client requests, the rate-limiting configuration should be reviewed.
-4. As a mitigation, the feature can be disabled by setting the `PodInfoAPI` feature gate to `false` in Kubelet's configuration.
+4. As a mitigation, the feature can be disabled by setting the `PodsAPI` feature gate to `false` in Kubelet's configuration.
 
 ## Implementation History
 
