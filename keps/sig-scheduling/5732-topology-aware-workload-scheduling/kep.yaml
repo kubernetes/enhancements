@@ -17,7 +17,8 @@ approvers:
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
-  - "/keps/sig-scheduling/5719-workload-aware-preemption"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/6012-composite-podgroup-api"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -27,12 +28,12 @@ stage: beta
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.36"
-  beta: "v1.37"
+  beta: "v1.38"
   stable: "v1.39"
 
 # The following PRR answers are required at alpha release
