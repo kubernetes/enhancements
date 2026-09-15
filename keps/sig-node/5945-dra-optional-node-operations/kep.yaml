@@ -1,4 +1,4 @@
-title: DRA Optional Node Preparation
+title: DRA Optional Node Operations
 kep-number: 5945
 authors:
   - "@troychiu"
@@ -32,7 +32,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: DRAOptionalNodePreparation
+  - name: DRAOptionalNodeOperations
     components:
       - kube-apiserver
       - kube-scheduler
@@ -41,5 +41,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - kubelet_dra_node_prepare_skips_total
-  - kubelet_dra_node_unprepare_skips_total
+  - dra_node_prepare_skips_total
+  - dra_node_unprepare_skips_total
