@@ -1,0 +1,45 @@
+title: GPU support for Pod-level Checkpoint/Restore
+kep-number: 6274
+authors:
+  - "@rst0git"
+  - "@dfeigin-nv"
+  - "@Ronkahn21"
+owning-sig: sig-node
+participating-sigs:
+  - sig-scheduling
+status: provisional
+creation-date: 2026-08-13
+reviewers:
+  - "@haircommander"
+approvers:
+  - TBD
+
+see-also:
+  - "/keps/sig-node/5823-pod-level-checkpoint-restore"
+  - "/keps/sig-node/4381-dra-structured-parameters"
+  - "/keps/sig-node/4817-resource-claim-device-status"
+  - "/keps/sig-scheduling/5004-dra-extended-resource"
+  - "/keps/sig-scheduling/5007-device-attach-before-pod-scheduled"
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+
+feature-gates:
+  - name: PodLevelCheckpointRestoreDevices
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kubelet
+disable-supported: true
+
+metrics:
+  - kubelet_pod_checkpoint_operations_total
+  - kubelet_pod_checkpoint_duration_seconds
+  - kubelet_pod_checkpoint_size_bytes
+  - kubelet_pod_restore_operations_total
+  - kubelet_pod_restore_duration_seconds
+  - kubelet_runtime_operations_errors_total
