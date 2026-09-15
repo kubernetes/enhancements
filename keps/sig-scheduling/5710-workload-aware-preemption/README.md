@@ -765,6 +765,21 @@ type PodGroupPostFilterPlugin interface {
 }
 ```
 
+#### Preemptor Eligibility and Ongoing Preemption Detection
+
+In standard pod-level preemption, before evaluating candidate nodes for preemption, the scheduler checks whether the preemptor pod is eligible to preempt other pods (`PodEligibleToPreemptOthers`). Specifically, if the pod already has a `status.nominatedNodeName` set and there are lower-priority victim pods actively terminating on that nominated node, the scheduler avoids triggering a redundant preemption attempt unless that nominated node returned `UnschedulableAndUnresolvable` during the `Filter` phase.
+
+When generalizing this behavior to Workload-Aware Preemption, two key differences arise due to the global (cluster-wide) preemption scope and the `PodGroupPostFilter` execution model:
+
+1. **Global scope and rate-limiting cascading preemptions**:
+   A pod group's member pods can be nominated across multiple nodes in the cluster. To prevent redundant and cascading preemptions while an existing preemption is in flight, `PodGroup` preemption checks whether *any* unscheduled member pod has a `status.nominatedNodeName` where lower-priority victims are currently terminating. If so, the preemption is considered ongoing and a new preemption search is not performed.
+   Unlike single-pod preemption, Workload-Aware Preemption does not currently bypass this wait when a nominated node returns `UnschedulableAndUnresolvable`.
+   It's because it operates globally across the cluster and is significantly more disruptive than single-pod preemption, so waiting for in-flight victim terminations to complete acts as an effective rate-limiter against cascading preemption storms (one preemption cycle at a time).
+
+2. **Preserving `NominatedNodeName`s when preemption is ongoing**:
+   In single-pod preemption, returning `Unschedulable` from `PostFilter` when preemption is skipped leaves the pod's existing `NominatedNodeName` untouched. However, in Workload-Aware Preemption, when ongoing preemption is detected and `Unschedulable` is returned, the `SubmitPodGroupAlgorithmResult` would clear the existing nominations.
+   To resolve this, `PodGroupPostFilter` returns `Success` along with a result that explicitly preserves each member pod's current `NominatedNodeName`. This ensures existing nominations are retained and consecutive preemption attempts won't unnecessarily select different victims.
+
 ### Potential future extensions
 
 Here we discuss a couple of extensions that we envision just to ensure that we can build them
