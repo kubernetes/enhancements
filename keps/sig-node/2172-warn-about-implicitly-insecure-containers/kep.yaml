@@ -39,6 +39,5 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - kubelet_implicitly_insecure_pods
-  - kubelet_explicitly_insecure_pods
+  - kubelet_insecure_pods
 

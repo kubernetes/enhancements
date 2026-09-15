@@ -114,7 +114,8 @@ to 0, or with GID 0 (as the primary GID or as a supplemental group) with
 1) To make it impossible or opt-in to run as root.
 2) To actively impact users who run as root.
 3) To make noise about explicitly-root containers (though the proposed
-   `kubelet_explicitly_insecure_pods` metric below does track them).
+   `kubelet_insecure_pods{declaration="explicit"}` metric below does track
+   them).
 
 ## Proposal
 
@@ -145,11 +146,11 @@ pods that are implicitly-root:
 
 #### Story 2 (Optional)
 
-Pete the platform admin can track the `kubelet_implicitly_insecure_pods` and
-`kubelet_explicitly_insecure_pods` metrics and set alerts when they become
-non-zero. They can investigate and ask users to set a specific `runAs...` or
-to set it to 0. Pete can also install admission controllers to only allow
-approved users to set the `runAs...` fields to 0.
+Pete the platform admin can track the `kubelet_insecure_pods` metric and
+set alerts when it becomes non-zero. They can investigate and ask users to
+set a specific `runAs...` or to set it to 0. Pete can also install
+admission controllers to only allow approved users to set the `runAs...`
+fields to 0.
 
 #### Story 3
 
@@ -161,7 +162,7 @@ will eventually choose to make them go away by running as non-root.
 ### Notes/Constraints/Caveats (Optional)
 
 This feature is purely observational. It adds pod conditions, warning
-events, and metrics, and never blocks, denies, or changes how the pod is
+events, and a metric, and never blocks, denies, or changes how the pod is
 admitted or run. If a container explicitly sets `runAsUser`, the UID
 condition and event are skipped for it, no matter what value is set,
 including 0. Likewise, if a container explicitly sets `runAsGroup`, the GID
@@ -192,8 +193,17 @@ implicitly-root pods. To bound this, events will be throttled to at most
 ### Condition when running implicitly-root
 
 Kubelet sets two pod conditions on every pod, `InsecureUserID` and
-`InsecureGroupID`, `True` if a container is observed running as UID/GID 0
-without `runAsUser`/`runAsGroup` respectively, `False` otherwise.
+`InsecureGroupID`:
+
+- `True`, if a container is observed running as UID/GID 0 without
+  `runAsUser`/`runAsGroup` respectively.
+- `False`, once the runtime has reported the container's UID/GID and it is
+  confirmed not to be implicitly-root.
+- `Unknown`, until the runtime reports `status.containerStatuses[].user.linux`
+  for the container (e.g., before the container has started, or on a
+  runtime too old to report it). `Unknown` self-resolves to `True`/`False`
+  once the data is reported; no warning event fires while a condition is
+  `Unknown`.
 
 ```go
 const (
@@ -340,17 +350,24 @@ and if so it will color pods that are running as root in red.  For example,
 
 ### Metrics
 
-Kubelet will add two gauge metrics, both labeled by `id_type` (`uid`, `gid`,
-or `supplementalgroups`):
+Kubelet will add one gauge metric, `kubelet_insecure_pods`, labeled by
+`declaration` (`implicit` or `explicit`) and `id_type` (`uid`, `gid`, or
+`supplementalgroups`):
 
-- `kubelet_implicitly_insecure_pods`: number of pods with an implicitly-root
+- `declaration="implicit"`: number of pods with an implicitly-root
   container. A pod insecure on both UID and GID counts in both series. A
   container's primary GID being 0 counts only in `gid`, never also in
   `supplementalgroups`, per the exclusion described in
   [Condition when running implicitly-root](#condition-when-running-implicitly-root).
-- `kubelet_explicitly_insecure_pods`: number of pods with a container that
+- `declaration="explicit"`: number of pods with a container that
   explicitly requests UID/GID 0, via `runAsUser`, `runAsGroup`, `fsGroup`,
   or `supplementalGroups`, and is observed running as that ID.
+
+> Note: A `0` reading for a node can mean either "no insecure pods" or "this
+> node's runtime doesn't report the data needed to detect them." To tell
+> these apart, check `Node.Status.Features.SupplementalGroupsPolicy`
+> (from KEP-3619): it reflects the runtime's live, per-node capability to
+> report `user.linux`, the same data this metric depends on.
 
 ### Test Plan
 
@@ -367,15 +384,14 @@ machinery in kubelet; no changes to existing tests are required first.
 
 - `pkg/kubelet/status/generate_test.go`: covers the `InsecureUserID`/
   `InsecureGroupID` conditions for implicitly-root, explicitly-root
-  (bypassed), non-root, and `hostUsers: false` (bypassed) pods, and
-  explicit-root detection used by the explicit-root metric. This will
-  also cover the `supplementalGroupsPolicy: Merge` case (implicit and
-  explicit GID 0 via `fsGroup`/`supplementalGroups`, and the primary-GID
-  mirroring exclusion).
+  (bypassed), non-root, not-yet-reported (`Unknown`), and `hostUsers:
+  false` (bypassed) pods. This will also cover the
+  `supplementalGroupsPolicy: Merge` case (implicit and explicit GID 0 via
+  `fsGroup`/`supplementalGroups`, and the primary-GID mirroring
+  exclusion).
 - `pkg/kubelet/kubelet_pods_test.go`: covers the combined vs. separate
-  UID/GID event reasons and messages, and the
-  `kubelet_implicitly_insecure_pods`/`kubelet_explicitly_insecure_pods`
-  gauges.
+  UID/GID event reasons and messages, and the `kubelet_insecure_pods`
+  gauge.
 
 Coverage of the touched packages, before this enhancement's tests were added:
 
@@ -386,7 +402,7 @@ Coverage of the touched packages, before this enhancement's tests were added:
 ##### Integration tests
 
 Not applicable. This feature is entirely within kubelet (reading an
-existing status field and setting conditions/events/metrics); it does not
+existing status field and setting conditions/events/metric); it does not
 add or change any kube-apiserver or controller-manager behavior, so there is
 nothing for the integration test suite (which exercises apiserver +
 controllers) to cover beyond what unit and node e2e tests already do.
@@ -397,7 +413,7 @@ controllers) to cover beyond what unit and node e2e tests already do.
 gate toggled on via `tempSetCurrentKubeletConfig`. Covered cases:
 
 - a pod implicitly-root on both UID and GID (conditions, combined event,
-  metrics)
+  metric)
 - a pod implicitly-root on UID only
 - a pod implicitly-root on GID only
 - a pod explicitly-root (bypassed)
@@ -443,7 +459,7 @@ normal kubelet restart.
 This feature is entirely local to the kubelet; it does not coordinate with
 the control plane or other nodes. A node running a kubelet without this
 feature, or with the gate off, simply does not report the new conditions,
-events, or metrics for its own pods; other nodes are unaffected.
+events, or metric for its own pods; other nodes are unaffected.
 
 ## Production Readiness Review Questionnaire
 
@@ -484,12 +500,12 @@ _This section must be completed when targeting alpha to a release._
 ###### Does enabling the feature change any default behavior?
 
 No behavioral change (this feature is purely observational). Enabling it
-adds new pod conditions, one of three warning event reasons, and two
-metrics; nothing about how a pod runs changes.
+adds new pod conditions, one of three warning event reasons, and a new
+metric; nothing about how a pod runs changes.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes. Disabling stops new conditions/events/metrics from being generated; it
+Yes. Disabling stops new conditions/events/metric from being generated; it
 does not affect running workloads. Already-set conditions on existing pod
 objects are left as-is until the pod is otherwise resynced/recreated.
 
@@ -499,14 +515,14 @@ Verified on a kind cluster. Kubelet feature gates are only read at process
 startup, so disabling or enabling the gate has no effect until kubelet
 restarts. Editing the config file alone while kubelet keeps running was
 confirmed to have no effect. After restarting kubelet with the gate
-re-enabled, conditions, events, and metrics resume being generated correctly
+re-enabled, conditions, events, and the metric resume being generated correctly
 on the next sync of each pod; nothing needs to be reconciled or backfilled.
 
 ###### Are there any tests for feature enablement/disablement?
 
 Yes. Tests added in `test/e2e_node/pod_conditions_test.go` use
 `tempSetCurrentKubeletConfig` to toggle the `InsecurePodWarnings` feature gate
-on for their test context, and cover the pod conditions, event, and metrics
+on for their test context, and cover the pod conditions, event, and metric
 with the gate enabled. Unit tests added in `pkg/kubelet/status`,
 `pkg/kubelet`, and `pkg/securitycontext` cover the underlying logic with and
 without the feature.
@@ -518,7 +534,7 @@ _This section must be completed when targeting beta to a release._
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 It cannot fail in a way that affects running workloads: this feature only
-toggles kubelet-computed conditions/events/metrics and reads an existing
+toggles kubelet-computed conditions/events/metric and reads an existing
 field (`status.containerStatuses[].user.linux`, see Proposal) rather than
 adding one.
 
@@ -534,7 +550,7 @@ noticeable overhead on nodes with very large numbers of pods.
 
 See Upgrade / Downgrade Strategy above. Disabling and re-enabling the gate on
 the same kubelet version (each requiring a restart) was verified directly on
-a kind cluster: conditions, events, and metrics correctly resume.
+a kind cluster: conditions, events, and the metric correctly resume.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -546,9 +562,9 @@ _This section must be completed when targeting beta to a release._
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-The `kubelet_implicitly_insecure_pods` and `kubelet_explicitly_insecure_pods`
-metrics (labeled by `id_type`) become non-zero on any node running
-implicitly-root or explicitly-root pods, respectively.
+The `kubelet_insecure_pods` metric (labeled by `declaration` and `id_type`)
+becomes non-zero on any node running implicitly-root or explicitly-root
+pods.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -562,21 +578,19 @@ implicitly-root or explicitly-root pods, respectively.
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
 N/A. This feature does not serve requests and has no latency or error-rate
-path of its own; it only adds conditions, events, and metrics as a side
+path of its own; it only adds conditions, events, and a metric as a side
 effect of the pod sync kubelet already performs.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `kubelet_implicitly_insecure_pods`,
-    `kubelet_explicitly_insecure_pods`
+  - Metric name: `kubelet_insecure_pods`
   - Components exposing the metric: `kubelet`
 - [ ] Other
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No, the implicitly-root and explicitly-root pod count metrics described above
-already cover this.
+No, the `kubelet_insecure_pods` metric described above already covers this.
 
 ### Dependencies
 
@@ -638,7 +652,7 @@ _This section must be completed when targeting beta to a release._
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-The pod conditions/events/metrics update is skipped or retried along with
+The pod conditions/events/metric update is skipped or retried along with
 the rest of the kubelet's normal pod status sync; no special handling is
 added.
 
@@ -647,9 +661,11 @@ added.
 - Older CRI runtime does not report `status.containerStatuses[].user.linux`
   (predates stable KEP-3619 support). Observed directly on containerd
   v1.7.33: kubelet ran without any error, but the `InsecureUserID`/
-  `InsecureGroupID` conditions stayed `False` even for pods that were
-  actually implicitly-root. Upgrading to containerd v2.0+ (which populates
-  that CRI field, per KEP-3619) fixed it.
+  `InsecureGroupID` conditions stayed `Unknown` (not `False`) for affected
+  containers, correctly signaling that detection wasn't possible rather
+  than implying they were secure. Upgrading to containerd v2.0+ (which
+  populates that CRI field, per KEP-3619) resolved the conditions to their
+  correct `True`/`False` value.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
