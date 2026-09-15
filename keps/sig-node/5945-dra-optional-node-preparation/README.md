@@ -48,18 +48,18 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -434,8 +434,9 @@ None.
 
 ##### Integration tests
 
-- **Scheduler Filtering Integration Tests**: In
-  `test/integration/dra/optional_node_operations.go`:
+- **Scheduler Filtering Integration Tests**:
+  - Source: [`test/integration/dra/optional_node_operations.go`](https://github.com/kubernetes/kubernetes/blob/master/test/integration/dra/optional_node_operations.go)
+  - TestGrid: [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=testOptionalNodeOperations), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=testOptionalNodeOperations)
   - Verify that a pod or pod group requiring `DRAOptionalNodeOperations` (having a claim
     allocated with `SkipNodeOperations`) is successfully scheduled to a
     node that advertises the feature.
@@ -447,6 +448,9 @@ None.
     `DRAOptionalNodeOperations` feature on nodes.
 
 ##### e2e tests
+
+- Source: [`test/e2e/dra/dra.go` (`optionalNodeOperationsTests`)](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/dra/dra.go)
+- TestGrid: [sig-node-kubelet](https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-serial-dra&include-filter-by-regex=DRAOptionalNodeOperations), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=DRAOptionalNodeOperations)
 
 Basic End-to-End test cases (Scenario 1 & 2) were implemented in Alpha inside `test/e2e/dra/dra.go` to validate
 `skipNodeOperations` configurations using different
@@ -568,20 +572,21 @@ upgrade or downgrade/rollback of the feature gate.
 
 #### Alpha
 
-- Feature implemented behind the `DRAOptionalNodeOperations` feature flag (off
+- [x] Feature implemented behind the `DRAOptionalNodeOperations` feature flag (off
   by default).
-- Full unit and basic E2E test suites (Scenario 1 & 2) implemented and green.
+- [x] Full unit and basic E2E test suites (Scenario 1 & 2) implemented and green.
 
 #### Beta
 
-- Enable the feature gate by default.
-- E2E upgrade/downgrade and rollback test suites (Scenario 3) implemented and green.
-- Gather real-world feedback from developers and vendors deploying
+- [ ] Enable the feature gate by default.
+- [ ] E2E upgrade/downgrade and rollback test suites (Scenario 3) implemented and green.
+- [ ] Gather real-world feedback from developers and vendors deploying
   controller-managed DRA drivers.
-- Ensure no regressions or performance issues are observed in large clusters.
+- [ ] Ensure no regressions or performance issues are observed in large clusters.
 
 #### GA
-- Feature gate locked to true.
+
+- [ ] Feature gate locked to true.
 
 ### Upgrade / Downgrade Strategy
 
@@ -674,7 +679,7 @@ upgrade or downgrade/rollback of the feature gate.
     - kube-scheduler
     - kubelet
 
-The gate is off by default in alpha (v1.37).
+The gate is off by default in alpha (v1.37) and on by default in beta (v1.38).
 It also depends on the `DynamicResourceAllocation` and `NodeDeclaredFeatures`
 gates.
 
@@ -898,6 +903,7 @@ to container application crashes.
 - **2026-05-21**: KEP drafted and proposed as Provisional for Alpha stage.
 - **v1.37**: KEP marked `implementable`; alpha implementation merged
   (`DRAOptionalNodeOperations` feature gate, off by default).
+- **v1.38**: KEP updated for beta graduation; feature gate enabled by default.
 
 ## Drawbacks
 
