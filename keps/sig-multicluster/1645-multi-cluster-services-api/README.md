@@ -1149,9 +1149,6 @@ when drafting this test plan.
 
 #### Beta -> GA Graduation
 
-- Scalability/performance testing, understanding impact on cluster-local service
-  scalability.
-- [Cluster ID KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/2149-clusterid) is GA, with at least one other multi-cluster use case.
 - A conformance report program for MCS-API has been created to document the
   conformance level of the various implementations.
 
@@ -1278,6 +1275,7 @@ enhancement:
 - 2026-05-26: Clarified MCS upgrade, downgrade, and version-skew strategies.
 - 2026-05-26: Added ServiceImport status field signaling for the presence of
   imported EndpointSlice objects.
+- 2026-XX-XX: Promoted the KEP to stable and remove obsolete GA graduation criteria.
 <!--
 Major milestones in the life cycle of a KEP should be tracked in this section.
 Major milestones might include
