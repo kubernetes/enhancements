@@ -1251,6 +1251,33 @@ enhancement:
 - 2020-08-04 - ClusterSet name finalized
 - 2020-08-10 - Alpha implementation available at
   [sigs.k8s.io/mcs-api](http://sigs.k8s.io/mcs-api)
+- 2020-08-25: Updated graduation criteria and changed `ServiceImport.spec.ip` to
+  `ServiceImport.spec.ips` in preparation for dual-stack support.
+- 2021-11-30: Removed kube-proxy integration from the graduation requirements.
+- 2022-03-23: Added the multicluster DNS specification.
+- 2023-04-01: Standardized the definition of cluster id and cluster name
+  and allowed location-disambiguated addressing of pods backing a
+  headless Service.
+- 2024-01-19: Made imported EndpointSlices optional while retaining their
+  required structure when present.
+- 2024-10-01: Clarified the chosen conflict resolution algorithm by documenting
+  the rejected alternatives.
+- 2024-10-08: Removed the EndpointSlice owner reference requirement.
+- 2024-12-11: Clarified port conflict rules.
+- 2024-12-11: Added label and annotation export.
+- 2025-03-11: Relaxed the EndpointSlice manager requirements.
+- 2025-06-26: Updated ServiceExport conditions to use standard Kubernetes
+  conditions to align with the API from kubernetes-sigs/mcs-api.
+- 2025-07-30: Added ServiceImport conditions.
+- 2025-10-09: Defined dual-stack policies and fields.
+- 2025-12-09: Added internal traffic policy and traffic distribution fields to
+  ServiceImport.
+- 2025-12-17: Added conflict conditions for asymmetric traffic caused by IP
+  family and port differences.
+- 2026-01-09: Promoted the KEP to beta and the API to v1beta1.
+- 2026-05-26: Clarified MCS upgrade, downgrade, and version-skew strategies.
+- 2026-05-26: Added ServiceImport status field signaling for the presence of
+  imported EndpointSlice objects.
 <!--
 Major milestones in the life cycle of a KEP should be tracked in this section.
 Major milestones might include
