@@ -17,9 +17,9 @@ approvers:
 see-also:
   - "/keps/sig-scheduling/624-scheduling-framework"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"
