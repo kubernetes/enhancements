@@ -898,8 +898,8 @@ admission controller gets extended to additionally support the
 We enforce a strict single-priority constraint: all member groups and pods
 within a single group hierarchy tree **must share the exact same priority and
 PriorityClassName**. Support for differing group-level priorities under basic
-scheduling policies could be explored independently of KEP-6012 and could be
-added in a backward-compatible way in the future, should such a use case emerge.
+scheduling policies it will be explored independently of KEP-6012 in a dedicated
+KEP when we prioritize the relevant usecases.
 
 The value of the `Priority` field is being used in the following two contexts:
 
@@ -1020,7 +1020,12 @@ of group objects that form a hierarchy which is not reflected in that
 
 - Is deeper than allowed,
 - Contains a cyclical parent reference relationship,
-- References to more than a single `Workload`.
+- References to more than a single `Workload`,
+- Contains differing priorities or preemption policies,
+- Contains semantically improper parent-child relationships:
+  - A `gang` parent group with a `basic` child group,
+  - A parent group with `All` disruption mode that has a child group with the
+    `Single` disruption mode.
 
 Each of these should be treated as a failure mode since it is essentially a
 manifestation of the API misuse. Because of that we will make kube-scheduler
@@ -1031,30 +1036,22 @@ to scheduling it at all.
 
 ##### Runtime validation in Beta
 
-A complete implementation of runtime hierarchy validation — including verifying that the group
-tree matches the definition in the corresponding `Workload` object — will be tackled in the
-**Beta** release. While the high-level goals are established, the detailed design requires
-careful consideration to guarantee consistent decisions and prevent race conditions.
+Runtime hierarchy validation will be performed in two distinct places inside
+kube-scheduler:
 
-The initial outline and key challenges to address for the Beta design include:
-
-*   **Watching `Workload` objects:** To validate whether the runtime group tree matches the
-    actual `Workload`-defined tree, the scheduler will potentially need to list and watch
-    `Workload` objects. Their total number is strictly bounded by the number of active pods
-    (and is typically much lower). Furthermore, because `Workload` objects are generally static,
-    their update churn is extremely low. Introducing this watch is therefore expected to have a
-    negligible impact on the scheduler's scalability.
-*   **Validation Loop in the Scheduling Queue:** Validating group hierarchies against
-    `Workload` definitions can be computationally heavier than simple single-pod validations.
-    To ensure this does not affect the scheduler's main loop performance, this validation will
-    happen in the scheduling queue as a separate loop. It will target stalled or long-standing
-    hierarchies (e.g., those residing in the queue for too long and failing to become
-    schedulable) that have spent excessive time in the unschedulable cache.
-*   **Race Conditions & Atomic Transitions:** A central challenge is the thread-safe
-    transition of group hierarchies. We must ensure that moving hierarchies between the
-    queue's "unschedulable hierarchies" (represented in memory by `pendingPodGroups`)
-    and the active queue (`activeQ`) is done atomically under a single lock to prevent race
-    conditions during concurrent updates and scheduling attempts.
+* **Validation Loop in the Scheduling Queue:** Scheduler will spawn a separate
+  goroutine that periodically scans the `incompletePodGroupPods` structure and
+  validates group hierarchies of the Pods that were retained in that structure
+  for a longer period of time. When finding an invalid group hierarchy, that
+  goroutine will mark all groups and pods belonging to that hierarchy as
+  unschedulable by updating the statuses of these objects accordingly.
+* **Validation in the Scheduling Cycle**: `PodGroupInfo` object popped from the
+  scheduling queue can contain older API objects, hence the scheduling cycle
+  runs the `reconcilePodGroupWithSnapshot` method to update the underlying
+  hierarchy. These intermediary updates might make the group hierarchy invalid.
+  Because of that, immediately after the reconciliation, scheduler will run the
+  same group hierarchy validation checks as in the validation loop performed in
+  the scheduling queue.
 
 ### Changes in kube-scheduler
 
@@ -1416,9 +1413,16 @@ decided to retain the greedy evaluation for the time being and to defer the
 prospect of adjusting the evaluation logic in the algorithm to the future
 releases.
 
-For a detailed analysis of the possible solutions, their trade-offs, and the
-rationale for deferral, see [this section](#mitigations-for-resource-stealing)
-in the alternatives.
+The primary rationale is that we prioritize the most common distributed workload
+use cases, where `minCount` equals the total pod count and `minGroupCount`
+equals the total child group count. In this common model, all pods and groups
+are strictly required, so resource stealing between siblings cannot occur.
+Retaining greedy evaluation allows us to deliver the core `CompositePodGroup`
+API and framework as soon as possible without introducing premature complexity.
+
+For a detailed analysis of the possible solutions, their trade-offs, and more
+detailed rationale for deferral, see
+[this section](#mitigations-for-resource-stealing) in the alternatives.
 
 ###### Handling new pods for scheduled hierarchies
 If a controller scales up a scheduled `CompositePodGroup` hierarchy by
@@ -1787,22 +1791,21 @@ More tests will be added for beta release.
 
 - `CompositePodGroup` object is protected against deletion if any group refers
   to it.
-- At least one true workload controller (e.g. `JobSet`) is planned to be
-  integrated with the `CompositePodGroup` API.
+- At least one true workload controller (e.g. `JobSet`) has designed the
+  integration with the `CompositePodGroup` API.
 - Scheduler detects invalid runtime group hierarchies (i.e. hierarchies which
   are too deep, have a cycle, refer to two or more Workloads, or have an
   invalid combination of scheduling policies or disruption modes at different
   levels of the hierarchy).
-- The recursive greedy scheduling search trade-offs are re-evaluated, and a
-  decision on incorporating advanced backtracking heuristics (such as
-  restricted search depth or bounded branches) is made to optimize scheduling
-  success rates for multi-level gangs.
+- Trade-offs related to the introduction of backtracking heuristics in the
+  scheduling algorithm are analyzed, supporting the decision to not introduce
+  backtracking.
 - Scheduler bypasses futile scheduling cycles for inadmissible nested child
   groups during recursion by extending `PlacementFeasible` to execute checks
   prior to in-memory scheduling (to protect performance and avoid redundant
   preemption passes).
-- Resource stealing-related tradeoffs are analyzed and a decision about
-  adjustments to the greedy scheduling cycle algorithm is made.
+- Resource stealing-related trade-offs are analyzed, supporting the decision to
+  not make adjustments to the greedy scheduling cycle algorithm.
 - The `minGroupCount` field of the `CompositePodGroup` objects becomes
   mutable at runtime (aligning with the pre-existing mutable `minCount` field
   in `PodGroup` objects).
@@ -1941,22 +1944,31 @@ This section must be completed when targeting beta to a release.
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+Workloads that do not use the `Workload` and `PodGroup` APIs should not be
+impacted, since the functionality remains unchanged for them. During a rolling
+upgrade, if the active scheduler instance has the feature disabled, it will
+schedule Pods using the single level non-recursive `PodGroup` scheduling
+algorithm (or the standard pod-by-pod method for standalone Pods). This results
+in a fallback to the status quo behavior, meaning that Pods and `PodGroups` will
+be still scheduled, but `CompositePodGroup`-level scheduling constraints won't
+be applied.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+- `scheduler_schedule_attempts_total{result="error"}`: A sudden spike indicates internal errors or
+  panics within the scheduling loop, possibly caused by the new logic.
+- `process_start_time_seconds`: Frequent resets of this metric indicate that the scheduler process
+  is crashing and restarting (crash loop).
+- `scheduler_pod_scheduling_sli_duration_seconds`: A significant regression in P99 latency for
+  standalone Pods (without `spec.schedulingGroup` specified) would indicate that the overhead of the
+  new logic is unacceptable.
+- `scheduler_podgroup_scheduling_algorithm_duration_seconds{type="podgroup"}`: A significant
+  regression in P99 latency for standalone PodGroups would indicate that the overhead of the new
+  logic is unacceptable.
+- `scheduler_podgroup_schedule_attempts_total`: Consistently high failure rates for valid
+  `CompositePodGroups` compared to successful attempts.
+- `scheduler_queued_entities{type="compositepodgroup"}`: Unexpectedly high value may indicate issues
+  with the queueing algorithm.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -1966,11 +1978,47 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+We'll perform manual testing of the upgrade -> downgrade -> upgrade path using the following sequence:
+
+1. Start a local Kubernetes v1.38 cluster with `CompositePodGroup` feature gate disabled
+   and both `GenericWorkload` and `TopologyAwareWorkloadScheduling` enabled.
+2. Attempt to create a PodGroup object with `spec.parentCompositePodGroupName` set.
+3. The API server rejects the request (using the `spec.parentCompositePodGroupName` field is rejected by the
+   API server's validation when the gate is disabled).
+4. Restart API Server, Scheduler and Controller Manager with `CompositePodGroup` feature gate enabled.
+5. Create a Workload object `wl1` defining a template hierarchy with one CompositePodGroup template that has
+   two child PodGroup templates.
+   Create a CompositePodGroup object `cpg1` referencing `wl1` with `minGroupCount=2`.
+6. Create a PodGroup object `pg1` referencing `wl1`, with `spec.parentCompositePodGroupName` set to `cpg1` and `minCount=2`.
+7. Create two Pods, each with a `spec.schedulingGroup` set to `pg1`.
+8. The Pods stay in `Pending` state (waiting for the multi-level gang to assemble). Verify that
+   `scheduler_queued_entities{type="compositepodgroup"}` metric is incremented.
+9. Create a PodGroup object `pg2` referencing `wl1`, with `spec.parentCompositePodGroupName` set to `cpg1` and `minCount=2`.
+10. Create a Pod with a `spec.schedulingGroup` set to `pg2`.
+11. The 3 Pods continue to stay in `Pending` state (waiting for the multi-level gang to assemble).
+12. Create another Pod with a `spec.schedulingGroup` set to `pg2`.
+13. All 4 Pods are scheduled successfully in the same cycle (Gang Scheduling works).
+14. Create a Workload object `wl2` defining a template hierarchy with one CompositePodGroup template that has
+    three child PodGroup templates.
+    Create a CompositePodGroup object `cpg2` referencing `wl2` with `minGroupCount=3`.
+15. Create a PodGroup object `pg3` referencing `wl2`, with `spec.parentCompositePodGroupName` set to `cpg2` and `minCount=2`.
+16. Create two Pods with `spec.schedulingGroup` set to `pg3`.
+17. Verify that the Pods stay in `Pending` state (waiting for the multi-level gang to assemble).
+18. Update the API Server, Scheduler and Controller Manager with `CompositePodGroup` feature gate being disabled again.
+19. Verify that the Pods created in step 16 are now scheduled successfully. With `CompositePodGroup` disabled,
+    the scheduler ignores `spec.parentCompositePodGroupName` and evaluates `pg3` as a flat PodGroup,
+    where its `minCount=2` requirement is fully satisfied.
+20. Update the API Server, Scheduler and Controller Manager with `CompositePodGroup` feature gate being enabled again.
+21. Create a PodGroup object `pg4` referencing `wl2`, with `spec.parentCompositePodGroupName` set to `cpg2` and `minCount=2`.
+22. Create two Pods with `spec.schedulingGroup` set to `pg4`.
+23. Verify that the Pods stay in `Pending` state (waiting for the multi-level gang to assemble).
+24. Create a PodGroup object `pg5` referencing `wl2`, with `spec.parentCompositePodGroupName` set to `cpg2` and `minCount=2`.
+25. Create two Pods with `spec.schedulingGroup` set to `pg5`.
+26. Verify that all 6 Pods belonging to the group hierarchy with `cpg2` as a root group are now scheduled successfully.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No.
 
 ### Monitoring Requirements
 
@@ -1983,30 +2031,22 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+Operators can check the `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup"}`
+metric. A value greater than zero indicates that the scheduler is processing `CompositePodGroups`
+in the PodGroup scheduling cycle.
+
+Alternatively, checking for the existence of `CompositePodGroups` via
+`kubectl get compositepodgroups` confirms that users are actively using the
+feature.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [X] API .status
+  - Object: CompositePodGroup
+  - Condition Name: `CompositePodGroupInitiallyScheduled`
+- [X] Metrics
+  - Metric name: `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup"}`
+  - Value is greater than 0.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -2031,19 +2071,35 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [x] Metrics
   - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+    - `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup"}`
+    - `scheduler_podgroup_scheduling_attempt_duration_seconds{type="compositepodgroup"}`
+    - `scheduler_podgroup_scheduling_algorithm_duration_seconds{type="compositepodgroup"}`
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+Several `PodGroup`-specific metrics were added in scope of the Workload-Aware
+Scheduling KEPs. To maintain parity, the beta version of this feature adjusts
+these metrics by either adding a new label or extending the set of metric labels
+to have a way to distinguish `CompositePodGroups` from other entities like
+`PodGroups` or `Pods`:
+
+- Scheduling queue:
+  - `scheduler_queue_incoming_entities_total`
+  - `scheduler_queued_entities`
+- PodGroup scheduling cycle:
+  - `scheduler_podgroup_schedule_attempts_total`
+  - `scheduler_podgroup_scheduling_algorithm_duration_seconds`
+  - `scheduler_podgroup_scheduling_attempt_duration_seconds`
+- Workload-Aware Preemption:
+  - `scheduler_workload_preemption_attempts_total`
+  - `scheduler_workload_preemption_victims`
+- Topology-Aware Scheduling:
+  - `scheduler_generated_placements_total`
+  - `scheduler_placement_evaluation_duration_seconds`
+  - `scheduler_placement_evaluations_total`
 
 ### Dependencies
 
@@ -2054,7 +2110,7 @@ This section must be completed when targeting beta to a release.
 ###### Does this feature depend on any specific services running in the cluster?
 
 No dependencies other than the components where the feature is implemented
-(kube-apiserver and kube-scheduler).
+(kube-apiserver, kube-scheduler and kube-controller-manager).
 
 ### Scalability
 
@@ -2151,6 +2207,11 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+The behavior is consistent with the status quo. Since the scheduler cannot bind
+pods or update statuses without the API server, any in-flight CompositePodGroup
+scheduling will eventually fail at the binding/update stage. These attempts will
+be retried with standard exponential backoff once connectivity is restored.
+
 ###### What are other known failure modes?
 
 <!--
@@ -2165,6 +2226,62 @@ For each of them, fill in the following information by copying the below templat
       Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
+
+- Pods Pending Indefinitely - Waiting for Multi-level Gang Assembly (PreEnqueue)
+  - Detection:
+    - Check metric indicating the number of gated CompositePodGroups:
+      `scheduler_queued_entities{type="compositepodgroup", queue="gated"}`.
+      If the metric is non-zero and there are no CompositePodGroups gated for
+      other reasons (e.g., waiting for preemption victim removal), then there
+      are pods waiting for multi-level gang assembly.
+    - Check group statuses:
+      - The number of pending/running pods in one or more leaf `PodGroups` is less
+        than their configured `minCount`, OR
+      - The number of admissible child groups in a `CompositePodGroup` subtree is
+        less than its configured `minGroupCount`.
+  - Mitigations:
+    - Ensure the workload controller (e.g., JobSet, LeaderWorkerSet) created all
+      required `CompositePodGroup`, `PodGroup`, and `Pod` instances.
+    - In Beta, decrease `minGroupCount` on the `CompositePodGroup` (or `minCount`
+      on child `PodGroups`) in-place to match the available capacity/groups.
+    - If gang scheduling is no longer desired, delete the `CompositePodGroup` and
+      `PodGroup` objects and recreate the pods without `spec.schedulingGroup`
+      to fall back to standard best-effort scheduling.
+  - Diagnostics:
+    - Inspect `kubectl describe compositepodgroup <cpg-name>` and
+      `kubectl describe podgroup <pg-name>`.
+    - Verify that the number of child groups matches or exceeds `minGroupCount`,
+      and that pods created for each child `PodGroup` match or exceed `minCount`.
+    - Check scheduler logs at `V=4` searching for `"compositepodgroup"` to trace
+      the `PreEnqueue` admissibility checks across the hierarchy.
+  - Testing:
+    - Covered by integration tests submitting incomplete hierarchies (e.g., fewer
+      child groups than `minGroupCount`, or fewer member pods than `minCount`).
+
+- Pods Pending Indefinitely - Multi-level Gang cannot fit (Resource or Topology Constraints)
+  - Detection:
+    - Check `CompositePodGroup.status.conditions`: condition
+      `CompositePodGroupInitiallyScheduled` is `False` with `reason: Unschedulable`.
+      The condition `message` details why the tree could not be placed (e.g., insufficient
+      node resources or topology constraint violations across the required child groups).
+    - Metric: `scheduler_podgroup_schedule_attempts_total{type="compositepodgroup", result="unschedulable"}`
+      is incremented.
+    - Pod status: member pods remain in `Pending` state with pod condition
+      `PodScheduled: False`.
+  - Mitigations:
+    - Scale up cluster capacity (add nodes matching the required topology/accelerator constraints)
+      or terminate other lower-priority workloads.
+    - If preemption was expected, verify that the hierarchy's `priorityClassName` / `priority`
+      is strictly higher than prospective victims in the target topology domain.
+    - In Beta, mutate `minGroupCount` (or leaf `minCount`) to allow a smaller sub-gang to schedule.
+    - If acceptable, delete the hierarchy objects and recreate pods without `spec.schedulingGroup`.
+  - Diagnostics:
+    - Check `kubectl describe compositepodgroup <cpg-name>` for the failure reason and message.
+    - Scheduler logs at `V=4` searching for `"compositepodgroup"` to inspect the recursive
+      simulation pass and determine which child groups or topology domains failed placement.
+  - Testing:
+    - Covered by integration tests submitting multi-level CPGs that exceed available cluster
+      capacity or request unsatisfiable multi-level topology constraints.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -2182,6 +2299,8 @@ Major milestones might include:
 -->
 
 - 2026-04: Initial KEP-6012 proposal.
+- 2026-06: KEP-6012 created for the CompositePodGroup API alpha release.
+- 2026-09: KEP updated to promote to beta in v1.38.
 
 ## Drawbacks
 
@@ -2409,11 +2528,7 @@ production use cases and concrete workload patterns warrant it.
 
 ## Infrastructure Needed (Optional)
 
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+N/A
 
 [^1]: `JobSet` API documentation: https://jobset.sigs.k8s.io/docs/overview/.
 
