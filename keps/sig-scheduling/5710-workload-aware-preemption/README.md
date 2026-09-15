@@ -488,7 +488,7 @@ and `Never`.
 
 This field was not added as a part of the Alpha release of Workload Aware Preemption,
 thus it lags one release behind the other fields. This means that it cannot be covered
-by the `GenericWorkload` feature gate. We introduced an additional feature gate `PodGroupPreemptionPolicy` just for this field, which was introduced as Alpha in v1.37.
+by the `GenericWorkload` feature gate. We introduced an additional feature gate `PodGroupPreemptionPolicy` just for this field, which was introduced as Alpha in v1.37 and is promoted to Beta in v1.38.
 
 As the `preemptionPolicy` is also a field of the Pod, we will apply the same constraints as
 for the priority. Namely, all pods within `PodGroup` will have to share the same `preemptionPolicy`. 
@@ -939,7 +939,7 @@ For Beta, we implemented dedicated e2e tests covering the four basic workload-aw
   - Job: https://testgrid.k8s.io/sig-scheduling#gce-cos-master-default&include-filter-by-regex=WorkloadAwarePreemption
   - Triage: https://storage.googleapis.com/k8s-triage/index.html?text=WorkloadAwarePreemption
 
-For GA we will promote those tests to conformance.
+For GA, we promote these e2e tests to conformance.
 
 ### Graduation Criteria
 
@@ -961,7 +961,8 @@ For GA we will promote those tests to conformance.
 
 - E2E test promoted to conformance
 - Performance benchmarks have well defined thresholds and are run as part of the scheduler-perf of sig-scalability-benchmarks
-- All known issues resolved 
+- Performance is acceptable for large scale clusters (5k nodes as officially supported size for scheduler)
+- All known issues resolved
 
 
 ### Upgrade / Downgrade Strategy
@@ -998,9 +999,9 @@ is not relevant for it.
   - Components depending on the feature gate: kube-apiserver, kube-scheduler
 
 Note that for Alpha this feature was using the `WorkloadAwarePreemption` feature gate.
-For Beta and GA we merged it together with the `GenericWorkload` feature gate,
+For Beta and GA we merged it together with the `GenericWorkload` feature gate (which graduates to GA in v1.38),
 with the rationale provided in the rest of the KEP.
-There is also a separate `PodGroupPreemptionPolicy` feature gate (introduced as Alpha in v1.37)
+There is also a separate `PodGroupPreemptionPolicy` feature gate (introduced as Alpha in v1.37 and promoted to Beta in v1.38)
 that allows setting the preemption policy at the pod group level.
 
 ###### Does enabling the feature change any default behavior?
@@ -1223,12 +1224,12 @@ of the workload scheduling which in term would degrade the performance of the st
 
 - [X] Metrics
   - Metric name: 
-    - scheduler_workload_preemption_attempts_total
-    - scheduler_workload_preemption_victims
-    - scheduler_preemption_workload_disruptions
-    - scheduler_preemption_evaluation_duration_seconds
-    - scheduler_preemption_execution_duration_seconds
-    - scheduler_preemption_pdb_violations_total
+    - scheduler_workload_preemption_attempts_total (promoted to Beta)
+    - scheduler_workload_preemption_victims (promoted to Beta)
+    - scheduler_preemption_workload_disruptions (promoted to Beta)
+    - scheduler_preemption_evaluation_duration_seconds (promoted to Beta)
+    - scheduler_preemption_execution_duration_seconds (promoted to Beta)
+    - scheduler_preemption_pdb_violations_total (promoted to Beta)
     - plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PodGroupPostFilter"}
   - Components exposing the metric: kube-scheduler
 
@@ -1373,6 +1374,7 @@ If preemptor workloads are stuck and preemption attempts fail:
 2026-02: KEP-5710 created for WAP alpha release.
 2026-02: KEP-5710 updated to sync with decoupling of PodGroup/Workload API.
 2026-05: KEP updated to promote to beta in v1.37.
+2026-09: KEP updated to promote to GA in v1.38.
 
 ## Drawbacks
 
