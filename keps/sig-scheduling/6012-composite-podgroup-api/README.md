@@ -1934,7 +1934,7 @@ The scheduler algorithm changes are purely in-memory and don't require any dedic
 enablement/disablement tests - the logic will be covered by regular feature tests.
 
 For the newly introduced API fields, dedicated enablement/disablement tests at the
-kube-apiserver registry layer will be added in Alpha.
+kube-apiserver registry layer will be added in Beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -2050,20 +2050,20 @@ feature.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
+Since there are no formal SLOs for the kube-scheduler apart from scalability SLOs, we define the objectives for this
+feature primarily in terms of non-regression to ensure that multi-level recursive scheduling does not degrade the
+performance of the standard pod scheduling loop or flat pod group scheduling:
 
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+- Scheduling Latency for Standalone Pods: There should be no significant regression in scheduling latency
+  (`scheduler_pod_scheduling_sli_duration_seconds`) for standalone Pods (pods without `spec.schedulingGroup`)
+  compared to the baseline with the `CompositePodGroup` feature gate disabled.
+- Scheduling Latency for Flat PodGroups: The algorithm duration for flat, single-level `PodGroups`
+  (`scheduler_podgroup_scheduling_algorithm_duration_seconds{type="podgroup"}`) should not significantly regress
+  compared to the baseline before enabling the `CompositePodGroup` feature gate.
+- System-wide Scheduling Throughput: There should be no significant regression in overall cluster scheduling
+  throughput (pods/s) when scheduling pods attached to a `CompositePodGroup` hierarchy compared to scheduling an
+  equivalent number of pods under flat `PodGroups`. This can be observed via the rate of Pod binding calls arriving
+  at the API server (`apiserver_request_total{resource="pods", subresource="binding"}`).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
