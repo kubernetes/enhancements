@@ -4,7 +4,7 @@ authors:
   - "@AI-Armless"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: "2026-07-13"
 reviewers:
   - "@ffromani"

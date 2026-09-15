@@ -22,6 +22,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -69,8 +72,9 @@ checkpoint by hand.
 
 This KEP makes the policy tolerate a bounded, benign per-node memory drift and
 re-baseline onto the current machine, while still failing on genuine hardware or
-configuration changes. The bound is auto-detected from the running kernel image
-size, and an operator option can disable or override it.
+configuration changes. The behavior is gated by the `MemoryManagerDriftTolerance`
+feature gate. The bound is auto-detected from the running kernel image size, and
+an operator option can disable or override it.
 
 ## Motivation
 
@@ -128,7 +132,9 @@ surfaces on ordinary reboots.
 
 ## Proposal
 
-Three pieces, matching the shape outlined on the tracking issue:
+Three pieces, matching the shape outlined on the tracking issue, all behind the
+`MemoryManagerDriftTolerance` feature gate (alpha: disabled by default). With the
+gate disabled the policy keeps today's strict per-node equality check.
 
 1. **Tolerate a bounded drift and re-baseline** (implemented in
    kubernetes/kubernetes#140473).
@@ -139,8 +145,9 @@ Three pieces, matching the shape outlined on the tracking issue:
 
 - *Routine reboot:* a node reboots (or finishes an OS update) and kubelet comes
   back `Ready` without anyone deleting `/var/lib/kubelet/memory_manager_state`.
-- *Strict environment:* an operator who wants the previous strict behavior, or a
-  specific bound, sets a policy option.
+- *Strict environment:* an operator who wants the previous strict behavior leaves
+  the feature gate off, or sets the policy option to disable the tolerance or pin
+  a specific bound.
 
 ### Risks and Mitigations
 
@@ -156,8 +163,9 @@ Three pieces, matching the shape outlined on the tracking issue:
 
 ### Part 1: bounded tolerance, conservation and re-baseline
 
-In `validateState`, when `areMachineStatesEqual` fails, accept the difference iff
-the states differ only within the tolerated drift: identical topology (nodes,
+In `validateState`, when `areMachineStatesEqual` fails and the
+`MemoryManagerDriftTolerance` gate is enabled, accept the difference iff the
+states differ only within the tolerated drift: identical topology (nodes,
 NUMA grouping, assignment count), identical `SystemReserved`, hugepage totals
 exact, and the regular-memory `TotalMemSize`/`Allocatable` within the bound per
 node. Per-node `Reserved` is not compared - a drift can legitimately reshuffle a
@@ -165,7 +173,9 @@ cross-NUMA assignment's split while the group total is unchanged, and the
 assignments are re-derived from the persisted blocks. `updateExpectedMachineState`
 returns an error when a recorded assignment no longer fits, so a reduction that
 would under-serve a pod still fails regardless of the bound. On success the policy
-re-baselines with `SetMachineState(expected)`. Implemented and tested in #140473.
+re-baselines with `SetMachineState(expected)`. With the gate disabled the existing
+error is returned unchanged. Implemented and tested in kubernetes/kubernetes#140473;
+the gate is added to that change as part of the alpha work.
 
 ### Part 2: auto-detecting the bound
 
@@ -189,10 +199,13 @@ is tighter than a fixed 256 MiB, so it detects real changes sooner.
 
 ### Part 3: operator option
 
-Add a `memoryManagerPolicyOptions` map (mirroring `cpuManagerPolicyOptions` /
-`topologyManagerPolicyOptions`), gated behind the `MemoryManagerDriftTolerance`
-feature gate, with an option to disable the tolerance (restore strict behavior)
-or set an explicit byte bound. The default keeps the auto-detected behavior.
+Add a `memoryManagerPolicyOptions` map to the kubelet configuration (mirroring
+`cpuManagerPolicyOptions` / `topologyManagerPolicyOptions`), accepted only with
+the gate enabled, with one option, `memory-drift-tolerance`: `auto` (default, the
+kernel-image-derived bound), `off` (strict equality, today's behavior) or an
+explicit quantity such as `128Mi`. Unknown options and values are rejected at
+kubelet start, as for the other managers. Once the gate is on by default this is
+how an operator keeps the strict behavior without touching feature gates.
 
 ### Test Plan
 
@@ -207,20 +220,25 @@ start-up path this enhancement extends.
 
 ##### Unit tests
 
-Part 1 is implemented with unit tests in kubernetes/kubernetes#140473; parts 2-3
-add tests in the same package.
+Part 1 is implemented with unit tests in kubernetes/kubernetes#140473; the gate
+and parts 2-3 add tests in the same package.
 
-- `k8s.io/kubernetes/pkg/kubelet/cm/memorymanager`: `2026-07-13` - covered by the
-  existing policy suite plus the cases below.
+- `k8s.io/kubernetes/pkg/kubelet/cm/memorymanager`: `2026-09-15` - `86.9%`
+  (`go test -cover` on master); the start-up validation path this enhancement
+  extends is exercised by `TestStaticPolicyStart` and
+  `TestMemoryManagerRestoreState`.
 
 Cases (added / planned):
 - policy: a small drift with no assignments; a small drift where assignments still
   fit; a reduction that no longer fits (start fails); a drift above the bound
   (start fails); a cross-NUMA assignment whose split shifts under drift; a manager
   restart with a drifted `machineInfo`.
+- feature gate: the same drifted state fails with the existing error when the
+  gate is disabled, and is tolerated and re-baselined when it is enabled.
 - autodetect: parse the kernel span from a captured `/proc/iomem` (including the
   rodata gap); reject zeroed / absent addresses; fall back on a missing file.
-- option: strict mode rejects any drift; an explicit bound is honored.
+- option: `off` rejects any drift; an explicit bound is honored; an option set
+  without the gate is rejected by configuration validation.
 
 ##### Integration tests
 
@@ -229,26 +247,47 @@ configuration to exercise; unit tests and node e2e cover it.
 
 ##### e2e tests
 
-- A node-e2e that writes a Memory Manager checkpoint, restarts kubelet with a
-  slightly different per-NUMA `MemTotal`, and asserts the node returns `Ready`
-  instead of crash-looping.
+- A node e2e (`test/e2e_node`, serial, `Feature:MemoryManagerDriftTolerance`),
+  targeted at beta: with the `Static` policy running, stop kubelet, rewrite the
+  persisted per-node `TotalMemSize` in the `memory_manager_state` checkpoint by a
+  few MiB through the state package (the e2e environment cannot change the
+  machine's real `MemTotal`), restart kubelet and assert it comes up `Ready` with
+  the assignments restored; the same edit with the gate disabled reproduces the
+  existing start failure.
 - Optionally document the `nokaslr` boot option as the confirming experiment for
   the KASLR factor (diagnostic only, not a fix).
 
 ### Graduation Criteria
 
-- *Alpha:* parts 1-2 behind the Memory Manager machinery; the option (part 3)
-  behind the `MemoryManagerDriftTolerance` feature gate, default off.
-- *Beta:* option on by default; e2e_node coverage; no open correctness issues.
-- *GA:* soak across releases with no regressions.
+#### Alpha
+
+- Parts 1-3 (bounded tolerance with conservation and re-baseline; auto-detected
+  bound; `memoryManagerPolicyOptions` with `memory-drift-tolerance`) implemented
+  behind the `MemoryManagerDriftTolerance` feature gate, disabled by default.
+- Unit tests for the tolerated, rejected, gate-disabled and option paths.
+
+#### Beta
+
+- Feature gate enabled by default.
+- The `memory_manager_drift_tolerated_total` kubelet metric and the node e2e test
+  in place and passing in the sig-node periodic jobs.
+- Feedback from users affected by kubernetes/kubernetes#131253; no open
+  correctness issues.
+
+#### GA
+
+- At least two releases in beta with no regressions and no reported false
+  tolerations; the gate is locked to enabled (removal follows the feature gate
+  lifecycle).
 
 ### Upgrade / Downgrade Strategy
 
 No configuration change is required to keep working: a kubelet with the feature
-tolerates benign drift automatically, and an operator who wants the previous
-strict behavior sets the opt-out option. The checkpoint format is unchanged, so
-there is no state migration. On downgrade the kubelet reverts to strict equality
-(and the pre-existing reboot failure can reappear).
+gate enabled tolerates benign drift automatically, and an operator who wants the
+previous strict behavior leaves the gate off or sets the opt-out option. The
+checkpoint format is unchanged, so there is no state migration. On downgrade the
+kubelet reverts to strict equality (and the pre-existing reboot failure can
+reappear).
 
 ### Version Skew Strategy
 
@@ -257,8 +296,6 @@ change to the checkpoint format, CRI, CNI or CSI. Nodes without the feature keep
 the old strict behavior. There are no skew concerns.
 
 ## Production Readiness Review Questionnaire
-
-<!-- Completed for `implementable`; provisional answers below. -->
 
 ### Feature Enablement and Rollback
 
@@ -270,9 +307,10 @@ the old strict behavior. There are no skew concerns.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. The `Static` policy tolerates a bounded per-node memory drift on start and
-re-baselines, instead of failing. Genuine hardware/configuration changes and
-non-fitting assignments still fail as before.
+Yes. The `Static` policy (and `BestEffort`, which delegates to the same
+validation) tolerates a bounded per-node memory drift on start and re-baselines,
+instead of failing. Genuine hardware/configuration changes and non-fitting
+assignments still fail as before.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -287,8 +325,11 @@ state depends on the gate.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests exercise the tolerant and strict paths; option tests will cover the
-enable/disable switch.
+Yes. Unit tests in `pkg/kubelet/cm/memorymanager` start the policy on a drifted
+checkpoint with the gate disabled (the existing error is returned) and enabled
+(the drift is tolerated and re-baselined), using
+`featuregatetesting.SetFeatureGateDuringTest`. Beta adds the node e2e described
+in the test plan.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -307,8 +348,11 @@ An increase in kubelet start failures with
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Covered by unit tests exercising the gate on/off. The checkpoint format is
-unchanged, so the upgrade/downgrade/upgrade path does not migrate state.
+Not yet; this is alpha. The checkpoint format is unchanged, so no state is
+migrated in either direction: enabling the gate only changes how an existing
+checkpoint is validated at start, and disabling it restores the strict check on
+the same file. The enable -> disable -> enable path will be exercised manually on
+a node before beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -326,7 +370,7 @@ re-baseline message when a benign drift is tolerated) and in the node staying
 
 - [x] Other (treatment): a benign drift is logged as tolerated and re-baselined
   at start; a drift beyond the bound still fails with the existing error. A
-  counter (`memory_manager_drift_tolerated_total`, proposed) will make this
+  counter (`memory_manager_drift_tolerated_total`, beta) will make this
   observable via metrics.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -337,12 +381,12 @@ behavior.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `memory_manager_drift_tolerated_total` (proposed)
+  - Metric name: `memory_manager_drift_tolerated_total` (beta)
   - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-The proposed counter above.
+The counter above, added at beta.
 
 ### Dependencies
 
@@ -405,7 +449,9 @@ current `/sys/.../nodeN/meminfo`.
 
 - 2026-07-12: bug reported / fix opened (kubernetes/kubernetes#140473, part 1).
 - 2026-07-13: root cause (KASLR + boot-reserved drift) analyzed on the tracking
-  issue (#131253); KEP drafted.
+  issue (#131253); KEP drafted (kubernetes/enhancements#6233).
+- 2026-09-08: opted into v1.38 by sig-node (alpha).
+- 2026-09-15: KEP marked `implementable` for v1.38.
 
 ## Drawbacks
 
