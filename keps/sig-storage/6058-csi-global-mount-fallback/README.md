@@ -290,13 +290,14 @@ from reconstruction, and a fallback in two CSI call sites:
    rather than a special case of the first. `staging` and `publish` are siblings
    of the volume directories there, not volumes, and are left out by name. The
    staging directory is what says a volume is still staged, the way
-   `globalmount` does for a filesystem volume: the volume directory outlives an
-   unstage, and the global map directory is not created until the volume is
-   mapped into a pod, so a volume staged for a pod that never ran has neither.
-   The
-   directory name is the escaped `specVolID` rather than a hash of the handle,
-   so the check available here is that the name matches the `specVolID` the file
-   carries. Every entry is reported with its volume mode and carries that mode
+   `globalmount` does for a filesystem volume: the volume directory holds the
+   identity file from the moment the mapper is built and outlives an unstage,
+   and the global map directory is not created until the volume is mapped into
+   a pod, so a volume staged for a pod that never ran has no such directory.
+   The directory name is the escaped `specVolID` rather than a hash of the
+   handle, so the check available here is that the name matches the `specVolID`
+   the file carries, and a file carrying none is refused rather than guessed
+   at. Every entry is reported with its volume mode and carries that mode
    on its spec, and both matter: reconstruction picks the registration path from
    the reported mode, and `UnmountDevice` later picks its branch from the spec.
    Describe a block volume as a filesystem one and that branch recomputes a path
