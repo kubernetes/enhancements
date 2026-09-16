@@ -284,10 +284,16 @@ from reconstruction, and a fallback in two CSI call sites:
    from the spec, and would report success while leaving this mount in place.
 
    Raw block volumes stage under a layout of their own, `vol_data.json` at
-   `volumeDevices/<specVolID>/data` beside a global map directory at
+   `volumeDevices/<specVolID>/data`, the staged volume at
+   `volumeDevices/staging/<specVolID>`, and a global map directory at
    `volumeDevices/<specVolID>/dev`, so they are a second walk of that subtree
    rather than a special case of the first. `staging` and `publish` are siblings
    of the volume directories there, not volumes, and are left out by name. The
+   staging directory is what says a volume is still staged, the way
+   `globalmount` does for a filesystem volume: the volume directory outlives an
+   unstage, and the global map directory is not created until the volume is
+   mapped into a pod, so a volume staged for a pod that never ran has neither.
+   The
    directory name is the escaped `specVolID` rather than a hash of the handle,
    so the check available here is that the name matches the `specVolID` the file
    carries. Every entry is reported with its volume mode and carries that mode
