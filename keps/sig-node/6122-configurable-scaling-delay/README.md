@@ -294,7 +294,10 @@ type PodSpec struct {
 | Range | `[0, 10]` seconds, validated by kube-apiserver; values outside the range are rejected |
 | Unset (`nil`) or `0` | No delay — the cpuset is applied immediately. This is the default and preserves the behavior from before this KEP |
 | Mutability | Immutable: rejected by `ValidatePodUpdate`, including as part of a resize request |
-| Feature gate disabled in kube-apiserver | A pod that sets the field is rejected in validation; the value is never dropped, so there is no `dropDisabledFields` handling for this field |
+| Feature gate disabled, pod creation | The pod is rejected in validation; the value is never dropped, so there is no `dropDisabledFields` handling for this field |
+| Feature gate disabled, pod update | Accepted if the old spec already carries the field, so that disabling the gate does not block updates of pods already using it |
+
+Validation re-checks the whole spec on every update, not only what changed, so without that second rule disabling the gate would make every update to a pod that already carries the field fail — including the resize this KEP exists to serve. Permitting a value that is already in use (validation ratcheting) is the established pattern for gated values in the Pod API.
 
 The upper bound of 10s is needed because the CPUs being released are not returned to the shared pool until the delay expires, so another pod on the node cannot claim them in the meantime. The cap bounds how long a single pod can hold onto CPUs it no longer requests, while still covering the preparation time reported for DPDK-style workloads.
 
