@@ -847,9 +847,13 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-Check the downward API volume in the pod. Files /etc/podinfo/cpuset should be present respectively for CPU info.
+No metric is added in Alpha. Since the feature is requested through a pod field, the pods using it can be listed directly:
 
-The kubelet configuration printed in kubelet's logs shows non-zero `scale-delay-time`.
+```
+kubectl get pods -A -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,GRACE:.spec.scaleDownGracePeriodSeconds'
+```
+
+The nodes able to honor it are those declaring `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` in `node.status.declaredFeatures`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -862,9 +866,9 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-Check whether there is a downward API volume of cpuset in the pod.
+On a scale-down, the pod's `PodResizeInProgress` condition stays set until the new cpuset has been applied, so the resize visibly takes at least the requested grace period. Inside the container, the cpuset in cgroups is unchanged for at least that long after the resize was accepted.
 
-After scaling containers with exclusive CPUs assigned down there should be a temporary (for at least `scale-delay-time`) visible discrepancy between the /etc/podinfo/cpuset file (which already contains the new values) and the current cpuset settings in cgroups (still containing old CPUset).
+If the node could not honor the grace period, this is visible on the pod itself rather than only in node logs: the `PodResizeInProgress` condition says so and a `ScaleDownGracePeriodNotHonored` event is emitted, both shown by `kubectl describe pod`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -883,10 +887,10 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
-- The downward API volume must reflect the new cpuset before the cpuset is applied, ensuring the workload has the full delay window to prepare.
-- After at least `scale-delay-time` has elapsed, the new cpuset is applied to the container at the next cpuset actuation time.
-- Scale-up operations are not delayed by this feature and follow the existing behavior.
-- The cpuset values exposed via the downward API must always be accurate: `assigned.cpuset` must reflect the allocated cpuset (preAssignments if scale-down is pending, otherwise assignments).
+- A scale-down of a pod that sets `scaleDownGracePeriodSeconds` is never actuated sooner than that grace period. This is the guarantee the feature exists to provide, so violations should be zero.
+- The new cpuset is applied at the first cpuset actuation after the grace period elapses, so the wait beyond the grace period is bounded by one reconcile period.
+- Scale-up is never delayed by this feature.
+- A kubelet restart does not extend the total wait beyond the grace period plus one reconcile period.
 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
@@ -895,11 +899,11 @@ question.
 Pick one more of these and delete the rest.
 -->
 
-- Time from the CPU manager determining the new cpuset to the downward API volume being updated. This indicates whether the workload receives timely notification of the upcoming change.
+- Time from a resize being accepted to the new cpuset being applied, compared against the pod's grace period.
 
-- Time from the `scale-delay-time` expiring to the new cpuset being applied to the container. This indicates whether the cpuset change is applied promptly after the delay.
+- Number of scale-downs actuated earlier than the grace period, which must be zero.
 
-- Number of scale-down operations where the downward API volume was updated after the cpuset was applied (should be zero). This indicates whether the critical guarantee — that the workload is notified before the change — is being upheld.
+- Number of `ScaleDownGracePeriodNotHonored` events, which counts pods whose requested window was not provided.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -908,9 +912,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-These can be measured via kubelet metrics and events. For example, a `scale_delay_timer_fired` event and a `cpuset_applied` timestamp allow computing the delay between notification and application.
-
-These metrics won't be implemented for alpha stage, but will be considered later for alpha2/beta
+Yes. A histogram of the delay between a scale-down being accepted and the new cpuset being applied, and a counter of grace periods that could not be honored, would let an operator check the SLOs above without inspecting individual pods. Neither is implemented in Alpha; both are considered for Alpha2, see [Alpha2](#alpha2).
 
 ### Dependencies
 
