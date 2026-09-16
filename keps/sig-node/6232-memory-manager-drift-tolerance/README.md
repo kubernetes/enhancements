@@ -14,7 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Part 1: bounded tolerance, conservation and re-baseline](#part-1-bounded-tolerance-conservation-and-re-baseline)
-  - [Part 2: auto-detecting the bound](#part-2-auto-detecting-the-bound)
+  - [Part 2: deriving the bound](#part-2-deriving-the-bound)
   - [Part 3: operator option](#part-3-operator-option)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -72,16 +72,24 @@ checkpoint by hand.
 
 This KEP makes the policy tolerate a bounded, benign per-node memory drift and
 re-baseline onto the current machine, while still failing on genuine hardware or
-configuration changes. The behavior is gated by the `MemoryManagerDriftTolerance`
-feature gate. The bound is auto-detected from the running kernel image size, and
-an operator option can disable or override it.
+configuration changes. The bound is derived from the size of the running kernel
+image, and a memory manager policy option can disable the tolerance or pin the
+bound.
+
+The mechanism is Linux-specific: the drift comes from Linux kernel behavior and
+the bound is read from `/proc/iomem`. It is validated on x86-64, where all the
+reports so far come from. arm64 is expected to behave the same (the kernel image
+is placed randomly by the EFI stub and `/proc/iomem` carries the same entries)
+and will be confirmed during alpha. On every other platform, including Windows,
+the memory manager keeps its exact comparison and this feature is a no-op.
 
 ## Motivation
 
 ### Background: why per-node MemTotal moves across a reboot
 
 Two independent effects, at very different scales, both change the per-node
-total that the policy checks.
+total that the policy checks. Kernel references below are to Linux 6.12 on
+x86-64; the mechanisms are unchanged since KASLR became the default.
 
 **1. KASLR relocation of the kernel image (major, MB-scale).** The physical half
 of `CONFIG_RANDOMIZE_BASE` (KASLR) chooses a random, 2 MiB-aligned base for the
@@ -129,25 +137,35 @@ surfaces on ordinary reboots.
 - Changing how memory is allocated to pods, or the checkpoint format.
 - Eliminating the fluctuation itself (a kernel/firmware concern).
 - Covering the `None` policy (it does not validate machine state).
+- Platforms other than Linux: the exact comparison stays as it is.
 
 ## Proposal
 
-Three pieces, matching the shape outlined on the tracking issue, all behind the
-`MemoryManagerDriftTolerance` feature gate (alpha: disabled by default). With the
-gate disabled the policy keeps today's strict per-node equality check.
+Three pieces, matching the shape outlined on the tracking issue:
 
-1. **Tolerate a bounded drift and re-baseline** (implemented in
-   kubernetes/kubernetes#140473).
-2. **Auto-detect the bound** from the kernel image size.
-3. **An operator option** to disable the tolerance or set an explicit bound.
+1. **Tolerate a bounded drift and re-baseline.**
+2. **Derive the bound** from the kernel image size when the memory manager is
+   initialized; when it cannot be derived, keep the exact comparison.
+3. **A memory manager policy option** (`memoryManagerPolicyOptions`, a new
+   `KubeletConfiguration` field that mirrors `cpuManagerPolicyOptions` and
+   `topologyManagerPolicyOptions`) to disable the tolerance or pin the bound.
+
+kubernetes/kubernetes#140473 (parts 1-2) and kubernetes/kubernetes#142121
+(part 3) are reference implementations that ground the discussion; the design
+in this document is what counts.
 
 ### User Stories
 
-- *Routine reboot:* a node reboots (or finishes an OS update) and kubelet comes
-  back `Ready` without anyone deleting `/var/lib/kubelet/memory_manager_state`.
-- *Strict environment:* an operator who wants the previous strict behavior leaves
-  the feature gate off, or sets the policy option to disable the tolerance or pin
-  a specific bound.
+- As a cluster administrator running the `Static` memory manager policy, when
+  my nodes reboot (a kernel update, a power event) I want kubelet to come back
+  `Ready` on its own, without someone deleting
+  `/var/lib/kubelet/memory_manager_state` on every node.
+- As a cluster administrator, when a node really loses memory (a failed DIMM, a
+  changed `systemReserved`) I still want kubelet to refuse to start on the stale
+  state, so that pods with pinned memory are not silently under-served.
+- As a cluster administrator of a strictly controlled fleet, I want to keep the
+  exact comparison, or decide myself how much drift is acceptable, through the
+  memory manager policy options.
 
 ### Risks and Mitigations
 
@@ -155,17 +173,17 @@ gate disabled the policy keeps today's strict per-node equality check.
   the assignment structure and the group-reserved sum exact, by bounding the
   drift, and by the conservation check (an assignment that no longer fits still
   fails the start).
-- *Wrong auto-detected bound.* Mitigated by a generous grace and a conservative
-  fallback when `/proc/iomem` is unreadable; the operator option is the final
-  override.
+- *Wrong derived bound.* Mitigated by a grace on top of the image size and by
+  not guessing: when the size cannot be read the tolerance stays off and the
+  start keeps the exact comparison. The policy option is the final override.
 
 ## Design Details
 
 ### Part 1: bounded tolerance, conservation and re-baseline
 
-In `validateState`, when `areMachineStatesEqual` fails and the
-`MemoryManagerDriftTolerance` gate is enabled, accept the difference iff the
-states differ only within the tolerated drift: identical topology (nodes,
+In `validateState` (kubelet v1.37, `pkg/kubelet/cm/memorymanager/policy_static.go`),
+when `areMachineStatesEqual` fails, accept the difference iff the states differ
+only within the tolerated drift: identical topology (nodes,
 NUMA grouping, assignment count), identical `SystemReserved`, hugepage totals
 exact, and the regular-memory `TotalMemSize`/`Allocatable` within the bound per
 node. Per-node `Reserved` is not compared - a drift can legitimately reshuffle a
@@ -173,39 +191,48 @@ cross-NUMA assignment's split while the group total is unchanged, and the
 assignments are re-derived from the persisted blocks. `updateExpectedMachineState`
 returns an error when a recorded assignment no longer fits, so a reduction that
 would under-serve a pod still fails regardless of the bound. On success the policy
-re-baselines with `SetMachineState(expected)`. With the gate disabled the existing
-error is returned unchanged. Implemented and tested in kubernetes/kubernetes#140473;
-the gate is added to that change as part of the alpha work.
+re-baselines with `SetMachineState(expected)`. When no tolerance is in effect
+(the bound could not be derived, or the option turned it off) the existing error
+is returned unchanged.
 
-### Part 2: auto-detecting the bound
+### Part 2: deriving the bound
 
-At policy construction, derive the bound from the running kernel image: read the
+When the memory manager is initialized at kubelet start (the static policy
+object is created), derive the bound from the running kernel image: read the
 `Kernel code`/`Kernel data`/`Kernel bss` lines of `/proc/iomem`, take the physical
 span from the lowest start to the highest end (the image is contiguous; this
-captures rodata/alignment gaps), and add a grace for the KiB-scale secondary drift
-and rounding. The span gives both the movable size and (via the code start and
-`/sys/devices/system/memory/block_size_bytes`) the current node.
+captures rodata/alignment gaps), and add a 64 MiB grace for the KiB-scale
+secondary drift and rounding. The bound is recomputed on every start from the
+kernel that actually booted, so it follows kernel upgrades by construction.
 
-Fallbacks: `/proc/iomem` hides its addresses without `CAP_SYS_ADMIN` (a
-KASLR-leak mitigation); kubelet has the capability, but if the addresses read as
-zero, or the file is absent (non-Linux), fall back to a conservative default. The
-read is in kubelet, not cAdvisor: the value is boot-static so cAdvisor's
-collection loop adds nothing, and cAdvisor exposes only `nodeN/meminfo MemTotal`
-today, so it is net-new either way.
+Whether KASLR is enabled does not need to be detected: the image size bounds the
+possible shift either way, and with KASLR off the image never moves, so the
+tolerance is simply never exercised.
+
+`/proc/iomem` is world-readable, but since Linux 4.6 it shows zeroed addresses
+to readers without `CAP_SYS_ADMIN`; kubelet runs with it. If the entries are
+absent (another platform or architecture) or zeroed, the size is unknown and the
+policy does not guess: the tolerance stays off, the start keeps the exact
+comparison, and a log line names the `memory-drift-tolerance` option as the way
+to set the bound explicitly. The read is in kubelet, not cAdvisor: the value is
+boot-static so cAdvisor's collection loop adds nothing, and kubelet and cAdvisor
+already read procfs (`/proc/meminfo`, `/proc/cpuinfo`), so this is not a new
+kind of dependency.
 
 On the reported single-NUMA node this yields ~119 MiB (55 MiB image + 64 MiB
 grace), which tolerates the observed 12 KiB drift by ~4 orders of magnitude and
-is tighter than a fixed 256 MiB, so it detects real changes sooner.
+stays far below a memory bank, so a real change is still caught.
 
 ### Part 3: operator option
 
 Add a `memoryManagerPolicyOptions` map to the kubelet configuration (mirroring
-`cpuManagerPolicyOptions` / `topologyManagerPolicyOptions`), accepted only with
-the gate enabled, with one option, `memory-drift-tolerance`: `auto` (default, the
-kernel-image-derived bound), `off` (strict equality, today's behavior) or an
-explicit quantity such as `128Mi`. Unknown options and values are rejected at
-kubelet start, as for the other managers. Once the gate is on by default this is
-how an operator keeps the strict behavior without touching feature gates.
+`cpuManagerPolicyOptions` / `topologyManagerPolicyOptions`) with one option,
+`memory-drift-tolerance`: `auto` (default: the bound derived from the kernel
+image, or the exact comparison when it cannot be derived), `off` (the exact
+comparison) or an explicit quantity such as `128Mi`. Unknown options and values
+are rejected at kubelet start, as for the other managers. This is how an
+operator keeps the exact comparison, or sets the bound on a platform where it
+cannot be derived.
 
 ### Test Plan
 
@@ -235,10 +262,13 @@ Cases (added / planned):
   restart with a drifted `machineInfo`.
 - feature gate: the same drifted state fails with the existing error when the
   gate is disabled, and is tolerated and re-baselined when it is enabled.
-- autodetect: parse the kernel span from a captured `/proc/iomem` (including the
-  rodata gap); reject zeroed / absent addresses; fall back on a missing file.
+- derived bound: parse the kernel span from a captured `/proc/iomem` (including
+  the rodata gap); reject zeroed / absent addresses; with no readable size the
+  start keeps the exact comparison.
 - option: `off` rejects any drift; an explicit bound is honored; an option set
   without the gate is rejected by configuration validation.
+- metrics: the tolerance in effect and the observed per-node drift are exported
+  after a start.
 
 ##### Integration tests
 
@@ -261,16 +291,18 @@ configuration to exercise; unit tests and node e2e cover it.
 
 #### Alpha
 
-- Parts 1-3 (bounded tolerance with conservation and re-baseline; auto-detected
+- Parts 1-3 (bounded tolerance with conservation and re-baseline; derived
   bound; `memoryManagerPolicyOptions` with `memory-drift-tolerance`) implemented
   behind the `MemoryManagerDriftTolerance` feature gate, disabled by default.
+- The `kubelet_memory_manager_drift_tolerance_bytes` and
+  `kubelet_memory_manager_memory_drift_bytes` metrics.
 - Unit tests for the tolerated, rejected, gate-disabled and option paths.
 
 #### Beta
 
 - Feature gate enabled by default.
-- The `memory_manager_drift_tolerated_total` kubelet metric and the node e2e test
-  in place and passing in the sig-node periodic jobs.
+- arm64 confirmed.
+- The node e2e test in place and passing in the sig-node periodic jobs.
 - Feedback from users affected by kubernetes/kubernetes#131253; no open
   correctness issues.
 
@@ -283,11 +315,10 @@ configuration to exercise; unit tests and node e2e cover it.
 ### Upgrade / Downgrade Strategy
 
 No configuration change is required to keep working: a kubelet with the feature
-gate enabled tolerates benign drift automatically, and an operator who wants the
-previous strict behavior leaves the gate off or sets the opt-out option. The
-checkpoint format is unchanged, so there is no state migration. On downgrade the
-kubelet reverts to strict equality (and the pre-existing reboot failure can
-reappear).
+tolerates benign drift automatically, and an operator who wants the exact
+comparison sets the policy option. The checkpoint format is unchanged, so there
+is no state migration. On downgrade the kubelet reverts to the exact comparison
+(and the pre-existing reboot failure can reappear).
 
 ### Version Skew Strategy
 
@@ -348,11 +379,10 @@ An increase in kubelet start failures with
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not yet; this is alpha. The checkpoint format is unchanged, so no state is
-migrated in either direction: enabling the gate only changes how an existing
-checkpoint is validated at start, and disabling it restores the strict check on
-the same file. The enable -> disable -> enable path will be exercised manually on
-a node before beta.
+Not applicable: the feature changes no API and no on-disk format. Enabling the
+gate only changes how an unchanged state file is validated at start, and
+disabling it restores the exact comparison on the same file, so there is nothing
+to migrate in either direction.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -362,39 +392,45 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-It is node-level, not workload-level. Its effect is visible in kubelet logs (a
-re-baseline message when a benign drift is tolerated) and in the node staying
-`Ready` after a reboot.
+It is node-level, not workload-level. `kubelet_memory_manager_drift_tolerance_bytes`
+above zero means the tolerance is in effect on that node, and
+`kubelet_memory_manager_memory_drift_bytes{numa_node}` shows the drift observed
+at the last start. Kubelet logs carry a re-baseline message when a benign drift
+is tolerated.
 
 ###### How can someone using this feature know that it is working for their instance?
 
+- [x] Metrics
+  - Metric name: `kubelet_memory_manager_drift_tolerance_bytes` (the bound in
+    effect, 0 when the exact comparison applies) and
+    `kubelet_memory_manager_memory_drift_bytes{numa_node}` (the drift observed
+    at the last start)
+  - Components exposing the metric: kubelet
 - [x] Other (treatment): a benign drift is logged as tolerated and re-baselined
-  at start; a drift beyond the bound still fails with the existing error. A
-  counter (`memory_manager_drift_tolerated_total`, beta) will make this
-  observable via metrics.
+  at start; a drift beyond the bound still fails with the existing error.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Node startup succeeds after a benign reboot drift, with no change to allocation
-behavior.
+No SLO change is expected: the feature affects only the kubelet start path,
+with negligible overhead (one `/proc/iomem` read and a per-node comparison).
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `memory_manager_drift_tolerated_total` (beta)
+  - Metric name: `kubelet_memory_manager_drift_tolerance_bytes`,
+    `kubelet_memory_manager_memory_drift_bytes`
   - Components exposing the metric: kubelet
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-The counter above, added at beta.
+None beyond the two above.
 
 ### Dependencies
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No cluster services. On Linux it reads `/proc/iomem` to size the bound and falls
-back to a conservative default when that is unavailable, so there is no hard
-dependency.
+No cluster services. On Linux it reads `/proc/iomem` to size the bound; when
+that is unavailable the tolerance stays off, so there is no hard dependency.
 
 ### Scalability
 
@@ -435,9 +471,11 @@ Unaffected; it is entirely node-local at kubelet start.
 
 ###### What are other known failure modes?
 
-If `/proc/iomem` is unreadable (addresses hidden without `CAP_SYS_ADMIN`, or a
-non-Linux node), the bound falls back to a conservative default; behavior stays
-correct, only the bound is less tight, and this is logged at start.
+If the kernel image size cannot be read from `/proc/iomem` (addresses hidden
+without `CAP_SYS_ADMIN`, or a platform without the entries), the tolerance stays
+off and the start keeps the exact comparison; this is logged at start and
+`kubelet_memory_manager_drift_tolerance_bytes` reads 0. Setting
+`memory-drift-tolerance` explicitly enables it.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -452,6 +490,9 @@ current `/sys/.../nodeN/meminfo`.
   issue (#131253); KEP drafted (kubernetes/enhancements#6233).
 - 2026-09-08: opted into v1.38 by sig-node (alpha).
 - 2026-09-15: KEP marked `implementable` for v1.38.
+- 2026-09-16: first sig-node review pass; the fallback now keeps the exact
+  comparison instead of a default bound, metrics moved to alpha, platform scope
+  stated.
 
 ## Drawbacks
 
@@ -460,8 +501,11 @@ platform-specific `/proc/iomem` read.
 
 ## Alternatives
 
-- *Fixed absolute bound (no autodetect).* Simpler, but the right value is
+- *Fixed absolute bound (no derivation).* Simpler, but the right value is
   per-kernel, not one global constant.
+- *A default bound when the size cannot be read.* Rejected in review: a guessed
+  bound can hide a real change; keeping the exact comparison and letting the
+  administrator set the bound is safer.
 - *Fraction of node RAM.* Rejected: the kernel image does not scale with RAM, so
   a fraction would tolerate multi-GiB changes on large machines and hide a real
   memory loss.
