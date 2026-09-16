@@ -138,10 +138,10 @@ drivers.
   their global mounts through an interface, so adding FC or iSCSI is
   implementing one call, not changing the volume manager. NFS does not use
   `MountDevice` and is unaffected.
-- Raw block volumes. Their volume data is already node-global, so the pod-local
-  failure mode cannot happen for them, and the staging path they can still leak
-  waits for beta: `GlobalVolume` carries one path, while a block volume's
-  staging, publish and device paths sit under different roots.
+- The pod-local fallback for raw block volumes. Their volume data is already
+  node-global, so the pod-local failure mode cannot happen for them. The staging
+  path they can still leak is recovered by the listing, which is in scope and in
+  alpha.
 - Changing the CSI specification or any contract with drivers. Nothing here
   requires a driver change.
 - Recovering a volume whose global `vol_data.json` is also unreadable. With
@@ -208,6 +208,13 @@ the normal unmount path.
   `target_path` any more, and `NodeUnstageVolume` is required to be idempotent.
 - Listing global mounts happens once per reconstruction pass, that is, once
   per kubelet startup, and each plugin reads only the directories it staged.
+- A known gap for alpha: after a node reboot, a volume whose pod-local
+  `vol_data.json` is unreadable is recovered by the listing and unstaged, but
+  nothing calls `NodeUnpublishVolume` for it first, which the CSI specification
+  asks of the CO. Pairing the two by the PV name would close it, at the cost of
+  a rule for the case where more than one global mount claims a name, and per
+  SIG Storage review this KEP keeps its current scope and leaves that to a
+  bugfix or a KEP of its own.
 
 ### Risks and Mitigations
 
@@ -255,25 +262,40 @@ from reconstruction, and a fallback in two CSI call sites:
    by the path every other volume takes.
 
 3. `csi_global_volumes.go`: the CSI implementation. It walks its own plugin
-   directory,
-   loads each `vol_data.json`, and builds a spec with `constructPVSourceSpec`.
-   It excludes its own `volumeDevices` subtree, the raw block subtree that is a
-   sibling of the per-driver directories, by asking the host for that path
-   rather than matching a literal name. Inline ephemeral volumes never stage a
-   global mount, so they never appear. A volume whose `vol_data.json` will not
-   load is skipped rather than reported, so one unreadable directory does not
-   hide the volumes around it.
+   directory, loads each `vol_data.json`, and builds a spec with
+   `constructPVSourceSpec`. It keeps its own `volumeDevices` subtree out of
+   that walk, the raw block subtree that is a sibling of the per-driver
+   directories, by asking the host for that path rather than matching a
+   literal name. Inline ephemeral volumes never stage a global mount, so they
+   never appear. A volume whose `vol_data.json` will not load is skipped
+   rather than reported, so one unreadable directory does not hide the
+   volumes around it.
 
    FibreChannel and iSCSI can implement the same call when someone wants
    reconstruction for them: both already rebuild their spec from the global
    directory name alone (`parsePDName`, `extractPortalAndIqn`), and each knows
-   its own exclusions, of which `volumeDevices` is one.
+   which of its own directories are volumes and which are not.
 
-   A directory is only reported if it is the one `MountDevice` would have
-   staged the volume its `vol_data.json` names, that is, `sha256(volumeHandle)`.
+   A directory under a driver directory is only reported if it is the one that
+   `MountDevice` would have staged the volume its `vol_data.json` names under,
+   that is, `sha256(volumeHandle)`.
    Without that check a directory holding another volume's data would be
    unstaged at a path that is not itself, since the unmount recomputes the path
    from the spec, and would report success while leaving this mount in place.
+
+   Raw block volumes stage under a layout of their own, `vol_data.json` at
+   `volumeDevices/<specVolID>/data` beside a global map directory at
+   `volumeDevices/<specVolID>/dev`, so they are a second walk of that subtree
+   rather than a special case of the first. `staging` and `publish` are siblings
+   of the volume directories there, not volumes, and are left out by name. The
+   directory name is the escaped `specVolID` rather than a hash of the handle,
+   so the check available here is that the name matches the `specVolID` the file
+   carries. Every entry is reported with its volume mode and carries that mode
+   on its spec, and both matter: reconstruction picks the registration path from
+   the reported mode, and `UnmountDevice` later picks its branch from the spec.
+   Describe a block volume as a filesystem one and that branch recomputes a path
+   the volume does not have, finds no volume data there, and returns success
+   while the volume is still staged.
 
 4. `pkg/kubelet/volumemanager` (reconstruction): after the existing walk of
    `/var/lib/kubelet/pods`, reconstruction calls each such plugin and, for every
@@ -285,12 +307,15 @@ from reconstruction, and a fallback in two CSI call sites:
    derived here rather than returned by the plugin, so that it matches what the
    desired state produces.
 
-   Two kinds of entry are declined before anything is registered. A volume the
-   plugin cannot device mount is skipped, because the desired state names that
-   kind by pod and there is no pod here to name it with, so unstaging it would
-   use a name the desired state never produces. A raw block volume is skipped
-   too: it reaches the ActualStateOfWorld through the block mapper rather than
-   through a device mount, which is why `GlobalVolume` carries a volume mode.
+   One kind of entry is declined before anything is registered: a volume the
+   plugin cannot device mount, because the desired state names that kind by pod
+   and there is no pod here to name it with, so unstaging it would use a name
+   the desired state never produces. A raw block volume is registered on the
+   same terms, gated on its mapper rather than on device mounting, which is why
+   `GlobalVolume` carries a volume mode: the two reach the ActualStateOfWorld by
+   different paths and the caller has to know which one it is holding. Nothing
+   new is needed on the unmount side: `UnmountDevice` already sends a block
+   volume to its unmap path and builds the unmapper with no pod.
    If marking the device fails after the volume was added, it is removed again
    rather than left behind, since a volume with no pod and no mounted device
    reads to the reconciler as one to detach.
@@ -400,13 +425,16 @@ predates the listing interface and does not cover it.
 
 Unit tests cover both sides of the interface. In `pkg/volume/csi`,
 `ListGlobalVolumes` returns one entry per global mount with the real volume
-handle in the spec, skips `volumeDevices`, skips a directory whose volume data
-will not load or names another volume, and still recovers one staged before this
-feature existed. In `pkg/volume`, only a plugin implementing the interface is
-returned. In `pkg/kubelet/volumemanager`, a listed volume is registered with an
-uncertain device and the reported mount path, one already tracked is left alone,
-a raw block volume is left to the block path, a plugin that cannot list is not
-fatal, and the gate is exercised in both positions.
+handle in the spec, skips a directory whose volume data will not load or names
+another volume, and still recovers one staged before this feature existed. In
+`pkg/volume`, only a plugin implementing the interface is returned. In
+`pkg/kubelet/volumemanager`, a listed volume is registered with an uncertain
+device and the reported mount path, one already tracked is left alone, a plugin
+that cannot list is not fatal, and the gate is exercised in both positions. The
+block cases arrive with the block listing: one volume listed from
+`volumeDevices` and registered through its mapper, the `staging` and `publish`
+siblings left out, and a directory whose name does not match the `specVolID` it
+carries refused.
 
 ##### Integration tests
 
@@ -416,7 +444,10 @@ node.
 
 ##### e2e tests
 
-For beta: node e2e tests that cover both recovery paths.
+Written during alpha, in CI before beta: node e2e tests that cover both
+recovery paths. Raw block volumes are covered by unit tests in alpha: only the
+orphaned global mount applies to them, and it reaches them through the same
+listing the e2e exercises.
 
 Pod-local fallback:
 
@@ -443,29 +474,29 @@ Tests will live in `test/e2e_node/csi_volume_reconstruction_test.go`.
 
 - `GlobalVolumeListerPlugin` in `pkg/volume`, with reconstruction calling it
   for every plugin that implements it.
-- The CSI implementation of that interface, listing global mounts and excluding
-  its own `volumeDevices` subtree. Nothing is removed by the listing: a
-  recovered volume is cleaned up by `UnmountDevice` like any other.
+- The CSI implementation of that interface, listing the global mounts under
+  each driver directory. Nothing is removed by the listing: a recovered volume
+  is cleaned up by `UnmountDevice` like any other.
 - The global mount's `vol_data.json` carries `specVolID`, so a staged volume can
   be identified with no pod directory in hand. Written unconditionally, so a
   node with the gate off still produces files an enabled node can use.
 - `ConstructVolumeSpec` and `NewUnmounter` fall back to that file when the
   pod-local one cannot be loaded, refusing any global mount whose `specVolID`
   names a different volume.
+- Raw block volumes, listed from their own subtree and registered through the
+  block mapper, with unit tests. The two layouts are read separately, so this
+  can land after the filesystem path within alpha.
+- Node e2e tests for both recovery paths, written during alpha so that they are
+  in CI before the gate goes beta.
 - All of it behind `CSIGlobalMountReconstruction`, default off, with unit tests
   in `pkg/volume/csi` and `pkg/kubelet/volumemanager` for both gate states.
 - KEP merged.
 
-Raw block volumes are excluded from alpha: `GlobalVolume` carries one path and
-no volume mode, and describing a block volume's staging, publish and device
-paths needs that field.
-
 #### Beta
 
-- Raw block volumes, which need a volume mode on `GlobalVolume` before their
-  staging path can be described, with unit tests in
-  `pkg/kubelet/volumemanager`.
-- Node e2e test in CI for at least one release, covering both recovery paths.
+- Every path implemented and tested, raw block volumes included.
+- The node e2e tests from alpha green in CI for at least one release, covering
+  both recovery paths.
 - Metrics: a label on `reconstruct_volume_operations_total` distinguishing
   `pod-local` from `global-mount`, so operators can see recovery frequency.
 - One release cycle at alpha with no open bugs against either recovery path.
@@ -484,6 +515,15 @@ paths needs that field.
   fields, so a future downgrade is safe.
 - Upgrade with gate enabled: reconstruction uses the fallback when needed.
   No interaction with control plane.
+- Upgrade with the gate enabled, over volumes an older kubelet staged: those
+  global files carry no `specVolID`, so the listing names the spec from the
+  volume handle instead. The unique volume name comes from the driver and the
+  handle either way, so it is the same volume the pod directory walk finds, and
+  a volume whose pod directory survived is still marked uncertain as a pod mount
+  and as a device mount, exactly as it is with the gate off. Where both sources
+  report one volume, the spec added first is the one kept at the volume level
+  while each pod keeps its own, and the unstage is unaffected either way, since
+  it recomputes its path from the driver and the handle.
 - Downgrade: kubelet stops reading the extra fields. Global files written
   during the upgraded period contain extra keys that are ignored. No data
   migration needed.
@@ -552,7 +592,8 @@ versus pre-rollout. If it does, disable the gate.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be exercised in the e2e test added at beta.
+Will be exercised in the node e2e tests, which are written during alpha and in
+CI before beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -703,6 +744,9 @@ gate and report the bug.
 - 2026-09-08: Moved recovery behind `GlobalVolumeListerPlugin` per SIG Storage
   review, so that the volume manager asks each plugin rather than reading the
   CSI layout itself, and brought it into alpha.
+- 2026-09-16: Brought raw block volumes and the node e2e tests into alpha per
+  SIG Storage review, and recorded the missing `NodeUnpublishVolume` after a
+  reboot as a known alpha gap.
 
 ## Drawbacks
 
