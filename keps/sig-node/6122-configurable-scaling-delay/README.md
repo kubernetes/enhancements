@@ -638,19 +638,23 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-The `scale-delay-time` functionality is local to kubelet only so it is not affected by skewness problems between components.
+This feature involves coordination between kube-apiserver (field validation), the kubelet (enforcing the delay and declaring the feature) and the scheduler (node filtering via Node Declared Features).
 
-Exposition of the field `assigned.cpuset` is behind feature gate `DownwardAPIAssignedResources`. The feature gate is Alpha and disabled by default. The documentation states: "Only enable this feature gate when all kubelets in the cluster support this feature." The operator must upgrade all kubelets first, then enable the feature gate.
+**New apiserver, older kubelet.** The apiserver accepts `scaleDownGracePeriodSeconds`. An older kubelet — the [version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubelet) allows it to lag the apiserver by up to three minor versions — does not have the code for it, so it would apply a scale-down with no preparation window and could not report having done so. Node Declared Features prevents this: such a kubelet does not declare `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`, so the scheduler does not place these pods on it.
 
+**Old apiserver, newer kubelet.** Not a supported configuration, since the [version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubelet) requires that the kubelet not be newer than kube-apiserver. Were it to occur anyway, the apiserver would not know the field and would drop it as unknown, so the kubelet would never see it and would behave as before.
 
-Considering the following scenarios:
+**Apiserver ON, kubelet OFF.** The pod is admitted, but the node does not declare the feature and the scheduler avoids it. If such a pod does run there anyway — a gate flip under a running pod, or a pod that bypassed the scheduler — the kubelet applies the new cpuset without a delay and reports it, rather than rejecting a running pod; see [Grace Period Not Honored](#grace-period-not-honored). Unlike the older kubelet above, this one has the code and can report.
 
-* Cluster has kubelets both: without the feature (1.36-) and with feature implemented (1.37+) (mixed versions): The operator does not enable the feature gate. Nobody can use `assigned.cpuset`.
+**Apiserver OFF, kubelet ON.** New pods setting the field are rejected by the apiserver, so it never reaches the kubelet. A pod that already carries the field keeps it and is still honored, since validation permits a value already in use. Static pods bypass the apiserver, so a static pod setting the field is honored by the kubelet regardless of the gate on the apiserver.
 
-* All kubelets upgraded to versions having feature implemented (1.37+): The operator enables the feature gate on the API server and kubelets.
-`assigned.cpuset` can be mounted as DownwardAPI volume files by pods.
+**Both ON.** Full behavior: the apiserver validates the field, the kubelet declares the feature and enforces the delay, and the scheduler places these pods only on nodes that declare it.
 
-* Operator enables the feature gate while some kubelets still don’t have feature implemented (1.36-): This is an operator error. The feature gate is Alpha and disabled by default. The documentation states: "Only enable this feature gate when all kubelets in the cluster support this feature." The operator must upgrade all kubelets first, then enable the feature gate.
+**Both OFF.** Feature disabled, existing behavior.
+
+In clusters with mixed node versions the Node Declared Features framework ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features)) handles the skew on its own: only nodes declaring the feature receive pods that set the field. The operator therefore does not have to upgrade every kubelet before enabling the gate, and a pod that no node can honor stays unschedulable instead of running without its grace period.
+
+A newer kubelet writing a pending scale-down into the CPU Manager checkpoint does not break an older kubelet that later reads it; see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ## Production Readiness Review Questionnaire
 
