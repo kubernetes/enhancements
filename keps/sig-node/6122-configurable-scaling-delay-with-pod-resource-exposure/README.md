@@ -1214,7 +1214,10 @@ The following alternatives were considered:
 
 * **Description**: Instead of using a time-based delay, implement a hook-based mechanism where the workload can register a pre-scale-down hook that the kubelet invokes before applying the cpuset change. The kubelet would wait for the hook to complete (or timeout) before proceeding with the actual cpuset actuation. This approach was suggested by @ffromani during the KEP review process as an alternative to the timer-based delay.
 
-* **Future Consideration**: The hook-based approach remains a candidate for Alpha2/Beta as one of the mechanisms to provide opt-in/opt-out capability at the pod or container level.
+* **Why Rejected**: This approach was evaluated during the work on v1.38 and rejected for three reasons:
+  1. **It does not avoid an API change.** Registering a hook would itself require a new field in the pod spec, so the approach offers no saving over adding `scaleDownGracePeriodSeconds` — it only replaces a duration with a more complex field.
+  2. **A maximum wait is unavoidable.** The kubelet would have to cap how long it waits for the hook; without a cap, a misbehaving or malicious workload could block the release of its CPUs indefinitely. @kad raised this during the review, noting that a hook would give the workload a way to prevent or significantly delay the scale-down ([comment](https://github.com/kubernetes/enhancements/pull/6123#issuecomment-4715291188)). Once that cap exists, the timer remains and the hook is merely added on top of it.
+  3. **There is no safe behavior across a kubelet restart.** After a restart the kubelet cannot tell whether the hook already ran to completion. The only safe choice is to invoke it again, so every restart would re-arm the wait — exactly what persisting the pending scale-down avoids (see [Kubelet Restart](#kubelet-restart)).
 
 ### 8. Generalizing Scale-Down Delay to Other Resource Types
 
