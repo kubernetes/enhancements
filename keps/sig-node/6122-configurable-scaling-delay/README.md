@@ -981,7 +981,7 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
-No
+No new periodic or per-pod calls. The kubelet's node status already carries declared features, and the `PodResizeInProgress` condition is already maintained by the in-place resize machinery — this KEP only changes the message it carries. A `ScaleDownGracePeriodNotHonored` event is emitted only when a node cannot honor a grace period, which is not part of normal operation.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -992,26 +992,7 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
-A new field `assigned.cpuset` is added to the existing `ResourceFieldRef.Resource`:
-
-* resource: limits.cpu
-   + A container's CPU limit
-* resource: requests.cpu
-   + A container's CPU request
-* resource: limits.memory
-   + A container's memory limit
-* resource: requests.memory
-   + A container's memory request
-* resource: limits.hugepages-*
-   + A container's hugepages limit
-* resource: requests.hugepages-*
-   + A container's hugepages request
-* resource: limits.ephemeral-storage
-   + A container's ephemeral-storage limit
-* resource: requests.ephemeral-storage
-   + A container's ephemeral-storage request
-* **resource: assigned.cpuset** *(NEW)*
-   + **A container’s CPU desired assignments**
+No new API types. One new optional field, `scaleDownGracePeriodSeconds`, is added to `PodSpec`.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1032,7 +1013,7 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-No
+Yes, marginally. Pods that set `scaleDownGracePeriodSeconds` carry one additional optional integer: a few tens of bytes in JSON, a couple of bytes in protobuf. Pods that do not set it are unchanged, and no new objects are created.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -1045,7 +1026,7 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-No
+No existing SLI/SLO covers in-place pod resize, and pod startup is unaffected, since the field only takes effect when a running container's exclusive CPUs are reduced. The one bounded side effect is that the CPUs being released stay assigned for the duration of the grace period, so another pod requiring exactly those CPUs can only be admitted once it has elapsed.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1059,7 +1040,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-No
+Negligible. A resize already rewrites the CPU Manager checkpoint as the assignments and the shared pool change; this feature adds writes for recording a pending scale-down and for clearing it. They happen per resize event, not per reconcile.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -1073,7 +1054,7 @@ Are there any tests that were run/should be run to understand performance charac
 and validate the declared limits?
 -->
 
-No
+No. The persisted state is one entry per container with a pending scale-down, bounded by the number of containers being resized at once, and each entry is removed once the new cpuset has been applied.
 
 ### Troubleshooting
 
