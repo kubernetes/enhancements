@@ -700,25 +700,22 @@ well as the [existing list] of feature gates.
 
 This feature requires enabling the following feature gates
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
+- [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `InPlacePodVerticalScalingExclusiveCPUs`
-  - Feature gate name: `CPUManagerPolicyAlphaOptions`
-  - Feature gate name: `DownwardAPIAssignedResources`
+    - Components depending on the feature gate: kubelet
+  - Feature gate name: `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`
+    - Components depending on the feature gate: kube-apiserver, kubelet
   - Requires `--cpu-manager-policy` kubelet configuration set to `static`
-  -	Requires `scale-delay-time` kubelet configuration.
+  - Requires pods to set `scaleDownGracePeriodSeconds`
 
 The following table shows the effect of each feature gate combination:
 
-| CPUManager PolicyAlpha Options | InPlacePod VerticalScaling ExclusiveCPUs | DownwardAPI Assigned Resources | Effect |
-|---|---|---|---|
-| ✗ | ✗ | ✗ | Legacy version: no scaling of exclusive CPUs, no minimum delay, no exposure of cpuset in downwardAPI |
-| ✗ | ✗ | ✓ | No scaling of exclusive CPUs, no minimum delay, desired cpuset exposed in downwardAPI |
-| ✗ | ✓ | ✗ | Scaling of exclusive CPUs, no minimum delay, no exposure of cpuset in downwardAPI |
-| ✗ | ✓ | ✓ | Scaling of exclusive CPUs, no minimum delay, desired cpuset exposed in downwardAPI |
-| ✓ | ✗ | ✗ | No scaling of exclusive CPUs, `scale-delay-time` > 0 rejected (warning emitted), no exposure of cpuset in downwardAPI |
-| ✓ | ✗ | ✓ | No scaling of exclusive CPUs, `scale-delay-time` > 0 rejected (warning emitted), desired cpuset exposed in downwardAPI |
-| ✓ | ✓ | ✗ | Scaling of exclusive CPUs, delay configurable and working, no exposure of cpuset in downwardAPI |
-| ✓ | ✓ | ✓ | Full feature: scaling of exclusive CPUs, delay configurable and working, desired cpusets exposed in downwardAPI |
+| InPlacePodVerticalScaling ExclusiveCPUs | InPlacePodVerticalScalingExclusiveCPUs ScaleDownDelay | Effect |
+|---|---|---|
+| ✗ | ✗ | Exclusive CPUs cannot be resized in place; the field cannot be set |
+| ✗ | ✓ | Rejected at kubelet startup, because the second gate depends on the first |
+| ✓ | ✗ | Exclusive CPUs can be resized; the field is rejected on creation and the new cpuset is applied immediately |
+| ✓ | ✓ | Full behavior: a pod's `scaleDownGracePeriodSeconds` is honored |
 
 ###### Does enabling the feature change any default behavior?
 
@@ -727,14 +724,7 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-Enabling `scale-delay-time`, it will ensure a minimum delay before the cpuset is applied when the pod scales down.
-
-Enabling `DownwardAPIAssignedResources`, it will expose the CPU states via downward API. Feature gate `DownwardAPIAssignedResources` only gates the kube-apiserver validation.
-
-The feature gate behavior is as follows:
-- **Feature gate disabled (apiserver implements the feature but gate is off):** The `assigned.cpuset` field in pod specs is silently ignored during validation. This allows pods with `assigned.cpuset` to be admitted, but the field has no effect. This enables seamless rollout/rollback scenarios where pods can be created with the field before enabling the feature gate.
-- **Feature gate enabled:** The `assigned.cpuset` field is validated and accepted in pod specs.
-- **Feature not implemented (older apiserver version):** The apiserver does not recognize the `assigned.cpuset` field and will reject pods using it with a validation error: "unsupported container resource: assigned.cpuset". Operators must upgrade all apiservers before using this field in pod specs.
+No. Enabling the feature gates changes nothing on its own: the delay applies only to pods that set `scaleDownGracePeriodSeconds`, and a pod that leaves it unset scales down exactly as it did before.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -749,17 +739,11 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-Yes.
-
-Disabling `scale-delay-time` does not have any consequences.
-
-Disabling `DownwardAPIAssignedResources` on kube-apiserver causes the `assigned.cpuset` field to be silently ignored during validation. Existing pods with `assigned.cpuset` continue to run without interruption. However, the field will have no effect until the feature gate is re-enabled. Operators should be aware that workloads relying on `assigned.cpuset` exposure will no longer receive updated CPU assignments via the Downward API while the feature gate is disabled.
+Yes. Pods that already set the field keep it and keep running, since validation permits a value already in use, while new pods setting it are rejected. A scale-down of a pod that still carries the field is then applied without waiting, and the kubelet reports that; see [Grace Period Not Honored](#grace-period-not-honored). A pending scale-down already persisted in the CPU Manager checkpoint is ignored, and the resize is carried out without the delay.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The cpuset will be applied with a minimum delay again based on the configuration of `scale-delay-time`.
-
-The `assigned.cpuset` will contain proper values.
+Pods that still carry `scaleDownGracePeriodSeconds` have it honored again from the next scale-down onwards. Pods created while the gate was off could not set the field, and because it is immutable they have to be recreated in order to use the feature.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -776,7 +760,7 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Provided E2E tests cover rollout and rollback cases.
+Yes. Unit tests exercise the feature gate switch itself: that the validation option follows the gate, and that a value already present in the old spec stays permitted once the gate is off. An integration test covers the same behavior end to end in kube-apiserver, and the e2e cases "Feature Gate Rollback" and "Feature Gate Rollout" cover a running cluster.
 
 ### Rollout, Upgrade and Rollback Planning
 
