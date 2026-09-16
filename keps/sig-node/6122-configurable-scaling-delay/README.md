@@ -1,4 +1,4 @@
-# KEP-6122: Configurable Scaling Delay with Pod Resource Exposure
+# KEP-6122: Configurable Scaling Delay
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -36,7 +36,6 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Kubelet Restart](#kubelet-restart)
     - [Resize Complete State](#resize-complete-state)
     - [Actual Resources Update](#actual-resources-update)
-    - [Extend Downward API Volume to Expose CPU Manager Status](#extend-downward-api-volume-to-expose-cpu-manager-status)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -129,9 +128,7 @@ A good summary is probably at least a paragraph in length.
 
 This proposal introduces a new pod-level field, `scaleDownGracePeriodSeconds`, which lets a pod declare a minimum delay before a new cpuset is applied to its containers after a scale-down event. Pods that do not set the field keep the current behavior, where the new cpuset is applied immediately.
 
-This proposal also extends the downward API volume to expose the CPUs assigned to containers. This extension is controlled by the new `DownwardAPIAssignedResources` feature gate.
-
-Together, these two features allow latency-sensitive applications to obtain the assigned cpuset in advance via the downward API and specify a preparation time window. This enables workloads to prepare for CPU removal triggered by scale-down within the pod-specified grace period. As a result, performance degradation caused by sudden CPU loss is avoided.
+The delay gives a latency-sensitive workload a guaranteed window in which to prepare for the removal of CPUs from its cpuset — for example by migrating tasks away from the affected cores — so that performance degradation caused by sudden CPU loss is avoided. Learning *which* CPUs are about to be removed is the subject of the companion [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369), which exposes the assigned cpuset through the Downward API.
 
 ## Motivation
 
@@ -146,13 +143,13 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 Latency-sensitive applications often require exclusive CPUs to achieve predictable performance and resource isolation. These applications commonly use CPU affinity to minimize performance degradation caused by CPU migration.
 
-When scaling down, guaranteed QoS pods need to know in advance which CPUs will be removed from their cpuset. This allows latency-sensitive applications to take preparatory actions — such as migrating workloads away from affected CPUs — and avoid performance degradation caused by CPU migration and core sharing during the removal of active CPUs.
+When scaling down, guaranteed QoS pods need to know in advance which CPUs will be removed from their cpuset, and they need time to act on that before the removal happens. Together this allows latency-sensitive applications to take preparatory actions — such as migrating workloads away from affected CPUs — and avoid performance degradation caused by CPU migration and core sharing during the removal of active CPUs. This KEP provides the time; the information is provided by [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369).
 
 This KEP depends on [KEP-1287](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/1287-in-place-update-pod-resources/README.md), which allows Pods (without exclusive CPUs) to update their resource requests and limits in-place, and [KEP-5554](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/5554-in-place-update-pod-resources-alongside-static-cpu-manager-policy/README.md), which extends this feature to support guaranteed QoS Pods with exclusive CPUs to resize without restarts. The scale-down delay feature only applies to in-place resize enabled by KEP-1287 and exclusive CPUs resize enabled by KEP-5554.
 
-> **Note:** This KEP was originally considered as part of KEP-5554 but was separated to keep KEP-5554 focused on the core scaling functionality. This KEP introduces two complementary features: configurable scale-down delay and exposure of assigned CPU sets via the Downward API. These features are independent of the basic scaling mechanism and can be implemented and adopted separately.
+> **Note:** This KEP was originally considered as part of KEP-5554 but was separated to keep KEP-5554 focused on the core scaling functionality. It initially covered two complementary features; the exposure of assigned CPU sets via the Downward API was then moved into its own [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369), leaving this KEP focused on the scale-down delay alone. Both features are independent of the basic scaling mechanism and can be implemented and adopted separately.
 
-> **Note:** This KEP depends on three feature gates. Two of them (`InPlacePodVerticalScalingExclusiveCPUs` and `CPUManagerPolicyAlphaOptions`) are already available in Kubernetes. This KEP only introduces one new feature gate: `DownwardAPIAssignedResources`.
+> **Note:** This KEP introduces one new feature gate, `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`, which requires `InPlacePodVerticalScalingExclusiveCPUs` to be enabled as well. The dependency is enforced at kubelet startup by the [feature gate dependency functionality](https://github.com/kubernetes/kubernetes/pull/133697).
 
 ### Goals
 
@@ -161,8 +158,6 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-* Expose CPUSet assignments to containers via the downward API volume with `DownwardAPIAssignedResources` feature gate enabled:
-   + `assigned.cpuset`: the desired exclusive cpuset (Linux cpuset format, e.g. `0-3,7,12-15`). Empty string when no exclusive CPUs are assigned.
 * Allow pods to optionally specify a scale-down grace period via the `scaleDownGracePeriodSeconds` field in the Pod spec.
 * When a pod specifies `scaleDownGracePeriodSeconds`, wait at least that duration before applying the new cpuset configuration when a container scales down.
 * The `scaleDownGracePeriodSeconds` value must be between 0s and 10s. Setting it to 0s or leaving it unset disables the delay before applying the cpuset, preserving the existing behavior. The 10s maximum bounds how long a pod can hold CPUs it no longer requests, since those CPUs are not available to other pods until the delay expires.
@@ -194,16 +189,15 @@ This proposal introduces a new pod-level field, `scaleDownGracePeriodSeconds`, w
 
 During the delay window, the container continues to use the current cpuset for at least the configured grace period. This allows latency-sensitive workloads to monitor and prepare for the upcoming CPUSet change before CPU(s) are removed from the container. The minimum delay must be guaranteed at all times, including during kubelet restarts.
 
-This proposal also extends the Downward API volume to expose CPU Manager cpuset information through a new `assigned.cpuset` resource field. During the delay window, `assigned.cpuset` exposes the desired cpuset so that workloads can prepare for the upcoming change. Exposition of new field is gated by the `DownwardAPIAssignedResources` feature gate.
-
 This proposal does not require a handshake (acknowledgment) from the workload. The workload declares its needed preparation time via `scaleDownGracePeriodSeconds`, and the kubelet guarantees to honor this time window without requiring explicit feedback from the application.
 
 ### Use Cases
 
 1.	A Pod with one container is allocated 4 CPUs: {1, 2, 11, 12}, where {1, 11} are the initially assigned CPUs. DPDK workers are deployed on each core. The pod spec includes `scaleDownGracePeriodSeconds: 5`, requesting a 5-second preparation window for scale-down events.
-2.	When the container's CPU request scales down from 4 to 3, the CPU manager assigns a new cpuset {1, 2, 11}. Subsequently, the Downward API Volume (/etc/podinfo/assigned_cpuset) within the container is updated with the CPU Manager's state information (cpuset allocated in the CPU manager).
-3.	The kubelet starts a 5-second timer. After waiting at least 5 seconds (the pod's specified `scaleDownGracePeriodSeconds`), the new cpuset {1, 2, 11} is applied to the container. Once applied, kubelet marks the container resize as successful.
-4.	During the interval between the update of the Downward API Volume and the new cpuset application, the container can perform necessary preparations for the DPDK workers (e.g., migrating tasks from CPU 12 to other CPUs).
+2.	When the container's CPU request scales down from 4 to 3, the CPU manager assigns a new cpuset {1, 2, 11}.
+3.	The container learns the new cpuset through [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369) — out of scope here, and not required for the delay itself.
+4.	The kubelet starts a 5-second timer. After waiting at least 5 seconds (the pod's specified `scaleDownGracePeriodSeconds`), the new cpuset {1, 2, 11} is applied to the container. Once applied, kubelet marks the container resize as successful.
+5.	During the interval between the notification and the new cpuset application, the container can perform necessary preparations for the DPDK workers (e.g., migrating tasks from CPU 12 to other CPUs).
 ![alt text](a_case_of_scale_down_delay.png)
 
 ### Risks and Mitigations
@@ -226,9 +220,9 @@ Consider including folks who also work outside the SIG or subproject.
 
 **Workload may not complete preparations within the delay window:** The kubelet guarantees only that the cpuset will not be applied before `scaleDownGracePeriodSeconds` has elapsed. There is no synchronization mechanism between the workload and kubelet — if the workload fails to complete its preparations (e.g., workload migration, draining tasks) within the delay window, the cpuset change is applied anyway. This is an inherent limitation of keeping kubelet independent from workload state.
 
-**Mitigation:** Application developers should configure `scaleDownGracePeriodSeconds` based on the worst-case preparation time required by their latency-sensitive workloads. Workloads should be designed to handle premature CPU removal gracefully (e.g., by quickly migrating tasks to remaining CPUs or tolerating brief performance degradation). The `assigned.cpuset` field in the Downward API provides early notification of the upcoming change, giving workloads the maximum possible preparation time.
+**Mitigation:** Application developers should configure `scaleDownGracePeriodSeconds` based on the worst-case preparation time required by their latency-sensitive workloads. Workloads should be designed to handle premature CPU removal gracefully (e.g., by quickly migrating tasks to remaining CPUs or tolerating brief performance degradation). Early notification of the upcoming change, which gives a workload the maximum possible preparation time, is provided by [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369).
 
-**Security Considerations:** Exposing `assigned.cpuset` via Downward API does not introduce new security risks. The same CPU assignment information is already accessible to applications from inside the container via `/proc/self/cgroup` controllers and from the node level. The `assigned.cpuset` field only exposes CPU IDs (e.g., `0-3,7,12-15`), not NUMA topology information. This KEP simply exposes the assigned CPUset in advance (during the scale-down delay window) without creating new data recipients or adding new security risks.
+**Security Considerations:** The scale-down delay exposes no new information and creates no new data recipients; it only changes *when* an already-decided cpuset is applied. The security considerations of exposing the assigned cpuset itself belong to [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369).
 
 ## Design Details
 
@@ -246,7 +240,7 @@ The overview of the design:
 
 The basic flow shown in the diagram is as follows:
 - During allocation of new CPUSets, changes are not applied to assignments immediately but kept in preAssignments, and scale_delay_timers are started.
-- Downward API exposes the new CPUSets in preAssignments to the container.
+- The new CPUSets kept in preAssignments are the values [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369) exposes to the container.
 - During cpuset actuation, containers scaling down (with active `scale_delay_timer`) are skipped if the pod's `scaleDownGracePeriodSeconds` has not yet elapsed. For those where the time has passed, preAssignments are written to assignments and actuated in containers.
 - The SyncPod processes two actions after there are no active scale_delay_timer on the pod, and actuated states equal the allocated ones:
   - Marking the resize as completed
@@ -284,8 +278,8 @@ type PodSpec struct {
 	// ...
 	// Optional duration in seconds the pod needs to prepare for the removal of exclusive
 	// CPUs during an in-place scale-down. The kubelet does not apply the new cpuset sooner
-	// than this duration after the new cpuset has been allocated and exposed via the
-	// Downward API. Value must be in the range [0, 10]. An unset field or the value zero
+	// than this duration after the new cpuset has been allocated.
+	// Value must be in the range [0, 10]. An unset field or the value zero
 	// applies the new cpuset immediately, with no preparation window. This field is
 	// immutable. It is honored only for containers with exclusive CPUs, and only when the
 	// InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay feature gate is enabled.
@@ -420,34 +414,6 @@ When a pod resize passes admission, the CPU request is applied immediately (upda
 
 Note: Before the checkpoint is updated and the cpuset is applied, if the runtime-reported CPU resource request (value from cpu.weight in cgroup v2) were used to update the actual resources during the delay, it would cause a mismatch between the available CPU number reported to the scheduler and the actual available CPUs in kubelet. This would result in a new pod being scheduled to the node but failing to allocate CPU resources, leading to an `UnexpectedAdmissionError`. Deferring the actual resources update until after cpuset application prevents this scenario from occurring.
 
-#### Extend Downward API Volume to Expose CPU Manager Status
-
-A new field `assigned.cpuset` is added to the existing `ResourceFieldRef.Resource`:
-
-ResourceFieldRef.Resource
-* resource: limits.cpu
-   + A container's CPU limit
-* resource: requests.cpu
-   + A container's CPU request
-* resource: limits.memory
-   + A container's memory limit
-* resource: requests.memory
-   + A container's memory request
-* resource: limits.hugepages-*
-   + A container's hugepages limit
-* resource: requests.hugepages-*
-   + A container's hugepages request
-* resource: limits.ephemeral-storage
-   + A container's ephemeral-storage limit
-* resource: requests.ephemeral-storage
-   + A container's ephemeral-storage request
-* **resource: assigned.cpuset** *(NEW)*
-   + **A container’s CPU desired assignments**
-
-The Volume manager gets the CPU state from CPU manager, and writes it to the Downward API volume file `assigned.cpuset`, which exposes the CPUSet to the container:
-  - If the container has exclusive CPUs assigned, the value exposes the exclusive cpuset (If preAssignments exist (scale-down is pending), this exposes the preAssignments; otherwise, it exposes the assignments).
-  - Otherwise, the value is empty ("").
-
 ### Test Plan
 
 <!--
@@ -573,7 +539,6 @@ The following scenarios will be tested:
 
 #### Alpha
 
-For scale down delay feature
 * Feature implemented behind the feature gate `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`
 * Feature requires the `InPlacePodVerticalScalingExclusiveCPUs` feature gate to be enabled
 * Pod-level API field `scaleDownGracePeriodSeconds` is added to the Pod spec
@@ -582,23 +547,12 @@ For scale down delay feature
 * Graceful handling when feature gate is disabled: delay is silently not applied (no error)
 * Unit and e2e tests are completed with sufficient coverage
 
-For downward API exposing CPU states feature
-* Feature implemented behind the `DownwardAPIAssignedResources`
-* Validation logic is in-place in kube-apiserver
-* Kubelet has support for CPU manager exposure in the pod
-* Unit testing and e2e testing for downward API enhancement for CPU exposure
-
 #### Alpha2
 
-For scale down delay feature
 * No unresolved critical bugs.
 * Bugs reported by users have been addressed
 * Generalization of scale down delay to another type of resources has been analyzed.
 * New metrics or events will be considered to improve the observability of this feature.
-
-For downward API exposing CPU states feature
-* Exposing Memory Manager information (e.g., `assigned.memset`) via the Downward API.
-* unit testing and e2e testing for downward API enhancement for memory exposure.
 
 #### Beta
 
@@ -1157,6 +1111,8 @@ Major milestones might include:
 - 2026-06-16: KEP merged as `implementable` ([#6123](https://github.com/kubernetes/enhancements/pull/6123))
 - 2026-09-02: Retargeted to Alpha in v1.38
 - 2026-09-16: Design changed from the node-level `scale-delay-time` policy option to the pod-level `scaleDownGracePeriodSeconds` field, making the scale-down delay opt-in per pod, gated by the new `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` feature gate
+- 2026-09-16: Pending scale-downs are persisted in the CPU Manager checkpoint, so a kubelet restart no longer re-arms the grace period, addressing the restart race raised in review
+- 2026-09-16: Split in two in agreement with the community, because the KEP had grown too large to review as one unit: the exposure of assigned resources via the Downward API moved to [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369), leaving the scale-down delay in this KEP
 
 ## Drawbacks
 
@@ -1166,7 +1122,7 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-This section summarizes the alternatives considered during the design phase. These discussions originated in the context of KEP-5554 (which enables in-place scaling of pods with exclusive CPUs) and continued during the design of this KEP (which adds configurable scale-down delay and Downward API exposure).
+This section summarizes the alternatives considered during the design phase. These discussions originated in the context of KEP-5554 (which enables in-place scaling of pods with exclusive CPUs) and continued during the design of this KEP (which adds the configurable scale-down delay).
 
 The following alternatives were discussed in SIG Node meetings and in the KEP review process. For more details, see:
 - [SIG Node Meeting Recording (March 2025) discussing static CPU policy support](https://www.youtube.com/watch?v=RuqzXH3liqg)
@@ -1241,7 +1197,7 @@ The following alternatives were considered:
 
 * **Description**: Keep the pending scale-down — the preAssignments and its timer — in kubelet memory only. After a kubelet restart the resize is re-admitted from the pod spec and the grace period starts again from zero. This was the behavior in the version of this KEP approved for the v1.37 milestone.
 
-* **Why Rejected**: Repeated kubelet restarts postpone the release of the CPUs indefinitely, because each restart re-arms the full grace period. Between the restart and the re-admission of the pod, `assigned.cpuset` reverts to the pre-scale-down cpuset, so the workload sees its notification withdrawn and then issued again. The target cpuset is also recomputed after the restart, with nothing guaranteeing that the result matches the one already exposed to the workload. In fairness, the kubelet does re-arm the pod termination grace period and the crash-loop backoff after a restart, so re-arming would be consistent with existing kubelet behavior. Avoiding it here, however, costs only a cpuset and one timestamp per pending scale-down, and the v4 CPU Manager checkpoint already has a precedent for such additive extensions, so the more predictable option was chosen during the work on v1.38.
+* **Why Rejected**: Repeated kubelet restarts postpone the release of the CPUs indefinitely, because each restart re-arms the full grace period. The target cpuset is also recomputed after the restart, so the container can end up on a different set of cores than the one originally allocated to it. In fairness, the kubelet does re-arm the pod termination grace period and the crash-loop backoff after a restart, so re-arming would be consistent with existing kubelet behavior. Avoiding it here, however, costs only a cpuset and one timestamp per pending scale-down, and the v4 CPU Manager checkpoint already has a precedent for such additive extensions, so the more predictable option was chosen during the work on v1.38.
 
 **Note:** The scale-down delay approach was selected during the KEP review process (discussed in SIG Node meetings and document reviews) as it provides a simple, deterministic guarantee without requiring workload-kubelet synchronization. Within a running kubelet the approach is free of races: both the delay check and the cpuset actuation happen sequentially in the CPUManager's reconcile loop. The one real race — losing a pending scale-down when the kubelet restarts — is addressed by persisting it in the CPU Manager checkpoint (see [Kubelet Restart](#kubelet-restart)).
 

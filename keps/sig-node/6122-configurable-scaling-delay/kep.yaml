@@ -1,4 +1,4 @@
-title: Configurable Scaling Delay with Pod Resource Exposure
+title: Configurable Scaling Delay
 kep-number: 6122
 authors:
   - "@Chunxia202410"
@@ -30,6 +30,7 @@ see-also:
   - "/keps/sig-node/1287-in-place-update-pod-resources"
   - "/keps/sig-node/3570-cpu-manager"
   - "/keps/sig-node/5554-in-place-update-pod-resources-alongside-static-cpu-manager-policy"
+  - "https://github.com/kubernetes/enhancements/issues/6369"
 replaces:
 
 
@@ -56,10 +57,6 @@ feature-gates:
     components:
       - kubelet
   - name: InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay
-    components:
-      - kube-apiserver
-      - kubelet
-  - name: DownwardAPIAssignedResources
     components:
       - kube-apiserver
       - kubelet
