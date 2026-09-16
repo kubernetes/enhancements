@@ -65,7 +65,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Publish & Maintain VEX attestations
+# KEP-6377: Publish & Maintain VEX attestations
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -367,7 +367,8 @@ In this proposal, we did not wish to impact the existing security job at all, no
 | Unauthorized user adds a chatops (slash) comment to an issue in kubernetes/.vexflow | The vexflow binary, running in the Publish job will ignore any comments by contributors not listed in the OWNERS file |
 | Unauthorized user adds themselves to kubernetes/.vexflow's ONWERS | The main branch of .vexflow is protected, and pull requests need to be approved by owners in order to affect the main branch |
 | **Publish job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/.vexflow (marking CVEs as fixed when they really affect K8S for example), or to publish attestations to kubernetes/.vexflow without going through the Prow job | same security mechanisms as for other secrets used by Prow? |
-| **Bridge job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/kubernetes (which is already open) and kubernetes/.vexflow (marking CVEs as fixed when they really affect K8S for example). | same security mechanisms as for other secrets used by Prow? | 
+| **Bridge job's GITHUB_TOKEN is stolen**: This would allow a user to create or update issues in kubernetes/kubernetes (which is already open) and kubernetes/.vexflow (marking CVEs as fixed when they really affect K8S for example). | same security mechanisms as for other secrets used by Prow? |
+| Prow jobs (Bridge or Publish) have too many issues to parse through | A worst case scenario mitigation: the binaries running through the prow jobs should be configurable via command line arguments for a max number of issues to handle. Ex: k/k repo has 10000 issues labeled `vex-unaffected-feed`, the job is configured with max-issues=500. 20 runs of the jobs are needed to go through the complete list of issues. (no context deadline exceeded, no out of memory) 
 
 ## Design Details
 
@@ -489,188 +490,33 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
-[x] I/we understand the owners of the involved components may require updates to
-existing tests to make this code solid enough prior to committing the changes necessary
-to implement this enhancement.
+This is a process KEP implemented using periodic prow job. This KEP is not implemented for any functional use cases of kubernetes. So no e2e/unit/integration tests are applicable and going forward test plan will mostly include :
+* the unit tests around the binaries used by the Bridge and Publish jobs. The code for those binaries is maintained under the kubernetes/sig-security repository. The unit tests will run locally.
+* the scenarios around monitoring of the prow job for any failures as and when needed. 
 
-##### Prerequisite testing updates
-
-<!--
-Based on reviewers feedback describe what additional tests need to be added prior
-implementing this enhancement to ensure the enhancements have also solid foundations.
--->
-
-##### Unit tests
-
-<!--
-In principle every added code should have complete unit test coverage, so providing
-the exact set of tests will not bring additional value.
-However, if complete unit test coverage is not possible, explain the reason of it
-together with explanation why this is acceptable.
--->
-
-<!--
-Additionally, for Alpha try to enumerate the core package you will be touching
-to implement this enhancement and provide the current unit coverage for those
-in the form of:
-- <package>: <date> - <current test coverage>
-The data can be easily read from:
-https://testgrid.k8s.io/sig-testing-canaries#ci-kubernetes-coverage-unit
-
-This can inform certain test coverage improvements that we want to do before
-extending the production code to implement this enhancement.
--->
-
-- `<package>`: `<date>` - `<test coverage>`
-
-##### Integration tests
-
-<!--
-Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
-Integration tests allow control of the configuration parameters used to start the binaries under test.
-This is different from e2e tests which do not allow configuration of parameters.
-Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
-For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
-
-If integration tests are not necessary or useful, explain why.
--->
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/integration/...): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
-
-##### e2e tests
-
-<!--
-This question should be filled when targeting a release.
-For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
-
-For Beta and GA, document that tests have been written,
-have been executed regularly, and have been stable.
-This can be done with:
-- permalinks to the GitHub source code
-- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
-- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
-
-We expect no non-infra related flakes in the last month as a GA graduation criteria.
-If e2e tests are not necessary or useful, explain why.
--->
-
-- [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, [feature gate] graduations, or as
-something else. The KEP should keep this high-level with a focus on what
-signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Feature gate][feature gate] lifecycle
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[feature gate]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- Feature implemented with VEX attestations appearing under https://github.com/kubernetes/.vexflow/attestations, verifiable with sigstore
+- Alerting setup for detecting failures
 
 #### Beta
 
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Additional tests are in Testgrid and linked in KEP
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- All functionality completed
-- All security enforcement completed
-- All monitoring requirements completed
-- All testing requirements completed
-- All known pre-release issues and gaps resolved
-
-**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
-
-#### GA
-
-- N examples of real-world usage
-- N installs
-- Allowing time for feedback
-- All issues and gaps identified as feedback during beta are resolved
-
-**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-**For non-optional features moving to GA, the graduation criteria must include
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
-
-#### Deprecation
-
-<!--
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
--->
+- Gather feedback from developers and end users regarding:
+  - Include states `affected`, `fixed`, `under-investigation`
+  - Create attestations per release version
+  - Adapting process to include data from govulncheck
+  - Adapting scanning process (Snyk today)
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+Not applicable
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and nodes?
-- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
-- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+Not applicable
 
 ## Production Readiness Review Questionnaire
 
@@ -704,110 +550,60 @@ This section must be completed when targeting alpha to a release.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-<!--
-Pick one of these and delete the rest.
+This feature is not intended to be delivered to kubernetes end users, and will not be deployed to clusters. 
 
-Documentation is available on [feature gate lifecycle] and expectations, as
-well as the [existing list] of feature gates.
+This feature only impacts the Kubernetes CI/CD (Prow). 
 
-[feature gate lifecycle]: https://git.k8s.io/community/contributors/devel/sig-architecture/feature-gates.md
-[existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
--->
-
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
-  - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?
+Both Bridge and Publish jobs can be added/removed from the https://github.com/kubernetes/test-infra/tree/master/config/jobs/kubernetes/sig-security repository.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+No
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-<!--
-Describe the consequences on existing workloads (e.g., if this is a runtime
-feature, can it break the existing applications?).
-
-Feature gates are typically disabled by setting the flag to `false` and
-restarting the component. No other changes should be necessary to disable the
-feature.
-
-NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
--->
+Yes, by simply removing the job configuration from the repository.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+After re-creating the prow jobs, the initial execution of the job might have a larger quantities of issues to parse through, which might lead to longer execution time.
+
+This is something that we expect can happen (see risks), and mitigations have been considered for these cases.  
+
 ###### Are there any tests for feature enablement/disablement?
 
-<!--
-The e2e framework does not currently support enabling or disabling feature
-gates. However, unit tests in each component dealing with managing data, created
-with and without the feature, are necessary. At the very least, think about
-conversion tests if API types are being modified.
-
-Additionally, for features that are introducing a new API field, unit tests that
-are exercising the `switch` of feature gate itself (what happens if I disable a
-feature gate after having objects written with the new field) are also critical.
-You can take a look at one potential example of such test in:
-https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
--->
+Not applicable
 
 ### Rollout, Upgrade and Rollback Planning
 
-<!--
-This section must be completed when targeting beta to a release.
--->
+Synchronization with testing and infra SIGs can be key in resolving dependencies (new GitHub repo, appropriate tokens for the jobs, job configuration, PR reviews)
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
-<!--
-Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
-
-Be sure to consider highly-available clusters, where, for example,
-feature flags will be enabled on some API servers and not others during the
-rollout. Similarly, consider large clusters and how enablement/disablement
-will rollout across nodes.
--->
+Prow jobs can fail but should have no impact on Kubernetes release process.
+Not applicable for running workloads.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
+Job failures
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+Not Applicable
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-<!--
-Even if applying deprecation policies, they may still surprise some users.
--->
+No
 
 ### Monitoring Requirements
 
+Not applicable
 <!--
 This section must be completed when targeting beta to a release.
 
 For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
--->
+
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -815,7 +611,7 @@ previous answers based on experience in the field.
 Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
--->
+
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -826,7 +622,7 @@ Pick one more of these and delete the rest.
 Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
 and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
--->
+
 
 - [ ] Events
   - Event Reason: 
@@ -851,13 +647,13 @@ high level (needs more precise definitions) those may be things like:
 
 These goals will help you determine what you need to measure (SLIs) in the next
 question.
--->
+
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
--->
+
 
 - [ ] Metrics
   - Metric name:
@@ -881,6 +677,7 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
+No
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
 as node-level agents (e.g. specific version of CRI). Focus on external or
@@ -898,6 +695,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
+Not applicable
 <!--
 For alpha, this section is encouraged: reviewers should consider these questions
 and attempt to answer them.
@@ -909,6 +707,12 @@ previous answers based on experience in the field.
 -->
 
 ###### Will enabling / using this feature result in any new API calls?
+Not applicable for kubernetes clusters.
+
+Running the jobs in Prow will require Prow to :
+* Read / write GitHub issues in both kubernetes/kubernetes and kubernetes/.vexflow
+* write attestations to GitHub kubernetes/.vexflow
+* interact with sigstore to sign in-toto attestations
 
 <!--
 Describe them, providing:
@@ -925,6 +729,7 @@ Focusing mostly on:
 
 ###### Will enabling / using this feature result in introducing new API types?
 
+No
 <!--
 Describe them, providing:
   - API type
@@ -934,6 +739,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
+No
 <!--
 Describe them, providing:
   - Which API(s):
@@ -942,6 +748,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
+No
 <!--
 Describe them, providing:
   - API type(s):
@@ -951,6 +758,7 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
+No
 <!--
 Look at the [existing SLIs/SLOs].
 
@@ -962,6 +770,7 @@ Think about adding additional work or introducing new steps in between
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
+No
 <!--
 Things to keep in mind include: additional in-memory state, additional
 non-trivial computations, excessive access to disks (including increased log
@@ -974,6 +783,7 @@ This through this both in small and large cases, again with respect to the
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
+No
 <!--
 Focus not just on happy cases, but primarily on more pathological cases
 (e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
@@ -999,7 +809,11 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Not applicable
+
 ###### What are other known failure modes?
+
+Not applicable
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -1015,6 +829,8 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Not applicable
 
 ## Implementation History
 
