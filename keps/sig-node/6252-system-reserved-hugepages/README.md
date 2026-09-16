@@ -19,7 +19,7 @@
   - [Memory Manager Integration](#memory-manager-integration)
   - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
-      - [Prerequisite testing updates](#prerequisite-testing-updates)
+    - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
@@ -33,6 +33,7 @@
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+    - [How can a rollout or rollback fail? Can it impact already running workloads?](#how-can-a-rollout-or-rollback-fail-can-it-impact-already-running-workloads)
   - [Monitoring Requirements](#monitoring-requirements)
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
@@ -118,7 +119,7 @@ at the time.
 ## Proposal
 
 Extend `--system-reserved` and `--kube-reserved` to accept `hugepages-<size>`
-keys, gated by `SystemReservedHugepages`. Kubelet already subtracts matching
+keys, gated by the `SystemReservedHugepages` Feature Gate. Kubelet already subtracts matching
 `system-reserved` and `kube-reserved` entries from node capacity when computing
 Allocatable, so hugepages flow through that path with no scheduler changes.
 The same totals unblock `--reserved-memory`: Memory Manager requires per-type
@@ -171,13 +172,11 @@ pre-allocate the pool through sysfs before kubelet can reserve or schedule
 against it.
 
 When [KEP-5894 Node System Partition](/keps/sig-node/5894-node-system-partition)
-is enabled, `--system-reserved` and `--kube-reserved` continue to cover host
-processes (kubelet, container runtime, OS services) - not system partition
-Pods. The hugepages reserved through this KEP are subtracted from the
-node-wide `Allocatable`. This KEP does not add any configuration under
-`systemPartition`, since that section deals with system Pods whereas this
-KEP reserves hugepages for host services. This KEP does not depend on or
-modify KEP-5894.
+is enabled, hugepages reservation is configured via `--system-reserved` and
+`--kube-reserved`, not under `systemPartition`. KEP-5894's `systemPartition`
+reserves resources for system pods; this KEP reserves hugepages for host-level
+services (kubelet, container runtime, OS daemons). The two are orthogonal:
+this KEP does not depend on or modify KEP-5894.
 
 ### Risks and Mitigations
 
@@ -191,13 +190,6 @@ resource types including hugepages once they are accepted.
 consistent with `--reserved-memory` when the Memory Manager is enabled.
 **Mitigation:** The existing `validateReservedMemory()` check enforces this
 consistency. No additional validation is needed.
-
-**Risk:** Reviewers may treat this as a bug fix because hugepages are already
-GA, rather than as a feature.
-**Mitigation:** Kubelet flags are API, so this KEP treats the change as a
-feature. `SystemReservedHugepages` is rollout safety: when the gate is
-disabled, hugepages keys in `--system-reserved` and `--kube-reserved` are
-rejected, which is current behavior.
 
 ## Design Details
 
@@ -222,47 +214,95 @@ The `--system-reserved` and `--kube-reserved` flag help text in
 `cmd/kubelet/app/options/options.go` should list hugepages as an accepted
 resource type.
 
+The two flags are independent of each other; no cross-validation between them
+is performed. Their combined value is validated against node capacity by
+`validateNodeAllocatable()` at kubelet startup, which rejects configurations
+where `system-reserved + kube-reserved + eviction-threshold` exceeds capacity
+for any resource type.
+
 ### Allocatable Computation
 
+`CapacityFromMachineInfo()` in `pkg/kubelet/cadvisor/util.go` populates
+`cm.capacity` from cAdvisor machine info, including hugepage entries for each
+pre-allocated page size. No changes are needed there.
+
 `GetNodeAllocatableReservation()` in
-`pkg/kubelet/cm/node_container_manager_linux.go` iterates over all resource
-types in node capacity and sums `SystemReserved[k] + KubeReserved[k] +
-evictionReservation[k]`. That reservation is subtracted from `Capacity` to
-compute `Allocatable` on the node status (used for scheduling).
+`pkg/kubelet/cm/node_container_manager_linux.go` iterates over `cm.capacity`
+keys and sums `SystemReserved[k] + KubeReserved[k] + evictionReservation[k]`
+for each. Because `cm.capacity` is the key universe, a hugepage reservation
+only takes effect if the corresponding page size exists in `cm.capacity` -
+i.e. the host has that hugepage pool pre-allocated. That reservation is
+subtracted from `Capacity` to compute `Allocatable` on the node status (used
+for scheduling).
 
 `GetNodeAllocatableAbsolute()` is `capacity - system-reserved - kube-reserved`
 with no eviction component. It is the value used when applying node-allocatable
 cgroup limits.
 
 `hardEvictionReservation` only handles `memory` and `ephemeral-storage`, so
-the eviction term for hugepages is always zero. For hugepages, reservation
-and absolute allocatable therefore differ from capacity by the same
-system-reserved + kube-reserved amount.
+the eviction term for hugepages is always zero. For hugepages,
+`GetNodeAllocatableReservation()` and `GetNodeAllocatableAbsolute()` therefore
+produce the same result: `capacity - system-reserved - kube-reserved`.
 
-`CapacityFromMachineInfo()` in `pkg/kubelet/cadvisor/util.go` already reports
-node-wide hugepage capacity. Once hugepages are present in the parsed
-`NodeConfig` reserved lists, they are included in both computations with no
-further changes on those paths and no scheduler changes.
+```mermaid
+flowchart TD
+    cadvisor["CapacityFromMachineInfo()\ncadvisor/util.go"]
+    parse["parseResourceList()\nserver.go\n← gate change"]
+    capacity["cm.capacity"]
+    nodeConfig["NodeConfig.SystemReserved\nNodeConfig.KubeReserved"]
+
+    GNAR["GetNodeAllocatableReservation()\nSystemReserved[k] + KubeReserved[k]\n+ hardEvictionReservation[k]\n(hugepages eviction = 0)"]
+    GNAA["GetNodeAllocatableAbsolute()\ncapacity - SystemReserved\n- KubeReserved (no eviction)"]
+
+    nodeStatus["node.status.allocatable\nscheduler accounting"]
+    validate["validateNodeAllocatable()\ncapacity[k] - reservation[k] >= 0\n(kubelet startup)"]
+
+    internalAbs["getNodeAllocatableInternalAbsolute()"]
+    enforceNA["enforceNodeAllocatableCgroups()"]
+    getCgroup["getCgroupConfig()\ngetCgroupConfigInternal()\n└─► HugePageLimits(rl)\n    no change needed"]
+    enforceEC["enforceExistingCgroup()"]
+    kubepods["kubepods cgroup\nhugetlb limit"]
+    reservedCgroups["system/kube-reserved cgroups\nhugetlb limit"]
+
+    cadvisor --> capacity
+    parse --> nodeConfig
+    capacity --> GNAR
+    nodeConfig --> GNAR
+    capacity --> GNAA
+    nodeConfig --> GNAA
+    GNAR --> nodeStatus
+    GNAR --> validate
+    GNAA --> internalAbs --> enforceNA --> getCgroup --> kubepods
+    enforceNA --> enforceEC --> getCgroup
+    nodeConfig --> enforceEC
+    getCgroup --> reservedCgroups
+```
 
 ### Cgroup Enforcement
 
-Node-allocatable enforcement already writes hugepage limits on the `kubepods`
-cgroup via `HugePageLimits()` in `pkg/kubelet/cm/helpers_linux.go`, and
-`enforceExistingCgroup()` does the same for system-reserved and kube-reserved
-cgroups. Those paths require no changes once hugepages are in the parsed
+Memory and hugepages use separate cgroup controllers: the `memory` controller
+for RAM, and the `hugetlb` controller for hugepages. There is a kernel mount
+option (`memory_hugetlb_accounting`) that routes hugepage accounting through
+the memory controller instead, but Kubernetes does not enable it. Doing so
+would conflict with container runtimes, which set the two controllers
+independently based on pod resource requests.
+
+`getCgroupConfigInternal()` in `pkg/kubelet/cm/node_container_manager_linux.go`
+already calls `HugePageLimits(rl)` unconditionally. Every enforcement path -
+`kubepods` via `enforceNodeAllocatableCgroups()`, and the system-reserved /
+kube-reserved cgroups via `enforceExistingCgroup()` - goes through this
+function. Those paths require no changes once hugepages are in the parsed
 `ResourceList`.
 
-The QoS cgroup manager (`pkg/kubelet/cm/qos_container_manager_linux.go`)
-runs `UpdateCgroups()` every minute and currently sets hugepage limits to
-unbounded on all QoS tiers, including Guaranteed. Because the Guaranteed tier
-maps to the `kubepods` root, this overwrites the limits that node-allocatable
-enforcement applied.
+The only issue is the QoS cgroup manager
+(`pkg/kubelet/cm/qos_container_manager_linux.go`), which runs `UpdateCgroups()`
+every minute and currently sets hugepage limits to unbounded on all QoS tiers,
+including Guaranteed. Because the Guaranteed tier maps to the `kubepods` root,
+this overwrites the limits that node-allocatable enforcement applied.
 
-The fix (from
-[kubernetes/kubernetes#124357](https://github.com/kubernetes/kubernetes/pull/124357))
-is to apply `GetNodeAllocatableAbsolute()` hugepage limits on the Guaranteed /
-`kubepods` root tier and keep Burstable and BestEffort unbounded, matching the
-existing QoS cgroup design for other resources.
+The fix is to apply `GetNodeAllocatableAbsolute()` hugepage limits on the
+Guaranteed / `kubepods` root tier and keep Burstable and BestEffort unbounded,
+matching the existing QoS cgroup design for other resources.
 
 ### Memory Manager Integration
 
@@ -305,7 +345,7 @@ the reserved flags before disabling the gate or downgrading kubelet.
 existing tests to make this code solid enough prior to committing the changes
 necessary to implement this enhancement.
 
-##### Prerequisite testing updates
+#### Prerequisite testing updates
 
 None.
 
@@ -326,12 +366,11 @@ None.
 
 ##### Integration tests
 
-None planned at this time.
+None planned at this time, because e2e test will cover the flows.
 
 ##### e2e tests
 
-Extend `test/e2e_node/node_container_manager_test.go` as in
-[kubernetes/kubernetes#124357](https://github.com/kubernetes/kubernetes/pull/124357):
+Extend `test/e2e_node/node_container_manager_test.go`:
 
 - Configure 2Mi hugepages on the host.
 - Set `--system-reserved` and `--kube-reserved` to `hugepages-2Mi=2Mi` each
@@ -354,15 +393,15 @@ Extend `test/e2e_node/node_container_manager_test.go` as in
 
 #### Beta
 
-- Gather feedback from developers and users.
+- Gather feedback from developers and users, by verifying no reported issues, and no collisions with other features were reported.
 - Feature gate enabled by default.
-- Extend e2e test coverage.
+- Extend e2e test coverage based on feedback and reported issues.
 
 #### GA
 
 - Feature gate locked to enabled.
-- At least two releases since beta.
-- Real-world usage confirmed.
+- At least two releases since beta with no major bugs.
+- Real-world usage confirmed - i.e. users are using this feature to reserve HugePages for their ovs-dpdk app.
 
 #### Deprecation
 
@@ -420,11 +459,20 @@ is disabled and accepted when enabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
-###### How can a rollout or rollback fail? Can it impact already running workloads?
+#### How can a rollout or rollback fail? Can it impact already running workloads?
 
-A rollout changes future scheduling through `Allocatable`. Already-running
-pods that have hugepages allocated keep those mappings. The change does not
-evict or rewrite existing hugepage allocations.
+Already-running pods that have hugepages allocated keep those mappings;
+hugepages are not evicted.
+
+If existing pods already hold more hugepages than the new allocatable limit,
+the `kubepods` cgroup hugetlb enforcement will fail the kernel rejects
+setting `hugetlb.max` below current usage. Kubelet
+retries every minute and emits `FailedNodeAllocatableEnforcement` warning
+events until pods release hugepages. Unlike memory, there is no hugepage
+eviction mechanism to drive usage down. Administrators should drain
+hugepage-consuming pods from the node before introducing or increasing
+hugepage reservations, the same recommendation that applies when reducing
+memory allocatable.
 
 A rollback that disables the feature gate while hugepages entries are still
 in `--system-reserved` or `--kube-reserved` causes kubelet to reject the
@@ -439,7 +487,7 @@ the reservation values may be misconfigured. Verify the `--system-reserved` /
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Will be tested during beta.
+Will be tested during alpha.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -576,6 +624,8 @@ amount the system daemon consumes. This requires no kubelet changes and the
 scheduler accounts for the reservation correctly. It is however a hack: the
 pod serves no workload purpose, must be kept in sync with the daemon's actual
 consumption, and adds operational overhead.
+plus, the pod should started first (or among the first),
+but there's no real direct/explicit control over the ordering on which kubelet restore pods
 
 **No feature gate.** Hugepages are already GA, so the change could land as a
 direct fix. A gate adds rollback safety (disabled = reject hugepage keys in
