@@ -610,13 +610,17 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-The scale-down delay functionality doesn't store any information in kubelet checkpoints or any other persistent storage. This makes upgrades and downgrades seamless.
+**Upgrade.** No change is required of an existing cluster. `scaleDownGracePeriodSeconds` is optional, and leaving it unset keeps the behavior from before this KEP. To use the feature, enable `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` on kube-apiserver and on the kubelets, and set the field on the pods that need it.
 
-The new field `assigned.cpuset` is exposed behind the `DownwardAPIAssignedResources` feature gate. Field validation in kube-api-server depends on this gate. Kubelet handles file creation and updates based on pod spec (no dependency on feature gate).
+**Changing the value.** The field is immutable, so moving a workload to a different grace period means recreating its pods.
 
-The feature gate is Alpha and disabled by default. The documentation states: "Only enable this feature gate when all kubelets in the cluster support this feature." The operator must upgrade all kubelets first, then enable the feature gate.
+The two downgrade paths differ in whether the target version knows the field at all.
 
-This documentation entry guarantees that, in both upgrades and downgrades, if one of the kubelet versions does not yet support this feature, the feature gate must remain disabled.
+**The target version has the field, with the feature gate disabled.** The field is preserved on existing pods and rejected on new ones, so a pod already using it keeps running and can still be resized. A scale-down of such a pod is applied without waiting, and the kubelet reports that as described in [Grace Period Not Honored](#grace-period-not-honored).
+
+**The target version does not have the field.** The field becomes unknown to kube-apiserver and is dropped, so pods keep running but lose the grace period without any error. Operators should remove the field from pod specs before such a downgrade, so that the loss of the guarantee is a deliberate change rather than a silent one.
+
+**CPU Manager checkpoint.** The pending scale-down is stored as an optional field of the existing v4 checkpoint payload, added the way KEP-5554 added `Baselines`. A kubelet that knows v4 but not this field ignores it, and `Entries` still holds the cpuset the container currently owns, so a checkpoint written by a newer kubelet is read by an older one without draining the node or deleting the file. Ignoring the field only means the pending scale-down is forgotten: the container keeps the cpuset it holds, and the resize is processed again according to that kubelet's own capabilities.
 
 
 ### Version Skew Strategy
