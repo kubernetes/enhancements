@@ -513,7 +513,12 @@ This can be done with:
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-Integration tests are not necessary because all cases are covered by unit and e2e tests.
+Integration tests cover the two behaviors that are out of reach for `e2e_node`, which runs a single node and exercises the kubelet:
+
+- **Validation ratcheting**: with the feature gate disabled in kube-apiserver, creating a pod that sets `scaleDownGracePeriodSeconds` is rejected, while updating a pod that already carries the field — including through a resize request — is accepted.
+- **Scheduler filtering**: a pod that sets `scaleDownGracePeriodSeconds` is placed only on nodes declaring `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`, and stays unschedulable while no such node exists.
+
+Both are control plane behaviors driven by the feature gate, which an integration test can exercise without standing up a cluster.
 
 ##### e2e tests
 
@@ -532,29 +537,34 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 If e2e tests are not necessary or useful, explain why.
 -->
 
-These cases will be added in the existing e2e_node tests to verify that CPU Manager works with `scale-delay-time` static policy option and downward API exposing CPU states.
+These cases will be added to the existing e2e_node tests to verify that the CPU Manager honors a pod's `scaleDownGracePeriodSeconds`.
 
 Prerequisites:
 
 1. Enable the following feature gates:
     * `InPlacePodVerticalScalingExclusiveCPUs`
-    * `CPUManagerPolicyAlphaOptions`
-    * `DownwardAPIAssignedResources`
-2. Configure the CPU Manager policy option to use `scale-delay-time`.
+    * `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay`
+2. Configure the CPU Manager policy as `static`.
+3. Pods under test set `scaleDownGracePeriodSeconds` in their spec.
+
+The restart decision table in [Kubelet Restart](#kubelet-restart) is covered row by row by unit tests. The cases below take only the situations where a real node matters: that the grace period is not re-armed, a node reboot, and a kubelet outage longer than the grace period.
 
 The following scenarios will be tested:
 
 | No | Test | Description | Expected Result |
 |----|------|-------------|-----------------|
-| 1 | Validate Scale-Down Delay | Initiate a scale-down request for a container and verify the operation timing against the configured `scale-delay-time`. | • Verify the pod is successfully patched for scale-down<br />• The downward API volume exposes the new cpuset before it is applied to the container<br />• Verify the pod scales down only after the scale-delay timer has expired<br />• Verify the final resources allocated to the pod after the resize |
-| 2 | Resource Allocation Blocking | Initiate a scale-down request for Pod 1 and attempt to allocate the CPU resources being released from Pod 1 to Pod 2 before the delay timer expires. | • Verify Pod 1's scale-down request is pending and new cpuset has not yet been applied<br />• Verify Pod 2 cannot allocate the CPUs held by Pod 1 until the delay timer has fully elapsed<br />• Verify Pod 2 successfully resizes and claims the CPUs only after Pod 1's delay period expires |
-| 3 | Validate Scale-Up Before Timer Expiry | Initiate a scale-down request and, before the delay timer expires, send a scale-up request for the container CPU. | • Verify the pending scale-down request is cleared<br />• The downward API volume reflects the current (scaled-up) cpuset<br />• Verify the pod scales up as requested<br />• Verify the resources allocated to the pod match the latest requested scale-up configuration |
-| 4 | Validate Repeated Scale-Down Before Timer Expiry | Initiate a scale-down request and, before the delay timer expires, send another, different scale-down request for the container CPU. | • Verify the initial pending scale-down request is cleared<br />• The downward API volume reflects the cpuset from the latest scale-down request<br />• Verify the pod scales down following the latest request after the timer expires<br />• Verify the resources allocated to the pod match the final scaled-down configuration |
-| 5 | Validate Kubelet Restart Before Timer Expiry | Initiate a scale-down request and restart the Kubelet before the delay timer expires. | • Verify the scale-down is reprocessed after the kubelet restarts<br />• Once the Kubelet restarts, verify the downward API volume exposes the new cpuset for the pending scale-down<br />• Verify the Pod scales down after the `scale-delay-time` has elapsed |
-| 6 | Feature gate `DownwardAPIAssignedResources` Rollback | Enable the feature gate and initiate a scale-down request. After scale-down actuation, disable the feature gate and perform another scale-down request. | • Verify CPU manager states are exposed through the Downward API when the feature gate is enabled<br />• Verify the pod scales down after timer expiry<br />• Restart kubelet and kube-apiserver with the feature gate disabled, verify existing pods with `assigned.cpuset` continue running without errors (field is silently ignored)<br />• Perform pod downscaling again and verify the pod still scales down after timer expiry (but `assigned.cpuset` is not exposed) |
-| 7 | Feature gate `DownwardAPIAssignedResources` Rollout | Disable the feature gate and initiate a scale-down request. After scale-down actuation, enable the feature gate and perform another scale-down request. | • Verify the pod scales down after timer expiry<br />• Restart kubelet and kube-apiserver with the feature gate enabled, patch the pod to add downwardAPI and verify the pod comes in Running state without errors<br />• Perform pod downscaling again and verify CPU manager states are exposed through the Downward API, while the pod scales down after timer expiry<br />• Verify pods created with `assigned.cpuset` while feature gate was disabled are admitted (field silently ignored) and start receiving correct values after enabling the feature gate |
-| 8 | Kubelet Version Rollback | Start with version v1.37 and initiate a scale-down request. Before scale-down completes (i.e. before timer expiry), downgrade kubelet to v1.36. | Before Downgrade:<br />• Verify CPU manager states are exposed through the Downward API<br />After Downgrade:<br />• Patch the pod to remove downward-API, verify the pod comes in Running state and the pending scale-down request is rejected since scaling exclusive cpus are not supported in v1.36 |
-| 9 | Kubelet Version Rollout | Start with version v1.36, deploy a pod with exclusive cpu, upgrade to v1.37, enable the `DownwardAPIAssignedResources` feature gate, and initiate a scale-down request. | • Verify the pod remains in Running state<br />• Patch the pod to add downward-API and verify CPU manager states are exposed through the Downward API<br />• Verify the pod scales down after the scale-delay timer expires |
+| 1 | Validate Scale-Down Delay | Initiate a scale-down request for a container and verify the operation timing against the pod's `scaleDownGracePeriodSeconds`. | • Verify the pod is successfully patched for scale-down<br />• Verify the pod scales down only after the grace period has elapsed<br />• Verify the final resources allocated to the pod after the resize |
+| 2 | Resource Allocation Blocking | Initiate a scale-down request for Pod 1 and attempt to allocate the CPU resources being released from Pod 1 to Pod 2 before the grace period expires. | • Verify Pod 1's scale-down request is pending and new cpuset has not yet been applied<br />• Verify Pod 2 cannot allocate the CPUs held by Pod 1 until the grace period has fully elapsed<br />• Verify Pod 2 successfully resizes and claims the CPUs only after Pod 1's grace period expires |
+| 3 | Validate Scale-Up Before Timer Expiry | Initiate a scale-down request and, before the grace period expires, send a scale-up request for the container CPU. | • Verify the pending scale-down request is cleared<br />• Verify the pod scales up as requested<br />• Verify the resources allocated to the pod match the latest requested scale-up configuration |
+| 4 | Validate Repeated Scale-Down Before Timer Expiry | Initiate a scale-down request and, before the grace period expires, send another, different scale-down request for the container CPU. | • Verify the initial pending scale-down request is replaced by the latest one<br />• Verify the pod scales down following the latest request after the grace period expires<br />• Verify the resources allocated to the pod match the final scaled-down configuration |
+| 5 | Grace Period Is Not Re-Armed by a Kubelet Restart | Initiate a scale-down request and restart the kubelet before the grace period expires. | • Verify the pending scale-down survives the restart with its target cpuset unchanged<br />• Verify the total time from the resize request to the cpuset change is approximately one grace period, not two |
+| 6 | Kubelet Outage Longer Than the Grace Period | Initiate a scale-down request and keep the kubelet down until after the grace period would have expired. | • Verify the new cpuset is applied on the first reconcile after the kubelet restarts and its pod sources are synced |
+| 7 | Node Reboot Before Timer Expiry | Initiate a scale-down request and reboot the node before the grace period expires. | • Verify the persisted pending scale-down is discarded, because the boot ID no longer matches<br />• Verify the container is given a fresh, full grace period before the new cpuset is applied |
+| 8 | Grace Period Not Honored | Disable the feature gate on the kubelet of a node already running a pod that sets `scaleDownGracePeriodSeconds`, then initiate a scale-down request. | • Verify the pod keeps running and is not rejected<br />• Verify the new cpuset is applied without a delay<br />• Verify the `PodResizeInProgress` condition reports that the grace period was not honored and a `ScaleDownGracePeriodNotHonored` event is emitted |
+| 9 | Feature Gate Rollback | With the gate enabled, create a pod that sets `scaleDownGracePeriodSeconds` and scale it down. Then disable the gate on kube-apiserver and the kubelet and scale down again. | • Verify the first scale-down waits for the grace period<br />• Verify the existing pod keeps running once the gate is disabled and can still be resized, since the field is already in use<br />• Verify the second scale-down is applied without a delay<br />• Verify a newly created pod that sets the field is rejected |
+| 10 | Feature Gate Rollout | With the gate disabled, create a pod without the field and scale it down. Then enable the gate on kube-apiserver and the kubelet, create a pod that sets `scaleDownGracePeriodSeconds` and scale it down. | • Verify the first scale-down is applied without a delay<br />• Verify the pod created after the rollout is admitted<br />• Verify its scale-down waits for the grace period |
+| 11 | Kubelet Version Rollback | Start with kubelet v1.38 running a pod that sets `scaleDownGracePeriodSeconds`, initiate a scale-down and downgrade the kubelet to v1.37 before the grace period expires. | • Verify the pod keeps running with its original cpuset<br />• Verify the persisted pending scale-down is ignored by v1.37 and the resize is reported `Infeasible`, since resizing exclusive CPUs is not supported before v1.38 |
+| 12 | Kubelet Version Rollout | Start with kubelet v1.37 running a pod with exclusive CPUs and request a scale-down, then upgrade the kubelet to v1.38, enable the feature gates, and create a pod that sets `scaleDownGracePeriodSeconds` on that node. | • Verify the scale-down requested before the upgrade is reported `Infeasible` and is carried out only after it<br />• Verify the pre-existing pod stays in Running state across the upgrade<br />• Verify the upgraded node declares the feature, the new pod is scheduled to it and admitted, and its scale-down waits for the grace period |
 
 
 ### Graduation Criteria
