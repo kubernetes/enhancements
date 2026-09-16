@@ -29,9 +29,11 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Implementation](#implementation)
     - [Pod API Extension](#pod-api-extension)
     - [Node Declared Features Integration](#node-declared-features-integration)
+    - [Grace Period Not Honored](#grace-period-not-honored)
     - [Scale Down Delay in CPU Manager](#scale-down-delay-in-cpu-manager)
       - [Scale-Down Delay Timing](#scale-down-delay-timing)
       - [Consecutive Scaling](#consecutive-scaling)
+      - [Kubelet Restart](#kubelet-restart)
     - [Resize Complete State](#resize-complete-state)
     - [Actual Resources Update](#actual-resources-update)
     - [Extend Downward API Volume to Expose CPU Manager Status](#extend-downward-api-volume-to-expose-cpu-manager-status)
@@ -65,6 +67,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [6. Node Declared Features as Opt-Out Mechanism](#6-node-declared-features-as-opt-out-mechanism)
   - [7. Hook-Based Synchronization Approach](#7-hook-based-synchronization-approach)
   - [8. Generalizing Scale-Down Delay to Other Resource Types](#8-generalizing-scale-down-delay-to-other-resource-types)
+  - [9. No Persistence of Pending Scale-Down State](#9-no-persistence-of-pending-scale-down-state)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -219,7 +222,7 @@ Consider including folks who also work outside the SIG or subproject.
 
 **A pod's grace period is not honored by the node:** A pod that sets `scaleDownGracePeriodSeconds` could run on a kubelet where the feature gate is disabled, and have its cpuset changed with no preparation window.
 
-**Mitigation:** kube-apiserver rejects the field while the gate is disabled, so it cannot be set in a cluster that does not support the feature, and the scheduler only places such pods on nodes that declare it. The remaining case is a gate flip on a node that already runs the pod; the kubelet then resizes it without the delay and reports this via the `PodResizeInProgress` condition and an event, rather than killing a running pod. See [Node Declared Features Integration](#node-declared-features-integration).
+**Mitigation:** kube-apiserver rejects the field while the gate is disabled, so it cannot be set in a cluster that does not support the feature, and the scheduler only places such pods on nodes that declare it. The remaining case is a gate flip on a node that already runs the pod; the kubelet then resizes it without the delay and reports this via the `PodResizeInProgress` condition and an event, rather than killing a running pod — see [Grace Period Not Honored](#grace-period-not-honored).
 
 **Workload may not complete preparations within the delay window:** The kubelet guarantees only that the cpuset will not be applied before `scaleDownGracePeriodSeconds` has elapsed. There is no synchronization mechanism between the workload and kubelet — if the workload fails to complete its preparations (e.g., workload migration, draining tasks) within the delay window, the cpuset change is applied anyway. This is an inherent limitation of keeping kubelet independent from workload state.
 
@@ -307,18 +310,18 @@ The field is a pointer so that `nil` remains distinguishable from an explicit `0
 
 Rejecting the field in kube-apiserver guarantees that an accepted pod was admitted by a cluster that understands `scaleDownGracePeriodSeconds`. It does not guarantee that the node the pod lands on honors it, because the feature gate is per-kubelet. That gap is closed with the Node Declared Features framework ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features), GA since v1.37).
 
-When the `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` feature gate is enabled, the kubelet declares `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` in `node.status.declaredFeatures` during bootstrap. This enables:
+When the `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` feature gate is enabled, the kubelet declares `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` in `node.status.declaredFeatures` during bootstrap. The scheduler infers that a pod setting `scaleDownGracePeriodSeconds` requires the feature and only places it on nodes that declare it, which keeps such a pod off a node that would ignore its grace period.
 
-- **Scheduler filtering**: The scheduler infers that a pod setting `scaleDownGracePeriodSeconds` requires the feature and only places it on nodes that declare it. This prevents a pod from landing on a node that would ignore its grace period.
+Once the feature graduates to GA and the feature gate is removed, every kubelet honors the field unconditionally and the declared feature is no longer needed.
 
-One case remains: the feature gate is turned off on a node that already runs such a pod (a gate flip with a node restart). Here the kubelet does **not** reject the pod, unlike the default handling in KEP-5328 — killing a running latency-sensitive pod is worse than resizing it without the preparation window. Instead the kubelet applies the new cpuset immediately and reports the skipped grace period:
+#### Grace Period Not Honored
+
+Scheduler filtering leaves one case open: the feature gate is turned off on a node that already runs a pod which sets `scaleDownGracePeriodSeconds` (a gate flip together with a node restart). Here the kubelet does **not** reject the pod, unlike the default handling in KEP-5328 — killing a running latency-sensitive pod is worse than resizing it without the preparation window. Instead the kubelet applies the new cpuset immediately and reports the skipped grace period:
 
 - the `PodResizeInProgress` condition ([KEP-1287](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1287-in-place-update-pod-resources)) carries a message stating that the grace period was not honored,
 - the kubelet emits an event with reason `ScaleDownGracePeriodNotHonored`.
 
 Neither requires a new API type.
-
-Once the feature graduates to GA and the feature gate is removed, every kubelet honors the field unconditionally and the declared feature is no longer needed.
 
 #### Scale Down Delay in CPU Manager
 
@@ -333,8 +336,8 @@ The CPU Manager reads `scaleDownGracePeriodSeconds` from the spec of the pod bei
      - The container's assignments are updated to the new cpuset
      - CPU manager checkpoint is updated immediately with new assignments and defaultCPUSet.
    - If `scaleDownGracePeriodSeconds` is greater than 0, after reallocating the new cpuset:
-     - A scale_delay_timer is started with the pod's `scaleDownGracePeriodSeconds` as its duration. (monotonic time should be considered)
-     - The new cpuset is saved in preAssignments, which is a local parameter in the CPU manager.
+     - A scale_delay_timer is started with the pod's `scaleDownGracePeriodSeconds` as its duration.
+     - The new cpuset is saved in preAssignments, and both the preAssignments and the time at which the cpuset may be applied are recorded in the CPU manager checkpoint (see [Kubelet Restart](#kubelet-restart)).
 
    When a container scales up (If the CPU number of assignments in checkpoint <= CPU request and limit for the container in Pod Spec), after reallocating the new cpuset:
    - The added_CPUs (new cpuset - assignments in checkpoint) are removed from the defaultCPUset.
@@ -353,7 +356,7 @@ The CPU Manager reads `scaleDownGracePeriodSeconds` from the spec of the pod bei
    - The CPUSet(assignments) is applied to the container by the runtime.
    - If the CPUSet(assignments) is an exclusive CPUSet, a PLEG event is triggered.
 
-Note: If the kubelet restarts during a pending scale-down delay, the scale-down operation is restarted from the beginning with a fresh `scale_delay_timer`. This is because the CPU Manager does not persist `preAssignments` or active timers to the checkpoint — only the current `assignments` (the original cpuset before scale-down) are preserved. Upon restart, the kubelet observes a mismatch between the container's desired CPU request (from the Pod spec) and the allocated CPUs (from the checkpoint), triggering a new allocation cycle. Because `scaleDownGracePeriodSeconds` lives in the Pod spec, it survives the restart, so a new `scale_delay_timer` is started with the same duration and the full delay is guaranteed even after a restart.
+Note: a pending scale-down survives a kubelet restart and its delay is not restarted — see [Kubelet Restart](#kubelet-restart).
 
 ##### Scale-Down Delay Timing
 
@@ -377,6 +380,31 @@ When a scale-up request arrives while a scale-down is in progress, the behavior 
 
 - **If the new CPU count is greater than or equal to the original (pre-scale-down) CPU count**, it is effectively a scale-up: the assignments are updated directly (not via preAssignments), and the scale_delay_timer and preAssignments are cleared.
 - **If the new CPU count is still lower than the original CPU count**, it is effectively a scale-down: the preAssignments are updated with the new cpuset, and the scale_delay_timer is reset.
+
+##### Kubelet Restart
+
+A pending scale-down is persisted in the CPU Manager checkpoint, so that a kubelet restart neither restarts the delay nor recomputes the target cpuset. For each container with a pending scale-down the checkpoint holds:
+
+- the **preAssignments**, so the cpuset already exposed to the workload is the one eventually applied,
+- the **time at which the new cpuset may be applied**, expressed as monotonic time since boot, not counting time spent suspended,
+- the **node's boot ID**, read locally from cAdvisor (the same value the kubelet publishes in `node.status.nodeInfo.bootID`).
+
+Wall-clock time is deliberately not used: serializing a `time.Time` discards its monotonic reading and leaves only a wall clock, which is exposed to NTP steps, manual changes and timezone handling. Monotonic time since boot advances steadily by kernel guarantee, but it is comparable only within a single boot — which is what the boot ID establishes. How the value is represented in the checkpoint is an implementation detail.
+
+A container with no persisted entry needs no special handling. For an entry that does exist, the kubelet evaluates the following in order:
+
+| Check | Decision |
+|---|---|
+| The feature gate is disabled | Ignore the persisted fields. The resize is then processed without a delay, as described in [Grace Period Not Honored](#grace-period-not-honored) |
+| The boot ID differs from the current one | The node rebooted, so every container process is new and was never notified: drop the entry. If the pod spec still requests fewer CPUs, admission treats it as a new resize and the container gets a fresh, full grace period |
+| The CPU request in the pod spec matches the number of assignments in the checkpoint | The scale-down was reverted while the kubelet was down: drop the entry. No CPUs were ever released |
+| The CPU request does not match the number of preAssignments | The request changed again while the kubelet was down: treat it as [Consecutive Scaling](#consecutive-scaling), allocating a new cpuset and starting a new grace period only if this is still a scale-down |
+| The stored time has passed | Apply the new cpuset |
+| Otherwise | Keep the entry unchanged; the reconcile loop applies the new cpuset once the stored time is reached |
+
+Because the grace period comes from the immutable pod field, the stored time never needs to be recomputed.
+
+Releasing CPUs waits until the kubelet's pod sources are synced, the same condition the CPU Manager already applies before discarding stale state. Without it the reconcile loop could release CPUs before the pods are re-admitted, so a scale-down that had been reverted during the downtime would be applied and then immediately undone, possibly on different CPUs.
 
 #### Resize Complete State
 The pod resize completed event (Pod Lifecycle Event) is not emitted until the new cpuset has been successfully applied to all containers in the pod. Only then is the pod resize considered complete.
@@ -1174,7 +1202,7 @@ The following alternatives were considered:
 ### 5. Node-Level Scale Delay as CPU Manager Option
 
 * **Description**: Configure `scale-delay-time` as an option in the CPU Manager's static policy configuration on the node. This approach affects all guaranteed pods with exclusive CPUs on that node uniformly.
-* **Why Rejected**: A node-level configuration creates a "blast radius" where the delay applies to ALL pods on the node, regardless of whether they need it. This impacts cluster elasticity and automated scaling responsiveness. Individual pods without latency-sensitive workloads are forced to wait the configured duration during scale-down, slowing down the cluster's ability to respond to resource changes. While node taints provide an operational workaround for Alpha, this masks an underlying design gap — the feature should be opt-in at the pod level, not a one-size-fits-all node setting. See discussion in [GitHub issue #6123](https://github.com/kubernetes/enhancements/pull/6123#issuecomment-4712288809).
+* **Why Rejected**: A node-level configuration applies the delay to all pods on the node, regardless of whether they need it. This impacts cluster elasticity and automated scaling responsiveness. Individual pods without latency-sensitive workloads are forced to wait the configured duration during scale-down, slowing down the cluster's ability to respond to resource changes. While node taints provide an operational workaround for Alpha, this masks an underlying design gap — the feature should be opt-in at the pod level, not a one-size-fits-all node setting. It would also interact badly with persisting pending scale-downs across a kubelet restart (see [Kubelet Restart](#kubelet-restart)): the operator could change or remove the option between the moment a scale-down is accepted and the moment its delay expires, leaving in-flight resizes governed by a value they were never admitted with — whereas a pod-level field is immutable for the pod's lifetime, so a persisted deadline is never ambiguous. See discussion in [GitHub issue #6123](https://github.com/kubernetes/enhancements/pull/6123#issuecomment-4712288809).
 
 ### 6. Node Declared Features as Opt-Out Mechanism
 
@@ -1206,7 +1234,13 @@ The following alternatives were considered:
   
   4. **Need for User Feedback**: The SIG Node community agreed to collect user feedback from the Alpha1 implementation of the CPU-focused delay mechanism before designing a more generalized solution. This feedback will inform whether and how to extend the feature to other resource types.
 
-**Note:** The scale-down delay approach was selected during the KEP review process (discussed in SIG Node meetings and document reviews) as it provides a simple, deterministic guarantee without requiring workload-kubelet synchronization. Concerns about timer-based approaches introducing race conditions are unfounded: both the delay verification and cpuset actuation occur sequentially within the CPUManager's reconcile loop, ensuring deterministic behavior.
+### 9. No Persistence of Pending Scale-Down State
+
+* **Description**: Keep the pending scale-down — the preAssignments and its timer — in kubelet memory only. After a kubelet restart the resize is re-admitted from the pod spec and the grace period starts again from zero. This was the behavior in the version of this KEP approved for the v1.37 milestone.
+
+* **Why Rejected**: Repeated kubelet restarts postpone the release of the CPUs indefinitely, because each restart re-arms the full grace period. Between the restart and the re-admission of the pod, `assigned.cpuset` reverts to the pre-scale-down cpuset, so the workload sees its notification withdrawn and then issued again. The target cpuset is also recomputed after the restart, with nothing guaranteeing that the result matches the one already exposed to the workload. In fairness, the kubelet does re-arm the pod termination grace period and the crash-loop backoff after a restart, so re-arming would be consistent with existing kubelet behavior. Avoiding it here, however, costs only a cpuset and one timestamp per pending scale-down, and the v4 CPU Manager checkpoint already has a precedent for such additive extensions, so the more predictable option was chosen during the work on v1.38.
+
+**Note:** The scale-down delay approach was selected during the KEP review process (discussed in SIG Node meetings and document reviews) as it provides a simple, deterministic guarantee without requiring workload-kubelet synchronization. Within a running kubelet the approach is free of races: both the delay check and the cpuset actuation happen sequentially in the CPUManager's reconcile loop. The one real race — losing a pending scale-down when the kubelet restarts — is addressed by persisting it in the CPU Manager checkpoint (see [Kubelet Restart](#kubelet-restart)).
 
 
 ## Infrastructure Needed (Optional)
