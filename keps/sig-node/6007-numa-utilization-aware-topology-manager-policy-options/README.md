@@ -27,7 +27,6 @@
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
-      - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -133,9 +132,9 @@ node selection based on allocation state. This KEP addresses that gap.
   prioritize CPU, memory, or specific device types when computing utilization
   scores. Weights are specified as a comma-separated string of `resource=weight`
   pairs (e.g., `"cpu=3,memory=1,nvidia.com/gpu=6"`), where each weight is an
-  integer in the range [0, 100]. Resources the string does not name default to a
-  weight of 1, so naming a resource raises its influence rather than silencing
-  the others.
+  integer in the range [0, 100]. Any resource not explicitly listed in the string
+  defaults to a weight of 1, so naming a resource raises its influence rather
+  than silencing the others.
 - Maintain existing topology guarantee semantics. The new options only
   influence NUMA node selection among equally valid candidates and do not
   change which hints are considered preferred.
@@ -583,7 +582,11 @@ None. Existing Topology Manager test infrastructure is sufficient.
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `<date>` - `<coverage>`
+- `k8s.io/kubernetes/pkg/kubelet/cm/topologymanager`: `2026-09-16` - `90.8`
+
+as reported by `go test -cover ./pkg/kubelet/cm/topologymanager/`. This is the current baseline;
+we'll re-measure once the implementation lands and ensure the new scoring and policy option code
+maintains or improves it.
 
 Unit tests will cover:
 - Score calculation for each provider (CPU/Memory/Device)
@@ -607,14 +610,6 @@ Unit tests will cover:
 - Validation of `numa-allocation-strategy` values (`none`, `most-allocated`,
   `least-allocated`)
 - Feature gate on/off behavior
-
-##### Integration tests
-
-Integration tests will cover:
-- Multi-provider hint merge with scores
-- Policy behavior with feature gate enabled and disabled
-- Weight normalization end-to-end
-- Interaction with `prefer-closest-numa-nodes` from KEP-3545
 
 ##### e2e tests
 
@@ -640,6 +635,8 @@ E2e tests will cover:
 - [ ] `numa-allocation-strategy` policy option implemented (with `none`,
   `most-allocated`, and `least-allocated` values)
 - [ ] Per-resource weights (`numa-score-weights`) implemented
+- [ ] `kubelet_topology_manager_numa_score_selection_total` metric implemented
+  to help validate the feature is operative
 - [ ] Add proper e2e node tests
 
 #### Alpha to Beta Graduation
@@ -647,6 +644,8 @@ E2e tests will cover:
 - [ ] Gather feedback from consumers of the new policy options
 - [ ] No major bugs reported in the previous cycle
 - [ ] Score-aware preferred-first merge optimization implemented
+- [ ] `kubelet_topology_manager_numa_container_count` metric implemented to
+  track container distribution across NUMA nodes
 
 #### Beta to GA Graduation
 
@@ -751,8 +750,30 @@ pod admissions.
 
 ###### What specific metrics should inform a rollback?
 
-An increase in topology admission errors or unexpected pod placement patterns
-(e.g., pods not landing on expected NUMA nodes) should prompt investigation.
+A rise in `kubelet_topology_manager_admission_errors_total` (an existing
+kubelet metric) relative to
+`kubelet_topology_manager_admission_requests_total`, or unexpected pod
+placement patterns (e.g., pods not landing on expected NUMA nodes), should
+prompt investigation.
+
+**Alpha**: The following metric will help operators confirm the feature is
+operative and identify unexpected placement patterns:
+- `kubelet_topology_manager_numa_score_selection_total` (counter): Tracks the
+  total count of NUMA node selections where scoring influenced the placement
+  decision (incremented when the selected hint differs from what the
+  pre-existing narrowest/closest tiebreak would have chosen). Labels:
+  `numa_allocation_strategy` (`most-allocated`, `least-allocated`). When this
+  counter increases, it confirms the policy option is actively affecting
+  placement decisions.
+
+Operators can also manually verify placement by inspecting container CPU
+affinity via `taskset -cp 1` and NUMA memory allocation via `numactl -H`
+inside containers.
+
+**Beta**: An additional metric will be introduced, described under
+[Monitoring Requirements](#monitoring-requirements):
+- `kubelet_topology_manager_numa_container_count`: tracks container
+  distribution across NUMA nodes
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -769,7 +790,23 @@ No.
 Inspect the kubelet configuration of the nodes: check the feature gate status
 and the `numa-allocation-strategy` value in `topologyManagerPolicyOptions`.
 
+A non-zero `kubelet_topology_manager_numa_score_selection_total` on a node
+confirms that the option is not merely configured but is actually changing
+placement decisions, and its `numa_allocation_strategy` label reports which
+strategy is in effect.
+
 ###### How can someone using this feature know that it is working for their instance?
+
+- [x] Metrics
+  - Metric name: `kubelet_topology_manager_numa_score_selection_total`
+  - Components exposing the metric: kubelet
+
+The counter increases whenever score-based selection picks a different NUMA
+node than the pre-existing narrowest/closest tiebreak would have picked, so a
+rising value is direct evidence that the feature is operative. A counter that
+stays at zero while the option is configured means every admission so far was
+already structurally determined (or no scored candidates tied), not necessarily
+that the feature is broken.
 
 - [ ] Other (treat as last resort)
   - Details: Launch a pod requiring resources from a specific NUMA node on a
@@ -786,7 +823,7 @@ new API latency or availability concerns.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `topology_manager_admission_duration_ms`
+  - Metric name: `kubelet_topology_manager_admission_duration_ms`
   - Components exposing the metric: kubelet
 
 This existing metric captures the time spent in Topology Manager admission.
@@ -795,9 +832,42 @@ in this metric.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-A metric tracking the score-based selection outcome (e.g., which NUMA node was
-selected and its score) would be useful for debugging and can be considered
-for beta.
+**Alpha**: The following metric will be implemented to help validate that
+the feature is operative:
+
+- **`kubelet_topology_manager_numa_score_selection_total`** (counter): Total
+  count of NUMA node selections where scoring influenced the placement decision
+  (incremented when the selected hint differs from what the pre-existing
+  narrowest/closest tiebreak would have chosen). Labels:
+  `numa_allocation_strategy` (`most-allocated`, `least-allocated`). This helps
+  operators verify that the policy option is taking effect and quantify its
+  impact on placement decisions.
+
+  Computing this does not require a second comparison pass: the merge loop
+  already carries the incumbent best hint, which is exactly what Step 4 of
+  [Allocation-Aware Policy Options](#allocation-aware-policy-options) ("keep
+  current") selects under `numa-allocation-strategy: none`, so the two
+  candidates are both available in the same pass. The counter is incremented
+  once per completed merge, i.e. once per admitted container under container
+  scope and once per admitted pod under pod scope.
+
+**Beta**: The following metric will be added to improve observability:
+
+- **`kubelet_topology_manager_numa_container_count`** (gauge): Number of
+  containers currently allocated on each NUMA node. Labels: `numa_node`. This
+  metric helps operators verify expected pod placement patterns (e.g.,
+  containers spreading across NUMA nodes with `least-allocated` or
+  consolidating with `most-allocated`) and identify NUMA imbalance issues.
+
+  A container aligned to a multi-node affinity mask increments the gauge for
+  every node in its mask, so the sum across nodes can exceed the number of
+  running containers. The gauge is decremented when a container's allocation is
+  released, and is rebuilt from the checkpointed allocation state when the
+  kubelet restarts.
+
+Both metrics are registered in `pkg/kubelet/metrics` alongside the existing
+Topology Manager metrics, use the same `kubelet` subsystem, and are registered
+at `ALPHA` stability level.
 
 ### Dependencies
 
@@ -832,8 +902,14 @@ the number of providers (typically 2-4), which is negligible.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-No. The additional Score field in `TopologyHint` adds 8 bytes per hint. Score
-computation reuses allocation state already maintained by hint providers.
+No. The additional Score field in `TopologyHint` adds 8 bytes per hint, and the
+hint count is bounded and predictable. Hints are produced per requested
+resource by O(number of device plugins) + 2 providers (the CPU and memory
+managers), and each provider enumerates at most one hint per NUMA affinity mask
+it considers (`bitmask.IterateBitMasks` over N NUMA nodes). On real hardware
+(typically 2-8 NUMA nodes and 2-4 hint providers) this stays well under
+control, and the hints are transient: they are freed once admission completes.
+Score computation reuses allocation state already maintained by hint providers.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -870,7 +946,11 @@ using local allocation state.
   - Mitigations: See
     [Preserving Current Placement Behavior](#preserving-current-placement-behavior).
   - Diagnostics: Compare `topologyManagerScope` in the kubelet configuration
-    against the pod's observed CPU and memory affinity.
+    against the pod's observed CPU and memory affinity. The
+    `kubelet_topology_manager_numa_score_selection_total` metric (alpha)
+    confirms whether scoring is influencing placement decisions. In beta, the
+    `kubelet_topology_manager_numa_container_count` metric will help identify
+    when containers are spreading across NUMA nodes.
   - Testing: E2e tests cover both scopes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -885,7 +965,8 @@ N/A.
 
 Adds complexity to the Topology Manager hint comparison and merge logic.
 However, the additional complexity is gated behind opt-in policy options and
-has no effect on the default code path.
+has no effect on the default code path. The change is well contained and
+clearly scoped, even at the projected GA stage.
 
 ## Alternatives
 
@@ -904,6 +985,9 @@ Let users specify packing/spreading preference per pod via annotations.
 **Pros:** More flexible, users opt-in per workload.
 **Cons:** Increases configuration burden; hard to enforce cluster-wide
 policies; inconsistent with the existing node-level Topology Manager model.
+Annotations are also an API side channel: their values are not covered by API
+validation, so a malformed preference is only caught on the node at admission
+time, per node, rather than being rejected when the pod is created.
 
 ### Alternative 3: Static NUMA Assignment
 

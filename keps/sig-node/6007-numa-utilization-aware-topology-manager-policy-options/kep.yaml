@@ -12,7 +12,7 @@ reviewers:
   - "@ffromani"
 approvers:
   - "@dchen1107"
-last-updated: "2026-09-08"
+last-updated: "2026-09-16"
 see-also:
   - "keps/sig-node/3545-improved-multi-numa-alignment"
   - "keps/sig-node/4622-topologymanager-max-allowable-numa-nodes"
@@ -45,5 +45,12 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics: 
-  - topology_manager_admission_duration_ms
+metrics:
+  # New in alpha: confirms the strategy is actually changing NUMA placement.
+  - kubelet_topology_manager_numa_score_selection_total
+  # New in beta: container distribution across NUMA nodes.
+  - kubelet_topology_manager_numa_container_count
+  # Existing Topology Manager metrics used to detect admission regressions.
+  - kubelet_topology_manager_admission_duration_ms
+  - kubelet_topology_manager_admission_errors_total
+  - kubelet_topology_manager_admission_requests_total
