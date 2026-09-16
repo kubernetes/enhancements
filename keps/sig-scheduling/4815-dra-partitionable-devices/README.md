@@ -51,17 +51,17 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -1288,6 +1288,18 @@ Start of v1.36 development cycle (01/23/2026):
 - `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 44.2%
 - `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 80.0%
 
+Start of v1.38 development cycle (09/16/2026):
+- `k8s.io/dynamic-resource-allocation/cel`: 93.2%
+- `k8s.io/dynamic-resource-allocation/structured`: 50.0%
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: 94.9%
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: 95.3%
+- `k8s.io/dynamic-resource-allocation/structured/internal/stable`: 94.1%
+- `k8s.io/kubernetes/pkg/controller/resourceclaim`: 78.5%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: 87.2%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: 93.0%
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: 49.1%
+- `k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources`: 87.1%
+
 ##### Integration tests
 
 <!--
@@ -1299,9 +1311,19 @@ https://storage.googleapis.com/k8s-triage/index.html
 -->
 
 Integration tests to verify performance have been added
-[here](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf/dra/partitionabledevices).
-These tests also serve as correctness tests, but additional integration tests will
-be added to improve coverage.
+[here](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf/dra/partitionabledevices)
+(expanded in [#139866](https://github.com/kubernetes/kubernetes/pull/139866)
+alongside allocator performance optimizations in
+[#138917](https://github.com/kubernetes/kubernetes/pull/138917)).
+
+Additional integration tests covering correctness, feature
+enablement/disablement, and multi-host device node selection have been added:
+- source code:
+  https://github.com/kubernetes/kubernetes/blob/d888ea8ae424fd5dac4535a9ef013b12cb0cb375/test/integration/dra/partitionable_devices.go
+- job:
+  https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=dra
+- triage:
+  https://storage.googleapis.com/k8s-triage/index.html?text=PartitionableDevices&job=integration&test=dra
 
 ##### e2e tests
 
@@ -1317,7 +1339,9 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 
 E2e tests have been added for the Partitionable Devices feature:
 
-- source code: https://github.com/kubernetes/kubernetes/blob/b2ac9e206fdd912f35f2ab5b3c5b5243303ba14b/test/e2e/dra/dra.go#L1789-L1867
+- source code:
+  - https://github.com/kubernetes/kubernetes/blob/d888ea8ae424fd5dac4535a9ef013b12cb0cb375/test/e2e/dra/dra.go#L2465-L2543
+  - https://github.com/kubernetes/kubernetes/blob/d888ea8ae424fd5dac4535a9ef013b12cb0cb375/test/e2e_dra/partitionabledevices_test.go (upgrade/downgrade e2e test)
 - job: https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all&include-filter-by-regex=DRAPartitionableDevices
 - triage: https://storage.googleapis.com/k8s-triage/index.html?test=DRAPartitionableDevices
 
@@ -1337,9 +1361,26 @@ E2e tests have been added for the Partitionable Devices feature:
 
 #### GA
 
-- 3 examples of vendors making use of the extensions proposed in this KEP
-- Scalability tests that mirror real-world usage as determined by user feedback
-- Allowing time for feedback
+- Examples of vendors making use of the extensions proposed in this KEP:
+  - **NVIDIA DRA Driver for GPUs**
+    ([dra-driver-nvidia-gpu](https://github.com/kubernetes-sigs/dra-driver-nvidia-gpu)):
+    Uses `SharedCounters` and `ConsumesCounters` to dynamically partition
+    Multi-Instance GPUs (MIG) across multiple dimensions upon allocation rather
+    than requiring static pre-partitioning.
+- Scalability tests that mirror real-world usage as determined by user feedback:
+  - Scheduler performance integration benchmarks in
+    [`test/integration/scheduler_perf/dra/partitionabledevices`](https://github.com/kubernetes/kubernetes/tree/master/test/integration/scheduler_perf/dra/partitionabledevices)
+    ([#139866](https://github.com/kubernetes/kubernetes/pull/139866)) test
+    allocation latency, backtracking, and throughput with partitionable devices
+    and shared counter pools, alongside allocator performance optimizations
+    ([#138917](https://github.com/kubernetes/kubernetes/pull/138917)).
+- Allowing time for feedback:
+  - The feature has been in Beta and enabled by default since Kubernetes v1.36
+    (two releases: v1.36 and v1.37). Edge cases discovered during Beta (such as
+    interaction between `SharedCounters` and multi-allocatable devices in
+    `DRAConsumableCapacity`,
+    [#139040](https://github.com/kubernetes/kubernetes/pull/139040)) were
+    addressed without requiring API changes.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1453,6 +1494,11 @@ on the nodes. Drivers should only use the feature once it has been fully
 rolled out in the cluster. This will not affect running workloads unless they
 have to be restarted.
 
+For upgrade to 1.38 where the Partitionable Devices feature is promoted to GA,
+the feature remains enabled by default with no API or behavioral changes from 1.36
+and 1.37. Existing workloads and drivers using Partitionable Devices will continue
+to work seamlessly across the upgrade.
+
 ###### What specific metrics should inform a rollback?
 
 One indicator are unexpected restarts of the cluster control plane
@@ -1469,8 +1515,14 @@ whether errors are related to this feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-This will be done manually before transition to beta by bringing up a KinD cluster with kubeadm
+Manual testing was conducted before transition to beta by bringing up a KinD cluster with kubeadm
 and changing the feature gate for individual components.
+
+In addition, automated end-to-end upgrade and downgrade testing is performed by
+[`test/e2e_dra/partitionabledevices_test.go`](https://github.com/kubernetes/kubernetes/blob/d888ea8ae424fd5dac4535a9ef013b12cb0cb375/test/e2e_dra/partitionabledevices_test.go)
+as part of `TestUpgradeDowngrade`, which verifies API preservation
+(`SharedCounters` and `ConsumesCounters`) and scheduler allocation behavior
+across cluster version upgrades and downgrades.
 
 Roundtripping of API types is covered by unit tests.
 
@@ -1529,9 +1581,9 @@ No
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-This feature depends on the DRA structured parameters feature being enabled, and on DRA drivers being deployed.
-There are no requirements beyond those already needed for DRA structured parameters. Core DRA is locked to on in
-1.36, but it can still be disabled through emulation.
+This feature depends on DRA drivers being deployed. There are no requirements
+beyond those already needed for core DRA (which graduated to GA in 1.34 and is
+unconditionally enabled).
 
 ### Scalability
 
@@ -1601,6 +1653,7 @@ N/A since this feature does not come with an SLO.
 - Kubernetes 1.32: KEP accepted as "implementable".
 - Kubernetes 1.33: Implemented as an alpha feature.
 - Kubernetes 1.36: Partitionable Devices graduates to beta.
+- Kubernetes 1.38: Partitionable Devices graduates to GA.
 
 ## Drawbacks
 
