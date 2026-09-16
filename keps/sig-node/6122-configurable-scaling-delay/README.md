@@ -462,11 +462,30 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-We plan on adding/modifying functions to the following files:
-- `pkg/kubelet/cm/cpumanager/policy_options_test.go`
-- `pkg/kubelet/cm/cpumanager/policy_static_test.go`
-- `pkg/volume/downwardapi/downwardapi_test.go`
-- `pkg/apis/core/validation/validation_test.go`
+We plan on adding or extending tests in the following files.
+
+Pod API field:
+- `pkg/apis/core/validation/validation_test.go`: the `[0, 10]` range, rejection of the field on creation while the feature gate is disabled, immutability on update including as part of a resize, and acceptance on update when the old spec already carries the field.
+- `pkg/api/pod/util_test.go`: wiring the feature gate into the pod validation options, and the ratcheting rule that keeps the value allowed once it is in use.
+
+Scale-down delay in the CPU Manager:
+- `pkg/kubelet/cm/cpumanager/policy_static_test.go`: recording a pending scale-down, applying it once the grace period has elapsed, consecutive scaling in both directions, and an unset or zero `scaleDownGracePeriodSeconds`.
+- `pkg/kubelet/cm/cpumanager/cpu_assignment_test.go`: the cpuset computed for a scale-down.
+- `pkg/kubelet/cm/cpumanager/cpu_manager_test.go`: the reconcile loop applying an expired pending scale-down, and waiting for the pod sources to be synced before releasing CPUs.
+- `pkg/kubelet/cm/cpumanager/topology_hints_test.go`: topology hints while a scale-down is pending.
+
+Checkpoint persistence:
+- `pkg/kubelet/cm/cpumanager/state/state_checkpoint_test.go`: round-trip of the persisted pending scale-down, restoring a checkpoint written without it, restoring with the feature gate disabled, and tolerance of unknown fields.
+- `pkg/kubelet/cm/cpumanager/state/state_test.go`: removing a container or clearing the state also removes its pending scale-down.
+- `pkg/kubelet/cm/cpumanager/policy_static_restore_test.go`: every row of the restart decision table — a mismatched boot ID, a stored time that has and has not elapsed, and a request reverted or changed again while the kubelet was down.
+- `pkg/kubelet/util`: the helper returning monotonic time since boot, with a test per supported platform alongside the existing boot-time helpers.
+
+Node Declared Features:
+- `staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features`: a new package declaring this feature and its registration, following the per-feature packages already present there.
+
+Reporting and resize completion:
+- `pkg/kubelet/allocation/allocation_manager_test.go`: the `PodResizeInProgress` condition and the event emitted when a grace period cannot be honored.
+- `pkg/kubelet/kubelet_pods_test.go`: deferring the actual resources update until the new cpuset has been applied.
 
 
 
