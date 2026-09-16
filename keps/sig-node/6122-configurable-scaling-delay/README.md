@@ -937,7 +937,22 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-No
+No new in-cluster or external services. The feature relies on the following, all in-tree:
+
+- `InPlacePodVerticalScalingExclusiveCPUs` feature gate
+  - Usage description: the scale-down delay applies to in-place resizes of exclusive CPUs, which this gate enables.
+    - Impact of its outage on the feature: `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` cannot be enabled without it, and the dependency is refused at kubelet startup.
+    - Impact of its degraded performance or high-error rates on the feature: N/A, a feature gate is binary.
+- CPU Manager `static` policy
+  - Usage description: only containers with exclusive CPUs have a cpuset whose change can be delayed, and those exist only under the static policy.
+    - Impact of its outage on the feature: under any other policy no pod has exclusive CPUs, so the field has no effect.
+    - Impact of its degraded performance or high-error rates on the feature: N/A, a kubelet configuration.
+- Node Declared Features ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features), GA since v1.37)
+  - Usage description: the kubelet declares the feature and the scheduler uses it to filter nodes for pods that set `scaleDownGracePeriodSeconds`.
+    - Impact of its outage on the feature: a pod may be placed on a node that cannot honor its grace period. The kubelet then applies the new cpuset without waiting and reports it, see [Grace Period Not Honored](#grace-period-not-honored). The same applies to pods placed without the scheduler, such as static pods.
+    - Impact of its degraded performance or high-error rates on the feature: a stale node status could misroute pods for as long as the declared features are out of date, with the same bounded consequence.
+
+No new container runtime capability is required: applying a cpuset already goes through the existing CRI `UpdateContainerResources` call.
 
 ### Scalability
 
