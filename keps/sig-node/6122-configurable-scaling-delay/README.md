@@ -780,13 +780,11 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-The feature gate `DownwardAPIAssignedResources` is Alpha and is disabled by default.
+**Highly available control plane.** During a rollout the gate may be enabled on some apiservers and not others. Creating a pod that sets `scaleDownGracePeriodSeconds` then succeeds or fails depending on which apiserver serves the request. The failure is an explicit validation error rather than silent acceptance, and it disappears once the rollout completes. Updates of pods that already carry the field are unaffected, because the validation option is derived from the old spec and therefore does not depend on the gate state of the apiserver handling the request.
 
-The upgrade and rollback of kubelet and kube-apiserver components can be conducted with feature gate enabled only if it does not break the rule written in documentation: "Only enable this feature gate when all kubelets in the cluster support this feature.". See above sections for  Upgrade / Downgrade Strategy and Version Skew Strategy
+**Rolling the gate out across nodes.** A kubelet starts declaring `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` once the gate is enabled on it. Until enough nodes declare it, a pod that sets the field stays `Pending` with a scheduling event, rather than running somewhere that would ignore its grace period. That is a visible and recoverable state.
 
-This feature ensures a minimum delay before applying the new cpuset during scale-down. A rollout or rollback can fail if the kubelet configuration is invalid (e.g., an invalid `scale-delay-time` value).
-
-However, since this feature only affects the timing of cpuset changes and not the allocation itself, a failure does not impact already running workloads — their current cpuset remains in effect.
+**Already running workloads are not affected.** The feature only changes when an already-decided cpuset is applied, never which CPUs are allocated. If anything about it fails, the container keeps the cpuset it currently has. A rollback of the kubelet likewise leaves the persisted pending scale-down ignored rather than misread; see [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ###### What specific metrics should inform a rollback?
 
@@ -795,7 +793,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-N/A
+No dedicated metrics are added in Alpha. The signals to watch are the `ScaleDownGracePeriodNotHonored` events, which indicate nodes applying a cpuset without the preparation window a pod asked for, and pods that stay `Pending` because no node declares the feature. Metrics are considered for Alpha2, see [Alpha2](#alpha2).
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -805,44 +803,24 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-Local Testing Plan:
+Local testing plan.
 
-**Test `DownwardAPIAssignedResources` feature upgrade and rollback**
+**Feature gate enable → disable → enable**
 
-Note: The `DownwardAPIAssignedResources` feature gate is configured on kube-apiserver (not kubelet). The kubelet always supports reading `assigned.cpuset` from pod specs and exposing CPU manager state via Downward API volumes. The feature gate only controls API server validation of the `assigned.cpuset` field.
+1. Cluster with both gates enabled and the CPU Manager static policy. Create a pod with exclusive CPUs and `scaleDownGracePeriodSeconds: 5`, then scale it down.
+   - Verify the cpuset changes no sooner than 5s after the request.
+2. Disable `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` on kube-apiserver and the kubelet and restart both.
+   - Verify the pod keeps running and can still be resized.
+   - Verify its next scale-down is applied without waiting and is reported through the `PodResizeInProgress` condition and an event.
+   - Verify that creating a new pod which sets the field is rejected.
+3. Re-enable the gate on both and restart.
+   - Verify the existing pod's next scale-down waits for its grace period again.
+   - Verify a newly created pod setting the field is admitted.
 
-1. Deploy cluster with `DownwardAPIAssignedResources` feature gate disabled on kube-apiserver.
-2. Create a pod with `assigned.cpuset` downward API volume.
-   - Verify the pod is admitted (field is silently ignored by apiserver).
-   - Verify kubelet creates the downward API volume file (empty or with current cpuset).
-3. Initiate a pod downscaling request.
-   - Verify the pod scales down after timer expiry.
-   - Verify the downward API volume file is updated with the new cpuset by kubelet.
-4. Enable the feature gate on kube-apiserver (restart apiserver) and initiate another pod downscaling request.
-   - Verify the pod remains in `Running` state without errors.
-   - Verify CPU manager states are exposed through the Downward API.
-   - Verify new pods with `assigned.cpuset` are accepted by apiserver.
-5. Disable the feature gate on kube-apiserver again and initiate another pod downscaling request.
-   - Verify existing pods with `assigned.cpuset` continue running without errors (field is silently ignored).
-   - Verify the pod still scales down after timer expiry.
-   - Verify kubelet continues to update the downward API volume file (kubelet behavior is independent of the feature gate).
-6. Finally, re-enable the feature gate on kube-apiserver and initiate another pod downscaling request.
-   - Verify the pod remains in `Running` state without errors.
-   - Verify CPU manager states are exposed through the Downward API.
+**Kubelet downgrade with a pending scale-down**
 
-**Test `scale-delay-time` feature upgrade and rollback**
-
-1. Deploy kubelet v1.36 with `scale-delay-time` as 0.
-   - Do not verify the pod scale-down delay, as exclusive CPU resize is not supported in this version.
-2. Upgrade kubelet from v1.36 to v1.37, configure `scale-delay-time` as Xs (e.g. 5s), and initiate a pod scale up first and request scale-down.
-   - Verify the pod remains in `Running` state without errors.
-   - Verify the pod scales down delay is greater than 5s.
-3. Downgrade kubelet from v1.37 to v1.36, clear the `scale-delay-time` configuration.
-   - Verify the pod remains in `Running` state without errors.
-   - Do not verify the pod scale-down delay, as exclusive CPU resize is not supported in this version.
-4. Upgrade kubelet back to v1.37, configure `scale-delay-time` again, and initiate a pod scale up first and request scale-down.
-   - Verify the pod remains in `Running` state without errors.
-   - Verify the pod scales down delay is greater than 5s.
+1. Request a scale-down with a grace period long enough for it to still be pending, then restart the kubelet from an older build.
+   - Verify the kubelet starts without errors, ignores the persisted pending scale-down, and leaves the container on the cpuset it currently holds.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
