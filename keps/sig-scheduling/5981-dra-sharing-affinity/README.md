@@ -2012,7 +2012,7 @@ Two signals, in order of cost-to-collect:
 
 ###### How can someone using this feature know that it is working for their instance?
 
-A user should be able to observe that:
+There are no events or logs to show that the scheduler is excluding devices due to affinity locks, and adding them may be noisy. Instead, users can observe that the affinity is respected. A user should be able to observe that:
 
 - compatible claims are eligible to reuse already-locked devices (alpha
   does not actively prefer them; affinity-aware preference lands in beta),
