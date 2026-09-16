@@ -1071,7 +1071,9 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-N/A
+The delay itself needs no control plane: the grace period comes from the pod spec the kubelet already holds, and a scale-down already in flight is completed locally by the CPU Manager.
+
+Two things do depend on the apiserver. The resize completion and the `ScaleDownGracePeriodNotHonored` event are reported only once it is reachable again, through the existing retry paths. And if the kubelet restarts while the apiserver is unreachable, releasing CPUs waits for the pod sources to sync, so a pending scale-down stays pending and the container keeps the CPUs it currently has — the minimum delay is still honored, only its completion is postponed.
 
 ###### What are other known failure modes?
 
@@ -1088,11 +1090,29 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
-N/A
+- A pod's grace period is not honored
+  - Detection: `ScaleDownGracePeriodNotHonored` events, and the message on the pod's `PodResizeInProgress` condition.
+  - Mitigations: re-enable `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` on the node, or move the pod to a node that declares the feature.
+  - Diagnostics: kubelet logs where the pending scale-down is applied without waiting.
+  - Testing: e2e case "Grace Period Not Honored".
+- A pod that sets the field stays `Pending`
+  - Detection: the pod has no node assigned and the scheduler reports that no node satisfies its required features.
+  - Mitigations: enable the gate on at least one node running the static CPU policy, or remove the field from the pod.
+  - Diagnostics: scheduling events from `kubectl describe pod`, and `node.status.declaredFeatures` on the candidate nodes.
+  - Testing: the scheduler filtering integration test.
+- A pending scale-down is discarded
+  - Detection: the resize does not complete and takes a fresh grace period instead, visible as the `PodResizeInProgress` condition persisting.
+  - Mitigations: none needed. The container keeps the CPUs it holds and the resize is carried out on the next cycle.
+  - Diagnostics: kubelet logs on checkpoint restore, reporting a boot ID mismatch or an entry that could not be used.
+  - Testing: e2e case "Node Reboot Before Timer Expiry", and the restart decision table in unit tests.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-N/A
+The SLOs concern when the new cpuset is applied relative to a pod's grace period.
+
+If a cpuset is applied sooner than the grace period, check whether the node still declares the feature and look for a `ScaleDownGracePeriodNotHonored` event, which tells a node that could not honor the request apart from an actual defect.
+
+If it is applied far later than the grace period, the wait beyond it is bounded by the CPU Manager reconcile period, so check that configuration first, then look for kubelet restarts during the window and for a pending scale-down discarded on restore.
 
 ## Implementation History
 
