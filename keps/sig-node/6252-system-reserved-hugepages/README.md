@@ -27,6 +27,7 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
+    - [Deprecation](#deprecation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -39,6 +40,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -53,7 +55,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -362,6 +364,10 @@ Extend `test/e2e_node/node_container_manager_test.go` as in
 - At least two releases since beta.
 - Real-world usage confirmed.
 
+#### Deprecation
+
+N/A — this feature extends existing flags; no deprecation is planned.
+
 ### Upgrade / Downgrade Strategy
 
 No special upgrade steps required. The feature is opt-in via the
@@ -574,3 +580,7 @@ consumption, and adds operational overhead.
 **No feature gate.** Hugepages are already GA, so the change could land as a
 direct fix. A gate adds rollback safety (disabled = reject hugepage keys in
 the reserved flags) and is preferred for a kubelet flag API change.
+
+## Infrastructure Needed (Optional)
+
+None.
