@@ -52,11 +52,12 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: InPlacePodVerticalScalingExclusiveCPUS
+  - name: InPlacePodVerticalScalingExclusiveCPUs
     components:
       - kubelet
-  - name: CPUManagerPolicyAlphaOptions
+  - name: InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay
     components:
+      - kube-apiserver
       - kubelet
   - name: DownwardAPIAssignedResources
     components:
