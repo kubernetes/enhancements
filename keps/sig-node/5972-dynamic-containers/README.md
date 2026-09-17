@@ -320,7 +320,7 @@ When a running container is removed from a pod (and the changes are allocated), 
 
 Once a removed container is terminated, its `ContainerStatus` will be kept in the pod status. The Kubelet will preserve removed container statuses in the API when it updates the pod status. Garbage collection will be applied to removed container statuses.
 
-1. Keep up to N (maybe 10) removed container statuses: After more than N removed container statuses have accrued, delete the oldest status.
+1. Keep up to N (for alpha, N=10) removed container statuses: After more than N removed container statuses have accrued, delete the oldest status.
 2. Enhance `containerGC` to clear the container status when the actual container object is garbage collected.
 
 Logs from removed containers will be managed by the [existing container garbage collection](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/kuberuntime/kuberuntime_gc.go).
@@ -416,6 +416,7 @@ matching `MatchConstraints`, `NamespaceSelector`, or `ObjectSelector` are consid
 - Ecosystem research & outreach for static container assumptions.
 - Decide on strategy for resolving the Kubelet / Scheduler resize race condition.
 - Decision on whether to add a field to designate pods as dynamic/non-dynamic at creation time.
+- Reevaluate status garbage collection threshold (N=10).
 
 #### GA
 
@@ -450,7 +451,20 @@ The Kubelet will declare support for DynamicContainers in it's declared features
   - Feature gate name: `DynamicContainers`
   - Components depending on the feature gate: `kube-apiserver`, `kubelet`
 
-Additionally, a cluster admin can prevent dynamic container mutation with a ValidatingAdmissionPolicy, such as:
+**kube-apiserver feature gate controls:**
+- Whether the `dynamic` subresource is enabled.
+- Whether the `allocated` subresource is enabled.
+
+**kubelet feature gate controls:**
+- Whether image updates go through allocation
+- Whether the Kubelet will allocate dynamic container changes (Note: blocking dynamic container allocation will also block resize)
+
+In addition to feature gating, the following mechanisms are included to control use of this feature:
+- RBAC, via limiting the granting of the `/dynamic` subresource
+- ValidatingAdmissionPolicy for fine-grained mutation control (see below)
+- API server flag: `--disable-pod-subresources`
+
+ValidatingAdmissionPolicy to forbid dynamic container mutation:
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
@@ -473,7 +487,9 @@ spec:
 
 ###### Does enabling the feature change any default behavior?
 
-No.
+Yes. Container image updates will now be gated by the atomic allocation step. See [Image update allocation](#image-update-allocation).
+
+The main containers field on the pod spec is now mutable, via the new subresource.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -487,7 +503,8 @@ There are no storage changes in the API.
 
 ###### Are there any tests for feature enablement/disablement?
 
-None planned.
+- Enabled & disabled E2E tests
+- Enabled, disabled, and skew integration tests (mocked NodeDeclaredFeatures on the node).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -506,7 +523,7 @@ intact until they naturally terminate.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No.
+Will be manually tested for Beta.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -524,7 +541,16 @@ Monitor container status for newly added or removed containers.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-- Dynamic container addition to `Running` state transition overhead < 500ms (excluding container image pulling & assuming resource availability).
+Assuming:
+- Image pre-pulled
+- Resources are immediately available (i.e. no deferred resizes)
+- Moderate container churn
+
+Dynamic container addition to `Running` state, excluding container image pulling & assuming resource availability:
+- Median < 500ms
+- 95th Percentile < 5s
+
+Note that these numbers are heavily constrained by containerd/runc latency.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
