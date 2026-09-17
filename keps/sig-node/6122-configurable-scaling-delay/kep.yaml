@@ -10,7 +10,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: implementable
+status: provisional
 creation-date: 2026-05-28
 reviewers:
   - "@ffromani"
@@ -53,9 +53,6 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: InPlacePodVerticalScalingExclusiveCPUs
-    components:
-      - kubelet
   - name: InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay
     components:
       - kube-apiserver
