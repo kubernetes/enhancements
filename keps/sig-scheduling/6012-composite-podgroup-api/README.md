@@ -45,7 +45,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [API validation](#api-validation)
     - [<code>Workload</code>](#workload)
     - [Group hierarchy](#group-hierarchy)
-      - [Runtime validation in Beta](#runtime-validation-in-beta)
+      - [Runtime validation](#runtime-validation)
   - [Changes in kube-scheduler](#changes-in-kube-scheduler)
     - [Multi-level gang scheduling](#multi-level-gang-scheduling)
       - [Prerequisites](#prerequisites)
@@ -111,14 +111,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -1029,29 +1029,60 @@ of group objects that form a hierarchy which is not reflected in that
 
 Each of these should be treated as a failure mode since it is essentially a
 manifestation of the API misuse. Because of that we will make kube-scheduler
-responsible for discovering them in runtime. Specifically, if scheduler notices
-any of these modes, it will update the status of all the groups within the group
-hierarchy accordingly (i.e. deeming those groups invalid) and will not proceed
-to scheduling it at all.
+responsible for discovering them at runtime and preventing invalid hierarchies
+from being scheduled. For rooted hierarchies that enter the scheduling cycle,
+the scheduler will also update the status of all groups within the hierarchy
+accordingly (deeming those groups invalid).
 
-##### Runtime validation in Beta
+##### Runtime validation
 
-Runtime hierarchy validation will be performed in two distinct places inside
-kube-scheduler:
+In Alpha, we initially envisioned watching `Workload` objects in `kube-scheduler`
+to verify that the runtime group hierarchy matches the template tree defined in
+the `Workload` specification, executed via a dedicated background loop in the
+scheduling queue. That loop would periodically scan stalled/incomplete structures
+in the queue (such as `workloadForest` and `incompletePodGroupPods`), validate
+hierarchies retained there for an extended period, and update group statuses to
+report misconfigurations.
 
-* **Validation Loop in the Scheduling Queue:** Scheduler will spawn a separate
-  goroutine that periodically scans the `incompletePodGroupPods` structure and
-  validates group hierarchies of the Pods that were retained in that structure
-  for a longer period of time. When finding an invalid group hierarchy, that
-  goroutine will mark all groups and pods belonging to that hierarchy as
-  unschedulable by updating the statuses of these objects accordingly.
-* **Validation in the Scheduling Cycle**: `PodGroupInfo` object popped from the
-  scheduling queue can contain older API objects, hence the scheduling cycle
-  runs the `reconcilePodGroupWithSnapshot` method to update the underlying
-  hierarchy. These intermediary updates might make the group hierarchy invalid.
-  Because of that, immediately after the reconciliation, scheduler will run the
-  same group hierarchy validation checks as in the validation loop performed in
-  the scheduling queue.
+However, upon deeper evaluation for Beta, we decided against watching `Workload`
+objects in the scheduler and against running a background validation loop in the
+scheduling queue:
+
+* **Unnecessary `Workload` watch overhead:** Watching `Workload` objects in
+  kube-scheduler solely to compare runtime group trees against `Workload`
+  templates adds cache overhead and cross-resource synchronization races without
+  being necessary for safe scheduling. Enforcing self-contained structural and
+  semantic invariants on the group hierarchy itself is sufficient.
+* **Unclear performance implications:** A background queue scan would need to
+  hold the scheduling queue lock while traversing hierarchies, potentially for a
+  longer period of time, negatively impacting the scheduling throughput.
+* **Increased complexity of the queue:** Making the scheduling queue execute API
+  status updates would require non-trivial synchronization to prevent races with
+  the scheduling cycle, as well as arbitrary tuning of scan intervals and
+  retention thresholds in `incompletePodGroupPods`.
+* **Subsequent validation in the scheduling cycle is still necessary:** A group
+  hierarchy popped from the queue might be stale with respect to the cluster
+  state in the scheduler snapshot. Because the scheduling cycle reconciles
+  objects via `reconcilePodGroupWithSnapshot` shortly before running the
+  scheduling algorithm, asynchronous updates could invalidate a hierarchy that
+  was valid when queued.
+
+Consequently, runtime hierarchy validation in Beta is performed exclusively at
+the beginning of the scheduling cycle. Concretely, we extend the
+`validatePodGroup` method to verify the structural and semantic conditions
+listed in the previous section. If any check fails, the scheduling cycle aborts
+early and updates the statuses of all groups and pods within the hierarchy to
+mark them as invalid.
+
+Note that group hierarchies containing parent reference cycles cannot resolve a
+root group. While queue insertion and `PreEnqueue` traversal must guard against
+cycles to prevent infinite loops in the scheduling queue, cyclical hierarchies
+will remain in `workloadForest` and `incompletePodGroupPods` without ever
+entering the scheduling cycle. As a result, `validatePodGroup` will not execute
+for cycles and the scheduler will not update their status conditions. Because
+creating cyclical references requires a severe bug in a workload controller,
+this edge case is unlikely in practice; if operational experience proves
+otherwise, we can revisit adding out-of-band cycle reporting in the future.
 
 ### Changes in kube-scheduler
 
@@ -1468,6 +1499,60 @@ Further rationale for this decision, together with an analysis of trade-offs, is
 covered in the [alternatives section](#backtracking-in-the-scheduling-algorithm)
 about backtracking.
 
+###### Diagnostics and workload recommendations
+
+Because `kube-scheduler` evaluates sibling child groups sequentially in a
+greedy, single-pass manner without backtracking, any hierarchy containing
+heterogeneous groups or pods that compete for the same nodes or shared topology
+domains can experience order-dependent placement failures.
+
+To alleviate this limitation in Beta without introducing backtracking in the
+scheduling algorithm, we combine hierarchical status diagnostics in the
+scheduler with user-facing workload design guidance in the Kubernetes
+documentation:
+
+1. **Hierarchical Failure Diagnostics (Status Propagation):**
+   When an ancestor `CompositePodGroup` fails to satisfy its scheduling policy
+   or constraints, any descendant child groups and member Pods that succeeded
+   during their own isolated in-memory simulation (or were skipped due to an
+   early abort) cannot proceed to binding. To prevent silent or misleading
+   states where a leaf group appears schedulable or unevaluated while its pods
+   remain pending, the scheduler propagates the nearest failed ancestor's status
+   down the hierarchy. Specifically, relevant conditions on affected descendant
+   groups and pods are updated with the `Unschedulable` reason and a message
+   identifying the failed ancestor `CompositePodGroup` and the underlying
+   failure cause.
+
+2. **Workload Design Recommendations:**
+   While scheduling success cannot be guaranteed when heterogeneous groups
+   compete for shared capacity, users and workload controllers can optimize the
+   chance of finding a successful placement by following three structural best
+   practices:
+   * **Keep individual `PodGroups` homogeneous:** Group pods with identical
+     resource requests, node selectors, and scheduling constraints into the same
+     leaf `PodGroup`. When all pods within a `PodGroup` (or all replicated child
+     groups within a `CompositePodGroup`) are homogeneous, greedy placement is
+     mathematically invariant to evaluation order. Distinct pod roles (e.g.,
+     driver vs. workers) should be split into separate homogeneous `PodGroups`
+     under a parent `CompositePodGroup`.
+   * **Segregate non-competing heterogeneous groups onto disjoint node pools:**
+     When heterogeneous child groups do not require the same physical node
+     hardware (for example, CPU-only coordinator/driver pods vs. GPU/TPU worker
+     pods), use `nodeSelector`, node affinity, or taints and tolerations to
+     prevent flexible pods from landing on specialized nodes required by
+     stricter sibling groups. When sibling groups target disjoint sets of
+     candidate nodes, evaluation order between them cannot cause resource
+     stealing or order-induced deadlocks.
+   * **Scope topology constraints to the minimal required subtree:** Attach
+     topological constraints (`SchedulingConstraints.Topology`) only to the
+     specific `CompositePodGroup` or `PodGroup` subtrees that strictly require
+     high-bandwidth physical co-location, rather than placing them on the root
+     `CompositePodGroup` by default. Using a root `CompositePodGroup` without
+     topology constraints provides coordinated gang scheduling and collective
+     preemption fate-sharing across the entire workload without forcing
+     non-topological components to compete for capacity inside constrained
+     topology domains.
+
 #### Integration with workload-aware preemption
 
 If a root `PodGroupInfo` (representing a root CPG or standalone PG) is
@@ -1810,7 +1895,8 @@ More tests will be added for beta release.
   mutable at runtime (aligning with the pre-existing mutable `minCount` field
   in `PodGroup` objects).
 - Scheduler diagnostics and recommendations with regards to the scheduling order
-  are re-evaluated to improve troubleshooting and scheduling success rates.
+  are analyzed and documented to improve troubleshooting and scheduling success
+  rates.
 - The logic for triggering preemption for subsequent scheduling is re-evaluated in case
   the scheduling policy is not initially satisfied (e.g., PG has been disrupted or `minCount`
   has changed).
