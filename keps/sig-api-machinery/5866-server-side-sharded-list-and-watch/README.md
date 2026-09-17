@@ -137,7 +137,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
@@ -412,8 +412,9 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-- `k8s.io/apimachinery/pkg/apis/meta/v1`: `2026-02-01` - `TBD` (Validation logic)
-- `k8s.io/apiserver/pkg/storage`: `2026-02-01` - `TBD` (Filtering logic)
+- `k8s.io/apimachinery/pkg/sharding`: Parsing, hashing, and range evaluation.
+- `k8s.io/apiserver/pkg/sharding`: CEL expression evaluation.
+- `k8s.io/apiserver/pkg/storage/cacher`: Watch cache filtering and dispatch.
 
 ##### Integration tests
 
@@ -621,6 +622,8 @@ feature.
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+Yes, the feature can be disabled by setting the `ShardedListAndWatch` feature gate to `false` on `kube-apiserver` and restarting the component. When disabled, `kube-apiserver` ignores `shardSelector` parameters and omits `ShardInfo` from `ListMeta`, reverting to standard un-filtered list/watch behavior. Sharding-aware clients inspect `ListMeta.ShardInfo` and fall back to client-side filtering when absent, ensuring no disruption or violation of mutual exclusion for running workloads.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 Clients can resume sending sharding parameters. The API server will immediately start respecting
@@ -662,6 +665,10 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
+
+During a rolling upgrade or rollback in a high-availability control plane, some `kube-apiserver` instances may have `ShardedListAndWatch` enabled while others have it disabled. A client connecting to an un-upgraded or rolled-back API server will receive the full, un-sharded stream without `ListMeta.ShardInfo`.
+
+Sharding-aware clients inspect `ListMeta.ShardInfo` on `LIST` and initial `WATCH` responses to confirm whether server-side filtering was applied. If `ShardInfo` is absent, clients fall back to client-side filtering using the common `k8s.io/apimachinery/pkg/sharding` evaluator so they do not process out-of-shard objects or violate mutual exclusion. Workloads that do not specify `shardSelector` are completely unaffected.
 
 ###### What specific metrics should inform a rollback?
 
@@ -708,13 +715,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- Clients can inspect `ListMeta.ShardInfo.Selector` returned in `LIST` responses (and initial `WATCH` sync/bookmark events), which echoes the applied `shardSelector` expression when server-side sharding is active.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -844,6 +845,10 @@ For each of them, fill in the following information by copying the below templat
 -->
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Check `apiserver_request_duration_seconds` for `LIST` and `WATCH` requests to determine if latency degradation is isolated to requests specifying `shardSelector`.
+2. Inspect `apiserver_watch_shards_total` and `apiserver_watch_filtered_events_total` by `group` and `resource` to identify high-volume or uneven sharded watch streams.
+3. If the feature is causing degradation, disable the `ShardedListAndWatch` feature gate on `kube-apiserver` to immediately revert to standard un-filtered watch dispatch.
 
 ## Implementation History
 
