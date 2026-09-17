@@ -909,10 +909,10 @@ sequenceDiagram
     rect rgb(245,245,245)
     Note over User,CRI: Restore
     User->>API: create Pod (spec.restoreFrom = checkpoint name)
-    API->>API: authorize "restore" verb; inject nodeAffinity=status.nodeName;<br/>validate pod-template equality (authoritative)
+    API->>API: authorize "restore" verb, inject nodeAffinity=status.nodeName,<br/>validate pod-template equality (authoritative)
     API-->>API: scheduler binds Pod to status.nodeName (node affinity)
-    API-->>Kubelet: Pod assigned; SyncPod observes spec.restoreFrom
-    Kubelet->>API: read PodCheckpoint (location, template);<br/>re-validate equality (defense in depth)
+    API-->>Kubelet: Pod assigned, SyncPod observes spec.restoreFrom
+    Kubelet->>API: read PodCheckpoint (location, template),<br/>re-validate equality (defense in depth)
     Kubelet->>CRI: RestorePod(...)
     CRI-->>Kubelet: sandbox + containers restored
     end
