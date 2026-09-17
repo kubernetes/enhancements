@@ -131,14 +131,14 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -319,7 +319,7 @@ extending the production code to implement this enhancement.
 
 Unit tests for the mixins live under the [`tests` directory].
 
-[`tests` directory]: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/tests
+[`tests` directory]: https://github.com/kubernetes-sigs/kubernetes-mixin/tree/master/tests
 
 ##### Integration tests
 
@@ -347,7 +347,7 @@ This can be done with:
 
 Integration tests for the mixins live under the [`tests` directory].
 
-[`tests` directory]: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/tests
+[`tests` directory]: https://github.com/kubernetes-sigs/kubernetes-mixin/tree/master/tests
 
 ##### e2e tests
 
@@ -372,7 +372,7 @@ already available [local development] functionality, building over
 confidence between the dependency versions mentioned in the compatibility
 matrix.
 
-[local development]: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master#local-development
+[local development]: https://github.com/kubernetes-sigs/kubernetes-mixin/tree/master#local-development
 [ContainerSolutions/prom-metrics-check]: https://github.com/ContainerSolutions/prom-metrics-check
 
 ### Graduation Criteria
@@ -524,7 +524,7 @@ The version skews of the repository, in general, are dictated by the metric
 sources (see below) that the mixins rely on. The [compatibility matrix]
 documents the relationship between the mixins and the metric sources.
 
-[compatibility matrix]: https://github.com/kubernetes-monitoring/kubernetes-mixin/#releases
+[compatibility matrix]: https://github.com/kubernetes-sigs/kubernetes-mixin/#releases
 
 ### Dependencies
 
@@ -599,7 +599,20 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-TBD
+- 2026-02-09: KEP opened as PR #5906 targeting alpha in v1.37.
+- 2026-07-14: KEP merged as `implementable`.
+- 2026-09-08: `kubernetes-mixin` added as a SIG Instrumentation subproject
+  ([kubernetes/community#9148](https://github.com/kubernetes/community/pull/9148)).
+- 2026-09: Repository transferred from `kubernetes-monitoring/kubernetes-mixin`
+  to `kubernetes-sigs/kubernetes-mixin`.
+- 2026-09-11: GitHub transfer redirects verified for git and web operations
+  ([kubernetes-sigs/kubernetes-mixin#1288](https://github.com/kubernetes-sigs/kubernetes-mixin/issues/1288)).
+- 2026-09-17: Repository README updated to document the transfer and recommend
+  `kubernetes-sigs/kubernetes-mixin`
+  ([kubernetes-sigs/kubernetes-mixin#1289](https://github.com/kubernetes-sigs/kubernetes-mixin/pull/1289)).
+- 2026-09-17: Blog post opened to announce SIG Instrumentation adoption
+  ([kubernetes/website#57582](https://github.com/kubernetes/website/pull/57582)).
+- 2026-09-17: KEP updated to `stage: stable` / `status: implemented` for v1.38.
 
 ## Drawbacks
 
@@ -629,5 +642,6 @@ new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
 
-SIG Instrumentation requests a `kubernetes-mixin` repository under the
-`kubernetes-sigs` organization.
+SIG Instrumentation requested a `kubernetes-mixin` repository under the
+`kubernetes-sigs` organization. This is now complete: the repository lives at
+[`kubernetes-sigs/kubernetes-mixin`](https://github.com/kubernetes-sigs/kubernetes-mixin).
