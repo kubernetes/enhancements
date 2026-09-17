@@ -29,6 +29,7 @@ see-also:
   - "/keps/sig-node/1287-in-place-update-pod-resources"
   - "/keps/sig-node/3570-cpu-manager"
   - "/keps/sig-node/5554-in-place-update-pod-resources-alongside-static-cpu-manager-policy"
+  - "/keps/sig-node/6122-configurable-scaling-delay"
 replaces:
 
 
