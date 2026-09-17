@@ -26,8 +26,10 @@
     - [Resource Calculation](#resource-calculation)
     - [Integration with Pod Level Resources](#integration-with-pod-level-resources)
     - [Handling Shared Claims](#handling-shared-claims)
+    - [DRA Admin Access](#dra-admin-access)
     - [Multiple Claims per Container](#multiple-claims-per-container)
     - [Unreferenced Claims](#unreferenced-claims)
+    - [Scoring](#scoring)
     - [Preemption](#preemption)
   - [Node Resource Enforcement and Isolation](#node-resource-enforcement-and-isolation)
     - [Scope](#scope)
@@ -41,6 +43,8 @@
       - [Handling Kubelet Disabling Quota with Exclusive CPUs](#handling-kubelet-disabling-quota-with-exclusive-cpus)
     - [Enforcement Use Case Walkthroughs](#enforcement-use-case-walkthroughs)
     - [OOM Score Adjustment with DRA](#oom-score-adjustment-with-dra)
+    - [Kubelet Eviction](#kubelet-eviction)
+    - [Ephemeral Storage Support and Eviction](#ephemeral-storage-support-and-eviction)
     - [Integration with Memory QoS](#integration-with-memory-qos)
       - [Current Memory QOS settings](#current-memory-qos-settings)
       - [Integration with DRA](#integration-with-dra)
@@ -48,10 +52,14 @@
     - [Kubelet Internal Resource States](#kubelet-internal-resource-states)
     - [Integration with In-Place Pod Vertical Scaling](#integration-with-in-place-pod-vertical-scaling)
   - [Kubelet Admission Control](#kubelet-admission-control)
+  - [ResourceQuota Enforcement](#resourcequota-enforcement)
+    - [Accounting for Running Pods with DRA Claims](#accounting-for-running-pods-with-dra-claims)
+    - [Enforcement for Incoming Pods with DRA Claims](#enforcement-for-incoming-pods-with-dra-claims)
+      - [PreBind Ordering and Claim Allocation](#prebind-ordering-and-claim-allocation)
+  - [HPA Integration](#hpa-integration)
+  - [Cluster Autoscaler Integration](#cluster-autoscaler-integration)
+  - [Node Capacity Reporting](#node-capacity-reporting)
   - [Future Enhancements](#future-enhancements)
-    - [Kube-Scheduler Scoring and Resource Quota](#kube-scheduler-scoring-and-resource-quota)
-      - [Scoring](#scoring)
-      - [Quota](#quota)
     - [Pass Allocation Details from Driver to Kubelet](#pass-allocation-details-from-driver-to-kubelet)
       - [API Changes](#api-changes-1)
       - [Node Cgroup Enforcement](#node-cgroup-enforcement)
@@ -64,6 +72,7 @@
     - [Alpha](#alpha)
     - [Alpha2](#alpha2)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -79,11 +88,6 @@
   - [DeviceClass API Extension for NodeAllocatableResourceMappings](#deviceclass-api-extension-for-nodeallocatableresourcemappings)
   - [Explicit AccountingPolicy in DeviceClass and PodStatus](#explicit-accountingpolicy-in-deviceclass-and-podstatus)
   - [Alternative Model for pod level resources + DRA](#alternative-model-for-pod-level-resources--dra)
-    - [1. Kubelet Cgroup Enforcement](#1-kubelet-cgroup-enforcement)
-    - [2. Kube-Scheduler Changes](#2-kube-scheduler-changes)
-    - [Enforcement Use Case Walkthroughs with this model](#enforcement-use-case-walkthroughs-with-this-model)
-      - [1. pod level Request and Limit + DRA Claim (Single container references claim)](#1-pod-level-request-and-limit--dra-claim-single-container-references-claim)
-      - [2. pod level Request and Limit + Fungible DRA Claim (Prioritized List)](#2-pod-level-request-and-limit--fungible-dra-claim-prioritized-list)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -98,7 +102,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -120,7 +124,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 This KEP proposes a solution for managing node allocatable resources via Dynamic Resource Allocation (DRA). Node allocatable resources are resources currently reported in `v1.Node` `status.allocatable` that are not extended resources (examples include CPU, Memory, Ephemeral-storage, and Hugepages). Currently, when these node allocatable resources are managed via DRA, there is a fundamental disconnect across the control plane and the Node. In the scheduler, having two independent accounting systems (one for standard resources, one for DRA) managing the same underlying resource leads to resource overcommitment. On the node, the kubelet is completely unaware of DRA allocations, which may result in incorrect QoS class assignment and has many downstream implications. This forces users into fragile workarounds that are incompatible with all use cases.
 
 The proposed solution in this KEP addresses node allocatable resource accounting and enforcement in kube-scheduler and kubelet:
-1.  **Kube-Scheduler Accounting**: The standard resource (`NodeResourcesFit` plugin) and DRA (`DynamicResources` plugin) synchronize their accounting, creating a single, authoritative ledger to prevent node overcommitment.
+1.  **Kube-Scheduler Accounting**: The `DynamicResources` plugin checks the pod's combined footprint, standard requests plus the resources its claims consume, 
+    against the node's remaining allocatable capacity, so a node cannot be overcommitted. Pods already placed on a node contribute their own claim footprint to that capacity, 
+    and resource scoring accounts for it on both sides.
 2.  **Kubelet Enforcement**: kubelet natively incorporates node allocatable resource allocations made through DRA `ResourceClaim`s to configure Linux container and pod cgroups and calculate OOM score.
 
 ## Motivation
@@ -336,7 +342,7 @@ cache, and schedules the pod. The user did not need to guess which resource to p
 
 The proposal here is to implement a **"Unified Accounting and Enforcement"** model across the control plane and the host for node allocatable resources requested through the standard pod Spec or through Dynamic Resource Allocation (DRA) claims. This involves:
 1.  **API Changes**: Updates to the DRA API for drivers to declare node allocatable resource implications in `Device` objects, and PodStatus to record DRA-based node allocatable resource allocations.
-2.  **Kube-Scheduler Changes**: Modifications in `NodeResourcesFit` and `DynamicResources` plugins to synchronize node resource usage tracking, delegating authoritative node-fit checks to the `DynamicResources` plugin when a pod utilizes DRA claims.
+2.  **Kube-Scheduler Changes**: The `DynamicResources` plugin performs the node-fit check for pods whose claims consume node allocatable resources, in addition to the existing check in `NodeResourcesFit`, which continues to evaluate standard requests. Resource scoring accounts for the footprint of the pod being scored on the node being considered.
 3.  **Kubelet Changes**: Updates in Kubelet to take into account resources allocated through DRA in the cgroup enforcement.
 
 ### Conceptual Mapping: Pod Spec Requests and Limits with DRA
@@ -369,12 +375,12 @@ type Device struct {
     // that are managed by the DRA driver exposing this device. These are resources currently
     // reported in v1.Node `status.allocatable` that are not extended resources
     // (see https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#extended-resources).
-    // The only allowed keys are "cpu", "memory", and "hugepages-<size>".
+    // The only allowed keys are "cpu", "memory", "hugepages-<size>", and "ephemeral-storage".
     // In addition to standard requests made through the Pod `spec`, these resources
     // can also be requested through claims and allocated by the DRA driver.
     // For example, a CPU DRA driver might allocate exclusive CPUs or auxiliary node memory
     // dependencies of an accelerator device.
-    // The keys of this map are the node-allocatable resource names (e.g., "cpu", "memory").
+    // The keys of this map are the node-allocatable resource names (e.g., "cpu", "memory", "ephemeral-storage").
     // Extended resource names are not permitted as keys.
     // +optional
     // +featureGate=DRANodeAllocatableResources
@@ -959,12 +965,14 @@ type NodeAllocatableOverheadResources struct {
 
 #### API Validation
 
-* The keys in the `nodeAllocatableResources` map must be exactly `cpu`, `memory`, or `hugepages-<size>`. All other names, including extended resources and `ephemeral-storage`, are rejected (`ephemeral-storage` is deferred to beta together with DRA-aware eviction in kubelet).
+* The keys in the `nodeAllocatableResources` map must be exactly `cpu`, `memory`, `hugepages-<size>`, or `ephemeral-storage`.
+  All other names, including extended resources, are rejected.
 * Within a single resource mapping, at least one of the `mapping` or `overhead` fields must be specified.
 * If `mapping` is specified, it must use either `deviceMultiplier` or a combination of `capacityKey` and `capacityMultiplier`. These options are mutually exclusive.
 * If `capacityKey` is specified, it must be a valid qualified name and `capacityMultiplier` is required.
 * If the `overhead` field is specified, it must contain at least one non-negative value for either the `perPod` or `perContainer` overhead quantities.
 * For `PodStatus` updates, each entry in the `nodeAllocatableResourceClaimStatuses` array must reference a valid claim name and contain correctly formatted resource quantities.
+* Ephemeral storage is validated and supported for root filesystem allocations (see [Ephemeral Storage Support and Eviction](#ephemeral-storage-support-and-eviction) in Node Resource Enforcement for details).
 
 ### Kube-Scheduler Changes
 
@@ -981,7 +989,7 @@ plugins.
       `NodeResourcesFit` and the `DynamicResources` plugins, but the `DynamicResources` plugin's check is the authoritative check.
 
 2. **Filter Stage:** This stage performs the node-level checks to determine if a pod fits on a specific node.
-   *  **NodeResourcesFit Plugin:** In the Alpha stage, this plugin would continue to do the resource fit based on standard requests.
+   *  **NodeResourcesFit Plugin:** This plugin continues to do the resource fit based on standard requests.
    *  **DynamicResources Plugin:** This plugin takes on the authoritative role for checking node allocatable resource fit if any of the
       pod's `ResourceClaim`s request node allocatable resources.
       *   The plugin tries to allocate devices to all the resource claims of the pod.
@@ -1022,10 +1030,11 @@ plugins.
         checks the `UseDRANodeAllocatableResourceClaimStatus` option to sum standard requests and DRA status allocations. This is added to `nodeInfo.Requested`.
 
 4.  **PreBind Stage:** This stage performs actions right before the pod is immutably bound to the node.
-    *   **DynamicResources Plugin:** The plugin updates the `ResourceClaim.Status` to reflect the allocated devices. It also
-        patches the `Pod.Status` to add the `NodeAllocatableResourceClaimStatuses` field, persisting the information calculated during
-        the Filter stage and making this information available for components like the Kubelet. Kubelet consumes the status field directly 
-        during [pod admission](#kubelet-admission-control) and [cgroup enforcement](#cgroup-enforcement).
+    *   **DynamicResources Plugin:** The plugin first patches the `Pod.Status` to add the `NodeAllocatableResourceClaimStatuses`
+        field, persisting the information calculated during the Filter stage. This write is subject to `ResourceQuota` and is
+        ordered before claim reservation (see [ResourceQuota Enforcement](#resourcequota-enforcement)). It then updates the
+        `ResourceClaim.Status` to reflect the allocated devices. Kubelet consumes the status field directly during
+        [pod admission](#kubelet-admission-control) and [cgroup enforcement](#cgroup-enforcement).
 
 5.  **Bind Stage:** This stage executes asynchronously after the main scheduling cycle has decided on a node. The scheduler
     listens for pod `Update` events, and transitions the pod from the "assumed" state to "bound" if the bind process
@@ -1108,6 +1117,17 @@ No new scheduler framework API is required for this. The `NodeAllocatableDRAClai
 `NodeInfo` tracking introduced in the initial alpha (v1.36) were removed in the alpha2 rework of the
 `k8s.io/kube-scheduler` staging module.
 
+#### DRA Admin Access
+
+Admin access (`adminAccess: true` on a claim request) is a privileged mode for monitoring and diagnostics, only allowed in
+namespaces labeled `resource.kubernetes.io/admin-access: "true"`. In the scheduler, an admin access allocation does not consume
+the device: the allocator can hand out a device that is already allocated to a workload, and the admin allocation does not block
+later allocations. Each such device is marked with `adminAccess: true` in the allocation result.
+
+For node allocatable resources, the workload's own claim already accounts for the device's resources, so charging the admin
+claim again would double count the node. Admin access results therefore contribute no footprint, get no entry in
+`pod.status.nodeAllocatableResourceClaimStatuses`, and do not block or get blocked by the mapped-claim sharing rule.
+
 #### Multiple Claims per Container
 
 A single container can reference multiple DRA claims. The node allocatable resources from each distinct claim are summed up to contribute to the pod's total resource requirements.
@@ -1133,6 +1153,25 @@ If a `ResourceClaim` is listed in `pod.spec.resourceClaims` but not referenced b
 the resources associated with this claim are still accounted for against the node's capacity once. This is because 
 the DRA allocator allocates the devices to the claim making them unavailable to others (e.g., exclusive CPUs requested through a claim). 
 This will be enforced in the `PodRequests()` helper function when computing the pod resource footprint.
+
+#### Scoring
+
+Currently, resource-based scoring plugins (`NodeResourcesFit` and `NodeResourcesBalancedAllocation`) evaluate 
+candidate nodes by comparing a pod's resource requests against each node's allocatable capacity and existing usage 
+(`nodeInfo.GetRequested()`). Because `pod.Spec` requests are uniform across all nodes, the scheduler computes the 
+pod's request vector once during `PreScore` and reuses it to score every node.
+
+With DRA node allocatable resources, scoring accounts for dynamic claim resources on both sides of the calculation:
+
+* **Existing pods on a node:** Covered automatically. Their footprint in `nodeInfo.GetRequested()` includes node 
+allocatable resources allocated to claims via `pod.status.nodeAllocatableResourceClaimStatuses` (both for running 
+pods and assumed pods in the scheduler cache).
+* **The pod being scored:** The footprint can vary per node because the same claim may resolve to different resource 
+quantities on different nodes. During `Filter`, the `DynamicResources` plugin records the pod's node-specific claim 
+allocations in `CycleState`. During `Score`, both `NodeResourcesFit` and `NodeResourcesBalancedAllocation` read this 
+allocation from `CycleState` for the candidate node and include it in the pod's request vector. Pods with no such 
+claims, and nodes where the plugin did not run, use the requests computed in `PreScore` unchanged. No device 
+resolution is added to the scoring path.
 
 #### Preemption
 
@@ -1187,7 +1226,7 @@ Kubelet translates Pod Spec resource requests and limits into corresponding cgro
 *   **CPU Requests** are mapped to **CPU Shares/Weight** (`cpu.weight`): Controls the relative CPU scheduling weight/priority of the pod or container when the node experiences CPU contention.
 *   **CPU Limits** are mapped to **CPU Quota** (`cpu.max`): Caps the absolute maximum CPU time the pod/container can consume in a time window (configurable).
 *   **Memory Limits** are mapped to **Memory Limit** (`memory.max`): Caps the absolute maximum memory (RAM) the pod/container can consume.
-*   **HugePages Limits** are mapped to **HugePages Limit** (`hugepages.limit_in_bytes`): Caps the maximum hugepage allocation size.
+*   **HugePages Limits** are mapped to **HugePages Limit** (`hugetlb.<size>.max`): Caps the maximum hugepage allocation size.
 
 Kubelet also sets up the cgroup directories for the pod based on the QoS class (`Guaranteed`, `BestEffort` or `Burstable`). DRA based allocation **does not**
 have an influence on the QOS class of the pod and how Kubelet sets up cgroup hierarchies.
@@ -1220,7 +1259,7 @@ HugePages Limit = Sum(Spec.Limits[hugepages-<size>]) + DRADirectMapped(hugepages
 
 **Why Pod Level Cgroup Limits includes DRA allocations?**
 
-*   The pod's cgroup slice establishes the absolute upper ceiling (`cpu.max`, `memory.max`, `hugepages.limit_in_bytes`) for the entire pod workloads footprint.
+*   The pod's cgroup slice establishes the absolute upper ceiling (`cpu.max`, `memory.max`, `hugetlb.<size>.max`) for the entire pod workloads footprint.
 *   If DRA allocations (direct or overhead) are not added to the pod workloads cgroup limits, the pod-level ceiling remains locked at standard Spec-pure limits
     The moment any container attempts to utilize its DRA capacity, the overall pod usage will hit the uninflated parent boundary, resulting in immediate CPU throttling, memory OOM kills, or hugepage allocation failures.
 *   If `PodLevelResources` are explicitly declared in `pod.spec.resources.limits`, the Kubelet respects the user's aggregate pod limits budget and **does not
@@ -1696,9 +1735,48 @@ To manage node stability during Out-Of-Memory (OOM) events, Kubelet applies DRA 
     containers sharing the claim and update the OOM score. This follows the same established pattern with Pod Level Resources (PLR), 
     where pod-level memory requests are distributed equally among containers that omit container-level memory requests.
 
+#### Kubelet Eviction
+
+Under node pressure, Kubelet ranks eviction candidates by how much a pod's usage exceeds its requests. Usage already includes
+DRA allocations, since they are enforced in the pod's cgroup. The eviction manager would be updated to compute requests as pod
+spec plus DRA allocations (using the shared `PodRequests` component-helpers function). Without this, a pod whose memory
+comes mostly from a claim would be prioritized incorrectly for eviction. Kubelet preemption uses the same requests to decide
+how much capacity evicting a pod would free.
+
+#### Ephemeral Storage Support and Eviction
+
+**Scope:** The `ephemeral-storage` key in `nodeAllocatableResources` covers the same local ephemeral storage a pod can
+request through the pod spec (`spec.containers[].resources.requests["ephemeral-storage"]`, see
+[Local ephemeral storage](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#local-ephemeral-storage)):
+the container writable layers, container logs, and `emptyDir` volumes backed by the node's root filesystem.
+
+Unlike cpu, memory, and hugepages, which the kernel contains through cgroups, ephemeral storage has no cgroup controller.
+Kubelet enforces it by measurement. The scheduler fits requests against the node's allocatable ephemeral storage, derived from
+the filesystem backing the kubelet root directory. Kubelet periodically measures usage in the container writable layers, 
+container logs, and local `emptyDir` volumes, and under node disk pressure ranks eviction candidates by how far their usage 
+is compared to their requests.
+
+**How it works with DRA.** A claim grants the pod additional root filesystem storage with the same semantics as
+`spec.containers[].resources.requests["ephemeral-storage"]`:
+
+*   The scheduler reserves claim-allocated ephemeral storage against `Node.Status.Allocatable["ephemeral-storage"]`,
+    preventing root filesystem overcommitment.
+*   Under node disk pressure, eviction ranking includes the DRA amounts in a pod's requests, so a pod consuming its
+    claim-granted storage is not ranked as exceeding its requests.
+*   Limit eviction, at both pod level and container level, includes the DRA amounts in the limit it enforces. Like cpu and
+    memory, the DRA amount is added only when the spec declares an `ephemeral-storage` limit; a pod without a spec limit
+    stays unlimited and is bounded by node-pressure eviction alone.
+*   `emptyDir` size limit eviction is unchanged. A `sizeLimit` (`spec.volumes[].emptyDir.sizeLimit`) bounds that one
+    volume, not the pod. Since a claim raises the pod's total storage, so a volume that grows more than its own `sizeLimit` is still
+    evicted.
+
+The resource quantities are available through `pod.status.nodeAllocatableResourceClaimStatuses` like cpu and memory, so `ResourceQuota`
+accounts them under `requests.ephemeral-storage` and `limits.ephemeral-storage` with no additional changes.
+
+
 #### Integration with Memory QoS
 
-Memory QoS [KEP-2570](https://github.com/kubernetes/enhancements/pull/6143) is proposed for beta graduation in v1.37. This configures cgroup v2 memory knobs at both container-level
+Memory QoS [KEP-2570](https://github.com/kubernetes/enhancements/pull/6143) configures cgroup v2 memory knobs at both container-level
 and pod-level cgroups to manage memory isolation and throttling as follows:
 
 *   **`memory.min`**: Hard memory reclaim protection (configured for Guaranteed QoS pods), mapped from container or pod memory requests.
@@ -1855,10 +1933,8 @@ node allocatable resources:
 
 #### Integration with In-Place Pod Vertical Scaling
 
-In Alpha 1, prior to introducing Kubelet cgroup enforcement, API validation was added in
-`pkg/apis/core/validation/validation.go` to block In-Place Pod Resizing (IPPR) for pods utilizing DRA node
-allocatable resources. Now that Kubelet cgroup enforcement is introduced, this validation restriction can
-be safely removed. At the API layer, resizing operations target standard Spec requests and limits in `pod.spec`,
+In Alpha 1, prior to Kubelet cgroup enforcement, API validation blocked In-Place Pod Resizing (IPPR) for pods using DRA
+node allocatable resources; Alpha2 (v1.37) removed that restriction. At the API layer, resizing operations target standard Spec requests and limits in `pod.spec`,
 while DRA `ResourceClaim` allocations remain immutable.
 
 In the control plane, when the scheduler computes a resizing pod's footprint, because `PodRequests()` aggregates
@@ -1885,62 +1961,122 @@ without needing to persist DRA allocations in Kubelet's local disk checkpoints (
 are immutable after scheduling, Kubelet can bypass the local checkpoints for DRA evaluation, relying instead on this API status field as
 the source of truth.
 
+### ResourceQuota Enforcement
+
+`ResourceQuota` currently accounts for resources defined in the standard `pod.spec` requests/limits. A pod that receives CPU,
+memory, or ephemeral storage through a DRA `ResourceClaim` consumes real node capacity, but no namespace quota tracks it. 
+This section describes how quota accounts for and enforces DRA node allocatable resources in Beta.
+
+Two existing quota mechanisms remain **unchanged**: 
+1. DRA device quota (`count/resourceclaims.resource.k8s.io` and `<deviceclass>.deviceclass.resource.k8s.io/devices`)
+   charged from the claim spec at claim admission.
+2. Standard spec quota (`requests.cpu` / `requests.memory`) charged from the pod spec at pod creation.
+
+To account for and enforce DRA node allocatable resources, the mechanism covers two operational cases:
+
+#### Accounting for Running Pods with DRA Claims
+
+When admitting a new pod that does not use DRA claims (or when the ResourceQuota controller calculates namespace 
+usage), quota must account for existing pods that consume DRA resources. Their footprints are persisted in `pod.status.nodeAllocatableResourceClaimStatuses`.
+
+As described in the scheduler and Kubelet sections, the shared `component-helpers` functions (`PodRequests` and 
+`PodLimits`) aggregate standard spec requests with DRA allocations from this status field. The core pod quota evaluator 
+(`pkg/quota/v1/evaluator/core/pods.go`) reuses these helpers to compute each pod's total compute footprint. Both the 
+ResourceQuota admission plugin and the ResourceQuota controller share this evaluator, keeping `ResourceQuota.Status.Used` 
+in sync without requiring any separate accounting. The evaluator reads the status field without a feature gate check. The
+field is only populated while the feature is enabled, and the unconditional read keeps kube-apiserver and
+kube-controller-manager from disagreeing about usage when the gate is enabled on one but not the other.
+
+#### Enforcement for Incoming Pods with DRA Claims
+
+When the incoming pod itself requests DRA node allocatable resources, create-time admission alone cannot prevent quota 
+overcommitment. The claim's exact footprint cannot be charged at pod creation because allocations depend on the node
+and the information in the `ResourceSlice` (like `deviceMultiplier`).
+Hence we need to re-evaluate quota again before the pod is bound to the node. The DRA scheduler plugin patches `pod.status.nodeAllocatableResourceClaimStatuses` during `PreBind`. This status patch executes before claim reservation (`bindClaim`) and if the update exceeds quota, the apiserver rejects it, and the scheduler unreserves the pod, leaving it `Pending` to be retried on backoff.
+
+##### PreBind Ordering and Claim Allocation
+
+**Current Behavior:**
+In the DRA plugin, `PreBind` calls `bindClaim` to record claim allocation and reservation in etcd before patching
+pod status. If a subsequent step fails, standard `Unreserve` removes the pod from `claim.status.reservedFor` but retains `claim.status.allocation` so retries on the same node can reuse it.
+
+If ResourceQuota admission evaluated the pod status patch after `bindClaim`, an over-quota pod would be 
+rejected but leave its claim allocated in etcd. While the pod waits in the scheduler backoff queue, those node
+devices and capacity would remain unavailable to other workloads.
+
+**Proposed Change:**
+This KEP proposes that for node allocatable claims we change the `PreBind` sequence so the pod status patch 
+executes **before** claim allocation (`bindClaim`):
+*   On Quota Rejection, the status patch is rejected. Because `bindClaim` was deferred, claim allocation is not
+    written to etcd. The scheduler calls `Unreserve`, clears the assumed pod from cache (`Cache.ForgetPod`), and the
+    node's devices and capacity remain immediately free for other pods.
+*   On Quota Success, ResourceQuota usage is updated in the API server. The scheduler then proceeds with `bindClaim`
+    to allocate and reserve the claim, and binds the pod.
+*   Pods with pod-level resources are charged their declared budget at creation. The scheduler validates that the container requests
+    plus the DRA footprint fit within that budget.
+
+For spec resources, since ResourceQuota admission runs synchronously at pod creation, if quota is exceeded, the API 
+server rejects pod creation immediately. With DRA node-allocatable resources, the exact resource footprint is only 
+known after node selection, so quota is evaluated when the scheduler patches `pod.status.nodeAllocatableResourceClaimStatuses` during `PreBind`.
+
+The ResourceQuota admission plugin currently skips status subresources. To enforce quota at `PreBind`, this check 
+must be updated so `pod/status` updates modifying `nodeAllocatableResourceClaimStatuses` are evaluated against quota.
+On Failure, if quota is exceeded, the API server rejects the status patch with HTTP 403. Because the pod already 
+exists in etcd, it remains `Pending`. The scheduler moves the pod to the exponential backoff queue. The pod 
+continues retrying until quota is freed or the pod is deleted. Only writes that change `nodeAllocatableResourceClaimStatuses`
+to a non-empty value are evaluated. Other status writes are not affected. This follows the same pattern as the `resize` subresource.
+
+### HPA Integration
+
+The HPA controller computes utilization as usage divided by requests. The requests come only from the pod spec: container
+requests are summed directly, and pod-level resources are used when set and no container is named in the metric. The controller
+never reads `pod.status.nodeAllocatableResourceClaimStatuses`.
+
+For a pod with a DRA footprint, the denominator is therefore too small, and the reported utilization is too high by the factor
+(spec + DRA) / spec. This always results in over-scaling. Three configurations are not affected: pod-level resources
+(pod-level value covers the DRA footprint, so the denominator is correct), `AverageValue` targets (no denominator), and custom or external metrics.
+
+The DRA-aware request computation already exists in the shared request helper behind an opt-in option,
+and the scheduler, Kubelet, and quota use it. The HPA controller will be updated to enable this option when computing requests, so the
+denominator becomes spec requests plus DRA. A pod whose containers have no spec request for the metric's resource gets its
+denominator from the footprint instead of failing.
+
+### Cluster Autoscaler Integration
+
+Cluster Autoscaler decides scale-up and scale-down by simulating the scheduler over a snapshot of the cluster,
+and it measures node utilization by summing pod requests. Both paths read requests from the pod spec only, so DRA footprint is currently invisible to them.
+
+Cluster Autoscaler already supports DRA. It snapshots ResourceClaims, ResourceSlices and DeviceClasses, and runs
+the real scheduler plugins over that snapshot. It would be updated to also account for DRA node allocatable
+resources. This includes
+
+*   The autoscaler computes pod requests through the shared `component-helpers` function. We need to pass the
+    same DRA-aware option that the scheduler, Kubelet, and quota already use so the DRA footprint is included.
+*   The scheduler records the footprint in `pod.status.nodeAllocatableResourceClaimStatuses` during `PreBind`,
+    which the simulation does not run. The autoscaler already fills in the claim reservation that `PreBind`
+    would have made, so it can fill in this field the same way, and clear it when a pod is unscheduled.
+
+### Node Capacity Reporting
+
+With DRA node allocatable resources, scheduling a pod with a node allocatable claim requires satisfying two constraints:
+1. **Device capacity:** Tracked by `ResourceSlice` and `ResourceClaim`.
+2. **Node allocatable capacity:** Tracked by remaining `node.status.allocatable` (`node.status.allocatable` - existing pod spec and DRA requests).
+
+Because these two constraints are tracked in separate API objects, they are reported by different tools:
+
+*   **`kubectl describe node`:** Will be updated to include DRA allocations in reported pod and node resource requests.
+    However, this only reflects node resource headroom and does not show how many DRA devices or pool capacities remain
+    unallocated in `ResourceSlice` objects.
+*   **`ResourcePoolStatusRequest` ([KEP-5677](https://github.com/kubernetes/enhancements/issues/5677)):** Reports
+    device-pool availability computed purely from `ResourceSlice` and `ResourceClaim` state. For pools whose devices
+    declare `nodeAllocatableResources`, non-zero availability indicates free device entries in the pool, but the
+    underlying node resources backing those devices may be consumed by regular pods without claims (since regular pod requests are node-scoped and do not specify which DRA pool or device supplies their capacity).
+
+In summary, `kubectl describe node` provides overall node resource availability (accounting for both spec 
+and DRA requests), while `ResourcePoolStatusRequest` shows which specific DRA devices remain unallocated in 
+the pool.
+
 ### Future Enhancements
-
-#### Kube-Scheduler Scoring and Resource Quota
-
-##### Scoring
-
-In the current Alpha implementation, unified scoring for node allocatable resources is only partially achieved:
-*   For existing (assumed) pods on the node, The `NodeResourcesFit` plugin's scoring accurately accounts for their combined footprint. 
-    This is because the scheduler's `Assume` stage updates `NodeInfo.Requested` with both standard Spec requests and dynamic DRA status claim allocations
-    for all previously assumed pods on the node.
-*   For the incoming pod being scored, scoring in `NodeResourcesFit` only considers CPU and Memory requests defined directly in the pod's Spec. It does 
-    not account for the incoming pod's DRA based allocations.
-
-The root cause of this limitation lies in the sequential execution and encapsulation between plugins and the scheduler's lifecycle stages:
-1.  **Filter Stage (`DynamicResources` Plugin)**: DRA device allocations are resolved, and the dynamic CPU/Memory resource overheads are calculated for each candidate node.
-    These node-specific allocations are stored transiently in the in-memory `CycleState`.
-2.  **Score Stage (`NodeResourcesFit` Plugin)**: Nodes are scored using CPU/Memory spreading or packing algorithms. Although the allocations exist in `CycleState` at this point
-    `NodeResourcesFit` does not read them because:
-    *   `PreScore` calculates the pod's resource footprint once for the entire cycle, to be able to include DRA based allocations, the `NodeResourcesFit` plugin should read 
-    `DynamicResources`' internal state which is challenging and introduces coupling between plugins.
-3.  **PreBind Stage (`DynamicResources` Plugin)**: Only after a node is selected and reserved does the scheduler patch the **`Pod.Status`** in the API server to persist the 
-    `NodeAllocatableResourceClaimStatuses` field.
-
-**Potential Options to Explore:**
-To achieve fully unified scoring in future milestones, we need to explore `CycleState` sharing between scheduling plugins. Alternatively, we can continue scoring strictly based
-on the pod's Spec requests (our default fallback).
-*   **Pros:** Keeps core scheduler plugins (`NodeResourcesFit` and `DynamicResources`) completely decoupled and avoids cross-plugin sharing.
-*   **Cons:** Degrades ranking quality for pods with large DRA allocations. We might pack a pod onto a node that appears to have low occupancy but is actually heavily committed due to
-    DRA claims, though the `Filter` stage still strictly guarantees the node has sufficient physical capacity.
-
-##### Quota
-
-Currently, `ResourceQuota` only accounts for resources defined in the standard `pod.spec` requests/limits. Including node allocatable resources allocated via DRA `ResourceClaims` in `ResourceQuota` enforcement is not included in the initial Alpha scope.
-
-Two primary implementation options are proposed for future milestones:
-
-**Option A: Separate Standard Requests and DRA-Based Quotas**
-
-In this option, standard compute quotas (`requests.cpu`, `requests.memory`) and DRA-based device quotas are kept entirely separate. 
-A separate namespace quota is created to track device counts for each `DeviceClass` (e.g., using keys like `<deviceclass>.deviceclass.resource.k8s.io/devices`). Standard CPU and Memory requests defined in the pod Spec are charged against the traditional namespace compute quotas, while DRA-allocated CPU or Memory are evaluated and charged independently as custom resources. This is how things work currently with standard DRA-based quota.
-* **Pros:** Simple, highly decoupled, and matches the current standard DRA quota design. Avoids complex integration or synchronization between standard ResourceQuota admission and scheduler-driven DRA allocation states.
-* **Cons:** Fragmented quota tracking for compute. Users cannot define a single, unified `requests.cpu` ceiling that restricts both direct pod spec cpu requests and dynamic DRA-managed exclusive CPU claims.
-
-**Option B: Quota Enforcement in the Scheduler**
-
-In this option, standard compute resource quotas (e.g., `requests.cpu`, `requests.memory`) are unified to account for both pod spec requests and DRA-allocated node allocatable resources, with the quota validation and enforcement executed by the scheduler. This can only happen during the scheduling cycle because
-  - The `ResourceClaim` can be created asynchronously after the Pod passes admission.
-  - If a claim uses prioritized list (e.g., GPU or CPU), the selected resource type is only resolved by the scheduler during node selection.
-  - The exact resource footprint depends on the target node's topology and driver configurations, which are resolved after scheduling.
-
-Once the scheduler selects a node and resolves DRA claim allocations, it sums the pod spec standard requests with the newly calculated DRA cgroup-burst resource requests. It evaluates this unified footprint against the remaining namespace `ResourceQuota`. If the computed usage exceeds the remaining quota, the node is filtered out during the scheduling cycle.
-
-* **Pros:** Provides a single quota ceiling for CPU and Memory, regardless of whether they are requested in the PodSpec or allocated dynamically via DRA claims.
-* **Cons:** Pods exceeding quota are accepted by the API server and remain in a `Pending` state indefinitely (emitting `FailedScheduling` events) instead of being synchronously rejected at creation time. Requires state synchronization and a custom namespace quota cache inside the scheduler, introducing risk of split-brain quota enforcement.
-
-Integrating DRA node allocatable resources would involve ensuring this helper is called with the appropriate options to include `pod.status.nodeAllocatableResourceClaimStatuses`. The implications of this change need to be discussed.
 
 #### Pass Allocation Details from Driver to Kubelet
 
@@ -2051,7 +2187,7 @@ type NodeAllocatableMappedResources struct {
     {
       "resourceClaimName": "cpu-claim",
       "containers": ["worker"],
-      "direct": [
+      "mapping": [
         {
           "name": "cpu",
           "quantity": "4",
@@ -2066,28 +2202,28 @@ type NodeAllocatableMappedResources struct {
 
 ###### Pod Level Cgroup
 
-*   **CPU Limits**: Set based on standard limits sum + unique direct mapped resources (refer to the [Pod-Level Cgroup Limits](#pod-level-cgroup-limits) calculation section above).
+*   **CPU Limits**: Set based on standard limits sum + unique direct mapped resources (refer to the [Pod-Level Cgroup Settings](#pod-level-cgroup-settings) calculation section above).
 *   **CPU Requests**:
     *   In the current alpha implementation, CPU shares are configured strictly based on the standard pod Spec requests sum.
     *   Under the proposed `AllocationType`-aware future design:
         *   **Exclusive Mode (`AllocationType: Exclusive`)**: Shares remain configured strictly based on the standard pod Spec requests sum. Since the DRA driver dedicates and physically 
             isolates CPU capacity to the container (e.g., cpuset pinning), the workloads do not experience scheduling contention with other co-located pods on the node, making CFS shares inflation unnecessary. 
-            Setting shared based on exclusive resouces reserved by the DRA driver also gives the container/pod unfair advantage in the shared resource pool during resource contention.
+            Setting shares based on exclusive resources reserved by the DRA driver also gives the container/pod an unfair advantage in the shared resource pool during resource contention.
         *   **Shared Mode (`AllocationType: Shared`)**: Shares are inflated by adding the standard pod Spec requests sum and the resolved direct CPU quantity mapped by the claim 
             (obtained from `pod.status.nodeAllocatableResourceClaimStatuses[].mapping[].quantity`). Since the workload competes inside the node's general shared resource pool, this inflation guarantees 
             that the pod as a whole obtains its scheduler-reserved resources under contention.
-*   **Memory Limits**: Set based on standard limits sum + unique direct mapped memory resources (refer to the [Pod-Level Cgroup Limits](#pod-level-cgroup-limits) calculation section above).
+*   **Memory Limits**: Set based on standard limits sum + unique direct mapped memory resources (refer to the [Pod-Level Cgroup Settings](#pod-level-cgroup-settings) calculation section above).
 *   **Memory Requests**: Currently in kubelet, we do not set memory cgroups based on requests.
 
 ###### Container Level Cgroup
 
-*   **CPU Limits**: Set based on standard limits + direct resources + container overhead + pod overhead (refer to the [Container-Level Cgroup Limits](#container-level-cgroup-limits) calculation section above).
+*   **CPU Limits**: Set based on standard limits + direct resources + container overhead + pod overhead (refer to the [Container-Level Cgroup Settings](#container-level-cgroup-settings) calculation section above).
 *   **CPU Requests**: Configured strictly based on the container's standard Spec request (`pod.spec.containers[].resources.requests.cpu`).
 *   **Why we do not set container-level shares based on DRA CPU**:
     * By setting the inflated CPU weight strictly at the pod-level parent cgroup, Kubelet guarantees correct resource priority relative to other pods in the cgroup hierarchy during resource contention. 
       Inside the pod's cgroup tree, sibling containers time-share the pod's aggregate budget proportionally based on their relative standard Spec requests.
     * When multiple containers in the same pod reference the same claim, dividing the claim's CPU shares across container-level cgroups introduces complexity.
-*   **Memory Limits**: Set based on standard limits + direct resources + container overhead + pod overhead (refer to the [Container-Level Cgroup Limits](#container-level-cgroup-limits) calculation section above).
+*   **Memory Limits**: Set based on standard limits + direct resources + container overhead + pod overhead (refer to the [Container-Level Cgroup Settings](#container-level-cgroup-settings) calculation section above).
 *   **Memory Requests**: Currently in kubelet, we do not set memory cgroups based on requests.
 
 ###### Enforcement Example:
@@ -2132,16 +2268,16 @@ Cgroup bounds are set as:
 
 *   **Pod Level Cgroup**:
     *   `cpu.weight` (CPU Shares): Inflated based on standard requests sum + DRA direct CPU quantity (2 + 4 + 5): **11 CPUs**.
-    *   `cpu.max` (CPU Quota): Set based on [Pod-Level Cgroup Limits](#pod-level-cgroup-limits): 17 CPUs**.
-    *   `memory.max` (Memory Limit): Set based on [Pod-Level Cgroup Limits](#pod-level-cgroup-limits): 12 GiB.
+    *   `cpu.max` (CPU Quota): Set based on [Pod-Level Cgroup Settings](#pod-level-cgroup-settings): **17 CPUs**.
+    *   `memory.max` (Memory Limit): Set based on [Pod-Level Cgroup Settings](#pod-level-cgroup-settings): 12 GiB.
 *   **Container Level C1 Cgroup**:
     *   `cpu.weight` (CPU Shares): Configured strictly based on standard container request: 2 CPUs.
-    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 9 CPUs.
-    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 4 GiB.
+    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 9 CPUs.
+    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 4 GiB.
 *   **Container Level C2 Cgroup**:
     *   `cpu.weight` (CPU Shares): Configured strictly based on standard container request: 4 CPUs.
-    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 13 CPUs.
-    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 8 GiB.
+    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 13 CPUs.
+    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 8 GiB.
 
 **2. Exclusive Mode (AllocationType = Exclusive)**
 
@@ -2160,16 +2296,16 @@ status:
 Cgroup bounds are set as:
 *   **Pod Level Cgroup**:
     *   `cpu.weight` (CPU Shares): Kept uninflated, configured strictly based on standard requests sum (2 + 4): **6 CPUs**.
-    *   `cpu.max` (CPU Quota): Set based on [Pod-Level Cgroup Limits](#pod-level-cgroup-limits): 17 CPUs.
-    *   `memory.max` (Memory Limit): Set based on [Pod-Level Cgroup Limits](#pod-level-cgroup-limits): 12 GiB.
+    *   `cpu.max` (CPU Quota): Set based on [Pod-Level Cgroup Settings](#pod-level-cgroup-settings): 17 CPUs.
+    *   `memory.max` (Memory Limit): Set based on [Pod-Level Cgroup Settings](#pod-level-cgroup-settings): 12 GiB.
 *   **Container Level C1 Cgroup**:
     *   `cpu.weight` (CPU Shares): Configured strictly based on standard container request: 2 CPUs.
-    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 9 CPUs.
-    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 4 GiB.
+    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 9 CPUs.
+    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 4 GiB.
 *   **Container Level C2 Cgroup**:
     *   `cpu.weight` (CPU Shares): Configured strictly based on standard container request: 4 CPUs.
-    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 13 CPUs.
-    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Limits](#container-level-cgroup-limits): 8 GiB.
+    *   `cpu.max` (CPU Quota): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 13 CPUs.
+    *   `memory.max` (Memory Limit): Set based on [Container-Level Cgroup Settings](#container-level-cgroup-settings): 8 GiB.
 
 
 ### Test Plan
@@ -2208,7 +2344,8 @@ extending the production code to implement this enhancement.
 
 Unit tests will be added for all new and modified logic within the `kube-scheduler` and `kubelet` components.
 
--   Ensuring the new fields in `Device` and `PodStatus` are validated correctly.
+-   Ensuring the new fields in `Device` and `PodStatus` are validated correctly, including the mapping combinations and the
+    immutability of `nodeAllocatableResourceClaimStatuses` once the pod is bound.
 -   Scheduler Plugin Logic (`NodeResourcesFit`, `DynamicResources`):
     -   Verifying the correct deferral of node allocatable resource checks in `NodeResourcesFit`.
     -   Verify the accurate calculation of a pod's total node allocatable resource demand across both `Direct`
@@ -2217,6 +2354,18 @@ Unit tests will be added for all new and modified logic within the `kube-schedul
     -   Verify that inter-pod sharing of `Direct` mapped device claims is correctly blocked during the Filter stage,
         while inter-pod sharing of `Overhead`-mapped claims is permitted.
     -   Validating that `pod.status.nodeAllocatableResourceClaimStatuses` is updated correctly.
+    -   Verify the scheduler-assigned claim name for extended resources backed by DRA is recorded in the status patch and the
+        claim is created with the same name only after the patch is accepted; a rejected patch creates nothing.
+    -   Verify admin access results contribute no footprint and no status entry.
+-   Scheduler Scoring (`NodeResourcesFit`, `NodeResourcesBalancedAllocation`):
+    -   Verify scoring includes the DRA node allocatable footprint of the pod being scored and of existing pods on the node.
+    -   Verify `NodeResourcesBalancedAllocation` does not skip pods whose only CPU and memory come through claims.
+-   ResourceQuota (pod evaluator and quota admission):
+    -   Verify namespace usage includes the DRA footprint (`mapping`, per-pod and per-container `overhead`) and drops when the
+        pod is deleted.
+    -   Verify a pod declaring pod-level resources produces a zero delta at the status write.
+    -   Verify only writes changing `nodeAllocatableResourceClaimStatuses` are evaluated against quota; other status writes
+        are unaffected.
 -   Scheduler Framework:
     -   Verify `NodeInfo` cache updates correctly in the `Assume` stage and reflects resources allocated to node allocatable resource claims.
     -   Verify that when a pod using DRA node allocatable resources is deleted, the resources are correctly released 
@@ -2245,26 +2394,41 @@ Unit tests will be added for all new and modified logic within the `kube-schedul
     -   Verify that during steady-state reconciliation loops, Kubelet maintains the `allocated`
         checkpoint strictly limited to standard Spec requests and limits, while correctly incorporating DRA
         allocations when evaluating node capacity during pod admission and resize checks.
+-   Kubelet Eviction and Preemption:
+    -   Verify eviction ranking and preemption use requests that include the DRA footprint.
+    -   Verify ephemeral storage: disk-pressure ranking, pod-level limit eviction, and container-level limit eviction account
+        for DRA claim allocations; a pod without a spec limit stays unlimited; behavior is unchanged with the gate disabled.
+-   HPA request computation includes the DRA footprint when the feature gate is enabled and the pod has node allocatable claims
+
+**Coverage:**
 
 <!--
 Generated with:
-go test -cover ./pkg/scheduler/framework/plugins/dynamicresources ./pkg/scheduler/framework/plugins/noderesources ./pkg/scheduler ./pkg/scheduler/framework ./staging/src/k8s.io/component-helpers/resource ./pkg/kubelet/kuberuntime ./pkg/kubelet/cm ./pkg/kubelet/allocation
+go test -cover ./pkg/scheduler/framework/plugins/dynamicresources ./pkg/scheduler/framework/plugins/noderesources ./pkg/scheduler ./pkg/scheduler/framework ./staging/src/k8s.io/component-helpers/resource ./pkg/kubelet/kuberuntime ./pkg/kubelet/cm ./pkg/kubelet/allocation ./pkg/kubelet/qos ./pkg/kubelet/status ./pkg/registry/core/pod ./pkg/apis/core/validation ./plugin/pkg/admission/nodedeclaredfeatures ./staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features/dranodeallocatableresources
 -->
 
--  pkg/scheduler/framework/plugins/dynamicresources: 20260517 - 82.5%
--  pkg/scheduler/framework/plugins/noderesources: 20260517 - 89.1%
--  pkg/scheduler/schedule_one.go: 20260517 - 76.8%
--  pkg/scheduler/framework/types.go: 20260517 - 73.0%
--  pkg/scheduler/eventhandlers.go: 20260517 - 76.8%
--  staging/src/k8s.io/component-helpers/resource/helpers.go: 20260517 - 82.7%
--  pkg/kubelet/kuberuntime: 20260517 - 70.9%
--  pkg/kubelet/cm: 20260517 - 24.3%
--  pkg/kubelet/allocation: 20260517 - 82.8%
+-  pkg/scheduler/framework/plugins/dynamicresources: 20260916 - 87.0%
+-  pkg/scheduler/framework/plugins/noderesources: 20260916 - 91.3%
+-  pkg/scheduler: 20260916 - 83.2%
+-  pkg/scheduler/framework: 20260916 - 76.7%
+-  staging/src/k8s.io/component-helpers/resource: 20260916 - 99.2%
+-  pkg/kubelet/kuberuntime: 20260916 - 78.9%
+-  pkg/kubelet/cm: 20260916 - 28.6%
+-  pkg/kubelet/allocation: 20260916 - 85.7%
+-  pkg/kubelet/qos: 20260916 - 98.9%
+-  pkg/kubelet/status: 20260916 - 91.8%
+-  pkg/registry/core/pod: 20260916 - 82.8%
+-  pkg/apis/core/validation: 20260916 - 87.9%
+-  plugin/pkg/admission/nodedeclaredfeatures: 20260916 - 84.4%
+-  staging/src/k8s.io/component-helpers/nodedeclaredfeatures/features/dranodeallocatableresources: 20260916 - 100.0%
 
 
 ##### Integration tests
 
-Integration tests will be added in `test/integration/dynamicresource` to cover the end-to-end scheduling flow:
+Integration tests are in `test/integration/dra` and cover the end-to-end scheduling flow. 
+
+The Kube-Scheduler filter/allocation and Kubelet items below were added as part of alpha. The ResourceQuota, Kube-Scheduler
+scoring, and HPA tests will be added with the beta implementation.
 
 **Kube-Scheduler:**
 -   Tests to ensure correct interaction between `NodeResourcesFit` and `DynamicResources` plugins.
@@ -2273,19 +2437,38 @@ Integration tests will be added in `test/integration/dynamicresource` to cover t
 -   Ensure that resources are correctly released in the scheduler cache when a pod with DRA node allocatable resource claims is deleted.
 -   Validate that fungible claims resulting in different node allocatable resource footprints are accounted for correctly on a per-node basis.
 -   Verify that the scheduler correctly enforces inter-pod sharing restrictions, blocking pods that attempt to
-    share `Direct`-mapped devices.
+    share `Mapping` devices.
 -   Tests to validate the `pod.status.nodeAllocatableResourceClaimStatuses` is populated correctly and the kubelet
     admission check correctly computes the effective pod resource request.
+-   Test that `NodeResourcesFit` scoring (LeastAllocated and MostAllocated) accounts for the DRA node allocatable footprint of both existing pods and the pod being scheduled across candidate nodes.
+-   Test that `NodeResourcesBalancedAllocation` scoring balances CPU and memory ratios incorporating DRA node allocatable requests.
 
 **Kubelet:**
 -   Test that the Kubelet's admission handler correctly factors in the node allocatable resources specified in `pod.status.nodeAllocatableResourceClaimStatuses` 
     when deciding whether to admit a pod.
 -   Test that Kubelet correctly generates Linux cgroup configurations summing standard Spec limits and DRA allocations.
 
+**ResourceQuota:**
+-   Test that when a new pod without DRA claims is created, namespace quota evaluation at admission includes the DRA footprints of existing scheduled pods.
+-   Test that a pod whose DRA node allocatable footprint fits the namespace budget binds successfully and that
+    `ResourceQuota.Status.Used` reflects the standard requests plus the DRA footprint.
+-   Test that a pod whose footprint exceeds the remaining namespace budget is rejected at `PreBind`, remains unschedulable.
+-   Test that deleting a bound pod releases the DRA portion of the usage.
+-   Test that a pod declaring pod-level resources covering its DRA footprint is rejected synchronously at creation when the namespace is
+    out of quota.
+
+**HPA:**
+-   Test that utilization calculation is DRA aware for pods with node allocatable claims.
+
+Integration tests added for alpha:
+
+- [TestDRA/DRANodeAllocatableResources](https://github.com/kubernetes/kubernetes/blob/b328c6d3c672acbcec4ab43b424dce097b434145/test/integration/dra/node_allocatable_resources.go#L44): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=test%2Fintegration%2Fdra), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=DRANodeAllocatableResources)
+
 ##### e2e tests
 
-E2E tests will be added to `test/e2e/dra`:
+E2E tests are added under `test/e2e/dra`.
 
+Alpha:
 -   Verify these pods are scheduled onto nodes with sufficient capacity, considering both the pod's standard requests and the DRA-added node allocatable resources.
     These tests should cover various DRA modeling scenarios:
     -   Node allocatable resources as individual devices. 
@@ -2294,6 +2477,14 @@ E2E tests will be added to `test/e2e/dra`:
     -   Auxiliary node allocatable resources required by other devices (e.g., additional memory for an accelerator).
     -   Fungible claims involving node allocatable resources.
 -   Verify that Kubelet enforces correct cgroup limits on running containers without kernel throttling or OOM kills, and applies correct OOM score adjustments.
+
+Beta:
+-   Verify that a pod requesting DRA node allocatable resources exceeding namespace quota is rejected at PreBind in a running cluster.
+
+e2e tests added for alpha: [SIG Node](https://testgrid.k8s.io/sig-node-dynamic-resource-allocation#ci-kind-dra-all&include-filter-by-regex=Node.Allocatable.Resources), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=Node+Allocatable+Resources)
+
+- [verifies cgroup and OOM score settings](https://github.com/kubernetes/kubernetes/blob/b3a755401b2b3654e7f494b8f1ec51307ba0c911/test/e2e/dra/dra_node_allocatable_resources.go#L589)
+- [verifies pod status after resize](https://github.com/kubernetes/kubernetes/blob/b3a755401b2b3654e7f494b8f1ec51307ba0c911/test/e2e/dra/dra_node_allocatable_resources.go#L842)
 
 ### Graduation Criteria
 
@@ -2308,7 +2499,7 @@ E2E tests will be added to `test/e2e/dra`:
 -   The Kubelet's admission handler is updated to consider node allocatable resource claims in `Pod.Status`.
 -   API validation restriction implemented in `pkg/apis/core/validation/validation.go` blocking In-Place Pod
     Resizing for pods utilizing DRA node allocatable resources.
--   All unit and integration tests outlined in the Test Plan are implemented and verified.
+-   All unit and integration tests outlined in the Test Plan for the alpha scope are implemented and verified.
 
 #### Alpha2
 
@@ -2324,10 +2515,23 @@ E2E tests will be added to `test/e2e/dra`:
 
 #### Beta
 
--   At least one DRA driver has integrated the API extensions and successfully validated the node allocatable resource mapping in ResourceSlice.
--   Integrate DRA-allocated node allocatable resources into the Kubelet Eviction Manager to ensure accurate eviction decisions during node pressure.
--   Support unified ResourceQuota and LimitRange enforcement for DRA-allocated node allocatable resources.
--   Support node allocatable resource mappings to ephemeral storage.
+-  One DRA driver ([dra-driver-cpu](https://github.com/kubernetes-sigs/dra-driver-cpu), consumed by slurm-bridge) has integrated the API extensions and validated the node allocatable resource mapping in ResourceSlice.
+-   Kubelet eviction and preemption count DRA-allocated node allocatable resources, so pods are ranked by usage over their true
+    request, not their spec request alone.
+-   Init container `perContainer` overhead counts only toward the pod's peak resource calculation, 
+    the same way init container spec requests are counted.
+-   Ephemeral storage - validation and the eviction manager integration.
+-   Unified `ResourceQuota` accounting and enforcement for DRA-allocated node allocatable resources.
+-   Compatibility with DRA-backed extended resources (scheduler-created claims) validated and tested.
+-   Per-node scoring in `NodeResourcesFit` and `NodeResourcesBalancedAllocation`.
+-   HPA integration - pod utilization accounts for DRA node allocatable resources.
+-   Cluster Autoscaler integration - binpacking and node utilization account for DRA node allocatable
+    resources, including for pods placed during simulation and pods duplicated into node templates.
+-   `kubectl describe node` integration - per-pod rows and the summary consider both spec and DRA values.
+
+#### GA
+
+-   The feature has been enabled by default for at least two releases with no critical bug reports.
 
 ### Upgrade / Downgrade Strategy
 
@@ -2365,7 +2569,7 @@ E2E tests will be added to `test/e2e/dra`:
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: `DRANodeAllocatableResources`
-  - Components depending on the feature gate: `kube-scheduler`, `kubelet`, `kube-apiserver`.
+  - Components depending on the feature gate: `kube-scheduler`, `kubelet`, `kube-apiserver`, `kube-controller-manager`.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -2395,9 +2599,9 @@ resynchronize control-plane accounting and node cgroup limit inflation, pods uti
 
 ###### Are there any tests for feature enablement/disablement?
 
-Unit tests in `kube-scheduler`, `kubelet`, and `kube-apiserver` will verify the behavior of the scheduler plugins
-(`NodeResourcesFit`, `DynamicResources`), Kubelet cgroup enforcement, and
-API validation with the feature gate enabled and disabled.
+Unit tests in `kube-scheduler`, `kubelet`, `kube-apiserver`, and `kube-controller-manager` will verify the behavior of the
+scheduler plugins (`NodeResourcesFit`, `DynamicResources`), Kubelet cgroup enforcement, API validation, and the HPA request
+computation with the feature gate enabled and disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -2417,12 +2621,23 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
+Scheduler prevent placing pods with DRA claims on older Kubelets that does not have have the feature enabled using the Node Declared Features framework (`DRANodeAllocatableResources`).
+
+Neither rollout nor rollback terminates, restarts, or evicts running pods. On rollback, running
+containers retain their DRA inflated cgroups. If a container restarts while the gate is disabled on Kubelet,
+its cgroups revert to standard Spec limits, which can cause CPU throttling or OOM kills if it relies on DRA capacity.
+
 ###### What specific metrics should inform a rollback?
 
 <!--
 What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
+
+- `scheduler_unschedulable_pods{plugin="DynamicResources"}` or a sharp rise in `scheduler_pending_pods`: Indicates pods with DRA claims are failing node-fit filtering, device resolution (e.g. driver slice unavailability), or `PreBind` status patching.
+- `kubelet_admission_rejections_total`: Pods rejected at Kubelet admission due to insufficient node allocatable capacity, indicating scheduler cache undercounting.
+- `container_cpu_cfs_throttled_seconds_total` or elevated container OOM kills: Workloads with DRA claims experiencing throttling or OOM kills due to cgroup limits not being inflated.
+- `ResourceQuota.Status.Used`: Quota failing to decrease after pod deletion, or unexpected rapid depletion blocking standard workload admission.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -2432,11 +2647,24 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
+Manual testing of the enable -> disable -> enable lifecycle was tested on Kind cluster with the feature gate enabled on 1.37:
+
+1. **Upgrade (Enable):** Enable feature gate on API server, scheduler, and Kubelet; deploy `dra-driver-cpu` and a pod 
+requesting DRA CPU. Verify `pod.status.nodeAllocatableResourceClaimStatuses` is populated, scheduler cache reflects the 
+combined footprint, and Kubelet inflates container cgroups.
+2. **Downgrade (Disable):** Disable gate. Verify running pods continue uninterrupted and keep their recorded footprints in
+quota usage until deleted, new pods with DRA claims are scheduled without accounting and do not inflate cgroups, and restarting
+a container reverts its cgroup limits to standard Spec.
+3. **Upgrade (Re-enable):** Re-enable feature gate. Verify new pods regain unified accounting, pod status with 
+`nodeAllocatableResourceClaimStatuses`, and cgroup inflation, and restarting earlier pods resynchronizes node cgroups.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
+
+No.
 
 ### Monitoring Requirements
 
@@ -2463,13 +2691,9 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
 - [x] API .status
-    - Other field: pod.status.nodeAllocatableResourceClaimStatuses
-    - Details: Pods referencing node allocatable resource claims should have the pod status updated with `nodeAllocatableResourceClaimStatuses`.
-- [ ] Other (treat as last resort)
-  - Details:
+  - Other field: `pod.status.nodeAllocatableResourceClaimStatuses`
+  - Details: Pods referencing node allocatable resource claims have this status field populated with their allocated footprint.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -2488,18 +2712,26 @@ These goals will help you determine what you need to measure (SLIs) in the next
 question.
 -->
 
+Existing DRA and kube-scheduler SLOs continue to apply and must be maintained. Enabling this feature only affects pods 
+requesting DRA Node Allocatable claims. Pods not using these claims should not experience any additional overhead.
+For pods utilizing DRA Node Allocatable claims, pod scheduling duration should be comparable to baseline DRA claim allocation 
+and introduce no visible degradation compared to baseline scheduling performance.
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric names:
+    - `scheduler_plugin_execution_duration_seconds` with `plugin="DynamicResources"`
+        - For capacity check: `extension_point="Filter"`
+        - For status patching: `extension_point="PreBind"`
+    - `scheduler_unschedulable_pods` with `plugin="DynamicResources"`
+    - `scheduler_pending_pods`
+    - `kubelet_admission_rejections_total`
+  - Components exposing the metric: `kube-scheduler`, `kubelet`
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -2507,6 +2739,8 @@ Pick one more of these and delete the rest.
 Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
 implementation difficulties, etc.).
 -->
+
+No.
 
 ### Dependencies
 
@@ -2531,7 +2765,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
       - Impact of its degraded performance or high-error rates on the feature:
 -->
 
-No
+No. The feature relies only on core Kubernetes components (`kube-apiserver`, `kube-scheduler`, `kubelet`) and compliant DRA drivers that publish `ResourceSlice` objects with node allocatable resource mappings.
 
 ### Scalability
 
@@ -2653,6 +2887,10 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+Scheduling stops cluster-wide when the API server is unavailable, which is not specific to this feature. The `PreBind` status 
+patch fails, so the pod stays unbound and is retried.
+Already-bound pods are unaffected. Kubelet keeps enforcing cgroups from the last observed pod status, and running containers are not affected. Quota enforcement runs inside the API server, so it is also unavailable when the API server is down.
+
 ###### What are other known failure modes?
 
 <!--
@@ -2668,7 +2906,23 @@ For each of them, fill in the following information by copying the below templat
     - Testing: Are there any tests for failure mode? If not, describe why.
 -->
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
+
+- [Pod unschedulable due to unresolvable device mapping during driver slice churn]
+  - Detection: `scheduler_unschedulable_pods{plugin="DynamicResources"}` rises; pod `FailedScheduling` events report that device mappings could not be resolved.
+  - Mitigations: Recovers automatically when the DRA driver republishes its `ResourceSlice`s. Restart the driver daemonset if slices remain absent.
+  - Diagnostics: Scheduler logs at `-v=5` show device mapping lookup failure in `DynamicResources` plugin during fail-closed sharing validation.
+  - Testing: Scheduler unit tests for fail-closed sharing validation.
+
+- [Pod pending at PreBind due to namespace ResourceQuota exhaustion]
+  - Detection: Pod status remains `Pending`; `scheduler_unschedulable_pods{plugin="DynamicResources"}` or `scheduler_pending_pods` rises; pod events report `FailedScheduling` with `exceeded quota`.
+  - Mitigations: Increase the namespace `ResourceQuota` or reduce claim requested quantities.
+  - Diagnostics: Scheduler logs at `-v=5` show the quota rejection error on the status patch.
+  - Testing: Integration tests covering `PreBind` quota rejection.
+
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A. This feature does not define any separate SLO; general kube-scheduler and DRA SLOs apply.
 
 ## Implementation History
 
@@ -2682,6 +2936,10 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+-   2025-12-22: KEP created.
+-   v1.36: Initial alpha. Device API extensions, scheduler fit checks, and pod status recording.
+-   v1.37: Alpha2. Kubelet cgroup and OOM enforcement.
 
 ## Drawbacks
 
@@ -2770,195 +3028,36 @@ type NodeAllocatableResourceClaimStatus struct {
 
 ### Alternative Model for pod level resources + DRA
 
-This section explores an alternative design where the pod footprint is always
-calculated as the sum of pod level resources and allocated DRA claims (additive
-model: pod level resources + DRA).
+The current model treats pod-level resources as the upper bound: the declared pod-level values are the pod's effective footprint,
+and DRA-delivered resources must fit within them. The alternative treats them as independent: the pod-level values cover the
+containers, and the DRA footprint is added on top. When pod-level resources are not specified, the two models are identical: the
+footprint is the sum of container requests plus DRA allocations.
 
-If pod level resources are not specified in the PodSpec, the behavior is
-identical to the current proposal (sum-of-containers plus DRA allocations).
+**Ceiling (current): pod-level resources include the DRA footprint.**
 
-Under this alternative model, cgroup enforcement and scheduling components would
-be configured as follows:
+*   Pros:
+    *   Pod-level resources keep representing the whole pod footprint.
+    *   Claims are requested at the container level, so adding the claim's resources to the container's spec requests matches the
+        spec shape, and the pod-level value stays the bound over both.
+    *   Existing DRA drivers (like dra-driver-cpu) and their users can keep accounting correct while the feature rolls out by
+        declaring pod-level bounds that include the claim.
+    *   Quota and autoscaler integrations keep working: the pod-level value is the effective footprint they already read.
+*   Cons:
+    *   Does not work well with pod-level resources plus prioritized lists: the footprint depends on the selected alternative, so
+        users must over-declare or omit pod-level resources.
+    *   A driver upgrade that raises overhead can make existing pods unschedulable when the footprint no longer fits the
+        pod-level budget.
 
-#### 1. Kubelet Cgroup Enforcement
+**Additive: the DRA footprint is added on top of pod-level resources.**
 
-*   **pod level Parent Cgroup**:
-    If pod level resources are specified, Kubelet sets the parent pod cgroup
-    limits by adding the DRA resource allocation to the pod level limits:
+*   Pros:
+    *   Node-variable overhead and prioritized lists work without over-declaring.
+    *   A driver upgrade does not invalidate existing pod specs.
+*   Cons:
+    *   There is no way to specify per-pod total cap.
 
-    ```
-    Request   = pod level requests + DRA claims
-    Limit     = pod level limits + DRA claims
-    ```
-
-*   **Container-Level Fallback Capping**:
-    Similar to the current proposal, container-level cgroup settings are
-    configured according to container-level requests/limits if explicitly
-    specified. The cgroup enforcement changes only for the fallback behavior
-    when container-level limits are omitted:
-    *   For containers without claims:
-        `Limits = pod level limits` (caps them at the pod level resources
-        baseline to prevent leaking into sibling claims).
-    *   For containers with claims:
-        `Limits = pod level limits + DRA claim`
-
-#### 2. Kube-Scheduler Changes
-
-*   **Footprint Calculation**:
-    The dynamic validation check in the `DynamicResources` scheduler plugin
-    (which verifies that resolved DRA claims fit within the pod level resource
-    ceiling) is removed. The scheduler plugin instead calculates the effective
-    pod requests as:
-    ```
-    Effective Pod Request = pod level requests + DRA claim requests
-    ```
-    This sum is checked against node allocatable capacity during the resource fit check.
-
-
-#### Enforcement Use Case Walkthroughs with this model
-
-To demonstrate how cgroup enforcement and limit configurations would work under
-this alternative model, consider the following walkthroughs:
-
-##### 1. pod level Request and Limit + DRA Claim (Single container references claim)
-
-*   **Setup**: The pod defines explicit pod level resources. Container `c1` references the DRA claim, which resolves to a **Direct mapped** allocation of 5 CPU and 5 GiB memory. Container `c2` has no claims and specifies no container-level limits.
-*   **Pod Spec**:
-    ```yaml
-    spec:
-      resources:
-        requests: { cpu: "5", memory: "5Gi" }
-        limits: { cpu: "5", memory: "5Gi" }
-      containers:
-      - name: c1
-        resources:
-          claims: [{ name: "dra-claim" }]
-      - name: c2
-      resourceClaims:
-      - name: dra-claim
-        resourceClaimName: dra-claim
-    ```
-*   **Pod Status (Allocated)**:
-    ```yaml
-    status:
-      nodeAllocatableResourceClaimStatuses:
-      - resourceClaimName: dra-claim
-        containers: ["c1"]
-        mapping:
-        - name: cpu
-          quantity: "5"
-        - name: memory
-          quantity: "5Gi"
-    ```
-*   **Cgroup Bounds Configuration**:
-    *   **pod level Cgroup**:
-        *   `cpu.weight` (CPU Shares): Inflated by adding DRA requests to pod level resources requests (5 + 5): **10** (10240 shares).
-        *   `cpu.max` (CPU Quota): Inflated by adding DRA limits to pod level resources limits (5 + 5): **10 CPUs**.
-        *   `memory.max` (Memory Limit): Inflated by adding DRA limits to pod level resources limits (5 GiB + 5 GiB): **10 GiB**.
-    *   **Container Level Cgroups**:
-        *   Container `c1` (references claim):
-            *   `cpu.max` (CPU Quota): Capped at `claim + pod level limit` (5 + 5): **10 CPUs**.
-            *   `memory.max` (Memory Limit): Capped at `claim + pod level limit` (5 + 5): **10 GiB**.
-        *   Container `c2` (does NOT reference claim):
-            *   `cpu.max` (CPU Quota): Capped at pure pod level limit: **5 CPUs**.
-            *   `memory.max` (Memory Limit): Capped at pure pod level limit: **5 GiB**.
-*   **Outcome**: Only container `c1` (which references the claim) includes the DRA allocation in its limit. Sibling container `c2` is restricted to the baseline pod level Resources limits.
- 
-##### 2. pod level Request and Limit + Fungible DRA Claim (Prioritized List)
-
-*   **Setup**: The pod defines explicit pod level Resources (5 CPU, 5 GiB memory). Container `c1` references a fungible DRA claim representing a prioritized list:
-    *   **Option A (Preferred)**: GPU device mapping with flat 2 CPU and 2 GiB memory host overhead.
-    *   **Option B (Fallback)**: CPU device mapping with direct allocation of 4 CPU (no memory/CPU overhead).
-*   **Pod Spec**:
-    ```yaml
-    spec:
-      resources:
-        requests: { cpu: "5", memory: "5Gi" }
-        limits: { cpu: "5", memory: "5Gi" }
-      containers:
-      - name: c1
-        resources:
-          claims: [{ name: "fungible-claim" }]
-      - name: c2
-      resourceClaims:
-      - name: fungible-claim
-        resourceClaimName: preferred-gpu-fallback-cpu
-    ```
-
-**Sub-Case 4a: Resolved to Option A (GPU Allocated)**
-
-*   **Pod Status (Allocated)**:
-    ```yaml
-    status:
-      nodeAllocatableResourceClaimStatuses:
-      - resourceClaimName: preferred-gpu-fallback-cpu
-        containers: ["c1"]
-        overhead:
-        - name: cpu
-          quantity: "2"
-        - name: memory
-          quantity: "2Gi"
-    ```
-*   **Cgroup Bounds Configuration**:
-    *   **pod level Cgroup**:
-        *   `cpu.weight` (CPU Shares): Inflated by adding DRA requests to pod level resources requests (5 + 2): **7** (7168 shares).
-        *   `cpu.max` (CPU Quota): Inflated by adding DRA limits to pod level resources limits (5 + 2): **7 CPUs**.
-        *   `memory.max` (Memory Limit): Inflated by adding DRA limits to pod level resources limits (5 GiB + 2 GiB): **7 GiB**.
-    *   **Container Level Cgroups**:
-        *   Container `c1` (references claim):
-            *   `cpu.max` (CPU Quota): Capped at `claim + pod level limit` (2 + 5): **7 CPUs**.
-            *   `memory.max` (Memory Limit): Capped at `claim + pod level limit` (2 + 5): **7 GiB**.
-        *   Container `c2` (does NOT reference claim):
-            *   `cpu.max` (CPU Quota): Capped at pure pod level limit: **5 CPUs**.
-            *   `memory.max` (Memory Limit): Capped at pure pod level limit: **5 GiB**.
-
-**Sub-Case 4b: Resolved to Option B (Fallback CPU Allocated)**
-
-*   **Pod Status (Allocated)**:
-    ```yaml
-    status:
-      nodeAllocatableResourceClaimStatuses:
-      - resourceClaimName: preferred-gpu-fallback-cpu
-        containers: ["c1"]
-        mapping:
-        - name: cpu
-          quantity: "4"
-    ```
-*   **Cgroup Bounds Configuration**:
-    *   **pod level Cgroup**:
-        *   `cpu.weight` (CPU Shares): Inflated by adding DRA requests to pod level resources requests (5 + 4): **9** (9216 shares).
-        *   `cpu.max` (CPU Quota): Inflated by adding DRA limits to pod level resources limits (5 + 4): **9 CPUs**.
-        *   `memory.max` (Memory Limit): Since no DRA memory is allocated, matches pure pod level resources Memory limit: **5 GiB**.
-    *   **Container Level Cgroups**:
-        *   Container `c1` (references claim):
-            *   `cpu.max` (CPU Quota): Capped at `claim + pod level limit` (4 + 5): **9 CPUs**.
-            *   `memory.max` (Memory Limit): Capped at pure pod level limit: **5 GiB**.
-        *   Container `c2` (does NOT reference claim):
-            *   `cpu.max` (CPU Quota): Capped at pure pod level limit: **5 CPUs**.
-            *   `memory.max` (Memory Limit): Capped at pure pod level limit: **5 GiB**.
-
-*   **Outcome**: Under Option A, the pod footprint automatically sets itself to
-    7 CPUs and 7 GiB. Under Option B, the footprint is 9 CPUs and 5 GiB. In both
-    options, the sibling container `c2` is safely restricted to the baseline pod
-    level resources spec limit (5 CPUs, 5 GiB), and scheduling succeeds without
-    requiring the user to over-provision the pod's limit in the Spec.
-
-**Pros:**
-1. Footprint dynamically scales based on the allocated claim, which avoids
-   sizing the pod level requests to the maximum choice in prioritized lists.
-2. DRA claims remain consistently additive on top of standard requests at
-   both pod and container levels.
-
-**Cons:**
-1. We lose the current semantic that pod level resources serve as the absolute
-   upper bound of the pod's resource footprint.
-2. Existing DRA drivers face onboarding friction, requiring custom
-   coordination to prevent double accounting in scheduler node capacity.
-3. The current proposal of using pod level resources as an upper ceiling
-   provides immediate solutions for quota enforcement, LimitRange, VPA, and
-   Cluster Autoscaler that were solved for pod level resources, provided we
-   have a restriction that pod level resources are specified for pods with
-   node allocatable claims.
+Future option: both models are implementable at the scheduler and for node enforcement, so a configuration option to pick between
+the two can be added if a use case emerges.
 
 ## Infrastructure Needed (Optional)
 
