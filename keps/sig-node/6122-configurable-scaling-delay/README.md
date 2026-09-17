@@ -240,6 +240,7 @@ The overview of the design:
 
 The basic flow shown in the diagram is as follows:
 - During allocation of new CPUSets, changes are not applied to assignments immediately but kept in preAssignments, and `scale_delay_timers` are started.
+- The preAssignments and the time at which the cpuset may be applied are recorded in the CPU manager checkpoint.
 - The new CPUSets kept in preAssignments are the values [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369) exposes to the container.
 - During cpuset actuation, containers scaling down (with active `scale_delay_timer`) are skipped if the pod's `scaleDownGracePeriodSeconds` has not yet elapsed. For those where the time has passed, preAssignments are written to assignments and actuated in containers.
 - The SyncPod performs two actions after there is no active `scale_delay_timer` on the pod, and actuated states equal the allocated ones:
@@ -259,8 +260,6 @@ The existing flow (before applying this KEP) among AllocationManager, CPUManager
 The flow after the modifications introduced by this KEP is as follows:
 
 ![alt text](flow_to_be.png)
-
-
 
 Regarding the ownership of resize:
 - **AllocationManager** is responsible for accepting resize and triggering the allocation phase. This KEP does not modify this part.
