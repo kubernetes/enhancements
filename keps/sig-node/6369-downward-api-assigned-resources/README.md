@@ -58,6 +58,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [4. Volume files only, without environment variables](#4-volume-files-only-without-environment-variables)
   - [5. Include the amount of memory in <code>assigned.memset</code>](#5-include-the-amount-of-memory-in-assignedmemset)
   - [6. Expose the assignments through DRA](#6-expose-the-assignments-through-dra)
+  - [7. Inject the assignments as files, the way DRA device attributes are](#7-inject-the-assignments-as-files-the-way-dra-device-attributes-are)
 <!-- /toc -->
 
 ## Release Signoff Checklist
