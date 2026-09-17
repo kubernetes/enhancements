@@ -175,7 +175,7 @@ nitty-gritty.
 
 This proposal extends the Downward API with two new values of the existing `ResourceFieldRef.Resource` field: `assigned.cpuset`, carrying the CPU Manager's cpuset for the container, and `assigned.memset`, carrying the Memory Manager's set of memory NUMA nodes. Exposure of both is gated by the `DownwardAPIAssignedResources` feature gate.
 
-**Note:** The feature supports both downward API volume files and environment variables. Volume file values are updated while the container runs, including during a resize, while an environment variable is evaluated when the container is created and keeps that value until the container is recreated.
+**Note:** The feature supports both downward API volume files and environment variables. Volume file values are updated while the container runs, also during a resize, whereas an environment variable is evaluated when the container is created and keeps that value until the container is recreated.
 
 ### Use Cases
 
@@ -230,7 +230,6 @@ Once the feature graduates to GA and the feature gate is removed, every kubelet 
 
 Two new values, `assigned.cpuset` and `assigned.memset`, are added to the existing `ResourceFieldRef.Resource` field:
 
-ResourceFieldRef.Resource
 * resource: limits.cpu
    + A container's CPU limit
 * resource: requests.cpu
@@ -256,27 +255,27 @@ Both values use the Linux list format — `0-3,7,12-15` for CPUs, `0-1` for NUMA
 
 #### Downward API Volume Exposure
 
-The Volume manager gets the CPU state from CPU manager, and writes it to the Downward API volume file `assigned.cpuset`, which exposes the CPUSet to the container:
-  - If the container has exclusive CPUs assigned, the value exposes the exclusive cpuset:
-    - during a scale-down, the newly allocated cpuset, before it is applied to the container,
-    - otherwise, the cpuset the container currently holds.
-  - Otherwise, the value is empty ("").
+The Volume Manager gets the CPU state from the CPU Manager, and writes it to the Downward API volume file `assigned.cpuset`, which exposes the cpuset to the container:
+- **If the container has exclusive CPUs assigned**:
+  - during a scale-down: the file contains the newly allocated cpuset (before it is applied to the container).
+  - at other times: the file contains the cpuset the container currently holds.
+- **Otherwise**: the file contains an empty string (`""`).
 
-The Volume manager gets the Memory state from Memory manager, and writes it to the Downward API volume file `assigned.memset`, which exposes the set of memory NUMA nodes to the container:
-  - If the container has memory assigned, the value exposes those NUMA nodes (e.g. `0-1`).
-  - Otherwise, the value is empty ("").
+The Volume Manager gets the Memory state from the Memory Manager, and writes it to the Downward API volume file `assigned.memset`, which exposes the set of memory NUMA nodes to the container:
+- **If the container has memory assigned**: the file contains those NUMA nodes (e.g. `0-1`).
+- **Otherwise**: the file contains an empty string (`""`).
 
 #### Downward API Environment Variable Exposure
 
-The environment variable for CPU exposure gets the CPU state from the CPU manager when the container is created:
-  - If the container has exclusive CPUs assigned, the value exposes the exclusive cpuset.
-  - Otherwise, the value is empty ("").
+The environment variable for CPU exposure gets the CPU state from the CPU Manager when the container is created:
+- **If the container has exclusive CPUs assigned**: the variable exposes the exclusive cpuset.
+- **Otherwise**: the variable is empty (`""`).
 
-The environment variable for Memory exposure gets the Memory state from the Memory manager when the container is created:
-  - If the container has memory assigned, the value exposes those NUMA nodes (e.g. `0-1`).
-  - Otherwise, the value is empty ("").
+The environment variable for Memory exposure gets the Memory state from the Memory Manager when the container is created:
+- **If the container has memory assigned**: the variable exposes those NUMA nodes (e.g. `0-1`).
+- **Otherwise**: the variable is empty (`""`).
 
-**Note** An environment variable is evaluated when the container is created and is not updated afterwards, so it does not follow a resize; it is re-evaluated only when the container is recreated. Volume file values, in contrast, are updated whenever the assignment changes. A workload that needs the value to follow a resize must read the volume file.
+**Note:** An environment variable is evaluated when the container is created and is not updated afterwards, so it does not follow a resize; it is re-evaluated only when the container is recreated. Volume file values, in contrast, are updated whenever the assignment changes. A workload that needs that value to follow a resize must read the volume file.
 
 ### Test Plan
 
@@ -399,7 +398,7 @@ If e2e tests are not necessary or useful, explain why.
 * The kubelet produces both values for downward API volume files and for container environment variables.
 * With the gate disabled the kubelet produces an empty value rather than failing the container.
 * The kubelet declares `DownwardAPIAssignedResources` in `node.status.declaredFeatures`, and the scheduler filters on it.
-* Unit, integration and e2e tests as described in the test plan.
+* Unit, integration, and e2e tests as described in the test plan.
 
 #### Beta
 
@@ -452,7 +451,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-This feature involves coordination between kube-apiserver (field validation), the kubelet (producing the values) and the scheduler (node filtering via Node Declared Features).
+This feature involves coordination between kube-apiserver (field validation), the kubelet (producing the values), and the scheduler (node filtering via Node Declared Features).
 
 **New apiserver, older kubelet.** The apiserver accepts `assigned.cpuset` and `assigned.memset`. An older kubelet does not know these resource names at all, so it cannot produce a value for them and the downward API setup for such a container fails. Node Declared Features prevents this from being reached: such a kubelet does not declare `DownwardAPIAssignedResources`, so the scheduler does not place these pods on it.
 
@@ -466,7 +465,7 @@ This feature involves coordination between kube-apiserver (field validation), th
 
 **Both OFF.** Feature disabled, existing behavior.
 
-In clusters with mixed node versions the Node Declared Features framework ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features)) handles the skew on its own: only nodes declaring the feature receive pods that use these values. The operator therefore does not have to upgrade every kubelet before enabling the gate, and a pod that no node can serve stays unschedulable instead of failing on a node that cannot produce the values.
+In clusters with mixed node versions, the Node Declared Features framework ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features)) handles the skew on its own: only nodes declaring the feature receive pods that use these values. The operator therefore does not have to upgrade every kubelet before enabling the gate, and a pod that no node can serve stays unschedulable instead of failing on a node that cannot produce the values.
 
 ## Production Readiness Review Questionnaire
 
@@ -587,11 +586,11 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 
-**Highly available control plane.** During a rollout the gate may be enabled on some apiservers and not others. Creating a pod that references these values then succeeds or fails depending on which apiserver serves the request. The failure is an explicit validation error rather than silent acceptance, and it disappears once the rollout completes. Updates of pods that already reference them are unaffected, because the validation option is derived from the old spec and does not depend on the gate state of the apiserver handling the request.
+**Highly available control plane.** During a rollout, the gate may be enabled on some apiservers and not others. Creating a pod that references these values then succeeds or fails depending on which apiserver serves the request. The failure is an explicit validation error rather than silent acceptance, and it disappears once the rollout completes. Updates of pods that already reference them are unaffected, because the validation option is derived from the old spec and does not depend on the gate state of the apiserver handling the request.
 
 **Rolling the gate out across nodes.** A kubelet starts declaring `DownwardAPIAssignedResources` once the gate is enabled on it. Until enough nodes declare it, a pod referencing these values stays `Pending` with a scheduling event, rather than running somewhere that cannot serve it. That is a visible and recoverable state.
 
-**Already running workloads are not affected.** A rollback does not kill pods. With the gate disabled the kubelet writes an empty value into the volume file and leaves the environment variables as they were, so a container keeps running and only loses the information. Nothing about the CPU or memory assignment itself changes — this feature only reports it.
+**Already running workloads are not affected.** A rollback does not kill pods. With the gate disabled, the kubelet writes an empty value into the volume file and leaves the environment variables as they were, so a container keeps running and only loses the information. Nothing about the CPU or memory assignment itself changes — this feature only reports it.
 
 ###### What specific metrics should inform a rollback?
 
@@ -664,7 +663,7 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-For a single pod this is visible from inside the container, without access to node logs or metrics. Read the value and compare it with the container's own cgroup files: a working setup gives the same set in `assigned.cpuset` as in `cpuset.cpus`, and in `assigned.memset` as in `cpuset.mems`. An empty value for a container that does hold exclusive CPUs or assigned memory means the node is not serving the feature — see [Troubleshooting](#troubleshooting).
+For a single pod, this is visible from inside the container, without access to node logs or metrics. Read the value and compare it with the container's own cgroup files: a working setup gives the same set in `assigned.cpuset` as in `cpuset.cpus`, and in `assigned.memset` as in `cpuset.mems`. An empty value for a container that does hold exclusive CPUs or assigned memory means the node is not serving the feature — see [Troubleshooting](#troubleshooting).
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -740,8 +739,8 @@ No new in-cluster or external services. The feature relies on the following, all
     - Impact of its outage on the feature: under any other policy no container has exclusive CPUs, so `assigned.cpuset` is always empty.
     - Impact of its degraded performance or high-error rates on the feature: N/A, a kubelet configuration.
 - Memory Manager `Static` policy (`--memory-manager-policy=Static`)
-  - Usage description: `assigned.memset` has a value only for containers the Memory Manager has assigned memory to, which happens only under this policy. The value is read through the Memory Manager's existing `GetMemory` interface; the Memory Manager itself is unchanged.
-    - Impact of its outage on the feature: with `None` no container has assigned memory, so `assigned.memset` is always empty.
+  - Usage description: `assigned.memset` has a value only for containers the Memory Manager has assigned memory to, which happens only under this policy. The value is read from the Memory Manager's state through `GetMemoryBlocks`; the Memory Manager itself is unchanged.
+    - Impact of its outage on the feature: with `None`, no container has assigned memory, so `assigned.memset` is always empty.
     - Impact of its degraded performance or high-error rates on the feature: N/A, a kubelet configuration.
 - Node Declared Features ([KEP-5328](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features), GA since v1.37)
   - Usage description: the kubelet declares `DownwardAPIAssignedResources` whenever the feature gate is enabled, and the scheduler uses it to keep pods requesting these values off nodes that would not understand them.
@@ -908,7 +907,7 @@ The SLOs concern the accuracy and the freshness of the exposed values.
 
 If a value disagrees with the container's actual assignment, first check whether it is an environment variable. Those are set when the container is created and are expected to be stale after a resize, which is not a violation. For a volume file, compare it with the container's `cpuset.cpus` and `cpuset.mems`, and look in the kubelet log for failures writing the volume.
 
-If a value is empty where an assignment does exist, the node is not serving the feature: check that the gate is enabled there, that the node declares `DownwardAPIAssignedResources`, and that the relevant resource manager policy is not `none`.
+If a value is empty where an assignment does exist, the node is not serving the feature: check that the gate is enabled there, that the node declares `DownwardAPIAssignedResources`, and that the relevant resource manager policy is not `None`.
 
 If a volume file lags an assignment change by much more than a kubelet sync period, check the kubelet's sync configuration first, then whether the pod is being synced at all.
 
@@ -955,7 +954,7 @@ information to express the idea and why it was not acceptable.
 ### 3. Expose the assignments in the pod status
 
 * **Description**: Report the assigned CPUs and memory NUMA nodes in the pod status, for example as `pod.status.resourceAssignments`, and let the workload watch its own pod. Suggested by @dchen1107 and @ffromani during the review of KEP-6122 as a way to decouple the exposure from the CPU Manager implementation.
-* **Why Rejected for Alpha**: This requires API credentials and RBAC inside the workload, plus a watch per pod on the apiserver, to deliver information the node already has locally. It also makes the value's freshness depend on the control plane being reachable, whereas a Downward API volume is written from local state. It remains the strongest candidate should the coupling discussed in [Risks and Mitigations](#risks-and-mitigations) need to be undone, since it would cover CPU, memory and future resource types through one field.
+* **Why Rejected for Alpha**: This requires API credentials and RBAC inside the workload, plus a watch per pod on the apiserver, to deliver information the node already has locally. It also makes the value's freshness depend on the control plane being reachable, whereas a Downward API volume is written from local state. It remains the strongest candidate should the coupling discussed in [Risks and Mitigations](#risks-and-mitigations) need to be undone, since it would cover CPU, memory, and future resource types through one field.
 
 ### 4. Volume files only, without environment variables
 
