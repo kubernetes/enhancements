@@ -44,7 +44,6 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Alpha2](#alpha2)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -597,16 +596,11 @@ The following scenarios will be tested:
 * The metrics described in [Metrics](#metrics) are added
 * Unit and e2e tests are completed with sufficient coverage
 
-#### Alpha2
-
-* No unresolved critical bugs.
-* Bugs reported by users have been addressed
-* Generalization of the scale-down delay to other resource types has been analyzed.
-
 #### Beta
 
 * No unresolved critical bugs.
 * Bugs reported by users have been addressed
+* Generalization of the scale-down delay to other resource types has been analyzed.
 
 #### GA
 
@@ -1223,7 +1217,7 @@ The following alternatives were considered:
   
   - **DRA Resources**: For dynamically allocated resources (e.g., GPUs, FPGAs, or other accelerators managed via DRA), a scale-down grace period would allow applications to gracefully release or migrate workloads from resources being removed. This is particularly relevant as DRA evolves to support more dynamic allocation patterns.
 
-* **Why Deferred to Alpha2/Beta**: This generalization was not included in the initial Alpha implementation for the following reasons:
+* **Why Deferred to Beta**: This generalization was not included in the initial Alpha implementation for the following reasons:
   1. **Scope Focus**: The initial implementation focuses exclusively on exclusive CPUs, which is the only resource type currently supporting in-place vertical scaling with guaranteed QoS pods (via KEP-5554). Non-exclusive resources like general CPU and memory requests are not distinguishable at the container level for the purposes of selective resource removal.
   
   2. **Implementation Complexity**: Extending the delay mechanism to other resource types requires coordination across multiple resource managers (Memory Manager, DRA framework, etc.) and potentially new APIs. Each resource type has different semantics for what "graceful release" means.
