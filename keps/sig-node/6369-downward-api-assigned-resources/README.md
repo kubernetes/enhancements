@@ -837,7 +837,7 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-No. Each reference is one small file, rewritten only when its content changes.
+No. One small file per reference, in a volume the pod already mounts.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -970,3 +970,9 @@ information to express the idea and why it was not acceptable.
 
 * **Description**: Have the Dynamic Resource Allocation framework provide the abstraction instead, for example by publishing the assignment through CDI. Suggested by @SergeyKanzhelev during the review of KEP-6122.
 * **Why Deferred**: The DRA CPU driver and the kubelet's static CPU policy cannot run on the same node today, so DRA cannot serve the workloads this KEP targets. Exposing DRA allocations the same way is tracked in [dra-driver-cpu#181](https://github.com/kubernetes-sigs/dra-driver-cpu/issues/181), and the intent is for the driver to use the same file path, which makes this a future extension of the contract rather than a competing design.
+
+### 7. Inject the assignments as files, the way DRA device attributes are
+
+* **Description**: Rather than letting a pod request these values through `ResourceFieldRef`, have the component that knows them inject them. [KEP-5304](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5304-dra-attributes-downward-api) does this for DRA device attributes: the driver's metadata is bind-mounted into the container through a CDI spec and appears at a well-known path. Applied here, the CPU Manager and the Memory Manager would inject their assignments the same way, with nothing in the pod spec asking for them. Suggested by @liggitt in [kubernetes/kubernetes#136015](https://github.com/kubernetes/kubernetes/pull/136015#issuecomment-5683234122), on the grounds that these values are not part of the Pod API and therefore sit oddly in an API meant to project pod fields downward.
+
+* **Why Rejected for Alpha**: Its main attraction is that it would remove this KEP's API change altogether, but three things do not carry over. KEP-5304's path and CDI spec are keyed by a claim and a request, and exclusive CPUs managed by the kubelet have neither, so the convention would have to be reinvented along with a way to emit container edits without a DRA driver. Nothing in the pod spec would reference the assignment, so there would be no anchor for the scheduler to filter on and no way for a workload to state that it needs the value — KEP-5304 has the ResourceClaim for that, and this KEP has no equivalent. And a file is then the only possible form, so the environment variable in [Use Cases](#use-cases) would be lost. This remains the most direct answer to the coupling concern in [Risks and Mitigations](#risks-and-mitigations) and a candidate for revisiting.
