@@ -457,9 +457,10 @@ kubectl delete resourcepoolstatusrequest/$REQUEST_NAME
    devices in the pool regardless of whether they are also allocated,
    so a device that is both allocated and tainted is subtracted twice
    from `availableDevices`; the `max(0, …)` floor hides the resulting
-   underflow. Reconciling this with the field's stated meaning
-   ("not available due to taints … but are not allocated") is a Beta
-   item; see [Beta (1.38)](#beta-138) under Graduation Criteria.
+   underflow. Beta resolves this in favour of the field's stated meaning
+   ("not available due to taints … but are not allocated") by excluding
+   allocated devices from the taint tally; see
+   [Beta (1.38)](#beta-138) under Graduation Criteria.
 
 ### Risks and Mitigations
 
@@ -717,7 +718,7 @@ non-nil status indicates the request has been processed.
 | `pools.totalDevices` | `*int32` (optional) | Total devices across all slices. Unset when `validationError` is set. |
 | `pools.allocatedDevices` | `*int32` (optional) | Devices allocated to claims. Unset when `validationError` is set. |
 | `pools.availableDevices` | `*int32` (optional) | `totalDevices - allocatedDevices - unavailableDevices`. Unset when `validationError` is set. |
-| `pools.unavailableDevices` | `*int32` (optional) | Count of devices with at least one `NoSchedule` or `NoExecute` taint, sourced from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s. **0 in Alpha 1.36** (hard-coded); computed from real taints since Alpha 1.37. Counted over all devices in the pool regardless of allocation, so a device that is both allocated and tainted is subtracted twice from `availableDevices`. Unset when `validationError` is set. |
+| `pools.unavailableDevices` | `*int32` (optional) | Count of devices with at least one `NoSchedule` or `NoExecute` taint, sourced from `ResourceSlice.Spec.Devices[].Taints` and matching `DeviceTaintRule`s. **0 in Alpha 1.36** (hard-coded); computed from real taints since Alpha 1.37. Counted over all devices in the pool regardless of allocation, so a device that is both allocated and tainted is subtracted twice from `availableDevices`. **Corrected at Beta** to exclude allocated devices, matching this field's doc comment and making `total = allocated + unavailable + available` exact — see [Beta (1.38)](#beta-138). Unset when `validationError` is set. |
 | `pools.validationError` | `*string` (optional, max 256 bytes) | Set when the pool's data could not be fully validated. When set, the count fields above may be unset (incomplete pool) or still populated (a view-level error, which clears `partitionSummary` but leaves the counts valid). The controller emits a stable, machine-readable prefix followed by `: ` and a free-form detail so operators can grep / alert on the specific case without parsing the message body. Prefixes as of Alpha 1.37 (provisional, may grow): `PoolIncomplete:` (observed slices < declared `ResourceSliceCount`) — note that this one is **computed but never persisted**, because the controller aborts the status write and requeues whenever any pool carries it, so in practice a reader never observes it; the remaining prefixes are permanent and are written to status: `PartitionTypeMissing:` (a grouped device lacks the resolved partition-type attribute, or the pool resolves a grouping attribute but publishes no `sharedCounters`), `PartitionCostMismatch:` (devices of the same partition type publish different `ConsumesCounters` costs), `PartitionSummaryOverCap:` (distinct partition types exceed the 32-item cap), `ShareableSummaryOverCap:` (distinct shareable capacity keys exceed the 32-item cap). Promoting this field to a structured `{reason, message}` pair (Condition-style) is tracked as a Beta consideration. |
 | `pools.partitionSummary` | atomic list of `PartitionTypeStatus`, max 32, unique on (`attribute`, `type`) (Alpha 1.37, **provisional** — revisit at Beta) | Per-(attribute, partition-type) aggregate, emitted for a partitionable pool that publishes `SharedCounters` and for which a grouping attribute could be resolved — from `ResourceSlice.Spec.PartitionTypeAttribute` on a slice, or from `spec.defaultPartitionTypeAttribute` on the request. A pool that mixes partitions declared under different attributes reports each independently. When neither source names an attribute, the pool reports no `partitionSummary`. A grouped device missing the resolved attribute produces a per-pool `validationError`, as does a device whose `ConsumesCounters` cost differs from peers of the same type — both prevent silent bucketing. Cap of 32 is a provisional starting point that fits MIG-class pools (3–7 partition types typical); over-cap pools produce a per-pool `validationError` instead of silent truncation. Entries are sorted by (`attribute`, `type`). |
 | `pools.partitionSummary.attribute` | string (required) | Fully qualified name of the device attribute whose value groups this entry — the `PartitionTypeAttribute` declared by the devices' own slice, or the request's `defaultPartitionTypeAttribute` when their slice declares none. |
@@ -726,7 +727,7 @@ non-nil status indicates the request has been processed.
 | `pools.partitionSummary.allocatable` | `*int32` (required) | Number of additional devices of this partition type that can still be allocated under current shared-counter constraints, capped by the number of unallocated devices of this type in the pool. Computed by a greedy per-device fit check against `counterAvailable[s][c] = SharedCounters[s].Counters[c].Value − sum_{in-use d in s} d.ConsumesCounters[s][c]` (each in-use device debited once, per-device not per-claim — matches scheduler counter accounting). For the common single-counter-set case this reduces to `min(freshDevices[type], min over counters c of floor(counterAvailable[s_type][c] / consumesCounters[type][c]))`, where `freshDevices[type]` is the count of devices of this type currently unallocated. **Every entry is computed independently against the same baseline**, so entries describe mutually exclusive alternatives and must not be summed. See [Partitionable & Consumable Device Accounting](#partitionable--consumable-device-accounting) for the multi-counter-set algorithm. On shareable partitions (`allowMultipleAllocations=true`) this counts only fresh device slots, not capacity headroom on already-in-use devices; operators reading the same pool should consult `shareableSummary.capacity.available` for per-key headroom on shared devices. |
 | `pools.shareableSummary` | `*ShareableSummaryStatus` (optional) | Pool-level aggregate for devices with `allowMultipleAllocations=true`. Omitted when the pool has no such devices. Per-device detail was intentionally not included: a per-device list would scale to hundreds of entries on large pools, so the aggregate gives the operator-relevant signal in three small numbers plus a per-capacity-key breakdown. |
 | `pools.shareableSummary.fullyAvailableDevices` | `*int32` (required) | Count of shareable devices in the pool with **zero** non-AdminAccess claims. |
-| `pools.shareableSummary.partiallyAvailableDevices` | `*int32` (required) | Count of shareable devices with **at least one** non-AdminAccess claim, regardless of how much of their capacity is still free — a fully consumed device is counted here, not excluded. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. Tightening this to the field's stated meaning ("some but not all capacity consumed") is a Beta item. |
+| `pools.shareableSummary.partiallyAvailableDevices` | `*int32` (required) | Count of shareable devices with **at least one** non-AdminAccess claim, regardless of how much of their capacity is still free — a fully consumed device is counted here, not excluded. `fullyAvailableDevices + partiallyAvailableDevices` equals the total number of shareable devices in the pool. The field's own doc comment ("some but not all capacity consumed") does not describe this behaviour; **Beta corrects the doc comment** to match the implementation rather than tightening the computation, since the in-use count is the intended signal and per-key remaining capacity is already reported by `capacity[]` — see [Beta (1.38)](#beta-138). |
 | `pools.shareableSummary.capacity` | atomic list of `ShareableCapacityStatus`, max 32 (Alpha 1.37) | Per-capacity-key aggregate across all shareable devices in the pool, sorted by key. Cap of 32 matches the per-device combined `Attributes + Capacity` cap (no single device can carry more than 32 capacity keys); aggregation across devices may introduce additional keys but homogeneous-schema pools rarely exceed this. |
 | `pools.shareableSummary.capacity.name` | string (required) | Capacity key as it appears in `ResourceSlice.Spec.Devices[].Capacity`. |
 | `pools.shareableSummary.capacity.total` | `*resource.Quantity` (required) | Sum of `Device.Capacity[name].Value` across all shareable devices in the pool that carry this key. Devices that do not carry the key contribute nothing (rather than zero), which is the correct behaviour for heterogeneous-schema pools. |
@@ -1619,17 +1620,45 @@ the metric objects rather than the controller's emission paths.
 #### Beta (1.38)
 
 After two Alpha cycles (1.36 and 1.37) the shape of the API is settled and
-the accounting is correct for all three device shapes. Beta is about making
-the feature reachable, making the remaining semantics defensible, and
-closing the test gaps.
+the accounting is correct for all three device shapes. Beta is about aligning
+the API's group version with its stability level, making the remaining
+semantics defensible, and closing the test gaps.
 
 ##### API graduation
 
-The gating problem is that `ResourcePoolStatusRequest` currently lives only
-in `resource.k8s.io/v1alpha3`, which is an alpha group version and is
-therefore disabled by default. A Beta feature gate on an alpha-only API
-would still require `--runtime-config=resource.k8s.io/v1alpha3=true`, so the
-type has to move to a beta group version at the same time.
+`ResourcePoolStatusRequest` currently lives only in
+`resource.k8s.io/v1alpha3`. Moving it to a beta group version does **not**
+make the feature reachable without explicit opt-in: beta group versions are
+disabled by default too, so an operator swaps
+`--runtime-config=resource.k8s.io/v1alpha3=true` for
+`--runtime-config=resource.k8s.io/v1beta2=true` and keeps the feature gate
+either way. The enablement burden is unchanged by this promotion.
+
+The move is still required, for reasons of lifecycle rather than
+reachability. A Beta-stability feature served only from an alpha group
+version is incoherent; there is no conventional `v1alpha3` → `v1` hop, so
+`v1beta2` is the only route to GA; and Beta starts the two-release clock that
+GA requires. `DeviceTaintRule` is the precedent to follow throughout — it was
+added to `v1beta2` at Beta in 1.36 and to `v1` at GA in 1.37.
+
+There is also a clock already running, set by `prerelease-lifecycle-gen`
+rather than by this KEP. Alpha kinds get their deprecation and removal
+releases derived automatically from `introduced` (+3 and +6), and
+`resource.k8s.io/v1alpha3` serves exactly two kinds:
+
+| Kind (v1alpha3) | Introduced | Deprecated | Removed |
+| --- | --- | --- | --- |
+| `DeviceTaintRule` | 1.33 | 1.36 | 1.39 |
+| `ResourcePoolStatusRequest` | 1.36 | 1.39 | **1.42** |
+
+Adding the type to `v1beta2` does not retire the `v1alpha3` copy — this KEP
+keeps it served for skew — so from 1.39 `ResourcePoolStatusRequest` is the
+only kind holding `resource.k8s.io/v1alpha3` open, until its own removal at
+1.42. What the 1.38 promotion buys is that a served successor exists well
+before then, so the `v1alpha3` copy can age out on its generated schedule
+without taking the feature with it. Promoting later compresses that margin.
+
+Concretely:
 
 - **Add `ResourcePoolStatusRequest` (and its status types) to
   `resource.k8s.io/v1beta2`**, with
@@ -1639,24 +1668,54 @@ type has to move to a beta group version at the same time.
   version override in `pkg/kubeapiserver/default_storage_factory_builder.go`
   from `v1alpha3` to `v1beta2`. Keep `v1alpha3` served so 1.37 clients keep
   working across the skew window.
+- **Mark the superseded `v1alpha3` type.** Add
+  `+k8s:prerelease-lifecycle-gen:replacement=resource.k8s.io,v1beta2,ResourcePoolStatusRequest`
+  to the `v1alpha3` kind (and its list type), so clients on the old version
+  get the standard replacement warning. `introduced`, `deprecated` and
+  `removed` are derived and need no edit. This is the convention for a
+  superseded version — `discovery.k8s.io/v1beta1` and
+  `authentication.k8s.io/v1beta1` are examples — and is the one
+  lifecycle-marker change the promotion requires.
 - **Promote the gate:**
   `DRAResourcePoolStatus: {Version: "1.38", Default: false, PreRelease: Beta}`.
   It stays default-off because `resource.k8s.io/v1beta2` is itself an
   off-by-default beta group version — the same position `DRADeviceTaintRules`
   was in at 1.36, where the gate carries the comment
-  `// Depends on an off-by-default beta API.` `DeviceTaintRule` is the
-  precedent to follow throughout: it was added to `v1beta2` at Beta in 1.36
-  and to `v1` at GA in 1.37.
-- **Decide `DRAPartitionableDevicesType` separately.** It gates a field on
+  `// Depends on an off-by-default beta API.`
+- **Promote `DRAPartitionableDevicesType` to Beta, default off:**
+  `{Version: "1.38", Default: false, PreRelease: Beta}`. It gates a field on
   `ResourceSlice`, which is served from the GA `resource.k8s.io/v1`, so its
-  lifecycle is not automatically tied to the status API's. Either promote it
-  to Beta alongside `DRAResourcePoolStatus` or hold it at Alpha for one more
-  cycle; this needs a call from KEP-4815 owners since the field lives on
-  their type. Whichever is chosen, it **must stay default-off** as long as
+  lifecycle is not automatically tied to the status API's — but holding it at
+  Alpha while its only consumer goes Beta would leave the typed
+  `partitionSummary` path behind an alpha gate for at least another release,
+  which undercuts the promotion. It **must stay default-off** as long as
   `DRAResourcePoolStatus` is: `AddDependencies` rejects a default-enabled
   feature that depends on a default-disabled one, and it likewise rejects a
   dependent whose stability level is higher than a dependency's. Both
   constraints are hard errors at registration, not warnings.
+  Beta/default-off satisfies both — the gate's
+  dependencies are `DynamicResourceAllocation` (GA, until the removal
+  described below drops it from the list), `DRAPartitionableDevices` (Beta)
+  and `DRAResourcePoolStatus` (Beta after this promotion), none of which sit
+  below Beta.
+
+  The two gates are coupled at runtime, not just at registration:
+  `AddDependencies` is checked again when gates are set, and enabling a
+  feature whose dependency is disabled is a startup error
+  (`"<feature> is enabled, but depends on features that are disabled"`). So
+  `DRAPartitionableDevicesType` cannot be switched on by itself — it requires
+  `DRAResourcePoolStatus` on as well. That coupling is another reason to move
+  both gates together rather than leaving one at Alpha.
+
+  The gates and the group version remain independent, though, and that
+  asymmetry is intentional. `ResourceSlice` is served from the GA
+  `resource.k8s.io/v1`, which is enabled by default, so a cluster running
+  `--feature-gates=DRAResourcePoolStatus=true,DRAPartitionableDevicesType=true`
+  and **no** `--runtime-config` change can accept
+  `ResourceSlice.Spec.PartitionTypeAttribute` from drivers while not serving
+  `ResourcePoolStatusRequest` at all. Drivers can therefore adopt the
+  attribute ahead of any cluster consuming it, which is the ordering this KEP
+  wants.
 - **Track the removal of `DynamicResourceAllocation`.** That gate is GA and
   locked to default since 1.35 and is slated for complete removal in **1.38**
   (`kubernetes/kubernetes#134459`) — the same release as this promotion. Both
@@ -1677,22 +1736,44 @@ type has to move to a beta group version at the same time.
 ##### Semantics to correct before Beta
 
 Three behaviours where the implementation and the field documentation
-disagree. Each is described as-shipped elsewhere in this KEP; Beta must
-resolve the disagreement in one direction or the other.
+disagree. Each is described as-shipped elsewhere in this KEP; the resolution
+chosen for each is given here.
 
-- **`unavailableDevices` double-counts.** Tainted devices are counted
-  regardless of allocation, so a device that is both allocated and tainted
-  is subtracted twice in
+- **`unavailableDevices` double-counts — fix the controller, not the doc.**
+  Tainted devices are counted regardless of allocation, so a device that is
+  both allocated and tainted is subtracted twice in
   `availableDevices = max(0, total − allocated − unavailable)`, and the
-  `max(0, …)` floor hides the underflow. Either exclude allocated devices
-  from the taint tally, as the field's doc comment says ("not available due
-  to taints … but are not allocated"), or redefine the field and the
-  `availableDevices` formula to match the code.
-- **`partiallyAvailableDevices` means "in use".** It counts shareable
-  devices with at least one non-AdminAccess claim, so a device with *all*
-  its capacity consumed is still reported as partially available. Either
-  compute it from remaining capacity, as the doc comment says, or rename it
-  to match what it measures.
+  `max(0, …)` floor hides the underflow. Beta excludes allocated devices from
+  the taint tally, which is what the field's doc comment already says ("not
+  available due to taints … but are not allocated"). This is a controller-side
+  fix with **no API change**, and it makes the three counts a true partition:
+  `total = allocated + unavailable + available`, with `unavailableDevices`
+  meaning "unallocated and tainted".
+
+  Recorded trade-off: a device that is allocated *and* tainted — a taint
+  applied after allocation, since `NoSchedule` does not evict — is then
+  reported purely as allocated, and its taint is no longer visible anywhere in
+  the status. That signal is not being reported accurately today either; it is
+  corrupting `availableDevices`. If operators draining nodes by tainting
+  devices need "allocated but tainted" as a distinct number, it should be a
+  separate field, not an error term folded into this one.
+- **`partiallyAvailableDevices` means "in use" — correct the doc comment.**
+  It counts shareable devices with at least one non-AdminAccess claim, so a
+  device with *all* its capacity consumed is still reported as partially
+  available. Beta keeps both the field name and the computation, and fixes
+  the doc comment to describe what the field actually measures: membership in
+  the in-use set, not a measure of remaining capacity.
+
+  The "in use" semantic is the right one to report here, so there is nothing
+  to recompute; the mismatch is entirely in the field's documentation. The
+  precise remaining-capacity question is already answered by
+  `shareableSummary.capacity[]`, which reports `total`/`consumed`/`available`
+  per capacity key, so a per-device "has some capacity left" tally would be a
+  lossy restatement of data the status already carries.
+
+  No API change: the field keeps its name and its type, and no client sees a
+  different shape or a different number. Only the generated documentation
+  changes.
 - **Incomplete pools never reach a terminal state, and `PoolIncomplete:`
   is unobservable.** The sync returns an error before writing status
   whenever any pool is incomplete, so a request whose pool never completes
@@ -1779,10 +1860,39 @@ resolve the disagreement in one direction or the other.
 
 - **Validation against at least one production DRA driver.** This has been
   a standing requirement since the original Beta criteria and is a hard gate
-  for the promotion. No driver-side code change is needed — the controller
-  reads existing `ResourceSlice` and allocation fields — but a driver that
-  declares `PartitionTypeAttribute` exercises the typed
-  `partitionSummary` path end to end, which CI cannot.
+  for the promotion. The flat device counts need no driver-side change — the
+  controller reads existing `ResourceSlice` and allocation fields — but the
+  typed `partitionSummary` path is only exercised by a driver that declares
+  `PartitionTypeAttribute`, and CI cannot stand in for that.
+
+  The concrete target is `kubernetes-sigs/k8s-dra-driver-gpu`, where every
+  prerequisite is already in place:
+
+  - MIG devices already carry a `profile` string attribute
+    (`cmd/gpu-kubelet-plugin/mig.go`), so the grouping attribute is
+    `gpu.nvidia.com/profile` — nothing new needs to be invented or named.
+  - MIG devices already consume from their parent GPU's `CounterSet`
+    (`MigSpec.PartConsumesCounters`, `cmd/gpu-kubelet-plugin/partitions.go`),
+    which is what `computePartitionSummary` requires: devices consuming no
+    counters are skipped as non-partitions.
+  - The pool already publishes `SharedCounters`
+    (`PartSharedCounterSets`), without which the controller flags the pool
+    `PartitionTypeMissing:` rather than computing a partition view.
+  - The publishing helper already exposes the field —
+    `resourceslice.Slice.PartitionTypeAttribute` is present in the vendored
+    `k8s.io/dynamic-resource-allocation` at `v0.37.0`.
+
+  So the driver-side change is setting one field on the `Slice` at the two
+  `DriverResources` construction sites in `cmd/gpu-kubelet-plugin/driver.go`
+  (the split-slice and combined-slice models). Two caveats for whoever picks
+  it up: the partitionable code path is behind the driver's own `DynamicMIG`
+  feature gate, and the apiserver drops `PartitionTypeAttribute` unless
+  `DRAPartitionableDevicesType` is enabled — which is why that gate is
+  promoted alongside `DRAResourcePoolStatus` above.
+
+  Validating this needs a MIG-capable host, so it is a Beta criterion to be
+  satisfied during the 1.38 cycle, not a precondition of the enhancements
+  freeze.
 
 #### GA
 
@@ -1809,14 +1919,15 @@ resolve the disagreement in one direction or the other.
   no storage migration is required in practice. Operators who want the
   old endpoint can keep `--runtime-config=resource.k8s.io/v1alpha3=true`
   alongside the new one.
-- No new fields are added to the type at Beta beyond whatever the
+- No fields are added, removed or renamed at Beta beyond whatever the
   `validationError` decision produces, so a 1.37 client reading a 1.38
   object sees the same shape.
-- Any of the three semantic corrections listed under
-  [Beta](#beta-138) that change reported numbers
-  (`unavailableDevices`, `partiallyAvailableDevices`) must be called out
-  in the 1.38 release notes, since Alpha clients may have scripted around
-  the current values.
+- One Beta correction changes reported numbers and must be called out in the
+  1.38 release notes, since Alpha clients may have scripted around the
+  current values: `unavailableDevices` — and therefore `availableDevices` —
+  stops double-counting devices that are both allocated and tainted. The
+  `partiallyAvailableDevices` correction is documentation-only and changes no
+  value.
 
 **Downgrade (1.38 → 1.37):**
 - Objects stored at `v1beta2` are not readable by a 1.37 apiserver. The
@@ -2188,9 +2299,16 @@ Requests cannot be created or read. No workload impact.
   keyed by `(attribute, type)` rather than assuming one grouping
   attribute per pool. See "Alpha (1.37)" in Graduation Criteria.
 - 1.38 (Beta, planned): promote `ResourcePoolStatusRequest` into
-  `resource.k8s.io/v1beta2` and move `DRAResourcePoolStatus` to Beta
-  (default off, since the beta group version is itself off by default) —
-  see "Beta (1.38)" in Graduation Criteria.
+  `resource.k8s.io/v1beta2` and move both `DRAResourcePoolStatus` and
+  `DRAPartitionableDevicesType` to Beta, each default off. Note that the
+  move to `v1beta2` does not reduce the enablement burden — beta group
+  versions are disabled by default too — it aligns the group version with
+  the feature's stability level and opens the path to GA. Two semantic
+  corrections ship with it: `unavailableDevices` stops counting allocated
+  devices, and the doc comment on
+  `shareableSummary.partiallyAvailableDevices` is corrected to describe the
+  in-use count it actually reports. No field is added or renamed. See
+  "Beta (1.38)" in Graduation Criteria.
 
 ## Drawbacks
 
