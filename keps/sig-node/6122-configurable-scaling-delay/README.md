@@ -199,7 +199,7 @@ This proposal does not require a handshake (acknowledgment) from the workload. T
 3.	The container learns the new cpuset through [KEP-6369](https://github.com/kubernetes/enhancements/issues/6369) — out of scope here, and not required for the delay itself.
 4.	The kubelet starts a 5-second timer. After waiting at least 5 seconds (the pod's specified `scaleDownGracePeriodSeconds`), the new cpuset {1, 2, 11} is applied to the container. Once applied, kubelet marks the container resize as successful.
 5.	During the interval between the notification and the new cpuset application, the container can perform necessary preparations for the DPDK workers (e.g., migrating tasks from CPU 12 to other CPUs).
-![alt text](a_case_of_scale_down_delay.png )
+![alt text](a_case_of_scale_down_delay.png)
 
 ### Risks and Mitigations
 
@@ -422,14 +422,17 @@ Note: Before the checkpoint is updated and the cpuset is applied, if the runtime
 
 #### Metrics
 
-The kubelet exports the following metrics in the `cpu_manager` subsystem, all at ALPHA stability level (registered full names carry the `kubelet_` prefix):
+The kubelet exports the following metrics, all at ALPHA stability level. They are registered with the `kubelet` subsystem and a `cpu_manager_` name prefix, the way the existing CPU Manager metrics are, so their full names carry both.
 
-| Metric | Type | Description |
+| Metric | Type | Help |
 |---|---|---|
-| `cpu_manager_scale_down_delay_total` | Counter | Total number of CPU scale-down delays, split by the `phase` label: `phase="total"` counts every scale-down delay event: a new cpuset is recorded in preAssignments and its scale_delay_timer is armed; `phase="completed"` counts a delayed release that ran to completion — the grace period elapsed and the pending cpuset was applied to the container, releasing the removed CPUs. |
-| `cpu_manager_scale_down_pending_cpu_count` | Gauge | Number of containers currently pending CPU release. |
+| `cpu_manager_scale_down_delay_started_total` | Counter | Number of scale-down delays started. |
+| `cpu_manager_scale_down_delay_completed_total` | Counter | Number of scale-down delays that completed, applying the pending cpuset. |
+| `cpu_manager_scale_down_pending_cpu_count` | Gauge | Number of CPUs still assigned to a container but already earmarked for release, and therefore unavailable to other pods. |
 
-Each delayed release is counted by the `phase` label of `cpu_manager_scale_down_delay_total`: `phase="total"` counts every armed delay, including re-arms under [Consecutive Scaling](#consecutive-scaling), while `phase="completed"` counts only those that ran to completion. The difference between the two label values is the number of armed delays that have not completed: those still pending, those superseded by a newer resize request, and those dropped on restore after a revert or a node reboot (see [Kubelet Restart](#kubelet-restart)). `cpu_manager_scale_down_pending_cpu_count` reports the still-pending part of that difference; a gauge that never returns to zero points to a stuck delayed release.
+A delay is *started* when a new cpuset is recorded in preAssignments and its timer is armed, including a re-arm under [Consecutive Scaling](#consecutive-scaling), and *completes* when that cpuset has been applied. The *started* and *completed* counters track these events independently, and their difference represents the number of delays that never completed: still pending, superseded, or dropped on restore (see [Kubelet Restart](#kubelet-restart)).
+
+The gauge sums, over containers with a pending scale-down, the CPUs that will be released once the resize completes: those present in assignments but absent from preAssignments. If it does not return to zero, a delayed release is stuck.
 
 ### Test Plan
 
@@ -485,7 +488,7 @@ Pod API field:
 Scale-down delay in the CPU Manager:
 - `pkg/kubelet/cm/cpumanager/policy_static_test.go`: recording a pending scale-down, applying it once the grace period has elapsed, consecutive scaling in both directions, and an unset or zero `scaleDownGracePeriodSeconds`.
 - `pkg/kubelet/cm/cpumanager/cpu_assignment_test.go`: the cpuset computed for a scale-down.
-- `pkg/kubelet/cm/cpumanager/cpu_manager_test.go`: the reconcile loop applying an expired pending scale-down, waiting for the pod sources to be synced before releasing CPUs, and the [Metrics](#metrics) counter and gauge across the arm, complete and drop paths.
+- `pkg/kubelet/cm/cpumanager/cpu_manager_test.go`: the reconcile loop applying an expired pending scale-down, waiting for the pod sources to be synced before releasing CPUs, and the [Metrics](#metrics) counters and gauge across the arm, complete and drop paths.
 - `pkg/kubelet/cm/cpumanager/topology_hints_test.go`: topology hints while a scale-down is pending.
 
 Checkpoint persistence:
@@ -591,7 +594,7 @@ The following scenarios will be tested:
 * Validation logic is in-place in kube-apiserver to validate the field (range [0, 10] seconds)
 * Kubelet enforces the scale-down delay for pods that specify `scaleDownGracePeriodSeconds`
 * Graceful handling when feature gate is disabled: delay is silently not applied (no error)
-* The metrics described in [Metrics](#metrics) — `cpu_manager_scale_down_delay_total` and `cpu_manager_scale_down_pending_cpu_count` — are added
+* The metrics described in [Metrics](#metrics) are added
 * Unit and e2e tests are completed with sufficient coverage
 
 #### Alpha2
@@ -807,7 +810,7 @@ What signals should users be paying attention to when the feature is young
 that might indicate a serious problem?
 -->
 
-The metrics in [Metrics](#metrics) inform a rollback: `cpu_manager_scale_down_delay_total{phase="completed"}` should catch up with `cpu_manager_scale_down_delay_total{phase="total"}` within one grace period plus one reconcile period, and `cpu_manager_scale_down_pending_cpu_count` should return to zero once all pending releases complete; a gap that does not close indicates delayed releases that are stuck or being dropped. Other signals to watch are the `ScaleDownGracePeriodNotHonored` events, which indicate nodes applying a cpuset without the preparation window a pod asked for, and pods that stay `Pending` because no node declares the feature.
+The metrics in [Metrics](#metrics) inform a rollback. `cpu_manager_scale_down_pending_cpu_count` should return to zero once the last resize has settled; a gauge that stays non-zero means CPUs are held by a release that is not finishing. The gap between the started and completed counters also grows when a delay is superseded or dropped, so watch how fast it grows rather than its size. Other signals are the `ScaleDownGracePeriodNotHonored` events, which indicate nodes applying a cpuset without the preparation window a pod asked for, and pods that stay `Pending` because no node declares the feature.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -869,7 +872,7 @@ kubectl get pods -A -o custom-columns='NS:.metadata.namespace,NAME:.metadata.nam
 
 The nodes able to honor it are those declaring `InPlacePodVerticalScalingExclusiveCPUsScaleDownDelay` in `node.status.declaredFeatures`.
 
-Usage is also visible in the metrics: a non-zero `cpu_manager_scale_down_delay_total{phase="total"}` on a node means the node has started at least one delayed scale-down, and a non-zero `cpu_manager_scale_down_pending_cpu_count` means at least one container on it is currently inside its grace period.
+Usage is also visible in the metrics: a non-zero `cpu_manager_scale_down_delay_started_total` on a node means it has started at least one delayed scale-down, and a non-zero `cpu_manager_scale_down_pending_cpu_count` means CPUs on it are currently held by one.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -906,7 +909,7 @@ question.
 - A scale-down of a pod that sets `scaleDownGracePeriodSeconds` is never actuated sooner than that grace period. This is the guarantee the feature exists to provide, so violations should be zero.
 - The new cpuset is applied at the first cpuset actuation after the grace period elapses, so the wait beyond the grace period is bounded by one reconcile period.
 - Scale-up is never delayed by this feature.
-- A kubelet restart does not re-arm the grace period: the total wait is extended only by the time the kubelet is down plus the pod-source sync that precedes any CPU release, never by a second grace period.
+- A kubelet restart does not re-arm the grace period. The new cpuset is applied at the first reconcile after the stored deadline has passed and the pod sources have synced, so a restart delays the release only when the kubelet is still down, or still syncing, at that deadline.
 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
@@ -928,7 +931,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-The counter and gauge described in [Metrics](#metrics) are added in Alpha and give an aggregate view of how many scale-down delays start and complete. A histogram of the delay between a scale-down being accepted and the new cpuset being applied would additionally let an operator check the timing SLO without inspecting individual pods; it is not implemented yet and remains a candidate for Beta.
+The counters and gauge described in [Metrics](#metrics) are added in Alpha and give an aggregate view of how many scale-down delays start and complete. A histogram of the delay between a scale-down being accepted and the new cpuset being applied would additionally let an operator check the timing SLO without inspecting individual pods; it is not implemented yet and remains a candidate for Beta.
 
 ### Dependencies
 
