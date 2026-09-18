@@ -19,7 +19,10 @@
     - [Resource Limiting](#resource-limiting)
   - [Configuration](#configuration)
     - [Relationship to existing kubelet resource reservation](#relationship-to-existing-kubelet-resource-reservation)
-  - [Eviction](#eviction)
+  - [OOM Killer vs Eviction](#oom-killer-vs-eviction)
+    - [OOM Killer](#oom-killer)
+    - [Eviction](#eviction)
+    - [Comparison](#comparison)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -48,7 +51,7 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
@@ -349,13 +352,120 @@ that user Pod capacity is effectively reduced. Post-alpha, kubelet
 should subtract `systemPartition.memoryLimit` from Node Allocatable
 and report it to the scheduler.
 
-### Eviction
+### OOM Killer vs Eviction
 
-The Kubelet's eviction manager will be updated to enforce partition-level resource boundaries, specifically for non-compressible resources like memory.
+Two things can reclaim memory once a partition fills up: the kernel's OOM killer,
+which acts on the `memory.max` written to the partition root, and kubelet's
+eviction manager.
 
-- **Partition Usage Monitoring**: Kubelet will monitor the aggregate resource usage of each partition root cgroup. This can be achieved by summing up metrics from the `summaryProvider` or directly reading cgroup stats (e.g., `memory.current`).
-- **Targeted Eviction**: When a partition's memory usage exceeds its configured limit, the eviction manager will target Pods *within that specific partition*. This prevents a "noisy neighbor" in the `user` partition from causing the eviction of critical Pods in the `system` partition.
-- **Ranking**: Within a partition, Pods will be ranked for eviction based on existing criteria (QoS class, priority, and resource usage relative to requests).
+#### OOM Killer
+
+`memoryLimit` is written as `memory.max` on the partition root, so once the
+partition fills up the kernel reclaims and then, if that is not enough, invokes the
+OOM killer.
+
+A partition running out of memory triggers a **cgroup** OOM, not a node-wide one.
+The two differ in who can be killed: a node-wide OOM scans every task on the
+machine, while a cgroup OOM only scans tasks under the cgroup that hit its limit
+(`mem_cgroup_scan_tasks`). So a system Pod that leaks memory fills the partition
+and gets something in the partition killed, even though the node as a whole still
+has memory free, and no user Pod is ever a candidate.
+
+The reverse does not hold. When the node itself runs out, or `kubepods` hits its
+own limit, the scan covers everything under that cgroup and partition Pods are
+candidates like any other. The partition bounds what its Pods can take, not what
+can be taken from them.
+
+Within the partition the victim is chosen per task, by `oom_badness`:
+
+```
+score = rss + swap + pagetables + oom_score_adj / 1000 * totalpages
+```
+
+`totalpages` here is the OOM domain's limit, which is the partition's `memoryLimit`
+rather than node capacity, so `oom_score_adj` is weighted against the partition.
+
+Kubelet sets `oom_score_adj` per container, and the values it picks decide the
+victim:
+
+| Pod | `oom_score_adj` |
+| --- | --- |
+| `system-node-critical` (`IsNodeCriticalPod`) | -997, whatever the QoS class |
+| Guaranteed | -997 |
+| Burstable | `1000 - 1000 * memRequest / memCapacity`, where `memCapacity` is the node's, not the partition's |
+| BestEffort | 1000 |
+
+So the first Pod to be killed in a partition is the one that is neither
+node-critical nor Guaranteed, requested little, and is using a lot. Note that `-997`
+is not `OOM_SCORE_ADJ_MIN`, so node-critical Pods are heavily deprioritized but not
+immune. A partition holding nothing else will still have one of them killed.
+
+#### Eviction
+
+The Kubelet's eviction manager will be updated to enforce partition-level resource
+boundaries, specifically for non-compressible resources like memory.
+
+- **Partition Usage Monitoring**: Kubelet reports the partition root cgroup as a
+  new `system-pods` entry in the summary API's `systemContainers`, next to the
+  existing `pods` entry for `GetPodCgroupRoot()`. Reporting the cgroup rather than
+  summing per-Pod stats is deliberate: working set excludes inactive file pages,
+  and memory charged to the partition root or its QoS cgroups belongs to no Pod at all,
+  so a sum would sit below the number the kernel acts on. The two entries nest rather
+  than split the node. `pods` covers everything under `kubepods`, the system partition
+  included, so the usage of the default partition alone is `pods` minus `system-pods`.
+- **Targeted Eviction**: When a partition's memory usage exceeds its configured limit,
+  the eviction manager will target Pods *within that specific partition*. This prevents
+  a "noisy neighbor" in the `user` partition from causing the eviction of critical Pods
+  in the `system` partition.
+- **Ranking**: Within a partition, Pods will be ranked for eviction based on existing
+  criteria (QoS class, priority, and resource usage relative to requests).
+
+```
+<<[UNRESOLVED]>>
+##### Open Questions
+
+The points below came out of prototyping the feature and are not settled yet.
+
+- **Critical Pods are excluded from eviction.**: `evictPod` refuses to evict a Pod
+for which `kubelettypes.IsCriticalPod` returns true, which covers static Pods,
+mirror Pods, and any Pod whose priority is at or above `SystemCriticalPriority`
+(the value of the `system-cluster-critical` class). With a partition configured for
+system Pods, most of the Pods in it fall into that set, so targeted eviction finds
+no candidates on a typical node. Should eviction inside a partition ignore that
+exclusion and rank Pods by the partition's budget alone, whatever their priority?
+A narrower option is to reuse `IsNodeCriticalPod`, the check that decides the OOM
+score kubelet assigns, so that eviction and the kernel agree on what they are
+allowed to reclaim.
+
+- **A partition never exceeds its limit.**: `memoryLimit` is applied as `memory.max`
+on the partition root, so the kernel reclaims and then OOM kills before usage
+climbs past it. Eviction has to act on some headroom below the limit, the way node-level
+eviction acts on `memory.available` rather than waiting for the node to run out.
+Where that threshold comes from is undecided:
+
+- Reuse the node's hard `memory.available` threshold. This needs no new
+  configuration and follows the precedent of `addAllocatableThresholds`, which
+  copies that threshold to `allocatableMemory.available`. The drawback is that the
+  node value is sized for node capacity, so it can be far too large for a small
+  partition, and the feature is inert when `evictionHard` carries no memory entry.
+- Add a threshold to the `systemPartition` configuration. It can be sized for the
+  partition, at the cost of another configuration field.
+- Derive it from `memoryLimit` as a fixed fraction, with no configuration.
+- Set `memory.high` on the partition root and it makes the kernel throttle and reclaim
+  ahead of `memory.max`, which buys time without killing anything.
+<<[/UNRESOLVED]>>
+```
+
+#### Comparison
+
+Both mechanisms are in play once the feature is enabled, and they protect different
+sets of Pods and have different effects.
+
+|                      | Eviction                                                                      | Kernel OOM kill                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Protected from it    | static and mirror Pods, and priority >= `system-cluster-critical`             | nothing absolutely; `oom_score_adj` is `-997` for node-critical and Guaranteed Pods, which is heavy but not immunity |
+| Victim selection     | a Pod, ranked by request overage, then priority, then usage above request     | a task, by `oom_badness` = rss + swap + pagetables + `oom_score_adj` / 1000 * partition limit             |
+| Effect               | the Pod is terminated and leaves the node                                     | the container is killed, since `memory.oom.group=1` is set per container, and kubelet restarts it         |
 
 ### Test Plan
 
@@ -372,12 +482,14 @@ sufficient coverage before modifying those packages.
 
 Core packages to be modified for alpha:
 
-- `pkg/kubelet/cm`: container manager — system partition cgroup
-  creation, Pod placement logic, cpuset assignment
+- `pkg/kubelet/cm`: container manager — partition cgroup creation, Pod
+  placement, and reclaiming the cgroup a Pod leaves behind when it moves
+  between partitions
 - `pkg/kubelet/eviction`: eviction manager — partition-aware
   eviction targeting and memory monitoring
-- `pkg/kubelet/kubelet_pods.go`: Pod admission — namespace-based
-  partition membership check
+- `pkg/kubelet/apis/config/validation`: systemPartition configuration
+- `pkg/kubelet/server/stats`: the partition's summary API entry
+- `cmd/kubelet/app`: parsing systemPartition into its internal form
 
 Coverage data will be collected before implementation begins.
 
@@ -401,7 +513,8 @@ Node e2e tests will be added to validate:
   pressure is detected
 - System Pods running in the default partition (wrong partition)
   are restarted and moved to the system partition on the next
-  Pod sync (e.g., after enabling the feature on an existing node)
+  Pod sync after feature is turned on an existing node, and the
+  cgroup it was created under is removed.
 - Feature disabled: no system partition cgroup is created, all
   Pods use default hierarchy
 
@@ -426,9 +539,22 @@ Pod sync, which involves container restarts for affected Pods.
 
 **Downgrade**: Remove the `systemPartition` config and disable the
 feature gate, then restart kubelet. System Pods will be restarted
-in the default cgroup hierarchy. The orphaned `kubepods/system/`
-cgroup will be cleaned up by kubelet's cgroup reconciliation logic
-similar how MemoryQoS KEP implemented it.
+in the default cgroup hierarchy.
+
+Reclaiming what the partition leaves behind takes two steps, because
+no existing mechanism covers it. Kubelet's only cgroup removal path
+is the orphan pod cgroup cleanup, and the roots it scans are derived
+from the current configuration, so the moment the feature is off it
+stops looking inside `kubepods/system/` and the pod cgroups there
+become invisible to it. The partition's QoS roots are therefore kept
+in the scanned set whether or not a partition is configured, which
+lets the existing cleanup reclaim those pod cgroups, kill their
+processes and wait for volume teardown as it does anywhere else.
+That leaves the three now-empty cgroups `kubepods/system/`,
+`kubepods/system/burstable/` and `kubepods/system/besteffort/`, which
+a periodic task removes. The task only removes empty cgroups and
+retries until the partition is empty, since the orphan cleanup it
+waits on runs asynchronously.
 
 ### Version Skew Strategy
 
@@ -470,9 +596,11 @@ Yes. Disable the feature gate and restart kubelet. On restart,
 kubelet will not create or manage the system partition cgroup
 hierarchy. **System Pods will be restarted** and moved back to their
 default cgroup locations under `kubepods`. The orphaned
-`kubepods/system/` cgroup hierarchy will be cleaned up by kubelet's
-cgroup garbage collection. Note that this restart is expected and
-necessary — the containers must be recreated under a different
+`kubepods/system/` cgroup hierarchy is reclaimed as described in
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy): the pod
+cgroups inside it by the orphan pod cgroup cleanup, and the empty
+partition roots by a periodic task. Note that this restart is
+expected and necessary — the containers must be recreated under a different
 cgroup parent.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
@@ -519,8 +647,10 @@ upgrade->downgrade->upgrade path is:
 2. **Downgrade (disable)**: Remove `systemPartition` config and
    disable the feature gate. Restart kubelet. System Pods are
    restarted and moved back to the default cgroup hierarchy under
-   `kubepods`. The orphaned `kubepods/system/` cgroup is cleaned up
-   by kubelet's cgroup garbage collection. User Pods are unaffected.
+   `kubepods`. The orphaned `kubepods/system/` cgroup is reclaimed in
+   two steps, the pod cgroups inside it by the orphan pod cgroup
+   cleanup and the empty partition roots by a periodic task, so it can
+   take a few minutes to disappear. User Pods are unaffected.
 3. **Re-upgrade (re-enable)**: Same as step 1. Kubelet recreates the
    system partition cgroup hierarchy and moves system Pods back into
    it on the next sync. No persistent state is left behind from the
