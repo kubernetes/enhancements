@@ -1,0 +1,27 @@
+title: MinReadyReplicas for Workload Controllers
+kep-number: 6078
+authors:
+  - "@kairosci"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-network
+status: provisional
+creation-date: 2026-05-14
+reviewers:
+  - "@bowei"
+  - "@danwinship"
+approvers:
+  - "@bowei"
+  - "@danwinship"
+stage: alpha
+latest-milestone: "v1.38"
+milestone:
+  alpha: "v1.38"
+  beta: ""
+  stable: ""
+feature-gates:
+  - name: MinReadyReplicas
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
