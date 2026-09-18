@@ -48,6 +48,9 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
+    - [API server or etcd unavailable](#api-server-or-etcd-unavailable)
+    - [Explicit EndpointSelector does not update EndpointSlices after a pod readiness change](#explicit-endpointselector-does-not-update-endpointslices-after-a-pod-readiness-change)
+    - [Service-derived EndpointSelector projection is absent or stale](#service-derived-endpointselector-projection-is-absent-or-stale)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -883,32 +886,36 @@ affected by version skew in either direction.
 
 ###### Does enabling the feature change any default behavior?
 
-For new clusters, no existing behavior changes. `EndpointSelector` is a new
-resource type; nothing creates `EndpointSelector` objects unless a user or
-controller explicitly does so.
+Yes. In addition to making the `EndpointSelector` API available, enabling the
+feature causes `service-endpointselector-controller` to create a
+non-authoritative `EndpointSelector` projection for each `Service` with a pod
+selector. These projections let other controllers reference a Service's backend
+selection without using `Service` as their contract.
 
-For upgraded clusters, the `service-endpointselector-controller` begins
-creating an `EndpointSelector` for each existing `Service` with a pod
-selector. This is additive — `EndpointSlices` continue to be produced and
-served to `kube-proxy` and other consumers without interruption.
+The existing `endpointslice-controller` continues to reconcile Service-owned
+`EndpointSlices` directly from `Service`; Service-derived `EndpointSelector`
+objects do not produce another set of `EndpointSlices`. Consequently, enabling
+the feature does not change Service endpoint availability, EndpointSlice
+contents, or the Service-to-EndpointSlice reconciliation path.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
 Yes. Setting the `EndpointSelector` feature gate to false stops the API server
 from accepting new `EndpointSelector` objects and stops the controllers from
 reconciling them. Existing `EndpointSelector` objects remain in etcd but are
-not acted upon. The `endpointslice-controller` reverts to reconciling
-`EndpointSlices` directly from `Service` objects, so `Service`-backed slices
-remain current. `EndpointSlices` owned by manually created `EndpointSelector`
-objects stop being updated until the gate is re-enabled.
+not acted upon. Service-owned `EndpointSlices` remain current because their
+controller path continues to reconcile directly from `Service`. `EndpointSlices`
+owned by explicitly created `EndpointSelector` objects stop being updated until
+the gate is re-enabled; Service-derived projections may remain stale while the
+gate is disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
 The controllers resume reconciliation. The `service-endpointselector-controller`
-syncs all `Services` and creates any missing `EndpointSelector` objects. The
-`endpointslice-controller` reconciles all `EndpointSelector` objects, bringing
-any drifted `EndpointSlices` back into sync. No manual intervention is
-required.
+syncs all `Services` and creates or updates missing and stale projections. The
+`endpointslice-controller` reconciles explicitly created `EndpointSelector`
+objects, bringing their drifted `EndpointSlices` back into sync. No manual
+intervention is required.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -917,9 +924,13 @@ Yes. Alpha integration tests cover:
 - API server rejecting `EndpointSelector` objects when the gate is disabled.
 - `endpointslice-controller` skipping reconciliation of `EndpointSelector`
   objects when the gate is disabled.
-- `EndpointSlices` written while the gate was enabled drifting gracefully
-  (not deleted) when the gate is disabled, and returning to sync when
-  re-enabled.
+- Service-owned `EndpointSlices` continuing to reflect pod readiness changes
+  while the gate is enabled, disabled, and re-enabled.
+- Service-derived projections being created without producing duplicate
+  `EndpointSlices`.
+- `EndpointSlices` written for explicitly created `EndpointSelector` objects
+  drifting gracefully (not deleted) when the gate is disabled, and returning to
+  sync when re-enabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -929,25 +940,31 @@ Full analysis required at Beta. Known candidates:
 
 - Skewed rollout: in HA clusters where some API servers have the gate enabled
   and others do not, `EndpointSelector` creates that reach an old apiserver
-  return 404 and are retried. The `endpointslice-controller` detects the
-  missing API via informer registration errors and falls back to
-  `Service`-watching for that window. `EndpointSlices` remain current; no
-  workloads are impacted during the upgrade window.
+  return 404 and are retried. Explicit `EndpointSelector` objects cannot be
+  created or reconciled through an old API server during that window.
+  Service-owned `EndpointSlices` remain current because they continue to be
+  reconciled directly from `Service`.
+- Service projection writes can be rejected by quota, admission, or RBAC. The
+  service-endpointselector-controller retries the write; until it succeeds, the
+  derived `EndpointSelector` is absent or stale for consumers that reference
+  it. This does not interrupt EndpointSlice updates for the Service itself.
 - Object volume burst: clusters with many `Services` generate a large number of
   `EndpointSelector` create calls when the gate is first enabled. The
   `service-endpointselector-controller` is the sole writer and is rate-limited
   by the standard client-go work queue, but the burst may still be visible in
   API server metrics.
 - Mid-reconciliation restart: a `kube-controller-manager` restart during the
-  initial migration sync leaves a window where some `Services` do not yet have
+  initial projection sync leaves a window where some `Services` do not yet have
   a corresponding `EndpointSelector`. This is safe because the controller is
-  idempotent — the missing objects are created on the next sync.
+  idempotent — the missing projections are created on the next sync, and
+  Service-owned `EndpointSlices` continue to be reconciled directly.
 
 ###### What specific metrics should inform a rollback?
 
-Specific metric names will be defined at Beta. Signals to monitor:
+Signals to monitor:
 
-- Spike in `endpointslice-controller` sync error rate.
+- A relative increase in error results from
+  `endpoint_slice_controller_syncs` for EndpointSelector reconciliation.
 - Increase in `EndpointSlice` churn (endpoints added or removed per sync).
 - API server error rate for `EndpointSelector` operations.
 - Pod readiness transitions not reflected in `EndpointSlices` within the
@@ -971,17 +988,20 @@ At GA, documentation for the shadow-`Service` pattern — creating a headless
 ###### How can an operator determine if the feature is in use by workloads?
 
 `EndpointSelector` objects can be listed directly:
-`kubectl get endpointselectors --all-namespaces`. A dedicated metric will be
-added to `kube-controller-manager` before Beta.
+`kubectl get endpointselectors --all-namespaces`. The existing API server
+metric `apiserver_storage_objects{resource="endpointselectors.discovery.k8s.io"}`
+also reports the number of stored EndpointSelector objects.
 
 ###### How can someone using this feature know that it is working for their instance?
 
 - [ ] Other
   - Verify that `EndpointSlice` objects exist and reflect live pod readiness:
     `kubectl get endpointslices -l kubernetes.io/service-name=<name>` for
-    `Service`-backed selectors, or
+    Services, or
     `kubectl get endpointslices -l kubernetes.io/endpoint-selector-name=<name>`
-    to filter by `EndpointSelector` directly.
+    for an explicitly created `EndpointSelector`. For a Service-derived
+    projection, verify that the corresponding `EndpointSelector` exists and
+    its selector and target ports match the Service.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -994,21 +1014,18 @@ existing [EndpointSlice SLO][eps-slo] (pod readiness → slice updated within
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-- [ ] Metrics
-  - Existing `endpointslice-controller` metrics extended with an `owner_type`
-    label distinguishing `Service`-owned from `EndpointSelector`-owned slices
-    (for example,
-    `endpoint_slice_controller_syncs_total{owner_type="EndpointSelector"}`).
-    Exact metric names will be defined before Beta.
+- [X] Metrics
+  - Metric name: `endpoint_slice_controller_syncs`
+  - Aggregation method: Counter, partitioned by reconciliation result.
   - Component exposing the metric: `kube-controller-manager`
+  - Detail: A relative increase in `result="error"` indicates failed
+    EndpointSlice reconciliation for explicitly created EndpointSelectors.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Before Beta, evaluate whether existing `endpointslice-controller` metrics
-(`endpoints_added_per_sync`, `endpoints_removed_per_sync`, `syncs_total`) can
-be extended with an `owner_type` label rather than introducing new metric
-families. This keeps the observability surface small and avoids breaking
-existing dashboards.
+Before Beta, evaluate whether `endpoint_slice_controller_syncs` needs a source
+label to distinguish explicitly created EndpointSelectors from Services. Any
+such label must preserve the existing metric's stability guarantees.
 
 ### Dependencies
 
@@ -1035,7 +1052,8 @@ Yes.
   In steady state, `Service` updates trigger a re-sync but typically produce
   no write if the `EndpointSelector` is already current.
 - `EndpointSlice` create/update/delete rate is unchanged for the `Service`
-  compatibility path — the same slices are produced from the same pod events.
+  projection path — the same slices are produced directly from the same
+  Service and pod events.
 
 Throughput estimates relative to existing `EndpointSlice` load will be
 benchmarked before Beta.
@@ -1058,18 +1076,15 @@ New `EndpointSelector` objects are written to etcd, each roughly the same
 size as a `Service` object. For the `Service` compatibility path, one
 `EndpointSelector` is created per `Service` with a pod selector.
 
-The total `EndpointSlice` count does not increase for the compatibility
-path — the same slices are produced from the same pods, now driven through an
-`EndpointSelector` rather than directly from `Service`.
+The total `EndpointSlice` count does not increase for the Service projection
+path — the same slices continue to be produced directly from `Service`.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-The pod readiness → `EndpointSlice` update path gains one additional level of
-indirection (Service → EndpointSelector → EndpointSlice in the reconciler). No
-additional API server round-trips are needed since `EndpointSelector` objects
-are already in the controller's informer cache. The impact on end-to-end
-latency is expected to be negligible, but must be confirmed with benchmarks
-before Beta.
+The Service pod readiness → `EndpointSlice` update path is unchanged. Explicit
+EndpointSelectors use the EndpointSlice controller directly, with the same
+pod-readiness-to-EndpointSlice SLO as Services. Benchmarking before Beta will
+validate the additional controller and informer load.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1092,19 +1107,50 @@ No. Service-backed `EndpointSlices` remain functionally equivalent from
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
-Same degradation model as `Service`/`EndpointSlice` today: the controllers
-cannot reconcile while the API server is unavailable, and `EndpointSlices` may
-become stale as pods change readiness. Existing `EndpointSlices` continue to
-serve traffic until the API server recovers and the controllers catch up. There
-are no additional failure modes introduced by this feature.
+#### API server or etcd unavailable
+
+- **Detection:** API server and controller error metrics increase; controller
+  logs show failed list, watch, or write operations.
+- **Mitigations:** Restore API server or etcd availability. Existing
+  EndpointSlices continue serving traffic until controllers recover and catch
+  up.
+- **Diagnostics:** Check API server and etcd health, then inspect
+  kube-controller-manager logs for EndpointSlice and EndpointSelector
+  reconciliation errors.
+- **Testing:** Integration tests verify that controllers resume reconciliation
+  after transient API server errors.
 
 ###### What are other known failure modes?
 
-Full documentation required at Beta. Candidates:
+#### Explicit EndpointSelector does not update EndpointSlices after a pod readiness change
 
-- **`EndpointSlices` not updated after pod readiness change**: detectable via
-  `endpointslice-controller` sync error metrics. Mitigation: verify feature
-  gate status; restart `kube-controller-manager`.
+- **Detection:** `endpoint_slice_controller_syncs{result="error"}` increases,
+  or the EndpointSlices selected by
+  `kubernetes.io/endpoint-selector-name=<name>` do not reflect Pod readiness.
+- **Mitigations:** Verify the feature gate on kube-apiserver and
+  kube-controller-manager, correct invalid EndpointSelector configuration, and
+  restore controller access to the API server. Restart kube-controller-manager
+  only after the underlying condition is corrected.
+- **Diagnostics:** Inspect kube-controller-manager logs for the
+  EndpointSelector's namespace and name; compare its selector and target ports
+  with the selected Pods and generated EndpointSlices.
+- **Testing:** Integration tests cover Pod readiness transitions, invalid
+  selectors and ports, and feature-gate disablement and re-enablement.
+
+#### Service-derived EndpointSelector projection is absent or stale
+
+- **Detection:** The Service has no corresponding EndpointSelector, or the
+  projection's selector or target ports differ from the Service. API server
+  write errors and service-endpointselector-controller logs identify rejected
+  projection writes.
+- **Mitigations:** Correct quota, admission, or RBAC policy that rejects the
+  projection, then allow the controller's normal retry to create or update it.
+  Service-owned EndpointSlices continue to update directly from the Service
+  while the projection is unavailable.
+- **Diagnostics:** Compare the Service with its projected EndpointSelector and
+  inspect controller logs for the Service namespace and name.
+- **Testing:** Integration tests cover projection creation, updates, rejected
+  writes, controller restart, and the absence of duplicate EndpointSlices.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 

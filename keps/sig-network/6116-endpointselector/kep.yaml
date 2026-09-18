@@ -3,8 +3,6 @@ kep-number: 6116
 authors:
   - "@keithmattix"
 owning-sig: sig-network
-participating-sigs:
-  - sig-architecture # PRR reviewers
 status: provisional
 creation-date: 2026-05-26
 reviewers:
@@ -23,15 +21,13 @@ see-also:
 
 stage: alpha
 
-# latest-milestone: "v1.38"
+latest-milestone: "v1.38"
 
-# milestone:
-#   alpha: "v1.38"
-#   beta: "TBD"
-#   stable: "TBD"
+milestone:
+  alpha: "v1.38"
+  beta: "TBD"
+  stable: "TBD"
 
-# TODO: Confirm feature gate name with SIG Network before moving to implementable.
-# Suggested name: EndpointSelector
 feature-gates:
   - name: EndpointSelector
     components:
