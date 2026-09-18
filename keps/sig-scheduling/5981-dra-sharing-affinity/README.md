@@ -20,7 +20,6 @@
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Fragmentation (Poisoning)](#fragmentation-poisoning)
     - [Preemption Cannot Break Affinity Locks](#preemption-cannot-break-affinity-locks)
-    - [Packing Depends on DRA-Aware Scoring (Alpha Limitation)](#packing-depends-on-dra-aware-scoring-alpha-limitation)
 - [Design Details](#design-details)
   - [API Enhancement](#api-enhancement)
     - [ResourceSlice Spec](#resourceslice-spec)
@@ -768,6 +767,10 @@ sometimes over-evicts. A DRA-aware reprieve-ordering hook in
 `DefaultPreemption` would resolve this cleanly but is its own
 scheduler-framework enhancement, out of scope for this KEP.
 
+Reclaiming an affinity-locked device is addressed by workload-aware
+preemption (cluster-wide victim identification), which is out of scope
+for KEP-5690's initial integration and left to future enhancements.
+
 If KEP-5690 is not present or is disabled, this KEP provides no
 preemption capability — see
 [Preemption Cannot Break Affinity Locks](#preemption-cannot-break-affinity-locks).
@@ -892,27 +895,6 @@ scoring contribution in
 Lock-breaking is a property that emerges when DRA preemption is
 present in the cluster; see
 [Composition with DRA Preemption (KEP-5690)](#composition-with-dra-preemption-kep-5690).
-
-#### Packing Depends on DRA-Aware Scoring (Alpha Limitation)
-
-**Risk**: The Filter phase guarantees correctness (incompatible locked
-devices are excluded), but not packing — neither across nodes nor within
-a node:
-
-- **Cross-node**: standard Kubernetes scorers do not see DRA shared-device
-  consumption, so they cannot prefer a node that already has a
-  compatibly-locked device. Two compatible claims may land on two
-  different nodes — each locking a separate device — even when
-  consolidating onto one would have sufficed.
-- **Within-node**: the DRA allocator currently uses first-fit. When a
-  node has both a compatibly-locked device with capacity and a clean
-  device, the allocator may pick whichever appears first in the
-  ResourceSlice rather than preferring the locked one.
-
-**Mitigation**: See [Fragmentation (Poisoning)](#fragmentation-poisoning)
-for the beta scoring / packing plan; the `AllocatedState.AffinityStates`
-structure introduced in alpha is the substrate the beta score function
-reads, so alpha is the infrastructure step, not a dead end.
 
 ## Design Details
 
@@ -2460,7 +2442,7 @@ allocator and is also a beta deliverable.
 
 **Alpha contract: correctness only**. Packing of any kind (within-node or
 cross-node) is best-effort first-fit and is documented as a known
-limitation in [Risks and Mitigations](#packing-depends-on-dra-aware-scoring-alpha-limitation).
+limitation in [Risks and Mitigations](#fragmentation-poisoning).
 
 ### Priority-based Lock Preemption
 
