@@ -123,8 +123,8 @@ surfaces on ordinary reboots.
 
 ### Goals
 
-- The `Static`/`BestEffort` policies start after a reboot when the only change is
-  a benign per-node memory drift, without operator intervention.
+- The memory manager `Static` policy starts after a reboot when the only change
+  is a benign per-node memory drift, without operator intervention.
 - Genuine changes still fail the start: a change to `systemReserved`/reserved
   memory, a hugepage change, an added/removed memory bank (GiB-scale), or an
   assignment that no longer fits.
@@ -137,7 +137,8 @@ surfaces on ordinary reboots.
 - Changing how memory is allocated to pods, or the checkpoint format.
 - Eliminating the fluctuation itself (a kernel/firmware concern).
 - Covering the `None` policy (it does not validate machine state).
-- Platforms other than Linux: the exact comparison stays as it is.
+- Platforms other than Linux: the exact comparison stays as it is. This also
+  leaves out the `BestEffort` policy, which exists only on Windows.
 
 ## Proposal
 
@@ -156,10 +157,12 @@ in this document is what counts.
 
 ### User Stories
 
-- As a cluster administrator running the `Static` memory manager policy, when
-  my nodes reboot (a kernel update, a power event) I want kubelet to come back
-  `Ready` on its own, without someone deleting
-  `/var/lib/kubelet/memory_manager_state` on every node.
+- As a cluster administrator running the memory manager `Static` policy, when a
+  reboot (a kernel update, a power event) happens to move the memory a NUMA node
+  reports, which is the case on some reboots and not others, I want kubelet to
+  come back `Ready` on its own. Today it fails until someone deletes
+  `/var/lib/kubelet/memory_manager_state` on that node, and that workaround is
+  the problem.
 - As a cluster administrator, when a node really loses memory (a failed DIMM, a
   changed `systemReserved`) I still want kubelet to refuse to start on the stale
   state, so that pods with pinned memory are not silently under-served.
@@ -205,6 +208,15 @@ captures rodata/alignment gaps), and add a 64 MiB grace for the KiB-scale
 secondary drift and rounding. The bound is recomputed on every start from the
 kernel that actually booted, so it follows kernel upgrades by construction.
 
+The evidence behind the grace is small but consistent: 12 KiB on the production
+node that motivated this KEP, tens of KiB in the reports on
+kubernetes/kubernetes#131253, and a mechanism (boot-time allocations whose size
+depends on the randomized layout) that is KiB to low-MiB by construction, so
+64 MiB leaves about three orders of magnitude of headroom. The observed-drift
+metric exists to check this in the field during alpha; if the numbers come in
+higher, the grace changes before beta, and the explicit option covers any single
+node in the meantime.
+
 Whether KASLR is enabled does not need to be detected: the image size bounds the
 possible shift either way, and with KASLR off the image never moves, so the
 tolerance is simply never exercised.
@@ -232,7 +244,8 @@ image, or the exact comparison when it cannot be derived), `off` (the exact
 comparison) or an explicit quantity such as `128Mi`. Unknown options and values
 are rejected at kubelet start, as for the other managers. This is how an
 operator keeps the exact comparison, or sets the bound on a platform where it
-cannot be derived.
+cannot be derived. `auto` is the default only once the feature itself is
+enabled; an administrator who has not enabled it sees no change.
 
 ### Test Plan
 
@@ -338,9 +351,8 @@ the old strict behavior. There are no skew concerns.
 
 ###### Does enabling the feature change any default behavior?
 
-Yes. The `Static` policy (and `BestEffort`, which delegates to the same
-validation) tolerates a bounded per-node memory drift on start and re-baselines,
-instead of failing. Genuine hardware/configuration changes and non-fitting
+Yes. The memory manager `Static` policy tolerates a bounded per-node memory
+drift on start and re-baselines, instead of failing. Genuine hardware/configuration changes and non-fitting
 assignments still fail as before.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
