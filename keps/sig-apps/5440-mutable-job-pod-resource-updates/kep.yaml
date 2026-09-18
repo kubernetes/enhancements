@@ -44,4 +44,4 @@ disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
-  - apiserver_request_total[resource=job, group=batch, verb=UPDATE, code=400]
+  - 'apiserver_request_total{resource="jobs", group="batch", subresource="", verb=~"UPDATE|PATCH|APPLY", code="422"}'

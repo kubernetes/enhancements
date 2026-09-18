@@ -515,9 +515,11 @@ If the SLOs for apiserver `apiserver_request_sli_duration_seconds` and
 feature gates can be disabled while investigating.
 
 Another metric is
-`apiserver_request_total[resource=job, group=batch, verb=UPDATE, code=400]`.
-This can be used to watch for rejected Job update requests. At GA, disabling the
-feature gates is not a supported rollback path.
+`apiserver_request_total{resource="jobs", group="batch", subresource="", verb=~"UPDATE|PATCH|APPLY", code="422"}`.
+This counts Job updates rejected as invalid (`StatusReasonInvalid`). An increase
+can indicate a validation regression, but also includes unrelated invalid Job
+updates; inspect the returned validation errors before attributing it to this
+feature. At GA, disabling the feature gates is not a supported rollback path.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -529,8 +531,12 @@ The following scenarios were verified on a Kind 1.35 cluster.
 - create a kind cluster with feature gate on
   - verify suspend and patching of resources is allowed.
 
-Stable PRR should confirm whether additional GA upgrade and downgrade evidence
-is required.
+The upgrade->downgrade->upgrade path has not yet been verified. Before the
+feature gates are updated for GA, we will test this path between the preceding
+Beta release and the target GA release for both resource and scheduling-directive
+updates. Testing will cover initially suspended Jobs, Jobs that started and were
+then safely suspended, rejection of updates to active Jobs, and preservation of
+accepted updates across the version transitions.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -540,10 +546,29 @@ No.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-There is no dedicated status field for this behavior. Operators can inspect
-Job update requests through apiserver audit logs and request metrics, and
-controllers using the feature can observe whether their Job updates are accepted
-or rejected by the API server.
+There is no dedicated status field or metric that identifies use of this feature.
+With `RequestResponse` auditing enabled for `batch/jobs` updates and patches,
+operators can select successful updates from JSON-lines audit logs:
+
+```sh
+jq 'select(.stage == "ResponseComplete" and
+           .objectRef.apiGroup == "batch" and .objectRef.resource == "jobs" and
+           ((.objectRef.subresource // "") == "") and
+           (.verb == "update" or .verb == "patch") and
+           .responseStatus.code == 200) |
+    {auditID, objectRef, requestURI, requestObject, responseObject}' audit.log
+```
+
+Exclude dry-run requests (identified by `dryRun` in `requestURI`). Compare the
+returned Job in `responseObject` with a retained pre-update Job: a change to
+container or init-container `resources` while the prior Job was safely suspended
+demonstrates resource-mutation use. A scheduling-directive change on a Job that
+previously started and was then safely suspended demonstrates use of the extended
+scheduling mutability. A successful update alone does not prove use; scheduling
+updates to never-started suspended Jobs were already supported before this KEP.
+Metadata-only audit logs cannot establish which template fields changed. See
+[auditing](https://kubernetes.io/docs/tasks/debug/debug-cluster/audit/) for audit
+policy configuration.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -570,8 +595,8 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: apiserver_request_total[resource=job, group=batch, verb=UPDATE, code=400]
-  - [Optional] Aggregation method:
+  - Metric name: apiserver_request_total{resource="jobs", group="batch", subresource="", verb=~"UPDATE|PATCH|APPLY", code="422"}
+  - [Optional] Aggregation method: `sum by (instance) (rate(apiserver_request_total{resource="jobs", group="batch", subresource="", verb=~"UPDATE|PATCH|APPLY", code="422"}[5m]))`
   - Components exposing the metric: kube-apiserver
 - [ ] Other (treat as last resort)
   - Details:
@@ -631,9 +656,26 @@ Update requests will be rejected.
 
 ###### What are other known failure modes?
 
-In a multi-master setup with skewed apiservers during upgrade or downgrade,
-some Job update requests may get accepted and some may get rejected until all
-apiservers agree on the feature-gate state and validation behavior.
+During an HA control-plane upgrade or downgrade, Job template updates can be
+accepted by one API server and rejected by another if their effective feature-gate
+settings or validation behavior differ. Version skew alone does not necessarily
+cause this failure.
+
+To detect this, use the per-instance Job validation-error rate above and inspect
+the rejecting API server's audit events and client error responses for HTTP 422,
+reason `Invalid`, and an immutable `spec.template` error. Compare API server
+versions and effective settings for `MutablePodResourcesForSuspendedJobs` and
+`MutableSchedulingDirectivesForSuspendedJobs`. Also inspect the pre-update Job:
+it must have `spec.suspend: true`, `status.active` absent or zero, and either no
+`status.startTime` or a true `Suspended` condition. An active or not safely
+suspended Job is an expected rejection, not evidence of skew.
+
+Pause template mutations while resolving inconsistent API server behavior.
+Align feature-gate settings where configurable during Beta, and complete the
+supported control-plane upgrade or rollback so the API servers use consistent
+validation. At GA the gates cannot be disabled. Verify that an eligible suspended
+Job update succeeds after the control plane is consistent before resuming
+mutations.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
