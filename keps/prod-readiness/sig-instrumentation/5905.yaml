@@ -4,3 +4,5 @@
 kep-number: 5905
 alpha:
   approver: johnbelamaric
+stable:
+  approver: johnbelamaric
