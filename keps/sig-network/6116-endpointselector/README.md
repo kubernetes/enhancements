@@ -7,13 +7,13 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Service Compatibility Path](#service-compatibility-path)
+  - [Service EndpointSelector Projection](#service-endpointselector-projection)
   - [Controller-Managed Creation](#controller-managed-creation)
   - [User-Managed Creation](#user-managed-creation)
   - [User Stories](#user-stories)
     - [Story 1: InferencePool Implementation Simplification](#story-1-inferencepool-implementation-simplification)
     - [Story 2: Controller-Managed Endpoints Without Redundant Pod Watching](#story-2-controller-managed-endpoints-without-redundant-pod-watching)
-    - [Story 3: Client Settings Configuration for an Existing Service](#story-3-client-settings-configuration-for-an-existing-service)
+    - [Story 3: Referenceable Backend Selection for an Existing Service](#story-3-referenceable-backend-selection-for-an-existing-service)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Security](#security)
@@ -27,7 +27,7 @@
   - [EndpointSlice-Controller Changes](#endpointslice-controller-changes)
   - [New Service EndpointSelector Controller](#new-service-endpointselector-controller)
   - [Metadata Propagation](#metadata-propagation)
-  - [Service Compatibility Matrix](#service-compatibility-matrix)
+  - [Service Projection Mapping](#service-projection-mapping)
   - [Edge Cases and Deferred Design Decisions](#edge-cases-and-deferred-design-decisions)
   - [Controller-Managed Conventions](#controller-managed-conventions)
   - [Test Plan](#test-plan)
@@ -136,28 +136,26 @@ own version of label-selection-based endpoint management:
   `EndpointSelector` with a pod `LabelSelector` for backend endpoints.
   - GEP: https://github.com/kubernetes-sigs/gateway-api/blob/main/geps/gep-4488/index.md
 
-Furthermore, the highly coupled nature of `Service` has made it difficult to
-extend its label selection functionality to support more complex selector
-semantics (for example, set-based `matchExpressions`) without breaking
-backwards compatibility with existing `Service` objects that use an empty
-selector to indicate "manual" mode. This has been a longstanding community
-request (see kubernetes/kubernetes#48528 and kubernetes/kubernetes#62795) that
-has been deferred due to the complexity of adding new selector fields to
-`Service` without breaking existing objects.
+Furthermore, `Service.spec.selector` is an equality-based map and an empty
+selector represents manually managed endpoints. A dedicated resource can use a
+`metav1.LabelSelector` and support set-based `matchExpressions` without changing
+those Service semantics. This has been a longstanding community request (see
+kubernetes/kubernetes#48528 and kubernetes/kubernetes#62795).
 
 ### Goals
 
 - Allow users and controllers to create `EndpointSlices` for a set of pods
   matching a label selector without creating a `Service`.
-- Extend `endpointslice-controller` to watch `EndpointSelector` objects instead
-  of `Service` objects when the feature gate is enabled.
-- Create a new controller that creates an `EndpointSelector` for each `Service`
-  with a pod selector to maintain backwards compatibility.
+- Extend `endpointslice-controller` to watch `EndpointSelector` objects in
+  addition to `Service` objects.
+- Create a referenceable `EndpointSelector` projection for each `Service` with
+  a pod selector, without changing the Service EndpointSlice reconciliation
+  path.
 - Support `matchLabels` and `matchExpressions` for pod selection.
 
 ### Non-Goals
 
-- Replacing `Service` altogether.
+- Changing `Service` as an EndpointSlice source.
 - Extending `endpointslice-controller` to read arbitrary resources with pod
   selectors.
 
@@ -165,33 +163,29 @@ has been deferred due to the complexity of adding new selector fields to
 
 This KEP introduces `EndpointSelector`[^1], a namespace-scoped resource that
 allows users and controllers to obtain a managed set of `EndpointSlices` for a
-pod label selector without creating a `Service`. The `endpointslice-controller`
-watches `EndpointSelector` objects and manages their corresponding
-`EndpointSlices` using the same reconciliation logic it applies to
-`Service`-owned slices today.
+pod label selector without creating a `Service`. `Service` and
+`EndpointSelector` are independent inputs to `endpointslice-controller`: each
+has its own EndpointSlice reconciliation and ownership model.
 
-The `EndpointSelector` spec exposes the `Service` fields that affect endpoint
-selection and EndpointSlice presentation: `selector`, endpoint `ports`,
-`publishNotReadyAddresses`, and
-`trafficSettings.trafficDistribution`. `ports` describe the ports on selected
-endpoints — equivalent to `Service` target ports — not frontend `Service`
-ports. Fields tied to `Service`'s frontend role (ClusterIP, DNS hostname, load
-balancing policy, etc.) are not part of `EndpointSelector`.
+The `EndpointSelector` spec is limited to backend selection: `selector`, target
+ports, and IP families. It contains no Service frontend or policy configuration,
+such as ClusterIP, DNS, topology hints, readiness overrides, or application
+protocol metadata.
 
 [^1]: Alternative names considered: `EndpointGroup`, `EndpointPool`
 
 `EndpointSelector` objects are created in one of three ways:
 
-### Service Compatibility Path
+### Service EndpointSelector Projection
 
-To maintain backwards compatibility, the `service-endpointselector-controller`
-creates an `EndpointSelector` for each `Service` with a pod selector. The
-`Service` remains the source of truth; the `EndpointSelector` is a derived
-object managed entirely by this controller and is not intended for direct user
-interaction. The `endpointslice-controller` reconciles the `EndpointSelector`
-instead of the `Service`, but ownership of the resulting `EndpointSlices` is
-unchanged — they still point to the `Service` — to avoid breaking tooling that
-filters by owner kind.
+`service-endpointselector-controller` creates an `EndpointSelector` projection
+for each `Service` with a pod selector. The projection exposes the Service's
+backend selector, target ports, and IP families for controllers that want to
+reference that selection independently of the Service API.
+
+The projection is not an input to Service EndpointSlice reconciliation. The
+existing Service path continues to create and own Service EndpointSlices; the
+projection cannot delay, alter, or duplicate them.
 
 ### Controller-Managed Creation
 
@@ -236,29 +230,24 @@ and let the `endpointslice-controller` handle the rest. My controller only
 needs to create and delete the `EndpointSelector`; the endpoint lifecycle is
 not my problem.
 
-#### Story 3: Client Settings Configuration for an Existing Service
+#### Story 3: Referenceable Backend Selection for an Existing Service
 
-As an app developer, I have an existing `Service` and I want to configure
-client settings like TLS certificates, the MCP protocol, or other connection
-parameters so my gateway can connect to it. Rather than creating new
-infrastructure, I create a [Gateway API `Backend`][gep-4488] of
-`type: EndpointSelector` and set its `selectorRef` to the `EndpointSelector`
-the `Service` controller automatically created for my `Service`. I declare the
-TLS configuration and protocol on the `Backend`; the gateway uses those
-settings when routing to my existing pods. The `Service` routing and endpoint
-selection behavior are unchanged, though `EndpointSlices` gain the new
-`kubernetes.io/endpoint-selector-name` label once the feature gate is enabled.
+As an app developer, I have an existing `Service` and need another controller
+to reference the same backend selection. I reference the Service-derived
+`EndpointSelector` from a [Gateway API `Backend`][gep-4488], while declaring
+connection settings such as TLS and protocol on that Backend. The Service keeps
+its own routing and EndpointSlice lifecycle; the projection gives the Backend a
+stable backend-selection contract without adding those settings to Service.
 
 [gep-4488]: https://gateway-api.sigs.k8s.io/geps/gep-4488/
 
 ### Notes/Constraints/Caveats
 
-`EndpointSelector` and `Service` overlap in the endpoint-selection piece but
-are not in conflict. Once this feature is enabled, the `Service` controller
-creates an `EndpointSelector` for each `Service` with a pod selector, and the
-`endpointslice-controller` drives reconciliation from that object. Users and
-tooling that interact with `Services` and their `EndpointSlices` observe the
-same functional behavior.
+`EndpointSelector` and `Service` overlap in backend selection but are sibling
+APIs. The EndpointSlice controller reconciles Service EndpointSlices from
+Service and EndpointSelector EndpointSlices from explicitly created
+EndpointSelectors. A Service-derived projection is referenceable selection
+metadata; it is not substituted into either reconciliation path.
 
 An `EndpointSelector` is loosely coupled to its consumers. It has no awareness
 of which higher-level resources reference it, just as `EndpointSlices` have no
@@ -291,13 +280,10 @@ of whether their `EndpointSlices` originated from a `Service` or an
 
 #### Control Plane Load
 
-The per-object reconciliation cost of an `EndpointSelector` is equivalent to a
-`Service` with the same selector. For clusters where the `Service` controller
-auto-creates an `EndpointSelector` per `Service`, the `EndpointSlice` count and
-reconciliation frequency do not change — the same slices are produced, now
-driven by an `EndpointSelector` rather than directly by the `Service`. The net
-additional load is a new watch in the `endpointslice-controller` and apiserver
-writes to create the `EndpointSelector` objects for `Services`.
+The per-object reconciliation cost of an explicitly created `EndpointSelector`
+is equivalent to a `Service` with the same selector. The Service projection adds
+one object write per selector-based Service and a controller cache, but it does
+not add EndpointSlice reconciliation or alter the Service endpoint path.
 
 #### Orphaned Resources
 
@@ -310,43 +296,35 @@ managing controller.
 #### API Confusion
 
 Introducing a resource that partially overlaps with `Service` risks confusion
-about which to use when. This is mitigated by making the relationship explicit:
-`Service` creates an `EndpointSelector` on behalf of users; `EndpointSelector`
-is the right choice only when `Service`'s additional semantics — ClusterIP,
-DNS, kube-proxy routing — are unwanted or actively harmful.
+about which to use when. `Service` remains the API for a frontend, DNS, and
+kube-proxy semantics. `EndpointSelector` is the API for managed backend
+selection where those Service semantics are unwanted or actively harmful.
 
 ## Design Details
 
 ### Current State
 
 Today, the `endpointslice-controller` reads changes to `Service` and `Pod`
-objects to manage `EndpointSlices`. When a `Service` with a pod selector is
-created or updated, the controller creates or updates `EndpointSlices` to
-reflect the set of pods matching that selector. A `Service` with a nil pod
-selector or type `ExternalName` is ignored and produces no `EndpointSlice`;
-the controller preserves this nil selector opt-out behavior when creating
-derived `EndpointSelector` objects. When a pod changes status (for example,
-becomes ready), the controller updates the relevant `EndpointSlices`
-accordingly. When the `Service` is deleted, the controller garbage collects
-the owned `EndpointSlices`.
+objects to manage Service-owned `EndpointSlices`. When a `Service` with a pod
+selector is created or updated, the controller creates or updates
+`EndpointSlices` to reflect matching pods. A `Service` with a nil pod selector
+or type `ExternalName` is ignored. When a pod changes status, the controller
+updates the relevant EndpointSlices; when a Service is deleted, it garbage
+collects the slices it owns.
 
 ### Proposed Implementation
 
 When the `EndpointSelector` feature gate is enabled, the
-`endpointslice-controller` watches `EndpointSelector` objects instead of
-`Service`. This is a purposeful structural refactor to prevent duplication bugs
-and ensure that the same reconciliation logic applies to both `Service`-owned
-and `EndpointSelector`-owned slices. If the `EndpointSelector` API is not yet
-available on the API server when the gate is enabled — detectable via informer
-registration failure — the controller falls back to `Service`-watching until
-the API becomes accessible, then transitions automatically. A new controller
-(the `service-endpointselector-controller`) in `kube-controller-manager`
-watches `Service` objects and creates an `EndpointSelector` for each `Service`
-with a pod selector, ensuring backwards compatibility. `Service` resources
-without a pod selector will NOT result in an `EndpointSelector` being created.
-The `Service` remains the source of truth; the `EndpointSelector` is a derived
-resource managed by the `Service` controller. Users and tooling that interact
-with `Services` and their `EndpointSlices` observe the same functional behavior.
+`endpointslice-controller` adds an `EndpointSelector` watch while retaining its
+existing `Service` watch. Service and EndpointSelector events enqueue their own
+reconciliation keys and produce only their respective EndpointSlices. A
+Service-derived projection is excluded from EndpointSelector EndpointSlice
+reconciliation, preventing duplicate slices.
+
+The `service-endpointselector-controller` watches selector-based Services and
+maintains their projections asynchronously. Services without a pod selector do
+not get a projection. A failed projection write is retried independently and
+does not affect Service EndpointSlice reconciliation.
 
 ### API Definition
 
@@ -378,24 +356,11 @@ type EndpointSelectorSpec struct {
   // +optional
   IPFamilies []corev1.IPFamily `json:"ipFamilies,omitempty"`
 
-  // Ports defines the endpoint port numbers and protocols exposed on the
-  // selected pods. These are target ports, not Service frontend ports. Omitting
-  // this field produces EndpointSlices with an empty ports list, mirroring the
-  // behavior of a headless Service with no ports defined.
+  // Ports defines the endpoint target ports and protocols exposed on the
+  // selected pods. Omitting this field produces EndpointSlices with an empty
+  // ports list.
   // +optional
   Ports []EndpointSelectorPort `json:"ports,omitempty"`
-
-  // PublishNotReadyAddresses controls whether not-yet-ready pods appear in
-  // generated EndpointSlices. When true, not-ready pods are included with
-  // ready=true in their endpoint conditions, making them reachable before
-  // they pass readiness probes.
-  // +optional
-  PublishNotReadyAddresses bool `json:"publishNotReadyAddresses,omitempty"`
-
-  // TrafficSettings provides producer-side routing configuration propagated
-  // to generated EndpointSlices.
-  // +optional
-  TrafficSettings *EndpointSelectorTrafficSettings `json:"trafficSettings,omitempty"`
 }
 
 // EndpointSelectorPort defines a single port exposed by the selected pods.
@@ -410,30 +375,10 @@ type EndpointSelectorPort struct {
   // +optional
   Protocol corev1.Protocol `json:"protocol,omitempty"`
 
-  // Port is the target port number or name. Numeric values are used directly;
+  // TargetPort is the target port number or name. Numeric values are used directly;
   // string values are resolved per-pod by the endpointslice-controller by
-  // matching against pod.spec.containers[].ports[].name, mirroring
-  // Service.spec.ports[].targetPort semantics. For the Service compatibility
-  // path, the service-endpointselector-controller copies targetPort verbatim
-  // without resolving it.
-  Port intstr.IntOrString `json:"port"`
-
-  // AppProtocol is the application-level protocol hint for this port,
-  // following the same conventions as Service.spec.ports[].appProtocol.
-  // For the Service compatibility path, this is copied from the corresponding
-  // Service port and propagated to the generated EndpointSlice.
-  // +optional
-  AppProtocol *string `json:"appProtocol,omitempty"`
-}
-
-// EndpointSelectorTrafficSettings carries producer-side routing configuration
-// that the endpointslice-controller uses when generating `EndpointSlices`.
-type EndpointSelectorTrafficSettings struct {
-  // TrafficDistribution expresses a preference for how traffic is routed to
-  // endpoints (for example, "PreferSameZone"). The endpointslice-controller
-  // uses this value to calculate the topology hints on generated EndpointSlices.
-  // +optional
-  TrafficDistribution *string `json:"trafficDistribution,omitempty"`
+  // matching against pod.spec.containers[].ports[].name.
+  TargetPort intstr.IntOrString `json:"targetPort"`
 }
 
 ```
@@ -452,11 +397,8 @@ spec:
       app: my-model-server
   ports:
     - name: grpc
-      port: 8080
+      targetPort: 8080
       protocol: TCP
-      appProtocol: kubernetes.io/grpc
-  trafficSettings:
-    trafficDistribution: PreferSameZone
 ---
 apiVersion: gateway.networking.x-k8s.io/v1alpha1
 kind: XBackend
@@ -494,138 +436,57 @@ spec:
       app: my-model-server
   ports:
     - name: grpc
-      port: 8080
+      targetPort: 8080
       protocol: TCP
 ```
 
 ### EndpointSlice-Controller Changes
 
-The `endpointslice-controller` today reconciles `EndpointSlices` from `Service`
-objects. When the `EndpointSelector` feature gate is enabled, the controller is
-refactored to drive reconciliation from `EndpointSelector` objects instead. The
-`service-endpointselector-controller` (described below) ensures every `Service`
-with a pod selector has a corresponding `EndpointSelector`, so existing
-`Service`-owned `EndpointSlices` continue to be produced without user action.
+The `endpointslice-controller` retains its Service reconciliation and adds an
+independent EndpointSelector reconciliation path. The two paths share internal
+pod discovery and EndpointSlice packing logic where appropriate, but neither
+resource is translated into the other for EndpointSlice production.
 
-To reduce fracturing in the `endpointslice-controller`, a new interface
-`EndpointSliceSource` will be introduced that abstracts the commonalities
-between `Service` and `EndpointSelector` as sources of `EndpointSlices`. This
-interface will be introduced to the controller first, before `EndpointSelector`,
-to ensure the necessary information from source objects is correctly identified.
-
-As mentioned above, Gateway API [GEP-4731] introduces `XEndpointSelector` in
-the experimental channel as a means for experimentation and feedback until this
-KEP reaches GA. This resource will never be promoted to the standard channel;
-however, it may be desirable for the core endpointslice package to be able to
-consume `XEndpointSelector` as an additional `EndpointSliceSource` to allow
-Gateway API implementations to avoid re-implementing pod-watching logic. The
-core `endpointslice-controller` will not create `EndpointSlices` for
-`XEndpointSelector` objects directly; rather, the controller will expose the
-necessary interfaces and abstractions to allow a Gateway API implementation to
-consume `XEndpointSelector` objects in a separate controller that reuses the
-core pod-watching and slice management logic. This additional mode will be
-removed once `EndpointSelector` reaches GA.
-
-Today, `EndpointSlice` objects produced for a `Service` carry a
-`kubernetes.io/service-name` label to link each slice to its Service. This
-convention will remain unchanged for the compatibility path; in other words,
-`EndpointSlices` produced for a `Service`-owned `EndpointSelector` will
-maintain the `kubernetes.io/service-name` label and ownership reference to the
-`Service`. The `endpointslice-controller` determines label and owner assignment
-from the `EndpointSelector`'s `ownerReferences`: if it points to a `Service`,
-the resulting `EndpointSlices` carry the `kubernetes.io/service-name` label and
-an ownerRef to that `Service`; if it has no owner or an owner of a different
-kind, the `EndpointSlices` carry no `kubernetes.io/service-name` label and
-their ownerRef points to the `EndpointSelector` itself. Pointing the ownerRef
-to the `EndpointSelector` rather than to the higher-level resource (for
-example, an `InferencePool`) allows garbage collection without requiring the
-controller to understand the higher-level resource's API.
-
-A new label `kubernetes.io/endpoint-selector-name` will be added to all
-`EndpointSlices` to link them to their owning `EndpointSelector`. The existing
-`kubernetes.io/service-name` label only links to the `Service` and is not
-sufficient for slices owned by an `EndpointSelector` without a `Service` owner.
-The new label will be added for all `EndpointSlices` regardless of whether they
-are owned by a `Service` or an `EndpointSelector`, to allow tooling to identify
-the owning `EndpointSelector` for any given slice. `EndpointSelector` names
-must be safe to use as Kubernetes label values, just as `Service` names are
-safe to use in the existing `kubernetes.io/service-name` label. Validation
-uses the same name constraints as `Service` unless a different label-safe
-linking mechanism is selected before implementation.
+Service-owned EndpointSlices retain their current owner references, labels, and
+metadata propagation. EndpointSlices produced for an explicitly created
+EndpointSelector are owned by that EndpointSelector and carry the
+`kubernetes.io/endpoint-selector-name` label. The controller does not infer
+EndpointSlice ownership from an EndpointSelector's owner reference.
 
 ### New Service EndpointSelector Controller
 
 A new `service-endpointselector-controller` in `pkg/controller` creates and
 deletes an `EndpointSelector` for each `Service` with a pod selector. The
-`Service` remains the source of truth; the `EndpointSelector` is derived from
-it and deleted when the `Service` is deleted. The controller is enabled by the
-`EndpointSelector` feature gate in `kube-controller-manager`.
+projection is owned by its Service and deleted when the Service is deleted. The
+controller is enabled by the `EndpointSelector` feature gate in
+`kube-controller-manager`.
 
-The controller reconciles Service-owned `EndpointSelector` objects using plain
-`Create`/`Update`/`Delete` API calls, consistent with how the
-`endpointslice-controller` manages `EndpointSlices`. The controller owns all
-fields derived from `Service` and overwrites direct user edits to those values.
-Fields not derived from `Service` (for example, labels or annotations added by
-other actors) are not cleared by the controller.
-
-If the controller encounters an `EndpointSelector` with the deterministic name
-that is not owned by this `Service`, it deletes and recreates it, mirroring
-the existing `endpointslice-controller` behavior: unowned `EndpointSlices` are
-deleted rather than adopted (see
-`staging/src/k8s.io/endpointslice/reconciler.go`). `EndpointSelector` creation
-is asynchronous, consistent with how `EndpointSlices` are managed today.
+The controller reconciles projections using plain `Create`/`Update`/`Delete`
+API calls. It owns projection fields derived from Service and restores those
+fields after direct edits. Projection writes are asynchronous and independent
+from the Service EndpointSlice controller.
 
 ### Metadata Propagation
 
-Today, the `endpointslice-controller` copies non-reserved `Service` labels to
-the `EndpointSlices` it creates. When this feature gate is enabled,
-`EndpointSelector` becomes the source object for `EndpointSlices`, so the
-`endpointslice-controller` copies non-reserved labels from the
-`EndpointSelector` to generated `EndpointSlices`. The controller continues to
-own reserved EndpointSlice labels (the full list must be confirmed against the
-`endpointslice-controller` source before this KEP moves to implementable)
-including at minimum `kubernetes.io/service-name`,
-`endpointslice.kubernetes.io/managed-by`, and
-`kubernetes.io/endpoint-selector-name`.
+Service reconciliation continues to copy Service labels to Service-owned
+EndpointSlices. For an explicitly created EndpointSelector, non-reserved labels
+on the EndpointSelector are copied to its EndpointSlices. The controller owns
+`kubernetes.io/endpoint-selector-name` and other reserved EndpointSlice labels.
+This KEP does not introduce general annotation propagation.
 
-For the Service compatibility path, the `service-endpointselector-controller`
-copies non-reserved `Service` labels to the derived `EndpointSelector`. The
-label propagation chain is therefore:
-`Service` → Service-owned `EndpointSelector` → Service-owned `EndpointSlices`.
-This preserves the existing observable behavior for `EndpointSlices` generated
-for `Services`, while keeping the `endpointslice-controller` responsible for
-copying metadata from the source object it reconciles.
+### Service Projection Mapping
 
-Directly created `EndpointSelector` objects use the same rule: non-reserved
-labels on the `EndpointSelector` are propagated to generated `EndpointSlices`.
-This KEP does not introduce general annotation propagation; annotations that
-affect EndpointSlice behavior, such as topology-related configuration, are
-handled as explicit spec fields or implementation-specific controller inputs
-rather than copied wholesale.
+The projection makes backend-selection data referenceable while leaving Service
+EndpointSlice behavior on its existing path.
 
-### Service Compatibility Matrix
-
-For the compatibility path, existing `Service` behavior is preserved. The
-derived `EndpointSelector` is an implementation detail that lets the
-`endpointslice-controller` reconcile from a smaller source object without
-changing the observable `Service` → `EndpointSlice` contract.
-
-| Existing `Service` behavior | `EndpointSelector` compatibility behavior |
+| Service input | Projection behavior |
 | :--- | :--- |
-| `Service.spec.selector == nil` | No `EndpointSelector` is created; the `Service` remains selectorless/manual. |
-| `Service.type == ExternalName` | No `EndpointSelector` is created and no `EndpointSlices` are produced by this controller. |
-| Non-nil `Service.spec.selector` with equality-based labels | The `service-endpointselector-controller` creates or updates a Service-owned `EndpointSelector` with equivalent `matchLabels`. |
-| `Service.spec.selector` updated | The Service-owned `EndpointSelector` is updated; the `endpointslice-controller` reconciles additions and removals. |
-| `Service.spec.ports[]` | Service frontend ports are not exposed on `EndpointSelector`. The compatibility path preserves existing EndpointSlice port output, including target-port resolution, protocol, port name, and `appProtocol`. |
-| Named `Service.spec.ports[].targetPort` | The `service-endpointselector-controller` copies `targetPort` verbatim to `EndpointSelectorPort.port` (an `IntOrString`). The `endpointslice-controller` resolves named port strings per-pod when generating `EndpointSlices`, preserving existing behavior. |
-| Headless `Service` with no ports | Existing empty EndpointSlice port-list behavior is preserved. Direct `EndpointSelector` objects can also omit `spec.ports`. |
-| `publishNotReadyAddresses` | Matching pods are represented in EndpointSlices and endpoint conditions mirror current Service behavior; setting this field affects the generated `ready` condition for not-ready pods. |
-| Pod readiness, termination, node, zone, and hostname changes | Generated endpoint conditions and metadata remain functionally equivalent to pre-gate EndpointSlices. |
-| Service labels copied to EndpointSlices | Existing Service label propagation remains unchanged: non-reserved Service labels are copied to the derived `EndpointSelector`, then copied by the `endpointslice-controller` to Service-owned EndpointSlices. |
-| `kubernetes.io/service-name` label and `Service` ownerRef | Preserved for Service-backed EndpointSlices so existing consumers and tooling continue to work. |
-| `Service.spec.trafficDistribution` and topology hint behavior | Existing hint behavior is preserved. The `service-endpointselector-controller` copies `trafficDistribution` to `EndpointSelector.spec.trafficSettings.trafficDistribution`; the `endpointslice-controller` produces the same EndpointSlice hints as before the gate. |
-| Service IP family/address-type behavior | Existing EndpointSlice address-type selection is preserved for Service-backed slices: the `service-endpointselector-controller` copies `Service.spec.ipFamilies` to the derived `EndpointSelector.spec.ipFamilies`. Direct `EndpointSelector` objects use `spec.ipFamilies` to control which address families are produced; if unset, the controller generates one `EndpointSlice` per address family present in matching pod addresses. |
-| `Service` deletion | The derived `EndpointSelector` is deleted, and Service-owned `EndpointSlices` are garbage collected as they are today. |
+| `Service.spec.selector == nil` or `Service.type == ExternalName` | No projection is created. |
+| Non-nil `Service.spec.selector` | The projection uses equivalent `matchLabels`. |
+| `Service.spec.selector` updated | The projection updates; Service EndpointSlices continue to reconcile directly from Service. |
+| `Service.spec.ports[].targetPort` | The projection copies the target port verbatim. |
+| `Service.spec.ipFamilies` | The projection copies the requested IP families. |
+| `Service` deletion | The projection is garbage collected; Service EndpointSlices follow their existing lifecycle. |
 
 ### Edge Cases and Deferred Design Decisions
 
@@ -643,11 +504,10 @@ required-selector constraint clearer. Both `matchLabels` and
 with SIG Network before moving to implementable, as a pointer type would change
 validation behavior.
 
-`spec.selector` is mutable for manually created `EndpointSelector` objects.
-Changing it retargets the managed `EndpointSlices`, matching the mutability of
-`Service.spec.selector`. For Service-owned `EndpointSelector` objects, direct
-user edits to the selector are reconciled back to the Service-derived value by
-the `service-endpointselector-controller`.
+`spec.selector` is mutable for explicitly created `EndpointSelector` objects.
+Changing it retargets their managed `EndpointSlices`. For Service-derived
+projections, the service-endpointselector-controller restores selector edits
+from the Service.
 
 Set-based selection (`matchExpressions`) for `Service` users is a separate
 concern. `Service.spec.selector` remains `map[string]string`; how `Service`
@@ -655,12 +515,9 @@ users opt into set-based selection (for example, via a future
 `Service.spec.selectorRef`) is deferred to a follow-on KEP and is not part of
 this proposal.
 
-`EndpointSelectorPort.port` is typed as `intstr.IntOrString`, mirroring
-`Service.spec.ports[].targetPort`. The `endpointslice-controller` resolves
-named port strings per-pod when generating `EndpointSlices` by matching against
-`pod.spec.containers[].ports[].name`. The `service-endpointselector-controller`
-copies `Service.spec.ports[].targetPort` verbatim without resolving it, keeping
-named-port resolution in the controller that already watches pods.
+`EndpointSelectorPort.targetPort` is typed as `intstr.IntOrString`. The
+endpointslice-controller resolves named target ports per Pod when generating
+EndpointSlices by matching `pod.spec.containers[].ports[].name`.
 
 ### Controller-Managed Conventions
 
@@ -684,11 +541,9 @@ changes necessary to implement this enhancement.
 
 ##### Prerequisite testing updates
 
-Existing `endpointslice-controller` unit tests are tightly coupled to `Service`
-as the reconciliation source. Before `EndpointSelector` support is added, those
-tests must be refactored to work against the new `EndpointSliceSource`
-interface, so that new tests can cover both sources without duplicating test
-infrastructure.
+Existing endpointslice-controller tests cover Service reconciliation. New tests
+must preserve that coverage and add EndpointSelector reconciliation coverage
+without changing the Service test contract.
 
 ##### Unit tests
 
@@ -712,22 +567,17 @@ percentages will be filled in before the release is targeted.
 | Pod with labels matching an `EndpointSelector` deleted | Address removed from `EndpointSlice` |
 | Pod transitions from not-ready to ready | Endpoint `ready` and `serving` conditions updated to true |
 | Pod transitions from ready to not-ready | Endpoint `ready` and `serving` conditions updated to false |
-| `EndpointSelector` with `publishNotReadyAddresses: true` | Not-ready pod endpoint has `ready: true` while `serving` reflects pod readiness |
 | `EndpointSelector` deleted | Owned `EndpointSlices` garbage collected |
 | `EndpointSelector` with non-reserved labels | Generated `EndpointSlices` carry those labels |
 | `EndpointSelector` with reserved EndpointSlice labels | Generated `EndpointSlices` use controller-owned reserved label values |
-| `EndpointSelector` with `ownerReference` pointing to a `Service` | `EndpointSlice` carries `kubernetes.io/service-name` label and `Service` ownerRef |
-| `EndpointSelector` with `ownerReference` pointing to non-`Service` | `EndpointSlice` carries no `kubernetes.io/service-name`; ownerRef points to `EndpointSelector` |
-| Any `EndpointSlice` produced by `endpointslice-controller` | Carries `kubernetes.io/endpoint-selector-name` label |
+| Explicitly created `EndpointSelector` with an owner reference | `EndpointSlice` ownerRef points to `EndpointSelector` |
+| `EndpointSlice` produced from an `EndpointSelector` | Carries `kubernetes.io/endpoint-selector-name` label |
 | `Service` with pod selector created | `service-endpointselector-controller` creates a corresponding `EndpointSelector` |
-| `Service` with non-reserved labels created | Derived `EndpointSelector` carries those labels; generated `EndpointSlices` preserve existing Service label propagation behavior |
 | `Service` with nil pod selector created | No `EndpointSelector` created |
 | `Service` selector updated | Corresponding `EndpointSelector` updated to match |
-| User edits Service-owned `EndpointSelector` fields derived from `Service` | `service-endpointselector-controller` restores the Service-derived values |
-| `Service` with named `targetPort` created | Service-backed `EndpointSlices` preserve existing named-port resolution |
-| Service-backed compatibility matrix scenarios | `EndpointSlices` remain functionally equivalent to pre-gate output |
+| User edits projection fields derived from `Service` | `service-endpointselector-controller` restores the Service-derived values |
+| `Service` with named `targetPort` created | Projection keeps the target port value unchanged |
 | `Service` with pod selector deleted | Corresponding `EndpointSelector` deleted |
-| `spec.trafficSettings.trafficDistribution` set | Value propagated into `EndpointSlice` hints |
 | Feature gate disabled, `EndpointSelector` object submitted | API server rejects |
 | Feature gate disabled, controllers running | `EndpointSelector` objects not reconciled |
 
@@ -739,15 +589,11 @@ percentages will be filled in before the release is targeted.
   `EndpointSlice` conditions within the expected latency bound.
 - `EndpointSelector` deleted → all owned `EndpointSlices` garbage collected.
 - `Service` with pod selector created → `service-endpointselector-controller`
-  creates a corresponding `EndpointSelector`; `endpointslice-controller`
-  produces `EndpointSlices` functionally equivalent to the pre-gate output.
-- Service labels are copied to the derived `EndpointSelector`, and
-  non-reserved `EndpointSelector` labels are copied to generated
-  `EndpointSlices`.
-- Direct edits to Service-owned `EndpointSelector` fields derived from
-  `Service` are reconciled back to the Service-derived values.
-- `Service` deleted → corresponding `EndpointSelector` deleted →
-  `EndpointSlices` garbage collected.
+  creates a corresponding projection without creating duplicate EndpointSlices.
+- Direct edits to projection fields derived from Service are reconciled back to
+  the Service-derived values.
+- `Service` deleted → corresponding projection deleted; Service EndpointSlices
+  follow their existing lifecycle.
 - Feature gate toggled off → API server rejects new `EndpointSelector` objects;
   existing `Service`-backed `EndpointSlices` remain current.
 - Feature gate toggled off then on → controllers resume reconciliation; drifted
@@ -762,13 +608,9 @@ Links will be added once test files are created in `kubernetes/kubernetes`:
 - `EndpointSelector` created in a live cluster → `EndpointSlices` exist and
   reflect matching pods by name, IP, and endpoint readiness conditions.
 - `Service` with a pod selector auto-creates a corresponding `EndpointSelector`
-  (compatibility path); existing `EndpointSlices` for that `Service` are
-  functionally unchanged.
+  projection without creating duplicate EndpointSlices.
 - Controller-managed `EndpointSelector` with an `ownerReference` is garbage
   collected when the owning resource is deleted.
-- `publishNotReadyAddresses: true` causes not-ready pod endpoints to have
-  `ready: true` in a live cluster while `serving` continues to reflect actual
-  pod readiness.
 
 Links will be added once test files are created in `kubernetes/kubernetes`:
 [SIG Network](https://testgrid.k8s.io/sig-network?include-filter-by-regex=EndpointSelector),
@@ -781,21 +623,19 @@ Links will be added once test files are created in `kubernetes/kubernetes`:
 - `EndpointSelector` API type in `discovery.k8s.io/v1alpha1` defined,
   registered, and validated (including `matchExpressions` and empty selector
   rejection).
-- `endpointslice-controller` refactored to reconcile from `EndpointSelector`
-  objects when the `EndpointSelector` feature gate is enabled.
+- `endpointslice-controller` reconciles `EndpointSelector` objects while
+  retaining Service reconciliation.
 - `service-endpointselector-controller` creates and deletes an
   `EndpointSelector` for each `Service` with a pod selector.
 - Open questions from the Design Details resolved before moving to
-  implementable: ownership chain, structural seam, migration switchover,
-  orphaned resource enforcement, name validation, and Service-owned field
-  ownership strategy.
+  implementable: projection naming, projection field ownership, orphaned
+  resource enforcement, and name validation.
 - Unit and integration tests covering: `EndpointSelector` creation →
   `EndpointSlice` generation; pod readiness condition transitions;
   `EndpointSelector` deletion → `EndpointSlice` garbage collection;
-  EndpointSelector-to-EndpointSlice label propagation; Service compatibility
-  matrix scenarios; Service-owned `EndpointSelector` direct edits reconciled
-  back to Service-derived values; feature gate off → API server rejects
-  `EndpointSelector` objects.
+  EndpointSelector-to-EndpointSlice label propagation; Service projection
+  mapping; projection edits reconciled back to Service-derived values; feature
+  gate off → API server rejects `EndpointSelector` objects.
 - Basic e2e tests enabled (not required to be in Testgrid for Alpha).
 
 #### Beta
@@ -823,31 +663,23 @@ Links will be added once test files are created in `kubernetes/kubernetes`:
 
 ### Upgrade / Downgrade Strategy
 
-**Enabling the feature gate.** The `EndpointSelector` feature gate may be
-enabled on `kube-controller-manager` while `kube-apiserver` nodes are still
-being upgraded. If the `EndpointSelector` API is not yet available on all
-apiserver nodes, the `endpointslice-controller` detects this via informer
-registration errors and falls back to `Service`-watching until the API is
-available fleet-wide (see [Version Skew Strategy](#version-skew-strategy)).
-`EndpointSlices` remain current throughout the upgrade window. As apiservers
-are upgraded, the `service-endpointselector-controller` creates an
-`EndpointSelector` for each `Service` with a pod selector and the
-`endpointslice-controller` transitions to `EndpointSelector`-watching
-automatically.
+**Enabling the feature gate.** The EndpointSelector API and controller are
+enabled together. The EndpointSlice controller retains Service reconciliation
+throughout the rollout. Once the EndpointSelector API is available,
+explicitly-created EndpointSelectors begin reconciliation and the
+service-endpointselector-controller begins creating Service projections.
 
 **Disabling the feature gate.** The API server stops accepting new
 `EndpointSelector` objects and the controllers stop reconciling them. Existing
-`EndpointSelector` objects remain in etcd but are ignored. The
-`endpointslice-controller` returns to reconciling `EndpointSlices` directly
-from `Service` objects, so `Service`-backed slices remain current.
-`EndpointSlices` owned by manually created `EndpointSelector` objects stop
-being updated until the gate is re-enabled.
+`EndpointSelector` objects remain in etcd but are ignored. Service EndpointSlice
+reconciliation continues unchanged. EndpointSlices owned by explicitly created
+EndpointSelectors stop being updated until the gate is re-enabled.
 
 **Re-enabling after rollback.** The controllers resume reconciliation. The
 `service-endpointselector-controller` syncs all `Services` and creates any
-missing `EndpointSelector` objects. The `endpointslice-controller` reconciles
-all `EndpointSelector` objects, bringing any drifted `EndpointSlices` back into
-sync without manual intervention.
+missing projections. The endpointslice-controller reconciles explicitly created
+EndpointSelectors, bringing their drifted EndpointSlices back into sync without
+manual intervention.
 
 ### Version Skew Strategy
 
@@ -981,7 +813,7 @@ No APIs, fields, flags, or features are deprecated at Alpha.
 
 At GA, documentation for the shadow-`Service` pattern — creating a headless
 `Service` solely to generate `EndpointSlices` — will be updated to recommend
-`EndpointSelector` instead.
+`EndpointSelector` for that backend-selection use case.
 
 ### Monitoring Requirements
 
@@ -1062,9 +894,8 @@ benchmarked before Beta.
 
 Yes: `EndpointSelector` (`discovery.k8s.io/v1alpha1`), namespace-scoped.
 
-For the `Service` compatibility path, one `EndpointSelector` object is created
-per `Service` with a pod selector. Explicit testing targets will be defined and
-validated as part of Beta.
+For each selector-based Service, one EndpointSelector projection is created.
+Explicit testing targets will be defined and validated as part of Beta.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
@@ -1073,8 +904,8 @@ No.
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
 New `EndpointSelector` objects are written to etcd, each roughly the same
-size as a `Service` object. For the `Service` compatibility path, one
-`EndpointSelector` is created per `Service` with a pod selector.
+size as a `Service` object. One projection is created per selector-based
+Service.
 
 The total `EndpointSlice` count does not increase for the Service projection
 path — the same slices continue to be produced directly from `Service`.
@@ -1091,7 +922,7 @@ validate the additional controller and informer load.
 `kube-controller-manager` gains a new informer cache for `EndpointSelector`
 objects. Memory overhead is proportional to the number of `EndpointSelector`
 objects — the same order of magnitude as the existing `Service` informer cache
-for the compatibility path.
+for Service projections.
 
 CPU overhead from the `service-endpointselector-controller` is proportional
 to `Service` churn rate. Writes are gated on diffs, so steady-state cost is
@@ -1099,8 +930,8 @@ low. Formal benchmarks will be completed before Beta.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
-No. Service-backed `EndpointSlices` remain functionally equivalent from
-`kube-proxy`'s perspective. `EndpointSlices` created for direct
+No. Service EndpointSlices remain functionally equivalent from `kube-proxy`'s
+perspective. `EndpointSlices` created for direct
 `EndpointSelector` consumers do not require new node-level resources.
 
 ### Troubleshooting
@@ -1169,10 +1000,8 @@ verify the feature gate is enabled on both `kube-apiserver` and
 - `EndpointSelector` partially overlaps with `Service`. Users may be unsure
   which to use, especially when `Service` semantics are mostly — but not
   entirely — unwanted.
-- Auto-creating one `EndpointSelector` per `Service` (the compatibility path)
-  roughly doubles the number of objects the selector-reconciliation machinery
-  tracks, increasing `kube-controller-manager` memory and API server load
-  proportionally.
+- Creating one EndpointSelector projection per selector-based Service increases
+  `kube-controller-manager` memory and API server object count proportionally.
 - The [GEP-4731] experimental track may converge faster than the KEP process.
   If Gateway API implementations standardize on `XEndpointSelector` before this
   KEP reaches GA, migrating them to the upstream API becomes a coordination
