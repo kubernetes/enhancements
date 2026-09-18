@@ -195,13 +195,26 @@ func containsNormalized(list []string, user string) bool {
 
 // VerifyKEP verifies a single kep.yaml file and returns any violations found.
 func VerifyKEP(kepYAMLPath string) ([]Violation, error) {
+	return verifyKEP(kepYAMLPath, nil)
+}
+
+func verifyKEP(kepYAMLPath string, techLeads map[string]bool) ([]Violation, error) {
 	root, err := parseKEPRoot(kepYAMLPath)
 	if err != nil {
 		return nil, err
 	}
 
 	assignedReviewers := assignedUsers(mappingValue(root, "reviewers"), reviewerMarker)
-	assignedApprovers := assignedUsers(mappingValue(root, "approvers"), approverMarker)
+	approvers := mappingValue(root, "approvers")
+	assignedApprovers := assignedUsers(approvers, approverMarker)
+	var listedApprovers []string
+	if approvers != nil && approvers.Kind == yaml.SequenceNode {
+		for _, approver := range approvers.Content {
+			if approver.Kind == yaml.ScalarNode {
+				listedApprovers = append(listedApprovers, normalizeUser(approver.Value))
+			}
+		}
+	}
 
 	ownersPath := filepath.Join(filepath.Dir(kepYAMLPath), "OWNERS")
 	ownersData, err := os.ReadFile(ownersPath)
@@ -272,7 +285,8 @@ func VerifyKEP(kepYAMLPath string) ([]Violation, error) {
 		}
 	}
 	for _, u := range owners.Approvers {
-		if !containsNormalized(assignedApprovers, normalizeUser(u)) {
+		user := normalizeUser(u)
+		if !containsNormalized(assignedApprovers, user) && (!techLeads[user] || !containsNormalized(listedApprovers, user)) {
 			violations = append(violations, Violation{
 				KEPPath: kepYAMLPath,
 				Role:    approverRole,
@@ -289,6 +303,19 @@ func VerifyKEP(kepYAMLPath string) ([]Violation, error) {
 // kep.yaml and aggregates the violations from each.
 func VerifyAll(rootDir string) ([]Violation, error) {
 	return walkKEPs(rootDir, VerifyKEP)
+}
+
+// VerifyAllWithTechLeads verifies KEPs while allowing listed SIG Node tech leads
+// to be unmarked approvers.
+func VerifyAllWithTechLeads(rootDir, ownersAliasesPath string) ([]Violation, error) {
+	techLeads, err := loadTechLeads(ownersAliasesPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return walkKEPs(rootDir, func(path string) ([]Violation, error) {
+		return verifyKEP(path, techLeads)
+	})
 }
 
 // ownersAliasesFile is the minimal shape of an OWNERS_ALIASES file needed to
@@ -460,12 +487,12 @@ func VerifyTechLeadApprovers(kepYAMLPath string, techLeads map[string]bool, upco
 			})
 		}
 		for _, e := range entries {
-			if e.Marked {
+			if e.Marked && !techLeads[e.User] {
 				violations = append(violations, Violation{
 					KEPPath: kepYAMLPath,
 					Role:    approverRole,
 					User:    e.User,
-					Reason:  "alpha-stage KEP must not use # sig-node-assigned-approver marker",
+					Reason:  "alpha-stage KEP must not use # sig-node-assigned-approver marker for a non-tech-lead approver",
 				})
 			}
 		}

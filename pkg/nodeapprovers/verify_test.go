@@ -144,6 +144,16 @@ func TestVerifyKEP(t *testing.T) {
 	}
 }
 
+func TestVerifyKEPWithTechLeads(t *testing.T) {
+	violations, err := verifyKEP(filepath.Join("testdata", "no-markers", "kep.yaml"), techLeadsFixture)
+	require.NoError(t, err)
+	require.ElementsMatch(t, violationsFor("no-markers", Violation{
+		Role:   reviewerRole,
+		User:   "tallclair",
+		Reason: "listed in OWNERS but not annotated as sig-node-assigned-reviewer in kep.yaml",
+	}), violations)
+}
+
 func TestVerifyAll(t *testing.T) {
 	violations, err := VerifyAll("testdata")
 	require.NoError(t, err)
@@ -242,7 +252,7 @@ func TestVerifyTechLeadApprovers(t *testing.T) {
 		want []Violation
 	}{
 		{
-			name: "alpha with tech lead is valid",
+			name: "alpha with marked tech lead is valid",
 			dir:  "alpha-valid",
 		},
 		{
@@ -256,13 +266,13 @@ func TestVerifyTechLeadApprovers(t *testing.T) {
 			),
 		},
 		{
-			name: "alpha with disallowed marker",
+			name: "alpha with marked non-tech lead",
 			dir:  "alpha-marker-not-allowed",
 			want: techLeadViolationsFor("alpha-marker-not-allowed",
 				Violation{
 					Role:   approverRole,
 					User:   "tallclair",
-					Reason: "alpha-stage KEP must not use # sig-node-assigned-approver marker",
+					Reason: "alpha-stage KEP must not use # sig-node-assigned-approver marker for a non-tech-lead approver",
 				},
 			),
 		},
@@ -358,7 +368,7 @@ func TestVerifyAllTechLeadApprovers(t *testing.T) {
 		Violation{
 			Role:   approverRole,
 			User:   "tallclair",
-			Reason: "alpha-stage KEP must not use # sig-node-assigned-approver marker",
+			Reason: "alpha-stage KEP must not use # sig-node-assigned-approver marker for a non-tech-lead approver",
 		},
 	)...)
 	want = append(want, techLeadViolationsFor("beta-alias-invalid",

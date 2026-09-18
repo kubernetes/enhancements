@@ -27,17 +27,19 @@ import (
 	"k8s.io/enhancements/pkg/nodeapprovers"
 )
 
-// TestNodeApprovers verifies that every kep.yaml reviewer/approver annotated
-// with the sig-node-assigned-reviewer / sig-node-assigned-approver inline
-// comment is listed in the neighboring OWNERS file. It runs over the real
-// keps/ tree and is exercised automatically in CI via hack/test-go.sh.
+// TestNodeApprovers verifies that each assigned reviewer/approver and listed
+// SIG Node tech lead is listed in the neighboring OWNERS file. It runs over
+// the real keps/ tree and is exercised automatically in CI via hack/test-go.sh.
 func TestNodeApprovers(t *testing.T) {
 	wd, err := os.Getwd()
 	require.Nil(t, err)
 
 	rootDir := filepath.Dir(wd)
 
-	violations, err := nodeapprovers.VerifyAll(filepath.Join(rootDir, "keps"))
+	violations, err := nodeapprovers.VerifyAllWithTechLeads(
+		filepath.Join(rootDir, "keps"),
+		filepath.Join(rootDir, "OWNERS_ALIASES"),
+	)
 	require.Nil(t, err)
 
 	if len(violations) > 0 {
@@ -55,9 +57,9 @@ func TestNodeApprovers(t *testing.T) {
 
 // TestNodeTechLeadApprovers verifies that every KEP under keps/sig-node lists an
 // acceptable approver per the stage-dependent rules: alpha-stage KEPs must list a
-// sig-node-tech-leads member (and must not use the # sig-node-assigned-approver
-// marker), while non-alpha KEPs must list a sig-node-tech-leads member or an
-// approver marked # sig-node-assigned-approver. It runs over the real
+// sig-node-tech-leads member, while non-alpha KEPs must list a
+// sig-node-tech-leads member or an approver marked # sig-node-assigned-approver.
+// It runs over the real
 // keps/sig-node tree using the repo-root OWNERS_ALIASES and is exercised
 // automatically in CI via hack/test-go.sh.
 func TestNodeTechLeadApprovers(t *testing.T) {

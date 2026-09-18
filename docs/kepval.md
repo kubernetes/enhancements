@@ -20,5 +20,5 @@ As per [Scaling up KEP approvers](https://github.com/kubernetes/community/blob/m
 Every SIG Node KEP must list at least one `sig-node-tech-leads` member
 (from `OWNERS_ALIASES`) or an approver annotated with
 `# sig-node-assigned-approver` under `approvers:`. Active alpha KEPs must list
-a tech lead and must not use the `# sig-node-assigned-approver` marker.
+a tech lead; tech leads may, but need not, use the marker.
 
