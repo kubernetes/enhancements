@@ -33,6 +33,10 @@
     - [Eviction Manager](#eviction-manager)
     - [Pod Overhead](#pod-overhead)
     - [Hugepages](#hugepages)
+    - [Node Swap Support](#node-swap-support)
+      - [Pod-Level Swap Eligibility and Calculation](#pod-level-swap-eligibility-and-calculation)
+      - [Container-Level Swap Behavior with Pod-Level Resources](#container-level-swap-behavior-with-pod-level-resources)
+      - [Examples](#examples)
     - [[Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)](#scoped-for-beta-in-136-fix-for-pod-level-limits-default-logic-issue-136120)
     - [[Scoped for Beta in 1.36] Fix for Kubelet QoS Class Determination (Issue 135082)](#scoped-for-beta-in-136-fix-for-kubelet-qos-class-determination-issue-135082)
     - [[Scoped for Beta] Cluster Autoscaler](#scoped-for-beta-cluster-autoscaler)
@@ -55,7 +59,7 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Phase 1: Alpha (target 1.32)](#phase-1-alpha-target-132)
     - [Phase 2:  Beta (target 1.34)](#phase-2--beta-target-134)
-    - [GA (stable)](#ga-stable)
+    - [GA (stable) (target 1.38)](#ga-stable-target-138)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -1189,6 +1193,216 @@ resources.
 
 Containers will still need to mount an emptyDir volume to access the huge page filesystem (typically /dev/hugepages).  This is the standard way for containers to interact with huge pages, and this will not change. 
 
+#### Node Swap Support
+
+Node Swap Support ([KEP-2400](https://kep.k8s.io/2400)) enables Kubernetes workloads on Linux nodes with cgroup v2 to utilize swap memory when configured via `MemorySwap.SwapBehavior` in the KubeletConfiguration (`NoSwap` or `LimitedSwap`). Because the Linux kernel enforces `memory.swap.max` hierarchically across parent and child cgroups, Pod-level resources integrate naturally with cgroup v2 swap enforcement by defining the pod's total swap budget on the Pod cgroup while allowing individual containers to either share that budget or enforce their own container-level swap limits.
+
+##### Pod-Level Swap Eligibility and Calculation
+
+When `MemorySwap.SwapBehavior` is set to `LimitedSwap`, swap eligibility and limits at the Pod cgroup level are determined in a manner directly analogous to the existing container-level swap eligibility and calculation rules defined in [KEP-2400](https://kep.k8s.io/2400):
+
+* **Eligible Pods (analogous to KEP-2400 container-level eligibility):** Just as KEP-2400 allows a container to use swap if and only if it belongs to a non-critical `Burstable` pod, has a memory request greater than `0`, and has `ContainerMemoryRequest != ContainerMemoryLimit`, a pod is eligible for swap at the pod level if and only if:
+  1. The Pod QoS class is `Burstable`,
+  2. The pod is not a critical pod,
+  3. The pod's effective memory request is greater than `0`, and
+  4. The pod's effective memory request does not equal its effective memory limit (`PodMemoryRequest != PodMemoryLimit`).
+* **Pod Swap Limit Formula:** For an eligible pod, the kubelet sets `memory.swap.max` on the Pod cgroup proportionally to the pod's effective memory request, using the same formula as KEP-2400:
+  $$\text{PodSwapLimit} = \left( \frac{\text{PodMemoryRequest}}{\text{NodeTotalMemory}} \right) \times \text{TotalPodsSwapAvailable}$$
+* **Ineligible Pods:** If `SwapBehavior` is `NoSwap`, or if the pod is `Guaranteed`, `BestEffort`, a critical pod, or has `PodMemoryRequest == PodMemoryLimit`, the Pod cgroup's `memory.swap.max` is set to `0` (`NoSwap`).
+
+##### Container-Level Swap Behavior with Pod-Level Resources
+
+The rules below apply **when `pod.spec.resources.requests.memory` is specified** on an eligible `Burstable` pod (where the Pod cgroup's `memory.swap.max` is set to $\text{PodSwapLimit} = \left(\frac{\text{PodMemoryRequest}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$). When `pod.spec.resources.requests.memory` is not set, existing [KEP-2400](https://kep.k8s.io/2400) container-level swap rules apply unchanged.
+
+###### Step 1: Identify Concurrently Running Containers and Container Lifecycle Rules
+
+In Linux cgroup v2, `memory.swap.max` is a **ceiling (limit)** on a cgroup rather than a pre-allocated reservation:
+* **What happens to swap when a container exits:** When a container's processes terminate, the Linux kernel destroys their address spaces (`exit_mmap()`) and **immediately frees all swapped-out anonymous pages** (`free_swap_and_cache()`), while the container runtime deletes the container's cgroup. Both the container cgroup's and the parent Pod cgroup's `memory.swap.current` drop back down automatically—kubelet never needs to dynamically update or "release" cgroup `memory.swap.max` values at runtime. *(Note: Only pages written to a shared in-memory `emptyDir` (`medium: Memory` / `tmpfs`) persist until those files are deleted or the pod terminates.)*
+
+Kubernetes supports four distinct container types within a Pod, and each participates in swap accounting according to its execution lifecycle:
+
+1. **Regular Containers (`pod.spec.containers`):**
+   * **Lifecycle:** Run concurrently for the lifetime of the pod.
+   * **Accounting in Step 2 (`SumOfContainerMemoryRequests` / `NumContainersWithoutMemoryRequest`):** **Included.**
+2. **Restartable Init Containers (`pod.spec.initContainers` with `restartPolicy: Always` — Sidecars):**
+   * **Lifecycle:** Start during pod initialization and **remain running for the entire lifetime of the pod alongside all regular containers**.
+   * **Accounting in Step 2 (`SumOfContainerMemoryRequests` / `NumContainersWithoutMemoryRequest`):** **Included** alongside regular containers. Because restartable sidecars run concurrently with regular containers for the pod's entire lifetime, their swap usage competes directly within the parent Pod cgroup; accounting for them in Step 2 ensures that the combined swap limits of all concurrently running containers never exceed $\text{PodSwapLimit}$ and never starve sibling containers.
+3. **Non-Restartable Init Containers (`pod.spec.initContainers` without `restartPolicy: Always` — Sequential Init):**
+   * **Lifecycle:** Execute strictly one at a time during pod initialization and **exit completely before any regular container (`pod.spec.containers`) starts**.
+   * **Accounting in Step 2 (`SumOfContainerMemoryRequests` / `NumContainersWithoutMemoryRequest`):** **Excluded.** Because non-restartable init containers have already terminated and freed their swap before regular containers start, including them in the calculation for concurrently running containers would permanently strand their share of the pod's swap budget for the lifetime of the pod.
+   * **Assigned cgroup `memory.swap.max` during initialization:**
+     * If the non-restartable init container specifies container-level `requests.memory` / `limits.memory`: standard KEP-2400 calculation (uses its own request if `request < limit`, or `0` (`NoSwap`) if `request == limit`).
+     * If it specifies neither `requests.memory` nor `limits.memory`:
+       * **When no restartable sidecars have started before it:** It is the sole running container in the pod and receives the full $\text{PodSwapLimit}$.
+       * **When restartable sidecar(s) have already started before it:** It runs concurrently with those already-started sidecar(s), so its effective memory share is the remaining pod memory request after subtracting the explicit requests of already-started sidecars, divided equally among itself and any already-started sidecars without requests/limits (preventing starvation of already-running sidecars during initialization).
+4. **Ephemeral Containers (`pod.spec.ephemeralContainers`):**
+   * **Lifecycle:** Added dynamically to an already-running pod for interactive debugging (`kubectl debug`); Kubernetes API validation disallows setting `resources` on ephemeral containers.
+   * **Assigned cgroup `memory.swap.max`:** Always **`0` (`NoSwap`)** (matching KEP-2400 behavior), ensuring that dynamically attaching a debug container never steals swap from running workload containers or requires mutating existing container cgroups.
+
+###### Step 2: Calculate the Equal Memory Share for Containers Without Requests
+
+Across all **concurrently running containers** (i.e., all regular containers in `pod.spec.containers` **plus** any restartable sidecar containers in `pod.spec.initContainers` with `restartPolicy: Always`), every container falls into one of two mutually exclusive categories:
+
+* **Containers with a memory request (explicit or defaulted from limit):** If a concurrently running container specifies `requests.memory` (or specifies `limits.memory`, which defaults `requests.memory = limits.memory`), its effective memory request is added to $\text{SumOfContainerMemoryRequests}$.
+* **Containers without a memory request or limit:** If a concurrently running container specifies **neither `requests.memory` nor `limits.memory`**, it is counted in $\text{NumContainersWithoutMemoryRequest}$.
+
+From these two quantities:
+* Let $\text{RemainingPodMemoryRequest}$ be the unallocated portion of the pod's memory request:
+  $$\text{RemainingPodMemoryRequest} = \text{PodMemoryRequest} - \text{SumOfContainerMemoryRequests}$$
+* When $\text{RemainingPodMemoryRequest} > 0$ and $\text{NumContainersWithoutMemoryRequest} > 0$, the remaining pod memory request is divided **equally** among all $\text{NumContainersWithoutMemoryRequest}$ containers:
+  $$\text{EqualContainerMemoryShare} = \frac{\text{RemainingPodMemoryRequest}}{\text{NumContainersWithoutMemoryRequest}}$$
+
+###### Step 3: Apply the Standard KEP-2400 Formula to Each Container
+
+Every container's swap limit is calculated using the same proportional formula as KEP-2400 ($\frac{\text{EffectiveMemoryRequest}}{\text{NodeTotalMemory}} \times \text{TotalPodsSwapAvailable}$).
+
+**Summary by Container Specification in YAML (Concurrently Running Containers):**
+
+The table below summarizes the resulting cgroup values (after standard API defaulting, where specifying only `limits.memory` defaults `requests.memory` to `limits.memory`):
+
+| Container Specification in YAML | Effective Container Values (After Defaulting) | Pod Cgroup `memory.swap.max` (For Eligible Pod) | Container Cgroup `memory.swap.max` (Without Pod-Level Resources) | Container Cgroup `memory.swap.max` (With Pod-Level Resources) | Resulting Behavior with Pod-Level Resources |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Neither `requests.memory` nor `limits.memory` set | `request = 0`, `limit = 0` | $\text{PodSwapLimit} = \left(\frac{\text{PodMemoryRequest}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ *(set for eligible pod; `0` (`NoSwap`) otherwise)* | `0` (`NoSwap`) | **If $\text{RemainingPodMemoryRequest} > 0$:** <br> $\left(\frac{\text{EqualContainerMemoryShare}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ <br><br> **If $\text{RemainingPodMemoryRequest} == 0$:** <br> `0` (`NoSwap`) | Container swap limit is set **only if there is unallocated pod memory request** ($\text{RemainingPodMemoryRequest} > 0$), dividing $\text{RemainingPodMemoryRequest}$ **equally** across all concurrently running containers without requests/limits. If container requests already consume the full pod request ($\text{RemainingPodMemoryRequest} == 0$), the container gets `0` (`NoSwap`). |
+| Only `limits.memory` set | `request = limit` (`> 0`) | $\text{PodSwapLimit}$ *(for eligible pod)* | `0` (`NoSwap`) | `0` (`NoSwap`) | Container request equals limit after defaulting; container is disallowed from using swap. |
+| Both `requests.memory` and `limits.memory` set, with `request == limit` | `request = limit` (`> 0`) | $\text{PodSwapLimit}$ *(for eligible pod)* | `0` (`NoSwap`) | `0` (`NoSwap`) | Container explicitly opts out of swap (`request == limit`). |
+| Both `requests.memory` and `limits.memory` set, with `request < limit` | `request > 0`, `request < limit` | $\text{PodSwapLimit}$ *(for eligible pod)* | $\left(\frac{\text{ContainerMemoryRequest}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ | $\left(\frac{\text{ContainerMemoryRequest}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ | Container swap usage is capped by its own proportional swap limit (and bounded by the parent Pod cgroup's `memory.swap.max`). |
+| Only `requests.memory` set | `request > 0`, `limit = 0` (`request != limit`) | $\text{PodSwapLimit}$ *(for eligible pod)* | $\left(\frac{\text{ContainerMemoryRequest}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ | $\left(\frac{\text{ContainerMemoryRequest}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ | Container swap usage is capped by its own proportional swap limit (and bounded by the parent Pod cgroup's `memory.swap.max`). |
+
+**Summary Across All Four Kubernetes Container Types:**
+
+| Container Type | Runs Concurrently with Regular Containers? | Counted in `SumOfContainerMemoryRequests` / `NumContainersWithoutMemoryRequest`? | `memory.swap.max` When Container Requests/Limits Are Set | `memory.swap.max` When Neither `requests.memory` nor `limits.memory` Is Set |
+| :--- | :--- | :--- | :--- | :--- |
+| **Regular Container** (`pod.spec.containers`) | **Yes** | **Yes** | Standard KEP-2400 (`0` if `req == lim`; proportional to `req` if `req < lim`) | Equal share of remaining pod memory request: $\left(\frac{\text{EqualContainerMemoryShare}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ |
+| **Restartable Init Container** (`initContainers` with `restartPolicy: Always`) | **Yes** (sidecar runs for entire pod lifetime) | **Yes** (treated identically to regular containers) | Standard KEP-2400 (`0` if `req == lim`; proportional to `req` if `req < lim`) | Equal share of remaining pod memory request: $\left(\frac{\text{EqualContainerMemoryShare}}{\text{NodeTotalMemory}}\right) \times \text{TotalPodsSwapAvailable}$ |
+| **Non-Restartable Init Container** (`initContainers` without `restartPolicy: Always`) | **No** (exits before regular containers start; kernel frees swap on exit) | **No** (excluded so exited init containers never strand swap) | Standard KEP-2400 (`0` if `req == lim`; proportional to `req` if `req < lim`) | $\text{PodSwapLimit}$ if running alone during init; or equal share of remaining pod memory request if running alongside already-started sidecars |
+| **Ephemeral Container** (`pod.spec.ephemeralContainers`) | **Dynamically attached** at runtime (`kubectl debug`) | **No** (cannot specify resources; cannot retroactively alter running cgroups) | N/A (API disallows setting `resources`) | **`0` (`NoSwap`)** |
+
+###### Rationale: Why Equal Division Was Chosen Over Alternatives
+
+When `pod.spec.resources.requests.memory` is specified and a concurrently running container has neither `requests.memory` nor `limits.memory` set, three design options were evaluated (illustrated below using a node with **40 GiB physical memory** and **20 GiB total swap available for pods**, where every **2 GiB** of memory request maps to **1 GiB** of swap):
+
+1. **Rejected Alternative 1 — Keep container swap disabled (`0` / `NoSwap`):**
+   * **Why rejected:** If containers without container-level requests/limits were left at `0` (`NoSwap`), then in a **pod-level-only pod** (the primary KEP-2837 use case where `pod.spec.resources` is specified and no container sets requests or limits), **every container would receive `memory.swap.max = 0`**, leaving the Pod cgroup's entire swap allocation ($\text{PodSwapLimit}$) 100% unusable despite the pod being `Burstable` and eligible for swap. Likewise, in a mixed pod, the swap budget corresponding to $\text{RemainingPodMemoryRequest}$ would be completely stranded and unused.
+   * **Concrete Failure Example (100% Stranded Swap Budget):** Consider a `Burstable` pod with `pod.spec.resources.requests.memory: 4Gi` and `limits.memory: 8Gi` ($\implies$ **Pod Cgroup `memory.swap.max` = `2 GiB`**) running two containers `app` and `sidecar` with no container-level requests or limits set. Under Alternative 1, both `app` and `sidecar` are assigned container cgroup `memory.swap.max = 0`. Even though the Pod cgroup has a `2 GiB` swap budget, the maximum swap the pod can ever use is $0 + 0 = \mathbf{0\text{ GiB}}$—leaving **100% (`2 GiB`) of the pod's swap budget permanently stranded**.
+2. **Rejected Alternative 2 — Set container swap to `max` or full unpartitioned `RemainingPodMemoryRequest` per container:**
+   * **Why rejected:** Because Linux cgroup v2 has no swap reservation floor (`memory.swap.min` / `memory.swap.low`) and all containers are direct children of the Pod cgroup, giving each unallocated container `max`—or even the full unpartitioned swap corresponding to $\text{RemainingPodMemoryRequest}$—would allow multiple unallocated containers to **collectively consume up to $\text{NumContainersWithoutMemoryRequest} \times$ the remaining swap budget** (or up to the entire $\text{PodSwapLimit}$). This combined usage would exhaust the Pod cgroup's `memory.swap.max` and **starve sibling containers that have explicit memory requests set**.
+   * **Concrete Failure Example (Sibling Container Starvation):** Consider a `Burstable` pod with `pod.spec.resources.requests.memory: 4Gi` and `limits.memory: 8Gi` ($\implies$ **Pod Cgroup `memory.swap.max` = `2 GiB`**) running 3 containers:
+     * `c1` (critical worker with explicit request): `requests.memory: 2Gi, limits.memory: 4Gi` $\implies$ earns a **`1 GiB`** swap limit ($0.5 \times 2\text{ GiB}$).
+     * `c2` and `c3` (two helper containers with no requests/limits): share $\text{RemainingPodMemoryRequest} = 4\text{ GiB} - 2\text{ GiB} = \mathbf{2\text{ GiB}}$, which corresponds to **`1 GiB`** of remaining swap budget ($0.5 \times 2\text{ GiB}$).
+     * Under Alternative 2, giving both `c2` and `c3` the full unpartitioned remaining swap budget (**`1 GiB` each**, or `max`) allows `c2` and `c3` to simultaneously swap out $1\text{ GiB} + 1\text{ GiB} = \mathbf{2\text{ GiB}}$. Because the parent Pod cgroup ceiling is **`2 GiB`**, `c2` + `c3` exhaust 100% of the Pod cgroup's swap limit—**starving `c1` down to `0 GiB` of available swap** and violating the `1 GiB` swap budget backed by `c1`'s explicit `2Gi` memory request.
+3. **Selected Design — Equal Division ($\frac{\text{RemainingPodMemoryRequest}}{\text{NumContainersWithoutMemoryRequest}}$) across concurrently running unallocated containers:**
+   * **No stranded pod swap:** 100% of the swap budget backed by $\text{RemainingPodMemoryRequest}$ (and 100% of $\text{PodSwapLimit}$ in pod-level-only pods) is usable by containers without explicit requests/limits.
+   * **Zero starvation of sibling containers:** Even if all unallocated containers simultaneously reach 100% of their `memory.swap.max`, their **combined** swap usage cannot exceed the swap budget corresponding to $\text{RemainingPodMemoryRequest}$—strictly protecting swap earned by sibling containers with explicit memory requests.
+   * **Strict KEP-2400 conservation invariant ($\sum \text{ContainerSwapLimit} \le \text{PodSwapLimit}$):** Every byte of container swap limit across all concurrently running containers remains backed 1-to-1 by accounted pod memory request, with purely static per-container cgroup creation and no new API fields or intermediate sub-cgroups.
+   * **Built-in user control:** If a workload author wants a non-equal split or wants a specific helper/sidecar container to never swap (`request == limit`), they can explicitly specify container-level `requests.memory` / `limits.memory` on that container.
+   * **Seamless fallback when $\text{RemainingPodMemoryRequest} == 0$:** When $\text{SumOfContainerMemoryRequests} == \text{PodMemoryRequest}$ (which is always true when Pod-Level Resources is not set, as well as when container requests consume the entire pod request), $\text{RemainingPodMemoryRequest} = 0$, so the container swap limit evaluates to **`0` (`NoSwap`)**—matching KEP-2400 behavior.
+
+##### Examples
+
+Assume a Linux node with **40 GiB physical memory** and **20 GiB total swap available for pods** (`MemorySwap.SwapBehavior: LimitedSwap`), so every **2 GiB** of memory request maps to **1 GiB** of swap ($\frac{\text{MemoryRequest}}{40\text{ GiB}} \times 20\text{ GiB} = 0.5 \times \text{MemoryRequest}$).
+
+**Example 1: Pod-level resources only (equal split of pod swap limit)**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-level-swap-shared
+spec:
+  resources:
+    requests:
+      memory: "4Gi"
+    limits:
+      memory: "8Gi"
+  containers:
+  - name: app
+    image: app:latest
+  - name: sidecar
+    image: sidecar:latest
+```
+
+* **Pod QoS:** `Burstable` (`requests.memory: 4Gi` $\neq$ `limits.memory: 8Gi`).
+* **Pod Cgroup `memory.swap.max`:** $0.5 \times 4\text{ GiB} = \mathbf{2\text{ GiB}}$.
+* **Remaining Pod Memory Request:** $4\text{ GiB} - 0 = 4\text{ GiB}$ across $\text{NumContainersWithoutMemoryRequest} = 2$ containers (`app`, `sidecar`) $\implies \text{EqualContainerMemoryShare} = \frac{4\text{ GiB}}{2} = \mathbf{2\text{ GiB}}$.
+* **Container `app` Cgroup `memory.swap.max`:** $0.5 \times 2\text{ GiB} = \mathbf{1\text{ GiB}}$.
+* **Container `sidecar` Cgroup `memory.swap.max`:** $0.5 \times 2\text{ GiB} = \mathbf{1\text{ GiB}}$.
+* **Effective Behavior:** `app` and `sidecar` each receive an equal **1 GiB** swap limit, and their combined maximum swap usage ($1\text{ GiB} + 1\text{ GiB} = \mathbf{2\text{ GiB}}$) matches the parent Pod cgroup's **2 GiB** swap limit.
+
+**Example 2: Mixed pod-level and container-level resources**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-level-swap-mixed
+spec:
+  resources:
+    requests:
+      memory: "4Gi"
+    limits:
+      memory: "8Gi"
+  containers:
+  - name: c1-latency-sensitive
+    image: cache:latest
+    resources:
+      requests:
+        memory: "1Gi"
+      limits:
+        memory: "1Gi"
+  - name: c2-bounded-worker
+    image: worker:latest
+    resources:
+      requests:
+        memory: "1Gi"
+      limits:
+        memory: "2Gi"
+  - name: c3-helper-a
+    image: helper:latest
+  - name: c4-helper-b
+    image: helper:latest
+```
+
+* **Pod QoS:** `Burstable` (`requests.memory: 4Gi` $\neq$ `limits.memory: 8Gi`).
+* **Pod Cgroup `memory.swap.max`:** $0.5 \times 4\text{ GiB} = \mathbf{2\text{ GiB}}$.
+* **Sum of Container Memory Requests:** $1\text{ GiB}\ (\texttt{c1}) + 1\text{ GiB}\ (\texttt{c2}) + 0\ (\texttt{c3}) + 0\ (\texttt{c4}) = 2\text{ GiB}$.
+* **Remaining Pod Memory Request:** $4\text{ GiB} - 2\text{ GiB} = \mathbf{2\text{ GiB}}$ across $\text{NumContainersWithoutMemoryRequest} = 2$ containers (`c3-helper-a`, `c4-helper-b`) $\implies \text{EqualContainerMemoryShare} = \frac{2\text{ GiB}}{2} = \mathbf{1\text{ GiB}}$.
+* **Container `c1-latency-sensitive` (`request == limit = 1Gi`):** Container cgroup `memory.swap.max` = **`0` (`NoSwap`)**. Never swaps.
+* **Container `c2-bounded-worker` (`request = 1Gi, limit = 2Gi`):** Container cgroup `memory.swap.max` = $0.5 \times 1\text{ GiB} = \mathbf{512\text{ MiB}}$.
+* **Containers `c3-helper-a` and `c4-helper-b` (no container memory request or limit):** Container cgroup `memory.swap.max` for each is calculated from its **1 GiB** equal share: $0.5 \times 1\text{ GiB} = \mathbf{512\text{ MiB}}$.
+  Even if both `c3-helper-a` and `c4-helper-b` simultaneously reach their maximum swap limit ($512\text{ MiB} + 512\text{ MiB} = \mathbf{1\text{ GiB}}$), their combined swap usage cannot exceed the **1 GiB** swap budget corresponding to $\text{RemainingPodMemoryRequest}$—guaranteeing that `c2-bounded-worker`'s **512 MiB** swap share is never starved.
+
+**Example 3: Pod with Init Containers — Short-Lived Sequential vs. Long-Lived Sidecar (`20Gi` Pod Request)**
+
+Consider a `Burstable` pod on the same node (`40 GiB` memory, `20 GiB` total swap available for pods) with `pod.spec.resources.requests.memory: 20Gi` (`limits.memory: 40Gi` $\implies$ **Pod Cgroup `memory.swap.max` = `10 GiB`**), 1 init container, and 4 regular containers (`c1`, `c2`, `c3`, `c4`) where `c1` specifies `requests.memory: 2Gi` (`limits.memory: 4Gi`) and `c2`, `c3`, `c4` specify no container-level resources:
+
+* **Case 3A — Short-Lived Sequential Init Container (`init-1`, no request/limit set):**
+  * **Phase 1 (Initialization — `init-1` runs alone):**
+    * Regular containers `c1`–`c4` have not started yet. `init-1` is the only running container in the pod and receives the pod's full swap limit (`memory.swap.max = 10 GiB`).
+    * When `init-1` finishes and exits, the Linux kernel immediately frees all of `init-1`'s swapped-out anonymous pages and deletes its cgroup, returning the Pod cgroup's `memory.swap.current` to `0`.
+  * **Phase 2 (Regular Execution — `c1`, `c2`, `c3`, `c4` run concurrently):**
+    * Exited `init-1` is excluded. $\text{RemainingPodMemoryRequest} = 20\text{ GiB} - 2\text{ GiB}\ (\texttt{c1}) = \mathbf{18\text{ GiB}}$ across $\text{NumContainersWithoutMemoryRequest} = 3$ containers (`c2`, `c3`, `c4`) $\implies \text{EqualContainerMemoryShare} = \frac{18\text{ GiB}}{3} = \mathbf{6\text{ GiB}}$.
+
+    | Concurrent Container | Effective Memory Share | Container Cgroup `memory.swap.max` |
+    | :--- | :--- | :--- |
+    | **`c1`** (`request = 2Gi`) | **`2 GiB`** | **`1 GiB`** |
+    | **`c2`** (no request) | $\frac{18\text{ GiB}}{3} =$ **`6 GiB`** | **`3 GiB`** |
+    | **`c3`** (no request) | $\frac{18\text{ GiB}}{3} =$ **`6 GiB`** | **`3 GiB`** |
+    | **`c4`** (no request) | $\frac{18\text{ GiB}}{3} =$ **`6 GiB`** | **`3 GiB`** |
+    | **Total across running containers (`c1`–`c4`)** | **`20 GiB`** | **`10 GiB`** *(== Pod Cgroup Limit)* |
+
+* **Case 3B — Long-Lived Restartable Sidecar Init Container (`sidecar-1` with `restartPolicy: Always`, no request/limit set):**
+  * `sidecar-1` stays alive for the entire lifetime of the pod alongside `c1`, `c2`, `c3`, `c4` (**5 concurrently running containers**).
+  * $\text{RemainingPodMemoryRequest} = 20\text{ GiB} - 2\text{ GiB}\ (\texttt{c1}) = \mathbf{18\text{ GiB}}$ across $\text{NumContainersWithoutMemoryRequest} = 4$ containers (`sidecar-1`, `c2`, `c3`, `c4`) $\implies \text{EqualContainerMemoryShare} = \frac{18\text{ GiB}}{4} = \mathbf{4.5\text{ GiB}}$.
+
+    | Concurrent Container | Effective Memory Share | Container Cgroup `memory.swap.max` |
+    | :--- | :--- | :--- |
+    | **`sidecar-1`** (`restartPolicy: Always`, no request) | $\frac{18\text{ GiB}}{4} =$ **`4.5 GiB`** | **`2.25 GiB`** |
+    | **`c1`** (`request = 2Gi`) | **`2 GiB`** | **`1 GiB`** |
+    | **`c2`** (no request) | $\frac{18\text{ GiB}}{4} =$ **`4.5 GiB`** | **`2.25 GiB`** |
+    | **`c3`** (no request) | $\frac{18\text{ GiB}}{4} =$ **`4.5 GiB`** | **`2.25 GiB`** |
+    | **`c4`** (no request) | $\frac{18\text{ GiB}}{4} =$ **`4.5 GiB`** | **`2.25 GiB`** |
+    | **Total across all 5 running containers** | **`20 GiB`** | **`10 GiB`** *(== Pod Cgroup Limit)* |
+
 #### [Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)
 
 The `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36) addresses a bug in current defaulting logic which only implements defaulting for Pod-level requests. However, per the Rows 10 and 12 of the resource matrix, if Pod-level limits are unset but all containers have limits defined, the Pod-level limits should be defaulted to the sum of the container limits. This fix implements the missing logic to ensure consistency between the KEP and the implementation.
@@ -1353,7 +1567,8 @@ necessary to implement this enhancement.
 This feature will touch multiple components. For alpha, unit tests coverage for following packages needs to be added:
 
 * Scheduler logic will be updated to consider pod-level requests. Hence pkg/scheduler will require additional coverage.
-* pkg/kubelet/cm will be updated to set pod-level cgroups using CPU requests and limits, and memory limits.
+* pkg/kubelet/cm will be updated to set pod-level cgroups using CPU requests and limits, memory limits, and swap limits (`memory.swap.max`).
+* pkg/kubelet/kuberuntime will be updated to handle container swap behavior when pod-level resources are specified.
 * pkg/apis/core/validation/types_test.go and pkg/apis/core/validation since new fields are added in PodSpec and also new validation rules are required for the new fields.
 * pkg/kubeapiserver/admission for changes made in the admission logic for
   LimitRanger and ResourceQuota admission controllers.
@@ -1376,6 +1591,7 @@ enforcement. We may replicate and/or move some of the E2E tests functionality in
 * Validate the containers with no limits set are throttled on CPU when CPU usage reaches Pod level CPU limits.
 * Validate the containers with no limits set are OOMKilled when memory usage
   reaches Pod level memory limits.
+* Validate Pod and container cgroup swap limits (`memory.swap.max`) and swap usage under `LimitedSwap` and `NoSwap` for pods with pod-level resources (pod-only and mixed pod/container specifications).
 * Test the correct values in TotalResourcesRequested.
 
 - [Pod Level Resources](https://github.com/ndixita/kubernetes/blob/master/test/e2e/common/node/pod_level_resources.go): [SIG Node](https://testgrid.k8s.io/sig-node-presubmits#pr-kubelet-serial-e2e-podresources), [triage search](https://storage.googleapis.com/k8s-triage/index.html?ci=0&pr=1&sig=node&job=pull-kubernetes-node-kubelet-serial-podresources)
@@ -1411,13 +1627,14 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
 * Resolve defaulting bugs via `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36). [Issue 136120](https://github.com/kubernetes/kubernetes/issues/136120)
 * Resolve Kubelet QoS class determination bugs via `PodLevelResourcesFixKubeletQOSClass` feature gate (Beta in 1.36). [Issue 135082](https://github.com/kubernetes/kubernetes/issues/135082)
 
-#### GA (stable)
+#### GA (stable) (target 1.38)
 
 * No major bugs reported for 3 months.
 * Pod Level Resources Support With In Place Pod Vertical Scaling KEP is past alpha.
 * User feedback (ideally from at least two distinct users) is green
 * Resource Allocation Managers i.e. Topology, Memory and CPU managers support with
   Pod-level resources is past alpha.
+* Node Swap Support with Pod-level resources.
 
 ### Upgrade / Downgrade Strategy
 
@@ -1757,7 +1974,7 @@ Recall that end users cannot usually observe component logs or access metrics.
 
 - [X] Other Field
   - pod.status.spec.resources[x]
-  - Inspect Cgroup Filesystem: cgroup fs for the pod will reflect the requests/limits at pod level in cpu.weight, cpu.max, memory.max cgroup files.
+  - Inspect Cgroup Filesystem: cgroup fs for the pod will reflect the requests/limits at pod level in `cpu.weight`, `cpu.max`, `memory.max`, and `memory.swap.max` cgroup files.
 
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
@@ -2000,6 +2217,7 @@ resource specs.
 - **2025-06-18:** Revised KEP for Beta
 - **2026-01-27:** Revised KEP for 1.36 to include fixes for issues 135082 and 136120.
 - **2026-06-08:** Revised KEP for GA in 1.37.
+- **2026-09-18:** Revised KEP for GA in 1.38 and added Node Swap Support.
 
 ## Drawbacks
 
