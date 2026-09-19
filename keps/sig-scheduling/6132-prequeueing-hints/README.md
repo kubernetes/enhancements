@@ -172,7 +172,11 @@ same generated claim.
 
 ### Feature Gate
 
-`SchedulerPreQueueingHints` (beta, default=true):
+`SchedulerPreQueueingHints`:
+- v1.37: alpha, default=false. (Initially targeted beta in v1.37, but
+  demoted to alpha late in the cycle after correctness bugs were found
+  in review — see Implementation History.)
+- v1.38: beta, default=true, once those bugs were fixed.
 - When disabled: `PreQueueingHintFn` is ignored, all pods are
   evaluated on every event (existing behavior).
 - When enabled: `PreQueueingHintFn` narrows the pod set before
@@ -199,7 +203,8 @@ requeue path.
   enabled and disabled.
 - DRA integration tests (`pull-kubernetes-dra-integration`) pass.
 - Integration test verifying PreQueueingHintFn correctly narrows
-  the pod set and that missed pods are rescued by periodic flush.
+  the pod set, and that pods not covered by a narrowed hint are still
+  requeued by subsequent relevant events.
 
 #### E2E Tests
 
@@ -230,10 +235,18 @@ needs to be revised to match the improvement.
 - [x] DRA plugin implements `PreQueueingHintFn` using pod informer
   index
 - [x] Deallocation handling (signal "evaluate all pods")
+- [x] Per-plugin narrowing: a plugin without a `PreQueueingHintFn`
+  (or one returning "evaluate all pods", or erroring) forces all pods
+  to be evaluated for that plugin, while other plugins' narrowing is
+  preserved
+- [x] CompositePodGroup support: a hinted pod is resolved to its root
+  entity (PodGroup or CompositePodGroup)
 - [x] Unit tests for all code paths
 - [x] E2E test for shared claim correctness
 - [x] `scheduler_perf` benchmark demonstrating improvement
 - [x] All e2e tests pass with feature enabled
+- [x] Correctness bugs found during the v1.37 alpha review addressed
+  (see Implementation History)
 
 #### GA
 
@@ -448,5 +461,15 @@ and evaluate it accordingly.
 
 ## Implementation History
 
-- 2026-05: Initial KEP for beta proposed
-  ([#138916](https://github.com/kubernetes/kubernetes/pull/138916))
+- 2026-05: Initial KEP proposed, targeting beta in v1.37
+  ([#138916](https://github.com/kubernetes/kubernetes/pull/138916)).
+- v1.37: Merged, but demoted from beta to **alpha** (default=false) late
+  in the cycle after post-merge review surfaced correctness bugs in the
+  narrowing logic
+  ([#140959](https://github.com/kubernetes/kubernetes/pull/140959)).
+- v1.38: Graduated to **beta** (default=true) via
+  [#141732](https://github.com/kubernetes/kubernetes/pull/141732),
+  which fixed the alpha correctness bugs — per-plugin narrowing so a
+  plugin without a `PreQueueingHintFn` no longer drops the pods other
+  plugins narrowed, and resolving a hinted pod to its CompositePodGroup
+  root — and re-promoted the feature gate to beta.
