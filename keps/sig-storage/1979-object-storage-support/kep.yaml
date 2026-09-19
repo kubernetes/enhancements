@@ -21,15 +21,19 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2019-11-25
-last-updated: 2025-09-04
+last-updated: 2026-09-22
 status: implementable
-stage: alpha
-latest-milestone: v1.36
+stage: beta
+latest-milestone: v1.38
 milestone:
   alpha: "v1.25" # v1alpha2 in v1.36
+  beta: "v1.38"
 
 feature-gates: # not applicable, out of tree
 disable-supported: true # not applicable, can be disabled by not installing or uninstalling
 
 # The following PRR answers are required at beta release
 metrics:
+  - operation_total_seconds
+  - operations_in_flight
+  - driver_operation_total_seconds
