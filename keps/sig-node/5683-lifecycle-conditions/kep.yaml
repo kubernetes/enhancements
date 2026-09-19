@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-apps
+  - sig-cli
 status: implementable
 creation-date: 2026-06-04
 reviewers:
@@ -25,7 +26,7 @@ replaces: []
 
 stage: alpha
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"
@@ -35,6 +36,7 @@ feature-gates:
     components:
       - kube-apiserver
       - kube-controller-manager
+      - kubectl
 disable-supported: true
 
 metrics: []
