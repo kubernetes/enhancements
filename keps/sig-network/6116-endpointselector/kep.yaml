@@ -1,0 +1,44 @@
+title: EndpointSelector
+kep-number: 6116
+authors:
+  - "@keithmattix"
+owning-sig: sig-network
+participating-sigs:
+  - sig-architecture # PRR reviewers
+status: provisional
+creation-date: 2026-05-26
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+
+see-also:
+  - "/keps/sig-network/0752-endpointslices"
+  - https://gateway-api.sigs.k8s.io/geps/gep-4488/
+  # TODO: Add link to GEP-4731 once it has a stable URL (gateway-api PR #4731)
+
+stage: alpha
+
+# latest-milestone: "v1.38"
+
+# milestone:
+#   alpha: "v1.38"
+#   beta: "TBD"
+#   stable: "TBD"
+
+# TODO: Confirm feature gate name with SIG Network before moving to implementable.
+# Suggested name: EndpointSelector
+feature-gates:
+  - name: EndpointSelector
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+# TODO: Fill in metrics once monitoring requirements are defined (required for beta).
+# metrics:
+#   - endpoint_selector_controller/...
