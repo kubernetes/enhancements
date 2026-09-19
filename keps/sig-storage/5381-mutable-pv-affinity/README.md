@@ -74,6 +74,8 @@ SIG Architecture for cross-cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Handling race condition](#handling-race-condition)
+    - [Why not kubelet admission](#why-not-kubelet-admission)
+  - [Extending CSI specification](#extending-csi-specification)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -95,7 +97,11 @@ SIG Architecture for cross-cutting KEPs).
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [Integrate with the CSI spec and VolumeAttributesClass](#integrate-with-the-csi-spec-and-volumeattributesclass)
+  - [New GRPC](#new-grpc)
+  - [User Specified Topology Requirement](#user-specified-topology-requirement)
+  - [Support for SPs that don't Know Attached Nodes](#support-for-sps-that-dont-know-attached-nodes)
+  - [Confirming the Persisted Topology](#confirming-the-persisted-topology)
+  - [Attaching Before Binding via NominatedNodeName](#attaching-before-binding-via-nominatednodename)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -144,7 +150,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 This KEP proposes to make `PersistentVolume.spec.nodeAffinity` field mutable,
-making it possible to change the affinity of the volume.
+making it possible to change the affinity with VolumeAttributesClass.
 This allows user to migrate data or enabling features without
 interrupting workloads.
 
@@ -160,11 +166,11 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 -->
 
 Currently, `PersistentVolume.spec.nodeAffinity` is set at creation time and cannot be changed.
-But user may modify the volume to
-taking advantage of new features provided by the storage provider,
-or accommodate to the changes of business requirements.
-These modification can be expressed by `VolumeAttributesClass` in Kubernetes.
-But sometimes, A modification to volume comes with change to its accessibility, such as:
+But a user may modify the volume to
+take advantage of new features provided by the storage provider,
+or accommodate the changes of business requirements.
+These modifications can be expressed by `VolumeAttributesClass` in Kubernetes.
+But sometimes, a modification to a volume comes with a change to its accessibility, such as:
 1. migration of data from one zone to regional storage;
 2. enabling features that is not supported by all the client nodes.
 
@@ -174,17 +180,17 @@ This results in pods:
 * being scheduled to nodes that cannot access the volume, getting stuck in a `ContainerCreating` state;
 * or being rejected from nodes that actually can access the volume, getting stuck in a `Pending` state.
 
-By making `PersistentVolume.spec.nodeAffinity` field mutable,
-we give storage providers a chance to propagate latest accessibility requirement to the scheduler,
+By making the `PersistentVolume.spec.nodeAffinity` field mutable,
+we give storage providers a chance to propagate the latest accessibility requirement to the scheduler,
 improving the reliability of stateful pod scheduling.
 
 ### Goals
 
 - Make `PersistentVolume.spec.nodeAffinity` field mutable.
+- Enable CSI drivers to return a new accessibility requirement on ControllerModifyVolume.
 
 ### Non-Goals
 
-- Enable CSI drivers to return a new accessibility requirement on ControllerModifyVolume (future work).
 - Modifying the core scheduling logic of Kubernetes.
 - Implementing cloud provider-specific solutions within Kubernetes core.
 - Re-scheduling running pods with volumes being modified,
@@ -202,8 +208,10 @@ nitty-gritty.
 -->
 
 1. Change APIServer validation to allow `PersistentVolume.spec.nodeAffinity` to be mutable.
-2. Ensure scheduler will re-schedule pending pods that using a PV that has been updated (already implemented).
+2. Ensure the scheduler will re-schedule pending pods that are using a PV that has been updated (already implemented).
 3. When a Pod is scheduled to a node that does not match volume node affinity, kubelet should fail the Pod.
+4. Change CSI Specification to allow `ControllerModifyVolume` to return a new accessibility requirement.
+5. Change external-resizer to set `PersistentVolume.spec.nodeAffinity` to the new accessibility requirement if returned by CSI driver.
 
 ### User Stories (Optional)
 
@@ -212,7 +220,7 @@ nitty-gritty.
 As the owner of a stateful workload, I want to take advantage of the new
 regional storage provided by the storage provider,
 to improve the availability of my application.
-I need a way to tell scheduler that the volume is now accessible in every zone,
+I need a way to tell the scheduler that the volume is now accessible in every zone,
 so that the pod can be scheduled to another zone when the current zone is down.
 
 In this case, the old affinity would be:
@@ -225,24 +233,47 @@ required:
       values:
       - cn-beijing-g
 ```
-We would like to change it to:
-```yaml
-required:
-nodeSelectorTerms:
-- matchExpressions:
-  - key: topology.kubernetes.io/region
-    operator: In
-    values:
-    - cn-beijing
+Or in the view of CSI accessibility requirement:
+```json
+[{"topology.kubernetes.io/zone": "cn-beijing-g"}]
 ```
-manually currently, hopefully integrated into CSI in the future.
+
+The workflow:
+1. User creates a `VolumeAttributesClass`:
+   ```yaml
+   apiVersion: storage.k8s.io/v1beta1
+   kind: VolumeAttributesClass
+   metadata:
+     name: regional
+   driverName: csi.provider.com
+   parameters:
+     type: regional
+   ```
+2. User modifies the `volumeAttributesClassName` in the PVC to `regional`
+3. external-resizer initiates ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "regional"}`
+4. CSI driver blocks until the modification finishes, then returns with `accessible_topology` set to
+   ```json
+   [{"topology.kubernetes.io/region": "cn-beijing"}]
+   ```
+5. external-resizer sets `PersistentVolume.spec.nodeAffinity` to
+   ```yaml
+   required:
+   nodeSelectorTerms:
+   - matchExpressions:
+     - key: topology.kubernetes.io/region
+       operator: In
+       values:
+       - cn-beijing
+   ```
+   then updates the PV status to indicate the modification is successful.
+
 
 #### Story 2
 
 As a cluster operator, I'm conducting an upgrade to new storage category provided by our storage provider.
 However, once upgraded, the volume cannot be attached to some legacy nodes in the cluster.
 I need a way to convey this new requirement to the scheduler,
-so that my pod will not getting stuck in a `ContainerCreating` state.
+so that my pod will not get stuck in a `ContainerCreating` state.
 
 In this case, the old affinity would be:
 ```yaml
@@ -254,21 +285,50 @@ required:
       values:
       - available
 ```
+Or in the view of CSI accessibility requirement:
+```json
+[{"provider.com/disktype.cloud_ssd": "available"}]
+```
 
 Type A node only supports cloud_ssd, while Type B node supports both cloud_ssd and cloud_essd.
 We will only allow the modification if the volume is attached to type B nodes.
 And I want to make sure the Pods using new cloud_essd volume not to be scheduled to type A nodes.
 
-We would like to change the affinity to:
-```yaml
-required:
-  nodeSelectorTerms:
-  - matchExpressions:
-    - key: provider.com/disktype.cloud_essd
-      operator: In
-      values:
-      - available
-```
+In this case, it takes long to modify the volume, the new topology is not strictly less restrictive,
+and SP wants to minimize the time window of the race condition:
+
+The workflow:
+1. User creates a `VolumeAttributesClass`:
+   ```yaml
+   apiVersion: storage.k8s.io/v1beta1
+   kind: VolumeAttributesClass
+   metadata:
+     name: essd
+   driverName: csi.provider.com
+   parameters:
+     type: cloud_essd
+   ```
+2. User modifies the `volumeAttributesClassName` in the PVC to `essd`
+3. external-resizer initiates ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "cloud_essd"}`
+4. CSI driver returns with `in_progress` set to true, and `accessible_topology` set to
+   ```json
+   [{"provider.com/disktype.cloud_essd": "available"}]
+   ```
+5. external-resizer sets `PersistentVolume.spec.nodeAffinity` to
+   ```yaml
+   required:
+     nodeSelectorTerms:
+     - matchExpressions:
+       - key: provider.com/disktype.cloud_essd
+         operator: In
+         values:
+         - available
+   ```
+   but the PV status is not updated yet.
+   From now on, the new Pod will be scheduled to nodes with `provider.com/disktype.cloud_essd: available`,
+   and may get stuck in a `ContainerCreating` state until the modification finishes.
+6. external-resizer goes back to step 3 and retries until `in_progress` is set to false.
+7. external-resizer updates the PV status to indicate the modification is successful.
 
 
 ### Notes/Constraints/Caveats (Optional)
@@ -286,14 +346,16 @@ Whoever modifies the `PersistentVolume.spec.nodeAffinity` field should ensure th
 no running Pods on nodes with incompatible labels are using the PV.
 Kubernetes will not verify this. It is expensive and racy.
 
-If the incompatibility does happen (i.e. someone updated nodeAffinity, making running Pods violate the new nodeAffinity),
+If the incompatibility does happen while pod running (i.e. someone updated nodeAffinity, making running Pods violate the new nodeAffinity),
 we don't guarantee that those Pods will continue to run without any issue.
 However, we try our best not to interrupt them:
-- For volumes that not yet present in the Node.status.volumesAttached field,
-  we fail the Pods that use them, since we are sure the Pods have never been running.
-  (see [Handling race condition](#handling-race-condition) below)
+- For volumes that have never been mounted for the Pod (i.e. not present in
+  kubelet's actual state of world), we fail the Pods that use them, since we are
+  sure the Pods have never been running. This is plugin-agnostic and covers
+  attachable and non-attachable volumes alike (see
+  [Handling race condition](#handling-race-condition) below).
 - We will not detach the volume. So if the volume is actually accessible (depends on the storage provider), the Pod can continue to run.
-- For CSI drivers with `requiresRepublish` set to true, we will stop calling NodePublishVolume periodically. and an event is emitted.
+- For CSI drivers with `requiresRepublish` set to true, we will stop calling NodePublishVolume periodically, and an event is emitted.
 - For CSI drivers with `requiresRepublish` set to false, an event is emitted on kubelet restart. Otherwise the pod should continue to run.
 It is not re-evaluated when the pod is already running.
 
@@ -316,16 +378,16 @@ Consider including folks who also work outside the SIG or subproject.
 -->
 
 User may likely rollout workload and PV nodeAffinity changes at the same time.
-This may trigger a race condition where the workload pods are scheduled to a node matchs the old nodeAffinity,
+This may trigger a race condition where the workload pods are scheduled to a node that matches the old nodeAffinity,
 but the volume cannot be used on the node.
 
-To mitigate this risk, we let kubelet to fail the mis-scheduled pods.
+To mitigate this risk, we let kubelet fail the mis-scheduled pods.
 Hopefully, workload controller will create a replacement pod for it.
 
 If the user is running an incompatible scheduler which does not respect PV nodeAffinity,
-we may ended up in an endless loop of creating then failing pods.
+we may end up in an endless loop of creating then failing pods.
 This should be fine since we already have many cases like this.
-We mitigate this by adding an note in the release note.
+We mitigate this by adding a note in the release note.
 
 ## Design Details
 
@@ -339,21 +401,156 @@ proposal will be implemented, this is the place to discuss them.
 ### Handling race condition
 
 There is a race condition between volume modification and pod scheduling:
-1. User modifies the volume from storage provider.
-3. A new Pod is created and scheduler schedules it with the old affinity.
-4. User sets the new affinity to the PV.
-5. KCM/external-attacher attaches the volume to the node, and find the affinity mismatch.
+1. User requests a volume modification.
+2. A new Pod is created and scheduler schedules it using the affinity as it is
+   at that moment.
+3. external-resizer (or the operator) narrows the affinity on the PV and applies
+   the modification on the storage provider.
+4. KCM/external-attacher tries to attach the volume to the node, but the storage
+   provider rejects the attach because the volume is no longer reachable from
+   that node.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant R as external-resizer
+    participant SP as Storage Provider
+    participant PV as PV.spec.nodeAffinity
+    participant S as kube-scheduler
+    participant A as attacher
+    participant K as kubelet on node1
+
+    Note over SP,PV: backend reachable from node1 and node2.<br/>PV affinity allows node1 and node2.
+    User->>R: 1. request volume modification (regional to zonal)
+    S->>PV: reads affinity: node1, node2
+    S->>K: 2. binds Pod to node1, allowed by current affinity
+    R->>PV: 3a. sets affinity to allow only node2
+    R->>SP: 3b. ControllerModifyVolume
+    Note over SP: backend now reachable only from node2
+    A->>SP: 4. attach volume to node1
+    SP--xA: reject.
+    Note over A,K: volume is never mounted for the Pod
+    K->>PV: kubelet reads fresh affinity, only node2 allowed
+    Note over K: never mounted AND node1 excluded by affinity.<br/>reject Pod
+```
 
 If this happens, the pod will be stuck in a `ContainerCreating` state.
 Kubelet should detect this condition and reject the pod.
 Hopefully some other controllers (StatefulSet controller) will re-create the pod and it will be scheduled to the correct node.
 
-Specifically, kubelet should reject the pod (setting pod phase to 'Failed')
-if the volume is not present in the `node.status.volumesAttached` list and the volume nodeAffinity does not match the current node
-in `waitForVolumeAttach()`.
+Specifically, kubelet should reject the pod (setting pod phase to 'Failed') when
+both of the following hold:
+- the volume is not mounted for this pod — i.e. it is not present in
+  kubelet's actual state of world (neither `mounted` nor `uncertain`); and
+- the volume nodeAffinity does not match the current node.
 
-We check `volumesAttached` to ensure the Pods have never been running, to avoid interrupting running Pods.
-We don't check the VolumeAttachment to make this also work for non-CSI volumes.
+The "not mounted" condition should mean the Pod is not running,
+so rejecting it cannot interrupt a running workload.
+Kubelet reconstructs its actual state of world from the on-disk mounts when it restarts,
+marking each recovered volume as `uncertain`,
+so a Pod that was already running before a kubelet restart is still considered mounted and is never rejected.
+
+#### Why not kubelet admission
+
+PV nodeAffinity can change after admission, before volume attachment.
+So we must continuously monitor the affinity until the volume is attached and mounted.
+
+Also, admission may fail the Pod on kubelet restart, which can be a breaking change.
+
+### Extending CSI specification
+
+We will extend CSI specification to add:
+```protobuf
+// Specifies a capability of the controller service.
+message ControllerServiceCapability {
+  message RPC {
+    enum Type {
+      ...
+      // TODO
+      MODIFY_VOLUME_TOPOLOGY = 16 [(alpha_enum_value) = true];
+    }
+
+    Type type = 1;
+  }
+
+  oneof type {
+    // RPC that the controller supports.
+    RPC rpc = 1;
+  }
+}
+
+message ControllerModifyVolumeRequest {
+  option (alpha_message) = true;
+  ...
+
+  // Indicates whether the CO allows the SP to update the topology
+  // as a part of the modification.
+  bool allow_topology_updates = 4;
+}
+
+message ControllerModifyVolumeResponse {
+  option (alpha_message) = true;
+
+  // Specifies where (regions, zones, racks, etc.) the modified
+  // volume is accessible from.
+  // A plugin that returns this field MUST also set the
+  // VOLUME_ACCESSIBILITY_CONSTRAINTS plugin capability.
+  // An SP MAY specify multiple topologies to indicate the volume is
+  // accessible from multiple locations.
+  // COs MAY use this information along with the topology information
+  // returned by NodeGetInfo to ensure that a given volume is accessible
+  // from a given node when scheduling workloads.
+  // This field is OPTIONAL. It is effective and replaces the
+  // accessible_topology returned by CreateVolume if the plugin has
+  // MODIFY_VOLUME_TOPOLOGY controller capability.
+  // If it is not specified, the CO MAY assume
+  // the volume is equally accessible from all nodes in the cluster and
+  // MAY schedule workloads referencing the volume on any available
+  // node.
+  //
+  // SP MUST only set this field if allow_topology_updates is set
+  // in the request. SP SHOULD fail the request if it needs to update
+  // topology but is not allowed by CO.
+  repeated Topology accessible_topology = 1;
+
+  // Indicates whether the modification is still in progress.
+  // For a long-running modification, an SP SHOULD return with
+  // in_progress set to true rather than blocking until the RPC times out.
+  // SPs MAY also set in_progress to update the accessible_topology
+  // before the modification finishes to reduce possible race conditions.
+  // COs SHOULD retry the request if in_progress is set to true,
+  // until in_progress is set to false.
+  bool in_progress = 2;
+}
+```
+
+When this new field is set, external-resizer will set `PersistentVolume.spec.nodeAffinity` accordingly, before it updates the PV status.
+
+`in_progress` serves two purposes:
+1. It lets the SP publish `accessible_topology` as early as it knows it, without waiting for the whole
+   modification to finish, so external-resizer can update `PersistentVolume.spec.nodeAffinity` promptly and
+   keep the scheduler's view as fresh as possible.
+2. It gives external-resizer an explicit "still working" signal for long-running modifications. Without it, a
+   slow modification would either block the RPC until it times out, or be indistinguishable from a stuck or
+   failed call, causing external-resizer to surface spurious warnings. With `in_progress` set to true,
+   external-resizer knows to simply retry later.
+
+This mirrors the async pattern already in the CSI spec: `CreateSnapshot` reports progress via
+`ready_to_use`, and the CO re-invokes the idempotent RPC until the snapshot is ready. We use the inverse
+polarity (`in_progress`, whose proto3 default of `false` means "complete") so that a plain
+`ControllerModifyVolume` from an SP that never sets the field is treated as already finished.
+
+When anything unexpected happens (race between multiple resizer instances, crashes) and we lost track of the latest topology.
+external-resizer will invoke `ControllerModifyVolume` again with the desired `mutable_parameters` to fetch the latest topology.
+
+A new error condition of `ControllerModifyVolume` is added to CSI spec:
+
+| Condition | gRPC Code | Description | Recovery Behavior |
+|-----------|-----------|-------------|-------------------|
+| Topology conflict | 9 FAILED_PRECONDITION | Indicates that the CO has requested a modification that would make the volume inaccessible to some already attached nodes. | Caller MAY detach the volume from the nodes that are in conflict and retry. |
+
+But this KEP does not cover the automatic correction. Kubernetes should only retry with exponential backoff.
+
 
 ### Test Plan
 
@@ -454,6 +651,7 @@ If e2e tests are not necessary or useful, explain why.
 - [test name](https://github.com/kubernetes/kubernetes/blob/2334b8469e1983c525c0c6382125710093a25883/test/e2e/...): [SIG ...](https://testgrid.k8s.io/sig-...?include-filter-by-regex=MyCoolFeature), [triage search](https://storage.googleapis.com/k8s-triage/index.html?test=MyCoolFeature)
 
 - Test a mis-scheduled pod will be failed and re-created on another node.
+- Test modifying VolumeAttributesClass can properly update PV `nodeAffinity`.
 
 ### Graduation Criteria
 
@@ -532,8 +730,11 @@ in back-to-back releases.
 
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Initial e2e tests completed and enabled
+- v1.35: `PersistentVolume.spec.nodeAffinity` made mutable behind the `MutablePVNodeAffinity` feature gate
+- v1.38:
+  - kubelet fails pods mis-scheduled onto nodes incompatible with the volume's nodeAffinity
+  - CSI `ControllerModifyVolume` topology integration, with external-resizer setting the updated nodeAffinity
+  - Initial e2e tests completed and enabled
 
 #### Beta
 
@@ -563,12 +764,12 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-APIServer and kubelet can be update / downgraded independently.
+APIServer and kubelet can be updated / downgraded independently.
 
-Upgrade the external storage controller after APIServer to take advantage of the new feature if desired.
+Upgrade external-resizer after APIServer to take advantage of the new feature if desired.
 Otherwise, admin can also utilize the new feature manually with kubectl.
 
-Downgrade/Reconfigure the external storage controller before APIServer to avoid updating PV nodeAffinity being rejected.
+Downgrade/Reconfigure external-resizer before APIServer to avoid updating PV nodeAffinity being rejected.
 
 ### Version Skew Strategy
 
@@ -587,15 +788,44 @@ enhancement:
 
 This feature involves changes to the kubelet, and APIServer. But they are not strongly coupled.
 
-An n-3 kubelet will not able to fail the mis-scheduled pods. The mis-scheduled pods will stuck at ContainerCreating status.
+An n-3 kubelet will not be able to fail the mis-scheduled pods. The mis-scheduled pods will be stuck at ContainerCreating status.
 If the kubelet is upgraded afterwards, it will properly fail those pods.
 User can also manually delete the pods if they don't want to upgrade kubelet soon.
 If user does not actually update the PV nodeAffinity, there will be no such mis-scheduled pods and everything should be fine.
 
 kube-scheduler is not directly affected.
-It just read the latest PV nodeAffinity for scheduling decision regardless of whether it's being updated or not.
+It just reads the latest PV nodeAffinity for scheduling decisions regardless of whether it's being updated or not.
 
-An old external storage controller should work fine with new APIServer, since it will not update PV nodeAffinity.
+An old external-resizer should work fine with new APIServer, since it will not update PV nodeAffinity.
+
+external-resizer and the CSI driver can be upgraded in any order; all combinations work reasonably:
+- An old external-resizer never sets `allow_topology_updates`, so the CSI driver does not change the topology.
+  A driver that needs a topology change SHOULD reject the modification rather than silently breaking scheduling.
+- A new external-resizer with an old CSI driver: the driver does not advertise the `MODIFY_VOLUME_TOPOLOGY`
+  capability and ignores the unknown `allow_topology_updates` field, so it behaves as a plain `ControllerModifyVolume`
+  with no topology change.
+- A new external-resizer with a new CSI driver gets the full functionality.
+
+The dangerous skew is a new external-resizer and new CSI driver against an **old APIServer** that does
+not yet allow `PersistentVolume.spec.nodeAffinity` to be mutated.
+The CSI driver may already have changed the volume's accessibility, but external-resizer's PATCH of the
+PV nodeAffinity is rejected, leaving a stale nodeAffinity.
+Only accessibility-*reducing* modifications are affected: a stale (broader) nodeAffinity can let the
+scheduler place pods on nodes the volume no longer serves.
+A widening modification only leaves a stale, more-restrictive nodeAffinity, which is safe.
+
+To prevent this, external-resizer SHOULD dry-run (`?dryRun=All`) a nodeAffinity update before initiating a
+topology-changing modification. If the dry-run is rejected, it does not set `allow_topology_updates`, so the
+SP rejects the request before changing the volume. This catches the common case where the APIServer feature
+gate is simply not enabled yet.
+
+The recommended ordering remains: enable the feature gate on all APIServers before enabling it on
+external-resizer, and reverse on downgrade.
+Under an in-progress HA APIServer rollout, the dry-run and the real write may hit different APIServers,
+leaving a small window where an accessibility-reducing modification completes but the affinity is not yet
+persisted, and pods may get stuck on nodes the volume no longer serves.
+This is bounded and self-healing: once the gate is enabled on all APIServers, external-resizer persists the
+narrower affinity, and kubelet then fails and reschedules the affected pods.
 
 ## Production Readiness Review Questionnaire
 
@@ -641,7 +871,7 @@ well as the [existing list] of feature gates.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: MutablePVNodeAffinity
-  - Components depending on the feature gate: kubelet, kube-apiserver
+  - Components depending on the feature gate: kubelet, kube-apiserver, external-resizer
 
 ###### Does enabling the feature change any default behavior?
 
@@ -652,11 +882,11 @@ automations, so be extremely careful here.
 
 PV `spec.nodeAffinity` becomes mutable.
 
-If a pod being scheduled to a node that is incompatible with the PV's nodeAffinity, the pod will fail.
+If a pod is scheduled to a node that is incompatible with the PV's nodeAffinity, the pod will fail.
 Previously, it will be stuck at `ContainerCreating` status.
 
 This should be rare before enabling this feature, since we don't allow PV nodeAffinity to be updated,
-nor CSI driver can change the topology reported from NodeGetInfo.
+nor can a CSI driver change the topology reported from NodeGetInfo.
 So this is only possible if the user edited the node labels manually, or is running an incompatible scheduler.
 Existing workflow will unlikely be affected by this behavior change.
 
@@ -755,7 +985,7 @@ Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
 checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
-Unfortunately, no metrics records the update of a specific field.
+Unfortunately, no metric records the update of a specific field.
 Operator should check APIServer audit log.
 
 Operator may also use the storage controller specific metrics.
@@ -772,14 +1002,14 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 1. nodeAffinity can now be updated for existing volumes
-2. pods that cannot be run due volume that can't be attached are now being failed by kubelet
+2. pods that cannot be run due to a volume that can't be attached are now being failed by kubelet
 
-As the consequences, if a Pod is previously stuck due to out-of-date PV nodeAffinity,
-now user can update the PV to correct the nodeAffinity, and see the Pod entering Running state eventually.
-For Pods stuck in ContainerCreating due to storage provider unable to attach the volume to the scheduled node,
-The Pod will be rejected by kubelet and re-created at the correct node.
+As a consequence, if a Pod was previously stuck due to out-of-date PV nodeAffinity,
+now the user can update the PV to correct the nodeAffinity, and see the Pod entering Running state eventually.
+For Pods stuck in ContainerCreating due to the storage provider being unable to attach the volume to the scheduled node,
+the Pod will be rejected by kubelet and re-created at the correct node.
 For Pods stuck in Pending due to no suitable node available,
-scheduler will retry to schedule For Pods stuck in ContainerCreating due  Pod according to the updated nodeAffinity.
+the scheduler will retry scheduling the Pod according to the updated nodeAffinity.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -994,6 +1224,8 @@ Major milestones might include:
 -->
 - 2025-09: targeting alpha in v1.35
 - 2025-09-30: prototype implemented
+- v1.35: alpha; `PersistentVolume.spec.nodeAffinity` made mutable
+- 2026-07: proposing CSI spec changes; targeting a second alpha in v1.38 for kubelet enforcement and CSI integration
 
 ## Drawbacks
 
@@ -1003,13 +1235,196 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-### Integrate with the CSI spec and VolumeAttributesClass
+### New GRPC
 
-We have proposed the plan to integrate in the previous version of this KEP.
-But we did not reach consensus due to lack of SP want to implement this feature.
-The main concerns were about race condition between scheduler and update PV.
+Instead of adding new fields to CSI GRPC `ControllerModifyVolume`, we could add a new GRPC `ControllerModifyVolumeTopology` (Other candidate names: `ControllerMigrateVolume`):
 
-We will try this again in the future.
+```protobuf
+rpc ControllerModifyVolumeTopology (ControllerModifyVolumeTopologyRequest)
+  returns (ControllerModifyVolumeTopologyResponse) {
+    option (alpha_method) = true;
+  }
+
+message ControllerModifyVolumeTopologyRequest {
+  option (alpha_message) = true;
+  string volume_id = 1;
+  map<string, string> secret = 2 [(csi_secret) = true];
+  map<string, string> mutable_parameters = 3;
+}
+
+message ControllerModifyVolumeTopologyResponse {
+  option (alpha_message) = true;
+  repeated Topology accessible_topology = 1;
+  bool in_progress = 2;
+}
+```
+
+The workflow of this new GRPC is essentially the same as the current `ControllerModifyVolume` GRPC, but it allows SPs to mutate the accessible
+topologies of volumes by default.
+
+SPs with the `MODIFY_VOLUME_TOPOLOGY` controller capability should implement both this new GRPC and `ControllerModifyVolume`.
+New COs that support modify volume topology (i.e. external-resizer) should only call the new GRPC when modifying volumes.
+Old COs can continue to call `ControllerModifyVolume`. SPs should reject such requests if topology will be changed.
+
+Comparison between these two approaches:
+| Criteria | [PR 592](https://github.com/container-storage-interface/spec/pull/592) (Extended GRPC) | [PR 593](https://github.com/container-storage-interface/spec/pull/593) (New GRPC) |
+| -------- | ---------------------- | ----------------- |
+| Maintenance Difficulty | ✅ Low | ⚠️ High, need to also modify ControllerModifyVolumeTopology when making changes to ControllerModifyVolume |
+| Implementation Complexity | ✅ Low | ⚠️ High, SPs will have to implement a new GRPC if they want to support topology modification even if they have implemented ControllerModifyVolume |
+| Side Effects | ⚠️ Will impede the GA process of K8s VAC  | ✅ No influence on other features |
+
+### User Specified Topology Requirement
+
+Currently we don't support user specified topology requirement.
+We've considered a design:
+* Add `accessibility_requirements` in `ModifyVolumeRequest`, like that in `CreateVolumeRequest`
+* Add `allowedTopologies` in `VolumeAttributesClass`, like that in `StorageClass`
+
+We determine this lacks valid use cases.
+
+In most cases, the SP can determine the desired topology of a volume from the `mutable_parameters`, or from the currently attached nodes.
+An exception could be: modifying a volume from regional to zonal, and it is not attached to any node.
+In this case, the SP may need more information from the CO to determine the desired zone.
+But we don't want the user to create a separate VAC for each zone.
+Instead, it may be easier for the user to just attach it to a node, so that the SP can determine the desired zone.
+
+For the other case (User Story 2), the topology (provider.com/disktype.cloud_essd) is actually not intended for the user as an API.
+The user just wants to modify the disk type, and we implement the underlying limitations as topology.
+So we don't want to let the user specify this topology key directly.
+
+Besides, this facing a lot of unresolved questions:
+* How to merge `allowedTopologies` from `VolumeAttributesClass`, `StorageClass`?
+* Should we use `allowedTopologies` from `StorageClass` if it is not specified in `VolumeAttributesClass`?
+* Should we consider the topology of the currently attached nodes?
+* Should we consider the topology of all the nodes in the cluster?
+
+We may consider this again with valid use cases.
+
+### Support for SPs that don't Know Attached Nodes
+
+Maybe there are some SPs that don't know the currently attached nodes,
+so they cannot determine whether the topology change will break any workload.
+
+Some kinds of storage do not have a persistent connection between client and server, such as object storage like S3.
+But as network attached storage, they can be accessed wherever the network can reach.
+So these SPs typically do not use the topology feature at all.
+
+So, we decide that for an SP to support this feature,
+they are required to properly detect potential breakage for existing workloads.
+
+That said, the candidate design looks:
+Add a new `dry_run` parameter to the `ControllerModifyVolumeRequest`.
+The CO first calls `ControllerModifyVolume` with `dry_run=true` to fetch the new topology,
+determines if the new topology is compatible with the existing workloads,
+then decides whether to proceed with the modification with `dry_run=false`.
+
+Another way to get the new topology is further extending the "User Specified Topology Requirement" section,
+making it required for the user to explicitly specify the new topology in the VAC and
+remove `accessible_topology` from `ControllerModifyVolumeResponse`.
+That is to say, SP must accept the new topology specified by user or it should reject the request.
+The workflow will become:
+1. User creates a `VolumeAttributesClass`:
+   ```yaml
+   apiVersion: storage.k8s.io/v1beta1
+   kind: VolumeAttributesClass
+   metadata:
+     name: regional
+   driverName: csi.provider.com
+   parameters:
+     type: regional
+   allowedTopologies:
+   - matchLabelExpressions:
+     - key: topology.kubernetes.io/region
+       values:
+       - cn-beijing
+   ```
+2. User modifies the `volumeAttributesClassName` in the PVC to `regional`
+3. external-resizer verifies that all the nodes with this volume attached satisfy the `allowedTopologies`
+4. external-resizer sets `PersistentVolume.spec.nodeAffinity` to
+   ```yaml
+   required:
+   nodeSelectorTerms:
+   - matchExpressions:
+     - key: topology.kubernetes.io/region
+       operator: In
+       values:
+       - cn-beijing
+   ```
+5. external-resizer initiates ControllerModifyVolume with `allow_topology_updates` set to true, `mutable_parameters` set to `{"type": "regional"}`
+6. CSI driver blocks until the modification finished
+7. external-resizer then update the PV status to indicate the modification is successful.
+
+Besides the reasons mentioned above, we are also facing a critical drawback for this design:
+Topology can have many orthogonal aspects, such as the above-mentioned zone/region and disk type.
+If the SP cannot return the topology, the user will need to be aware of all aspects of topology used by the SP.
+And the SP will not be able to extend the topology in the future, since VAC is immutable.
+
+Note that the above designs are also racy.
+We may still break some workloads that just started after the check but before the modification.
+
+### Confirming the Persisted Topology
+
+To make the new external-resizer/CSI + old APIServer skew (see [Version Skew Strategy](#version-skew-strategy))
+fully safe, we considered adding a request field `current_accessible_topology`: the accessible topology the CO
+currently advertises for the volume, derived from `PersistentVolume.spec.nodeAffinity`.
+The SP would reduce a volume's accessibility only once this field shows the CO has already persisted the
+narrower topology (persist-before-reduce). Because "persisted" is an etcd fact, this is robust even to an
+in-progress HA APIServer rollout.
+
+If the field is message-typed (so absent means a topology-unaware CO), it could also replace
+`allow_topology_updates` — its presence is the capability signal — and subsume the `dry_run` preview above,
+since the first call returns the target topology without reducing accessibility.
+
+We defer it because:
+- It does not eliminate the scheduler race: it confirms the write reached etcd, not that the scheduler's
+  informer has observed the new PV. That race is already handled by kubelet failing mis-scheduled pods.
+- Feature-enablement detection is adequately covered by a dry-run PATCH to the APIServer in the common case.
+- Its only unique benefit — HA-skew-proof persist-before-reduce — applies only to accessibility-reducing
+  modifications, only during an APIServer upgrade window, and only for SPs that can defer the reduction;
+  the consequence without it is bounded and self-healing.
+- It adds protocol surface and complexity: a `nodeAffinity` ↔ `Topology` round-trip in the CO, and a
+  semantic comparison in the SP.
+
+If real-world usage shows this skew matters, we can adopt it.
+
+### Attaching Before Binding via NominatedNodeName
+
+[KEP-5278](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5278-nominated-node-name-for-expectation)
+(beta and on by default since v1.35, GA targeted for v1.37) has the scheduler set
+`Pod.status.nominatedNodeName` at the beginning of a binding cycle to express its intended placement.
+It writes the field only when the binding cycle will actually wait — a `Permit` plugin returned `Wait`, or a
+`PreBind` plugin has work to do (decided by a new `PreBindPreFlight()` hook that lets a plugin return `Skip`) —
+to limit the extra load on kube-apiserver. Today only the scheduler writes the field; other components consume
+it read-only.
+
+We could build on this to eliminate the race condition entirely, without the kubelet change. That needs two new
+pieces on top of KEP-5278:
+1. A new `VolumeAttachment` PreBind plugin that, for a pod with volumes to attach, returns non-`Skip` from
+   `PreBindPreFlight()` (which is what makes the scheduler publish `nominatedNodeName`) and then blocks the
+   binding cycle until the volume is attached to the chosen node.
+2. Teaching the attach/detach controller to act on `nominatedNodeName` (not just `spec.nodeName`), so it
+   creates the `VolumeAttachment` before the pod is bound.
+
+The flow becomes: scheduler picks a node and sets `nominatedNodeName` → the attach/detach controller attaches
+the volume to that node → the PreBind plugin waits for the attachment to succeed → scheduler binds. If the
+attachment fails (the volume is not accessible on that node under the current topology), the plugin fails the
+binding cycle; the scheduler clears `nominatedNodeName`, picks another node, and repeats.
+
+Because attachment is verified against the volume's *actual* accessibility before the pod is bound, a pod is
+never bound to a node where its volume cannot attach — regardless of any concurrent nodeAffinity update. This
+removes the need for kubelet to fail mis-scheduled pods, and avoids the pod-failure/recreation churn.
+
+We do not choose this because:
+- It moves volume attachment into the scheduling critical path (attachment happens after binding today) and
+  changes both the scheduler and the attach/detach controller — a larger and more cross-cutting change than the
+  kubelet-side check. The controller must also detach from a nominated node it later abandons.
+- Via the PreBind gate it adds an extra API write (`nominatedNodeName`) and an attach-wait to the binding cycle
+  of every pod that needs a volume attachment — an always-on cost paid to guard a race that should be rare.
+- It depends on KEP-5278 (only recently beta) plus a not-yet-designed extension of it.
+
+The kubelet-side check costs nothing in the common case and only acts when the rare race actually occurs, so we
+prefer it. This remains a clean option to revisit if the NominatedNodeName infrastructure matures or the
+kubelet approach proves insufficient.
 
 <!--
 What other approaches did you consider, and why did you rule them out? These do
