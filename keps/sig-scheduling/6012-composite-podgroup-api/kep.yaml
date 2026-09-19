@@ -22,9 +22,9 @@ see-also:
   - "/keps/sig-scheduling/5729-resourceclaim-support-for-workloads"
   - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"
@@ -39,5 +39,14 @@ feature-gates:
       - kube-scheduler
 disable-supported: true
 
-# The following PRR answers are required at beta release
 metrics:
+  - scheduler_podgroup_schedule_attempts_total
+  - scheduler_podgroup_scheduling_algorithm_duration_seconds
+  - scheduler_podgroup_scheduling_attempt_duration_seconds
+  - scheduler_queue_incoming_entities_total
+  - scheduler_queued_entities
+  - scheduler_workload_preemption_attempts_total
+  - scheduler_workload_preemption_victims
+  - scheduler_generated_placements_total
+  - scheduler_placement_evaluation_duration_seconds
+  - scheduler_placement_evaluations_total
