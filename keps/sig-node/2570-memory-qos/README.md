@@ -460,7 +460,7 @@ limit and (2) only throttling when usage > request.
 In Beta (v1.37), the `MemoryQoS` feature gate is enabled by default. To disable it, set `--feature-gates=MemoryQoS=false`, and ensure `memoryReservationPolicy` is not set or is set to `None`.
 
 When enabled, the following KubeletConfiguration fields control behavior:
-- `memoryThrottlingFactor` (float, range (0, 1.0], default 0.9): Controls memory.high calculation. Set to 1.0 to effectively disable early throttling.
+- `memoryThrottlingFactor` (float, range (0, 1.0], default `nil`): Controls `memory.high` calculation. When `nil`, kubelet does not set `memory.high`. Set a value explicitly to enable throttling; set to 1.0 to effectively disable early throttling.
 - `memoryReservationPolicy` (enum, default `None`): Controls whether request protection is applied. Set to `TieredReservation` to enable `memory.min` for Guaranteed and `memory.low` for Burstable workloads.
 
 ### Mapping Rules
@@ -700,7 +700,7 @@ Pick one of these and delete the rest.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Yes, when `memoryReservationPolicy` is set to `TieredReservation` (default is `None`), the kubelet will set `memory.min` for Guaranteed pod/container level cgroups and `memory.low` for Burstable pod/container level cgroups. The MemoryQoS feature gate also sets `memory.high` for burstable and best effort containers, which may slow memory allocation when usage reaches `memory.high`. `memory.min` on the kubepods root QoS cgroup and `memory.low` on the Burstable QoS cgroup will be set when `--cgroups-per-qos` is satisfied. `memory.min` for node level cgroups will be set when `--enforce-node-allocatable` is satisfied.
+With the v1.37 default KubeletConfiguration, enabling the MemoryQoS feature gate alone does not apply request protection or set a finite `memory.high`: `memoryReservationPolicy` defaults to `None` and `memoryThrottlingFactor` defaults to `nil`. When `memoryReservationPolicy` is set to `TieredReservation`, the kubelet sets `memory.min` for Guaranteed pod/container level cgroups and `memory.low` for Burstable pod/container level cgroups. When `memoryThrottlingFactor` is explicitly set, the kubelet sets `memory.high` for Burstable and BestEffort containers, which may slow memory allocation when usage reaches `memory.high`. `memory.min` on the kubepods root QoS cgroup and `memory.low` on the Burstable QoS cgroup will be set when `--cgroups-per-qos` is satisfied. `memory.min` for node level cgroups will be set when `--enforce-node-allocatable` is satisfied.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -739,8 +739,8 @@ Note: Pod-level and container-level `memory.min`/`memory.low` values persist aft
 <!--
 This section must be completed when targeting beta to a release.
 -->
-In Beta (v1.37), the `MemoryQoS` feature gate is enabled by default. No explicit opt-in is required. The feature uses two KubeletConfiguration fields:
-- `memoryThrottlingFactor` (float, default 0.9): Controls memory.high calculation
+In Beta (v1.37), the `MemoryQoS` feature gate is enabled by default and requires no explicit opt-in. Memory protection and throttling are controlled independently through two KubeletConfiguration fields:
+- `memoryThrottlingFactor` (float, default `nil`): Controls `memory.high` calculation. When `nil`, kubelet does not set `memory.high`; set a value explicitly to enable throttling.
 - `memoryReservationPolicy` (enum, default `None`): Controls whether memory protection is applied. Set to `TieredReservation` to enable memory.min for Guaranteed and memory.low for Burstable workloads.
 
 It doesn't require any special opt-in by the user in their PodSpec. The kubelet reconciles `memory.min`/`memory.low`/`memory.high` with related cgroups depending on whether the feature gate is enabled and the configuration values.
@@ -756,10 +756,7 @@ feature flags will be enabled on some API servers and not others during the
 rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
-When the feature gate is enabled and kubelet restarts, the kubelet reconciles cgroup settings for all pods. This means:
-- Existing pods will have `memory.min`/`memory.low`/`memory.high` set during the next cgroup reconciliation cycle
-- Node-level `memory.min` will be set immediately on kubelet startup
-- Impact is gradual as pods are reconciled, not instantaneous
+When the feature gate is enabled and kubelet restarts, QoS-class and pod-level `memory.min`/`memory.low` are reconciled during the next QoS cgroup manager update cycle according to `memoryReservationPolicy`. Existing container-level `memory.min`/`memory.low`/`memory.high` values keep their current values until the container is restarted; InPlacePodResize can also reapply the container resource configuration. For new, restarted, or in-place resized containers, kubelet sets a finite `memory.high` only when `memoryThrottlingFactor` is explicitly configured.
 
 ###### What specific metrics should inform a rollback?
 
@@ -783,7 +780,7 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 Yes. Manual testing was performed:
-- Upgrade: Enabling `MemoryQoS`, `memoryReservationPolicy: TieredReservation` on a running kubelet correctly sets `memory.min`/`memory.low`/`memory.high` on new pods and updates node-level cgroups
+- Upgrade: Enabling `MemoryQoS` with `memoryReservationPolicy: TieredReservation` and an explicitly configured `memoryThrottlingFactor` on a running kubelet correctly sets `memory.min`/`memory.low`/`memory.high` on new pods and updates node-level cgroups
 - Rollback: Disabling MemoryQoS stops new MemoryQoS writes. QoS class level `memory.min` and `memory.low` are cleared to 0 at kubelet startup. Per-container `memory.high` is set to `max` in the container resource config and is cleared when the container runtime applies the config on newly created containers, restarted containers, or existing containers updated via InPlacePodResize. For already-running containers with no restart or resize, stale `memory.high` values persist until the next container restart or InPlacePodResize update.
 - Upgrade->downgrade->upgrade: On re-enable, cgroup values are correctly reconciled; stale values from the prior enable cycle are overwritten.
 
@@ -815,7 +812,7 @@ When `memoryReservationPolicy: TieredReservation` is configured, an operator cou
 
 An operator can use kubelet metric `kubelet_memory_qos_node_memory_min_bytes` and `kubelet_memory_qos_node_memory_low_bytes` to observe protected memory bytes on a node.
 
-With the default configuration (`memoryReservationPolicy: None`), an operator can check if `memory.high` is set below `max` on a Burstable or BestEffort container to confirm the feature is active.
+With the v1.37 defaults (`memoryReservationPolicy: None`, `memoryThrottlingFactor: nil`), kubelet does not apply request protection or set a finite `memory.high`. When either behavior is explicitly configured, operators can inspect the corresponding cgroup files to confirm that configuration is active.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -829,9 +826,10 @@ Recall that end users cannot usually observe component logs or access metrics.
 -->
 
 - [X] Other (treat as last resort)
-  - Details: Operators can verify Memory QoS is working by inspecting cgroup v2 files
-  in the container's cgroup hierarchy. Check `memory.min` and `memory.high` values
-  are set according to the pod's requests and limits. The `memory.events` file shows
+  - Details: Operators can verify configured Memory QoS behavior by inspecting cgroup v2 files
+  in the container's cgroup hierarchy. Check `memory.min`/`memory.low` when
+  `memoryReservationPolicy: TieredReservation` is configured, and `memory.high` when
+  `memoryThrottlingFactor` is explicitly configured. The `memory.events` file shows
   breach counters for `high` (throttling events) and `low`/`min` protection events.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
