@@ -143,7 +143,7 @@ The userspace localhost NodePort proxy is a Layer 4 TCP forwarder. The following
 
 **Not implemented:**
 
-- `protocol: UDP` / `protocol: SCTP` — the proxy will not create a listener for these protocols. nftables will not log an error when these services are created since it won't be known if the user plans to connect to them over localhost. If a user tries to connect to a non-TCP protocol service using localhost NodePorts, then an nftables ruleset will reject the packets. Rejections will be tracked by a new metric, `kubeproxy_nftables_localhost_nodeport_rejected_packets_total{protocol}`.
+- `protocol: UDP` / `protocol: SCTP` — the proxy will not create a listener for these protocols. nftables will not log an error when these services are created since it won't be known if the user plans to connect to them over localhost. If a user tries to connect to a UDP or SCTP service using localhost NodePorts, the nftables ruleset will reject the packets. TCP packets are also rejected when the feature gate is enabled but no localhost proxy is active. Rejections are tracked by `kubeproxy_nftables_localhost_nodeport_rejected_packets_total{ip_family,protocol}`.
 
 **Not applicable:**
 
