@@ -836,6 +836,10 @@ For more details see https://github.com/kubernetes/kubernetes/issues/138670.
 
 #### GA
 - No user issues reported
+- WatchList feature gate locked to default value of true
+- WatchListClient feature gate locked to default value of true
+- WatchListCompression feature gate locked to default value of true
+- Performance is validated and compared with standard LIST requests
 
 #### Post-GA
 - Make  **list** calls expensive in APF. 
@@ -1436,7 +1440,10 @@ For each of them, fill in the following information by copying the below templat
 None SLOs have been defined for this feature yet.
 
 ## Implementation History
-The KEP was proposed on 2022-01-14
+- The KEP was proposed on 2022-01-14
+- Alpha in v1.27
+- Beta in v1.32
+- GA in v1.38
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
