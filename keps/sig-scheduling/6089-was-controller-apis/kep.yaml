@@ -17,15 +17,17 @@ approvers:
 
 see-also:
   - "/keps/sig-apps/5547-integrate-workload-with-job"
+  - "/keps/sig-apps/6276-integrate-workload-with-deployment"
+  - "/keps/sig-apps/6277-integrate-workload-with-statefulset"
   - "/keps/sig-scheduling/4671-gang-scheduling"
   - "/keps/sig-scheduling/5710-workload-aware-preemption"
   - "/keps/sig-scheduling/5729-resourceclaim-support-for-workloads"
   - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
   - "/keps/sig-scheduling/6012-composite-podgroup-api"
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 
 milestone:
   alpha: "v1.37"
@@ -40,4 +42,4 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-metrics:
+metrics: []
