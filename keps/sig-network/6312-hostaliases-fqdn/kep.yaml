@@ -1,0 +1,33 @@
+title: Relaxed validation for HostAliases hostnames (allow trailing dot / FQDN)
+kep-number: 6312
+authors:
+  - "@MU5A"
+owning-sig: sig-network
+participating-sigs: []
+status: provisional
+creation-date: 2026-09-02
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - "/keps/sig-network/5311-relaxed-validation-for-service-names"
+  - "/keps/sig-network/4427-relaxed-dns-search-validation"
+replaces: []
+
+stage: alpha
+
+latest-milestone: "v1.xx"
+
+milestone:
+  alpha: "v1.xx"
+  beta: "v1.xx"
+  stable: "v1.xx"
+
+feature-gates:
+  - name: RelaxedHostAliasesValidation
+    components:
+      - kube-apiserver
+disable-supported: true
+
+metrics: []
