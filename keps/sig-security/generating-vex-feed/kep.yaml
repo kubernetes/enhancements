@@ -1,0 +1,38 @@
+title: Generating VEX feed for Kubernetes
+kep-number: NNNN
+authors:
+  - "@sherine-k"
+  - "@PushkarJ"
+owning-sig: sig-security
+participating-sigs:
+  - sig-testing
+  - sig-k8s-infra
+  - sig-docs
+  - sig-release
+status: implementable
+creation-date: 2026-09-15
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
+see-also:
+
+
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: "TBD"
+  stable: "TBD"
+
+## This KEP enhances Kubernetes testing.  It does not directly impact any component.
+feature-gates: []
+disable-supported: true
+metrics: []
