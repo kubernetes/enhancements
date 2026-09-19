@@ -1,0 +1,36 @@
+title: Hugepages Reservation
+kep-number: 6252
+authors:
+  - "@Tal-or"
+owning-sig: sig-node
+participating-sigs: []
+status: provisional
+creation-date: 2026-07-20
+reviewers:
+  - "@harche"
+  - "@ndixita"
+  - "@swatisehgal"
+approvers:
+  - "@dchen1107"
+
+see-also:
+  - "/keps/sig-node/1769-memory-manager"
+  - "/keps/sig-node/1539-hugepages"
+  - "/keps/sig-node/5894-node-system-partition"
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.41"
+
+feature-gates:
+  - name: SystemReservedHugepages
+    components:
+      - kubelet
+disable-supported: true
+
+metrics: []
