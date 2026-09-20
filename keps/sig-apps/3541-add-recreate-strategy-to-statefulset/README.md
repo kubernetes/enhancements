@@ -668,7 +668,7 @@ No, unit and integration tests will be added to cover feature gate enablement/di
 
 ###### What specific metrics should inform a rollback?
 
-- `statefulset_controller_statefulset_unavailable_replicas` shows how many StatefulSet replicas are unavailable
+- `statefulset_unavailable_replicas` shows how many StatefulSet replicas are unavailable
 - `workqueue_depth{name="statefulset"}` shows the current depth of the StatefulSet controller queue
 - `workqueue_queue_duration_seconds{name="statefulset"}` shows how long items wait in queue before processing
 - `workqueue_retries_total{name="statefulset"}` shows retry counts which may indicate processing failures
@@ -725,7 +725,7 @@ kubectl get statefulsets -A -o json | \
     - `kube_statefulset_status_replicas_current`
     - Components exposing the metric: kube-state-metrics
   - Metric name: 
-    - `statefulset_controller_statefulset_unavailable_replicas`
+    - `statefulset_unavailable_replicas`
     - Components exposing the metric: kube-controller-manager
   - These metrics reflect the StatefulSet `.status` (availableReplicas, readyReplicas, currentReplicas). They have labels `statefulset` and `namespace`, so operators can filter by StatefulSet to monitor a specific StatefulSet during Recreate
   - During Recreate updates, the values show the transition from all pods deleted (0 available) to all new pods created and ready
