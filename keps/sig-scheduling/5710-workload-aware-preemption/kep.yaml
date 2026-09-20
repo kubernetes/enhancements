@@ -3,6 +3,7 @@ kep-number: 5710
 authors:
   - "@wojtek-t"
   - "@argh4k"
+  - "@dom4ha"
 owning-sig: sig-scheduling
 participating-sigs:
 status: implementable
@@ -10,12 +11,13 @@ creation-date: 2025-11-28
 reviewers:
   - "@macsko"
 approvers:
-  - "@dom4ha"
+  - "@macsko"
   - "@sanposhiho"
 
 see-also:
   - "/keps/sig-scheduling/4671-gang-scheduling"
   - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+  - "/keps/sig-scheduling/6012-composite-podgroup-api"
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
