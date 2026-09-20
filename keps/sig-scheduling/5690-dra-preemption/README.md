@@ -97,7 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Holding capacity for the preemptor](#holding-capacity-for-the-preemptor)
     - [Interaction with the preemption simulation](#interaction-with-the-preemption-simulation)
     - [Deferring further preemption](#deferring-further-preemption)
-    - [Why claims rather than devices](#why-claims-rather-than-devices)
+    - [Why simulated allocations and victim claims rather than devices](#why-simulated-allocations-and-victim-claims-rather-than-devices)
   - [Deferred: workload-aware preemption](#deferred-workload-aware-preemption)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -175,12 +175,12 @@ Simulating the removal of victims is not sufficient on its own. The devices held
 are reclaimed asynchronously by the resourceclaim controller, so there is a window during which a
 preemptor has been promised capacity that it does not yet hold. This KEP therefore also specifies
 how the scheduler records and holds that capacity, so that a preemptor is not made to preempt
-repeatedly.
+repeatedly and its promised resources are not taken by other pods while being reclaimed.
 
 Most of this is contained in the `dynamicresources` plugin. The one exception is a new optional
-scheduler framework extension point, `PreemptionSettlingPlugin`, which lets a plugin report that a
-pod is already waiting for capacity that an earlier preemption freed, so that the preemption logic
-does not select further victims for it.
+scheduler framework extension point, `PreemptionExtensions`, which notifies plugins when a
+preemption candidate is selected or cleared and lets a plugin report whether resources freed by an
+earlier preemption are still being reclaimed.
 
 ## Motivation
 Acquisition and allocation of specialized hardware (e.g., GPUs and TPUs) is a primary operational concern for
@@ -201,15 +201,16 @@ scheduling requirements of higher-priority tasks.
   this would require is outlined in
   [Deferred: workload-aware preemption](#deferred-workload-aware-preemption).
 * Support preemption of workloads using multi-node or network-attached devices.
-* Persist the scheduler's record of in-flight preemptions across a scheduler restart.
+* Persist the scheduler's record of in-flight preemptions across a scheduler restart or expose it in
+  the API for external components such as Cluster Autoscaler.
 * Coordinate held capacity between multiple schedulers.
-* Hold only the exact capacity a preemptor needs, rather than the whole of each released claim.
 
 ## Proposal
 We will implement the `fwk.PreFilterExtensions` interface in the `dynamicresources` scheduler plugin, which
 requires implementing the `AddPod` and `RemovePod` methods. These functions are invoked by the core
 `DefaultPreemption` plugin to incrementally simulate the removal or recovery (reprieval) of candidate victim
-pods during the preemption planning loop.
+pods during the preemption planning loop, as well as by the scheduling framework when accounting for
+nominated pods on a node (`RunFilterPluginsWithNominatedPods`).
 Implementing these functions requires updating the internal `stateData` structure in the `dynamicresources`
 plugin to track state transitions and maintain local capacity maps transactionally throughout the preemption
 simulation.
@@ -228,12 +229,14 @@ Features that we will support but require careful implementation:
   sure this is handled correctly during preemption simulations.
 
 Features/scenarios that we will not support:
-* **ResourceClaims that span multiple nodes, and network-attached devices**: The `dynamicresources`
-  plugin will not simulate the release of claims whose allocated devices are on more than one node.
-  Separately, preemption enumerates candidate victims from the pods on the node being evaluated, so a
-  device held by a pod on a different node is never offered as something that could be freed. Where a
-  device's location is decoupled from the pod using it, that is a property of the preemption algorithm
-  rather than a restriction this plugin can lift.
+* **ResourceClaims that span multiple nodes, and network-attached devices**: Every DRA device has an
+  associated node selector (`nodeName`, `nodeSelector`, or `allNodes`), either set directly on the
+  device or inherited from the `ResourceSlice` in which the device is defined. The `dynamicresources`
+  plugin will only simulate the release of claims whose allocated devices all use the explicit
+  `nodeName` selector (`Spec.NodeName != nil`). Claims using `nodeSelector` or `allNodes` are ignored
+  during preemption simulation. Separately, preemption enumerates candidate victims from the pods on
+  the node being evaluated, so a device held by a pod on a different node is never offered as
+  something that could be freed.
 * **Pods belonging to a PodGroup**: Preemption for these goes through the workload-aware preemption
   path, which removes victims from the simulation differently. The plugin will not free devices for
   them, whether their ResourceClaims are reserved for the PodGroup or for individual pods. See
@@ -242,43 +245,52 @@ Features/scenarios that we will not support:
 Simulating the removal of victims is not the whole problem. The devices freed by a preemption do not
 become allocatable when the victim pods are deleted, but later, when the resourceclaim controller
 deallocates their ResourceClaims. During that interval the scheduler can preempt further pods
-unnecessarily, and the freed devices can be taken by an unrelated pod. We introduce a record of the
-claims a preemptor is waiting for, and use it both to hold that capacity and to defer any further
-preemption by the same pod. This is specified in [Design Details](#design-details).
+unnecessarily, and the freed devices can be taken by an unrelated pod. When a preemption candidate is
+selected, `dynamicresources` records the simulated `AllocationResult`s computed for the preemptor
+together with the victim `ResourceClaim`s being released. It uses the simulated `AllocationResult`s
+in `AddPod` to hold the exact capacity the preemptor needs on the nominated node, and uses the victim
+`ResourceClaim`s to defer any further preemption by the same pod until those claims have been
+deallocated. This is specified in [Design Details](#design-details).
 
-It requires a small addition to the scheduling framework: an optional extension point through which
-a plugin can report that an earlier preemption by a pod has not finished settling. It is not
-specific to DRA. Today `DefaultPreemption` answers that question with a hard-coded heuristic: in
-`PodEligibleToPreemptOthers` it looks up the pod's nominated node and refuses to start another
-preemption while any pod on that node is still terminating because of preemption. That is a proxy
-for "the resources I freed are not available yet", and it stops holding as soon as the victims are
-gone. That works for resources that are released with the pod, but not for resources that a
-controller reclaims afterwards. The extension point lets a plugin answer the question directly.
+Supporting this requires a small, generic addition to the scheduling framework: an optional
+`PreemptionExtensions` interface. Because `DefaultPreemption` evaluates candidate nodes concurrently
+using cloned `CycleState`s, a plugin cannot tell from `RemovePod` and `Filter` alone which candidate
+won. `PreemptionExtensions` notifies the plugin when a winning preemption candidate is selected
+(passing the winning `CycleState` and victim pods) or when a nomination is cleared, and lets a plugin
+report in `PodEligibleToPreemptOthers` whether resources freed by an earlier preemption by that pod
+are still being reclaimed. Today `DefaultPreemption` answers that eligibility question with a
+hard-coded heuristic: if a pod already has `nominatedNodeName` set from an earlier preemption, it
+refuses to let that same pod preempt again while any pod on its nominated node is still terminating
+(other incoming pods without `nominatedNodeName` set are still free to preempt on that node). That
+heuristic works for resources released with the pod, but not for resources that a controller
+reclaims afterwards. `PreemptionExtensions` makes both the nomination lifecycle and the settling
+check pluggable.
 
 ### Risks and Mitigations
 
 The risks below concern the claim nomination mechanism specified in
-[Claim nomination](#claim-nomination), which holds the capacity freed by a preemption until the
+[Claim nomination](#claim-nomination), which holds the capacity promised to a preemptor until the
 preemptor has been scheduled. The timeline referred to as t0 to t4 is defined in
 [Preemption settling for DRA](#preemption-settling-for-dra).
 
-* **Capacity is held more coarsely than necessary.** The hold covers everything the victims' claims
-  held, which can be more than the preemptor needs: a whole device when the preemptor needs only a
-  share of it, or several devices when a claim held more than one. It never covers capacity the
-  victims did not hold. Holding only the share that the preemptor's simulated allocation consumed
-  would be tighter, but is not generally expressible; see
-  [Why claims rather than devices](#why-claims-rather-than-devices). The cost of the coarser
-  behavior is bounded: it is never more restrictive than the cluster state just before t3, it lasts
-  only until the preemptor is scheduled or the nomination expires, and it does not apply to pods of
-  higher priority.
-* **Nominations are lost when the scheduler restarts.** Nominations are in-memory, so a restart
-  during the settling window returns the affected pods to the behavior they would have without this
-  feature: the preemptor may be stolen from, and may cascade once. Persisting a nomination would
-  require storing the recorded allocation results, since they no longer exist in the API after t3,
-  and therefore an API change. We do not propose one for the initial implementation.
-* **Claims that are never deallocated.** If the resourceclaim controller does not deallocate a
-  nominated claim, the nomination expires and the preemptor preempts again. This is bounded by the
-  expiry and is reported through the metrics below.
+* **Nominations are in-memory and not visible to external components or across scheduler restarts.**
+  Nominations are held in memory in the `dynamicresources` plugin. A scheduler restart during the
+  settling window returns the affected pods to the behavior they would have without this feature:
+  the preemptor may have its freed devices taken by another pod, and may cascade once. Similarly,
+  external components that run scheduling simulations—most notably Cluster Autoscaler and external
+  queue controllers such as Kueue—can see `nominatedNodeName` on the preemptor pod in the API, but
+  cannot see which specific DRA devices or capacities on that node have been nominated for it, and
+  may therefore make conflicting scale-down or placement decisions during the settling window.
+  Persisting nominations in the API server (for example in `ResourceClaim.Status`) requires an API
+  change; we defer that decision to GA, informed by Beta feedback.
+* **Claims that are never deallocated.** If the resourceclaim controller is unhealthy and fails to
+  deallocate a victim claim, its capacity remains occupied in the API server (which is standard DRA
+  behavior whenever a pod is deleted while the controller is down). The preemptor remains waiting
+  for its nominated node—matching how `DefaultPreemption` behaves when a victim pod is stuck
+  terminating—rather than timing out and evicting additional victims on other nodes while the
+  controller is unhealthy. Once the controller recovers and deallocates the claim (or if the
+  preemptor is deleted), the nomination resolves. Persistently stuck nominations are visible through
+  the `scheduler_dra_claim_nominations` gauge metric below.
 * **Multiple schedulers.** A nomination is only known to the scheduler that created it. Another
   scheduler may allocate the held capacity. This matches the existing limitation of nominated nodes.
 
@@ -298,10 +310,11 @@ which the preemptor has been promised resources that it does not yet hold:
 | t3 | `Status.Allocation` is cleared; the devices become allocatable again | resourceclaim controller |
 | t4 | The preemptor is retried and scheduled | kube-scheduler |
 
-The scheduler already handles part of this window. `PodEligibleToPreemptOthers` refuses to start
-a new preemption for a pod whose nominated node still holds pods that are terminating because of
-an earlier preemption. That check assumes the settling window ends when the victim pods are gone,
-that is at t1.
+The scheduler already handles part of this window. When a pod that already has `nominatedNodeName`
+set is retried, `PodEligibleToPreemptOthers` refuses to let that pod start a second preemption while
+its nominated node still holds pods that are terminating because of preemption (while still allowing
+other un-nominated pods to preempt on that node). That check assumes the settling window ends when
+the victim pods are gone, that is at t1.
 
 For DRA the assumption does not hold, because devices are reclaimed asynchronously by the
 resourceclaim controller and only become allocatable at t3. Two problems follow:
@@ -310,10 +323,10 @@ resourceclaim controller and only become allocatable at t3. Two problems follow:
   devices are still allocated. If the preemptor is retried during this interval it fails again and
   preempts a second set of victims that were never needed. In the worst case, a slow or stuck
   resourceclaim controller turns a single preemption into a series of them.
-* **Device stealing.** Between t3 and t4 the devices are free, and nothing records that they were
-  freed on behalf of the preemptor. An unrelated pod may be allocated them first, after which the
-  preemptor has to preempt all over again. Under contention for scarce accelerators this can repeat
-  indefinitely, which would defeat the purpose of this KEP.
+* **Device stealing.** Between t3 and t4 the devices are free, and nothing in the API records that
+  they were freed on behalf of the preemptor. An unrelated pod may be allocated them first, after
+  which the preemptor has to preempt all over again. Under contention for scarce accelerators this
+  can repeat indefinitely, which would defeat the purpose of this KEP.
 
 These are two views of the same gap: the scheduler has no representation of capacity that a
 preemptor has earned by preempting but has not yet received. A single mechanism, described below,
@@ -325,169 +338,219 @@ interval is long enough to matter in practice.
 
 ### Claim nomination
 
-When the preemption logic selects a winning candidate for a preemptor pod, the `dynamicresources`
-plugin records a *claim nomination* for that preemptor, consisting of:
+When `DefaultPreemption` selects a winning candidate for a preemptor pod, it invokes
+`PreemptionExtensions.AddNominatedPod` on registered plugins. In its `AddNominatedPod`
+implementation, `dynamicresources` records an internal *claim nomination* for that preemptor,
+consisting of:
 
 * the nominated node;
-* the set of ResourceClaims that the preemption simulation released in order to make the placement
-  feasible;
-* the allocation result of each of those claims;
-* an expiry time.
+* the simulated `AllocationResult` for each of the preemptor's ResourceClaims on that node;
+* the UIDs of the victim ResourceClaims that the simulation released in order to make the placement
+  feasible.
 
-The set of claims is taken directly from the simulation, which already computes it in order to
-evaluate the candidate. Only claims whose every reserving pod was a victim are included. A shared
-claim that stays allocated because a pod that is not being preempted still holds it is not part of
-the nomination, which is the correct outcome: the preemptor's placement did not depend on it being
-released.
+During `Filter` in the preemption simulation, `dynamicresources` caches the computed
+`AllocationResult`s per candidate node in its own `CycleState` entry. When `AddNominatedPod` is
+called with the scheduling cycle's `CycleState`, the winning `nodeName`, and `victims`,
+`dynamicresources` looks up the cached `AllocationResult`s for `nodeName` and derives the released
+victim claims from `victims` (including only claims whose every reserving pod is in `victims`, not
+shared claims still held by a non-preempted pod).
 
-The allocation results are recorded because they no longer exist in the API after t3, and the
-scheduler needs to know which capacity to hold.
+A nomination's lifetime is bound 1-to-1 to the pod's `nominatedNodeName` in the scheduler's
+`PodNominator`. It is created by `PreemptionExtensions.AddNominatedPod` and discarded by
+`PreemptionExtensions.RemoveNominatedPod` when:
 
-A nomination is discarded when the preemptor is scheduled, when it is deleted, when its
-`nominatedNodeName` is cleared, when a subsequent preemption by the same pod replaces it, and when
-the capacity it holds is allocated to a pod of higher priority, which invalidates the preemptor's
-planned placement. These conditions cover the normal path.
+* the preemptor is scheduled and bound;
+* the preemptor is deleted;
+* the preemptor's `nominatedNodeName` is cleared or replaced by a subsequent preemption.
 
-The expiry is a backstop rather than a model of how long settling takes. It exists so that a
-nomination cannot hold capacity indefinitely when none of the conditions above is ever observed, for
-example because the resourceclaim controller never deallocates one of the claims. We propose a fixed
-value of five minutes as a starting point: long enough that it does not fire during ordinary
-operation, short enough to bound the cost of a leaked nomination. It is deliberately not derived
-from the victims' `terminationGracePeriodSeconds`, which bounds only how long the victim pods take
-to terminate. A nomination also has to survive the deallocation of their claims by the resourceclaim
-controller and the preemptor's next scheduling attempt, and neither of those is a function of the
-grace period.
+No separate time-based expiry is needed. Once all victim claims have been deallocated at t3, if the
+preemptor is retried and still cannot be scheduled on the nominated node (for example because a
+higher-priority pod took the freed device, or the node became unschedulable), `PodEligibleToPreempt`
+returns `true` and `DefaultPreemption` immediately re-evaluates the pod—either replacing the
+nomination with a new candidate node or clearing `nominatedNodeName`, which removes the nomination.
+Before t3, while the victim claims are still allocated, waiting without a timeout matches how
+`DefaultPreemption` behaves when a victim pod is stuck terminating: if the resourceclaim controller
+is unhealthy, expiring the nomination would only cause the preemptor to evict additional victims on
+other nodes while the controller is down.
 
-Erring on the long side is intentional. A nomination that outlives its usefulness holds capacity for
-a pod that is still pending and still wants it, and that capacity remains available to pods of
-higher priority. A nomination that expires while the preemptor is still waiting removes both the
-capacity hold and the deferral at once, so the preemptor preempts a second set of victims and
-creates more work for the controller whose slowness caused the expiry. The `expired` outcome on
-`scheduler_dra_claim_nominations_total` will show whether five minutes is the right value.
-
-When a nomination expires the plugin requeues the preemptor, so that a pod whose wake-ups were
-withheld while the nomination was unsettled does not then wait for the periodic flush of the
-unschedulable queue.
+When a nomination is removed without a corresponding `ResourceClaim` deallocation event in the API
+server (for example when the preemptor is deleted or its `nominatedNodeName` is cleared or changed),
+the plugin triggers a scheduling queue wake-up (mimicking resource deallocation) for any
+unschedulable pods that were waiting on the devices held by the nomination. Without this,
+lower-priority workloads that were rejected because of the held capacity—or when a rescheduled
+preemptor lands on the same node but selects different devices—would remain in the unschedulable
+queue until the periodic flush.
 
 Nominations are held in memory in the `dynamicresources` plugin and are keyed by the preemptor's pod
 UID. They are not persisted; see [Risks and Mitigations](#risks-and-mitigations).
 
 A claim nomination is distinct from, but paired with, the pod's `nominatedNodeName`. The latter is an
 API field recording which node the scheduler intends to place the pod on; the former is scheduler-local
-state recording which DRA capacity on that node is being held for it. A claim nomination never exists
-without a corresponding `nominatedNodeName`.
+state recording which DRA capacity on that node is being held for it and which victim claims it is
+waiting on. A claim nomination never exists without a corresponding `nominatedNodeName`.
 
-A nomination serves two purposes: it holds the freed capacity for the preemptor, and it defers any
-further preemption by that pod. The subsections below cover the first, then how it composes with the
-preemption simulation, then the second.
+A nomination serves two purposes: it holds the promised capacity for the preemptor, and it defers
+any further preemption by that pod while its victim claims are still being reclaimed. The subsections
+below cover the first, then how it composes with the preemption simulation, then the second.
 
 #### Holding capacity for the preemptor
 
-While a nomination is live, the `dynamicresources` plugin adds the recorded allocation results back
-into the allocated device state that it builds for *other* pods, as though the nominated claims were
-still allocated. The freed capacity is therefore not visible to those pods and cannot be allocated
-to them.
+When the scheduler evaluates a node for another pod `Q`—either during normal `Filter` or during a
+preemption simulation—the framework's `RunFilterPluginsWithNominatedPods` evaluates `Filter` in up
+to two passes whenever nominated pods `P` with priority >= `Q` exist on that node:
 
-This is the exact inverse of the operation that the preemption simulation already performs: the
-simulation removes a claim's allocation from the allocated state, and a nomination adds it back.
-Both use the same accounting, so consumable capacity and partitionable devices are handled exactly
-as they were before the claims were deallocated, and no additional logic is needed for either.
+* **Pass 1 (with nominated pods):** `RunFilterPluginsWithNominatedPods` applies
+  `PreFilterExtensions.AddPod` for each such nominated pod `P` and runs `Filter`.
+* **Pass 2 (without nominated pods):** If Pass 1 succeeds,
+  `RunFilterPluginsWithNominatedPods` runs `Filter` a second time without `AddPod(P)` applied.
 
-Holding this capacity does not make anything unavailable that was previously available. From t0
-until t3 the same capacity is already unusable by every pod, because the claims are still allocated.
-A nomination extends that existing condition until t4 rather than introducing a new restriction.
+When `AddPod` is called for a nominated preemptor `P` in Pass 1, `dynamicresources` consults `P`'s
+live nomination and performs two updates to the allocated device state in `CycleState`:
 
-The capacity is held only against pods whose priority is not higher than the preemptor's. A pod of
-higher priority sees the capacity as free and may be allocated it, after which the preemptor must
-preempt again. This keeps the mechanism consistent with pod priority and avoids a lower-priority
-preemptor blocking a higher-priority pod.
+1. **Subtract still-allocated victim claims (t0 to t3):** For each victim `ResourceClaim` UID
+   on that node that still has `Status.Allocation != nil` in the informer cache (and has not already
+   been removed in `CycleState`), `dynamicresources` subtracts its `Status.Allocation` from the
+   allocated device state, using the same accounting helper as `RemovePod`. This prevents
+   double-counting the capacity that `P` itself is taking from its victim claims between t0 and t3:
+   in particular, between t1 and t3, the victim Pod object has already been deleted from the API
+   server and is no longer in `NodeInfo.Pods` (so `RemovePod` is not called for it), yet its
+   `ResourceClaim.Status.Allocation` remains present in the state built by `PreFilter` until t3.
+2. **Add the preemptor's simulated `AllocationResult`s (t0 to t4):** `dynamicresources` adds
+   `P`'s recorded `AllocationResult`s into the allocated device state, marking the exact devices,
+   consumable capacity shares, or partition counters selected for `P` as in use.
+
+When both Pass 1 and Pass 2 run, `dynamicresources.Filter` preserves the `AllocationResult` computed
+for `Q` in Pass 1 (which respected `AddPod(P)` and avoided `P`'s nominated devices) rather than
+letting Pass 2 overwrite `nodeAllocations[nodeName]`.
+
+The combination of Pass 1 (with nominated pods) and Pass 2 (without nominated pods) ensures accurate
+capacity accounting across all phases of the settling window:
+
+* **Surplus victim capacity is never treated as free unless `RemovePod` removed the victim pod or
+  t3 has passed:** If a victim claim `Claim-V` holds more capacity than `P` consumes (for example,
+  two devices `GPU-0` and `GPU-1` when `P` only needs `GPU-0`), subtracting `Claim-V` and adding
+  `P`'s `AllocationResult` in Pass 1 leaves `GPU-1` free in Pass 1, but `Claim-V` (`GPU-0` and
+  `GPU-1`) remains allocated in Pass 2 unless `RemovePod(V)` explicitly removed `V`. Thus, during
+  normal `Filter` (t0 to t3) or during a preemption simulation between t1 and t3 (when `V` is
+  already gone from `NodeInfo.Pods`), Pass 2 rejects any attempt to allocate `GPU-1` while `Claim-V`
+  is still allocated in the API server.
+* **Once `Claim-V` is deallocated at t3:** `Claim-V` drops out of the state built by `PreFilter`,
+  step 1 in `AddPod(P)` becomes a no-op, and `P` continues to hold only `GPU-0` via step 2 until t4,
+  while `GPU-1` becomes immediately allocatable in normal `Filter` (passing both Pass 1 and Pass 2).
+
+The capacity is held only against pods whose priority is not higher than the preemptor's. When a pod
+of higher priority evaluates the node, `RunFilterPluginsWithNominatedPods` does not call `AddPod`
+for the lower-priority preemptor, so the higher-priority pod sees the capacity as free once t3
+passes and may be allocated it, after which the preemptor must preempt again.
 
 #### Interaction with the preemption simulation
 
-A nomination holds capacity on behalf of one pod, while the preemption simulation run for a
-different pod releases claims by calling `RemovePod` for each of its candidate victims. Both act on
-the allocated device state, and they can act on the same claim.
+Two cases illustrate how `AddPod` composes with subsequent preemption simulations on the same node
+while an earlier preemption on behalf of `P1` is settling:
 
-The nomination has to survive the release. `RemovePod` removes a victim's hold on a claim; it does
-not remove another pod's nomination of it. Nominated capacity is therefore kept separate from the
-state that the simulation mutates, and both are consulted when deciding what is allocatable.
+* **Sharing a terminating victim (t0 to t1):** Suppose victim `V` on Node `N` holds a claim
+  `Claim-V` with two devices (`GPU-0` and `GPU-1`), and `P1` (needing one device) preempts `V` and
+  records a nomination for `GPU-0` and victim claim `Claim-V`. While `V` is still terminating in
+  `NodeInfo.Pods` (t0 to t1), an equal-priority pod `P2` (also needing one device) runs a preemption
+  simulation on Node `N`:
+  1. `DefaultPreemption` calls `RemovePod(V)`, removing `Claim-V` (`GPU-0` and `GPU-1`) from the
+     simulated state.
+  2. In Pass 1 of `RunFilterPluginsWithNominatedPods`, `AddPod(P1)` adds `P1`'s nominated allocation
+     (`GPU-0`). `Filter(P2)` sees `GPU-0` occupied by `P1` and `GPU-1` free, and computes a
+     simulated allocation of `GPU-1` for `P2`.
+  3. Pass 2 (without nominated pods) also succeeds because `RemovePod(V)` removed `Claim-V` from the
+     simulated state.
+  Both `P1` (`GPU-0`) and `P2` (`GPU-1`) therefore select `V` as a victim, record `Claim-V` in their
+  nominations, and schedule once `Claim-V` is deallocated at t3. (If `P2` instead arrives between t1
+  and t3 after `V` has already been deleted from `NodeInfo.Pods`, `DefaultPreemption` sees no victim
+  pod `V` on Node `N` to evict; `P2` simply waits until `Claim-V` is deallocated at t3, when the
+  `ResourceClaim` informer event wakes `P2` and schedules it onto `GPU-1` in normal `Filter`.)
 
-Without this, a nomination could be cancelled by the very pod it is meant to hold capacity against.
-Suppose a victim `V` holds a claim with two devices, and a preemption on behalf of `P1`, which needs
-one of them, frees it. While the claim is still allocated, `P2` of equal priority fails to schedule
-and simulates removing `V`. If that release also dropped `P1`'s nomination, `P2` would see both
-devices as free, select `V` as a victim a second time even though it is already terminating, and
-record a nomination of its own on the same claim. Both pods would then hold the same capacity and
-mask it from each other, and neither would be able to schedule.
-
-With the nomination preserved, removing `V` gains `P2` nothing, so no candidate is selected and `P2`
-simply waits. Once `P1` has been scheduled its nomination is discarded, and the remaining device
-becomes available to `P2`.
+* **Preempting a second victim on the same node after the first victim is deleted (t1 to t3):**
+  Suppose an 80Gi device on Node `N` is split between `V1` (`Claim-V1`, 40Gi) and `V2` (`Claim-V2`,
+  40Gi). `P1` (needing 40Gi) preempts `V1`, and by t1 `V1` has terminated and been deleted from
+  `NodeInfo.Pods` while `Claim-V1` (40Gi) is still allocated in the API server. When an
+  equal-priority pod `P2` (needing 40Gi) runs a preemption simulation on Node `N` between t1 and t3,
+  `DefaultPreemption` calls `RemovePod(V2)` (freeing `V2`'s 40Gi), but does not call `RemovePod(V1)`
+  because `V1` is no longer in `NodeInfo.Pods`. In Pass 1 of `RunFilterPluginsWithNominatedPods`,
+  `AddPod(P1)` subtracts `Claim-V1` (40Gi) before adding `P1`'s nominated 40Gi, preventing
+  `Claim-V1` and `P1` from being double-counted to 80Gi. Both Pass 1 and Pass 2 therefore see 40Gi
+  in use and 40Gi freed by `RemovePod(V2)`, allowing `P2` to preempt `V2`.
 
 #### Deferring further preemption
 
-While a nomination is live and any of its claims is still allocated, the preemptor must not start a
-new preemption. Together with the existing terminating-pod check, which covers t0 to t1, this covers
-the settling window up to t3. Once all nominated claims have been deallocated, or once the
-nomination expires, the preemptor becomes eligible to preempt again; if its placement no longer
-works at that point, preempting again is the correct behavior.
+While a nomination is live and any of its victim ResourceClaims still has `Status.Allocation != nil`
+in the informer cache, the preemptor must not start a new preemption. Together with the existing
+terminating-pod check, which covers t0 to t1, this covers the settling window up to t3. Once all
+victim claims in the nomination have been deallocated (`Status.Allocation == nil`), the preemptor
+becomes eligible to preempt again; if its placement no longer works at that point (for example
+because a higher-priority pod took the freed device), preempting again is the correct behavior.
 
-`PodEligibleToPreemptOthers` belongs to the `DefaultPreemption` plugin, and we do not want to make
-that plugin aware of DRA. We therefore propose a small and generic addition to the scheduling
-framework: an optional extension point through which a plugin can report that an earlier preemption
-by a given pod has not finished settling.
+`PodEligibleToPreemptOthers` and `prepareCandidate` belong to the `DefaultPreemption` plugin, and we
+do not want to make that plugin aware of DRA. We therefore propose a small and generic addition to
+the scheduling framework: an optional `PreemptionExtensions` interface that manages the nomination
+lifecycle and preemption eligibility check:
 
 ```go
-// PreemptionSettlingPlugin is an optional interface for plugins that reclaim
-// resources asynchronously. DefaultPreemption consults it before starting a new
-// preemption for a pod that has already preempted.
-type PreemptionSettlingPlugin interface {
+// PreemptionExtensions is an optional interface for plugins that manage
+// resources requiring explicit reservation for nominated pods and/or
+// asynchronous reclamation when victim pods are preempted.
+type PreemptionExtensions interface {
     Plugin
-    // PreemptionSettling reports whether resources freed by an earlier preemption
-    // by this pod are still being reclaimed, and if so why.
-    PreemptionSettling(ctx context.Context, pod *v1.Pod) (bool, string)
+    // AddNominatedPod is called when preemption selects a winning candidate for a pod.
+    // state is the scheduling cycle's CycleState.
+    AddNominatedPod(ctx context.Context, state CycleState, pod *v1.Pod, nodeName string, victims []*v1.Pod)
+    // RemoveNominatedPod is called when a pod's nomination is cleared or superseded.
+    RemoveNominatedPod(ctx context.Context, pod *v1.Pod)
+    // PodEligibleToPreempt reports whether a pod with an existing nominatedNodeName
+    // is eligible to start a new preemption, or whether resources freed by an earlier
+    // preemption on nodeName are still being reclaimed.
+    PodEligibleToPreempt(ctx context.Context, pod *v1.Pod, nodeName string) (bool, string)
 }
 ```
 
-The framework gains a `RunPreemptionSettlingPlugins` method that calls each registered plugin
-implementing the interface and stops at the first one that reports the pod as settling. Plugins that
-do not implement it are skipped, as they are for the other optional extension points.
-`PodEligibleToPreemptOthers` calls it alongside its existing terminating-pod check, and the returned
-reason is reported in the pod's scheduling condition.
+The framework invokes registered plugins implementing `PreemptionExtensions`:
 
-This extension point is not DRA-specific and makes an existing hard-coded heuristic pluggable. The
-`dynamicresources` plugin implements it by reporting whether the pod has a live nomination with
-claims that are still allocated.
+* `AddNominatedPod` is called by `DefaultPreemption` when recording the winning preemption
+  candidate for a pod.
+* `RemoveNominatedPod` is called by the framework's `PodNominator` whenever a pod's nomination is
+  cleared or replaced.
+* `PodEligibleToPreempt` is called by `DefaultPreemption.PodEligibleToPreemptOthers` alongside its
+  existing terminating-pod check, stopping at the first plugin that reports `false` and surfacing
+  the returned reason in the pod's scheduling condition.
 
-As a secondary optimization, the plugin's queueing hints can withhold a wake-up while a nomination
-is unsettled, so that the preemptor is not retried pointlessly. This is not sufficient on its own,
-because the pod can also be woken by unrelated events and by the periodic flush of the
-unschedulable queue, but it avoids wasted scheduling attempts.
+The `dynamicresources` plugin implements `PodEligibleToPreempt` by checking whether the pod has a
+live nomination on `nodeName` with any victim `ResourceClaim` that still has
+`Status.Allocation != nil`.
 
-#### Why claims rather than devices
+When the `resourceclaim` controller clears `Status.Allocation` on a victim claim at t3, the
+scheduler's `ResourceClaim` informer event handler invokes `SchedulingQueue.MoveAllToActiveOrBackoffQueue`,
+which calls `dynamicresources`'s `QueueingHint` (`isSchedulableAfterClaimChange`). As a secondary
+optimization, the `QueueingHint` withholds a wake-up (`QueueSkip`) for the preemptor while any of
+its other nominated victim claims still has `Status.Allocation != nil`, and returns `Queue` as soon
+as the last victim claim is deallocated. This avoids pointless scheduling attempts while some victim
+claims are still settling.
 
-The obvious alternative is to nominate the *devices* that the preemptor is expected to receive,
-analogous to how `nominatedNodeName` records a node. We nominate claims instead, because the device
-is the wrong unit:
+#### Why simulated allocations and victim claims rather than devices
 
-* With **consumable capacity**, the preemptor may need only a share of a device, and that share may
-  be freed by several victims. There is no device-level entity corresponding to a share, so a device
-  nomination would have to hold the whole device, including capacity that the victims never held and
-  that other pods can still use. Recording the victims' claims holds exactly their shares.
-* With **partitionable devices**, the released capacity can be recombined and re-partitioned, so the
-  partition the preemptor ends up using is generally not one of the partitions the victims held.
-  Partitions are enumerated in the ResourceSlice, so there is a name to nominate, but picking one
-  commits to a guess: overlapping partitions draw on the same counters, so holding the wrong
-  partition fails to protect what the preemptor needs while blocking partitions that others could
-  have used. Holding the victims' claims holds the counters that the preemption actually freed,
-  without predicting which partition will be built from them.
-* A device nomination has no checkable completion condition. There is no observable event that says
-  a nominated device has been freed, so there is no reliable point at which to release the hold. A
-  claim's `Status.Allocation` being cleared is directly observable.
+A claim nomination records both the **preemptor's simulated `AllocationResult`s** (to hold capacity
+via `AddPod`) and the **victim `ResourceClaim` UIDs** (to track ongoing deallocation between t0
+and t3), rather than nominating raw device names:
 
-Claims do not have these problems, because the claim is the unit at which capacity is actually
-released. "These claims will be released" remains true and checkable regardless of how the
-underlying capacity is subsequently recombined.
+* **Why simulated `AllocationResult`s rather than device names:** With **consumable capacity** and
+  **partitionable devices**, a bare device name does not express a capacity share or the counter
+  draw of a partition. An `AllocationResult` (`*resourceapi.AllocationResult`) is the exact data
+  structure produced by the DRA allocator during `Filter` and consumed by `dynamicresources` when
+  building its allocated state. Recording the preemptor's simulated `AllocationResult` holds the
+  exact share or partition counters the preemptor needs, without blocking the rest of the device.
+* **Why victim `ResourceClaim` UIDs are also recorded:** A simulated `AllocationResult` has no
+  completion condition of its own in the API before t4, and checking whether a simulated
+  `AllocationResult` conflicts with arbitrary deallocating claims in the informer cache would
+  require complex counter and partition-overlap math across `ResourceSlice`s (since a preemptor's
+  partition name may differ from the partitions held by the victims). Recording the UIDs of the
+  victim claims that `RemovePod` released during the winning simulation gives an O(1), directly
+  observable completion condition (`claim.Status.Allocation == nil` at t3) and lets `AddPod`
+  subtract those exact victim allocations while `Status.Allocation != nil` with zero conflict math.
 
 ### Deferred: workload-aware preemption
 
@@ -498,7 +561,7 @@ and then reruns the pod group scheduling algorithm with fresh CycleStates, inste
 the preemption frees nothing. The pod group stays pending, which is the behavior without this
 feature. No state is corrupted and no device is allocated twice.
 
-Supporting that path needs two additions that we prefer to design separately:
+Supporting that path needs three additions that we prefer to design separately:
 
 * The plugin has to rebuild its allocated state by reconciling the ResourceClaims it reads against
   the pods present in the `NodeInfos` that `PreFilter` receives. Doing so safely requires
@@ -507,8 +570,13 @@ Supporting that path needs two additions that we prefer to design separately:
   yet bound.
 * A nomination has to be owned by the preempting pod group rather than by a single pod. One
   workload-aware preemption produces a nominated placement for every member of the group, all at
-  the same priority, so per-pod nominations covering the same released claims would mask the
-  capacity from each other and the group would never schedule.
+  the same priority, so per-pod nominations would need to be coordinated across the group.
+* Workload-aware preemption (as well as multi-node DRA claims) changes the scope of preemption and
+  nomination from node-local to cluster-global. Currently, the scheduler applies nominations
+  per-node during `Filter` (`RunFilterPluginsWithNominatedPods` only invokes `AddPod` for pods whose
+  `nominatedNodeName` matches the node being evaluated). Supporting multi-node DRA claims and global
+  workload-aware preemption requires applying nominations globally before filtering starts (for
+  example during `PreFilter`).
 
 [KEP-5710]: https://github.com/kubernetes/enhancements/issues/5710
 
@@ -598,8 +666,8 @@ particular:
 * devices freed by a preemption are not allocated to another pod of equal or lower priority before
   the preemptor has been scheduled;
 * a pod of higher priority can be allocated those devices, and the preemptor then preempts again;
-* a nomination expires and the preemptor becomes eligible to preempt again if its claims are never
-  deallocated.
+* a nomination is removed and held capacity is released when the preemptor is deleted or its
+  `nominatedNodeName` is cleared.
 
 ##### e2e tests
 
@@ -638,8 +706,9 @@ This feature targets Beta directly, without an Alpha stage.
 
 - 2 examples of real-world usage
 - Allowing time for feedback
-- A decision on whether claim nominations need to survive a scheduler restart, informed by the
-  metrics gathered during Beta
+- A decision on whether claim nominations need to be persisted in the API (e.g., in
+  `ResourceClaim.Status`) to survive a scheduler restart and be visible to external components
+  such as Cluster Autoscaler, informed by the metrics and feedback gathered during Beta
 
 
 ### Upgrade / Downgrade Strategy
@@ -811,10 +880,9 @@ Pick one more of these and delete the rest.
   - Metric name: `scheduler_dra_claim_nominations`, a gauge of the claim nominations currently
     held by the scheduler
   - Metric name: `scheduler_dra_claim_nominations_total`, a counter of resolved nominations,
-    labeled by outcome: `scheduled` when the preemptor was scheduled, `expired` when the
-    nomination timed out, `preempted` when the held capacity was taken by a pod of higher
-    priority, and `discarded` for the remaining cases, such as the preemptor being deleted or
-    preempting again
+    labeled by outcome: `scheduled` when the preemptor was scheduled, `preempted` when the held
+    capacity was taken by a pod of higher priority, and `discarded` for the remaining cases, such
+    as the preemptor being deleted or preempting again
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -831,8 +899,8 @@ This section must be completed when targeting beta to a release.
 
 Yes. The resourceclaim controller in kube-controller-manager deallocates the ResourceClaims of
 preempted pods, and preemption for DRA cannot complete until it has done so. If the controller is
-unavailable or lagging, preemptors remain unschedulable and their claim nominations eventually
-expire; see [What are other known failure modes?](#what-are-other-known-failure-modes).
+unavailable or lagging, preemptors remain unschedulable and wait for their nominated claims to be
+deallocated; see [What are other known failure modes?](#what-are-other-known-failure-modes).
 
 ### Scalability
 
@@ -880,9 +948,10 @@ It can lead to some additional work in the scheduler, since we are enabling
 preemption simulation for a new scheduler plugin.
 
 The scheduler additionally holds one claim nomination per preemptor pod that is waiting for an
-earlier preemption to settle, containing the allocation results of the claims that were released.
-The number of such nominations is bounded by the number of in-flight preemptions, and each is
-discarded when the preemptor is scheduled or when the nomination expires.
+earlier preemption to settle, containing the simulated allocation results for the preemptor and the
+UIDs of the victim claims being released. The number of such nominations is bounded by the number of
+in-flight preemptions, and each is discarded when the preemptor is scheduled, deleted, or has its
+`nominatedNodeName` cleared.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
 
@@ -907,18 +976,17 @@ The `dynamicresources` plugin does not add any calls to the API server compared 
 does, so the plugin behaves as it would without this feature enabled.
 
 Preemption as a whole cannot make progress while the API server is unavailable: victim pods cannot
-be deleted and their ResourceClaims cannot be deallocated, so claim nominations will expire. Once
-the API server is available again, preemptors whose nominations expired may preempt a further set
-of victims.
+be deleted and their ResourceClaims cannot be deallocated, so claim nominations remain active until
+the API server recovers and the victim claims are deallocated.
 
 ###### What are other known failure modes?
 
 - The resourceclaim controller does not deallocate a nominated claim, for example because it is
-  unhealthy. The preemptor's nomination expires and it preempts a further set of victims. This is
-  visible as a rising `expired` count on `scheduler_dra_claim_nominations_total`, and as a
-  persistently non-zero `scheduler_dra_claim_nominations`. Detection is by those metrics; there is no
-  mitigation in the scheduler beyond the expiry bound, since the scheduler cannot make the
-  controller progress.
+  unhealthy. The preemptor remains unschedulable and its nomination continues to hold the simulated
+  capacity until the controller recovers and deallocates the claim (or the preemptor is deleted).
+  This is visible as a persistently non-zero `scheduler_dra_claim_nominations` gauge. Detection is
+  by that metric; since the devices themselves remain allocated in the API until the controller
+  runs, operator attention is required to restore the controller.
 - The scheduler restarts while preemptions are settling. Nominations are in memory and are lost, so
   the affected preemptors may have their devices taken by another pod or may preempt again. The
   effect is limited to preemptions that were in flight at the time of the restart.
@@ -941,7 +1009,7 @@ It complicates the logic in the dynamicresources plugin and can lead
 to slower preemption when pods are using DRA.
 
 Holding capacity for a nominated preemptor can also leave devices idle for the duration of the
-settling window, and more of a device may be held than the preemptor actually needs. See
+settling window if the preemptor is deleted or fails before being scheduled. See
 [Risks and Mitigations](#risks-and-mitigations).
 
 ## Alternatives
@@ -950,17 +1018,23 @@ Kubernetes has a well-established framework for preemption, and this KEP uses it
 a separate mechanism for DRA. The alternatives below all concern the settling window described in
 [Preemption settling for DRA](#preemption-settling-for-dra).
 
-**Nominating devices rather than claims.** Discussed in
-[Why claims rather than devices](#why-claims-rather-than-devices).
+**Nominating devices rather than simulated allocations and victim claims.** Discussed in
+[Why simulated allocations and victim claims rather than devices](#why-simulated-allocations-and-victim-claims-rather-than-devices).
 
-**Allocating the preemptor's claims eagerly.** Rather than recording a nomination, the scheduler
-could write the allocation computed during preemption to the preemptor's ResourceClaims
+**Holding the victims' claims rather than the preemptor's simulated allocation.** Rather than
+recording the simulated `AllocationResult`s computed for the preemptor and adding them via `AddPod`,
+the plugin could hold the `AllocationResult`s of the victim claims that were released. We rejected
+this because a victim claim may hold more capacity than the preemptor needs—such as multiple devices
+when the preemptor needs only one, or a larger share of consumable capacity—which would unnecessarily
+block other pods from claiming the surplus capacity during the settling window.
+
+**Allocating the preemptor's claims eagerly.** Rather than recording an in-memory nomination, the
+scheduler could write the allocation computed during preemption to the preemptor's ResourceClaims
 immediately and mark it as not yet usable. We rejected this because the victims' claims still hold
 the same devices until t3, so the two allocations would conflict; because the allocation was
 computed against a simulated state and may no longer be valid once the cluster state converges; and
 because it would need an unwind path for the case where the preemptor ultimately cannot be
-scheduled. Recording the claims that will be released avoids all three, because it records an input
-to the allocator rather than one of its outputs.
+scheduled.
 
 **Deallocating the victims' claims from the scheduler.** The scheduler could clear
 `Status.Allocation` itself once the victim pods are gone, instead of waiting for the resourceclaim
@@ -973,21 +1047,13 @@ possible later optimization rather than a substitute.
 window altogether, but blocks the scheduler for the length of the victims' grace periods and is
 therefore not acceptable.
 
-**Deferring preemption from the plugin's PostFilter rather than through a framework extension
-point.** The `dynamicresources` plugin is registered immediately before `DefaultPreemption` at the
-PostFilter extension point, and `RunPostFilterPlugins` returns as soon as a plugin reports
+**Deferring preemption from the plugin's PostFilter rather than through `PreemptionExtensions`.**
+The `dynamicresources` plugin is registered immediately before `DefaultPreemption` at the PostFilter
+extension point, and `RunPostFilterPlugins` returns as soon as a plugin reports
 `UnschedulableAndUnresolvable`. The plugin could therefore return that status while the pod has an
-unsettled nomination, and `DefaultPreemption` would not run for that scheduling attempt. This
-achieves the same deferral with no change to the scheduling framework.
-
-We did not choose it as the primary design for three reasons. It depends on the relative ordering of
-the two plugins, which is a property of the default configuration rather than a guarantee, so a
-profile that reorders the plugins or disables the plugin's PostFilter would lose the protection
-silently. It suppresses every PostFilter plugin registered after `dynamicresources`, not only
-`DefaultPreemption`. And it leaves the assumption built into `PodEligibleToPreemptOthers`, that a
-preemption has finished settling once the victim pods are gone, incorrect for every other resource
-that is reclaimed by a controller rather than by the removal of the pod. It remains a workable
-fallback if the extension point is not accepted.
+unsettled nomination, and `DefaultPreemption` would not run for that scheduling attempt. We did not
+choose it because it still would not notify the plugin which candidate won `SelectCandidate`, and
+because it depends on the relative ordering of the two plugins at `PostFilter`.
 
 **Accepting the behavior and relying on priority.** Preemption is best-effort, so the scheduler
 could simply let the preemptor retry. We rejected this because the situation that motivates this
