@@ -64,8 +64,10 @@ systemd can restart kubelet.
 
 This KEP makes existing watchdog failures easier to diagnose. It adds
 default-visible structured logs for checker errors and `SdNotify()` errors, plus
-one summary when existing notification retries are exhausted. It does not
-change watchdog execution, timing, retry count, socket behavior, or cancellation.
+one summary when existing notification retries are exhausted. The new
+diagnostics are controlled by the Alpha `KubeletWatchdogDiagnostics` feature
+gate, which is disabled by default. The feature does not change watchdog
+execution, timing, retry count, socket behavior, or cancellation.
 
 ## Motivation
 
@@ -104,22 +106,26 @@ points:
 3. Exhausted retries emit one structured summary with the attempt count and
    final error/result.
 
-No feature gate is proposed because this change only increases failure-log
-visibility and adds a summary. It does not change watchdog behavior.
+The Alpha `KubeletWatchdogDiagnostics` feature gate controls all three new
+diagnostic outputs and is disabled by default. When the gate is disabled, the
+existing watchdog control flow and logging remain unchanged. Enabling the gate
+only increases failure-log visibility; it does not change watchdog behavior.
 
 ### User Stories
 
 #### Story 1: Triage watchdog-triggered kubelet restarts
 
-An operator detects a kubelet restart from existing process or systemd
-monitoring, checks kubelet logs and the systemd journal, and finds a structured
-entry identifying a failed checker, notification error, or exhausted retries.
+After enabling `KubeletWatchdogDiagnostics`, an operator detects a kubelet
+restart from existing process or systemd monitoring, checks kubelet logs and the
+systemd journal, and finds a structured entry identifying a failed checker,
+notification error, or exhausted retries.
 
 #### Story 2: Preserve evidence at default log levels
 
-An SRE investigates a recovered node using default kubelet logs and finds the
-failure entry without enabling higher verbosity. The SRE preserves the error and
-retry evidence for the incident record.
+An SRE investigating a recovered node where `KubeletWatchdogDiagnostics` is
+enabled uses default kubelet logs and finds the failure entry without enabling
+higher verbosity. The SRE preserves the error and retry evidence for the
+incident record.
 
 #### Story 3: Separate node environment issues from kubelet health issues
 
@@ -146,8 +152,9 @@ process-stack evidence.
 
 ### Risks and Mitigations
 
-- Additional default-visible logs may be noisy during repeated failures. Use
-  stable fields and rate-limit repeated failure records.
+- Additional default-visible logs may be noisy during repeated failures. The
+  feature gate provides an immediate rollback mechanism; stable fields and rate
+  limiting reduce repeated failure records while it is enabled.
 - The change could accidentally alter retry behavior. Tests must verify existing
   retry count, backoff, and successful retry behavior.
 - Timeout and cancellation are intentionally deferred because they require a
@@ -193,7 +200,8 @@ emit one summary containing the final result/error and total attempts.
 Failure records use stable fields: `operation`, `checker` when applicable,
 `attempt` when applicable, `watchdog_interval`, `result`, and `error` when
 available. Success logs remain high verbosity. Repeated failures may be
-rate-limited, but the first failure in a window should be retained.
+rate-limited, but the first failure in a window should be retained. These new
+records are emitted only when `KubeletWatchdogDiagnostics` is enabled.
 
 ### Test Plan
 
@@ -205,6 +213,12 @@ No prerequisite infrastructure changes are required.
 
 Unit tests should verify:
 
+- `KubeletWatchdogDiagnostics` is disabled by default;
+- with the feature gate disabled, no new diagnostic records or retry summary
+  are emitted and existing control flow is unchanged;
+- with the feature gate enabled, all three new diagnostic paths are active;
+- disabling the feature after enabling it stops the new diagnostics, and
+  reenabling it restores them without state cleanup or migration;
 - watchdog-disabled behavior is unchanged;
 - successful checker and notification behavior is unchanged;
 - checker error logs the checker name and error at the default level;
@@ -232,7 +246,9 @@ No e2e tests are required because this KEP adds no Kubernetes API behavior.
 #### Alpha
 
 - KEP is merged as implementable.
-- Unit tests cover success, checker failure, notify failure, retry, and logging.
+- `KubeletWatchdogDiagnostics` is disabled by default.
+- Unit tests cover gate enablement and disablement, success, checker failure,
+  notify failure, retry, and logging.
 - Implementation does not change watchdog execution or timing.
 
 #### Beta
@@ -240,6 +256,7 @@ No e2e tests are required because this KEP adds no Kubernetes API behavior.
 - SIG Node confirms the diagnostics are useful after at least one alpha release.
 - No unresolved reports show unacceptable default-visible log noise.
 - Existing retry and heartbeat behavior has no regression.
+- `KubeletWatchdogDiagnostics` is enabled by default.
 
 #### GA
 
@@ -247,17 +264,24 @@ No e2e tests are required because this KEP adds no Kubernetes API behavior.
   significant regressions.
 - No unresolved production-readiness concerns remain for usefulness or log
   volume.
+- The `KubeletWatchdogDiagnostics` feature gate is locked on and subsequently
+  removed according to the Kubernetes feature-gate lifecycle.
 
 ### Upgrade / Downgrade Strategy
 
-Upgrading kubelet adds failure diagnostics and retry summaries. Successful
-heartbeat behavior is unchanged. Downgrading kubelet removes the additional
-diagnostics. No state or configuration migration is involved.
+Upgrading to an Alpha kubelet adds the disabled-by-default
+`KubeletWatchdogDiagnostics` feature gate. Enabling it requires setting the gate
+for kubelet and restarting kubelet; no node reprovisioning is required.
+Disabling the gate and restarting kubelet removes the additional diagnostics.
+Downgrading to a version without the gate also removes them. Successful
+heartbeat behavior is unchanged, and no state or configuration migration is
+involved.
 
 ### Version Skew Strategy
 
 The change is kubelet-local and requires no coordination with other components.
-Nodes may run versions with and without the additional diagnostics.
+Nodes may run versions with and without the feature gate, and the gate may be
+enabled independently on each node.
 
 ## Production Readiness Review Questionnaire
 
@@ -265,37 +289,59 @@ Nodes may run versions with and without the additional diagnostics.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-There is no independent feature gate. It is enabled by upgrading kubelet and
-removed by downgrading or reverting kubelet.
+- [x] Feature gate
+  - Feature gate name: `KubeletWatchdogDiagnostics`
+  - Components depending on the feature gate: `kubelet`
+
+The gate is disabled by default during Alpha. Enabling or disabling it requires
+updating the kubelet feature-gate configuration and restarting kubelet. This
+causes kubelet downtime on that node but does not require control-plane downtime
+or node reprovisioning.
 
 ###### Does enabling the feature change any default behavior?
 
-Only failure-log visibility and retry summary content change. Watchdog timing,
-execution, retry count, and successful heartbeat behavior do not change.
+The gate is disabled by default, so upgrading does not change default behavior.
+When an operator enables it, only failure-log visibility and retry summary
+content change. Watchdog timing, execution, retry count, and successful
+heartbeat behavior do not change.
 
-###### Can the feature be disabled once it has been enabled?
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Binary rollback removes the behavior; no persisted state or configuration
-migration is needed.
+Yes. Set `KubeletWatchdogDiagnostics=false` and restart kubelet. The new
+diagnostic records stop, while watchdog behavior remains unchanged. No persisted
+state, workload change, or configuration migration is involved.
 
-###### What metrics should inform a rollback?
+###### What happens if we reenable the feature if it was previously rolled back?
 
-No new metrics are proposed. Use existing kubelet restart signals, kubelet logs,
-and systemd journal entries.
+Set `KubeletWatchdogDiagnostics=true` and restart kubelet. The diagnostic logs
+and retry summary resume with the same behavior as the initial enablement. There
+is no persisted feature state to recover or reconcile.
+
+###### Are there any tests for feature enablement/disablement?
+
+Unit tests will verify that the gate is disabled by default, that disabling it
+emits none of the new diagnostic records, and that enabling it activates the
+checker error, notification error, and retry-exhaustion summary paths. Tests
+will also cover disablement after enablement and reenabling after rollback; no
+persisted data or API conversion tests are required.
 
 ### Rollout, Upgrade and Rollback Planning
 
-The main rollout risk is noisy logs in repeatedly failing environments. Unit
+The main rollout risk is noisy logs in repeatedly failing environments. The
+feature can be rolled back by disabling `KubeletWatchdogDiagnostics` and
+restarting kubelet. No new metrics are proposed; existing kubelet restart
+signals, kubelet logs, and systemd journal entries should inform rollback. Unit
 tests verify compatibility because no persisted state or API migration is added.
 No deprecations or removals are introduced.
 
 ### Monitoring Requirements
 
-The feature is present when running a kubelet version containing the change.
-Operators can confirm the underlying watchdog setting from the kubelet systemd
-unit. Failure logs and retry summaries are the diagnostic signal. Fleet-wide
-analysis depends on external log collection; metrics, events, and NPD remain
-future options.
+Operators can determine whether the feature is enabled from the kubelet
+feature-gate configuration and can confirm the underlying watchdog setting from
+the kubelet systemd unit. Failure logs and retry summaries are the diagnostic
+signal when a failure occurs; their absence alone does not show that the feature
+is disabled. Fleet-wide analysis depends on external log collection; metrics,
+events, and NPD remain future options.
 
 ### Dependencies
 
@@ -304,17 +350,78 @@ systemd watchdog integration and adds no new node service dependency.
 
 ### Scalability
 
-No API calls, API types, cloud-provider calls, or API object data are added. No
-watchdog timing or Kubernetes operation latency changes. Extra work is limited
-to failure-path log records and one retry summary.
+###### Will enabling / using this feature result in any new API calls?
+
+No. The kubelet watchdog path remains node-local and does not call the
+Kubernetes API.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No. This KEP adds no Kubernetes API types or fields.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No. The feature does not use cloud-provider APIs.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No. The feature neither creates nor updates Kubernetes API objects.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No. The existing watchdog execution, notification interval, retry count, and
+backoff remain unchanged. The additional work is limited to emitting logs after
+a returned checker or notification error.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No material steady-state increase is expected. The gate is disabled by default,
+and, when enabled, additional CPU and I/O occur only on watchdog failure paths
+to emit structured records and one retry-exhaustion summary. Repeated records
+are rate-limited to bound log volume.
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No. The feature creates no goroutines, sockets, files, API objects, or persistent
+state. Rate limiting bounds the added failure-path log records; unit tests cover
+the retry-exhaustion summary and repeated-failure rate limiting.
 
 ### Troubleshooting
 
-Inspect kubelet logs and the systemd journal around the restart. If no structured
-failure record exists, inspect available core dumps or process-stack evidence;
-the failure may have occurred in a blocking operation outside this KEP. High
-latency logging storage may delay or lose records, and repeated failures may
-still produce noisy logs despite rate limiting.
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+The feature is node-local and does not call the API server or etcd. Their
+unavailability does not directly affect diagnostic logging. A health checker
+that reports an error as a consequence of another component's unavailability is
+logged in the same way as any other returned checker error.
+
+###### What are other known failure modes?
+
+- If a checker or `SdNotify()` blocks without returning, this feature cannot emit
+  a returned-error record. Detect the missed heartbeat or kubelet restart through
+  existing process or systemd monitoring. Inspect the systemd journal and any
+  available core dump or process-stack evidence. Timeout and cancellation remain
+  outside this KEP.
+- High-latency or stalled journal/log storage may delay or lose diagnostic
+  records before systemd terminates kubelet. Correlate all available node-local
+  evidence; this feature does not guarantee durable log persistence.
+- Repeated failures may produce noisy logs. Records may be rate-limited while
+  retaining the first failure in a window. If the volume remains unacceptable,
+  disable `KubeletWatchdogDiagnostics` and restart kubelet.
+
+Unit tests cover returned checker errors, returned notification errors, retry
+exhaustion, and rate limiting. Blocking calls and failures of the underlying log
+storage are documented limitations rather than behaviors introduced by this
+feature.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Confirm the kubelet feature-gate configuration and the systemd watchdog setting,
+then inspect kubelet logs and the systemd journal around affected restarts.
+Correlate the structured `operation`, `checker`, `attempt`, `result`, and `error`
+fields across affected nodes. If no structured failure record exists, inspect
+available core dumps or process-stack evidence and determine whether a checker,
+notification call, or logging path blocked before returning.
 
 ## Implementation History
 
@@ -324,9 +431,9 @@ still produce noisy logs despite rate limiting.
 
 ## Drawbacks
 
-The change increases default-visible log volume during failures and provides no
-additional evidence when an operation blocks without returning. Timeout and
-cancellation are intentionally left to a future proposal.
+When enabled, the change increases default-visible log volume during failures
+and provides no additional evidence when an operation blocks without returning.
+Timeout and cancellation are intentionally left to a future proposal.
 
 ## Alternatives
 
