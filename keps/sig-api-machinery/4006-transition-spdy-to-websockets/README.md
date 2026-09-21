@@ -113,6 +113,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [v1.35 Synthetic RBAC CREATE Authorization Check](#v135-synthetic-rbac-create-authorization-check)
       - [v1.36 Extend WebSockets to Kubelet](#v136-extend-websockets-to-kubelet)
     - [GA](#ga)
+      - [v1.38 Stable](#v138-stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
     - [RemoteCommand Subprotocol](#remotecommand-subprotocol)
@@ -156,16 +157,16 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [X] e2e Tests for all Beta API Operations (endpoints)
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -666,7 +667,21 @@ https://storage.googleapis.com/k8s-triage/index.html
 
 -->
 
-`PortForward: https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/portforward/portforward_test.go`
+- `PortForward` tunneling through the API Server:
+  [`test/integration/apiserver/portforward/portforward_test.go`](https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/portforward/portforward_test.go)
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=TestPortForward)
+- Synthetic RBAC `CREATE` authorization check for WebSocket upgrades on
+  `pods/exec`, `pods/attach`, and `pods/portforward`:
+  [`test/integration/apiserver/subresource_auth_test.go`](https://github.com/kubernetes/kubernetes/blob/master/test/integration/apiserver/subresource_auth_test.go)
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=SubresourceAuth)
+- API Server routing for `ExtendWebSocketsToKubelet` (proxy directly to the
+  Kubelet versus translate/tunnel at the API Server), including the
+  `Node.Status.declaredFeatures` check:
+  [`pkg/registry/core/pod/rest/subresources_test.go`](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/core/pod/rest/subresources_test.go)
+- Kubelet WebSocket server handling for `exec`, `attach`, and `port-forward`:
+  [`pkg/kubelet/server/server_test.go`](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/server/server_test.go)
+- Kubelet advertisement of `ExtendWebSocketsToKubelet` in `Node.Status.declaredFeatures`:
+  [`pkg/kubelet/kubelet_node_declared_features_test.go`](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/kubelet_node_declared_features_test.go)
 
 ##### e2e tests
 
@@ -682,10 +697,34 @@ We expect no non-infra related flakes in the last month as a GA graduation crite
 - `<test>: <link to test coverage>`
 -->
 
-While there are already numerous current e2e tests for `kubectl exec, cp, attach, and port-forward`,
-we will enhance these tests with the permutations of the feature flags for `kubectl`
-and the API Server. We will add e2e test coverage for flags and arguments that are
-not already covered for these commands.
+The existing `kubectl exec`, `cp`, `attach`, and `port-forward` e2e tests exercise
+the WebSocket code path by default, since both the `kubectl` environment variables
+and the API Server feature gates have been enabled by default since v1.30/v1.31.
+In addition, the following tests target the WebSocket path explicitly:
+
+- `RemoteCommand` (`exec`/`attach`) over WebSockets with fallback to SPDY:
+  [`test/e2e/kubectl/kubectl.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/kubectl.go)
+  - `[sig-cli] Kubectl client Simple pod should support inline execution and attach with websockets or fallback to spdy`
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20support%20inline%20execution%20and%20attach%20with%20websockets)
+- `PortForward` over WebSockets:
+  [`test/e2e/kubectl/portforward.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/kubectl/portforward.go)
+  - `[sig-cli] Kubectl Port forwarding With a server listening on 0.0.0.0 should support forwarding over websockets`
+  - `[sig-cli] Kubectl Port forwarding With a server listening on localhost should support forwarding over websockets`
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=should%20support%20forwarding%20over%20websockets)
+- Existing WebSocket conformance tests which cover the API Server `pods/exec`
+  and `pods/log` endpoints from a raw WebSocket client:
+  [`test/e2e/common/node/pods.go`](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/common/node/pods.go)
+  - `[sig-node] Pods should support remote command execution over websockets [NodeConformance] [Conformance]`
+  - `[sig-node] Pods should support retrieving logs from the container over websockets [NodeConformance] [Conformance]`
+  - [k8s-triage](https://storage.googleapis.com/k8s-triage/index.html?test=over%20websockets)
+
+For GA, the three `[sig-cli]` WebSocket tests above are promoted to conformance,
+so that the `pods/exec`, `pods/attach`, and `pods/portforward` endpoints are all
+exercised over the WebSocket subprotocols (`v5.channel.k8s.io` and
+`v2.portforward.k8s.io`) by conformance. Because these tests pass through the
+API Server to the Kubelet, they also exercise the `ExtendWebSocketsToKubelet`
+path when the target node advertises the feature, and the API Server
+translation/tunneling path when it does not.
 
 ### Graduation Criteria
 
@@ -819,17 +858,52 @@ in back-to-back releases.
 
 #### GA
 
-- `kubectl` environment variables and API Server feature gates are locked to on by default.
-- Deprecate `kubectl` environment variables and API Server feature gates for future removal.
-- Add WebSocket support for HTTPS proxies.
-  - See (https://github.com/kubernetes/kubernetes/issues/126134)
-- Conformance tests for `RemoteCommand` completed and enabled.
-- Conformance tests for `RemoteCommand` have been stable and
-  non-flaky for two weeks.
-- Conformance tests for `PortForward` completed and enabled.
-- Conformance tests for `PortForward` have been stable and
-  non-flaky for two weeks.
-- Achieve stable (GA) status for the extension of the WebSockets communication leg from the API Server to Kubelet.
+##### v1.38 Stable
+
+All four API Server feature gates and the two `kubectl` environment variables
+graduate together, since they implement a single end-to-end streaming feature
+that has been enabled by default for at least two releases in every component:
+
+| Gate / Variable | Component(s) | Enabled by default since |
+|---|---|---|
+| `KUBECTL_REMOTE_COMMAND_WEBSOCKETS` | `kubectl` | v1.30 |
+| `KUBECTL_PORT_FORWARD_WEBSOCKETS` | `kubectl` | v1.31 |
+| `TranslateStreamCloseWebsocketRequests` | `kube-apiserver` | v1.30 |
+| `PortForwardWebsockets` | `kube-apiserver` | v1.31 |
+| `AuthorizePodWebsocketUpgradeCreatePermission` | `kube-apiserver` | v1.35 |
+| `ExtendWebSocketsToKubelet` | `kube-apiserver`, `kubelet` | v1.36 |
+
+- All four API Server feature gates are promoted to GA and locked to **ON**
+  (`LockToDefault: true`) in v1.38. They are removed from the feature gate list
+  after the standard deprecation window (no earlier than v1.41).
+- The `ExtendWebSocketsToKubelet` dependency, `NodeDeclaredFeatures`
+  ([KEP-5328](https://kep.k8s.io/5328)), reached GA and was locked on in v1.37.
+- `kubectl` no longer consults the `KUBECTL_REMOTE_COMMAND_WEBSOCKETS` and
+  `KUBECTL_PORT_FORWARD_WEBSOCKETS` environment variables. WebSockets is always
+  attempted first, with the existing automatic fallback to SPDY. If either
+  variable is set, `kubectl` emits a deprecation warning and ignores it. The
+  variables are removed from the `kubectl` code base after the standard deprecation
+  window.
+- WebSocket support for HTTPS proxies shipped in v1.33
+  (https://github.com/kubernetes/kubernetes/issues/126134).
+- The following e2e tests have been promoted to conformance, and have been stable
+  and non-flaky for at least two weeks before code freeze:
+  - `RemoteCommand`: `[sig-cli] Kubectl client Simple pod should support inline
+    execution and attach with websockets or fallback to spdy`
+  - `PortForward`: `[sig-cli] Kubectl Port forwarding With a server listening on
+    0.0.0.0 should support forwarding over websockets`
+  - `PortForward`: `[sig-cli] Kubectl Port forwarding With a server listening on
+    localhost should support forwarding over websockets`
+- The Kubelet continues to advertise `ExtendWebSocketsToKubelet` in
+  `Node.Status.declaredFeatures`, and the API Server continues to check for it,
+  until the oldest supported Kubelet version has the gate locked on (see
+  [Version Skew Strategy](#version-skew-strategy)). This is a compatibility
+  requirement, not a graduation blocker.
+- Unit tests, integration tests, and e2e tests for every stage of this KEP are
+  present in `kubernetes/kubernetes` and linked in the [Test Plan](#test-plan).
+- Production Readiness Review is approved for GA.
+- User-facing documentation in `kubernetes/website` is updated to remove the
+  environment variable and feature gate opt-outs.
 
 ### Upgrade / Downgrade Strategy
 
@@ -845,9 +919,26 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
-Upgrade requires both the kubectl environment variable and API Server feature flags
-to be enabled. Downgrade requires one of the kubectl environment variable **or** API
-Server feature flags to be disabled.
+**Before GA (v1.29 through v1.37):** Upgrade requires both the kubectl environment
+variable and API Server feature flags to be enabled. Downgrade requires one of the
+kubectl environment variable **or** API Server feature flags to be disabled.
+
+**GA (v1.38 and later):** No operator or user action is required. All API Server
+feature gates are locked on, and `kubectl` always attempts WebSockets first with
+automatic fallback to SPDY. This feature persists no state in the API, so upgrade
+and downgrade are simply a matter of which binaries are running:
+
+- **Upgrade to v1.38:** A cluster with the default feature gate settings sees no
+  change in behavior, since every gate has been enabled by default for at least
+  two releases. A cluster which had explicitly disabled one of the beta gates will
+  have that override ignored by the v1.38 component. Because a v1.38 `kubectl`
+  still falls back to SPDY, and a v1.38 API Server still translates or tunnels to
+  SPDY for Kubelets that do not advertise WebSocket support, streaming keeps working
+  at every point of a rolling upgrade.
+- **Downgrade to v1.37:** The feature gates revert to beta (still enabled by
+  default) and the `kubectl` environment variables are honored again. Streaming
+  continues to work because every combination of v1.37 and v1.38 components is
+  covered by the fallback paths in the [Version Skew Strategy](#version-skew-strategy).
 
 ### Version Skew Strategy
 
@@ -909,12 +1000,12 @@ The phased rollout of this feature creates three distinct API server behaviors a
 **API Server Versions:**
 1.  **Legacy SPDY-Only** (prior to k8s 1.29): Does not support WebSocket streaming.
 2.  **Phase 1 (WS @ API Server)** (k8s 1.29+, enabled by default since 1.30 for RemoteCommand and 1.31 for PortForward): Supports WebSocket streaming from the client but always translates/tunnels this to an upstream SPDY connection for the Kubelet.
-3.  **Phase 2 (WS @ Kubelet)** (k8s 1.36+, beta): Supports WebSocket streaming and can proxy it directly to a capable Kubelet, falling back to Phase 1 behavior if the Kubelet does not support WebSockets.
+3.  **Phase 2 (WS @ Kubelet)** (k8s 1.36+, beta in 1.36 and 1.37, locked on from 1.38): Supports WebSocket streaming and can proxy it directly to a capable Kubelet, falling back to Phase 1 behavior if the Kubelet does not support WebSockets.
 
 **Kubelet Versions:**
 1.  **SPDY-Only** (prior to k8s 1.36): The legacy Kubelet which only accepts SPDY streams.
-2.  **WS-Capable during development/rollout** (k8s 1.36+, beta): The newer Kubelet which accepts both SPDY and WebSocket streams, advertising its capabilities during the period of time there are supported Kubelet versions which do not have the feature or which can disable the feature.
-3.  **WS-Capable after all supported versions have this feature** (stable): The newer Kubelet which accepts both SPDY and WebSocket streams, no longer needing to advertise its capabilities because all supported kubelet versions have the feature locked enabled.
+2.  **WS-Capable during development/rollout** (k8s 1.36 through at least 1.41): The newer Kubelet which accepts both SPDY and WebSocket streams, advertising its capabilities during the period of time there are supported Kubelet versions which do not have the feature or which can disable the feature. With the gate locked on in v1.38 and a three-minor-version Kubelet skew policy, the oldest supported Kubelet that can still disable the gate is v1.37, which is supported through the v1.40 control plane. The advertisement therefore stays in place until at least v1.41.
+3.  **WS-Capable after all supported versions have this feature** (no earlier than k8s 1.41): The newer Kubelet which accepts both SPDY and WebSocket streams, no longer needing to advertise its capabilities because all supported kubelet versions have the feature locked enabled. Removing the advertisement and the API Server check is a follow-up cleanup, not part of the v1.38 GA.
 
 **Interaction Scenarios:**
 
@@ -985,7 +1076,12 @@ server-side feature gates.
 -   `TranslateStreamCloseWebsocketRequests`: (Component: `kube-apiserver`) Enables the API server to handle the WebSocket-based `v5.channel.k8s.io` subprotocol for remote commands.
 -   `PortForwardWebsockets`: (Component: `kube-apiserver`) Enables the API server to handle WebSocket-based tunneling for port forwarding.
 -   `AuthorizePodWebsocketUpgradeCreatePermission`: (Component: `kube-apiserver`) Enforces a synthetic `CREATE` authorization check on WebSocket upgrade requests to maintain least privilege.
--   `ExtendWebSocketsToKubelet`: (Components: `kube-apiserver`, `kubelet`) Enables the end-to-end WebSocket communication path to the Kubelet, allowing the API server to proxy streams directly instead of translating/tunneling them. (Note: Depends on the `NodeDeclaredFeatures` gate).
+-   `ExtendWebSocketsToKubelet`: (Components: `kube-apiserver`, `kubelet`) Enables the end-to-end WebSocket communication path to the Kubelet, allowing the API server to proxy streams directly instead of translating/tunneling them. (Note: Depends on the `NodeDeclaredFeatures` gate, which is GA and locked on since v1.37).
+
+**GA (v1.38):** All four API Server feature gates are locked to **ON** and can no
+longer be disabled. `kubectl` ignores both environment variables (emitting a
+deprecation warning if either is set) and always attempts WebSockets first, falling
+back to SPDY when the server does not support it.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1037,9 +1133,18 @@ even if the Kubelet supports this functionality. Additionally, disabling the
 `ExtentWebSocketsToKublet` in the Kubelet ensures new code implementing the
 translation and tunneling in the Kubelet does not run.
 
+**GA (v1.38):** No. The API Server feature gates are locked on and the `kubectl`
+environment variables are ignored, so the feature can no longer be disabled through
+configuration. The behavioral safety nets remain in place, however: `kubectl` still
+falls back to SPDY when a WebSocket upgrade is rejected, and the API Server still
+translates or tunnels to SPDY for any Kubelet that does not advertise
+`ExtendWebSocketsToKubelet`. Rolling back to a v1.37 control plane restores the
+beta feature gates and their disable semantics.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-The feature does not depend on state, and can be disabled/enabled at will.
+The feature does not depend on state, and can be disabled/enabled at will (prior
+to GA, when the gates could still be disabled).
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1056,19 +1161,25 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-- There will be unit tests for the `kubectl` environment variable KUBECTL_REMOTE_COMMAND_WEBSOCKETS.
-- There are unit tests for the `kubectl` environment variable KUBECTL_PORT_FORWARD_WEBSOCKETS.
-- There will be unit tests in the API Server which exercise the feature gate within
+- There are unit tests for the `kubectl` environment variables
+  KUBECTL_REMOTE_COMMAND_WEBSOCKETS and KUBECTL_PORT_FORWARD_WEBSOCKETS in
+  `staging/src/k8s.io/kubectl/pkg/cmd/exec`, `.../attach`, and `.../portforward`.
+- There are unit tests in the API Server which exercise the feature gate within
   the `UpgradeAwareProxy`, which conditionally delegates to the `StreamTranslator`
-  proxy (depending on the feature gate and the upgrade parameters).
+  proxy (depending on the feature gate and the upgrade parameters), in
+  `staging/src/k8s.io/apiserver/pkg/util/proxy/translatinghandler_test.go`.
 - There are unit tests in the API Server which exercise the feature gate within
   the `UpgradeAwareProxy`, which conditionally delegates to the `StreamTunneling`
   proxy for the PortForward subprotocol.
-- There will be unit tests in the API Server to verify the feature gate
+- There are unit and integration tests in the API Server which verify the feature gate
   forcing more stringent RBAC checks for `pods/exec`, `pods/attach`, and
-  `pods/portforward`.
-- There will be unit tests in the API Server and Kubelet to verify the feature gate
-  `ExtendWebSocketsToKubelet`.
+  `pods/portforward` (`test/integration/apiserver/subresource_auth_test.go`).
+- There are unit tests in the API Server (`pkg/registry/core/pod/rest/subresources_test.go`)
+  and Kubelet (`pkg/kubelet/server/server_test.go`,
+  `pkg/kubelet/kubelet_node_declared_features_test.go`) which verify the feature gate
+  `ExtendWebSocketsToKubelet` in both the enabled and disabled state.
+- At GA the gates are locked on, so the disabled-gate branches of these tests are
+  removed along with the gate checks after the deprecation window.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1165,7 +1276,18 @@ entire upgrade or rollback process.
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-No.
+Yes, at GA (v1.38):
+
+- The `kubectl` environment variables `KUBECTL_REMOTE_COMMAND_WEBSOCKETS` and
+  `KUBECTL_PORT_FORWARD_WEBSOCKETS` are deprecated. `kubectl` ignores them and
+  prints a deprecation warning if either is set. They are removed after the
+  standard deprecation window.
+- The API Server feature gates `TranslateStreamCloseWebsocketRequests`,
+  `PortForwardWebsockets`, `AuthorizePodWebsocketUpgradeCreatePermission`, and
+  `ExtendWebSocketsToKubelet` are locked on and follow the normal GA feature gate
+  deprecation and removal timeline (removed no earlier than v1.41).
+
+No APIs, fields, or flags are removed in v1.38.
 
 ### Monitoring Requirements
 
@@ -1184,15 +1306,22 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-- An operator can detect if the WebSocket functionality is enabled by checking
-  either the `num_ws_remote_command_v5_total[success]` metric for `RemoteCommand` or
-  the `num_ws_port_forward_v2_total[success]` metric for `PortForward`.
+- An operator can detect if the WebSocket functionality is in use by checking
+  the API Server counters `apiserver_stream_translator_requests_total` (for
+  `RemoteCommand`, labeled by HTTP status code) and
+  `apiserver_stream_tunnel_requests_total` (for `PortForward`, labeled by HTTP
+  status code). A non-zero count with a `101` status code means clients are
+  streaming over WebSockets.
 
-- To determine if the Kubelet extension is active for a specific node, an
-  operator can inspect the `status.declaredFeatures` field of the Node object for
-  the presence of `ExtendWebSocketsToKubelet`. Additionally, proposed new metrics
-  will differentiate between API server connections that are proxied directly to
-  the Kubelet versus those that are translated to SPDY.
+- To determine if the Kubelet extension is active, an operator can check the
+  API Server counter `apiserver_websocket_streaming_requests_total`, which is
+  labeled by `subresource` (`exec`, `attach`, `portforward`) and `proxy_type`
+  (`proxied_to_kubelet` or `translated_at_apiserver`). A non-zero
+  `proxied_to_kubelet` count means the end-to-end WebSocket path is in use. On
+  the node side, `kubelet_websocket_streaming_requests_total` (labeled by
+  `subresource`) counts the WebSocket streams the Kubelet has handled directly.
+  For a specific node, an operator can also inspect the `status.declaredFeatures`
+  field of the Node object for the presence of `ExtendWebSocketsToKubelet`.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1208,8 +1337,8 @@ Recall that end users cannot usually observe component logs or access metrics.
 To confirm this feature is working for a given instance, both its configuration and runtime behavior can be observed:
 
 -   **Configuration Verification:**
-    -   **API Server Feature Gates:** Inspect the API server's startup flags (`--feature-gates`) to confirm that relevant feature gates (e.g., `TranslateStreamCloseWebsocketRequests`, `PortForwardWebsockets`, `ExtendWebSocketsToKubelet`) are enabled.
-    -   **Kubelet Feature Gates:** Confirm the `kubelet` is started with `--feature-gates=ExtendWebSocketsToKubelet=true` (or without `ExtendWebSocketsToKubelet=false` if it is enabled by default).
+    -   **API Server Feature Gates:** Inspect the API server's startup flags (`--feature-gates`) to confirm that relevant feature gates (e.g., `TranslateStreamCloseWebsocketRequests`, `PortForwardWebsockets`, `ExtendWebSocketsToKubelet`) are enabled. From v1.38 these gates are locked on, so no flag inspection is needed.
+    -   **Kubelet Feature Gates:** Confirm the `kubelet` is started with `--feature-gates=ExtendWebSocketsToKubelet=true` (or without `ExtendWebSocketsToKubelet=false` if it is enabled by default). From v1.38 the gate is locked on.
     -   **Node Declared Features:** For the Kubelet extension, verify that individual nodes are advertising support: `kubectl get node <node-name> -o jsonpath='{.status.declaredFeatures}'` should include `ExtendWebSocketsToKubelet`.
 
 -   **Runtime Verification:**
@@ -1258,40 +1387,50 @@ Pick one more of these and delete the rest.
 -->
 
 - [X] Metrics
-  - Metric name: `num_ws_remote_command_v5_total` with `type` dimension containing
-    enum values `success` and `failure`. Counts the total number of times the API
-	Server witnessed a WebSocket/V5 RemoteCommand connection upgrade attempt (either
-	`success` or `failure`).
-  - Components exposing the metric: API Server
 
-  - Metric name: `num_ws_port_forward_v2_total` with `type` dimension containing
-    enum values `success` and `failure`. Counts the total number of times the API
-	Server witnessed a WebSocket/V2 PortForward connection upgrade attempt (either
-	`success` or `failure`).
-  - Components exposing the metric: API Server
+  All of the following metrics exist in `kubernetes/kubernetes` today at
+  stability level ALPHA. As part of the GA graduation they are promoted to
+  stability level BETA.
 
-  - Metric name: `apiserver_streaming_active_connections` (Gauge)
-    - Help: "Gauge of active streaming connections, to distinguish between connections proxied directly to the Kubelet vs. those that require protocol translation or tunneling at the API server."
-    - Dimensions: `subresource` (`exec`, `attach`, `portforward`), `proxy_type` (`proxied`, `translated_or_tunneled`)
+  - Metric name: `apiserver_stream_translator_requests_total` (Counter)
+    - Help: "Total number of requests that were handled by the StreamTranslatorProxy, which processes streaming RemoteCommand/V5"
+    - Dimensions: `code` (HTTP status code of the upgrade response; `101` is success)
     - Component exposing the metric: `kube-apiserver`
 
-  - Metric name: `kubelet_streaming_websocket_requests_total` (Counter)
-    - Help: "Counter of WebSocket streaming upgrade requests handled by the Kubelet."
-    - Dimensions: `subresource` (`exec`, `attach`, `portforward`), `result` (`success`, `failure`)
+  - Metric name: `apiserver_stream_tunnel_requests_total` (Counter)
+    - Help: "Total number of requests that were handled by the StreamTunnelProxy, which processes streaming PortForward/V2"
+    - Dimensions: `code` (HTTP status code of the upgrade response; `101` is success)
+    - Component exposing the metric: `kube-apiserver`
+
+  - Metric name: `apiserver_websocket_streaming_requests_total` (Counter)
+    - Help: "Total number of WebSocket streaming requests (exec/attach/portforward) routed by the API server, labeled by subresource and proxy_type."
+    - Dimensions: `subresource` (`exec`, `attach`, `portforward`), `proxy_type` (`proxied_to_kubelet`, `translated_at_apiserver`)
+    - Component exposing the metric: `kube-apiserver`
+
+  - Metric name: `kubelet_websocket_streaming_requests_total` (Counter)
+    - Help: "Total number of WebSocket streaming requests (exec/attach/portforward) received by the kubelet."
+    - Dimensions: `subresource` (`exec`, `attach`, `portforward`)
     - Component exposing the metric: `kubelet`
+
+  The SLI for the first SLO above (upgrade success rate) is the ratio of
+  `code="101"` to all samples of the two `apiserver_stream_*_requests_total`
+  counters. The SLI for the Kubelet extension is the ratio of
+  `proxy_type="proxied_to_kubelet"` to all samples of
+  `apiserver_websocket_streaming_requests_total`, which should approach 100%
+  once every node in the cluster runs a v1.36+ Kubelet.
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-Yes. To properly observe the Kubelet extension, the following metrics are needed:
+The API Server and Kubelet metrics that were identified as missing at beta
+(distinguishing connections proxied directly to the Kubelet from those translated
+at the API Server, and counting WebSocket streams handled by the Kubelet) shipped
+in v1.36 as `apiserver_websocket_streaming_requests_total` and
+`kubelet_websocket_streaming_requests_total`.
 
-- An API server metric (e.g., `apiserver_streaming_connections`) is needed to
-  differentiate between WebSocket connections that are proxied directly to the
-  Kubelet versus those that are translated to SPDY. This is critical for
-  understanding whether the feature is active and for debugging rollout.
-- A Kubelet metric (e.g., `kubelet_streaming_websocket_requests_total`) is
-  needed to monitor the rate and success of incoming WebSocket requests directly
-  on the node. This provides visibility into the Kubelet's performance as a
-  streaming server, which is currently not available.
+One remaining gap is that the Kubelet counter has no result dimension, so a
+stream that the Kubelet accepts but then fails to translate or tunnel is only
+visible in Kubelet logs. This has not been a problem in practice during beta and
+can be added later without a KEP change if field experience calls for it.
 
 ### Dependencies
 
@@ -1530,35 +1669,43 @@ For each of them, fill in the following information by copying the below templat
 	  WebSockets connection upgrade attempt and failure, and the subsequent SPDY
 	  completion of the command.
     - Mitigations: The mitigation (fallback to legacy SPDY) is automatic.
-	- Diagnostics: We have suggested metrics to measure the number of fallbacks.
-	  the metrics `num_ws_remote_command_v5_total[failure]` as well as
-	  `num_ws_port_forward_v2_total[failure]` will measure the number of fallbacks.
+	- Diagnostics: The API Server metrics `apiserver_stream_translator_requests_total`
+	  and `apiserver_stream_tunnel_requests_total`, filtered to non-`101` status
+	  codes, measure the number of rejected WebSocket upgrade attempts (and therefore
+	  the number of client fallbacks to SPDY).
     - Testing: We have implemented tests for both the `FallbackWebSocketExecutor`
 	  (for `RemoteCommand`), and the `FallbackDialer` (for `PortForward`).
 
 - Failure Mode: Kubelet advertises WebSocket support but fails to handle streams.
     - Detection: The `kubectl` command will fail with a generic streaming error.
       API server logs will show a successful WebSocket upgrade request being proxied
-      to the Kubelet, but the `apiserver_streaming_connections` metric with
-      `proxy_type="proxied"` will show failures or short-lived connections. Kubelet
+      to the Kubelet, and `apiserver_websocket_streaming_requests_total` with
+      `proxy_type="proxied_to_kubelet"` will increase while the corresponding
+      `kubelet_websocket_streaming_requests_total` on the node does not. Kubelet
       logs on the target node will show errors in the WebSocket handling or
       translation/tunneling logic.
-    - Mitigations: An operator can disable the `ExtendWebSocketsToKubelet` feature
-      gate on the failing node(s) and restart the kubelet service. This will cause
-      the node to stop advertising the feature, and the API server will revert to
-      translating streams for that node, restoring functionality while the issue
-      is investigated.
+    - Mitigations: Prior to GA, an operator can disable the `ExtendWebSocketsToKubelet`
+      feature gate on the failing node(s) and restart the kubelet service. This will
+      cause the node to stop advertising the feature, and the API server will revert
+      to translating streams for that node, restoring functionality while the issue
+      is investigated. From v1.38 the gate is locked on; the mitigation is to cordon
+      the affected node(s) and roll the Kubelet back to a known-good version, which
+      likewise stops the advertisement and restores the API Server translation path.
     - Diagnostics: Kubelet logs (with increased verbosity if necessary) on the
       failing node will be the primary source for debugging. They will contain
       errors related to WebSocket handshake, subprotocol translation, or SPDY
       forwarding to the container runtime.
     - Testing: Unit and integration tests for the Kubelet's WebSocket server and
-      proxying logic cover the expected behavior. e2e tests will be added to
-      validate the end-to-end flow with the feature gate enabled.
+      proxying logic cover the expected behavior. The WebSocket e2e tests listed in
+      the [Test Plan](#test-plan) exercise the end-to-end flow, since the gate has
+      been enabled by default in both the API Server and the Kubelet since v1.36.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-- Step 1: Turn off the `kubectl` feature gate, and check the SLO afterwards.
+- Step 1: Prior to GA, turn off the `kubectl` feature gate, and check the SLO
+  afterwards. From v1.38 the environment variables are ignored, so instead compare
+  the WebSocket upgrade metrics above against the legacy SPDY path by running the
+  same command from a pre-v1.30 `kubectl`, which always uses SPDY.
 
 For `kubectl exec, kubectl cp, and kubectl attach`:
 
@@ -1674,6 +1821,10 @@ Major milestones might include:
 - WebSocket HTTPS Proxy functionality shipped: v1.33
 - Synthetic RBAC `CREATE` authz check for WebSocket upgrade requests: v1.35
 - Extend WebSocket communication to the Kubelet for RemoteCommand and PortForward shipped as beta: v1.36
+- API Server and Kubelet metrics for the Kubelet extension shipped: v1.36
+- `NodeDeclaredFeatures` dependency reached GA and locked on: v1.37
+- 2026-09-14: KEP revised for GA in v1.38
+- All feature gates locked on, `kubectl` environment variables deprecated, WebSocket e2e tests promoted to conformance: v1.38
 
 ## Drawbacks
 
