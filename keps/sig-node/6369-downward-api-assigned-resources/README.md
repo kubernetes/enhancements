@@ -103,6 +103,7 @@ Memory assignments are exposed from the start here. They were part of the origin
 * Let a pod influence which CPUs or memory NUMA nodes it is assigned. These values report a decision, they do not take part in making it.
 * Expose anything beyond what is assigned to the container itself, such as the assignments of other pods or the node's full topology.
 * Guarantee a window in which a workload can react to a change. That is the subject of [KEP-6122](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/6122-configurable-scaling-delay).
+* Expose pod-level assignments from the `PodLevelResourceManagers` feature ([KEP-5526](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5526-pod-level-resource-managers)). That KEP does not support in-place resizing of pod-level resources, so a pod-level assignment never changes while the pod runs; without an upcoming change to announce, exposing the value ahead of time has no benefit.
 
 ## Proposal
 
