@@ -21,6 +21,7 @@
     - [Use Case 1: Swap-Disabled Workload](#use-case-1-swap-disabled-workload)
     - [Use Case 2: Swap-Enabled Workload](#use-case-2-swap-enabled-workload)
     - [Use Case 3: Unlimited Swap](#use-case-3-unlimited-swap)
+    - [Use Case 4: Pod-Level Swap Configuration](#use-case-4-pod-level-swap-configuration)
 - [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
@@ -46,7 +47,7 @@
 ## Summary
 
 This KEP proposes a new API to give users control over how much swap a
-container can use. The current swap behavior in Kubernetes is implicit, which can
+container or pod can use. The current swap behavior in Kubernetes is implicit, which can
 lead to under-utilization of swap provisioned on a node. Explicit API
 control for swap enables Kubernetes users to directly manage swap for their
 workloads, eliminating assumptions about their requirements. This proposal also
@@ -54,7 +55,7 @@ removes existing swap restrictions for features like In-Place
 Pod Resize and for Guaranteed pods (e.g. those with CPU pinning), allowing these
 workloads to benefit from swap. This KEP introduces a
 "WorkloadControlledSwap" mode where swap usage is explicitly
-defined by the user for each container, defaulting to no swap if unspecified.
+defined by the user for each container or pod, defaulting to no swap if unspecified.
 This allows for better resource management and safer overcommitment of swap
 resources on a node.
 
@@ -73,11 +74,11 @@ To effectively manage swap utilization in workloads, the primary goals of this
 KEP are to
 
 -  provide an API that allows application owners to specify the amount of
-    swap an application can use.
--  offer the ability to disable swap entirely for a container by setting
+    swap an application can use (at the container level and/or pod level).
+-  offer the ability to disable swap entirely for a container or pod by setting
     `swap.limit=0`.
 -  enable workloads to declare the maximum _acceptable_ swap limits for
-    their containers.
+    their containers or pods.
 -  enable users to configure swap for containers of any QoS class (including
     `Guaranteed` and `BestEffort`), removing QoS-based restrictions on swap
     while maintaining the safe default of swap being disabled (i.e. limit=0).
@@ -98,18 +99,19 @@ KEP are to
 This proposal introduces a new `swapBehavior` mode in the `kubeletConfiguration`
 called `WorkloadControlledSwap`. When this mode is enabled on a node, swap usage
 is no longer implicitly calculated (as in `LimitedSwap` mode) but is instead
-explicitly defined by the user on a per-container basis.
+explicitly defined by the user on a per-container and/or pod level basis.
 
 This is achieved by introducing a new `swap` resource field under
-`resources.limits` for a container. This "limits-only" model allows users to
-specify the maximum amount of swap a container can use. If this limit is not
-specified, the container will not be allowed to use swap, providing a safe
+`resources.limits` (`containers[*].resources.limits.swap` and
+`pod.spec.resources.limits.swap`). This "limits-only" model allows users to
+specify the maximum amount of swap a container or pod can use. If this limit is not
+specified, swap will not be allowed (`0`), providing a safe
 default.
 
-This explicit per-container limit allows for:
+This explicit limit allows for:
 
-1. Disabling swap for specific containers by setting `swap: "0"`
-1. Granting specific swap allowances to containers that can benefit from it
+1. Disabling swap for specific containers or an entire pod by setting `swap: "0"`
+1. Granting specific swap allowances to containers or a shared pod swap pool that can benefit from it
     eg: `swap: "1Gi"`
 1. Enabling swap for QoS classes that were previously incompatible, like
     Guaranteed pods, because the user intent is now explicit.
@@ -194,24 +196,36 @@ kubeletConfiguration:
 ```
 ### Proposed Design: Limits-Only Model
 
-Swap limits are configured per container for a cleaner resource model. This
-avoids the ambiguity of swap requests. To enforce this, API-level validation
-will be added to forbid non-zero values for `requests.swap`.
+Swap limits are configured using `resources.limits.swap` for a cleaner resource
+model, supported at both the container level (`containers[*].resources.limits.swap`)
+and the explicit pod level (`pod.spec.resources.limits.swap`). This avoids the
+ambiguity of swap requests. To enforce this, API-level validation will be added
+to forbid non-zero values for `requests.swap` at both container and pod levels,
+and `limits.swap` will not be defaulted into `requests.swap` or affect Pod QoS
+class determination.
 
--  **Rationale:** "policy" fits per pod, swap "limits" are container specific
-    as swap is treated by kernel per process. Starting with ‘container' limits
-    first gives us flexibility for unambiguous design. If we start with pod
-    limits first, this implies all containers and we will need to reconsider
-    how to support individual container limits in the future. (eg: will it
-    override?)
--  This also avoids handling conflicts with current `PodLevelResource`
-    behavior of applying limit as request and using for admission time.   
+-  **Explicit Pod-Level Swap Configuration:** When `pod.spec.resources.limits.swap`
+    is explicitly specified on a pod (`PodSwapLimit`), it sets the pod-level
+    cgroup swap limit (`memory.swap.max`). Following the
+    [KEP-2837 (Pod-Level Resource Specifications)](https://kep.k8s.io/2837)
+    model for pod-level limits, containers within the pod that do not specify an
+    individual `resources.limits.swap` inherit `PodSwapLimit` as their container
+    cgroup `memory.swap.max` ceiling and dynamically share the pod's swap budget.
+    Individual containers may optionally specify `resources.limits.swap`
+    (`<= pod.spec.resources.limits.swap`) to enforce a tighter container-specific
+    cap or `swap: "0"` to disable swap for that container.
+-  **Scope with KEP-2837:** This KEP scopes pod-level swap support strictly to
+    explicit `pod.spec.resources.limits.swap` configuration in
+    `WorkloadControlledSwap` mode. Pod-level resource specific details—such as
+    implicit `LimitedSwap` calculations and pod-level limit derivation/defaulting
+    rules—are handled in the dedicated
+    [KEP-2837 (Pod-Level Resource Specifications)](https://kep.k8s.io/2837).
 
 ```yaml
 resources:
   limits:
     memory: "2Gi"
-    swap: "1Gi"    # Maximum swap this container can use
+    swap: "1Gi"    # Maximum swap this container (or pod) can use
   requests:
     memory: "1Gi"
     # No swap ‘requests' as this doesn't make sense
@@ -247,10 +261,10 @@ The default behavior for all pods in "WorkloadControlledSwap" mode is "No swap"
       <td>will not swap (default)</td>
     </tr>
     <tr>
-      <td><code>swap.limit</code> set</td>
+      <td><code>swap.limit</code> set (container or pod level)</td>
       <td>will not swap (No effect)</td>
       <td>swap as per calculated limit (user limit will have no effect)</td>
-      <td>maximum swap as per user request. </td>
+      <td>maximum swap as per user request (shared across pod if set at pod level).</td>
     </tr>
     <tr>
       <td><code>swap.limit=0</code> (disable)</td>
@@ -346,6 +360,49 @@ spec:
       limits:
         memory: "2Gi"
         swap: "8Gi"    # Large limit = effectively unlimited
+```
+
+#### Use Case 4: Pod-Level Swap Configuration
+
+When `pod.spec.resources.limits.swap` is explicitly configured, containers
+without individual `limits.swap` (`c3-helper-a`, `c4-helper-b`) share the pod's
+`2Gi` swap limit (`memory.swap.max = 2Gi`), while individual containers can
+still override their own swap limit (`c1-latency-sensitive` disables swap with
+`swap: "0"`, and `c2-swap-worker` bounds its swap usage to `512Mi`):
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-level-swap-mixed
+spec:
+  resources:
+    requests:
+      memory: "4Gi"
+    limits:
+      memory: "8Gi"
+      swap: "2Gi"
+  containers:
+  - name: c1-latency-sensitive
+    image: cache:latest
+    resources:
+      requests:
+        memory: "1Gi"
+      limits:
+        memory: "1Gi"
+        swap: "0"
+  - name: c2-swap-worker
+    image: worker:latest
+    resources:
+      requests:
+        memory: "1Gi"
+      limits:
+        memory: "2Gi"
+        swap: "512Mi"
+  - name: c3-helper-a
+    image: helper:latest
+  - name: c4-helper-b
+    image: helper:latest
 ```
 
 ## Test Plan
