@@ -1,4 +1,4 @@
-title: More granular Job failure reasons for PodFailurePolicy
+title: More granular Job failure reasons for PodFailurePolicyRule
 kep-number: 4443
 authors:
   - "@danielvegamyhre"
