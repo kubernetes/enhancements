@@ -106,12 +106,23 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Version](#version)
     - [Properties](#properties)
     - [Conditions](#conditions)
+    - [Access Providers](#access-providers)
   - [Cluster Access](#cluster-access)
     - [Pull Model with Work API](#pull-model-with-work-api)
     - [Push Model with Identity Federation (Recommended)](#push-model-with-identity-federation-recommended)
-    - [Push Model via Credentials in Secret (Not Recommended)](#push-model-via-credentials-in-secret-not-recommended)
-      - [Secret format](#secret-format)
+    - [Push Model via Access Provider Plugins](#push-model-via-access-provider-plugins)
+  - [Access Provider Plugin Design](#access-provider-plugin-design)
+    - [External Access Provider Plugin Mechanism](#external-access-provider-plugin-mechanism)
+    - [Standardizing the Provider Definition](#standardizing-the-provider-definition)
+      - [Cluster Data](#cluster-data)
+      - [Passing Plugin Configuration via Extensions](#passing-plugin-configuration-via-extensions)
+      - [Security Concerns](#security-concerns)
+    - [Configuring Plugins in the Controller](#configuring-plugins-in-the-controller)
+    - [Plugin Examples](#plugin-examples)
+      - [Secret Reader Plugin](#secret-reader-plugin)
+      - [GKE with Workload Identity Federation](#gke-with-workload-identity-federation)
 - [API Example](#api-example)
+  - [API Examples with Access Providers](#api-examples-with-access-providers)
   - [Scalability implication](#scalability-implication)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -136,13 +147,15 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
   - [Extending Cluster API <code>Cluster</code> resource](#extending-cluster-api-cluster-resource)
   - [ClusterProfile CRD scope](#clusterprofile-crd-scope)
-    - [Global hub cluster for multiple clustersets](#global-hub-cluster-for-multiple-clustersets)
-    - [Global hub cluster per clusterset](#global-hub-cluster-per-clusterset)
-    - [Regional hub cluster for multiple clustersets](#regional-hub-cluster-for-multiple-clustersets)
-    - [Regional hub clusters per clusterset](#regional-hub-clusters-per-clusterset)
-    - [Self-assembling clustersets](#self-assembling-clustersets)
+    - [Global hub cluster for multiple inventories](#global-hub-cluster-for-multiple-inventories)
+    - [Global hub cluster per inventory](#global-hub-cluster-per-inventory)
+    - [Regional hub cluster for multiple inventories](#regional-hub-cluster-for-multiple-inventories)
+    - [Regional hub clusters per inventory](#regional-hub-clusters-per-inventory)
+    - [Self-assembling inventories](#self-assembling-inventories)
     - [Workload placement across multiple clusters <em>without</em> cross-cluster service networking](#workload-placement-across-multiple-clusters-without-cross-cluster-service-networking)
-    - [Workload placement into a specific clusterset](#workload-placement-into-a-specific-clusterset)
+    - [Workload placement into a specific inventory](#workload-placement-into-a-specific-inventory)
+  - [Push Model via Credentials in Secret](#push-model-via-credentials-in-secret)
+    - [Secret format](#secret-format)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -219,6 +232,21 @@ ClusterProfile API. The objective is to establish a shared interface
 for cluster inventory, defining a standard for status reporting while
 allowing for multiple implementations.
 
+The ClusterProfile objects in one namespace form one cluster inventory.
+
+Additionally, to manage an inventory of clusters, a platform admin can rely on
+having the cluster manager output
+[ClusterProfile CRs](https://github.com/kubernetes-sigs/cluster-inventory-api/blob/main/apis/v1alpha1/clusterprofile_types.go)
+that point to the clusters. Those CRs are key for multicluster controllers
+that want to operate on the clusters. However, there isn't a single way to
+obtain credentials to reach those clusters. This KEP also provides a
+standardized way to obtain credentials for clusters when using ClusterProfile
+and makes it pluggable to allow the diverse ecosystem to support the multitude
+of ways to obtain credentials. It reuses part of the Kubeconfig external
+provider semantics (see
+[KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md))
+to make implementation easier.
+
 ## Motivation
 
 <!--
@@ -252,7 +280,7 @@ management. Examples of consumers includes:
   endpoints. A common ClusterProfile API will give schedulers a
   standard to reason about clusters and help to foster the growth of
   this area.
-* GitOps tools (ArgoCD, flux etc) are having the requirement to deploy
+* GitOps tools (Argo CD, Flux etc) are having the requirement to deploy
   workload to multiple clusters. They either need to build the cluster
   concept by themselves or understand APIs representing a cluster from each 
   cluster management project. A common ClusterProfile API can provide
@@ -262,6 +290,15 @@ management. Examples of consumers includes:
   providing a vendor agnostic integration point for external tools.
 * Cluster manager implementations themselves, for purposes such as
   grouping clusters into MCS API clustersets.
+
+Furthermore, ClusterInventory is unfinished without an ability to use the
+clusters and controller writers have been very explicit that credentials are
+needed. Previous attempts at writing credentials have
+failed and we believe that a plugin model, also reusing known flows
+such as [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md),
+will help solve the "credentials" need for ClusterProfiles.
+
+See also: [Credential Plugin introduction slides](https://docs.google.com/presentation/d/1v5-J-kFJ3TSpKqSraHcYkCz2NG7cNnYpq0ISF85wNMU/edit)
 
 ### Goals
 
@@ -280,7 +317,13 @@ know that this has succeeded?
   is most effective when platform extension authors can use it as a
   foundational tool to create extensions compatible with multiple
   providers.
-* Allow cluster managers of different types to share a single point inventory.
+* Allow cluster managers of different types to create ClusterProfiles in the
+  same inventory.
+* Provide a library for controllers to obtain credentials for a cluster
+  represented by a ClusterProfile
+* Allow cluster managers to provide a method to obtain credentials that
+  doesn't require to be embedded into the controller code and recompiling.
+* Be a secure mechanism for credential obtention and storage.
 
 
 ### Non-Goals
@@ -294,6 +337,11 @@ and make progress.
 * Define specific implementation details beyond general API behavior.
 * Offering functionalities related to multi-cluster orchestration.
 * Define the Consumer registration API
+* Define the mechanism for shipping plugins to be used by the controllers
+  and their delivery in the controller image/pod.
+* Design plugin or a library for plugins
+* Mandate Federated workload identity / OIDC frameworks (though they are
+  recommended)
 
 
 ## Proposal
@@ -318,11 +366,28 @@ the API proposed by this KEP aims to
   failures, and connectivity issues.
 - Provide a simple, clear interface for human operators to understand
   clusters under management.
+- Provide a standardized, pluggable mechanism for obtaining credentials
+  to access clusters represented by ClusterProfile objects. The proposed
+  approach is to leverage plugins for retrieving the credentials from an
+  issuer recognized by the target cluster. The controller using
+  ClusterProfile would use a library to run a local executable which
+  would retrieve the credentials for the current controller and a given
+  clusterprofile. Plugins would be exec'ed by the controller so that
+  they don't need be built-in the binary, allowing flexibility into
+  writing their own access plugins and still leveraging multicluster
+  controllers written by the community. We propose to reuse the exec
+  approach and protocol used for external credentials in Kubeconfig (but
+  not the configuration part of kubeconfig). Finally, in order to
+  retrieve the endpoint for the cluster, we standardize the property
+  names that are used in ClusterProfile.
 
 ### Terminology
-- **Cluster Inventory**: A conceptual term referring to a collection of clusters.
+- **Cluster Inventory**: The collection of ClusterProfile objects in one
+  namespace. A single cluster can host multiple inventories in different
+  namespaces.
 
-- **Member Cluster**: A kubernetes cluster that is part of a cluster inventory.
+- **Member Cluster**: A Kubernetes cluster represented by a ClusterProfile in
+  a cluster inventory.
 
 - **Cluster Manager**: An entity that creates the ClusterProfile API object per member cluster,
   and keeps their status up-to-date. Each cluster manager MUST be identified with a unique name.
@@ -402,32 +467,70 @@ manager.
 The ClusterProfile API represents a single member cluster in a cluster inventory.
 
 #### What's the relationship between a cluster inventory and clusterSet?
-A cluster inventory may or may not represent a ClusterSet. A cluster inventory is considered a [clusterSet](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#terminology)
-if all its member clusters adhere to the [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) principle.
-Note that a cluster can only be in one ClusterSet while there is not such restriction for a cluster inventory.
+A cluster inventory is defined by its namespace and is independent of ClusterSet.
+This KEP does not define a mapping between cluster inventories and [clusterSets](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#terminology):
+a clusterSet requires properties beyond [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md),
+such as mutual trust, shared ownership, and symmetric and transitive membership, and those properties
+are established by an MCS implementation rather than by this API.
 
 #### How should the API be consumed?
 We recommend that all ClusterProfile objects within the same cluster inventory reside on
 a dedicated Kubernetes cluster (aka. the hub cluster). This approach allows consumers to have a single integration 
 point to access all the information within a cluster inventory. Additionally, a multi-cluster aware
 controller can be run on the dedicated  cluster to offer high-level functionalities over this inventory of clusters.
+A consumer that reads ClusterProfile objects from multiple namespaces is consuming multiple
+inventories.
 
-####  How should we organize ClusterProfile objects on a hub cluster?
-While there are no strict requirements, we recommend making the ClusterProfile API a namespace-scoped object.
-This approach allows users to leverage Kubernetes' native namespace-based RBAC if they wish to restrict access to 
-certain clusters within the inventory.
+#### How should we organize ClusterProfile objects on a hub cluster?
+ClusterProfile is a namespace-scoped API. This allows users to leverage Kubernetes' native
+namespace-based RBAC if they wish to restrict access to certain clusters within the inventory.
 
-However, if a cluster inventory represents a ClusterSet, all its ClusterProfile objects MUST be part of the same clusterSet
-and namespace must be used as the grouping mechanism. In addition, the namespace must have a label with the key "clusterset.multicluster.x-k8s.io"
-and the value as the name of the clusterSet.
+Inventories may be organized per consumer. In the example below, a GitOps tool
+such as Argo CD consumes an inventory in the `argocd` namespace containing the
+dev, staging, and prod clusters, while MultiKueue consumes a separate inventory
+in the `kueue` namespace containing the prod and batch clusters. The prod
+cluster is a member of both inventories, represented by one ClusterProfile
+object in each namespace.
+
+![two consumer-scoped inventories on one hub cluster sharing a member cluster](./consumer-scoped-inventories.svg)
 
 #### Uniqueness of the ClusterProfile object
-While there are no strict requirements, we recommend that there is only one ClusterProfile object representing any member cluster
-on a hub cluster. 
+Within a cluster inventory, each member cluster SHOULD be represented by at most one
+ClusterProfile object, regardless of which cluster manager created it.
 
-However, a ClusterProfile object can only be in one ClusterSet since the namespace sameness property is transitive, therefore 
-it can only be in the namespace of that clusterSet if it is in a ClusterSet.
+Cluster managers SHOULD add the
+`multicluster.x-k8s.io/inventory-member-id` label when they create a
+ClusterProfile, using a value coordinated by the platform administrator. When
+set, the label MUST have a non-empty value.
 
+The platform administrator SHOULD ensure that, among all ClusterProfile
+objects stored in the same Kubernetes cluster, objects representing the same
+member cluster use the same value, and objects representing different member
+clusters use different values. Cluster managers SHOULD keep the value
+unchanged while a ClusterProfile continues to represent the same member
+cluster.
+
+ClusterProfile objects stored in the same Kubernetes cluster with the same
+non-empty `multicluster.x-k8s.io/inventory-member-id` value claim to represent
+the same member cluster. A consumer SHOULD deduplicate only among
+ClusterProfile objects selected by its configuration, such as inventory
+namespaces, label selectors, or object references, and only when its actions
+on those objects would conflict. Among objects with the same value in that
+set, the consumer SHOULD act only on the object with the oldest
+`creationTimestamp`; if two or more share it, the consumer SHOULD NOT act on
+any of them.
+
+If multiple ClusterProfile objects in the same inventory have the same
+non-empty `multicluster.x-k8s.io/inventory-member-id` value, the platform
+administrator SHOULD delete all but one. Consumers that select more than one
+of these objects, and whose actions on all of them would conflict, SHOULD
+surface a warning until the issue is resolved. The same value may appear in
+different inventories when the same member cluster belongs to each of them;
+those objects do not require deletion or a warning.
+Objects without the label are not correlated or deduplicated by this
+mechanism. An empty label value does not conform to this convention. A
+consumer that implements this deduplication MUST treat it as if the label were
+absent.
 
 ### Risks and Mitigations
 
@@ -442,6 +545,35 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+
+The ClusterProfile API does not enforce the inventory member ID conventions
+above. An absent, empty, conflicting, or unexpectedly changed value can cause
+consumers to treat one member cluster as multiple members or different member
+clusters as the same member. Deployments that require stronger guarantees can
+validate non-empty and stable values with a ValidatingAdmissionPolicy or an
+admission webhook; consistency across ClusterProfile objects remains the
+platform administrator's responsibility.
+
+Because of its interaction with authentication and credentials, particular
+attention in the access provider plugin design must be paid to security:
+
+* Credentials leak: ClusterProfile, Controller configuration and Plugin
+  configuration should never contain sensitive information.
+* Plugin poisoning: supporting access provider plugins in a controller
+  relies on trusting the plugin itself and its path in the filesystem.
+  Particular attention must be provided by the user deploying a controller to
+  make sure the plugins that they install are from a trusted source as they
+  will have access to the controller's identity. In addition, the path of the
+  plugin may be edited or hijacked by an attacker which would then sit in lieu
+  of the normal plugin, allowing process execution by the controller's process.
+  This risk is mitigated by the assumption that the pod's filesystem is private
+  to it and that no lower-privileged (or separate) processes are able to access
+  it.
+
+Another risk is around AuthZ. This design doesn't cover the distribution of
+RBAC to multiple clusters and identifying what principal a controller can be
+identified as. This setup is currently left to the responsibility of the
+platform admin setting up the different clusters and controllers.
 
 ## Design Details
 
@@ -470,12 +602,13 @@ below questions:
 
 ### Cluster Name
 
-It is required that cluster name is unique for each cluster, and it
-should also be unique among different providers (cluster manager). It
-is cluster manager's responsibility to ensure the name uniqueness.
+It is required that cluster name is unique within a cluster inventory,
+even when different cluster managers create ClusterProfiles in the same
+inventory. Each cluster manager is responsible for the uniqueness of the
+names it creates; the platform administrator who connects multiple
+cluster managers to one inventory is responsible for avoiding name
+collisions between them.
 
-It's the responsibility of the cluster manager platform administrator
-to ensure cluster name uniqueness.
 The examples below serve more as recommendations than hard requirements,
 providing guidance on best practices.
 
@@ -524,11 +657,13 @@ minimum kubelet version, maximum kubelet version, and enabled featureset version
 
 #### Properties
 
-Name/value pairs to represent properties of the clusters. It could be a
-collection of ClusterProperty resources, but could also be info based on
-other implementations. The name of the cluster property can be predefined
-name from ClusterProperty resources and is allowed to be customized by
-different cluster managers.
+Name/value pairs to represent properties of the clusters. Cluster managers
+SHOULD include ClusterProperty resources defined on the member cluster in the
+ClusterProfile's `.status.properties`. They MAY also include properties from
+other implementations. Properties derived from ClusterProperty resources MUST
+preserve the name and value of the ClusterProperty as-is. Cluster managers MAY
+additionally include their own custom-named properties, as long as they do not
+conflict with names derived from ClusterProperty resources.
 
 #### Conditions
 
@@ -559,6 +694,43 @@ Predefined condition types:
   The status of the cluster SHOULD be updated by the cluster manager under
   this condition.
 
+#### Access Providers
+
+We standardize a new field in ClusterProfile called `accessProviders` that is
+stored in the Status of the ClusterProfile.
+
+All the data from this structure is specific to the clusterProfile and does not
+contain any Controller-specific information. It must be usable by different
+controller, applications or consumers without requiring changes. It also
+cannot contain any data considered a secret; and we consider that reachability
+information is not sensitive.
+
+The definition is as follows:
+
+```
+type AccessProviders struct {
+  // +listType=map
+  // +listMapKey=name
+  accessProviders []AccessConfig
+}
+
+// AccessType defines the type of access provider that is used to reach
+// the cluster. For example, GCP access (using tokens that are understood
+// by GCP's IAM) is designated by the string `google`.
+type AccessType string
+
+// AccessConfig gives more details on data that is necessary to reach
+// the cluster for this kind of access provider.
+type AccessConfig struct {
+  Name string
+  Cluster *Cluster
+}
+```
+
+See [Access Provider Plugin Design](#access-provider-plugin-design)
+for full details on how `accessProviders` is consumed by the access
+provider plugin mechanism.
+
 ### Cluster Access
 There are multiple methods for a ClusterInventory Consumer to gain access to the cluster represented by a ClusterProfile API.
 This KEP does not define the exact mechanism for each approach, but it is recommended that ClusterInventory Consumers avoid 
@@ -576,22 +748,301 @@ or [GCP Workload Identity Federation](https://cloud.google.com/iam/docs/workload
 ClusterInventory Consumer to use an identity that already has access to the clusters in the Cluster Inventory.
 While the Cluster Manager can assist in setting up the federation, it is not a mandatory requirement.
 
-#### Push Model via Credentials in Secret (Not Recommended)
-The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by reading 
-from a secret. In this approach, the Cluster Manager generates secrets containing the necessary credentials within the namespace
-accessible to the ClusterInventory Consumer. For this to function correctly, Cluster Managers must be aware of the following details 
-about the consumer: their name, whether credentials are required, and the preferred unique namespace for reading credentials as secrets.
-Those information can be obtained during the "registering" process but this is out of the scope of this KEP.
+#### Push Model via Access Provider Plugins
+The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by
+using an access provider plugin. In this approach, the controller using ClusterProfile would use a library to run a
+local executable which would retrieve the credentials for the current controller and a given clusterprofile. It is
+expected that plugins would leverage elements local to the controller to help assert the identity of the controller
+(environment variables, config files, KSA, the local IP, etc.) to retrieve credentials that are valid on the target
+cluster. This approach reuses the exec protocol defined in
+[KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md),
+giving the ability to reuse the code in client-go. The cluster's endpoint and TLS configuration
+are read from the `accessProviders` field in the ClusterProfile status.
 
-##### Secret format
-- The secret *MUST* reside in the namespace with the label `x-k8s.io/cluster-inventory-consumer` with the value being the name of the ClusterInventory Consumer.
-- The secret *MUST* contain the label `x-k8s.io/cluster-profile` with the value being the name of the ClusterProfile object that the secret is associated with.
-- The secret *MAY* contain the label `x-k8s.io/cluster-profile-namespace` with the value being the namespace of the ClusterProfile object that the secret is associated with. If not present, the ClusterProfile is assumed to be in the default namespace.
-- The access information in the secret must contain the following fields
-  - **Config**: This field contains cluster access information compatible with the
-    [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/v1.31.2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
-  - Since a single [Kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) supports access to multiple clusters, the Cluster manager *MUST* ensure that each secret contains access information for only a single consumer.
+See [Access Provider Plugin Design](#access-provider-plugin-design) for the full design details.
 
+### Access Provider Plugin Design
+
+The access provider plugin implementation would be done via a library in
+https://github.com/kubernetes-sigs/cluster-inventory-api.
+The library would be in golang. The library is provided as the community shared
+implementation for golang and it is possible that other implementations would be
+created, and would work with the same plugin mechanism defined here, allowing
+for reuse of the external providers that cluster managers write.
+
+The expected prototype for a controller is expected to be the following:
+
+`func (c *access.Config) BuildConfigFromCP(cp *ClusterProfile) (*rest.Config, error)`
+
+The library implementation flow is expected to be as follows:
+
+1. Build the endpoint details of the cluster by reading properties of the
+   ClusterProfile
+2. Call the external access provider plugin, following the same flow defined in
+   [KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md)
+   (giving the ability to reuse the code in
+   [client-go's exec package](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159))
+3. If the `Cluster` includes an `extensions` entry named
+   `client.authentication.k8s.io/exec`, pass its `extension` object through to
+   `ExecCredential.Spec.Cluster.Config` as plugin configuration.
+4. Build the rest.Config and return it to the caller
+
+#### External Access Provider Plugin Mechanism
+
+In order to call the plugin, the library execs the plugin defined in the
+configuration. It passes the Cluster information that was obtained from the
+ClusterProfile. The library then calls the plugin following the protocol
+defined in
+[KEP 541](https://github.com/kubernetes/enhancements/blob/master/keps/sig-auth/541-external-credential-providers/README.md).
+The library provided in https://github.com/kubernetes-sigs/cluster-inventory-api
+can leverage the
+[original code that is kept in client-go](https://github.com/kubernetes/client-go/blob/master/plugin/pkg/client/auth/exec/exec.go#L159).
+
+#### Standardizing the Provider Definition
+
+In order to populate the Cluster object that the exec provider requires, a new
+field in ClusterProfile called `accessProviders` is standardized and stored in
+the Status of the ClusterProfile (see [Access Providers](#access-providers)).
+
+##### Cluster Data
+
+The Cluster structure for the exec defined in KEP 541,
+[implemented in k/client-go](https://github.com/kubernetes/client-go/blob/master/tools/clientcmd/api/types.go#L69-L106)
+assumes the following:
+
+```
+type Cluster struct {
+	// LocationOfOrigin indicates where this object came from. It is used for round tripping config post-merge, but never serialized.
+	// +k8s:conversion-gen=false
+	LocationOfOrigin string `json:"-"`
+	// Server is the address of the kubernetes cluster (https://hostname:port).
+	Server string `json:"server"`
+	// TLSServerName is used to check server certificate. If TLSServerName is empty, the hostname used to contact the server is used.
+	// +optional
+	TLSServerName string `json:"tls-server-name,omitempty"`
+	// InsecureSkipTLSVerify skips the validity check for the server's certificate. This will make your HTTPS connections insecure.
+	// +optional
+	InsecureSkipTLSVerify bool `json:"insecure-skip-tls-verify,omitempty"`
+	// CertificateAuthority is the path to a cert file for the certificate authority.
+	// +optional
+	CertificateAuthority string `json:"certificate-authority,omitempty"`
+	// CertificateAuthorityData contains PEM-encoded certificate authority certificates. Overrides CertificateAuthority
+	// +optional
+	CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
+	// ProxyURL is the URL to the proxy to be used for all requests made by this
+	// client. URLs with "http", "https", and "socks5" schemes are supported. If
+	// this configuration is not provided or the empty string, the client
+	// attempts to construct a proxy configuration from http_proxy and
+	// https_proxy environment variables. If these environment variables are not
+	// set, the client does not attempt to proxy requests.
+	//
+	// socks5 proxying does not currently support spdy streaming endpoints (exec,
+	// attach, port forward).
+	// +optional
+	ProxyURL string `json:"proxy-url,omitempty"`
+	// DisableCompression allows client to opt-out of response compression for all requests to the server. This is useful
+	// to speed up requests (specifically lists) when client-server network bandwidth is ample, by saving time on
+	// compression (server-side) and decompression (client-side): https://github.com/kubernetes/kubernetes/issues/112296.
+	// +optional
+	DisableCompression bool `json:"disable-compression,omitempty"`
+	// Extensions holds additional information. This is useful for extenders so that reads and writes don't clobber unknown fields
+	// +optional
+	Extensions map[string]runtime.Object `json:"extensions,omitempty"`
+}
+```
+
+In this structure, not all fields would apply, such as:
+
+* `CertificateAuthority`, which points to a file (and a ClusterProfile doesn't
+  have a filesystem)
+
+And there are fields that require special attention:
+
+* `Extensions`, which holds additional, usually cluster-specific information,
+  that might help authenticate with the cluster. (For more information about
+  this field and how it is handled, see the section on
+  [Passing Plugin Configuration via Extensions](#passing-plugin-configuration-via-extensions)).
+
+##### Passing Plugin Configuration via Extensions
+
+Some access providers require cluster-specific, non-secret parameters (for
+example, a `clusterName`) in order to obtain credentials. To standardize how
+this information is conveyed from a `ClusterProfile` to a plugin, the library
+follows the existing convention defined by the client authentication API:
+
+> Optional: when a plugin needs per-cluster, non-secret config, set an
+> extension entry with `name: client.authentication.k8s.io/exec` under
+> `Cluster.extensions`.
+> The library reads only the `extension` field of that entry and passes it
+> through verbatim to `ExecCredential.Spec.Cluster.Config`.
+> The content must be non-secret and cluster-specific. Controller- or
+> environment-specific data must not be placed here.
+> Plugins may read values (e.g. `clusterName`) from
+> `ExecCredential.Spec.Cluster.Config`.
+
+Reference: [client.authentication.k8s.io/v1 Cluster: `config` sourced from `extensions[client.authentication.k8s.io/exec]`](https://kubernetes.io/docs/reference/config-api/client-authentication.v1/#client-authentication-k8s-io-v1beta1-Cluster)
+
+Example (embedded in `ClusterProfile.status.accessProviders[].cluster`):
+
+```
+extensions:
+- name: client.authentication.k8s.io/exec
+  extension:
+    clusterName: spoke-1
+```
+
+In practice, however, there exist certain scenarios where setting the reserved
+`client.authentication.k8s.io/exec` extension to pass cluster-specific data
+might not be appropriate: libraries such as `client/go` will eventually save
+the extension data (along with other information, including the CA bundles for
+a cluster) to an environment variable, `KUBERNETES_EXEC_INFO`, which exec
+plugins can read; however:
+
+* some exec plugins might be expecting inputs from CLI arguments or
+  plugin-specific environment variables directly; they might not read the
+  `KUBERNETES_EXEC_INFO` environment variable at all, or might make only
+  limited use of the environment variable.
+* it might not be proper to set the `KUBERNETES_EXEC_INFO` environment variable
+  in the target environment: for example, `KUBERNETES_EXEC_INFO` includes CA
+  bundles for a cluster and its size might exceed length limitations in the
+  environment.
+* the `client.authentication.k8s.io/exec` extension keeps the data in the free
+  form, `runtime.RawExtension`; before it is saved to the
+  `KUBERNETES_EXEC_INFO` environment variable, `client/go` will pass it to the
+  `ExecConfig.Config` struct first, which accepts only `runtime.Object` data.
+  This brings about possible marshalling/unmarshalling complications, which
+  could be difficult to handle gracefully for the community-provided library
+  proposed in this KEP.
+
+To address the deficiencies above, we further propose that:
+
+* this KEP reserves a name in the extensions,
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-args`, which holds
+  additional CLI arguments that would be supplied to the exec plugin when the
+  ClusterProfile API and community-provided library are used for
+  authentication.
+
+  If an extension under this name is present, the community-provided library
+  will extract the data, and append the additional arguments to the
+  `ExecConfig` struct (specifically the `ExecConfig.Args` field) that will be
+  used to prepare the `rest.Config` output. The arguments will then be used to
+  invoke the exec plugin.
+
+  The additional arguments shall be saved as a string array in the YAML format.
+
+  For simplicity reasons, the community-provided library will not perform any
+  de-duplication on the CLI arguments after the additional arguments are
+  appended.
+
+* this KEP reserves another name in the extensions,
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-envs`, which holds
+  additional environment variables that would be supplied upon calling the exec
+  plugin when the ClusterProfile API and community-provided library are used
+  for authentication.
+
+  If an extension under this name is present, the community-provided library
+  will extract the data, and add the additional variables to the `ExecConfig`
+  struct (specifically the `ExecConfig.Env` field) that will be used to prepare
+  the `rest.Config` output. The variables will then be set when invoking the
+  exec plugin.
+
+  The additional environment variables shall be represented as a string map in
+  the YAML format.
+
+  The community-provided library will de-duplicate the list of environment
+  variables when adding the additional variables; if two entries are present
+  under the same name, the one from the extension will prevail.
+
+##### Security Concerns
+
+With the addition of newly reserved extensions, understandably there might be
+situations where users might want to block additional CLI arguments or
+environment variables from being set due to security reasons. To resolve this,
+the KEP proposes that the community-provided library implementation must allow
+users to specify whether additional CLI arguments or environment variables can
+be set by a `ClusterProfile` object. By default the reserved extensions should
+be ignored.
+
+See the [Configuring Plugins in the Controller](#configuring-plugins-in-the-controller)
+section for more information.
+
+#### Configuring Plugins in the Controller
+
+Plugins are selected by a string which represents the type of access provider
+that is used to reach the cluster, for example, "google" for GKE Clusters.
+This allows the controller to attach a different binary name or path for the
+binary.
+
+It is expected that the library will have a mapping from its supported type of
+access provider to the expected binary to call. The library would be fed via a
+JSON configuration file, specified by the `--clusterprofile-provider-file`
+flag. The file maps access provider types to the associated exec configuration
+and potential flags that should be passed. It cannot contain cluster-specific
+information (which is not known at that time).
+
+```
+./controller ... --clusterprofile-provider-file "clusterprofile-provider-file.json"
+```
+
+The structure for each Provider in the configuration file:
+
+```
+type Provider struct {
+  Name                        string
+  ExecConfig                  *clientcmdapi.ExecConfig
+  ProfileSourcedCLIArgsPolicy ProfileSourcedCLIArgsPolicy
+  ProfileSourcedEnvVarsPolicy ProfileSourcedEnvVarsPolicy
+}
+```
+
+Given the plugin is executed directly by the controller, it may expect to have
+access to the same environment as the controller itself, inclusive of envvars,
+filesystem and network. It is expected that the identity of the plugin is the
+same as the controller itself.
+
+The `ClusterProfileSourcedCLIArgsPolicy` and
+`ClusterProfileSourcedEnvVarsPolicy` flags control whether the library will
+process `clusterprofiles.multicluster.x-k8s.io/exec/additional-args` and
+`clusterprofiles.multicluster.x-k8s.io/exec/additional-envs` extensions, as
+described earlier. If set to `Ignore`, additional CLI arguments and/or
+environment variables cannot be set from the ClusterProfile side.
+
+#### Plugin Examples
+
+As an example, we provide pseudocode for plugins that could easily be
+implemented with the protocol. They are ultrasimplified versions of the code
+and structures to convey the idea and not be an implementation example.
+
+##### Secret Reader Plugin
+
+This plugin assumes the controller is aware of the list of clusters ahead of
+time and has created secrets for them in its namespace. It simply reads the
+token from the secret mapped to the cluster specifically for this controller.
+Note that namespace comes from the controller config while `clusterName` is
+read by the plugin from `ExecCredential.Spec.Cluster.Config`, which the
+library populates from the `Cluster.extensions` entry named
+`client.authentication.k8s.io/exec`.
+
+```
+func GetToken(namespace, clusterName string) string {
+  // query secrets local to this controller (same cluster, same namespace)
+  secret := secrets.Namespace(namespace).Get(clusterName)
+  return secret.Data.token
+}
+```
+
+##### GKE with Workload Identity Federation
+
+This plugin uses Workload Identity Federation to call the other clusters that
+are GKE clusters and therefore understanding google-issued credentials.
+
+```
+func GetToken() string {
+  // This library calls looks at the standard envvar called GOOGLE_CREDENTIALS and if not found, calls the Metadata Server IP (169.254.169.254)
+  creds := google.GetDefaultCredentials()
+  return creds.Token()
+}
+```
 
 ## API Example
 
@@ -600,8 +1051,10 @@ apiVersion: multicluster.x-k8s.io/v1alpha1
 kind: ClusterProfile
 metadata:
  name: generated-cluster-name
+ namespace: some-cluster-inventory
  labels:
    x-k8s.io/cluster-manager: some-cluster-manager
+   multicluster.x-k8s.io/inventory-member-id: cluster-us-east
 spec:
   displayName: cluster-us-east
   clusterManager:
@@ -624,6 +1077,117 @@ status:
      lastTransitionTime: "2023-05-08T07:58:55Z"
      message: ""
 ```
+
+### API Examples with Access Providers
+
+Below is an example of a GKE ClusterProfile, which would map to a plugin
+providing credentials of type `google`:
+
+```yaml
+apiVersion: multicluster.x-k8s.io/v1alpha1
+kind: ClusterProfile
+metadata:
+ name: my-cluster-1
+ namespace: fleet-system
+spec:
+  displayName: my-cluster-1
+  clusterManager:
+    name: GKE-Fleet
+status:
+  version:
+    kubernetes: 1.28.0
+  properties:
+   - name: clusterset.k8s.io
+     value: some-clusterset
+   - name: location
+     value: us-central1
+  accessProviders:
+  - name: google
+    cluster:
+      server: https://connectgateway.googleapis.com/v1/projects/123456789/locations/us-central1/gkeMemberships/my-cluster-1
+```
+
+Below are some examples that feature the use of extensions in ClusterProfiles:
+
+* This example uses the reserved `client.authentication.k8s.io/exec` extension
+  to pass cluster names to a plugin of the secret reader type:
+
+  ```yaml
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+    name: my-cluster-1
+    namespace: fleet-system
+  spec:
+    displayName: my-cluster-1
+    clusterManager:
+      name: inhouse-manager
+  status:
+    accessProviders:
+    - name: secretreader
+      cluster:
+        server: https://<spoke-server>
+        certificate-authority-data: <BASE64_CA>
+        extensions:
+        - name: client.authentication.k8s.io/exec
+          extension:
+            clusterName: spoke-1
+  ```
+
+* This example uses the
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-args` extension to
+  pass additional CLI arguments (`-audience https://my-on-prem-k8s.example.dev`)
+  to the exec plugin when the `spire-agent` access provider is used, as the
+  cluster's authentication solution is expecting tokens with this specific
+  audience for security reasons.
+
+  ```yaml
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+    name: my-on-prem-cluster
+    namespace: fleet-system
+  spec: ...
+  status:
+    ...
+    accessProviders:
+    - name: spire-agent
+      cluster:
+        server: https://my-on-prem-k8s.example.dev
+        ...
+        extensions:
+        - name: "clusterprofiles.multicluster.x-k8s.io/exec/additional-args"
+          extension:
+          - "-audience"
+          - "https://my-on-prem-k8s.example.dev"
+  ```
+
+* This example uses the
+  `clusterprofiles.multicluster.x-k8s.io/exec/additional-envs` extension to
+  pass additional environment variables `CLIENT_ID` and `TENANT_ID` to the exec
+  plugin when the `kubelogin` access provider is used; these entries can
+  help the exec plugin exchange for cluster-specific access tokens.
+
+  ```yaml
+  apiVersion: multicluster.x-k8s.io/v1alpha1
+  kind: ClusterProfile
+  metadata:
+   name: my-aks-cluster
+   namespace: fleet-system
+  spec: ...
+  status:
+    ...
+    accessProviders:
+    - name: kubelogin
+      cluster:
+        server: https://braveion-abcxyz.hcp.eastus2.azmk8s.io
+        ...
+        extensions:
+        - name: "clusterprofiles.multicluster.x-k8s.io/exec/additional-envs"
+          extension:
+            "CLIENT_ID": "my-client-id"
+            "TENANT_ID": "my-tenant-id"
+  ```
 
 ### Scalability implication
 
@@ -694,6 +1258,8 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 - A CRD definition and generated client.
 - A dummy controller and unit test to validate the CRD and client.
+- An access provider plugin library and protocol definition.
+- Unit tests for the access provider library.
 
 #### Beta
 
@@ -909,6 +1475,12 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
+The following metrics would be added into the access provider plugin
+library to help observability:
+
+* Number of Credential Obtention, categorized per plugin type, reply state
+* Latency to obtain credentials, categorized per plugin type
+
 ### Dependencies
 
 <!--
@@ -1065,6 +1637,18 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 2025-06-01: KEP-5339 (Plugin for Credentials in ClusterProfile) merged into
+  this KEP. The access provider plugin mechanism, `accessProviders` API
+  field, and all related design details were consolidated here since the base
+  API and the access-related fields are expected to graduate together.
+- 2026-07-16: Defined a cluster inventory as the set of ClusterProfile
+  objects in one namespace, scoped the ClusterProfile and cluster name
+  uniqueness rules to the inventory, and defined cluster inventories
+  independently of ClusterSet.
+- 2026-07-31: Defined the
+  `multicluster.x-k8s.io/inventory-member-id` label, duplicate ClusterProfile
+  handling within an inventory, and consumer deduplication across inventories.
+
 ## Drawbacks
 
 <!--
@@ -1108,43 +1692,67 @@ but was met with pushback by potential adopters in part due to a desire to host
 multiple distinct registry lists on a single control plane, which would be far
 more straightforward with namespaced resources.
 
-#### Global hub cluster for multiple clustersets
+#### Global hub cluster for multiple inventories
 
-![illustration of global hub for multiple clustersets topology](./global-hub.svg)
+![illustration of global hub for multiple inventories topology](./global-hub.svg)
 
-In this model, a single global hub cluster is used to manage multiple clustersets (a "Prod" clusterset and "Dev" clusterset in this illustration). For this use case, some means of segmenting the ClusterProfile resources into distinct groups for each clusterset is needed, and ideally should facilitate selecting all ClusterProfiles of a given clusterset. Because of this selection-targeting goal, setting clusterset membership within the `spec` of a ClusterProfile would not be sufficient. While setting a label such as the proposed `clusterset.multicluster.x-k8s.io` on the ClusterProfile resource (instead of a namespace) could be acceptable, managing multiple cluster-scoped ClusterProfile resources for multiple unrelated clustersets on a single global hub could quickly get cluttered. In addition to grouping clarity, namespace scoping could allow RBAC delegation for separate teams to manage resources for their own clustersets in isolation while still using a shared hub. The group of all clusters registered on the hub (potentially including clusters belonging to different clustersets or clusters not belonging to any clusterset) may represent a single "inventory" or multiple inventories, but such a definition is beyond the scope of this document and is permissible to be an undefined implementation detail.
+In this model, a single global hub cluster hosts multiple cluster inventories (a "Prod" inventory and a "Dev" inventory in this illustration). For this use case, some means of segmenting the ClusterProfile resources into distinct inventories is needed, and ideally should facilitate selecting all ClusterProfiles of a given inventory. Because of this selection-targeting goal, recording inventory membership within the `spec` of a ClusterProfile would not be sufficient. While a label on the ClusterProfile resource (instead of a namespace) could serve as the grouping mechanism, managing cluster-scoped ClusterProfile resources for multiple unrelated inventories on a single global hub could quickly get cluttered. In addition to grouping clarity, namespace scoping allows RBAC delegation for separate teams to manage their own inventories in isolation while still using a shared hub.
 
-#### Global hub cluster per clusterset
+#### Global hub cluster per inventory
 
-![illustration of global hub per clusterset topology](./global-hub-per-clusterset.svg)
+![illustration of global hub per inventory topology](./global-hub-per-inventory.svg)
 
-In this model, each "inventory" has a 1:1 mapping with a clusterset containing clusters in multiple regions. A cluster-scoped ClusterProfile CRD would be sufficient for this architecture, but it requires a proliferation of hub clusters, which may not be optimal. This model is still implementable with namespace-scoped ClusterProfile CRDs by writing them all to a single namespace, either the `default` namespace or a specific namespace configured in the cluster manager. The risk of placing resources in the wrong namespace would be somewhat minimal if following the suggested pattern of having ClusterProfile resources be written by a "manager" rather than authored by humans.
+In this model, each cluster inventory resides on its own dedicated hub cluster and contains member clusters in multiple regions. A cluster-scoped ClusterProfile CRD would be sufficient for this architecture, but it requires a proliferation of hub clusters, which may not be optimal. This model is still implementable with namespace-scoped ClusterProfile CRDs by writing them all to a single namespace, either the `default` namespace or a specific namespace configured in the cluster manager. The risk of placing resources in the wrong namespace would be somewhat minimal if following the suggested pattern of having ClusterProfile resources be written by a "manager" rather than authored by humans.
 
-#### Regional hub cluster for multiple clustersets
+#### Regional hub cluster for multiple inventories
 
-![illustration of regional hub clusters for multiple clustersets topology](./regional-hub-multiple-clustersets.svg)
+![illustration of regional hub clusters for multiple inventories topology](./regional-hub-multiple-inventories.svg)
 
-In this model, "hub" clusters are limited to a regional scope (potentially for architectural limitations or performance optimizations) and each hub is used to manage clusters only from the local region, but which may belong to separate clustersets. If, as in the pictured example, clustersets still span multiple regions, some out-of-band synchronization mechanism between the regional hubs would likely be needed. This model has similar segmentation needs to the global hub model, just at a smaller scale.
+In this model, "hub" clusters are limited to a regional scope (potentially for architectural limitations or performance optimizations) and each hub is used to manage clusters only from the local region, grouped into separate inventories per namespace. If, as in the pictured example, a logical group of clusters (such as an MCS clusterset) still spans multiple regions, its ClusterProfiles are split across inventories on different regional hubs, and some out-of-band synchronization mechanism between the regional hubs would likely be needed. This model has similar segmentation needs to the global hub model, just at a smaller scale.
 
-#### Regional hub clusters per clusterset
+#### Regional hub clusters per inventory
 
-![illustration of regional hub clusters per clusterset topology](./regional-hub-per-clusterset.svg)
+![illustration of regional hub clusters per inventory topology](./regional-hub-per-inventory.svg)
 
 This is creeping pretty far towards excessive cluster proliferation (and cross-region coordination overhead) purely for management needs (as opposed to actually running workloads), and would be more likely to be a reference or testing implementation than an architecture suitable for production scale.
 
-#### Self-assembling clustersets
+#### Self-assembling inventories
 
-![illustration of self-assembling clusterset topology](./self-assembling-clustersets.svg)
+![illustration of self-assembling inventory topology](./self-assembling-inventories.svg)
 
-This is the model most suited to a cluster-scoped ClusterProfile resource. In contrast to the prior models discussed, in this approach the ClusterProfile CRD would be written directly to each "member" cluster. ClusterSet membership would either be established through peer-to-peer relationships, or managed by an external control plane. For ClusterSet security and integrity, a two-way handshake of some sort would be needed between the local cluster and each peer or the external control plane to ensure it is properly authorized to serve endpoints for exported services or import services from other clusters. While these approaches could be implemented with a namespace-scoped ClusterProfile CRD in the `default` or a designated namespace, misuse is most likely in this model, because the resource would be more likely to be authored by a human if using the peer-to-peer model. Due to the complexity and fragility concerns of managing clusterset membership in a peer-to-peer topology, an external control plane would likely be preferable. Assuming the external control plane does not support Kubernetes APIs (if it did, any of the "hub" models could be applied instead), it could still be possible to implement this model with a namespace-scoped ClusterProfile resource, but it is _not_ recommended.
+This is the model most suited to a cluster-scoped ClusterProfile resource. In contrast to the prior models discussed, in this approach the ClusterProfile CRD would be written directly to each "member" cluster. Membership would either be established through peer-to-peer relationships, or managed by an external control plane. For inventory security and integrity, a two-way handshake of some sort would be needed between the local cluster and each peer or the external control plane to ensure it is properly authorized to participate (for example, to serve endpoints for exported services in an MCS implementation). While these approaches could be implemented with a namespace-scoped ClusterProfile CRD in the `default` or a designated namespace, misuse is most likely in this model, because the resource would be more likely to be authored by a human if using the peer-to-peer model. Due to the complexity and fragility concerns of managing membership in a peer-to-peer topology, an external control plane would likely be preferable. Assuming the external control plane does not support Kubernetes APIs (if it did, any of the "hub" models could be applied instead), it could still be possible to implement this model with a namespace-scoped ClusterProfile resource, but it is _not_ recommended.
 
 #### Workload placement across multiple clusters _without_ cross-cluster service networking
 
-In this model, a consumer of the Cluster Inventory API is looking to optimize workload placement to take advantage of excess capacity on existing managed clusters. These workloads may have specific hardware resource needs such as GPUs, but are typically "batch" jobs that do not require multi-cluster service networking to communicate with known services in a specific clusterset. The isolated nature of these jobs could allow them to be scheduled on many known clusters regardless of clusterset membership. A centralized hub which could register clusters in disparate clustersets or no clusterset and return a list of all known clusters from a single API call would be the most efficient for this consumer to query. Namespaced ClusterProfile CRDs on a global hub would be the best fit for this use case.
+In this model, a consumer of the Cluster Inventory API is looking to optimize workload placement to take advantage of excess capacity on existing managed clusters. These workloads may have specific hardware resource needs such as GPUs, but are typically "batch" jobs that do not require multi-cluster service networking to communicate with known services on other clusters. The isolated nature of these jobs could allow them to be scheduled on many known clusters regardless of any other grouping. A centralized hub that registers all such clusters in a single cluster inventory and returns them from a single API call would be the most efficient for this consumer to query. Namespaced ClusterProfile CRDs on a global hub would be the best fit for this use case.
 
-#### Workload placement into a specific clusterset
+#### Workload placement into a specific inventory
 
-Within a single clusterset, a global workload placement controller may seek to balance capacity across multiple regions in response to demand, cost efficiency, or other factors. Querying a list of all clusters within a single clusterset should be possible to serve this use case, which is amenable to either cluster-scoped or namespaced-scoped ClusterProfile CRDs.
+Within a single inventory (for example, a set of clusters connected by an MCS implementation), a global workload placement controller may seek to balance capacity across multiple regions in response to demand, cost efficiency, or other factors. Querying a list of all clusters within a single inventory should be possible to serve this use case, which is amenable to either cluster-scoped or namespace-scoped ClusterProfile CRDs.
+
+### Push Model via Credentials in Secret
+
+This was previously a fourth [Cluster Access](#cluster-access) approach, marked
+not recommended. It was ruled out in favor of the
+[access provider plugin mechanism](#push-model-via-access-provider-plugins),
+whose [secret reader](https://github.com/kubernetes-sigs/cluster-inventory-api/tree/main/plugins/secretreader)
+and [kubeconfig secret reader](https://github.com/kubernetes-sigs/cluster-inventory-api/tree/main/plugins/kubeconfig-secretreader)
+plugins cover the same use case through the standard exec protocol.
+
+The ClusterInventory Consumer can obtain credentials to access the cluster represented by a ClusterProfile object by reading
+from a secret. In this approach, the Cluster Manager generates secrets containing the necessary credentials within the namespace
+accessible to the ClusterInventory Consumer. For this to function correctly, Cluster Managers must be aware of the following details
+about the consumer: their name, whether credentials are required, and the preferred unique namespace for reading credentials as secrets.
+Those information can be obtained during the "registering" process but this is out of the scope of this KEP.
+
+#### Secret format
+- The secret *MUST* reside in the namespace with the label `x-k8s.io/cluster-inventory-consumer` with the value being the name of the ClusterInventory Consumer.
+- The secret *MUST* contain the label `x-k8s.io/cluster-profile` with the value being the name of the ClusterProfile object that the secret is associated with.
+- The secret *MAY* contain the label `x-k8s.io/cluster-profile-namespace` with the value being the namespace of the ClusterProfile object that the secret is associated with. If not present, the ClusterProfile is assumed to be in the default namespace.
+- The access information in the secret must contain the following fields
+  - **Config**: This field contains cluster access information compatible with the
+    [kubeconfig format](https://github.com/kubernetes/kubernetes/blob/v1.31.2/staging/src/k8s.io/client-go/tools/clientcmd/api/types.go#L31).
+  - Since a single [Kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) supports access to multiple clusters, the Cluster manager *MUST* ensure that each secret contains access information for only a single consumer.
 
 ## Infrastructure Needed (Optional)
 

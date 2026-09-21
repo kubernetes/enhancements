@@ -2,15 +2,17 @@ title: Extend the PodResources API to include resources allocated by DRA
 kep-number: 3695
 authors:
   - "@moshe010"
+  - "@guptaNswati"
 owning-sig: sig-node
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: 2023-02-07
 reviewers:
   - "@ffromani"
   - "@swatisehgal"
 approvers:
   - "@sig-node-tech-leads"
+  - "@ffromani" # sig-node-assigned-approver
 see-also:
   - "keps/sig-node/2403-pod-resources-allocatable-resources"
   - "keps/sig-node/606-compute-device-assignment/"
@@ -18,12 +20,12 @@ see-also:
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.34"
+latest-milestone: "v1.36"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:

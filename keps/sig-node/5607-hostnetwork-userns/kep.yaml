@@ -9,9 +9,11 @@ creation-date: 2025-10-03
 reviewers:
   - "@SergeyKanzhelev"
   - "@rata"
-  - "@haircommander"
+  - "@haircommander" # sig-node-assigned-reviewer
+  - "@mikebrow" # sig-node-assigned-reviewer
 approvers:
-  - "@mrunalp"
+  - "@mrunalp" # sig-node-tl
+  - "@haircommander" # sig-node-assigned-approver
 
 # The target maturity stage in the current dev cycle for this KEP.
 # If the purpose of this KEP is to deprecate a user-visible feature
@@ -21,7 +23,7 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.35"
+latest-milestone: "v1.36"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -33,5 +35,7 @@ feature-gates:
   - name: UserNamespacesHostNetworkSupport
     components:
       - kube-apiserver
+      - kubelet
+      - kube-scheduler
 disable-supported: true
 

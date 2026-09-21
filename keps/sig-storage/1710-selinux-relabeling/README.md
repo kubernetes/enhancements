@@ -75,15 +75,15 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [X] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+  - [x] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
-  - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
+  - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
 - [x] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -96,12 +96,11 @@ The enhancement describes situations when such option can/cannot be used, why it
 This KEP is split into three phases:
 1. ReadWriteOncePod volumes are mounted with `-o context` by default.
    All other volumes are recursively relabeled by the container runtime.
-   With feature gate `SELinuxMountReadWriteOncePod`, beta + on by default in v1.28.
+   With feature gate `SELinuxMountReadWriteOncePod`, GA in v1.36.
 2. Same as 1., but we provide metrics that show what Pods will break when *all* volumes are mounted with `-o context` and provide a proactive opt-out by setting `SELinuxChangePolicy: Recursive` in PodSpec.
-   With feature gate `SELinuxChangePolicy`.
-   Alpha in 1.32.
+   With feature gate `SELinuxChangePolicy`, GA in v1.36.
 3. All volumes are mounted with `-o context` by default, users can opt-out by setting `SELinuxChangePolicy: Recursive` in PodSpec.
-   With feature gate `SELinuxMount`, alpha without opt-out since 1.30, adding the opt-out field as alpha in 1.32.
+   With feature gate `SELinuxMount`, GA in v1.37.
 
 Initially, we thought we could do 2. without opt-out, but we found that it may break valid use cases.
 
@@ -533,6 +532,11 @@ Phase 1 + 2 (no breaking change yet):
 As of 2024-09-04, telemetry numbers from OpenShift show that less than 2% of the clusters have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`.
 More than 50% of these potentially-broken clusters have less than 10 of such Pods.
 
+As of 2026-01-13, telemetry numbers from OpenShift show:
+* ~0.9% of the clusters with Kubernetes 1.32 and newer have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`.
+* ~0.3% of the clusters with Kubernetes 1.33 and newer have any SELinux warning controller warnings. Admins of those clusters need to evaluate the warnings and fix their Pods before Kubernetes upgrade to a version where `SELinuxMount` is GA.
+We consider these numbers good enough to consider Phase 2 beta successful and proceed with GA, aiming at Phase 3 GA in the subsequent release.
+
 Phase 3:
 * `volume_manager_selinux_volume_context_mismatch_errors_total`: counter of Pods that did not start.
   * It is emitted only when the `SELinuxMount` feature gate is enabled.
@@ -544,6 +548,11 @@ Phase 3:
   * Either with names of the conflicting Pods, when they are in the same namespace.
   * Or just generic "volume XYZ is already mounted with a different SELinux label" when A and B are in different namespaces, so users cannot peek into other namespaces.
 * SELinuxController, if enabled, will send events to Pods that may not start if they land on the same node.
+
+As of 2026-05-25, telemetry numbers from OpenShift show:
+* ~1.2% of the clusters with Kubernetes 1.32 and newer have `volume_manager_selinux_volume_context_mismatch_warnings_total > 0`. It is higher than in Phase 2, because more old clusters with old workloads upgraded to 1.32 and newer.
+* ~0.4% of the clusters with Kubernetes 1.33 and newer have any SELinux warning controller warnings. Admins of those clusters need to evaluate the warnings and fix their Pods before Kubernetes upgrade to a version where `SELinuxMount` is GA.
+We consider these numbers good enough to consider Phase 3 successful and proceed with GA.
 
 ## Design Details
 
@@ -712,11 +721,13 @@ All these e2e tests use only CSI volumes. All in-tree volume types that support 
   * Users can update their clusters safely, there is no breaking change yet.
     Users willing to test `SELinuxMount` must enable it explicitly.
   * This phase allows production clusters to check what Pods (Deployments, StatefulSets) need update and fix them before the breaking part (`SELinuxMount`) is enabled by default in the next phase.
+  * Done in 1.36.
 * GA of Phase 3 (`SELinuxMount` is GA and locked to default):
   * At least 1 release after `SELinuxChangePolicy` is GA to give cluster admins enough time to apply `SELinuxChangePolicy` to their Pods.
   * Telemetry numbers from OpenShift show that <2% of clusters would need to change any of their Pods (i.e. most clusters already applied opt-out).
   * This is the phase that may break existing applications during cluster upgrade.
     Users that use SELinux should carefully evaluate the metrics emitted by kubelet and SELinuxWarningController and fix their workloads before upgrade to this version.
+  * Done in 1.37.
 
 ### Upgrade / Downgrade Strategy
 
@@ -754,11 +765,9 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: `SELinuxMountReadWriteOncePod` (beta in 1.28)
-    - Feature gate name: `SELinuxChangePolicy` (alpha in 1.30, proposing beta in 1.33)
-      - To enable `SELinuxChangePolicy` feature gate, `SELinuxMountReadWriteOncePod` **must** be enabled too.
-    - Feature gate name: `SELinuxMount` (alpha in 1.30, proposing beta in 1.33)
-      - To enable `SELinuxMount` feature gate, `SELinuxMountReadWriteOncePod` and `SELinuxChangePolicy` **must** be enabled too.
+    - Feature gate name: `SELinuxMountReadWriteOncePod` (beta in 1.28, GA in 1.36)
+    - Feature gate name: `SELinuxChangePolicy` (alpha in 1.32, beta in 1.33, GA in 1.36)
+    - Feature gate name: `SELinuxMount` (alpha in 1.30, beta in 1.33, GA in 1.37)
     - Components depending on the feature gate: apiserver (API validation only), kubelet
   - [ ] Other
     - Describe the mechanism:
@@ -1049,6 +1058,12 @@ _This section must be completed when targeting beta graduation to a release._
 * 1.33: Graduate `SELinuxMount` to beta / disabled by default, `SELinuxChangePolicy` to beta / enabled by default.
   * Add e2e tests for the SELinuxWarningController.
   * Test on non-Fedora based Linux distribution (e.g. Debian) with SELinux enabled.
+* 1.36: Graduate `SELinuxMountReadWriteOncePoc` and `SELinuxChangePolicy` to GA.
+  * Keep `SELinuxMount` beta / disabled by default.
+  * [Blog post about breaking changes](https://kubernetes.io/blog/2026/04/22/breaking-changes-in-selinux-volume-labeling/) published to warn cluster admins that upgrade from 1.36 to 1.37 may introduce breaking changes on clusters with SELinux enabled.
+  * This is based on favorable telemetry data reported by OpenShift on 2026-01-13, see [Risks and Mitigations](#risks-and-mitigations).
+* 1.37: Graduate `SELinuxMount` to GA.
+  * All three feature gates (`SELinuxMountReadWriteOncePod`, `SELinuxChangePolicy`, `SELinuxMount`) are GA and locked to default.
 
 ## Drawbacks [optional]
 

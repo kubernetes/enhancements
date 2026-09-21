@@ -51,11 +51,11 @@ release_.
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and
       SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for
+  - [x] (R) Ensure GA e2e tests meet requirements for
         [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
-  - [ ] (R)
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
+  - [x] (R)
         [all GA Endpoints](https://github.com/kubernetes/community/pull/1806)
         must be hit by
         [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
@@ -473,6 +473,8 @@ ResourceClaimTemplate and ResourceClaim for admin access
 
 #### GA
 - 1 example of real-world usage
+1. Kubernetes DRA example driver with DRAAdminAccess support in https://github.com/kubernetes-sigs/dra-example-driver/pull/112
+2. NVIDIA DRA driver with DRA admin access integration: https://github.com/NVIDIA/k8s-dra-driver-gpu/pull/817
 - Allowing time for feedback
 - All issues and gaps identified as feedback during beta are resolved
 **Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
@@ -575,11 +577,11 @@ Longer term, we may want to require automated upgrade/rollback tests, but we
 are missing a bunch of machinery and tooling and can't do that now.
 -->
 
-This will be done manually before transition to beta by bringing up a cluster with kubeadm and changing the feature gate for individual components.
+Manual testing has been done to bring up a kind cluster and changing the feature gate for individual components.
 
-Manual upgrade of the control plane to a version with the feature enabled will be tested. Existing pods not using the feature remained running. Creation of new pods and ResourceClaims that do not use the feature should be unaffected.
+Manual upgrade of the control plane to a version with the feature enabled has been tested. Existing pods not using the feature remained running. Creation of new pods and ResourceClaims that do not use the feature are unaffected.
 
-Manual downgrade of the control plane to a version with the feature disabled was tested. Existing pods using the feature remained running. Creation of new pods and ResourceClaims that use the feature should be blocked.
+Manual feature toggle of the control plane to disable the feature was tested. Existing pods using the feature remained running. Creation of new pods and ResourceClaims that use the feature have their adminAccess field dropped and scheduling fails if devices are in use by other pods.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -598,7 +600,7 @@ For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field.
 -->
 
-Metrics in kube-controller-manager about total (resourceclaim_controller_resource_claims_adminaccess) and allocated ResourceClaims with adminAccess (resourceclaim_controller_allocated_resource_claims_adminaccess).
+Metrics in kube-controller-manager for total number of ResourceClaims creation requests with adminAccess(resourceclaim_controller_creates_total) count metric with labels `admin_access` (true or false) and allocated ResourceClaims with adminAccess (resourceclaim_controller_resource_claims) gauge metric with labels `admin_access` (true or false).
 
 ###### How can an operator determine if the feature is in use by workloads?
 
@@ -610,7 +612,7 @@ logs or events for this purpose.
 
 ".status.allocation.devices.results[*].adminAccess" will be set to true for a claim using adminAccess when needed by a pod.
 
-Metrics in kube-controller-manager about total (resourceclaim_controller_resource_claims_adminaccess) and allocated ResourceClaims with adminAccess (resourceclaim_controller_allocated_resource_claims_adminaccess).
+Metrics in kube-controller-manager for  total number of ResourceClaims creation requests with adminAccess(resourceclaim_controller_creates_total) count metric with labels `admin_access` (true or false) and allocated ResourceClaims with adminAccess (resourceclaim_controller_resource_claims) gauge metric with labels `admin_access` (true or false).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -821,6 +823,7 @@ If SLOs are not being met, not all 100% of unauthorized access attempts are deni
 
 - Kubernetes 1.33: Alpha version of the KEP.
 - Kubernetes 1.34: Beta version of the KEP.
+- Kubernetes 1.36: GA version of the KEP.
 
 ## Drawbacks
 

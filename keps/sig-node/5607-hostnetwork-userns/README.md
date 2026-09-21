@@ -105,11 +105,6 @@ We propose the introduction of a new feature gate named `UserNamespacesHostNetwo
 When this feature gate is disabled (the default state), the kube-apiserver will maintain the current validation behavior, rejecting any Pod spec that includes both `spec.hostNetwork: true` and `spec.hostUsers: false`.
 
 When the `UserNamespacesHostNetworkSupport` feature gate is enabled, we will relax this validation check. 
-The kube-apiserver will accept such a Pod spec and pass it on to the kubelet. 
-At this point, the responsibility for successfully creating and running the Pod shifts to the container runtime. 
-If the low-level container runtime (e.g., containerd/runc) does not support this combination, the pod will remain stuck in the `ContainerCreating` state and report an exception event, which is the expected behavior.
-
-This change will primarily involve modifying the Pod validation function in pkg/apis/core/validation/validation.go to account for the state of the new feature gate.
 
 ### User Stories (Optional)
 
@@ -123,14 +118,39 @@ As a cluster administrator, I want to enable user namespaces for my control plan
 
 If either the container runtime or the underlying container runtime does not support this feature, the container will fail to be created. To mitigate this issue, we will keep this feature in the alpha stage until mainstream container runtimes (containerd/runc) and mainstream underlying container runtimes (runc/crun) both support it, before promoting it to beta.
 
-Users might upgrade the container runtime to a newer version on some nodes first, but pods could still be scheduled onto nodes that do not support this feature. In such cases, users can leverage [Node Declared Features](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features) to avoid this problem.
+Users might upgrade the container runtime to a newer version on some nodes first, but pods could still be scheduled onto nodes that do not support this feature. In such cases, users can leverage [Node Declared Features](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5328-node-declared-features) to avoid this problem. Specifically, the new `UserNamespacesHostNetwork` field in CRI-API's `RuntimeFeatures` will allow the kubelet to report whether the node supports this combination, enabling the scheduler to make informed placement decisions.
 
 
 ## Design Details
 
-The core design change is very simple: in the apiserver's Pod validation logic, locate the code block that prevents the `hostNetwork: true` and `hostUsers: false` combination, and wrap it in a conditional that only executes the validation if the `UserNamespacesHostNetworkSupport` feature gate is disabled.
+The `UserNamespacesHostNetworkSupport` feature integrates with the NodeDeclaredFeatures framework to ensure that Pods requiring the combination of `hostNetwork: true` and `hostUsers: false` are only scheduled onto nodes that explicitly declare support for this feature. The feature relies on the `UserNamespacesHostNetwork` field in CRI-API's `RuntimeFeatures` to determine whether the container runtime supports this combination.
+
+**Node Feature Declaration:**
+
+The kubelet will check the `UserNamespacesHostNetwork` field in CRI-API's `RuntimeFeatures` field in the CRI-API to determine if the container runtime supports the `UserNamespacesHostNetwork` feature.
+If supported, the kubelet will declare the `UserNamespacesHostNetwork` feature in the `node.status.declaredFeatures` field. This ensures that the scheduler and other control plane components are aware of the node's capabilities.
+
+**Pod Validation:**
 
 And add a parameter to `PodValidationOptions` so that if the `UserNamespacesHostNetworkSupport` feature gate is disabled, and the pod has already used the combination of `hostNetwork: true` and `hostUsers: false`, then we should allow updates the pod.
+
+**Scheduling:**
+
+The `NodeDeclaredFeatures` scheduler plugin will ensure that Pods requiring the `UserNamespacesHostNetwork` feature are only scheduled onto nodes that declare support for it. This is achieved by matching the Pod's feature requirements against the node's `node.status.declaredFeatures`.
+
+**CRI Implementation**
+
+When using `hostNetwork: true` and `hostUsers: false` together, container runtime needs to mount `/sys` using bind mounts instead of directly mounting sysfs. This is because directly mounting sysfs in this configuration will fail with insufficient permissions (EPERM).
+
+The following mount options will be used to ensure security and proper functionality:
+
+- `nosuid`: Prevents privilege escalation through SUID binaries.
+- `nodev`: Prevents unauthorized access to hardware through device files.
+- `noexec`: Prevents execution of binary programs from the mounted filesystem.
+- `rbind`: Ensures that the directory is mounted along with all its sub-mount points.
+- `rro`: Ensures that the entire directory tree, including sub-mount points, is mounted as read-only.
+
+
 
 ### Test Plan
 
@@ -155,6 +175,7 @@ to implement this enhancement.
 #### Alpha
 
 - The `UserNamespacesHostNetworkSupport` feature gate is implemented and disabled by default.
+- Add an implementation that integrates with the NodeDeclaredFeatures feature gate.
 
 #### Beta
 
@@ -177,10 +198,15 @@ If we were supposed to disable the feature, all pods using that configuration sh
 
 ### Version Skew Strategy
 
-A newer kube-apiserver with this feature enabled will accept such a Pod.
+**When the NodeDeclaredFeatures feature gate is enabled on the control plane but not on an older Kubelet:**
+- If the control plane is upgraded to a version that supports the `UserNamespacesHostNetworkSupport` feature, it will correctly identify older nodes as incompatible. The scheduler will filter these nodes, causing Pods with the feature requirement to remain in the Pending state until compatible nodes are available.
+- For API validation, operations will be rejected if the target Pod resides on an older node that lacks the necessary feature.
+- This strict filtering is reliable because the `NodeDeclaredFeatures` framework is scoped to new features only. This prevents ambiguous situations where a feature might be present on a node but is not being reported because the node is too old. The absence of a declared feature is a defini
 
-An older kubelet will still get the Pod definition from the kube-apiserver. 
-It will attempt to create the Pod, if the container runtime version is too old and doesn't support this combination, the pod will be stuck in the ContainerCreating state.
+**When the NodeDeclaredFeatures feature gate is disabled on the control plane but enabled on the Kubelet:**
+- A newer kube-apiserver with the `UserNamespacesHostNetworkSupport` feature enabled will accept a Pod with `hostNetwork: true` and `hostUsers: false`.
+- An older kubelet will still get the Pod definition from the kube-apiserver. It will attempt to create the Pod. If the container runtime version is too old and doesn't support this combination, the Pod will be stuck in the ContainerCreating state.
+- To mitigate scheduling issues in mixed-version clusters, the kubelet will use the `UserNamespacesHostNetwork` field from CRI-API's `RuntimeFeatures` to report node capabilities via Node Declared Features. This allows the scheduler to avoid placing Pods requiring this combination on nodes that do not support it, even in version-skew scenarios.
 
 ## Production Readiness Review Questionnaire
 
@@ -373,6 +399,7 @@ N/A
 ## Implementation History
 
 * 2025-10-03: Initial proposal
+* 2025-12-18: Add implementation content for v1.36
 
 ## Drawbacks
 

@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-windows
 participating-sigs:
   - sig-network
-status: implementable
+status: implemented
 creation-date: 2025-01-28
 reviewers:
   - "@jsturtevant"

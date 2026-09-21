@@ -1,0 +1,8 @@
+title: Beta Alias Invalid
+kep-number: 9
+owning-sig: sig-node
+stage: beta
+approvers:
+  - "@sig-node-tech-leads"
+  - "@someoneelse"
+latest-milestone: "v1.37"

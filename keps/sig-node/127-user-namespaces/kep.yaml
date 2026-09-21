@@ -6,27 +6,29 @@ authors:
   - "@saschagrunert"
 owning-sig: sig-node
 participating-sigs: []
-status: implementable
+status: implemented
 creation-date: 2021-11-02
 reviewers:
-  - "@mrunalp"
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-reviewer
   - "@thockin"
 approvers:
-  - "@derekwaynecarr"
+  - "@mrunalp" # sig-node-tl
+  - "@derekwaynecarr" # sig-node-tl
+  - "@haircommander" # sig-node-assigned-approver
 
-stage: beta
-latest-milestone: "v1.35"
+stage: stable
+latest-milestone: "v1.36"
 milestone:
   alpha: "v1.25"
   beta: "v1.35"
+  stable: "v1.36"
 
 feature-gates:
   - name: UserNamespacesSupport
     components:
       - kubelet
       - kube-apiserver
-disable-supported: true
+disable-supported: false
 
 metrics:
   - started_user_namespaced_pods_total (exposed by kubelet)

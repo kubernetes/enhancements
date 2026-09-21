@@ -1,0 +1,43 @@
+title: nftables Localhost NodePort Userspace Proxy
+kep-number: 6032
+authors:
+  - "@austinabro321"
+owning-sig: sig-network
+participating-sigs: []
+status: implementable
+creation-date: 2026-04-28
+reviewers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+approvers:
+  - "@thockin"
+  - "@danwinship"
+  - "@aojea"
+
+
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+
+milestone:
+  alpha: "v1.37"
+  beta: "v1.38"
+  stable: "v1.40"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: KubeProxyNFTablesLocalhostNodePorts
+    components:
+      - kube-proxy
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - kubeproxy_nftables_localhost_nodeport_listeners
+  - kubeproxy_nftables_localhost_nodeport_listener_creation_failures_total
+  - kubeproxy_nftables_localhost_nodeport_rejected_packets_total

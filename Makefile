@@ -45,12 +45,8 @@ add-verify-hook: ## Adds verify scripts to git pre-commit hooks.
 # performing a git commit.
 	git config --local core.hooksPath "${REPO_ROOT}/.githooks"
 
-# TODO(verify): Reconcile with duplicate target
 verify: ## Runs all verification tests.
 	${REPO_ROOT}/hack/verify.sh
-
-# TODO(lint): Uncomment verify-shellcheck once we finish shellchecking the repo.
-verify: tools verify-boilerplate verify-build verify-golangci-lint verify-go-mod #verify-shellcheck ## Runs verification scripts to ensure correct execution
 
 verify-boilerplate: ## Runs the file header check
 	${REPO_ROOT}/hack/verify-boilerplate.sh

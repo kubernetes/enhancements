@@ -83,8 +83,12 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Phase 1: Controller Sanitation (Pre-Alpha)](#phase-1-controller-sanitation-pre-alpha)
+  - [Phase 2: Fast Lease Release](#phase-2-fast-lease-release)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Phase 1 Implementation](#phase-1-implementation)
+  - [Phase 2 Implementation](#phase-2-implementation)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -107,6 +111,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Future Work (Stories)](#future-work-stories)
+    - [Graceful Leader Transition](#graceful-leader-transition)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -238,14 +243,26 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-The main control loops for `kube-controller-manager`, `kube-scheduler`, and
-`cloud-controller-manager` will be updated to support graceful leader
-transitions. When a leader fails to renew its lease, instead of exiting, the
-component will rely on client-go's leader election mechanism to cancel the
-context, and stop its internal controllers. It will then immediately return to a
-follower state where it will attempt to reacquire the lease.
+We propose a phased approach. Phase 1 ensures controllers can safely shut down, and Phase 2 builds on that to enable faster failovers by actively releasing the lease on shutdown. Phases 1 and 2 are the committed scope of this KEP. A future Phase 3 would remove the need for process restarts entirely (graceful leader transition). It is out of scope here and captured as [future work](#future-work-stories).
 
-This change will be guarded by a new feature gate, `GracefulLeaderTransition`.
+### Phase 1: Controller Sanitation (Pre-Alpha)
+
+This phase ensures that `kube-controller-manager` controllers gracefully terminate without leaking
+goroutines by strictly enforcing context cancellation within their control loops.
+
+*Note: This phase is largely addressed by [PR #134910](https://github.com/kubernetes/kubernetes/pull/134910) and [PR #134945](https://github.com/kubernetes/kubernetes/pull/134945), which standardizes `Run` termination.*
+
+- **Objective**: Ensure that kcm controller goroutines properly terminate when context is cancelled.
+- **Mechanism**: Refactor controller management to track all spawned goroutines via `wg.Go()` and `wg.Wait()`.
+- **Feature Gate**: None (Technical debt cleanup).
+
+### Phase 2: Fast Lease Release
+
+Once we are confident that controllers shut down gracefully (Phase 1), we can optimize the leadership transition. Instead of waiting for the lease TTL to expire, the leader will actively release the lock upon shutdown. Note: `kube-scheduler` already implements this behavior, so this phase only targets `kube-controller-manager`.
+
+- **Objective**: Reduce failover latency.
+- **Mechanism**: Modify `client-go/tools/leaderelection` to perform an active release of the `Lease` object (removing the holder identity) when the context is cancelled.
+- **Feature Gate**: `ControllerManagerReleaseLeaderElectionLockOnExit`
 
 ### Risks and Mitigations
 
@@ -309,30 +326,16 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-The core of this change involves modifying the `OnStoppedLeading` callback to
-not forcefully exit.
+### Phase 1 Implementation
 
-We will wrap leader election with a `wait.Until()` to retry the leader election
-loop similar to how the Coordinated Leader Election controller handles
-gracefully transition of leaders
-([code](https://github.com/kubernetes/kubernetes/blob/release-1.33/pkg/controlplane/controller/leaderelection/run_with_leaderelection.go#L54))
+All controllers must standardize their startup sequences. When the controller returns and the leader
+lock is released, all associated goroutines generally must be cancelled.
 
-The `controller-manager` sets up controller level health checks in
-non-reversible ways and will need to be modified so that handlers can be
-deregistered from the mux when leadership is lost. All resources created after a
-KCM becomes leader must be released when it loses leadership. This will be done
-through context cancellation and cleanup logic. Some additional refactoring may
-be needed to clean up processes gracefully when a leader lock is released. To
-verify that individual controllers relinquish the control loop, we can add a
-`ValidatingAdmissionPolicy` that warns when a controller that is not the leader
-sends a write request to the apiserver, and fails the test. This will help us
-identify locations where context cancellations are not respected.
+### Phase 2 Implementation
 
-Similarly for scheduler, assumptions that the process will be terminated losing
-the leader lock are made. Many scheduler resources are created before the leader
-election process. These will be modified to either defer resource creation or
-add a resetting mechanism when the leader is lost.
-
+The leader lock will be proactively released when the context is cancelled and the leader prepares to
+step down. This release must occur only after all controller goroutines have returned. This behavior will
+be guarded by the `ControllerManagerReleaseLeaderElectionLockOnExit` feature gate.
 
 ### Test Plan
 
@@ -437,12 +440,14 @@ See the above scenarios for test plan.
 
 #### Alpha
 
-- Feature implemented behind a feature flag
-- Runtime detection of leaked goroutines
-- Test that controller-manager and scheduler do not leak memory on leadership transitions
+- `ControllerManagerReleaseLeaderElectionLockOnExit` feature gate implemented.
+- Phase 1 implemented and controller startup and shutdown logic is handled gracefully.
+- Runtime detection of leaked goroutines.
+- Test that controller-manager and scheduler do not leak memory on leadership transitions.
 
 #### Beta
 
+- `ControllerManagerReleaseLeaderElectionLockOnExit` graduates to beta, enabled by default in v1.37.
 - e2e tests
 - Address how to minimize risks of putting KCM or scheduler in a "wedged" state
 
@@ -526,8 +531,8 @@ well as the [existing list] of feature gates.
 -->
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: GracefulLeaderTransition
-  - Components depending on the feature gate: kube-scheduler, kube-controller-manager, cloud-controller-manager
+  - Feature gate name: ControllerManagerReleaseLeaderElectionLockOnExit
+  - Components depending on the feature gate: kube-controller-manager
 - Will enabling / disabling the feature require downtime of the control plane? Yes, components need to be restarted.
 - Will enabling / disabling the feature require downtime or reprovisioning of a node? No.
 
@@ -537,11 +542,11 @@ well as the [existing list] of feature gates.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
-Yes. When the `GracefulLeaderTransition` feature gate is enabled, leader-elected
-components (kube-scheduler, kube-controller-manager, cloud-controller-manager)
-will attempt to gracefully release the leader lock and transition to a follower
-state without a full process restart. Previously, these components would shut
-down immediately upon losing leadership.
+Yes. With the `ControllerManagerReleaseLeaderElectionLockOnExit` feature gate
+enabled, kube-controller-manager actively releases its leader lease on shutdown
+(clearing the holder identity) instead of leaving it to expire by TTL, so a
+standby instance can acquire leadership without waiting out the lease duration.
+The component still exits when it loses leadership.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -555,17 +560,16 @@ feature.
 
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
-Yes, the feature can be disabled by setting the `GracefulLeaderTransition`
-feature gate to `false` and restarting the affected components (kube-scheduler,
-kube-controller-manager, cloud-controller-manager). This will revert to the
-previous behavior where components shut down immediately upon losing leadership.
-This should not break existing workloads as it restores the prior,
-well-understood behavior.
+Yes, the feature can be disabled by setting the
+`ControllerManagerReleaseLeaderElectionLockOnExit` feature gate to `false` and
+restarting kube-controller-manager. This reverts to the previous behavior where
+the leader lease is left to expire by TTL on shutdown. This should not break
+existing workloads as it restores the prior, well-understood behavior.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the feature is re-enabled after being rolled back, the components will once
-again use the graceful leader transition mechanism. There are no special
+If the feature is re-enabled after being rolled back, kube-controller-manager
+will once again actively release its lease on shutdown. There are no special
 considerations for re-enabling.
 
 ###### Are there any tests for feature enablement/disablement?
@@ -603,11 +607,10 @@ rollout. Similarly, consider large clusters and how enablement/disablement
 will rollout across nodes.
 -->
 A rollout could fail if:
-- Components (kube-scheduler, kube-controller-manager, cloud-controller-manager)
-  do not correctly handle context cancellation when losing leadership, leading
-  to incomplete shutdown of internal controllers.
-- Memory leaks occur in the components because they no longer fully restart on
-  leader transition, which previously masked such leaks.
+- kube-controller-manager does not correctly handle context cancellation when
+  losing leadership, leading to incomplete shutdown of internal controllers.
+- The lease is released before controllers have fully stopped, briefly allowing
+  a standby instance to start while the old leader is still finishing work.
 
 Impact on workloads:
 - If a leader component becomes unstable (e.g., due to memory leaks or improper
@@ -667,12 +670,12 @@ logs or events for this purpose.
 -->
 
 An operator can determine if the feature is active by inspecting the
-command-line flags of the relevant components (kube-scheduler,
-kube-controller-manager, cloud-controller-manager) to verify that the
-`GracefulLeaderTransition` feature gate is enabled.
+command-line flags of kube-controller-manager to verify that the
+`ControllerManagerReleaseLeaderElectionLockOnExit` feature gate is enabled.
 
-Observing component logs for messages indicating graceful leader release (as
-opposed to immediate shutdown) would also confirm its use.
+Observing component logs for messages indicating an active lease release on
+shutdown (rather than waiting for the lease to expire) would also confirm its
+use.
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -688,13 +691,11 @@ Recall that end users cannot usually observe component logs or access metrics.
 This feature is primarily for cluster operators. Operators can verify its
 operation by:
 
-- Observing component logs: Logs for kube-scheduler, kube-controller-manager,
-  and cloud-controller-manager should indicate that upon losing leadership, the
-  component attempts a graceful shutdown of its internal loops and returns to a
-  follower state to re-attempt leader election, rather than exiting.
-- Monitoring component behavior: Affected components should not restart (i.e.,
-  no new PIDs) immediately after losing leadership if the graceful transition is
-  successful. They should continue running and attempt to reacquire leadership.
+- Observing failover latency: after a graceful kube-controller-manager shutdown
+  (e.g. during a rolling upgrade), a standby instance should acquire leadership
+  promptly rather than waiting out the lease duration.
+- Inspecting the Lease object: the holder identity is cleared when the leader
+  shuts down, instead of remaining set until the lease expires.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -862,12 +863,13 @@ Leader election cannot function without apiserver or etcd.
 
 ###### What are other known failure modes?
 
-- Memory Leak
-  - Detection: kcm or kube-scheduler memory constantly increasing after leader changes.
-  - Mitigations: Restart the container, turn off the feature.
-    running user workloads?
-  - Diagnostics: Looking at memory consumption of KCM and kube-scheduler.
-  - Testing: Tests will be done manually.
+- Premature lease release
+  - Detection: briefly more than one active kube-controller-manager after a
+    leadership change (duplicate controller activity or conflicting writes).
+  - Mitigations: the lease is released only after controller goroutines return.
+    Turn off the feature to fall back to TTL expiry.
+  - Diagnostics: inspect the Lease object and controller logs around handoff.
+  - Testing: integration tests for shutdown ordering.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
@@ -894,7 +896,7 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
-Introduces additional risk of memory leak.
+Adds a small risk of briefly running two leaders if the lease is released before controllers have fully stopped.
 
 ## Alternatives
 
@@ -909,6 +911,15 @@ n/a
 ## Future Work (Stories)
 
 This feature enables the user stories below, but require additional modification to the kcm and scheduler code that they are outside the scope of this KEP.
+
+#### Graceful Leader Transition
+
+A possible future direction is for leader-elected components to keep running and
+return to a follower state on lost leadership instead of exiting the process,
+decoupling "stop leading" from "process exit". This would be gated separately
+(e.g. a `GracefulLeaderTransition` gate) and requires resolving metric
+re-registration conflicts, health-check deregistration, and resource cleanup on
+transition.
 
 #### Story 1
 

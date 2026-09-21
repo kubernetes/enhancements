@@ -18,7 +18,6 @@
   - [Risks and Mitigations](#risks-and-mitigations)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
-  - [Future expansion: HSM support for private keys](#future-expansion-hsm-support-for-private-keys)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -27,6 +26,11 @@
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+  - [Version Skew and API Versioning Impact](#version-skew-and-api-versioning-impact)
+    - [1. Kubelet Upgrade from 1.35 to 1.36 (Field Migration)](#1-kubelet-upgrade-from-135-to-136-field-migration)
+    - [2. Kubelet Upgrade from 1.36 to 1.37 (API Version Transition)](#2-kubelet-upgrade-from-136-to-137-api-version-transition)
+    - [3. Skewed Kubelet (1.35) with Upgraded Signer (1.37)](#3-skewed-kubelet-135-with-upgraded-signer-137)
+    - [4. Kubelet and Signer both use v1 (&gt;= 1.37)](#4-kubelet-and-signer-both-use-v1--137)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -48,10 +52,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
@@ -108,6 +112,12 @@ not include a concrete signer that issues dedicated server certificates,
 third-party signer implementations should be able to do so on top of the
 machinery described in this KEP.
 
+**Support external CA implementations that require PKCS#10 CSRs**: Some CA
+implementations are set up to issue certificates directly to arbitrary public
+keys.  However, there is a significant base of deployed systems (Vault, for
+example), that need a PKCS#10 certificate signing request in order to issue
+certificates.
+
 ### Non-Goals
 
 **Specify a solution for pod-to-pod mTLS in core Kubernetes**: Pod-to-pod mTLS
@@ -138,30 +148,48 @@ order to issue further certificates.  It is, however, possible for a privileged
 workload or human user to create PodCertificateRequests on behalf of other
 workloads.
 
+**Support integration with ACME-based or Web PKI CAs**: Certificate authorities
+that issue publicly-trusted Web PKI certificates often automate issuance via the
+[ACME protocol](https://datatracker.ietf.org/doc/html/rfc8555).  Web PKI CAs
+have constraints that make them poor targets for Pod Certificates:
+* Web PKI CAs may need to take extended downtime in case of actual or suspected
+mis-issuance of certificates.  This is problematic if successful certificate
+issuance is required for application pods to start up.
+* Web PKI CAs have strict rate limits that preclude issuing independent
+  certificates to each pod in an application.  For example, Let's Encrypt
+  [allows](https://letsencrypt.org/docs/rate-limits/#new-certificates-per-exact-set-of-identifiers)
+  the same certificate to be requested 5 times in 7 days.
+* At least one Web PKI CA (Let's Encrypt) makes the assumption that, if the same
+  ACME account request makes a new order for the same set of DNS names, that an
+  existing, finalized order can be re-used.  This assumes that the requester has
+  access to the private key used to create the original order.
+
+For these reasons, provisioning Web PKI certificates is best done with one
+central requester per cluster, that stores the private key and certificate in
+shared storage accessible to all pods that need it.  Examples of integrations that follow this pattern:
+* Gateways or Ingresses with support for automatically issuing certificates to
+  the load balancer.
+* cert-manager (or similar), that generates a key, fetches a certificate, and
+  then stores both in a secret that can then be mounted into individual pods.
+
 ## Design Details
 
 ### PodCertificateRequest Resource
 
-PodCertificateRequest is a new API type in certificates.k8s.io/v1alpha1.  It's a
+PodCertificateRequest is a new API type in certificates.k8s.io.  It's a
 stripped-down version of CertificateSigningRequest that is tailored directly to
 the pod certificate issuance use case.
 
 PodCertificateRequest is fundamentally a statement that "Pod X is requesting a
-certificate from Signer Y".  The signer is in complete control of the form of
-the issued certificate.  As such, PodCertificateRequest objects don't contain a
-typical X.509 CSR.  Instead, they contain:
-* A public key, PKIX-serialized.  This key must be an RSA key with modulus size
-  3072 or 4096, an ECDSA key with curve P256 or P384, or an ED25519 key.
-* A proof of possession of the corresponding private key.
-  * If the key is an RSA key, then the signature is over the ASCII bytes of the
-	  pod UID, using RSASSA-PKCS1-V1_5-SIGN from RSA PKCS #1 v1.5 (as implemented
-	  by the golang function crypto/rsa.SignPKCS1v15).
-  * If the key is an ECDSA key, then the signature is as described by [SEC 1,
-	  Version 2.0](https://www.secg.org/sec1-v2.pdf) (as implemented by the golang
-	  library function crypto/ecdsa.SignASN1)
-  * If the key is an ED25519 key, then the signature is as described by the
-    [ED25519 Specification](https://ed25519.cr.yp.to/) (as implemented by
-    the golang library crypto/ed25519.Sign).
+certificate from Signer Y".  PodCertificateRequests contain:
+* A stub PKCS#10 CSR.
+  * This CSR is normally completely empty, and the signer merely extracts the
+    subject public key from it in order to issue a certificate with the signer's
+    documented format.
+  * The subject public key in the CSR must be one of:
+    * An RSA key with modulus size 3072 or 4096,
+    * An ECDSA key with curve P256, P384, or P521, or
+    * An ED25519 key.
 * Details of the requesting Pod's identity:
   * Namespace (indicated by the namespace the PodCertificateRequest is created in).
   * Pod name
@@ -205,9 +233,12 @@ by matching on the signer name, it should take one of the following actions:
 
 PodCertificateRequest validation logic will:
 * Confirm that the public key is one of the supported key types.
-* Confirm that the proof-of-possession is valid.
+* Verify the signature on the PKCS#10 CSR to confirm proof-of-possession of the
+  private key.
+* Verify that the PKCS#10 CSR is empty.
 * Confirm that the issued chain (if one is set) consists of valid certificates.
-* To stay ahead of tighter certifificate validation coming in future versions of Go, we also check:
+* To stay ahead of tighter certificate validation coming in future versions of
+  Go, we also check:
   * no DNSNames entries are empty strings
   * no DNSNames entries contain `..` or start/end with `.`
   * all EmailAddresses entries pass mail.ParseAddress
@@ -295,25 +326,25 @@ type PodCertificateRequestSpec struct {
 	// signerName indicates the request signer.
 	SignerName string `json:"signerName" protobuf:"bytes,1,opt,name=signerName"`
 
-  // unverifiedUserAnnotations allow pod authors to pass additional information to
-  // the signer implementation.  Kubernetes does not restrict or validate this
-  // metadata in any way.
-  //
-  // Entries are subject to the same validation as object metadata annotations,
-  // with the addition that all keys must be domain-prefixed. No restrictions
-  // are placed on values, except an overall size limitation on the entire field.
-  //
-  // Signers should document the keys and values they support.  Signers should
-  // deny requests that contain keys they do not recognize.
-  UnverifiedUserAnnotations map[string]string `json:"unverifiedUserAnnotations,omitempty" protobuf:"bytes,11,opt,name=unverifiedUserAnnotations"`
+	// unverifiedUserAnnotations allow pod authors to pass additional information to
+	// the signer implementation.  Kubernetes does not restrict or validate this
+	// metadata in any way.
+	//
+	// Entries are subject to the same validation as object metadata annotations,
+	// with the addition that all keys must be domain-prefixed. No restrictions
+	// are placed on values, except an overall size limitation on the entire field.
+	//
+	// Signers should document the keys and values they support.  Signers should
+	// deny requests that contain keys they do not recognize.
+	UnverifiedUserAnnotations map[string]string `json:"unverifiedUserAnnotations,omitempty" protobuf:"bytes,11,opt,name=unverifiedUserAnnotations"`
 
 	// maxExpirationSeconds is the requested lifetime for the certificate.  This
-  // should be treated as a maximum, as both kube-apiserver and the signer 
-  // implementation may substitute a shorter expiration.
-  //
-  // If this field is set to 0 during creation of the PodCertificateRequest, then 
-  // kube-apiserver will set it to 24 hours.  kube-apiserver will then shorten
-  // the value to the maximum expiration configured for the requested signer.
+	// should be treated as a maximum, as both kube-apiserver and the signer 
+	// implementation may substitute a shorter expiration.
+	//
+	// If this field is set to 0 during creation of the PodCertificateRequest, then 
+	// kube-apiserver will set it to 24 hours.  kube-apiserver will then shorten
+	// the value to the maximum expiration configured for the requested signer.
 	MaxExpirationSeconds int32 `json:"expirationSeconds" protobuf:"bytes,2,opt,name=expirationSeconds"`
 
 	// podName is the name of the pod into which the certificate will be mounted.
@@ -333,50 +364,52 @@ type PodCertificateRequestSpec struct {
 	// nodeUID is the UID of the node the pod is assigned to.
 	NodeUID types.UID `json:"nodeUID" protobuf:"bytes,8,opt,name=nodeUID"`
 
-	// pkixPublicKey is the PKIX-serialized public key the signer should issue
-	// the certificate to.
+	// DEPRECATED: This field is replaced by StubPKCS10Request. If
+	// StubPKCS10Request is set, this field must be empty.
 	//
-	// The key must be one of RSA3072, RSA4096, ECDSAP256, ECDSAP384, or ED25519.
-  // Note that this list may be expanded in the future.
+	// This field will not be carried forward to certificates.k8s.io/v1.
+	//
+	// Signer implementations should extract the public key from StubPKCS10Request.
+	PKIXPublicKey []byte `json:"pkixPublicKey" protobuf:"bytes,9,opt,name=pkixPublicKey"`
+
+	// DEPRECATED: This field is replaced by StubPKCS10Request. If
+	// StubPKCS10Request is set, this field must be empty.
+	//
+	// This field will not be carried forward to certificates.k8s.io/v1.
+	//
+	// Signer implementations do not need to verify any proof of possession; this
+	// is handled by kube-apiserver.
+	ProofOfPossession []byte `json:"proofOfPossession" protobuf:"bytes,10,opt,name=proofOfPossession"`
+
+	// A PKCS#10 certificate signing request generated by Kubelet using the
+	// subject private key.
+	//
+	// Most signer implementations will ignore the contents of the CSR except to
+	// extract the subject public key. The API server automatically verifies the
+	// CSR signature during admission, so the signer does not need to repeat the
+	// verification.
+	//
+	// The subject public key must be one of RSA3072, RSA4096, ECDSAP256,
+	// ECDSAP384, ECDSAP521, or ED25519. Note that this list may be expanded in
+	// the future, as well as narrowed in the extraordinary event of an algorithm
+	// being broken.
 	//
 	// Signer implementations do not need to support all key types supported by
 	// kube-apiserver and kubelet.  If a signer does not support the key type
-	// used for a given PodCertificateRequest, it should deny the request, with
-	// a reason of UnsupportedKeyType.  It may also suggest a key type that it
-	// does support by attaching an additional SuggestedKeyType condition, with
-	// its reason field set to the suggested key type identifier.
-	PKIXPublicKey []byte `json:"pkixPublicKey" protobuf:"bytes,9,opt,name=pkixPublicKey"`
-
-	// proofOfPossession proves that the requesting Kubelet holds the private
-	// key corresponding to pkixPublicKey.
-  //
-  // It is contructed by signing the ASCII bytes of the pod's UID using 
-  // `PKIXPublicKey`.
-	//
-	// kube-apiserver validates the proof of possession during creation of the
-	// PodCertificateRequest.
-	//
-	// If the key is an RSA key, then the signature is over the ASCII bytes of
-	// the pod UID, using RSASSA-PKCS1-V1_5-SIGN from RSA PKCS #1 v1.5 (as
-	// implemented by the golang function crypto/rsa.SignPKCS1v15).
-	//
-	// If the key is an ECDSA key, then the signature is as described by [SEC 1,
-	// Version 2.0](https://www.secg.org/sec1-v2.pdf) (as implemented by the
-	// golang library function crypto/ecdsa.SignASN1)
-  //
-  // If the key is an ED25519 key, the the signature is as described by the
-  // [ED25519 Specification](https://ed25519.cr.yp.to/) (as implemented by
-  // the golang library crypto/ed25519.Sign).
-	ProofOfPossession []byte `json:"proofOfPossession" protobuf:"bytes,10,opt,name=proofOfPossession"`
+	// used for a given PodCertificateRequest, it must deny the request by
+	// setting a status.conditions entry with a type of "Denied" and a reason of
+	// "UnsupportedKeyType". It may also suggest a key type that it does support
+	// in the message field.
+	StubPKCS10Request string `json:"stubPKCS10Request" protobuf:"bytes,12,opt,name=stubPKCS10Request"`
 }
 
 type PodCertificateRequestStatus struct {
 	// conditions applied to the request. Known conditions are "Denied",
 	// "Failed", and "SuggestedKeyType".
-  //
-  // If the request is denied with `Reason=UnsupportedKeyType`, the signer
-  // may have suggested a key type that will work in the `Reason` field of a
-  // `SuggestedKeyType` condition.
+	//
+	// If the request is denied with `Reason=UnsupportedKeyType`, the signer
+	// may have suggested a key type that will work in the `Reason` field of a
+	// `SuggestedKeyType` condition.
 	//
 	// +listType=map
 	// +listMapKey=type
@@ -393,31 +426,31 @@ type PodCertificateRequestStatus struct {
 	// field remains empty.
 	//
 	// Validation requirements:
-  //  1. certificateChain must consist of one or more PEM-formatted certificates.
-  //  2. Each entry must be a valid PEM-wrapped, DER-encoded ASN.1 Certificate as
-  //     described in section 4 or RFC5280.
+	//  1. certificateChain must consist of one or more PEM-formatted certificates.
+	//  2. Each entry must be a valid PEM-wrapped, DER-encoded ASN.1 Certificate as
+	//     described in section 4 or RFC5280.
 	//
 	// If more than one block is present, and the definition of the requested
 	// spec.signerName does not indicate otherwise, the first block is the
 	// issued certificate, and subsequent blocks should be treated as
 	// intermediate certificates and presented in TLS handshakes.  When
 	// projecting the chain into a pod volume, kubelet will preserve the exact
-  // contents of certificateChain.
-  //
+	// contents of certificateChain.
+	//
 	// +optional
 	CertificateChain string `json:"certificateChain,omitempty" protobuf:"bytes,2,opt,name=certificateChain"`
 
 	// issuedAt is the time at which the signer issued the certificate.  This
 	// field is set via the /status subresource.  Once populated, it is
-	// immutable.  The signer must set this field at the same time it sets 
-  // certificateChain.
+	// immutable.  The signer must set this field at the same time it sets
+	// certificateChain.
 	//
 	// +optional
 	IssuedAt *metav1.Time `json:"issuedAt,omitempty" protobuf:"bytes,3,opt,name=issuedAt"`
 
 	// notBefore is the time at which the certificate becomes valid.  This field
 	// is set via the /status subresource.  Once populated, it is immutable.  The 
-  // signer must set this field at the same time it sets certificateChain.
+	// signer must set this field at the same time it sets certificateChain.
 	//
 	// +optional
 	NotBefore *metav1.Time `json:"notBefore,omitempty" protobuf:"bytes,4,opt,name=notBefore"`
@@ -426,16 +459,16 @@ type PodCertificateRequestStatus struct {
 	// refresh the certificate.  This field is set via the /status subresource,
 	// and must be set at the same time as certificateChain.  Once populated,
 	// this field is immutable.
-  //
-  // This field is only a hint.  Kubelet may start refreshing before or after
-  // this time if necessary.
+	//
+	// This field is only a hint.  Kubelet may start refreshing before or after
+	// this time if necessary.
 	//
 	// +optional
 	BeginRefreshAt *metav1.Time `json:"beginRefreshAt,omitempty" protobuf:"bytes,5,opt,name=beginRefreshAt"`
 
 	// notAfter is the time at which the certificate expires.  This field is set
 	// via the /status subresource.  Once populated, it is immutable.  The 
-  // signer must set this field at the same time it sets certificateChain.
+	// signer must set this field at the same time it sets certificateChain.
 	//
 	// +optional
 	NotAfter *metav1.Time `json:"notAfter,omitempty" protobuf:"bytes,6,opt,name=notAfter"`
@@ -455,10 +488,10 @@ const (
 	// doesn't support the key type of publicKey.
 	PodCertificateRequestConditionUnsupportedKeyType string = "UnsupportedKeyType"
 
-  // InvalidUnverifiedUserAnnotations should be set on "Denied" conditions when the signer
-  // does not recognize one of the keys passed in userConfig, or if the signer
-  // otherwise considers the userConfig of the request to be invalid.
-  PodCertificateRequestConditionInvalidUserConfig string = "InvalidUnverifiedUserAnnotations"
+	// InvalidUnverifiedUserAnnotations should be set on "Denied" conditions when the signer
+	// does not recognize one of the keys passed in userConfig, or if the signer
+	// otherwise considers the userConfig of the request to be invalid.
+	PodCertificateRequestConditionInvalidUserConfig string = "InvalidUnverifiedUserAnnotations"
 )
 ```
 
@@ -475,7 +508,14 @@ string that encapsulates both the key type and any parameters necessary (for
 example, RSA modulus size).  The intention is to offer a tasting menu of
 reasonable key choices, rather than offering a flexibility to a wide variety of
 parameters. Key types supported by kubelet are "RSA3072", "RSA4096",
-"ECDSAP256", "ECDSAP384", and "ED25519".
+"ECDSAP256", "ECDSAP384", "ECDSAP521", and "ED25519".
+
+To allow signer implementations to be backed by an ACME CA such as Let's
+Encrypt, the pod spec author can request DNS and IP Subject Alternate Names that
+Kubelet will embed in the PKCS#10 CSR it generates.  In the future, other
+customizations based on the [ACME Identifier Type
+Registry](https://www.iana.org/assignments/acme/acme.xhtml#acme-identifier-types)
+might be supported.
 
 Once the key is generated, kubelet creates a PodCertificateRequest with the
 details of the pod that is mounting the volume.  The kubelet then waits for the
@@ -546,36 +586,36 @@ sequenceDiagram
 // pod filesystem.
 type PodCertificateProjection struct {
 	// Kubelet's generated CSRs will be addressed to this signer.
+	//
+	// +required
 	SignerName string `json:"signerName,omitempty" protobuf:"bytes,1,rep,name=signerName"`
-
-  // userAnnotations allow pod authors to pass additional information to
-  // the signer implementation.  Kubernetes does not restrict or validate this
-  // metadata in any way.
-  //
-  // These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
-  // the PodCertificateRequest objects that Kubelet creates.
-  //
-  // Entries are subject to the same validation as object metadata annotations,
-  // with the addition that all keys must be domain-prefixed. No restrictions
-  // are placed on values, except an overall size limitation on the entire field.
-  //
-  // Signers should document the keys and values they support.  Signers should
-  // deny requests that contain keys they do not recognize.
-  UserAnnotations map[string]string `json:"userAnnotations,omitempty" protobuf:"bytes,6,rep,name=userAnnotations"`
 
 	// The type of keypair Kubelet will generate for the pod.
 	//
-	// Valid values are "RSA3072", "RSA4096", "ECDSAP256",
-	// "ECDSAP384", and "ED25519".
+	// Valid values are "RSA3072", "RSA4096", "ECDSAP256", "ECDSAP384",
+	// "ECDSAP521", and "ED25519".
+	//
+	// +required
 	KeyType string `json:"keyType,omitempty" protobuf:"bytes,2,rep,name=keyType"`
 
-  // The maximum certificate lifetime that the application wants.
-  //
-  // Kubelet will copy this value into the PodCertificateRequest that it creates.
-  //
-  // This field is a *request*, as both kube-apiserver and the signer 
-  // implementation can choose to set a shorter lifetime on the certificate.
-  MaxExpirationSeconds int32 `json:"maxExpirationSeconds,omitempty" protobuf:"bytes,3,rep,name=maxExpirationSeconds"`
+	// maxExpirationSeconds is the maximum lifetime permitted for the
+	// certificate.
+	//
+	// Kubelet copies this value verbatim into the PodCertificateRequests it
+	// generates for this projection.
+	//
+	// If omitted, kube-apiserver will set it to 86400(24 hours). kube-apiserver
+	// will reject values shorter than 3600 (1 hour).  The maximum allowable
+	// value is 7862400 (91 days).
+	//
+	// The signer implementation is then free to issue a certificate with any
+	// lifetime *shorter* than MaxExpirationSeconds, but no shorter than 3600
+	// seconds (1 hour).  This constraint is enforced by kube-apiserver.
+	// `kubernetes.io` signers will never issue certificates with a lifetime
+	// longer than 24 hours.
+	//
+	// +optional
+	MaxExpirationSeconds *int32 `json:"maxExpirationSeconds,omitempty" protobuf:"varint,3,opt,name=maxExpirationSeconds"`
 
 	// Write the credential bundle at this path in the projected volume.
 	//
@@ -586,29 +626,49 @@ type PodCertificateProjection struct {
 	// The remaining blocks are CERTIFICATE blocks, containing the issued
 	// certificate chain from the signer (leaf and any intermediates).
 	//
-	// Using credentialBundlePath lets your Pod's application code make a single 
-	// atomic read that retrieves a consistent key and certificate chain.  If you 
-	// project them to separate files, your application code will need to 
+	// Using credentialBundlePath lets your Pod's application code make a single
+	// atomic read that retrieves a consistent key and certificate chain.  If you
+	// project them to separate files, your application code will need to
 	// additionally check that the leaf certificate was issued to the key.
 	//
-	// Mutually exclusive with keyPath and certificateChainPath.
-	CredentialBundlePath string `json:"credentialBundlePath,omitempty" protobuf:"bytes,3,rep,name=credentialBundlePath"`
+	// +optional
+	CredentialBundlePath string `json:"credentialBundlePath,omitempty" protobuf:"bytes,4,rep,name=credentialBundlePath"`
 
 	// Write the key at this path in the projected volume.
 	//
-	// Mutually exclusive with credentialBundlePath.
+	// Most applications should use credentialBundlePath.  When using keyPath
+	// and certificateChainPath, your application needs to check that the key
+	// and leaf certificate are consistent, because it is possible to read the
+	// files mid-rotation.
 	//
-	// When using keyPath and certificateChainPath, your application needs to check 
-	// that the key and leaf certificate are consistent, because it is possible to 
-	// read the files mid-rotation.
-	KeyPath string `json:"keyPath,omitempty" protobuf:"bytes,4,rep,name=keyPath"`
+	// +optional
+	KeyPath string `json:"keyPath,omitempty" protobuf:"bytes,5,rep,name=keyPath"`
 
 	// Write the certificate chain at this path in the projected volume.
 	//
-	// Mutually exclusive with credentialBundlePath.
-	CertificateChainPath string `json:"certificateChainPath,omitempty" protobuf:"bytes,5,rep,name=certificateChainPath"`
-}
+	// Most applications should use credentialBundlePath.  When using keyPath
+	// and certificateChainPath, your application needs to check that the key
+	// and leaf certificate are consistent, because it is possible to read the
+	// files mid-rotation.
+	//
+	// +optional
+	CertificateChainPath string `json:"certificateChainPath,omitempty" protobuf:"bytes,6,rep,name=certificateChainPath"`
 
+	// userAnnotations allow pod authors to pass additional information to
+	// the signer implementation.  Kubernetes does not restrict or validate this
+	// metadata in any way.
+	//
+	// These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
+	// the PodCertificateRequest objects that Kubelet creates.
+	//
+	// Entries are subject to the same validation as object metadata annotations,
+	// with the addition that all keys must be domain-prefixed. No restrictions
+	// are placed on values, except an overall size limitation on the entire field.
+	//
+	// Signers should document the keys and values they support. Signers should
+	// deny requests that contain keys they do not recognize.
+	UserAnnotations map[string]string `json:"userAnnotations,omitempty" protobuf:"bytes,7,rep,name=userAnnotations"`
+}
 
 // ...
 
@@ -652,7 +712,7 @@ type VolumeProjection struct {
 	// use the certificates it issues.
 	//
 	// +featureGate=PodCertificateProjection
-  // +optional
+	// +optional
 	PodCertificate *PodCertificateProjection `json:"podCertificate,omitempty" protobuf:"bytes,6,opt,name=podCertificate"`
 }
 ```
@@ -699,12 +759,14 @@ capability to read back the existing key from the projected volume on startup.
 
 #### Story 1
 
-Several example signers built on the alpha feature set are available in the
+Several example signers built on the beta feature set are available in the
 [mesh-examples repository](https://github.com/ahmedtd/mesh-example).
 
 I'm an application developer building an application that I want to deploy into
 my cluster.  I want my application to receive a SPIFFE client certificate that
 can be used to authenticate to an external API.
+
+I install a signer (hypothetically, `mysigner.example/spiffe`) into my cluster.
 
 I add a new projected volume to my pod:
 ```yaml
@@ -728,7 +790,7 @@ spec:
     projected:
       sources:
       - podCertificate:
-          signerName: "row-major.net/spiffe"
+          signerName: "mysigner.example"
           keyType: ED25519
           credentialBundlePath: credentialbundle.pem
 ```
@@ -737,7 +799,6 @@ My application code can then read the private key and certificate chain from
 `/run/workload-spiffe-credentials/credentialbundle.pem`, and use them as an mTLS
 client certificate to authenticate to external APIs.
 
-### Future expansion: HSM support for private keys
 
 ### Test Plan
 
@@ -857,6 +918,17 @@ For Beta:
 * Migrate kubelet implementation to use the beta API.
 * Deprecate and remove the alpha API.
 
+For GA:
+* The `PKIXPublicKey` and `ProofOfPossession` fields, which have been marked as
+  deprecated in beta, will not be promoted to v1. They will remain on the
+  v1beta1 API until it is removed.
+* Allow time for feedback (wait at least two releases in Beta) with no major
+  bugs or regressions reported.
+* Ensure all e2e tests related to the feature are stable and flake-free, and
+  promote the e2e tests (`test/e2e/auth/projected_podcertificate.go`) to
+  conformance.
+* Official user-facing documentation is updated to reflect GA status.
+
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -933,6 +1005,17 @@ enhancement:
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
 
+The StubPKCS10Request field will be added to the v1beta1 API in 1.36, and
+at the same time Kubelet will be migrated to generate PodCertificateRequests
+using the new field (leaving PKIXPublicKey and ProofOfPossession empty).  If any
+workloads in the cluster are actively using Pod Certificate projected volumes
+sources, it will be necessary to ensure that all API server replicas are updated
+to 1.36 before upgrading Kubelets.
+
+If downgrading back to 1.35 is necessary, it will need to be done in reverse
+order.  All Kubelets will need to be downgraded to 1.35 before any API server
+can be downgraded.
+
 ### Version Skew Strategy
 
 <!--
@@ -979,6 +1062,60 @@ following skew cases:
   specified key type against its list of supported key types.
 * (`kube-apiserver>=N`, `kubelet>=N`): No problems, everything works.
 
+### Version Skew and API Versioning Impact
+
+The transition of the `PodCertificateRequest` API from Beta to GA involves two
+key changes across releases:
+1. **In 1.36 (Beta):** A field migration where Kubelet starts populating
+   `StubPKCS10Request` and leaves the deprecated `PKIXPublicKey` and
+   `ProofOfPossession` fields empty.
+2. **In 1.37 (GA):** The graduation to `v1`, where the deprecated
+   `PKIXPublicKey` and `ProofOfPossession` fields are dropped from the `v1`
+   schema (but kept in `v1beta1` and core/internal types).
+
+The skew scenarios and their impacts are detailed below:
+
+#### 1. Kubelet Upgrade from 1.35 to 1.36 (Field Migration)
+In this transition, both components are still using the `v1beta1` API version,
+but Kubelet changes the payload fields it writes.
+* **Kubelet version:** 1.36 (writes `v1beta1` with `StubPKCS10Request` only).
+* **Signer version:** 1.35 or unupgraded 1.36 (expects `PKIXPublicKey` or
+  `ProofOfPossession` to be populated).
+* **Impact:** The signer will fail to process requests from the 1.36 Kubelet.
+* **Mitigation:** Signer implementations must be upgraded to support
+  `StubPKCS10Request` before (or at the same time as) Kubelets in the cluster
+  are upgraded to 1.36.
+
+#### 2. Kubelet Upgrade from 1.36 to 1.37 (API Version Transition)
+In this transition, Kubelet is upgraded to 1.37 and begins using the `v1` API.
+* **Kubelet version:** 1.37 (writes `v1` with `StubPKCS10Request` only).
+* **Signer version:** 1.36 (uses `v1beta1`, supports `StubPKCS10Request`).
+* **Impact:** No compatibility impact. The API server automatically converts
+  the `v1` request written by Kubelet to `v1beta1` for the signer. Since the
+  1.36 signer already supports `StubPKCS10Request`, it will successfully sign
+  the request.
+
+#### 3. Skewed Kubelet (1.35) with Upgraded Signer (1.37)
+In this transition, the control plane/signer is upgraded to GA (`v1`), but
+there are still old 1.35 Kubelets in the cluster.
+* **Kubelet version:** 1.35 (writes `v1beta1`, populating `PKIXPublicKey` and
+  `ProofOfPossession` but not `StubPKCS10Request`).
+* **Signer version:** 1.37 (upgraded to use the `v1` API).
+* **Impact:** The API server converts the `v1beta1` request from the 1.35
+  Kubelet to `v1` for the signer. During this conversion, `PKIXPublicKey` and
+  `ProofOfPossession` are dropped. The `v1` signer will see an empty
+  `StubPKCS10Request` and will not be able to sign the request.
+* **Mitigation:** Signer controllers must continue to support and watch the
+  `v1beta1` API if they need to support skewed Kubelets (< 1.36) in the cluster.
+  Once all Kubelets are upgraded to >= 1.36, the signer can be safely
+  transitioned to use `v1` only.
+
+#### 4. Kubelet and Signer both use v1 (>= 1.37)
+* **Kubelet version:** >= 1.37
+* **Signer version:** >= 1.37 (using `v1` API)
+* **Impact:** Both use `StubPKCS10Request` over the `v1` API. The transition is
+  complete and functions normally.
+
 ## Production Readiness Review Questionnaire
 
 <!--
@@ -1007,13 +1144,7 @@ you need any help or guidance.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-At beta, enabling this feature in a live cluster will require the following steps.
-
-1. Enable the certificates/v1beta1 API.
-2. Enable the PodCertificateRequest feature gate on all kube-apiserver replicas.
-3. Enable the PodCertificateRequest feature gate on all kubelet instances.
-
-At this point, you can begin to create pods that use the features.
+This feature is enabled by default. You can begin to create pods that use the features without any additional enablement steps.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1021,18 +1152,11 @@ No, no default behavior is changed.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes, the feature can be disabled safely by following this procedure.
-
-1. Remove any workloads that are currently using PodCertificate projected volumes.
-2. Disable the PodCertificateRequest feature gate on all kubelet instances
-3. Disable the PodCertificateRequest feature gate on all kube-apiserver replicas
-5. Disable the certificates/v1beta1 API.
+No, the `PodCertificateRequest` feature gate is enabled by default and locked to true, meaning the feature cannot be disabled.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
-If the procedure in the previous section was followed, nothing.  If workloads
-using PodCertificate projected volumes remained in the cluster, their behavior
-may suddenly change.
+Not applicable, the feature cannot be disabled or rolled back at stable.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1092,14 +1216,32 @@ Upgrade is not tested for the Alpha to Beta transition.  Anyone evaluating the
 feature in alpha is expected to completely disable usage, then re-enable the
 beta version of the feature.
 
+No manual upgrade/rollback tests are planned for the Beta to Stable transition.
+Instead, we will promote the dedicated e2e tests
+(`test/e2e/auth/projected_podcertificate.go`) to conformance first.
+Standard Kubernetes CI jobs (such as `kubeadm-kinder-upgrade` and
+version-skewed Kubelet jobs) will continuously verify compatibility during
+upgrades and under version skew.
+
+Regarding API and component changes:
+* For clusters already running with the feature enabled in Beta: The only API
+  change is the schema transition from `v1beta1` to `v1` (where the deprecated
+  `PKIXPublicKey` and `ProofOfPossession` fields are dropped). Workloads not
+  relying on these deprecated fields will continue functioning safely.
+
+* For clusters upgrading from a version where the feature was disabled or not
+  present: Upgrading to GA will enable the `PodCertificateRequest` API and the
+  kubelet volume manager by default. This transition path (from disabled to
+  enabled) is continuously verified by standard CI runs where the feature gate
+  is enabled.
+
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
 -->
 
-The alpha API will be deprecated simultaneously with the beta API being
-launched.
+No.
 
 ### Monitoring Requirements
 
@@ -1341,10 +1483,17 @@ If a third party signer controller has an outage, that will affect
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+If SLOs for certificate issuance or refresh are not met, the problem likely lies in the third-party signer implementation. Operators should:
+1. Check the logs and metrics of the component implementing the signer to determine why it is failing to process `PodCertificateRequest` objects in a timely manner.
+2. Inspect `PodCertificateRequest` objects directly (`kubectl get podcertificaterequests`) to see their status or any error conditions.
+3. Check `kube-apiserver` and `kubelet` logs for errors related to managing `PodCertificateRequest` objects.
+
 ## Implementation History
 
 * 1.34 --- Launched to alpha.
 * 1.35 --- Launched to beta, with the addition of the `spec.userConfig` field.
+* 1.36 --- Introduced the `spec.stubPKCS10Request` field and deprecated the `spec.PKIXPublicKey` and `spec.proofOfPossession`
+* 1.37 --- Launched to stable.
 
 ## Drawbacks
 

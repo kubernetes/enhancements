@@ -7,20 +7,21 @@ participating-sigs:
   - sig-node
   - sig-windows
 creation-date: "2025-02-01"
-reviewers: 
-  - '@mikebrow'
+reviewers:
+  - '@mikebrow' # sig-node-assigned-reviewer
   - '@thockin'
   - '@mrunalp'
   - '@kannon92'
-approvers: 
+approvers:
+  - '@sergeykanzhelev' # sig-node-assigned-approver
   - '@mrunalp'
 
 status: implementable
-stage: alpha
-latest-milestone: "v1.34"
+stage: beta
+latest-milestone: "v1.37"
 milestone:
     alpha: "v1.33"
-    beta: ""
+    beta: "v1.37"
     stable: ""
 
 feature-gates:

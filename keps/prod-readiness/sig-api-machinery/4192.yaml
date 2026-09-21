@@ -3,3 +3,5 @@ alpha:
   approver: "@deads2k"
 beta:
   approver: "@jpbetz"
+stable:
+  approver: "@jpbetz"

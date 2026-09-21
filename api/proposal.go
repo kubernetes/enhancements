@@ -101,6 +101,7 @@ type Proposal struct {
 	ID       string `json:"id"`
 	PRNumber string `json:"prNumber,omitempty"`
 	Name     string `json:"name,omitempty"`
+	Path     string `json:"path,omitempty"`
 
 	Title             string   `json:"title" yaml:"title" validate:"required"`
 	Number            string   `json:"kepNumber" yaml:"kep-number" validate:"required"`

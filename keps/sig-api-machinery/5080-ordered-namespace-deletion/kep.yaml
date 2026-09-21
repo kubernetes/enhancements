@@ -5,7 +5,7 @@ authors:
   - "@thockin"
 owning-sig: sig-api-machinery
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2024-01-27
 reviewers:
   - "@aojea"

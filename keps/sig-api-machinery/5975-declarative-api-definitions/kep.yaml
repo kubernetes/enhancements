@@ -1,0 +1,27 @@
+title: Declarative API Definitions
+kep-number: 5975
+authors:
+  - "@jpbetz"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-architecture
+status: provisional
+creation-date: 2026-03-23
+reviewers:
+  - "@liggitt"
+  - "@thockin"
+  - "deads2k"
+approvers:
+  - "deads2k"
+
+see-also:
+  - "/keps/sig-api-machinery/4153-declarative-validation"
+  - "/keps/sig-api-machinery/5073-declarative-validation-with-validation-gen"
+
+stage: stable
+latest-milestone: "v1.37"
+milestone:
+  stable: "v1.37"
+
+feature-gates: []
+disable-supported: false

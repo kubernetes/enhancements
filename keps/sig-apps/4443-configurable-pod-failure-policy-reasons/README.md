@@ -977,7 +977,8 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
-- KEP Published: 02/05/2024
+- 2024-05-24: KEP Published
+- 2026-06-09: Update the milestone to v1.38
 
 ## Drawbacks
 

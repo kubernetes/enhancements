@@ -31,7 +31,7 @@ To get started with this template:
   appropriate SIG(s).
 - [X] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [X] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -84,8 +84,11 @@ Ensure the TOC is wrapped with
 tags, and then generate with `hack/update-toc.sh`.
 -->
 
+<!-- mdformat off() -->
 <!-- toc -->
+
 - [Release Signoff Checklist](#release-signoff-checklist)
+- [Glossary](#glossary)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -109,11 +112,16 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Policy Options](#policy-options-1)
     - [Pod Scope Allocation and Partitioning Algorithm](#pod-scope-allocation-and-partitioning-algorithm)
     - [State Management and Container Removal](#state-management-and-container-removal)
+      - [Compatibility with Generalized V4 State](#compatibility-with-generalized-v4-state)
     - [Interaction with CPU Quota Management](#interaction-with-cpu-quota-management)
   - [Memory Manager](#memory-manager)
     - [Policies](#policies-2)
     - [Pod Scope Allocation and Partitioning Algorithm](#pod-scope-allocation-and-partitioning-algorithm-1)
     - [State Management and Container Removal](#state-management-and-container-removal-1)
+      - [Compatibility with Generalized V4 State](#compatibility-with-generalized-v4-state-1)
+  - [PodResources API](#podresources-api)
+      - [Protobuf API Updates](#protobuf-api-updates)
+      - [Illustrative output](#illustrative-output)
   - [Future Enhancements and Long-Term Vision](#future-enhancements-and-long-term-vision)
   - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
@@ -123,6 +131,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
+    - [Beta](#beta)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -137,6 +146,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
+<!-- mdformat on -->
 
 ## Release Signoff Checklist
 
@@ -154,29 +164,29 @@ Check these off as they are completed for the Release Team to track. These
 checklist items _must_ be updated for the enhancement to be released.
 -->
 
-Items marked with (R) are required *prior to targeting to a milestone /
+Items marked with `R` are required *prior to targeting to a milestone /
 release*.
 
--   [ ](R) Enhancement issue in release milestone, which links to KEP dir in
+-   [x] `R` Enhancement issue in release milestone, which links to KEP dir in
     [kubernetes/enhancements](not the initial KEP PR)
--   [ ](R) KEP approvers have approved the KEP status as `implementable`
--   [ ](R) Design details are appropriately documented
--   [ ](R) Test plan is in place, giving consideration to SIG Architecture and
+-   [x] `R` KEP approvers have approved the KEP status as `implementable`
+-   [x] `R` Design details are appropriately documented
+-   [ ] `R` Test plan is in place, giving consideration to SIG Architecture and
     SIG Testing input (including test refactors)
     -   [ ] e2e Tests for all Beta API Operations (endpoints)
-    -   [ ](R) Ensure GA e2e tests meet requirements for
+    -   [ ] `R` Ensure GA e2e tests meet requirements for
         [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-    -   [ ](R) Minimum Two Week Window for GA e2e tests to prove flake free
--   [ ](R) Graduation criteria is in place
-    -   [ ](R)
+    -   [ ] `R` Minimum Two Week Window for GA e2e tests to prove flake free
+-   [ ] `R` Graduation criteria is in place
+    -   [ ] `R`
         [all GA Endpoints](https://github.com/kubernetes/community/pull/1806)
         must be hit by
         [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
         within one minor version of promotion to GA
--   [ ](R) Production readiness review completed
--   [ ](R) Production readiness review approved
--   [ ] "Implementation History" section is up-to-date for milestone
--   [ ] User-facing documentation has been created in [kubernetes/website], for
+-   [x] `R` Production readiness review completed
+-   [x] `R` Production readiness review approved
+-   [x] "Implementation History" section is up-to-date for milestone
+-   [x] User-facing documentation has been created in [kubernetes/website], for
     publication to [kubernetes.io]
 -   [ ] Supporting documentation—e.g., additional design documents, links to
     mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -190,13 +200,30 @@ release*.
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
 
+## Glossary
+
+-   **Pod Level Resources**: The resource budget defined at the pod level in
+    `pod.spec.resources`, which specifies the collective requests and limits for
+    the entire pod.
+-   **Guaranteed Container**: Within the context of this KEP, a container is
+    considered `Guaranteed` if it specifies resource requests equal to its
+    limits for both CPU and Memory. This status makes it eligible for exclusive
+    resource allocation from the resource managers, provided the topology scope
+    allows it.
+-   **Pod Shared Pool**: The subset of a pod's allocated resources that remains
+    after all exclusive slices have been reserved. These resources are shared by
+    all containers in the pod that do not receive an exclusive allocation.
+-   **Exclusive Slice**: A dedicated portion of resources (e.g., specific CPUs
+    or memory pages) allocated solely to a single container, ensuring isolation
+    from other containers.
+
 ## Summary
 
 This KEP proposes extending the Kubelet's Topology, CPU, and Memory Managers to
 support pod-level resource specifications. This enhancement evolves the resource
-managers from a strictly per-container allocation model to a pod-centric one. It
-enables them to use `pod.spec.resources` to perform NUMA alignment for the pod
-as a whole, and introduces a partitioning scheme to manage resources for
+managers from a strictly per-container allocation model to a pod-centric one,
+that enables them to use `pod.spec.resources` to perform NUMA alignment for the
+pod as a whole, and introduces a partitioning scheme to manage resources for
 containers within that pod-level grouping. This change introduces a more
 flexible and powerful resource management model, particularly for
 performance-sensitive workloads.
@@ -353,6 +380,10 @@ section.
 
 -   This feature is dependent on the `PodLevelResources` feature gate being
     enabled.
+-   If the `PodLevelResourceManagers` feature gate is disabled, pods utilizing
+    pod-level resources remain eligible for admission; however, they will not
+    receive NUMA-aligned or exclusive resource allocations from the CPU and
+    Memory managers, even if the pod's QoS class is `Guaranteed`.
 -   The functionality is only implemented for the `static` CPU Manager policy
     and the `Static` Memory Manager policy.
     -   Other policies like `none` are unaffected as they do not perform
@@ -455,9 +486,9 @@ can be aligned to a single NUMA node or a set of NUMA nodes.
 
 Pod-level resources | Container resources | CPU and Memory manager behavior
 :------------------ | :------------------ | :------------------------------
-Unset               | Set                 | Current behavior (alignment and exclusive allocation based on container resources)
-Set                 | Unset               | Alignment and exclusive allocation for the overall pod. All containers share the resulting resource pool.
-Set                 | Set                 | Alignment and exclusive allocation for the overall pod. The pod's resource pool is partitioned into exclusive slices for `Guaranteed` containers and a shared pool for the rest.
+Unset               | Set                 | Current behavior (alignment based on aggregated container resources, exclusive allocation based on individual container resources).
+Set                 | Unset               | Alignment and exclusive allocation for the overall pod based on pod-level resources. All containers share the resulting resource pool.
+Set                 | Set                 | Alignment and exclusive allocation for the overall pod based on pod-level resources. The pod's resource pool is partitioned into exclusive slices for `Guaranteed` containers and a shared pool for the rest.
 
 When `pod.spec.resources` are defined, they are the sole determinant of the
 pod's QoS class. However, the resource managers will still check each
@@ -482,10 +513,29 @@ New cases that need to be covered:
         allocated the remaining shared portion of the pool.
 
 Already existing logic for standard and restartable init containers is
-compatible with the changes presented in this KEP. They will continue be
-allocated exclusive slices from the pod's managed resource pool. The resources
-from standard init containers will be made reusable by the app containers within
-the pod's shared pool.
+compatible with the changes presented in this KEP. Standard init containers that
+are `Guaranteed` will be allocated exclusive slices from the pod's managed
+resource pool. Because they run sequentially, their resources are made reusable
+for subsequent app containers. Restartable init containers (sidecars) that are
+`Guaranteed` will also be allocated exclusive slices. Since they are intended to
+run for the entire duration of the pod's life, their resources are reserved for
+the entire pod lifecycle and are not returned to the pool for reuse. This
+results in a progressively decreasing `podSharedPool` as more sidecars with
+exclusive resource requirements are defined.
+
+Additionally, if a standard init container does not specify resource requests
+and limits (placing it in the shared pool), it is granted access to the entire
+pod-level resource budget, minus only the resources exclusively allocated to any
+`Guaranteed` sidecars running up to that point. This ensures that init
+containers can burst to utilize maximum available resources during
+initialization.
+
+In contrast, sidecars that run in the shared pool are assigned the final
+`podSharedPool`. This pool consists of the resources remaining after all
+exclusive allocations (for both `Guaranteed` sidecars and `Guaranteed`
+application containers) have been reserved. This ensures that shared sidecars do
+not interfere with the exclusive resources of application containers once they
+start.
 
 Pod Scope                                                             | Spec                                                                               | Hint Generation | Allocation
 :-------------------------------------------------------------------- | :--------------------------------------------------------------------------------- | :-------------- | :---------
@@ -494,6 +544,34 @@ New behavior <br> Pod Level Resources <br> All Guaranteed containers  | Pod: 5 C
 New behavior <br> Pod Level Resources <br> Some Guaranteed containers | Pod: 5 CPU <br> Container 1: 3 CPU <br> Container 2 <br> Container 3               | {NUMA node 0}   | Container 1: {1, 2, 3} <br> Container 2: {4, 5} <br> Container 3: {4, 5}
 New behavior <br> Pod Level Resources <br> No Guaranteed containers   | Pod: 5 CPU <br> Container 1 <br> Container 2 <br> Container 3                      | {NUMA node 0}   | Container 1: {1,2,3,4,5} <br> Container 2: {1,2,3,4,5} <br> Container 3: {1,2,3,4,5}
 New behavior <br> Pod Level Resources <br> Admission Failure          | Pod: 5 CPU <br> Container 1: 3 CPU <br> Container 2: 2 CPU <br> Container 3        | Admission Error | Pod Rejected
+
+###### Ephemeral Containers
+
+For pods under the `pod` scope:
+
+-   **No Resource Reservation:** Ephemeral containers do not participate in the
+    partition of the pod's pool and are not allocated exclusive resources from
+    the pod-level budget.
+-   **Node-level Resource Inheritance:** Ephemeral containers inherit the node's
+    default CPU set (the node-wide shared pool) rather than being confined to
+    the pod's assigned CPU set or the pod's shared pool.
+-   **Pod-level Limit Enforcement:** Although ephemeral containers run with the
+    node's default CPU set, they are executed inside the pod's cgroups. They
+    remain restricted by the overall pod-level resource limits (e.g., CPU quota
+    and memory limits) defined on the pod.
+-   **Troubleshooting Utility:** Pinned CPU sets allocated to Guaranteed pod
+    containers can become fully saturated by active workloads. By escaping the
+    pod's restricted CPU set, ephemeral containers can run on any available CPU
+    in the node-wide shared pool. This ensures they can be scheduled and execute
+    for debugging, even if the pod's exclusively allocated CPUs are fully
+    saturated. Furthermore, latency-sensitive workloads expect zero performance
+    interference on their exclusively assigned CPUs. Running ephemeral
+    containers on the node-wide shared pool (and specifically not on the pod's
+    exclusively allocated CPUs) ensures that troubleshooting/debugging
+    operations do not introduce CPU contention or cache disruption for the
+    primary workload. However, because they are inside the pod's cgroup, they
+    still share the overall pod-level cgroup quota limits with the regular
+    containers.
 
 ###### Rejected Configurations
 
@@ -556,6 +634,7 @@ shared resource pool.
 <!-- mdformat off() -->
 
 **Pod Spec:**
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -598,6 +677,7 @@ use the remainder.
 <!-- mdformat off() -->
 
 **Pod Spec:**
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -646,6 +726,7 @@ admission.
 <!-- mdformat off() -->
 
 **Pod Spec:**
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -711,7 +792,7 @@ bound by the pod's overall resource limit.
 
 Pod-level resources | Container resources | CPU and Memory manager behavior
 :------------------ | :------------------ | :------------------------------
-Unset               | Set                 | Current behavior (alignment and exclusive allocation based on container resources)
+Unset               | Set                 | Current behavior (alignment and exclusive allocation based on individual container resources).
 Set                 | Unset               | No alignment or exclusive allocation. Containers run in the node's shared pool.
 Set                 | Set                 | Alignment and exclusive allocation for containers that specify `Guaranteed` resources; pod-level resources are ignored for allocation decisions.
 
@@ -744,6 +825,19 @@ New behavior <br> Pod Level Resources <br> All Guaranteed containers  | Pod: 5 C
 New behavior <br> Pod Level Resources <br> Some Guaranteed containers | Pod: 5 CPU <br> Container 1: 3 CPU <br> Container 2 <br> Container 3               | {NUMA node 0}, No NUMA preference, No NUMA preference      | Container 1: {1,2,3} <br> Container 2: no exclusive allocation <br> Container 3: no exclusive allocation
 New behavior <br> Pod Level Resources <br> No Guaranteed containers   | Pod: 5 CPU <br> Container 1 <br> Container 2 <br> Container 3                      | No NUMA preference, No NUMA preference, No NUMA preference | Container 1: no exclusive allocation <br> Container 2: no exclusive allocation <br> Container 3: no exclusive allocation
 
+###### Ephemeral Containers
+
+For pods under the `container` scope:
+
+-   **Current Behavior Preserved:** Since there is no pod-level resource
+    allocation, ephemeral containers continue to follow their current behavior.
+    They do not receive exclusive allocations and run in the node-wide shared
+    pool.
+-   **Pod-level Limit Enforcement:** If the pod defines pod-level resource
+    requests/limits, ephemeral containers (along with all other containers in
+    the pod) remain restricted by the overall pod-level cgroup limits at
+    runtime.
+
 ###### Examples
 
 The examples focus on CPU resource behavior, however the memory behavior is
@@ -759,6 +853,7 @@ scope is `container`, the managers will evaluate each container individually.
 <!-- mdformat off() -->
 
 **Pod Spec:**
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -810,6 +905,7 @@ resources are ignored for allocation and alignment purposes.
 <!-- mdformat off() -->
 
 **Pod Spec:**
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -876,31 +972,57 @@ based on their individual requirements.
     reserved resources while allowing all other containers to efficiently share
     the remainder of the pod's budget.
 
-3.  **Handling Init Containers:** The existing, well-established logic for
-    handling init container resources is reused and applied within the new
-    pod-level resource pool. The allocation is pre-calculated based on the
+3.  **[New Logic] Handling Init Containers:** The existing, well-established
+    logic for handling init container resources is reused and applied within the
+    new pod-level resource pool. The allocation is pre-calculated based on the
     predictable, sequential lifecycle of init containers.
 
-    -   **Standard Init Containers:** Following the current logic, if a standard
-        init container is individually `Guaranteed`, it is allocated an
-        exclusive slice from the pod's total resource pool. At allocation time,
-        these resources are also added to a per-pod reusable set, making them
-        available for subsequent app containers (whether for exclusive
-        allocations or within the `podSharedPool`).
-    -   **Restartable Init Containers (Sidecars):** Consistent with the existing
-        sidecar behavior, if a restartable init container is individually
-        `Guaranteed`, it is allocated an exclusive slice that is reserved for
-        the entire pod lifecycle and is *not* added to the reusable set.
+    -   **Standard Init Containers:** If individually `Guaranteed`, they are
+        allocated an exclusive slice. These resources are added to a per-pod
+        reusable set upon completion, making them available for subsequent app
+        containers. If they are `non-Guaranteed` (shared), they are granted
+        access to the entire pod-level resource budget minus any resources
+        exclusively allocated to `Guaranteed` sidecars running at that time.
+        This allows standard init containers to burst during initialization.
+    -   **Restartable Init Containers (Sidecars):** If individually
+        `Guaranteed`, they receive an exclusive slice reserved for the entire
+        pod lifecycle. If they are `non-Guaranteed` (shared), they are assigned
+        the final `podSharedPool`. This pool consists of resources remaining
+        after all exclusive allocations (for both sidecars and application
+        containers) have been carved out. This ensures that shared sidecars
+        never compete with the exclusive resources of application containers.
+
+    This model results in a progressively decreasing shared resource set for
+    standard init containers as more `Guaranteed` sidecars are started,
+    eventually settling into the final `podSharedPool` used by all application
+    containers and shared sidecars.
 
 4.  **[New Logic] Pre-computation and State Update:** The manager pre-computes
     and writes the specific assignment for every container to the state file.
     `Guaranteed` containers are assigned their exclusive slices, and all other
-    containers are assigned the `podSharedPool`.
+    containers are assigned the `podSharedPool`. To ensure state consistency and
+    support accurate recovery after restarts, a new top-level property is added
+    to the state file to track the aggregate pod-level resource allocation. For
+    CPU Manager, this is `PodCPUAssignments` (a map of pod UIDs to `PodEntry`
+    containing the `CPUSet`). For Memory Manager, this is `PodMemoryAssignments`
+    (a map of pod UIDs to `PodEntry` containing the `MemoryBlocks`). This entry
+    serves as the source of truth for the pod's total NUMA-aligned resource
+    reservation.
 
 5.  **Container-Level Allocation:** For the current container (and all
     subsequent containers in the pod), the `Allocate` function reads that
     container's specific, pre-computed assignment from the state and applies it
     to the container's cgroup.
+
+6.  **[New Logic] Container and Pod Removal:** When a container is removed, its
+    individual assignment is deleted from the state. The pod-level resource
+    allocation persists to maintain alignment for any remaining containers.
+    Resources exclusively allocated to a container within a pod are not returned
+    to the pod's shared pool upon that container's termination; they remain
+    reserved for the pod until it is fully decommissioned. Only when the last
+    container of the pod is removed are the pod's resources released back to the
+    node's general pool and the aggregate pod-level entry is deleted from the
+    state.
 
 ### CPU Manager
 
@@ -993,21 +1115,59 @@ resource-specific responsibilities include:
 
 #### State Management and Container Removal
 
-The in-memory state and on-disk checkpoint file will be updated to be pod-aware.
-For the `pod` scope, the state will now store the total managed resource set for
-the pod and the individual assignments for each container (either an exclusive
-slice or the `podSharedPool`).
+The in-memory state and on-disk checkpoint file will be updated to facilitate
+the transition from a container-only model to a pod-aware model. This is
+achieved by introducing a new top-level field in the checkpoint file:
+`PodCPUAssignments`. This map uses pod UIDs as keys and the new `PodEntry`
+struct as values.
 
-The implementation must also consider the potential need to enhance the state
+The `PodEntry` struct is explicitly designed as an extensible container for all
+state information associated with a pod-level resource allocation. While its
+initial implementation only encapsulates the overall `CPUSet` assigned to the
+pod (`CPUSet cpuset.CPUSet`), using a struct instead of a raw type is a
+strategic choice for future-proofing. It allows for the seamless addition of new
+fields—such as the original `TopologyHint` used for alignment, the original
+resource request, or other metadata—without requiring breaking changes to the
+state file schema or complex migration logic for existing checkpoints.
+
+The state management logic is designed to support upgrade state compatibility,
+as detailed in the
+[Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+section. This ensures that the Kubelet can transparently migrate from
+container-only checkpoints to the new pod-level aware format.
+
+```go
+// PodCPUAssignments contains pod-level CPU assignments.
+type PodCPUAssignments map[string]PodEntry
+
+// PodEntry represents pod-level CPU assignments for a pod
+type PodEntry struct {
+    CPUSet cpuset.CPUSet `json:"cpuSet,omitempty"`
+}
+```
+
+The implementation also considers the potential need to enhance the state
 representation to support features like the correct handling of CPU quotas, as
-described in the "Interaction with CPU Quota Management" section. Any changes to
-the on-disk state format will require a carefully designed migration and
-rollback strategy.
+described in the "Interaction with CPU Quota Management" section.
 
-The `RemoveContainer` function will also be updated. When a container with an
-exclusive slice is removed, its resources will be returned to the pod's shared
-pool. The pod's entire managed resource set will only be released back to the
-node's shared pool when the last container of that pod is removed.
+When a container is removed, the `RemoveContainer` function first deletes the
+container-level assignment. For pods using the `pod` scope, the manager then
+checks if any containers from that pod remain in the state. Only when the last
+container is removed does the manager release the pod's aggregate `CPUSet` back
+to the node's default pool and delete the entry from `PodCPUAssignments`. This
+ensures that the NUMA-aligned pool remains reserved for the pod as long as it is
+running.
+
+##### Compatibility with Generalized V4 State
+
+To address forward compatibility issues and unify previously fragmented
+checkpoint versions, the CPU Manager utilizes the generalized V4 state
+checkpoint format (introduced in v1.37).
+
+The V4 checkpoint structure natively supports pod-level resource manager
+properties (specifically `podEntries` containing `PodCPUAssignments`). For the
+GA milestone of this feature, the pod-level resource manager support will be
+formally tied to and dependent on the generalized V4 checkpoint format.
 
 #### Interaction with CPU Quota Management
 
@@ -1051,6 +1211,66 @@ measure; it is a mandatory requirement to ensure that:
     behavior.
 2.  Containers within the new `podSharedPool` have their quotas correctly
     enforced to maintain resource fairness between them.
+
+To achieve this, the CPU Manager performs a check to determine the
+`ResourceIsolationLevel` for each container. This logic evaluates the
+container's resource assignment and its eligibility for exclusivity to
+distinguish between the following levels of isolation. Note that
+`ResourceIsolationLevel` is an internal Kubelet concept used for resource
+accounting and cgroup configuration; it is not part of the user-facing
+Kubernetes API.
+
+-   **`ResourceIsolationContainer`**
+
+    -   **Description:** Resources are exclusive to the container.
+    -   **Quota Behavior:** The CFS quota is disabled to allow full, unthrottled
+        access to the exclusive CPUs.
+    -   **Applicability:** Applies to any container that receives exclusive
+        resources, whether in a standard pod or a pod using pod-level resources
+        (in both `pod` and `container` scopes).
+
+-   **`ResourceIsolationPod`**
+
+    -   **Description:** Resources are isolated from other pods but shared among
+        containers within the same NUMA-aligned pod budget (the
+        `podSharedPool`).
+    -   **Quota Behavior:** The CFS quota corresponds to what the pod-level
+        request/limit define. However, if the `podSharedPool` is smaller than
+        the pod-level definition (due to other `Guaranteed` containers consuming
+        part of the budget), the containers are effectively constrained by the
+        CPU set of the `podSharedPool`. The CFS quota remains enabled to ensure
+        fairness and prevent noisy neighbors within the pod's shared pool.
+    -   **Applicability:** Specific to `non-Guaranteed` containers in a
+        `Guaranteed` pod when `topology-manager-scope=pod`.
+
+-   **`ResourceIsolationHost`**
+
+    -   **Description:** Resources are drawn from the node's general shared
+        pool.
+    -   **Quota Behavior:** The CFS quota remains enabled as per standard
+        behavior.
+    -   **Applicability:** Applies to `non-Guaranteed` containers in a
+        `Guaranteed` pod when `topology-manager-scope=container`, or any
+        container in a `non-Guaranteed` pod.
+
+The `ContainerHasExclusiveCPUs` and `PodHasExclusiveCPUs` checks are updated to
+return `true` only when the calculated isolation level is
+`ResourceIsolationContainer`, preventing the unintended disabling of quotas for
+containers in the `podSharedPool`.
+
+```go
+// ResourceIsolationLevel defines the level of isolation for a resource.
+type ResourceIsolationLevel string
+
+const (
+    // ResourceIsolationHost implies the resource is shared with other containers on the host.
+    ResourceIsolationHost ResourceIsolationLevel = "host"
+    // ResourceIsolationPod implies the resource is isolated from other pods but shared within the pod.
+    ResourceIsolationPod ResourceIsolationLevel = "pod"
+    // ResourceIsolationContainer implies the resource is exclusive to the container.
+    ResourceIsolationContainer ResourceIsolationLevel = "container"
+)
+```
 
 ### Memory Manager
 
@@ -1101,15 +1321,260 @@ resource-specific responsibilities include:
 
 #### State Management and Container Removal
 
-The in-memory state and on-disk checkpoint file will be updated to be pod-aware.
-For the `pod` scope, the state will now store the total managed resource set for
-the pod and the individual assignments for each container (either an exclusive
-slice or the `podSharedPool`).
+The in-memory state and on-disk checkpoint file will be updated to facilitate
+the transition from a container-only model to a pod-aware model. This is
+achieved by introducing a new top-level field in the checkpoint file:
+`PodMemoryAssignments`. This map uses pod UIDs as keys and the `PodEntry` struct
+as values, mirroring the pattern established in the CPU Manager.
 
-The `RemoveContainer` function will also be updated. When a container with an
-exclusive slice is removed, its resources will be returned to the pod's shared
-pool. The pod's entire managed resource set will only be released back to the
-node's shared pool when the last container of that pod is removed.
+The `PodEntry` struct encapsulates the pod-level memory assignment, currently
+containing the overall `MemoryBlocks` slice assigned to the pod. As with the CPU
+Manager, using a struct here is a forward-looking design choice. It allows for
+the future inclusion of additional metadata—such as the original topology hint
+or request details—without disrupting the state file schema or requiring complex
+migrations.
+
+The state management logic is designed to support upgrade state compatibility,
+as detailed in the
+[Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+section. This ensures that the Kubelet can transparently migrate from
+container-only checkpoints to the new pod-level aware format.
+
+```go
+// PodMemoryAssignments stores memory assignments of pods
+type PodMemoryAssignments map[string]PodEntry
+
+// PodEntry represents pod-level memory assignments for a pod
+type PodEntry struct {
+    MemoryBlocks []Block `json:"memoryBlocks,omitempty"`
+}
+```
+
+When a container is removed, the `RemoveContainer` function first deletes the
+container-level assignment. For pods using the `pod` scope, the manager then
+checks if any containers from that pod remain in the state. Only when the last
+container is removed does the manager release the pod's aggregate `MemoryBlocks`
+back to the node's free pool and delete the entry from `PodMemoryAssignments`.
+This ensures that the NUMA-aligned memory remains reserved for the pod as long
+as it is running.
+
+##### Compatibility with Generalized V4 State
+
+Following the CPU Manager's adoption of the generalized V4 state checkpoint
+format, the Memory Manager checkpoint format is planned to be updated similarly
+in a future release.
+
+For the GA milestone of this feature, the Memory Manager's pod-level resource
+manager support (specifically `PodMemoryAssignments`) will be formally tied to
+and dependent on the Memory Manager adopting the same generalized V4 checkpoint
+format structure.
+
+### PodResources API
+
+To support container resource monitoring tools and topology-aware scheduling
+plugins, the `PodResourcesLister` service (`List` and `Get` gRPC endpoints)
+natively reflects pod-level exclusive allocations by introducing new fields
+directly at the pod level:
+
+-   **Pod-Level Fields:** The `PodResources` message is extended to include the
+    following fields, which are populated when the `PodLevelResourceManagers`
+    feature gate is enabled:
+    -   `cpu_ids`: The list of exclusive CPUs allocated to the pod.
+    -   `memory`: The list of exclusive NUMA-aligned memory blocks allocated to
+        the pod.
+-   **Container-Level Filtering:** To prevent duplication and ambiguity,
+    container-level resources under `ContainerResources` are reported
+    selectively:
+    -   If a container is allocated exclusive resources individually (e.g., a
+        Guaranteed container with exclusive CPU/memory), its allocated CPU and
+        memory are reported in the container-level `cpu_ids` and `memory`
+        fields.
+    -   If a container shares resources within the pod's budget (running in the
+        pod's shared pool or the node's shared pool), the container-level
+        `cpu_ids` and `memory` fields are returned empty. Instead, these
+        allocations are surfaced at the pod level in the new `PodResources`
+        fields.
+
+**Interaction of Pod-Level and Container-Level Resources:** If exclusive
+resources allocated at the pod level are subsequently assigned exclusively to a
+specific container within that pod, those resources are represented **both** at
+the pod level (in `PodResources.cpu_ids` and `PodResources.memory`) and at the
+container level (in `ContainerResources.cpu_ids` and
+`ContainerResources.memory`).
+
+##### Protobuf API Updates
+
+```protobuf
+message PodResources {
+    string name = 1;
+    string namespace = 2;
+    repeated ContainerResources containers = 3;
+    repeated int64 cpu_ids = 4;
+    repeated ContainerMemory memory = 5;
+}
+```
+
+##### Illustrative output
+
+**Scenario 1: Pod-level exclusive resources with a mix of exclusive and pod
+shared pool containers (under `pod` topology manager scope)**
+
+In this scenario:
+
+*   The Topology Manager's scope is set to `pod`.
+*   The pod has pod-level resources defined.
+*   Container `exclusive-container` is allocated exclusive resources from the
+    pod shared pool (surfaced both at the pod level and at the container level).
+*   Container `pod-shared-pool-container` runs in the pod shared pool, so its
+    container-level resource slices are reported empty.
+
+```json
+{
+  "pod_resources": [
+    {
+      "name": "pod",
+      "namespace": "default",
+      "cpu_ids": [12, 23, 30, 31, 32],
+      "memory": [
+        {
+          "memory_type": "memory",
+          "size": 2147483648,
+          "topology": {
+            "nodes": [
+              {
+                "ID": 1
+              }
+            ]
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "exclusive-container",
+          "cpu_ids": [12, 23, 30],
+          "memory": [
+            {
+              "memory_type": "memory",
+              "size": 1073741824,
+              "topology": {
+                "nodes": [
+                  {
+                    "ID": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "pod-shared-pool-container",
+          "cpu_ids": [],
+          "memory": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Scenario 2: Pod-level exclusive resources where all containers share the pod
+shared pool (under `pod` topology manager scope)**
+
+In this scenario:
+
+*   The Topology Manager's scope is set to `pod`.
+*   The pod has pod-level resources defined.
+*   Both containers `pod-shared-pool-container-1` and
+    `pod-shared-pool-container-2` share the pod shared pool resources, so their
+    container-level resource slices are reported empty.
+
+```json
+{
+  "pod_resources": [
+    {
+      "name": "pod",
+      "namespace": "default",
+      "cpu_ids": [12, 23, 30, 31, 32],
+      "memory": [
+        {
+          "memory_type": "memory",
+          "size": 2147483648,
+          "topology": {
+            "nodes": [
+              {
+                "ID": 1
+              }
+            ]
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "pod-shared-pool-container-1",
+          "cpu_ids": [],
+          "memory": []
+        },
+        {
+          "name": "pod-shared-pool-container-2",
+          "cpu_ids": [],
+          "memory": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Scenario 3: Container-level exclusive resources (under `container` topology
+manager scope)**
+
+In this scenario:
+
+*   The Topology Manager's scope is set to `container`.
+*   The pod has pod-level resources defined, but no pod-level resources are
+    allocated exclusively.
+*   The pod-level `cpu_ids` and `memory` fields are returned empty.
+*   Container `exclusive-container` is allocated exclusive resources from the
+    node's allocatable resources, which are reported at the container level.
+*   Container `node-shared-pool-container` runs in the node's shared pool, so
+    its container-level resource slices are reported empty.
+
+```json
+{
+  "pod_resources": [
+    {
+      "name": "pod",
+      "namespace": "default",
+      "cpu_ids": [],
+      "memory": [],
+      "containers": [
+        {
+          "name": "exclusive-container",
+          "cpu_ids": [12, 23, 30],
+          "memory": [
+            {
+              "memory_type": "memory",
+              "size": 1073741824,
+              "topology": {
+                "nodes": [
+                  {
+                    "ID": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "node-shared-pool-container",
+          "cpu_ids": [],
+          "memory": []
+        }
+      ]
+    }
+  ]
+}
+```
 
 ### Future Enhancements and Long-Term Vision
 
@@ -1164,18 +1629,30 @@ necessary to implement this enhancement.
 -   `k8s.io/kubernetes/pkg/kubelet/cm/memorymanager`: `20250929` - `81.2%`
 -   `k8s.io/kubernetes/pkg/kubelet/allocation/state`: `20250929` - `48.8%`
 
-The following files will have test coverage added or updated: -
-`pkg/kubelet/cm/topologymanager/scope_pod_test.go`: - Add tests for pod scope
-with pod-level resources. -
-`pkg/kubelet/cm/topologymanager/scope_container_test.go`: - Add tests for
-container scope with pod-level resources. -
-`pkg/kubelet/cm/cpumanager/policy_static_test.go`: - Add extensive tests for the
-new partitioning logic in the `Allocate` function and the updated
-`podGuaranteedCPUs` function. -
-`pkg/kubelet/cm/memorymanager/policy_static_test.go`: - Add extensive tests for
-the new partitioning logic and the updated `getPodRequestedResources`
-function. - `pkg/kubelet/allocation/state/state_mem_test.go`: - Add tests for
-the updated `GetContainerResources` logic.
+The following files will have test coverage added or updated:
+
+-   `pkg/kubelet/cm/topologymanager/scope_pod_test.go`:
+    -   Add tests for pod scope with pod-level resources.
+-   `pkg/kubelet/cm/topologymanager/scope_container_test.go`:
+    -   Add tests for container scope with pod-level resources.
+-   `pkg/kubelet/cm/cpumanager/policy_static_test.go`:
+    -   Add extensive tests for the new partitioning logic in the `Allocate`
+        function and the updated `podGuaranteedCPUs` function.
+-   `pkg/kubelet/cm/memorymanager/policy_static_test.go`:
+    -   Add extensive tests for the new partitioning logic and the updated
+        `getPodRequestedResources` function.
+-   `pkg/kubelet/allocation/state/state_mem_test.go`:
+    -   Add tests for the updated `GetContainerResources` logic.
+
+Additionally, dedicated state restoration tests will be implemented in:
+
+-   `pkg/kubelet/cm/cpumanager/policy_static_restore_test.go`
+-   `pkg/kubelet/cm/memorymanager/policy_static_restore_test.go`
+
+These tests will validate that pod-level resource assignments
+(`PodCPUAssignments` and `PodMemoryAssignments`) will be correctly persisted to
+the checkpoint file and restored accurately after a Kubelet restart, ensuring
+alignment consistency across the pod lifecycle.
 
 ##### Integration tests
 
@@ -1192,6 +1669,7 @@ For Alpha, describe what tests will be added to ensure proper quality of the enh
 For Beta and GA, document that tests have been written,
 have been executed regularly, and have been stable.
 This can be done with:
+
 - permalinks to the GitHub source code
 - links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
 - a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
@@ -1211,6 +1689,32 @@ end-to-end behavior. These tests will:
     policies and policy options.
 -   Verify that resources are correctly aligned and allocated by inspecting the
     cgroup filesystem on the node (e.g., `CPU set.cpus`).
+
+Additional e2e tests will be implemented to validate the correctness of
+pod-level resource accounting and the lifecycle of aggregate resource
+allocations.
+
+-   **Pod-Level Accounting for Shared Containers:** These tests will create
+    multiple pods, each requesting a significant portion of the node's
+    allocatable resources (CPU or Memory) at the pod level, but containing
+    multiple `non-Guaranteed` containers. These tests verify that accounting is
+    correctly performed against the pod-level budget. If the system incorrectly
+    summed container-level resources (which are unset), the pods would be
+    rejected; instead, the tests will ensure both pods are admitted and run
+    concurrently based on their aggregate pod-level specifications.
+-   **Pod Shared Pool Resource Cleanup:** These tests will verify that resources
+    will be correctly released from the pod shared pool, even in cases where no
+    containers are explicitly linked to it at the time of removal. This
+    demonstrates that the container manager correctly identifies and cleans up
+    the pod-level aggregate allocation from the state when the pod's container
+    lifecycle ends.
+-   **Sequential Resource Recycle:** These tests will demonstrate that pod-level
+    resources will be correctly released and made available for subsequent
+    workloads. It will run two `Guaranteed` pods sequentially, each requesting a
+    large portion of the node's resources. The test will verify that the second
+    pod will be successfully allocated the same physical resources as the first
+    pod, proving that the managers correctly clean up and return the pod-level
+    bubble to the node's assignable pool once the pod terminates.
 
 ###### Specific Test Scenarios
 
@@ -1260,6 +1764,7 @@ something else. The KEP should keep this high-level with a focus on what
 signals will be looked at to determine graduation.
 
 Consider the following in developing the graduation criteria for this enhancement:
+
 - [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
 - [Feature gate][feature gate] lifecycle
 - [Deprecation policy][deprecation-policy]
@@ -1281,6 +1786,7 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 #### Alpha
 
 <!-- - Feature implemented behind a feature flag
+
 - Initial e2e tests completed and enabled -->
 
 -   Feature implemented behind the `PodLevelResourceManagers` feature gate,
@@ -1289,8 +1795,9 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 -   Support for `pod` and `container` Topology scopes with `static` CPU and
     Memory manager policies is implemented.
 
-<!--
 #### Beta
+
+<!--
 
 - Gather feedback from developers and surveys
 - Complete features A, B, C
@@ -1303,7 +1810,18 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - All known pre-release issues and gaps resolved
 
 **Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
+-->
 
+-   The `PodLevelResourceManagers` feature gate is enabled by default.
+-   The PodResources API is updated to reflect the pod-level exclusive resource
+    allocation for both CPU and memory resources, and associated e2e tests are
+    added to verify the correctness of reported resources.
+-   E2E tests for the new Kubelet metrics (introduced in Alpha) are added.
+-   Upgrade/downgrade testing is automated and verified to ensure that upgrading
+    from Alpha/Beta does not corrupt state files or disrupt running pods.
+-   Node e2e tests have been running consistently green on CI dashboards.
+
+<!--
 #### GA
 
 - N examples of real-world usage
@@ -1326,6 +1844,7 @@ in back-to-back releases.
 -->
 
 <!--
+
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
@@ -1340,6 +1859,7 @@ this is in the test plan.
 
 Consider the following in developing an upgrade/downgrade strategy for this
 enhancement:
+
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to maintain previous behavior?
 - What changes (in invocations, configurations, API use, etc.) is an existing
@@ -1446,10 +1966,16 @@ You can take a look at one potential example of such test in:
 https://github.com/kubernetes/kubernetes/pull/97058/files#diff-7826f7adbc1996a05ab52e3f5f02429e94b68ce6bce0dc534d1be636154fded3R246-R282
 -->
 
-Unit tests will be added to verify that the Kubelet's resource and topology
-managers correctly handle the feature gate being enabled or disabled.
-Specifically, tests will cover the conditional logic in the `Admit` and
-`Allocate` functions.
+Yes. Extensive unit tests have been implemented covering both feature states:
+
+-   **CPU & Memory Manager Policies:** Policy tests (e.g.,
+    `policy_static_test.go`) exercise the allocation, hint generation, and
+    admission flows under multiple combinations of feature gates (with
+    `PodLevelResourceManagers` enabled or disabled) to verify that conditional
+    logic behaves correctly.
+-   **State Checkpoints:** State checkpoint tests verify that checkpoint
+    restoration and state migration operate correctly depending on whether the
+    feature gate is enabled or disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1460,34 +1986,40 @@ This section must be completed when targeting beta to a release.
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 A rollout or rollback does not impact already running workloads, as their cgroup
-settings are already configures. The primary risk involves the Kubelet restart
+settings are already configured. The primary risk involves the Kubelet restart
 required for the change and the compatibility of the on-disk state files (e.g.,
-`/var/lib/kubelet/cpu_manager_state`), which affects new or restarting pods, as
-they will be subject to the new (or old) admission logic and could fail to come
-back up if an issue is present.
+`/var/lib/kubelet/cpu_manager_state` and
+`/var/lib/kubelet/memory_manager_state`), which affects new or restarting pods,
+as they will be subject to the new (or old) admission logic and could fail to
+come back up if an issue is present.
 
 *   **Rollout (Enabling the Feature):** This is a low-risk operation.
 
     *   **Behavior:** Before this feature, pods with `pod.spec.resources` were
         ignored by the resource managers. After enabling the feature, new or
         restarted pods will be correctly aligned, and new entries will be added
-        to the state file.
-    *   **Mitigation (Forward Compatibility):** The new Kubelet version will be
-        implemented to transparently read the old state file format. When it
-        admits a new pod using this feature, it will write the new pod-aware
-        entries, ensuring a seamless upgrade path without manual intervention.
+        to the state files.
+    *   **Mitigation (Backward Compatibility):** The Kubelet transparently loads
+        older state checkpoint formats (V2/V3 for CPU Manager, V1 for Memory
+        Manager) and migrates them to the new versions (V4 for CPU Manager, V2
+        for Memory Manager), ensuring a seamless upgrade path.
 
-*   **Rollback (Disabling the Feature):** This is a higher-risk operation.
+*   **Rollback (Disabling the Feature):**
 
-    *   **Failure Mode:** The main risk is state file incompatibility. An older
-        Kubelet may fail to parse the new state file format, leading to a crash
-        loop or preventing any Guaranteed pods from being admitted on the node.
-    *   **Mitigation (Backward Compatibility):** The new state file will be
-        structured to maintain backward compatibility. New pod-level fields will
-        be added in a way that allows older Kubelet versions to safely ignore
-        them. However, to completely eliminate any risk of parsing errors, the
-        safest and recommended rollback procedure involves draining the node and
-        deleting the state file.
+    *   **CPU Manager (Safe Rollback):** The CPU Manager utilizes a generalized
+        V4 checkpoint format that embeds the legacy V2 checkpoint data inline
+        and implements a dual-checksum format. When the feature gate is disabled
+        or the Kubelet is downgraded to a version only supporting V2, the
+        Kubelet can parse the embedded V2 payload and verify its checksum,
+        safely ignoring the newer V4 fields.
+    *   **Memory Manager (Higher Risk):** The Memory Manager does not support
+        forward compatibility. Disabling the feature gate (or downgrading to a
+        V1-only Kubelet) will cause the Kubelet to fail checksum validation of
+        the V2 state file, resulting in a startup failure.
+    *   **Mitigation (Memory Manager Rollback):** The only safe rollback path
+        for the Memory Manager involves draining the node, deleting the Memory
+        Manager state file (e.g., `/var/lib/kubelet/memory_manager_state`), and
+        restarting the Kubelet.
 
 **Recommended Operator Process for Rollout and Rollback**
 
@@ -1573,12 +2105,23 @@ would also warrant investigation and potential rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Manual testing of the upgrade/downgrade path will be performed as part of the
-alpha development cycle. As the feature matures towards Beta, dedicated e2e
-tests will be implemented to automate this validation. These tests will cover
-the full `upgrade->downgrade->upgrade` path, verifying the Kubelet's ability to
-handle state file transitions gracefully and manage pod lifecycles correctly
-during version changes.
+Upgrade and rollback behavior have been tested using unit tests covering the
+checkpoint migration paths:
+
+-   **CPU Manager Checkpoint:** Unit tests verify marshalling/unmarshalling of
+    V2, V3, and V4 checkpoint formats, checksum integrity verification, and
+    correct State restoration (both when `PodLevelResourceManagers` is enabled
+    or disabled).
+-   **Memory Manager Checkpoint:** Unit tests verify forward compatibility of
+    V1/V2 checkpoints, migration flow from V1 to V2, and verify that the Kubelet
+    correctly rejects corrupted checkpoints under rollback scenarios.
+
+While checkpoint migration logic is covered by unit tests, E2E upgrade,
+downgrade, and rollback verification is currently verified manually. To automate
+this validation in CI/CD pipelines, a dedicated version skew test workflow/lane
+for the Kubelet's built-in resource managers will be created. This workflow will
+verify the upgrade/downgrade path, ensuring that Kubelet version skew
+transitions do not corrupt state files or disrupt running workloads.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1603,7 +2146,7 @@ pod-level resource management capabilities on a given node:
 -   `resource_manager_allocations_total{source="pod"}`: A non-zero value for
     this metric series indicates that the resource managers have successfully
     performed at least one exclusive allocation using the new pod-level logic.
--   `resource_manager_container_assignments{assignment_type="shared_from_pod"}`:
+-   `resource_manager_container_assignments_total{assignment_type="shared_from_pod"}`:
     A non-zero value for this metric series indicates that one or more
     containers are currently running in a pod-level shared pool.
 
@@ -1645,7 +2188,7 @@ Recall that end users cannot usually observe component logs or access metrics.
             `resource_manager_allocations_total{source="pod"}` confirms that the
             new pod-scope logic is successfully performing exclusive
             allocations.
-        -   The `resource_manager_container_assignments` gauge provides a
+        -   The `resource_manager_container_assignments_total` gauge provides a
             real-time view of how many containers are running in each state
             (`exclusive_from_pod`, `shared_from_pod`, etc.).
         -   An increase in
@@ -1666,6 +2209,7 @@ for a feature.
 
 It's impossible to provide comprehensive guidance, but at the very
 high level (needs more precise definitions) those may be things like:
+
   - per-day percentage of API calls finishing with 5XX errors <= 1%
   - 99% percentile over day of absolute value from (job creation time minus expected
     job creation time) for cron job <= 10%
@@ -1690,27 +2234,25 @@ pod-level resource management.
 
     -   Metric name: `resource_manager_allocations_total`
         -   Type: `CounterVec`
-        -   Labels: `resource_name` (e.g., "cpu", "memory"), `source` (e.g.,
-            "pod", "node")
+        -   Labels: `resource_name` ("cpu", "memory"), `source` ("pod", "node")
         -   Description: Counts the total number of exclusive resource
             allocations performed by a manager. The `source` label distinguishes
             between allocations drawn from the node-level pool (`node`) versus a
             pre-allocated pod-level pool (`pod`).
     -   Metric name: `resource_manager_allocation_errors_total`
         -   Type: `CounterVec`
-        -   Labels: `resource_name` (e.g., "cpu", "memory"), `source` (e.g.,
-            "pod", "node")
+        -   Labels: `resource_name` ("cpu", "memory"), `source` ("pod", "node")
         -   Description: Counts errors encountered during exclusive resource
             allocation, distinguished by the intended allocation source.
-    -   Metric name: `resource_manager_container_assignments`
-        -   Type: `GaugeVec`
-        -   Labels: `resource_name` (e.g., "cpu", "memory"), `assignment_type`
-            (e.g., "exclusive_from_node", "exclusive_from_pod",
-            "shared_from_pod")
-        -   Description: Tracks the current number of containers with a specific
-            type of resource assignment. This provides visibility into how many
-            containers are running with exclusive resources (from the node or
-            pod pool) versus the pod-level shared pool.
+    -   Metric name: `resource_manager_container_assignments_total`
+        -   Type: `CounterVec`
+        -   Labels: `resource_name` ("cpu", "memory"), `assignment_type`
+            ("node_exclusive", "pod_exclusive", "pod_shared")
+        -   Description: Counts the total number of containers that will be
+            granted a specific type of resource assignment. This provides
+            visibility into how many containers are running with exclusive
+            resources (from the node or pod pool) versus the pod-level shared
+            pool.
 
 -   [X] Already existing Metrics
 
@@ -1718,6 +2260,8 @@ pod-level resource management.
         -   Aggregation method: `sum()`
     -   Metric name: `topology_manager_admission_errors_total`
         -   Aggregation method: `sum()`
+    -   Metric name: `topology_manager_admission_duration_ms`
+        -   Aggregation method: `histogram_quantile`
     -   Metric name: `cpu_manager_pinning_errors_total`
         -   Aggregation method: `sum()`
     -   Metric name: `memory_manager_pinning_errors_total`
@@ -1826,6 +2370,7 @@ based on its local state.
 
 <!--
 For each of them, fill in the following information by copying the below template:
+
   - [Failure mode brief description]
     - Detection: How can it be detected via metrics? Stated another way:
       how can an operator troubleshoot without logging into a master or worker node?
@@ -1859,6 +2404,7 @@ Kubelet may be necessary in extreme cases.
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
+
 - the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
 - the `Proposal` section being merged, signaling agreement on a proposed design
 - the date implementation started
@@ -1867,7 +2413,16 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
--   **v1.35**: Target for initial alpha implementation.
+-   **v1.36**: Alpha implementation.
+    *   [Pod Level Resource Managers - Alpha #134768](https://github.com/kubernetes/kubernetes/pull/134768)
+        *   Submitted
+    *   [CPU & Memory managers forward compatibility - Alpha #137751](https://github.com/kubernetes/kubernetes/pull/137751)
+        *   Submitted
+-   **v1.37**: Beta implementation.
+    *   [Report pod-level exclusive resources in PodResources API #138738](https://github.com/kubernetes/kubernetes/pull/138738)
+        *   Pending
+    *   [Metrics stability level & skip allocation for zero-memory containers #138770](https://github.com/kubernetes/kubernetes/pull/138770)
+        *   Pending
 
 ## Drawbacks
 

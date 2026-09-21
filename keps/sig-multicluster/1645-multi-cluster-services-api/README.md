@@ -629,6 +629,11 @@ type ServicePort struct {
 
 // ServiceImportStatus describes derived state of an imported service.
 type ServiceImportStatus struct {
+  // EndpointSliceObjects indicates whether imported EndpointSlice objects are
+  // present for this ServiceImport.
+  // +kubebuilder:validation:Enum=Present;Absent
+  // +optional
+  EndpointSliceObjects EndpointSliceObjectsStatus `json:"endpointSliceObjects,omitempty"`
   // +optional
   // +patchStrategy=merge
   // +patchMergeKey=cluster
@@ -647,6 +652,20 @@ type ServiceImportStatus struct {
 type ClusterStatus struct {
  Cluster string `json:"cluster"`
 }
+
+// EndpointSliceObjectsStatus indicates whether imported EndpointSlice objects
+// are present for a ServiceImport.
+type EndpointSliceObjectsStatus string
+
+const (
+  // EndpointSliceObjectsPresent indicates that imported EndpointSlice objects
+  // are present for a ServiceImport.
+  EndpointSliceObjectsPresent EndpointSliceObjectsStatus = "Present"
+
+  // EndpointSliceObjectsAbsent indicates that imported EndpointSlice objects are
+  // absent for a ServiceImport.
+  EndpointSliceObjectsAbsent EndpointSliceObjectsStatus = "Absent"
+)
 ```
 
 ```yaml
@@ -667,6 +686,7 @@ spec:
     port: 80
   sessionAffinity: None
 status:
+  endpointSliceObjects: Present
   conditions:
   - type: Ready
     reason: Ready
@@ -901,6 +921,13 @@ conform to the specification in the following section.
 
 _Optional to create, but specification defined if present._
 
+Implementations must publish whether imported `EndpointSlice` objects are
+present through `ServiceImport.Status.EndpointSliceObjects`. API consumers
+that would normally always use `EndpointSlice` objects (such as Gateway API
+implementations) can use this to decide whether to consume `EndpointSlice`
+objects directly, degrade to `ServiceImport` IPs if they support doing so,
+or fail if `EndpointSlice` objects are required.
+
 If an implementation does create `discovery.k8s.io/v1 EndpointSlice`s, they must
 conform to the following structure. This structure was originally required as
 part of this specification in alpha, and are the structure on which other
@@ -951,6 +978,7 @@ spec:
     port: 80
   sessionAffinity: None
 status:
+  endpointSliceObjects: Present
   clusters:
   - cluster: us-west2-a-my-cluster
 ---
@@ -1183,12 +1211,9 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-Kube-proxy and must be updated to a supported version before MCS services may be
-used. To take advantage of MCS DNS, the DNS provider must be upgraded to a
-version that implements the MCS spec. Kube-proxy MCS support will be guarded by
-a `MultiClusterServices` feature gate. When enabled, kube-proxy will watch the
-`serviceimports.multicluster.k8s.io` CRD. MCS support will be dynamically
-enabled and disabled as the CRD is created and deleted.
+The MCS API is defined as a set of CRDs (`ServiceExport` and `ServiceImport`) that are installed and managed independently of core Kubernetes components. As such, the upgrade and downgrade strategy is the responsibility of each MCS implementation. The two key components of the implementations are:
+- mcs-controller component: responsible for watching `ServiceExport` resources and managing the lifecycle of `ServiceImport` objects and their associated `EndpointSlice` resources.
+- MCS DNS component: responsible for serving the `<svc>.<ns>.svc.clusterset.local` domain, conforming to the multicluster DNS specification as defined in this KEP's [specification.md](specification.md).
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
 this is in the test plan.
@@ -1203,9 +1228,8 @@ enhancement:
 
 ### Version Skew Strategy
 
-Kube-proxy and DNS must be upgraded before new MCS API versions may be used.
-Backwards compatibility will be maintained in accordance with the [deprecation
-policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+- mcs-controller component <-> MCS CRD versions: The mcs-controller component must support the installed version of the `ServiceExport` and `ServiceImport` CRDs. Backwards compatibility will be maintained in accordance with the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+- MCS DNS component <-> MCS DNS spec: The MCS DNS component must conform to the multicluster DNS specification as defined in this KEP's [specification.md](specification.md).
 <!--
 If applicable, how will the component handle version skew with other
 components? What are the guarantees? Make sure this is in the test plan.

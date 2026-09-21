@@ -6,7 +6,7 @@ owning-sig: sig-storage
 participating-sigs:
 status: implemented
 creation-date: 2021-05-05
-last-updated: 2024-01-09
+last-updated: 2026-02-05
 reviewers:
   - "@xing-yang"
   - "@jsafrane"
@@ -18,7 +18,7 @@ replaces:
 
 stage: stable
 
-latest-milestone: "v1.33"
+latest-milestone: "v1.36"
 
 milestone:
   alpha: "v1.23"

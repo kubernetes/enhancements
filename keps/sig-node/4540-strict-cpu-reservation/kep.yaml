@@ -11,7 +11,7 @@ reviewers:
   - "@ffromani"
   - "@swatisehgal"                                                                      
 approvers:
-  - "@ffromani"
+  - "@ffromani" # sig-node-assigned-approver
 see-also: []
 replaces: []
 
@@ -39,7 +39,7 @@ feature-gates:
   - name: "CPUManagerPolicyBetaOptions"
     components:
       - kubelet
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:

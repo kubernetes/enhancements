@@ -1,0 +1,7 @@
+title: Beta Missing
+kep-number: 6
+owning-sig: sig-node
+stage: beta
+approvers:
+  - "@someoneelse"
+latest-milestone: "v1.37"

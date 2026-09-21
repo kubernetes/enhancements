@@ -3,7 +3,7 @@ kep-number: 4210
 authors:
   - "@haircommander"
 owning-sig: sig-node
-status: implementable
+status: implemented
 creation-date: 2023-09-14
 reviewers:
   - "@SergeyKanzhelev"
@@ -31,7 +31,7 @@ milestone:
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: ImageGCMaximumAge
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:

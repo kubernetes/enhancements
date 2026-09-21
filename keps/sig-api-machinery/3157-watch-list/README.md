@@ -104,6 +104,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Beta2](#beta2)
     - [Beta3](#beta3)
     - [Beta4](#beta4)
+    - [Beta5](#beta5)
+      - [Backward compatibility](#backward-compatibility)
+      - [Scale test results (5000 nodes, ~165K pods)](#scale-test-results-5000-nodes-165k-pods)
     - [GA](#ga)
     - [Post-GA](#post-ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -794,6 +797,42 @@ The discussion happened in [this document] and resulted in the following update 
   Enabling it will turn on the feature for all clients.
 
 [this document]: https://docs.google.com/document/d/1x30DjXSSF5krpyoTCwManJg6vphpnGI37xfCRaiHAbs
+
+#### Beta5
+- Enable gzip compression for the WatchList request. Gated behind a new server-side
+  feature gate `WatchListCompression` (Beta, enabled by default).
+  Regular watch requests are not affected.
+
+##### Backward compatibility
+
+No client-side changes are required. Go's `http.Transport` automatically sends
+`Accept-Encoding: gzip` when `DisableCompression` is `false` (the default in
+`rest.Config`), the same mechanism already used for LIST compression. Older
+clients will transparently receive compressed WatchList responses. 
+The `pull-kubernetes-gce-master-scale-performance-5000` test with the
+[POC](https://github.com/kubernetes/kubernetes/pull/138327) validates this: all
+in-cluster clients (kubelet, kube-controller-manager, scheduler) used the standard
+client-go transport with no modifications.
+
+##### Scale test results (5000 nodes, ~165K pods)
+
+We ran the `pull-kubernetes-gce-master-scale-performance-5000` test with WatchList
+compression enabled and compared against a [baseline][baseline-json]
+`ci-kubernetes-e2e-gce-scale-performance-5000` run without it.
+The WatchList P99 latency for pods dropped from 60s (capped at the histogram bucket
+ceiling, actual latency was much worse) to ~30s:
+
+|  | [Baseline][baseline-json] | [With compression][compression-json] |
+|--|----------|-----------------|
+| Count | 486 | 547 |
+| P50 | 1,950ms | 969ms |
+| P90 | 15,208ms | 17,150ms |
+| P99 | **60,000ms** (capped) | **29,673ms** |
+
+[baseline-json]: https://storage.googleapis.com/kubernetes-ci-logs/logs/ci-kubernetes-e2e-gce-scale-performance-5000/2056057601027739648/artifacts/APIResponsivenessPrometheus_simple_load_2026-05-17T19:11:35Z.json
+[compression-json]: https://storage.googleapis.com/kubernetes-ci-logs/pr-logs/pull/138327/pull-kubernetes-gce-master-scale-performance-5000/2055240498586587136/artifacts/APIResponsivenessPrometheus_simple_load_2026-05-15T13:31:38Z.json
+
+For more details see https://github.com/kubernetes/kubernetes/issues/138670.
 
 #### GA
 - No user issues reported

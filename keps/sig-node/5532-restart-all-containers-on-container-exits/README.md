@@ -38,7 +38,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Ephemeral Containers](#ephemeral-containers)
     - [Probes](#probes)
   - [Pod Status](#pod-status)
-    - [[New] Pod condition PodRestartInPlace](#new-pod-condition-podrestartinplace)
+    - [[New] Pod condition AllContainersRestarting](#new-pod-condition-allcontainersrestarting)
     - [Existing Pod Conditions](#existing-pod-conditions)
     - [Pod Phase](#pod-phase)
   - [Kubelet Implementation](#kubelet-implementation)
@@ -84,7 +84,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
   - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [x] (R) Graduation criteria is in place
   - [x] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -241,11 +241,11 @@ If the pod restart policy is "Never", and the init container fails after the `Re
 ### Restart Phases
 The pod restart can be split into two phases.
 
-The first phase is pod **termination**. The kubelet compares the containerStatuses with restart rules and decides to terminate the pod. The kubelet sets the PodRestartInPlace=True pod condition to the API. The SyncLoop will try to 1) kill all running containers, 2) remove all init and regular containers from the container runtime. The sandbox is preserved to keep the pod IP, UID, devices, and network namespace. The API endpoint slice is also kept. 
+The first phase is pod **termination**. The kubelet compares the containerStatuses with restart rules and decides to terminate the pod. The kubelet sets the AllContainersRestarting=True pod condition to the API. The SyncLoop will try to 1) kill all running containers, 2) remove all init and regular containers from the container runtime. The sandbox is preserved to keep the pod IP, UID, devices, and network namespace. The API endpoint slice is also kept. 
 
 Steps to terminate the pod includes:
 
-1) Add pod condition PodRestartInPlace
+1) Add pod condition AllContainersRestarting
 1) Kill all running containers
     - No ordering during the kill
     - Best-effort: prestop hooks
@@ -257,7 +257,7 @@ Steps to terminate the pod includes:
 1) No changes to probes
 1) No changes to other pod resources, such as sandbox, IP, network namespcae, devices, volumes, etc.
 
-The second phase is pod **startup**. With all containers terminated and removed, the kubelet unset the PodRestartInPlace pod condition to the API. Because kubelet sees no containers from the container runtime, it can proceed with the **normal Pod startup** actions in the SyncLoop. This will follow the regular pod startup flow, except the sandbox already exists. 
+The second phase is pod **startup**. With all containers terminated and removed, the kubelet unset the AllContainersRestarting pod condition to the API. Because kubelet sees no containers from the container runtime, it can proceed with the **normal Pod startup** actions in the SyncLoop. This will follow the regular pod startup flow, except the sandbox already exists. 
 
 This includes the following steps:
 
@@ -336,12 +336,12 @@ Startup probes are expected to fail during the restart. After the restart, Start
 
 ### Pod Status
 
-#### [New] Pod condition PodRestartInPlace
+#### [New] Pod condition AllContainersRestarting
 
 To make the restart process observable, a new pod condition will be added to the `Pod.status.conditions`.
 
 ```
-type: PodRestartInPlace
+type: AllContainersRestarting
 status: True / False
 reason: ContainerExited
 message: 'Container my-container exited with code 88, triggering pod restart'
@@ -366,11 +366,11 @@ The pod pod should be in the `Pending` phase throughout the restart. This means 
 
 ### Kubelet Implementation
 
-The in-place pod restart will be implemented in the kubelet as a state machine based on the PodCondition mentioned above. If the PodRestartInPlace condition is true, then the pod is in the Termination Phase. Otherwise, it is considered the Startup Phase (which is the same as pod regular startup).
+The in-place pod restart will be implemented in the kubelet as a state machine based on the PodCondition mentioned above. If the AllContainersRestarting condition is true, then the pod is in the Termination Phase. Otherwise, it is considered the Startup Phase (which is the same as pod regular startup).
 
-When a `RestartAllContainers` rule is triggered, the kubelet will set the PodCondition `PodRestartInPlace=True`. In this state, the kubelet's only goal is to kill and remove all of the pod's containers. This process is similar to a normal pod shutdown but skips tearing down the sandbox. The container statuses from the previous run are preserved for history.
+When a `RestartAllContainers` rule is triggered, the kubelet will set the PodCondition `AllContainersRestarting=True`. In this state, the kubelet's only goal is to kill and remove all of the pod's containers. This process is similar to a normal pod shutdown but skips tearing down the sandbox. The container statuses from the previous run are preserved for history.
 
-Once the kubelet verifies that all containers are removed, it transitions to startup phase by setting the PodCondition `PodRestartInPlace=False`. In this state, the kubelet's goal is to start the pod from the beginning, preserving the existing sandbox. This is the same as a normal pod startup sequence. 
+Once the kubelet verifies that all containers are removed, it transitions to startup phase by setting the PodCondition `AllContainersRestarting=False`. In this state, the kubelet's goal is to start the pod from the beginning, preserving the existing sandbox. This is the same as a normal pod startup sequence. 
 
 #### Kubelet Restarts
 
@@ -383,7 +383,7 @@ If kubelet restarted in the Startup Phase, it proceeds normally as today by sync
 
 On node restarts, kubelet and container runtime loses all containers. In the first pass, kubelet would sync the pods assigned to it. 
 
-- If the pod was previously restarted in place, and was in the **Termination Phase**, it would have the pod condition `PodRestartInPlace=True`. Since kubelet sees all containers do not exist, it will set the pod condition `PodRestartInPlace=False` and proceed with normal pod start up sequence.
+- If the pod was previously restarted in place, and was in the **Termination Phase**, it would have the pod condition `AllContainersRestarting=True`. Since kubelet sees all containers do not exist, it will set the pod condition `AllContainersRestarting=False` and proceed with normal pod start up sequence.
 
 - If the pod was previously restarted in place, and was in the **Startup Phase**, then kubelet will proceed as if the pod just got created.
 
@@ -399,11 +399,18 @@ N/A
 
 ##### Unit tests
 
+- `k8s.io/api/pod`
+  - TestValidateContainerRestartRulesOption
 - `k8s.io/apis/core`
 - `k8s.io/apis/core/v1/validations`
+  - TestValidatePodUpdate
+  - TestValidateContainerRestartPolicy
 - `k8s.io/features`
 - `k8s.io/kubelet`
 - `k8s.io/kubelet/container`
+- `k8s.io/kubelet/kuberuntime`
+- `k8s.io/kubelet/prober`
+- `k8s.io/kubelet/status`
 
 ##### Integration tests
 
@@ -414,7 +421,7 @@ Unit and E2E tests are expected to provide sufficient coverage.
 -   Create a pod with a container that has a `restartPolicyRule` with the `RestartAllContainers` action. Verify that when the container (init, regular, or sidecar) exits with the specified code, the entire pod is restarted in-place (same UID, IP).
 -   Verify that init containers are re-executed after a pod restart is triggered.
 -   Verify that all regular and sidecar containers are restarted.
--   Verify that the `PodRestartInPlace` condition is added to the pod status during the restart and removed after it completes.
+-   Verify that the `AllContainersRestarting` condition is added to the pod status during the restart and removed after it completes.
 
 List of other restart sequences that need to be tested:
 
@@ -423,6 +430,7 @@ List of other restart sequences that need to be tested:
 -   Init container failing after RestartAllContainers, restartPolicy=Always, then init container eventually succeeds, the pod should be started.
 -   Sidecar failing before the regular container started and triggers RestartAllContainers, all containers should be restarted.
 
+RestartAllContainers action should work with other features, including Topology Manager and Resource Manager.
 
 ### Graduation Criteria
 
@@ -483,12 +491,10 @@ If the feature is re-enabled, kubelets will once again recognize and enforce the
 
 - Unit test for the API's validation with the feature enabled and disabled.
 - Unit test for the kubelet with the feature enabled and disabled.
-- Unit test for API on the new field for the Pod API. First enable
-the feature gate, create a Pod with a container including RestartAllContainers action,
-validation should pass and the Pod API should match the expected result.
-Second, disable the feature gate, validate the Pod API should still pass
-and it should match the expected result. Lastly, re-enable the feature
-gate, validate the Pod API should pass and it should match the expected result.
+- Unit test for API on the new field for the Pod API. 
+  - The new API field is immutable.
+  - The option to allow the new API will be true if either the feature is enabled,
+  or the API is already used in the existing pod.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -498,11 +504,26 @@ During a rollout, a cluster may have a mix of kubelets with the feature enabled 
 
 ###### What specific metrics should inform a rollback?
 
-Repeated restarts of containers or pods, especially if they are not progressing.
+If pods do not specify the new RestartAllContainers action, the upgrade should not be affected by this feature.
+
+If pods specified this action and are in a repeated crash loop backoff, especially if they are not progressing, 
+this is a sign for rollback.
+
+Optionally, if the metric `kube_pod_container_status_restarts_total` is enabled, a significant increase in the metric
+is also a sign for rollback.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-This will be tested manually before graduation to Beta.
+Yes, the upgrade->downgrade->upgrade path was tested manually to ensure that the `RestartAllContainers`
+action is correctly ignored when the feature gate is disabled and resumes working when re-enabled.
+
+Tested with a kind cluster with the feature gate enabled, created a pod with `RestartAllContainers` action.
+The validation passed, and all containers were restarted after the source container exit.
+
+Disabled the feature flag and restarted kubelet and kube-apiserver. The action is ignored, and the container
+did not restart.
+
+Enabled the feature flag and restarted kubelet and kube-apiserver. All containers are restarted again.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -519,90 +540,59 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-<!--
-Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-checking if there are objects with field X set) may be a last resort. Avoid
-logs or events for this purpose.
--->
+The feature is only enabled if the Pod API specifies the `RestartAllContainers` action,
+and the container exited with a matching exit code. Pod not specifying the action
+will not use this feature.
+
+Also, to verify a pod is restarted by this feature, the pod condition will have 
+`AllContainersRestarting=True` during the restart. After the restart, container status
+will show the last termination status as restarted by this action.
+
+Lastly, the restart count of all containers will be incremented during the action.
+This could be a supplementary evidence that the `RestartAllContainers` action was
+triggered if the pod condition and container statuses are unavailable.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-<!--
-For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
-for each individual pod.
-Pick one more of these and delete the rest.
-Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
-and operation of this feature.
-Recall that end users cannot usually observe component logs or access metrics.
--->
-
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [] Events
+  - Event Reason:
+- [x] API .status
+  - Condition name: `AllContainersRestarting`
+  - Other field: `reason` and `message` in `PodCondition`
+- [ ] Other (treat as last resort) API .spec
+  - Details: pod.containers.RestartPolicyRules with action=RestartAllContainers
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-<!--
-This is your opportunity to define what "normal" quality of service looks like
-for a feature.
-
-It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99.9% of /health requests per day finish with 200 code
-
-These goals will help you determine what you need to measure (SLIs) in the next
-question.
--->
+- There is no explicit cluster-wide SLO for this feature. Some best-effort experiment
+and measurement are listed below.
+- A reasonable time for restart all containers to succeed should be within the typical
+container restart latencies (accounting for exponential backoff) as if all containers are restarted sequentially.
+Each container has a default termination of 2s, a reasonable restart time (not including
+init container execution) per container is less than 5 seconds.
+- A simple 2-container pod could restart its first container within 5s from the source container exit in 99%.
+The restart duration could be longer if the pod contains more containers. This can be measured by the difference 
+between container exit events and container started events of the pod.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
-- [ ] Metrics
-  - Metric name:
-  - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Metrics
+  - Metric name: `kube_pod_container_status_restarts_total`
+  - Aggregation method: Sum over time, grouped by container and pod.
+  - Components exposing the metric: kube-state-metrics
+- [x] Other (treat as last resort)
+  - Details: ContainerStatuses API will also include the last termination state 
+  of the restarted containers, indicating that the container was restarted due to RestartAllContainers. 
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-<!--
-Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-implementation difficulties, etc.).
--->
+No.
 
 ### Dependencies
 
-<!--
-This section must be completed when targeting beta to a release.
--->
-
 ###### Does this feature depend on any specific services running in the cluster?
 
-<!--
-Think about both cluster-level services (e.g. metrics-server) as well
-as node-level agents (e.g. specific version of CRI). Focus on external or
-optional services that are needed. For example, if this feature depends on
-a cloud provider API, or upon an external software-defined storage or network
-control plane.
-
-For each of these, fill in the following—thinking about running existing user workloads
-and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
--->
+No. It depends only on the standard Kubernetes components (kube-apiserver, kubelet) and a CRI-compatible container runtime.
 
 ### Scalability
 
@@ -618,54 +608,24 @@ previous answers based on experience in the field.
 
 ###### Will enabling / using this feature result in any new API calls?
 
-<!--
-Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-Focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
--->
 
 No.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
-
 A new possible value "RestartAllContainers" for RestartRulesAction will be introduced.
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
 
 No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
 
-The size of the PodCondition API object will be increased for account for the new PodRestartInPlace status, example:
+The size of the PodCondition API object will be increased to account for the new AllContainersRestarting status, example:
 ```
-type: PodRestartInPlace
+type: AllContainersRestarting
 status: True / False
 reason: ContainerExited
 message: 'Container my-container exited with code 88, triggering pod restart'
@@ -677,42 +637,13 @@ message: 'Container my-container exited with code 88, triggering pod restart'
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-<!--
-Look at the [existing SLIs/SLOs].
-
-Think about adding additional work or introducing new steps in between
-(e.g. need to do X to start a container), etc. Please describe the details.
-
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
--->
-
 No.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
-<!--
-Things to keep in mind include: additional in-memory state, additional
-non-trivial computations, excessive access to disks (including increased log
-volume), significant amount of data sent and/or received over network, etc.
-This through this both in small and large cases, again with respect to the
-[supported limits].
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
--->
-
 No.
 
 ###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
-
-<!--
-Focus not just on happy cases, but primarily on more pathological cases
-(e.g. probes taking a minute instead of milliseconds, failed pods consuming resources, etc.).
-If any of the resources can be exhausted, how this is mitigated with the existing limits
-(e.g. pods per node) or new limits added by this KEP?
-
-Are there any tests that were run/should be run to understand performance characteristics better
-and validate the declared limits?
--->
 
 No.
 
@@ -731,22 +662,48 @@ details). For now, we leave it here.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+If the API server is unavailable, the kubelet will not be able to update the `AllContainersRestarting` condition. However, the kubelet will still be able to perform the in-place restart of the containers locally if the trigger conditions are met. Observability of the restart process will be delayed until the API server becomes available again.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+- **Kubelet lost contact with API server**:
+  - Detection: Kubelet runs in standalone mode or cannot connect to the API server.
+  - Mitigations: Not needed. RestartAllContainers should keep functioning without
+  the API server.
+  - Testing: Covered by e2e tests that runs kubelet in standalone mode.
+
+- **Kubelet restarted**:
+  - Detection: Kubelet log shows that kubelet is restarted.
+  - Mitigations: Not needed. RestartAllContainers should keep functioning even
+  if the kubelet was restarted during the container restarts.
+  - Testing: Covered by e2e tests that interrupts kubelet during RestartAllContainer actions.
+
+- **Infinite Restart Loop**:
+    - Detection: The pod status shows a high number of container restartCount, and/or the pod status frequently transitioned into the `AllContainersRestarting` condition.
+    - Mitigations: Kubelet's exponential backoff mechanism for container restarts 
+    will apply to RestartAllContainers actions. Additionally, operators can delete the pod.
+    - Diagnostics: Kubelet logs will indicate the reason for which container exited
+    and triggered the `RestartAllContainers` action. Check container logs
+    and pod spec to understand why the container kept exiting.
+    - Testing: Covered by e2e tests that the RestartAllContainers should only be triggered once if
+    the workload and PodSpec are configured properly.
+
+- **Stuck in Termination Phase**:
+    - Detection: `AllContainersRestarting` condition is `True` for an extended period
+    (beyond the expected termination time of containers).
+    - Mitigations: Operators can delete the pod.
+    - Diagnostics:  Kubelet logs will indicate the reason for which container exited
+    and triggered the `RestartAllContainers` action. Container runtime logs
+    will indicate why container restart failed.
+    - Testing: Not covered. This usually indicates an issue with the container runtime.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+1. Review container logs to understand why container exited.
+2. Review kubelet logs for errors related to container termination or startup.
+3. Verify the container runtime's health and responsiveness.
+4. Ensure that kubelet can communicate with API server and the `AllContainersRestarting`
+condition is being correctly updated.
 
 ## Implementation History
 
@@ -760,6 +717,9 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 1.35: Implemented as Alpha feature
+  - https://github.com/kubernetes/kubernetes/pull/134345
 
 ## Drawbacks
 

@@ -554,6 +554,7 @@ N/A.
 - 1.26: Alpha
 - 1.31: Add e2e tests for the feature and promote to Beta.
 - 1.33: Promote to GA.
+- 1.36: Remove the feature gate.
 
 ## Drawbacks
 

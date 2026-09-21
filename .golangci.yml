@@ -32,6 +32,11 @@ linters:
     errcheck:
       check-type-assertions: true
       check-blank: true
+    goconst:
+      # Test files legitimately repeat expected error strings in assertions;
+      # counting those occurrences flags source strings that appear <3 times
+      # on their own. Exclude tests so goconst only reports real duplication.
+      ignore-tests: true
     gocritic:
       enabled-checks:
         - appendAssign

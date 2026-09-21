@@ -1,0 +1,44 @@
+title: DRA Node Allocatable Resources
+kep-number: 5517
+authors:
+  - "@pravk03"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-scheduling
+  - sig-node
+
+creation-date: "2025-12-22"
+reviewers: 
+  - '@johnbelamaric'
+  - '@kad'
+  - '@ffromani'
+  - '@catblade'
+  - '@dom4ha'
+  - '@macsko'
+  - '@dchen1107'
+  - '@sergeykanzhelev'
+approvers:
+  - '@johnbelamaric'
+  - '@kad'
+  - '@dchen1107'
+  - '@dom4ha'
+  - '@macsko'
+  - '@dchen1107'
+  - '@sergeykanzhelev'
+status: implementable
+stage: alpha
+latest-milestone: "v1.37"
+milestone:
+  alpha: "v1.36"
+  beta: "v1.38"
+  stable: "v1.39"
+
+feature-gates:
+  - name: DRANodeAllocatableResources
+    components:
+      - kube-scheduler
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+metrics: []

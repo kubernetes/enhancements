@@ -1,0 +1,54 @@
+title: API Server Authentication to Admission Webhooks
+kep-number: 6060
+authors:
+  - "@pmengelbert"
+  - "@benjaminapetersen"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+status: implementable
+creation-date: 2026-06-04
+reviewers:
+  - "@enj"
+  - "@deads2k"
+  - "@liggitt"
+approvers:
+  - "@enj"
+  - "@deads2k"
+  - "@liggitt"
+
+see-also:
+  - "https://github.com/kubernetes/enhancements/blob/46e48e35c72de7511fa3e22fed14adf484fbd06d/keps/sig-auth/2510-webhook-request-bearer-token/README.md"
+  - "https://github.com/pbarker/enhancements/blob/0188107d011f17e6dc19a6331ac2d7fb999a2474/keps/sig-auth/apiserver_auth_to_webhooks.md"
+  - "https://github.com/kubernetes/enhancements/pull/658"
+
+replaces:
+#  - "/keps/sig-auth/2510-replaced-kep"
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.37"
+#  beta: ""
+#  stable: ""
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: 'APIServerAuthenticationToWebhooks'
+    components:
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+#  - my_feature_metric

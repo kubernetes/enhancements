@@ -8,7 +8,7 @@ participating-sigs:
   - sig-node
   - sig-scheduling
   - sig-storage
-status: implementable
+status: implemented
 creation-date: 2024-09-24
 
 reviewers:

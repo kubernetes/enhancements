@@ -1,4 +1,4 @@
-# KEP-NNNN: Stale Controller Detection and Mitigation
+# KEP-5647: Stale Controller Detection and Mitigation
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -9,18 +9,20 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Informer and Cache Update](#informer-and-cache-update)
   - [Staleness Mitigation in Controllers](#staleness-mitigation-in-controllers)
+  - [Circuit Breaking Pattern in Controllers](#circuit-breaking-pattern-in-controllers)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
     - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -151,6 +153,14 @@ after I write on a previous reconcile so I can be assured that my reads are up
 to date. I use the newly provided  frameworks to ensure those objects are up to
 date, mitigating the risks that I am operating on stale data. 
 
+#### Story 3
+
+I am a controller author. I want to ensure that my controller doesn't perform
+time sensitive operations on stale reads. I perform live gets on certain disruptive
+operations and if my cache is out of sync I "break the circuit" and wait for my
+cache to catch up prior to processing, preventing any disruptive operations on stale
+reads.
+
 ### Risks and Mitigations
 
 There is the risk of skipping reconciles, if this is not correct and we don't
@@ -244,6 +254,20 @@ occurred. This will have the same exponential backoff semantics so after a few
 reconciles of being unable to catch up the requeue will take longer and longer
 until the cache has enough time to actually catch up to the writes.
 
+### Circuit Breaking Pattern in Controllers
+
+With the same pattern, we can implement a circuit breaking approach to certain
+controllers, such as the node-lifecycle controller. There are scenarios, such
+as the obtaining of node lease objects, where controllers may pull stale
+information from the cache, causing the controller to wrongly believe that a
+lease is expired.
+
+We can perform live gets on these resources to ensure that we don't overreact
+to staleness in the cache. Simultaneously if it is determined that the cache
+is stale, we can use the same pattern where we mark the cache as not ready
+until the cache has at least caught up to our prior live get. This will prevent
+too many requests hitting the api server.
+
 ### Test Plan
 
 <!--
@@ -329,15 +353,16 @@ If e2e tests are not necessary or useful, explain why.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Beta
 - Addition of new bookmark function for informers
 - Feature implemented behind a feature flag for 1 or more controllers
 - Unit tests for controllers/bookmark function
 - Addition of e2e tests for the controllers with feature gate enabled
 
-#### Beta
+#### GA
 - Analysis of onboarded controllers and addition of others that may have the same staleness issues
 - Addition of additional E2E tests and stress tests to ensure edge cases are fully tested
+- Implementation of circuit breaking to prevent disruptive behavior during staleness
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -480,9 +505,15 @@ well as the [existing list] of feature gates.
 [existing list]: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/
 -->
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
+- [x] Feature gate for stale controller mitigation 
   - Feature gate name: StaleControllerConsistency
   - Components depending on the feature gate: KCM Controllers that are determined to be high scale
+- [x] Feature gate for stale controller monitoring
+  - Feature gate name: MonitorInformerStaleness
+  - Components depending on the feature gate: None, but requires a direct get to the apiserver to determine staleness every 5 seconds.
+- [x] Feature gate for underlying client-go changes
+  - Feature gate names: AtomicFIFO, UnlockWhileProcessingFIFO
+  - Components depending on the feature gate: None, but required by the stale controller handling feature.
 
 ###### Does enabling the feature change any default behavior?
 There is no change to the default behavior of reconcilers, however the

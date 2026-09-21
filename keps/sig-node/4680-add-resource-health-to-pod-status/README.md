@@ -238,9 +238,8 @@ type PodStatus struct {
 
 No, there is no guarantee that the Device Plugin/DRA will detect device going unhealthy earlier than the Pod. Once device got unhealthy, container may crash and being marked as Failed already (if `restartPolicy=Never`, in other cases Pod will enter crash loop backoff).
 
-The proposal is to update the Pod Status with the device status even if the pod has been marked as Failed already, but still known to the kubelet.
-
-This use case is important to explore so this status may inform the retry policy introduced by the KEP: [Retriable and non-retriable Pod failures for Jobs](https://github.com/kubernetes/enhancements/issues/3329).
+Note: Updating Pod Status with device health after the pod has been marked as Failed is **not supported** due to a
+race condition in the Kubelet's DRA manager cleanup. See the Known Limitations section for details.
 
 
 ***Do we need the CheckDeviceHealth call introduced to the Device Plugin to work around the limitation above?***
@@ -280,12 +279,13 @@ We may consider this as a future improvement.
   [Issue #133202](https://github.com/kubernetes/kubernetes/issues/133202) and
   [PR #134506](https://github.com/kubernetes/kubernetes/pull/134506) for implementation details.
 
-- **Device Health for Terminated Pods:** Kubelet will continue to update the device health status in PodStatus
-  even after a Pod has terminated (e.g., in Failed state or CrashLoopBackOff). This is critical for post-mortem
-  troubleshooting and enables retry policies (such as those introduced by
-  [KEP-3329: Retriable and non-retriable Pod failures for Jobs](https://github.com/kubernetes/enhancements/issues/3329))
-  to make informed decisions based on whether the failure was caused by an unhealthy device. See
-  [Issue #132978](https://github.com/kubernetes/kubernetes/issues/132978) for more details.
+- **Known Limitation - Device Health for Terminated Pods:** Device health status is **not** updated in PodStatus
+  after a Pod has terminated (e.g., in Failed state). Due to a race condition between pod termination and
+  health status updates, the Kubelet's DRA manager cleans up the ClaimInfo from its cache before health updates
+  can be applied. The complexity required to fix this (tombstoning terminated ClaimInfo entries) was deemed
+  not worth the benefit for this edge case. The core value for long running services (`RestartPolicy: Always`)
+  is unaffected. See [Issue #132978](https://github.com/kubernetes/kubernetes/issues/132978) for details on why
+  this was closed without implementation.
 ### Risks and Mitigations
 
 There is not many risks of this KEP. The biggest risk is that Device Plugins will not be
@@ -456,7 +456,6 @@ Planned tests will cover the user-visible behavior of the feature:
 -   **State Transitions:**
     -   Test rapid health state changes (e.g., unhealthy to healthy and back) to ensure the final PodStatus reflects the latest state.
 -   **Failure Scenarios:**
-    -   Ensure that if a Pod fails *before* the plugin detects the unhealthy device, the PodStatus is still updated with the health information afterward.
     -   Verify that a Pod in a `CrashLoopBackOff` state due to an unhealthy device correctly shows the device's unhealthy status.
 -   **Feature Gate Behavior (for Alpha):**
     -   When the feature gate is disabled, verify that the `AllocatedResourcesStatus` field is not populated by the DRA manager.
@@ -478,12 +477,9 @@ Planned tests will cover the user-visible behavior of the feature:
 
 #### Beta
 
-The following requirements must be met for Beta graduation in v1.35:
+The following requirements must be met for Beta graduation:
 
 - Complete e2e tests coverage
-- **Device Health for Terminated Pods** ([Issue #132978](https://github.com/kubernetes/kubernetes/issues/132978)):
-  Ensure that device health status is correctly reported and updated in PodStatus even after a Pod has terminated.
-  This is critical for troubleshooting and allowing retry policies to make informed decisions based on device health.
 - **Configurable Device Health Check Timeout** ([Issue #133118](https://github.com/kubernetes/kubernetes/issues/133118), [PR #133752](https://github.com/kubernetes/kubernetes/pull/133752)):
   Verify that the configurable device health check timeout implementation (via `health_check_timeout_seconds` field)
   works correctly across different plugin vendors and hardware types (e.g., GPUs, FPGAs, TPUs, storage devices).
@@ -651,7 +647,11 @@ Not applicable.
 
 ## Drawbacks
 
-Not that we can think of.
+- **No post mortem health status for terminated pods:** For batch jobs using `RestartPolicy: Never`,
+  device health status will not be updated after the pod terminates. This means "post mortem"
+  troubleshooting for batch jobs cannot rely on this field. The race condition between pod termination
+  and health updates would require significant complexity to fix (tombstoning ClaimInfo entries in the
+  DRA manager), which was deemed not worth the benefit. See [Issue #132978](https://github.com/kubernetes/kubernetes/issues/132978).
 
 ## Alternatives
 

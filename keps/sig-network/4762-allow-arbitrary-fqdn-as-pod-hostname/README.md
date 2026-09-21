@@ -58,9 +58,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [x] e2e Tests for all Beta API Operations (endpoints)
-  - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
-  - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+  - [x] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [x] (R) Minimum Two Week Window for GA e2e tests to prove flake free
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
@@ -150,8 +150,8 @@ Based on the above design, after the KEP is implemented, we can achieve the foll
 | 15 | `aa`        | `bb`         | true                 | `xx.yy.zz`          |                | INVALID                         | INVALID                         | INVALID                         |
 | 16 |             |              |                      |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
 | 17 | `aa`        |              |                      |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
-| 18 |             | `bb`         |                      |                     | true           | `<same-as-node>`                | `<same-as-node>                 | `<pod-name>.bb.<ns>.svc.<zone>` |
-| 19 | `aa`        | `bb`         |                      |                     | true           | `>same-as-node>`                | `>same-as-node>`                | `aa.bb.<ns>.svc.<zone>`         |
+| 18 |             | `bb`         |                      |                     | true           | `<same-as-node>`                | `<same-as-node>`                | `<pod-name>.bb.<ns>.svc.<zone>` |
+| 19 | `aa`        | `bb`         |                      |                     | true           | `<same-as-node>`                | `<same-as-node>`                | `aa.bb.<ns>.svc.<zone>`         |
 | 20 |             |              | true                 |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
 | 21 | `aa`        |              | true                 |                     | true           | `<same-as-node>`                | `<same-as-node>`                |                                 |
 | 22 |             | `bb`         | true                 |                     | true           | `<same-as-node>`                | `<same-as-node>`                | `<pod-name>.bb.<ns>.svc.<zone>` |
@@ -270,103 +270,191 @@ The `kubelet_started_pods_total` metrics helps determine whether enabling/disabl
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-I use `FEATURE_GATES=HostnameOverride=true ./hack/local-up-cluster.sh` to create a new cluster.
+Yes. The upgrade, downgrade, and upgrade path was manually tested with a local
+cluster by restarting the kube-apiserver and kubelet with the
+`HostnameOverride` feature gate enabled, then disabled, then enabled again. The
+test verified that:
 
-Check the cluster version:
-```
-$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl version
-Client Version: v1.35.0
-Kustomize Version: v5.7.1
-Server Version: v1.35.0
-```
-Run a pod that uses HostnameOverride:
-```
-cat <<EOF | $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl apply -f -
+- A Pod created while `HostnameOverride=true` uses `spec.hostnameOverride` as
+  its runtime hostname.
+- The existing Pod keeps running and keeps its hostname after the feature gate
+  is disabled.
+- A new Pod created while `HostnameOverride=false` ignores
+  `spec.hostnameOverride` and uses the default Pod hostname.
+- The Pod created while the feature gate was disabled keeps running and keeps
+  the default hostname after the feature gate is re-enabled.
+
+The script used for the manual local-up test was:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+export GOPATH="${GOPATH:-/root/go}"
+KUBE_ROOT="$GOPATH/src/k8s.io/kubernetes"
+KUBECTL="$KUBE_ROOT/_output/bin/kubectl"
+POD_NAME="test-pod"
+OVERRIDE_HOSTNAME="test-hostname"
+DEFAULT_HOSTNAME="$POD_NAME"
+FEATURE_GATES_ON="HostnameOverride=true"
+FEATURE_GATES_OFF="HostnameOverride=false"
+
+cd "$KUBE_ROOT"
+export PATH="$PATH:$GOPATH/bin:$KUBE_ROOT/third_party/etcd"
+export KUBECONFIG="/var/run/kubernetes/admin.kubeconfig"
+
+kill_local_up_components() {
+  pkill -9 -f "$KUBE_ROOT/_output/local/bin/linux/arm64/kube-apiserver" >/dev/null 2>&1 || true
+  pkill -9 -f "$KUBE_ROOT/_output/local/bin/linux/arm64/kube-controller-manager" >/dev/null 2>&1 || true
+  pkill -9 -f "$KUBE_ROOT/_output/local/bin/linux/arm64/kube-scheduler" >/dev/null 2>&1 || true
+  pkill -9 -f "$KUBE_ROOT/_output/local/bin/linux/arm64/kubelet" >/dev/null 2>&1 || true
+  pkill -9 -f "$KUBE_ROOT/_output/local/bin/linux/arm64/kube-proxy" >/dev/null 2>&1 || true
+  pkill -9 -f "etcd --advertise-client-urls http://127.0.0.1:2379" >/dev/null 2>&1 || true
+  pkill -9 -f "bash hack/local-up-cluster.sh" >/dev/null 2>&1 || true
+  sleep 2
+}
+
+component_pid() {
+  pgrep -f "^$1 " | head -n 1
+}
+
+read_cmdline() {
+  local pid="$1"
+  local -n out="$2"
+  out=()
+  while IFS= read -r -d '' arg; do
+    out+=("$arg")
+  done <"/proc/$pid/cmdline"
+}
+
+set_feature_gates() {
+  local -n cmd="$1"
+  local feature_gates="$2"
+  for i in "${!cmd[@]}"; do
+    if [[ "${cmd[$i]}" == --feature-gates=* ]]; then
+      cmd[$i]="--feature-gates=$feature_gates"
+      return
+    fi
+    if [[ "${cmd[$i]}" == "--feature-gates" ]]; then
+      cmd[$((i + 1))]="$feature_gates"
+      return
+    fi
+  done
+  cmd+=("--feature-gates=$feature_gates")
+}
+
+start_cluster() {
+  local log_file="$KUBE_ROOT/_output/hostname-override-local-up.log"
+  kill_local_up_components
+  rm -f "$log_file"
+  FEATURE_GATES="$FEATURE_GATES_ON" LOG_LEVEL=3 hack/local-up-cluster.sh >"$log_file" 2>&1 &
+
+  until grep -q "Local Kubernetes cluster is running" "$log_file"; do
+    sleep 2
+  done
+}
+
+restart_apiserver_and_kubelet() {
+  local feature_gates="$1"
+  local apiserver_pid kubelet_pid
+  local apiserver_cmd kubelet_cmd
+
+  apiserver_pid="$(component_pid "$KUBE_ROOT/_output/local/bin/linux/arm64/kube-apiserver")"
+  kubelet_pid="$(component_pid "$KUBE_ROOT/_output/local/bin/linux/arm64/kubelet")"
+  read_cmdline "$apiserver_pid" apiserver_cmd
+  read_cmdline "$kubelet_pid" kubelet_cmd
+  set_feature_gates apiserver_cmd "$feature_gates"
+  set_feature_gates kubelet_cmd "$feature_gates"
+
+  pkill -9 -f "$KUBE_ROOT/_output/local/bin/linux/arm64/kubelet" >/dev/null 2>&1 || true
+  pkill -9 -f "$KUBE_ROOT/_output/local/bin/linux/arm64/kube-apiserver" >/dev/null 2>&1 || true
+  sleep 2
+
+  "${apiserver_cmd[@]}" >"/tmp/kube-apiserver-hostname-override.log" 2>&1 &
+  disown "$!"
+  until "$KUBECTL" version >/dev/null 2>&1; do
+    sleep 1
+  done
+
+  "${kubelet_cmd[@]}" >"/tmp/kubelet-hostname-override.log" 2>&1 &
+  disown "$!"
+  "$KUBECTL" wait --for=condition=Ready node/127.0.0.1 --timeout=180s >/dev/null
+}
+
+apply_pod() {
+  cat <<EOF | "$KUBECTL" apply -f - >/dev/null
 apiVersion: v1
 kind: Pod
 metadata:
-  name: data-writer-pod
+  name: $POD_NAME
 spec:
-  hostUsers: false
-  hostNetwork: true
-  priorityClassName: system-node-critical
+  hostnameOverride: $OVERRIDE_HOSTNAME
   containers:
   - name: writer-container
     image: busybox
     command: ["/bin/sh", "-c", "sleep 3600"]
 EOF
-```
-Confirm the pod is running normally and the HostnameOverride feature is working correctly:
-```
-➜  opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
-NAME       READY   STATUS    RESTARTS   AGE
-test-pod   1/1     Running   0          5s
-➜  opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec test-pod -- hostname
-test-hostname
+}
+
+wait_for_pod() {
+  "$KUBECTL" wait --for=condition=Ready "pod/$POD_NAME" --timeout=180s >/dev/null
+}
+
+expect_hostname() {
+  local message="$1"
+  local expected="$2"
+  local actual=""
+  for _ in $(seq 1 60); do
+    actual="$("$KUBECTL" exec "$POD_NAME" -- hostname 2>/dev/null || true)"
+    if [[ -n "$actual" ]]; then
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$actual" != "$expected" ]]; then
+    echo "FAIL: $message: expected hostname $expected, got $actual"
+    exit 1
+  fi
+  echo "PASS: $message: hostname=$actual"
+}
+
+print_version() {
+  echo "Cluster version:"
+  "$KUBECTL" version
+}
+
+start_cluster
+restart_apiserver_and_kubelet "$FEATURE_GATES_ON"
+print_version
+"$KUBECTL" delete "pod/$POD_NAME" --ignore-not-found --wait=true >/dev/null
+apply_pod
+wait_for_pod
+expect_hostname "HostnameOverride=true overrides pod hostname" "$OVERRIDE_HOSTNAME"
+
+restart_apiserver_and_kubelet "$FEATURE_GATES_OFF"
+wait_for_pod
+expect_hostname "existing pod keeps running after HostnameOverride=false" "$OVERRIDE_HOSTNAME"
+"$KUBECTL" delete "pod/$POD_NAME" --wait=true >/dev/null
+apply_pod
+wait_for_pod
+expect_hostname "new pod does not use hostnameOverride when HostnameOverride=false" "$DEFAULT_HOSTNAME"
+
+restart_apiserver_and_kubelet "$FEATURE_GATES_ON"
+wait_for_pod
+expect_hostname "pod created while HostnameOverride=false keeps running after HostnameOverride=true" "$DEFAULT_HOSTNAME"
 ```
 
-Checkout the `release-1.34` branch, add a tag using `git tag v1.34.0`, rebuild the `kubelet` and `kube-apiserver` binaries, and run kubelet and kube-apiserver using the same local command.
+The test result was:
 
-Check the cluster version:
-```
-$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl version
-Client Version: v1.35.0
-Kustomize Version: v5.7.1
-Server Version: v1.34.0
-```
-Confirm the pod is still running and the HostnameOverride feature is still working correctly:
-
-```
-➜  opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
-NAME       READY   STATUS    RESTARTS   AGE
-test-pod   1/1     Running   0          3m56s
-➜  opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec test-pod -- hostname
-test-hostname
-```
-Delete the pod and recreate it:
-```
-opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl delete test-pod
-pod "test-pod" deleted from default namespace
-
-cat <<EOF | $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: data-writer-pod
-spec:
-  hostUsers: false
-  hostNetwork: true
-  priorityClassName: system-node-critical
-  containers:
-  - name: writer-container
-    image: busybox
-    command: ["/bin/sh", "-c", "sleep 3600"]
-EOF
-```
-Confirm the pod is running and the HostnameOverride feature is still working correctly:
-```
-➜  opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
-NAME       READY   STATUS    RESTARTS   AGE
-test-pod   1/1     Running   0          17s
-➜  opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec test-pod -- hostname
-test-hostname
-```
-Checkout to the master branch, add a tag using `git tag v1.35.0`, rebuild the `kubelet` and `kube-apiserver` binaries, and run `kubelet` and `kube-apiserver` using the same local command.
-
-Check the cluster version:
-```
-$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl version
-Client Version: v1.35.0
-Kustomize Version: v5.7.1
-Server Version: v1.35.0
-```
-Confirm the pod is still running and the HostnameOverride feature is still working correctly:
-```
-$GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl get pods
-NAME       READY   STATUS    RESTARTS   AGE
-test-pod   1/1     Running   0          98s
-➜  opt $GOPATH/src/k8s.io/kubernetes/_output/bin/kubectl exec test-pod -- hostname
-test-hostname
+```console
+Cluster version:
+Client Version: v1.36.0-1349+643e407efef84a
+Kustomize Version: v5.8.1
+Server Version: v1.36.0-1349+643e407efef84a
+PASS: HostnameOverride=true overrides pod hostname: hostname=test-hostname
+PASS: existing pod keeps running after HostnameOverride=false: hostname=test-hostname
+PASS: new pod does not use hostnameOverride when HostnameOverride=false: hostname=test-pod
+PASS: pod created while HostnameOverride=false keeps running after HostnameOverride=true: hostname=test-pod
 ```
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
@@ -455,11 +543,51 @@ No known failure modes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
+If the SLO is not being met, operators should:
+
+1. Check whether the affected Pods use `spec.hostnameOverride`:
+
+   ```sh
+   kubectl get pods -A -o json | jq -r '.items[] | select(.spec.hostnameOverride != null) | "\(.metadata.namespace) \(.metadata.name) \(.spec.hostnameOverride)"'
+   ```
+
+2. Confirm the `HostnameOverride` feature gate state on the kube-apiserver and
+   kubelet. The field is accepted and used only when the feature gate is
+   enabled in the relevant components.
+
+3. Inspect kubelet metrics for the affected nodes, especially
+   `kubelet_started_pods_errors_total`, `run_podsandbox_errors_total`,
+   `kubelet_started_pods_total`, and `kubelet_restarted_pods_total`, and compare
+   them with the same metrics before the feature gate was enabled or before
+   Pods using `spec.hostnameOverride` were created.
+
+4. Inspect affected Pod status, events, and kubelet logs to determine whether
+   the failures are during Pod admission, sandbox creation, or container start:
+
+   ```sh
+   kubectl describe pod -n <namespace> <pod>
+   kubectl get events -n <namespace> --field-selector involvedObject.name=<pod>
+   ```
+
+5. Verify the runtime hostname for Pods that are Ready but suspected to be
+   misconfigured:
+
+   ```sh
+   kubectl exec -n <namespace> <pod> -- hostname
+   ```
+
+6. If failures correlate with enabling this feature or with Pods using
+   `spec.hostnameOverride`, roll back by disabling the `HostnameOverride`
+   feature gate. Existing Pods are not expected to be disrupted; newly created
+   Pods will stop using `spec.hostnameOverride` while the feature gate is
+   disabled.
+
 ## Implementation History
 
 - 2024-07-18: Initial draft KEP
 - 2025-08-13: Align KEPs with implemented PRs and documentation.
 - 2025-10-10: Promote to beta stage
+- 2026-05-23: Promote to stable (GA) stage
 
 ## Drawbacks
 

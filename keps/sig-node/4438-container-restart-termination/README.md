@@ -87,6 +87,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Alpha limitations](#alpha-limitations)
+    - [Pod termination and In-Place Pod Restart interaction](#pod-termination-and-in-place-pod-restart-interaction)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -263,6 +265,28 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
+#### Alpha limitations
+
+The Alpha implementation (`SidecarsRestartableDuringPodTermination` v1.37) provides a scoped
+restart guarantee with the following known limitations to be addressed in Beta:
+
+- **SIGKILL on restart**: restarted sidecars receive SIGKILL (not an ordered SIGTERM), because
+  the termination ordering machinery is already in flight.
+- **Probes not re-attached**: liveness, readiness, and startup probes are not re-connected
+  after a mid-termination restart.
+- **Pull secrets not re-resolved**: image pull secrets are not re-resolved at restart time.
+- **RestartCount inflated**: each mid-termination restart increments the container's
+  `RestartCount`, which may confuse monitoring tools.
+- **Short grace periods excluded**: pods with `terminationGracePeriodSeconds <= 1` are not
+  eligible for sidecar restart to avoid restarting a container that will be SIGKILL-ed
+  immediately anyway.
+- Container lifecycle hooks (`postStart`/`preStop`) are not invoked on the mid-termination
+  restart.
+
+#### Pod termination and In-Place Pod Restart interaction
+
+To prevent conflicting lifecycle actions, when a Pod enters its termination phase (i.e. `pod.DeletionTimestamp != nil`), the kubelet must not trigger a pod-wide `RestartAllContainers` (In-Place Pod Restart) action. This ensures that the graceful deletion sequence is not disrupted by a pod-wide restart. In-place restart checks (e.g. `ShouldAllContainersRestart` function) must return `false` during Pod termination, allowing the KEP-4438 sidecar monitoring and restart watcher to manage the sidecar container restarts in isolation during Pod shutdown.
+
 ### Risks and Mitigations
 
 <!--
@@ -343,6 +367,25 @@ extending the production code to implement this enhancement.
 -->
 
 - `pkg/kubelet/kuberuntime`: `2024/02/06` - `66.8%`
+
+The following unit tests were added for the Alpha implementation:
+
+`pkg/kubelet/kuberuntime/kuberuntime_termination_order_test.go`:
+- `TestAllPrereqsMet` — verifies the non-blocking `allPrereqsMet` helper used by the watcher
+  to decide whether a sidecar's SIGTERM turn has arrived.
+
+`pkg/kubelet/kuberuntime/kuberuntime_termination_restart_test.go`:
+- `TestWatchAndRestartSidecar_ExitsBeforeTurn` — gate enabled, sidecar exits before its turn;
+  asserts `CreateContainer` is called within one ticker cycle.
+- `TestWatchAndRestartSidecar_PrereqsMet_NoRestart` — gate enabled, prereqs already met;
+  asserts the watcher exits cleanly without restarting.
+- `TestKillContainers_GateDisabled_NoRestart` — gate disabled; asserts no restart occurs even
+  with `terminating=true`.
+- `TestKillContainers_NotTerminating_NoRestart` — gate enabled but `terminating=false`
+  (sandbox-replacement path); asserts no restart watcher is spawned.
+
+`pkg/kubelet/container/helpers_test.go`:
+- `TestShouldAllContainersRestart` — verifies that a pod-wide `RestartAllContainers` action is not triggered when the pod is in its termination phase (i.e. `DeletionTimestamp` is set), even if a container restart rule or the `v1.AllContainersRestarting` condition is present.
 
 ##### Integration tests
 
@@ -487,13 +530,31 @@ in back-to-back releases.
 
 #### Alpha
 
-- Allow sidecar containers to restart during the shutdown of the Pod.
-- Enable `livenessProbe`, `readinessProbe` and `startupProbe` during the shutdown of the Pod for sidecar containers that restart.
-- Enable `postStart` and `preStop` hooks during the shutdown of the Pod for sidecar containers that restart.
+- Feature implemented behind `SidecarsRestartableDuringPodTermination` feature gate (disabled by default, v1.37).
+- Sidecar containers (restartable init containers) that exit prematurely during pod termination
+  are restarted by the kubelet, preserving the KEP-753 ordering guarantee within the grace period.
+- The watcher goroutine exits without restarting once the sidecar's ordered SIGTERM turn arrives
+  (`allPrereqsMet` returns true).
+- No restart is performed when `terminating=false` (sandbox-replacement path in `SyncPod`).
+- Pods with `terminationGracePeriodSeconds <= 1` are excluded.
+- Initial unit tests in place (see [Unit tests](#unit-tests)).
+
+> **Note:** Early drafts of this KEP planned to also enable liveness/readiness/startup probes and
+> `postStart`/`preStop` hooks for sidecars restarted during termination in Alpha. After further
+> analysis we determined that re-attaching probes mid-termination carries non-trivial risk: a
+> liveness probe failure on a just-restarted sidecar could trigger a restart loop that interferes
+> with the grace period budget. We therefore defer probe and hook support to Beta, where we can
+> validate the design with data from Alpha adopters and address the restart-loop risk explicitly.
 
 #### Beta
 
-TBD
+- Resolve alpha limitations:
+  - Re-attach liveness, readiness, and startup probes after a mid-termination restart.
+  - Invoke `preStop` hook before restarting a sidecar (ordered SIGTERM instead of SIGKILL).
+  - Re-resolve image pull secrets at restart time.
+- Enable container lifecycle hooks (`postStart`/`preStop`) for restarted sidecars.
+- e2e node tests added and passing in Testgrid without flakes for two consecutive releases.
+- Feedback from Alpha adopters addressed.
 
 #### GA
 
@@ -576,7 +637,7 @@ well as the [existing list] of feature gates.
 -->
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: RestartContainerDuringTermination
+  - Feature gate name: SidecarsRestartableDuringPodTermination
   - Components depending on the feature gate:
     - kubelet
 - [ ] Other
@@ -902,7 +963,7 @@ Major milestones might include:
 
 - 2024-01-30: `Summary` and `Motivation` sections merged
 - 2024-02-08: `Proposal` section merged, KEP marked as `implementable`
-- v1.33: Alpha release
+- v1.37: Alpha release (`SidecarsRestartableDuringPodTermination` feature gate, disabled by default)
 
 ## Drawbacks
 

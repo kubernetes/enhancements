@@ -14,6 +14,7 @@ reviewers:
   - "@klueska"
   - "@derekwaynecarr"
 approvers:
+  - "@klueska" # sig-node-assigned-approver
   - "@derekwaynecarr"
 see-also:
 replaces:
@@ -38,7 +39,7 @@ feature-gates:
   - name: MemoryManager
     components:
       - kubelet
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:

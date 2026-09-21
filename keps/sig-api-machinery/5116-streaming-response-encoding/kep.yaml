@@ -3,7 +3,7 @@ kep-number: 5116
 authors:
   - serathius
 owning-sig: sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2025-01-31
 reviewers:
   - liggitt

@@ -1,0 +1,8 @@
+title: No Owners Fixture
+kep-number: 4
+owning-sig: sig-node
+status: implementable
+reviewers:
+  - "@tallclair" # sig-node-assigned-reviewer
+approvers:
+  - "@dchen1107" # sig-node-assigned-approver

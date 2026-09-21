@@ -5,7 +5,7 @@ authors:
   - "@tallclair"
 owning-sig: sig-node
 participating-sigs:
-status: implementable
+status: implemented
 creation-date: 2025-01-21
 reviewers:
   - "@yujuhong"
@@ -40,7 +40,7 @@ feature-gates:
       - kubelet
       - kube-controller-manager
       - kube-scheduler
-disable-supported: true
+disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:

@@ -2,25 +2,35 @@ title: Memory QoS
 kep-number: 2570
 authors:
   - "@xiaoxubeii"
+  - "@QiWang19"
+  - "@sohankunkerkar"
 reviewers:
   - "@derekwaynecarr"
   - "@bobbypage"
   - "@mrunalp"
   - "@giuseppe"
   - "@pacoxu"
+  - "@ndixita" # sig-node-assigned-reviewer
+  - "@ajaysundark" # sig-node-assigned-reviewer
 approvers:
   - "@derekwaynecarr"
 owning-sig: sig-node
-status: provisional
+status: implementable
 editor: "@ndixita"
 creation-date: 2021-03-14
-last-updated: 2023-06-14
-stage: alpha
-latest-milestone: "v1.27"
+last-updated: 2026-06-01
+stage: beta
+latest-milestone: "v1.37"
 milestone:
   alpha: "v1.27"
+  beta: "v1.37"
 feature-gates:
   - name: MemoryQoS
     components:
       - kubelet
+metrics:
+  - kubelet_memory_qos_node_memory_min_bytes (exposed by kubelet)
+  - kubelet_memory_qos_node_memory_low_bytes (exposed by kubelet)
+  - container_memory_events_high_total (exposed by cadvisor)
+  - container_memory_events_max_total (exposed by cadvisor)
 disable-supported: true

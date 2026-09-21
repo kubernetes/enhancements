@@ -11,6 +11,7 @@ reviewers:
   - "@haircommander"
 approvers:
   - "@mrunalp"
+  - "@haircommander" # sig-node-assigned-approver
 
 see-also:
   - "keps/sig-node/4639-oci-volume-source/README.md"

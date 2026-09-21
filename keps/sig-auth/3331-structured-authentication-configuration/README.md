@@ -138,7 +138,7 @@ jwt:
     audiences:
     - my-app
     - other-app
-  audienceMatchPolicy: MatchAny
+    audienceMatchPolicy: MatchAny
   claimValidationRules:
   - claim: hd
     requiredValue: example.com

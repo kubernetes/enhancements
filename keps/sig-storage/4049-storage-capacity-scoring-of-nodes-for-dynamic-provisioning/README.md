@@ -1,6 +1,13 @@
 <!--
 **Note:** When your KEP is complete, all of these comment blocks should be removed.
 
+Follow the guidelines of the [documentation style guide].
+In particular, wrap lines to a reasonable length, to make it
+easier for reviewers to cite specific portions, and to minimize diff churn on
+updates.
+
+[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
+
 To get started with this template:
 
 - [ ] **Pick a hosting SIG.**
@@ -84,8 +91,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [Story 1 (Optional)](#story-1-optional)
+    - [Story 2 (Optional)](#story-2-optional)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -142,10 +149,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
-  - [X] (R) Ensure GA e2e tests for meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [X] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
-  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
+  - [X] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [X] "Implementation History" section is up-to-date for milestone
@@ -176,13 +183,6 @@ should help to ensure that the tone and content of the `Summary` section is
 useful for a wide audience.
 
 A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
 ## Motivation
@@ -248,11 +248,11 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Story 1 (Optional)
 
 We want to leave room for volume expansion after node allocation. In this case, we want to allocate the node that has the maximum amount of free space. 
 
-#### Story 2
+#### Story 2 (Optional)
 
 We want to reduce the number of nodes as much as possible to reduce costs when using a cloud environment. In this case, we want to allocate the node that has the smallest amount of sufficiently free space left.
 
@@ -541,22 +541,53 @@ This can inform certain test coverage improvements that we want to do before
 extending the production code to implement this enhancement.
 -->
 
-The following unit tests are planned:
+The following unit tests have been written. Most are already merged
+into the master branch; a minor fix is under review in
+[kubernetes/kubernetes#138497](https://github.com/kubernetes/kubernetes/pull/138497).
 
-- Are the scores assigned to nodes for dynamic provisioning appropriate for the amount of free space?
-- Are the amount of free space score of nodes for dynamic provisioning and the Static Bindings score both functional?
+- [`TestVolumeBinding/storage_capacity_score`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L738):
+  Are the scores assigned to nodes for dynamic provisioning appropriate
+  for the amount of free space?
+- [`TestVolumeBinding/storage_capacity_score_with_static_binds`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L779):
+  Are the amount of free space score of nodes for dynamic provisioning
+  and the Static Bindings score both functional?
+- [`TestVolumeBinding/dynamic_provisioning_with_multiple_PVCs_of_the_same_StorageClass`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L852):
+  Are multiple PVCs of the same StorageClass correctly handled in
+  scoring, with their total requested storage accounted for?
+- [`TestVolumeBinding/prefer_node_with_least_allocatable`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L887):
+  When configured to prefer the node with the least available storage,
+  is the pod placed on the node with the least available capacity?
+- [`TestVolumeBinding/prefer_node_with_maximum_allocatable`](https://github.com/kubernetes/kubernetes/blob/ba49c893f28512d8e134211afa57a854d2ed00c7/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L941):
+  Does the default `Shape` setting configure scoring to prefer the node
+  with the most available storage?
 
 ##### Integration tests
+
+<!--
+Integration tests are contained in https://git.k8s.io/kubernetes/test/integration.
+Integration tests allow control of the configuration parameters used to start the binaries under test.
+This is different from e2e tests which do not allow configuration of parameters.
+Doing this allows testing non-default options and multiple different and potentially conflicting command line options.
+For more details, see https://github.com/kubernetes/community/blob/master/contributors/devel/sig-testing/testing-strategy.md
+
+If integration tests are not necessary or useful, explain why.
+-->
 
 <!--
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+For Beta and GA, document that tests have been written,
+have been executed regularly, and have been stable.
+This can be done with:
+- permalinks to the GitHub source code
+- links to the periodic job (typically https://testgrid.k8s.io/sig-release-master-blocking#integration-master), filtered by the test name
+- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 -->
 
-The scoring function will be tested in test/integration/volumescheduling/storage_capacity_scoring_test.go.
+The scoring function is tested in test/integration/volumescheduling/storage_capacity_scoring_test.go.
+
+- [test/integration/volumescheduling/storage_capacity_scoring_test.go](https://github.com/kubernetes/kubernetes/blob/89900005eed1fdfe3060680bddb69ea2a17ede22/test/integration/volumescheduling/storage_capacity_scoring_test.go): [integration master](https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=volumescheduling)
 
 ##### e2e tests
 
@@ -564,20 +595,24 @@ The scoring function will be tested in test/integration/volumescheduling/storage
 This question should be filled when targeting a release.
 For Alpha, describe what tests will be added to ensure proper quality of the enhancement.
 
-For Beta and GA, add links to added tests together with links to k8s-triage for those tests:
-https://storage.googleapis.com/k8s-triage/index.html
+For Beta and GA, document that tests have been written,
+have been executed regularly, and have been stable.
+This can be done with:
+- permalinks to the GitHub source code
+- links to the periodic job (typically a job owned by the SIG responsible for the feature), filtered by the test name
+- a search in the Kubernetes bug triage tool (https://storage.googleapis.com/k8s-triage/index.html)
 
 We expect no non-infra related flakes in the last month as a GA graduation criteria.
+If e2e tests are not necessary or useful, explain why.
 -->
 
-The following e2e tests are planned:
+The following e2e tests are under review in [kubernetes/kubernetes#138497](https://github.com/kubernetes/kubernetes/pull/138497):
 
 - When only static provisioning is available, or a mixture of static provisioning and dynamic provisioning is available:
   - Does it pass traditional tests?
-- When only dynamic provisioning is available:
+- When only dynamic provisioning is available (single CSI driver case):
   - Is the Pod placed on the node with the largest available space by default?
   - When `VolumeBindingArgs` is set to "Prefer a node with the maximum allocatable", is the Pod placed on the node with the largest available space?
-  - When `VolumeBindingArgs` is set to "Prefer a node with the least allocatable", is the Pod placed on the node that meets the requested size but has the smallest available space?
   - Does the Pod placement fail if no node meets the requested size?
   - Even when the Pod is recreated, is the placement in the node performed as expected above?
 
@@ -620,13 +655,23 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 - Gather feedback from developers and surveys
 - Complete features A, B, C
 - Additional tests are in Testgrid and linked in KEP
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- All functionality completed
+- All security enforcement completed
+- All monitoring requirements completed
+- All testing requirements completed
+- All known pre-release issues and gaps resolved
+
+**Note:** Beta criteria must include all functional, security, monitoring, and testing requirements along with resolving all issues and gaps identified
 
 #### GA
 
 - N examples of real-world usage
 - N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
 - Allowing time for feedback
+- All issues and gaps identified as feedback during beta are resolved
+
+**Note:** GA criteria must not include any functional, security, monitoring, or testing requirements.  Those must be beta requirements.
 
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
@@ -639,6 +684,7 @@ in back-to-back releases.
 
 #### Deprecation
 
+<!--
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
@@ -689,14 +735,20 @@ components? What are the guarantees? Make sure this is in the test plan.
 
 Consider the following in developing a version skew strategy for this
 enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
+- Does this enhancement involve coordinating behavior in the control plane and nodes?
+- How does an n-3 kubelet or kube-proxy without this feature available behave when this feature is used?
+- How does an n-1 kube-controller-manager or kube-scheduler without this feature available behave when this feature is used?
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-Nothing in particular.
+This enhancement is confined to the `kube-scheduler` component.
+A `kube-scheduler` at n-1 (without the `StorageCapacityScoring`
+feature gate) reverts to the current scoring behavior — scoring for
+VolumeBinding based on static provisioning only. This is acceptable
+and identical to the previous behavior. No changes are made to
+`kubelet`, `kube-proxy`, `kube-controller-manager`, or any
+node-level components (CSI, CRI, or CNI).
 
 ## Production Readiness Review Questionnaire
 
@@ -774,7 +826,23 @@ Re-enabling the feature from a rolled-back state will result in scheduling that 
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes. We will add unit tests with and without the feature gate enabled.
+Yes. The unit tests in `TestVolumeBinding` cover both cases:
+
+- Feature gate enabled
+  (`fts: feature.Features{EnableStorageCapacityScoring: true}`):
+  the scoring tests listed in the [Unit tests](#unit-tests) section
+  above (e.g., [`TestVolumeBinding/storage_capacity_score`][scoring-test])
+  verify that dynamic provisioning scoring based on
+  `CSIStorageCapacity` works correctly.
+- Feature gate disabled (no `fts` field, defaulting to `false`):
+  test cases such as
+  [`TestVolumeBinding/unbound_claims_no_matches`][no-match-test]
+  verify that when the feature gate is disabled, `PreScore` returns
+  `Skip` for dynamic-provisioning-only scenarios, meaning behavior
+  reverts to static provisioning scoring only.
+
+[scoring-test]: https://github.com/kubernetes/kubernetes/blob/c2e3492837be213a2ffc143bb81588d20df91247/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L738
+[no-match-test]: https://github.com/kubernetes/kubernetes/blob/c2e3492837be213a2ffc143bb81588d20df91247/pkg/scheduler/framework/plugins/volumebinding/volume_binding_test.go#L198
 
 <!--
 The e2e framework does not currently support enabling or disabling feature
@@ -820,7 +888,11 @@ that might indicate a serious problem?
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-Not applicable, yet.
+This was tested manually before the transition to beta using a cluster with the
+TopoLVM CSI driver. The test covered enabling `StorageCapacityScoring` (with the
+corresponding CSI driver configuration), disabling it (reverting the CSI driver
+configuration), and re-enabling it. In all three steps, Pod scheduling completed
+successfully with no unexpected behavior.
 
 <!--
 Describe manual testing that was done and the outcomes.
@@ -830,7 +902,7 @@ are missing a bunch of machinery and tooling and can't do that now.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
-No, it isn't.
+Yes, the `VolumeCapacityPriority` feature gate is deprecated in favor of the new `StorageCapacityScoring` feature gate.
 
 <!--
 Even if applying deprecation policies, they may still surprise some users.
@@ -858,7 +930,9 @@ logs or events for this purpose.
 
 ###### How can someone using this feature know that it is working for their instance?
 
-Pods that use only dynamically provisioned PVCs will be scheduled to nodes with more available capacity.
+By default, pods that use only dynamically provisioned PVCs will be
+scheduled to nodes with the most free space. This behavior can be
+configured to prefer nodes with the least free space instead.
 
 <!--
 For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
@@ -869,17 +943,19 @@ and operation of this feature.
 Recall that end users cannot usually observe component logs or access metrics.
 -->
 
-- [ ] Events
-  - Event Reason: 
-- [ ] API .status
-  - Condition name: 
-  - Other field: 
-- [ ] Other (treat as last resort)
-  - Details:
+- [x] Other (treat as last resort)
+  - Details: Check which node the pod was scheduled to (`kubectl get pod <pod> -o wide`)
+    and verify it is the node with the most available storage capacity by running
+    `kubectl get csistoragecapacities -A`. By default, the VolumeBinding plugin
+    prefers the node with the most available capacity for dynamic provisioning.
+    This can be configured to prefer the node with the least available capacity
+    instead via the `Shape` setting in `VolumeBindingArgs`.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-It may affect the time taken by scheduling. Clarify it during the beta phase.
+Metric `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}` <= 100ms on 90-percentile.
+
+(This follows the same SLO established in KEP-1845, as the additional overhead introduced by this KEP is limited to arithmetic calculations for scoring.)
 
 <!--
 This is your opportunity to define what "normal" quality of service looks like
@@ -898,18 +974,14 @@ question.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-Clarify this during the beta phase.
-
 <!--
 Pick one more of these and delete the rest.
 -->
 
-- [ ] Metrics
+- [X] Metrics
   - Metric name: `plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}`
   - [Optional] Aggregation method:
-  - Components exposing the metric:
-- [ ] Other (treat as last resort)
-  - Details:
+  - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -928,7 +1000,23 @@ This section must be completed when targeting beta to a release.
 
 ###### Does this feature depend on any specific services running in the cluster?
 
-No.
+Yes. This feature depends on a CSI driver that opts into storage capacity
+tracking by setting `StorageCapacity: true` in its `CSIDriver` spec. If no
+such driver is deployed, the feature has no effect on scheduling.
+
+- CSI driver (with `StorageCapacity: true` in its `CSIDriver` spec)
+  - Usage description: The scheduler reads `CSIStorageCapacity` objects
+    published by the CSI driver's `external-provisioner` sidecar to
+    determine available storage capacity on each node, which is used to
+    score nodes for dynamic provisioning.
+    - Impact of its outage on the feature: `CSIStorageCapacity` objects are
+      no longer updated. Scoring continues based on stale capacity data and
+      may place pods on suboptimal nodes.
+    - Impact of its degraded performance or high-error rates on the feature:
+      Stale or infrequently updated `CSIStorageCapacity` data causes scoring
+      to reflect outdated capacity values. Pods may be placed on suboptimal
+      nodes, reducing the effectiveness of the feature. Scoring returns to
+      accurate behavior once the driver resumes updating the capacity objects.
 
 <!--
 Think about both cluster-level services (e.g. metrics-server) as well
@@ -1008,7 +1096,16 @@ Describe them, providing:
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-Yes, it may affect the time taken by scheduling.
+Yes, it may affect the time taken by scheduling, but the impact is negligible.
+
+The additional overhead introduced by this KEP is limited to arithmetic
+calculations in the Score phase: iterating over `DynamicProvisions` per node
+and summing the requested and available capacity values. This is equivalent in
+complexity to the existing static provisioning scoring. Importantly, the
+`CSIStorageCapacity` objects are already fetched and cached during the Filter
+phase, so no additional API calls or I/O occur during scoring. The SLO for
+`plugin_execution_duration_seconds{plugin="VolumeBinding",extension_point="Score"}`
+is therefore the same as established by KEP-1845 (<= 100ms on 90-percentile).
 
 <!--
 Look at the [existing SLIs/SLOs].
@@ -1066,7 +1163,47 @@ The behavior in such cases does not change. This proposal only modifies one of t
 
 ###### What are other known failure modes?
 
-Not applicable, yet.
+- [Pods are placed on suboptimal nodes due to stale CSIStorageCapacity data]
+  - Detection: Pods end up on nodes that do not match the intended scoring
+    strategy configured via the `Shape` setting of `VolumeBindingArgs` — for
+    example, placed on a node with less remaining capacity than expected when
+    preferring the maximum allocatable. PVC provisioning may also fail after
+    scheduling if the actual capacity on the chosen node is insufficient. Run
+    `kubectl get csistoragecapacities -A` and inspect the `creationTimestamp`
+    to check whether the data is fresh.
+  - Mitigations: CSIStorageCapacity objects are created and updated by the
+    CSI driver's external-provisioner sidecar, not by the scheduler. If
+    the objects do not reflect current node storage state, the root cause
+    lies in the external-provisioner. Delete the stale CSIStorageCapacity
+    objects so that the external-provisioner recreates them, or restart
+    the external-provisioner Pod to trigger a forced resync. As an
+    immediate workaround, disable the `StorageCapacityScoring` feature
+    gate; scoring for VolumeBinding will revert to the previous method
+    and will not be affected by stale capacity information.
+  - Diagnostics: Check kube-scheduler logs at verbosity level 5 or higher
+    for messages related to CSIStorageCapacity lookups. Verify that
+    CSIStorageCapacity objects (`kubectl get csistoragecapacities -A`)
+    reflect current node storage state. If objects are stale, also check
+    the external-provisioner logs for sync errors or update failures.
+  - Testing: Unit and integration tests verify that scoring correctly
+    reflects the capacity values reported in CSIStorageCapacity objects.
+    Note that detecting staleness is outside the scheduler's responsibility;
+    stale capacity data is not covered by tests.
+
+- [Fallback to scoring only with static provisioning when both static
+  and dynamic provisioning exist]
+  - Detection: When both static and dynamic provisioning are involved,
+    the scoring is done only with static provisioning. This is by design
+    but may be unexpected for users who expect storage capacity for
+    dynamic provisioning to always be scored.
+  - Mitigations: This is expected behavior documented in the KEP. Users
+    who need scoring for dynamic provisioning should use only dynamically
+    provisioned PVCs for a given pod.
+  - Diagnostics: Inspect the pod's PVC list. If any PVC has already been
+    bound to an existing PV (`kubectl get pvc`), that pod will use scoring
+    only with static provisioning.
+  - Testing: Unit tests verify that static provisioning takes precedence
+    when both exist.
 
 <!--
 For each of them, fill in the following information by copying the below template:
@@ -1087,7 +1224,8 @@ Check the kube-scheduler logs.
 
 ## Implementation History
 
-- 2023-05-30 Initial KEP sent out for review
+- v1.33: Alpha release
+- v1.37: Beta release
 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.

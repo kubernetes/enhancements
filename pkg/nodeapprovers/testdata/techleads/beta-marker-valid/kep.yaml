@@ -1,0 +1,7 @@
+title: Beta Marker Valid
+kep-number: 5
+owning-sig: sig-node
+stage: beta
+approvers:
+  - "@tallclair" # sig-node-assigned-approver
+latest-milestone: "v1.37"

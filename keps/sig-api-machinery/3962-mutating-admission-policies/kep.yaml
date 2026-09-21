@@ -8,7 +8,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-auth
-status: implementable
+status: implemented
 creation-date: 2023-04-24
 reviewers:
   - "@liggitt"
@@ -21,7 +21,6 @@ approvers:
   - "@deads2k"
 see-also:
   - "/keps/sig-api-machinery/3488-cel-admission-control"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable

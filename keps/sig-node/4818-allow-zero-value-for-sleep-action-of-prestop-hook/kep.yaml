@@ -11,7 +11,7 @@ reviewers:
   - "@kannon92"
   - "@ffromani"
 approvers:
-  - "@SergeyKanzhelev"
+  - "@SergeyKanzhelev" # sig-node-assigned-approver
 
 see-also:
   - "/keps/sig-node/3960-pod-lifecycle-sleep-action"

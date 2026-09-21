@@ -64,6 +64,8 @@ SIG Architecture for cross-cutting KEPs).
     - [ResourceClaim's request](#resourceclaims-request)
     - [ResourceClaim's status](#resourceclaims-status)
     - [ResourceClaim with distinctAttribute](#resourceclaim-with-distinctattribute)
+  - [Fractional Quantity](#fractional-quantity)
+    - [Implementation details](#implementation-details)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
       - [Unit tests](#unit-tests)
@@ -71,8 +73,8 @@ SIG Architecture for cross-cutting KEPs).
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-  - [Beta](#beta)
-  - [GA](#ga)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -105,7 +107,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [x] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [ ] (R) Graduation criteria is in place
@@ -154,6 +156,9 @@ Relations to other KEPs:
 - [KEP 5007](https://github.com/kubernetes/enhancements/issues/5007): The allocated share can be provisioned at the pre-bind step.
 - [KEP 4817](https://github.com/kubernetes/enhancements/issues/4817): A single network device can be shared across multiple pods, with each allocated share's `NetworkData` identified by a unique Share ID.
 - [KEP 4816](https://github.com/kubernetes/enhancements/issues/4816): The enhancement must be able to handle subrequests when the DRAPrioritizedList feature is enabled.
+- [KEP 5677](https://github.com/kubernetes/enhancements/pull/6068): This enhancement reports aggregated allocated, available devices and their resources.
+- [KEP 5941](https://github.com/kubernetes/enhancements/issues/5941): The enhancement introduce a generic DRA model for parent-scoped shared capacities (`sharedCapacities`) consumed by related child devices.
+- [KEP 5981](https://github.com/kubernetes/enhancements/issues/5981): The extractors of `sharingAffinity` acts as a structural gatekeeper before capacity subtraction occurs. It guarantees that multi-allocation devices do not accidentally mingle workloads from distinct administrative configurations.
 
 A motivating use case is to allocate a multi-allocatable network device in the [CNI DRA driver](https://github.com/kubernetes-sigs/cni-dra-driver)
 which can be selected by more than one pod on demand during scheduling.
@@ -560,6 +565,7 @@ type AllocatedDeviceStatus struct {
 ```
 
 ### Scheduling enhancement
+
 - When the scheduler invokes the `Allocate` function in the allocator, 
   the total allocated capacity is calculated by aggregating the consumedCapacity from all resource claims's `DeviceRequestAllocationResult` that have already been allocated.
 - Before allocation proceeds, existing selection criteria (defined by `alloc.isSelectable`) are evaluated. 
@@ -686,6 +692,50 @@ spec:
       distinctAttribute: interfaceName
 ```
 
+### Fractional Quantity
+
+Until Kubernetes v1.36, the DRAConsumableCapacity feature did not support fractional quantities when evaluating CapacityRange requests.
+The implementation assumed integer quantities (`.Value()`) in several parts of the API validation and matching logic,
+causing valid fractional values to be rejected or handled incorrectly.
+
+Specifically, the issue affected:
+
+- **Range policy evaluation**: fractional values were not correctly compared against the requested minimum and maximum capacity.
+- **API validation**: incorrectly rejected fractional quantities even though `resource.Quantity` itself supports them.
+
+To address these issues while preserving compatibility for existing deployments, the `DRAFractionalCapacityRange` feature gate has been introduced.
+When enabled, both API validation and CapacityRange evaluation support fractional quantities.
+
+#### Implementation details
+
+When the `DRAFractionalCapacityRange` feature gate is enabled, the implementation first determines whether any of `min`, `max`, or `step` contains a fractional value.
+If all quantities are integers, comparisons continue to use `resource.Quantity.Value()`, preserving the existing fast path with no behavioral or performance changes.
+
+If at least one quantity is fractional, the implementation switches to milli-unit arithmetic using `resource.Quantity.MilliValue()`.
+This provides support for quantities with up to three decimal places (for example, 100m = 0.1)
+while avoiding the complexity of arbitrary-precision calculations.
+
+API Description change:
+
+```go
+// CapacityRequestPolicyRange defines a valid range for consumable capacity values.
+//
+// If the DRAFractionalCapacityRange feature gate is
+// enabled and at least one of Min, Max, or Step is a fractional quantity (i.e.
+// its value is not an integer), milli-unit arithmetic is used instead,
+// supporting values with up to 3 decimal places (e.g. 100m = 0.1).
+// The largest supported value then is 1000 times smaller compared to using 64-bit integers.
+// Otherwise, all comparisons use 64-bit integer arithmetic via resource.Quantity.Value().
+```
+
+In addition to `ValidRange` evaluation, the same behavior applies to `ValidValues` validation.
+Prior to this feature gate, validation compared quantities using `resource.Quantity.Value()`, which truncates fractional quantities to their integer component.
+As a result, distinct fractional values such as 100m (0.1) and 200m (0.2) were both converted to 0 and incorrectly treated as equal,
+causing duplicate-value validation to reject valid configurations.
+
+When the `DRAFractionalCapacityRange` feature gate is enabled, validation instead compares quantities using `resource.Quantity.AsDec()`.
+This preserves the full decimal precision of the quantities, ensuring that fractional values are compared correctly and that only numerically equal quantities are considered duplicates.
+
 ### Test Plan
 
 <!--
@@ -778,20 +828,15 @@ implementing this enhancement to ensure the enhancements have also solid foundat
 
 ###### Coverage
 
-Target changes:
-
-- `k8s.io/dynamic-resource-allocation/structured/internal/experimental:`: `10/15/2025` - `90.7` to `93.8`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `10/15/2025` - `64.8` to `76.1`
-
-No change:
-
-- `k8s.io/dynamic-resource-allocation/structured`: `10/15/2025` - `58.8`
-- `k8s.io/kubernetes/pkg/apis/resource/validation`: `10/15/2025` - `97.9`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `10/15/2025` - `89.4`
-- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `10/15/2025` - `76.4`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `10/15/2025` - `83.2`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `10/15/2025` - `77.9`
-- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `10/15/2025` - `46.2`
+- `k8s.io/dynamic-resource-allocation/structured/internal/experimental`: `21/7/2026` - `94.7`
+- `k8s.io/dynamic-resource-allocation/structured/internal/incubating`: `21/7/2026` - `93.9`
+- `k8s.io/kubernetes/pkg/apis/resource/validation`: `21/7/2026` - `96.9`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaimtemplate`: `21/7/2026` - `69.2`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceclaim`: `21/7/2026` - `83.2`
+- `k8s.io/kubernetes/pkg/registry/resource/resourceslice`: `21/7/2026` - `77.4`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra`: `21/7/2026` - `84.7`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/plugin`: `21/7/2026` - `92.6`
+- `k8s.io/kubernetes/pkg/kubelet/cm/dra/state`: `21/7/2026` - `44.2`
 
 ##### Integration tests
 
@@ -828,20 +873,23 @@ The following functionalities should be covered in E2E tests:
 - Documentation provided
 - Initial unit, integration and e2e tests completed and enabled.
 
-### Beta
+#### Beta
 
 - Feature Gates are enabled by default.
 - No major outstanding bugs.
-- 1 example of real-world use case.
-  - CNI DRA driver (kubernetes-sigs/cni-dra-driver) can use this feature to manage and limit bandwidth quota.
-- Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
-
-### GA
-
 - 2 examples of real-world use cases.
   - CNI DRA driver (kubernetes-sigs/cni-dra-driver) can use this feature to manage and limit bandwidth quota.
+  - DRA Driver for CPU (kubernetes-sigs/dra-driver-cpu) can use this feature to manage and limit CPU resources.
+- Feedback collected from the community (developers and users) with adjustments provided, implemented and tested.
+
+#### GA
+
+- Available for general testing via the DRA Example Driver (kubernetes-sigs/dra-example-driver)
+- 2 examples of real-world use cases.
+  - DRA driver for multi-network can use this feature to manage and limit bandwidth quota.
   - Acelerator DRA driver can use this feature for on-demand virtual memory allocation.
 - Allowing time for feedback from developers and users.
+- Concrete evaluation of scheduling performance metrics, addressing: https://github.com/kubernetes/kubernetes/pull/138618
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -1048,22 +1096,17 @@ will rollout across nodes.
 
 ###### What specific metrics should inform a rollback?
 
-<!--
-What signals should users be paying attention to when the feature is young
-that might indicate a serious problem?
--->
-
-N/A
+When we notice unexpected `scheduler_unschedulable_pods{plugin="DynamicResources"}` or metric `scheduler_plugin_execution_duration_seconds{plugin="DynamicResources"}` in the kube-scheduler suddenly increases.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-<!--
-Describe manual testing that was done and the outcomes.
-Longer term, we may want to require automated upgrade/rollback tests, but we
-are missing a bunch of machinery and tooling and can't do that now.
--->
+The manual test was performed on a local Kind cluster by manually disabling and enabling the feature gate for all control plane components on the Kind node.
 
-N/A
+When this feature is enabled, a `ResourceClaim` with the added fields can be deployed and the driver can advertise 10G of bandwidth. Workloads which requests 5G can request capacity from devices that allow multiple allocations, and the consumed capacity is updated in `ResourceClaim.Status`.
+
+When the feature is disabled, existing workloads continue running, and there is no change to `ResourceClaim`, including the status of consumed capacity. However, new workloads, requesting 2G, that include a capacity request are rejected and remain in a pending state. Additionally, the fields added by this feature are removed when applying a new `ResourceClaimTemplate`.
+
+When the feature is re-enabled, a new `ResourceClaimTemplates` can be created with the added fields. The scheduler can properly prevent over-provisioning of capacity when trying to deploy another workload which requests 8G while allow the workload which requests only 2G to run with their consumed capacity tracked in `ResourceClaim.Status`, as intended by this feature, without impacting on the first workload that was already running.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1132,13 +1175,10 @@ Existing DRA and related SLOs continue to apply.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
-<!--
-Pick one more of these and delete the rest.
--->
-
 - [x] Metrics
   - Metric names:
-    - `apiserver_request` with `resource="resourceclaims", subresource="status"`
+    - `apiserver_request` with `resource="resourceclaims"`
+    - `scheduler_unschedulable_pods` with `plugin="DynamicResources"`
     - `scheduler_plugin_execution_duration_seconds` with `plugin="DynamicResources"`
         - For state gathering, `extension_point="PreFilter"`
         - For allocation, `extension_point="Filter"`
@@ -1155,7 +1195,7 @@ Describe the metrics themselves and the reasons why they weren't added (e.g., co
 implementation difficulties, etc.).
 -->
 
-Will consider in the beta timeframe.
+No.
 
 ### Dependencies
 
@@ -1297,35 +1337,30 @@ No.
 
 ### Troubleshooting
 
-<!--
-This section must be completed when targeting beta to a release.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
-
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
--->
+The troubleshooting section in https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#troubleshooting
+still applies. The only additional failure modes comes from version skew
+in the cluster and the troubleshooting steps provided through the link above
+should be sufficient to determine the cause.
 
 ###### How does this feature react if the API server and/or etcd is unavailable?
 
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable.
+
 ###### What are other known failure modes?
 
-<!--
-For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
--->
+See https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/4381-dra-structured-parameters#what-are-other-known-failure-modes.
+
+- kube-scheduler cannot allocate ResourceClaims.
+
+  The shared device may not have sufficient capacity to satisfy the request. The log message `Device capacity not enough` and the `capacities` field in the log `Allocating one device` can provide further clues for investigation (require -v=7 on kube-scheduler).
+
+If the feature is disabled but a ResourceClaim still requests capacity, the scheduler log will report:
+has capacity requests, but the DRAConsumableCapacity feature is disabled. Nevertheless, when using the allocator in stable mode, no logs related to the DRAConsumableCapacity feature will be emitted.
+
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
+
+N/A
 
 ## Implementation History
 
@@ -1351,6 +1386,24 @@ Alpha 1.35:
 - [Fix 134100 - integration with partitionable device PR 134103](https://github.com/kubernetes/kubernetes/pull/134103) has been pushed on 2025-09-17
 - [Fix 134519 - add ShareID to kubelet plugin API PR 134520](https://github.com/kubernetes/kubernetes/pull/134520) has been pushed on 2025-10-10
 - [Increase test coverage PR 134615](https://github.com/kubernetes/kubernetes/pull/134615) has been pushed on 2025-10-15
+
+Beta 1.36:
+
+- [Fix 136734 - missing GetSharedDeviceIDs bug in GatherAllocatedState](https://github.com/kubernetes/kubernetes/pull/136734) has been pushed on 2025-02-04
+- [Promote DRAConsumableCapacity to Beta PR 136611](https://github.com/kubernetes/kubernetes/pull/136611) has been pushed on 2026-01-29
+
+Beta 1.37:
+
+- [Update scheduler_perf integration test cases of ConsumableCapacity](https://github.com/kubernetes/kubernetes/pull/139511) has been merged on 2026-06-13
+  - Partially address [#135058 - DRA: measure and track performance of "experimental" allocator](https://github.com/kubernetes/kubernetes/issues/135058)
+- [Fix 139653 - ResourceSlice validation panics on zero validRange.step](https://github.com/kubernetes/kubernetes/pull/139698) has been merged on 2026-06-26
+- [Fix 140436 - allocator leaks reserved counters and constraints when it rejects or backtracks a candidate device](https://github.com/kubernetes/kubernetes/pull/140431) has been merged on 2026-07-15
+- [Fix 140160 - CapacityRequestPolicyRange not support fractional quantities](https://github.com/kubernetes/kubernetes/pull/140161) has been merged on 2026-07-20
+  - Introduce a new feature gate `DRAFractionalCapacityRange` to support fractional quantities in milli-scale.
+- [Fix 140433 - allocator double-counts a shared counter for a persisted allow-multiple device recorded only by share ID](https://github.com/kubernetes/kubernetes/pull/140437) has been merged on 2026-07-21
+- [Fix 140472 - ResourceSlice validRange.step of 2^64 re-panics with integer divide by zero](https://github.com/kubernetes/kubernetes/pull/140666) has been merged on 2026-07-21
+- [Fix 140441 - consumable-capacity roundUpRange overflows int64 for a large capacity request, allocating a device it cannot satisfy](https://github.com/kubernetes/kubernetes/pull/140442) has been pushed on 2026-07-11
+- [Fix 140650 - validate as fully qualified name in capacity requests](https://github.com/kubernetes/kubernetes/pull/140563) has been pushed on 2026-07-15
 
 ## Drawbacks
 

@@ -3,36 +3,40 @@ kep-number: 4205
 authors:
   - "@ndixita"
   - "@dragoncell"
-  - "roycaihw"
+  - "@roycaihw"
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: implementable
+status: implemented
 creation-date: 2023-05-25
 reviewers:
   - "@mrunalp"
-  - "@haircommander"
+  - "@haircommander" # sig-node-assigned-reviewer
   - "@porterdavid"
   - "@rphillips"
 
 approvers:
-  - "@sig-node-leads"
+  - '@mrunalp' # sig-node-tl
+  - '@haircommander' # sig-node-assigned-approver
+  - "@haircommander" # sig-node-assigned-approver
 
 see-also: []
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.34"
+latest-milestone: "v1.36"
+disable-supported: false
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.33"
   beta: "v1.34"
+  stable: "v1.36"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
@@ -41,7 +45,6 @@ feature-gates:
     components:
       - kubelet
 
-disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:

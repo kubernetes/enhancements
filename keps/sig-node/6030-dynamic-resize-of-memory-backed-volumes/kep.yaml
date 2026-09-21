@@ -1,0 +1,54 @@
+title: Dynamic Resize of Memory-Backed Volumes
+kep-number: 6030
+authors:
+  - "@natasha41575"
+owning-sig: sig-node
+participating-sigs:
+  - sig-storage
+status: implementable
+creation-date: 2026-04-27
+reviewers:
+  - "@msau42"
+  - "@jsafrane"
+  - "@tallclair"
+  - "@ndixita"
+approvers:
+  - "@dchen1107"
+  - "@msau42"
+  - "@jsafrane"
+  - "@tallclair"
+
+see-also:
+  - "/keps/sig-node/1287-in-place-update-pod-resources"
+  - "/keps/sig-node/1967-size-memory-backed-volumes"
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+# If the purpose of this KEP is to deprecate a user-visible feature
+# and a Deprecated feature gates are added, they should be deprecated|disabled|removed.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "1.37"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "1.37"
+  beta: "TBD"
+  stable: "TBD"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: InPlacePodVerticalScalingMemoryBackedVolumes
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - TBD
+

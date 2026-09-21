@@ -33,10 +33,21 @@
     - [Eviction Manager](#eviction-manager)
     - [Pod Overhead](#pod-overhead)
     - [Hugepages](#hugepages)
+    - [[Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)](#scoped-for-beta-in-136-fix-for-pod-level-limits-default-logic-issue-136120)
+    - [[Scoped for Beta in 1.36] Fix for Kubelet QoS Class Determination (Issue 135082)](#scoped-for-beta-in-136-fix-for-kubelet-qos-class-determination-issue-135082)
     - [[Scoped for Beta] Cluster Autoscaler](#scoped-for-beta-cluster-autoscaler)
     - [[Scoped for Beta] HPA](#scoped-for-beta-hpa)
     - [Cluster Autoscaler](#cluster-autoscaler)
     - [VPA](#vpa)
+  - [Instrumentation](#instrumentation)
+    - [Feature Adoption](#feature-adoption)
+      - [<code>kubelet_pod_level_resources_admission_total</code>](#kubelet_pod_level_resources_admission_total)
+    - [The Kubelet (Execution Phase)](#the-kubelet-execution-phase)
+      - [<code>kubelet_oom_kills_total</code>](#kubelet_oom_kills_total)
+      - [<code>kubelet_cpu_cfs_throttled_seconds_total</code>](#kubelet_cpu_cfs_throttled_seconds_total)
+    - [Kube-State-Metrics (KSM)](#kube-state-metrics-ksm)
+      - [<code>kube_pod_level_resource_spec</code>](#kube_pod_level_resource_spec)
+    - [Regression Monitoring (Existing Metrics)](#regression-monitoring-existing-metrics)
   - [Test Plan](#test-plan)
     - [Unit tests](#unit-tests)
     - [Integration tests](#integration-tests)
@@ -76,17 +87,17 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
   - [ ] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) 
 - [ ] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -1178,6 +1189,23 @@ resources.
 
 Containers will still need to mount an emptyDir volume to access the huge page filesystem (typically /dev/hugepages).  This is the standard way for containers to interact with huge pages, and this will not change. 
 
+#### [Scoped for Beta in 1.36] Fix for pod-level limits default Logic (Issue 136120)
+
+The `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36) addresses a bug in current defaulting logic which only implements defaulting for Pod-level requests. However, per the Rows 10 and 12 of the resource matrix, if Pod-level limits are unset but all containers have limits defined, the Pod-level limits should be defaulted to the sum of the container limits. This fix implements the missing logic to ensure consistency between the KEP and the implementation.
+
+Note: `PodLevelResourcesFixUpdateDefaulting` feature gate is introduced in Beta stage
+in 1.36 and is enabled by default. It is not recommended to disable this feature gate.
+Turning it off creates a discrepancy between the expected resource model and the actual
+defaulting behavior.
+
+#### [Scoped for Beta in 1.36] Fix for Kubelet QoS Class Determination (Issue 135082)
+
+The `PodLevelResourcesFixKubeletQOSClass` feature gate (Beta in 1.36) addresses a bug where `ComputePodQOS` incorrectly handles the distinction between `nil` and empty Pod Level Resources (PLRs). While most of the codebase correctly differentiates between them to determine if a pod has opted into pod-level resources, `ComputePodQOS` fails to do so consistently. This can lead to situations where a pod with container-level resources is misclassified as `BestEffort` because its (absent) pod-level resources are incorrectly interpreted. This fix ensures that pods are assigned the correct QoS class, maintaining expected eviction and scheduling priority behavior.
+
+Note: `PodLevelResourcesFixKubeletQOSClass` feature gate is introduced in Beta stage
+in 1.36 and is enabled by default. Disabling this feature is strongly discouraged, as it reverts
+the system to a state where resource-heavy pods may be erroneously targeted for eviction.
+
 #### [Scoped for Beta] Cluster Autoscaler
 
 Cluster Autoscaler won't work as expected with pod-level resources in alpha since
@@ -1253,6 +1281,67 @@ type RecommendedPodResources struct {
 Note: Detailed KEP design is owned and being worked on by 
 sig-autoscaling: [#7571](https://github.com/kubernetes/autoscaler/issues/7571)
 
+### Instrumentation
+
+This section outlines the final list of metrics for the Pod-Level Resources feature, excluding Resource Manager extensions. These metrics are designed to provide deep observability into admission control, scheduling efficiency, and Kubelet-level execution.
+
+#### Feature Adoption
+These metrics track feature adoption, user intent, and validation friction within the control plane.
+
+##### `kubelet_pod_level_resources_admission_total`
+Total number of pods processed during Kubelet admission, categorized by resource configuration strategy.
+
+**Note:** This metric is **ALPHA** and temporary. It is intended to track feature adoption while the feature is new and is scheduled to be removed 2-3 releases after the Pod-Level Resources feature reaches General Availability (GA).
+
+Labels: 
+- `config_mode` - Possible values: `container_level`, `pod_level_only`, `pod_and_container_level`.
+- `status` - Possible values: `admitted`, `rejected`.
+- `qos_class` - Possible values: `guaranteed`, `burstable`, `best_effort`.
+
+This metric is recorded as a counter.
+
+#### The Kubelet (Execution Phase)
+Tracks operation failures and resource enforcement during the container lifecycle. Labels are kept low-cardinality to ensure node stability.
+
+##### `kubelet_oom_kills_total`
+Total number of OOM kills triggered. This generic metric uses labels to distinguish between pod-level and container-level events.
+
+Labels:
+- `scope` - Possible values: `pod` (kills triggered specifically because the shared pod-level memory pool was exhausted), `container` (standard container-level OOM kills).
+- `resource` - Always `memory`.
+
+This metric is recorded as a counter.
+
+##### `kubelet_cpu_cfs_throttled_seconds_total`
+Total time in seconds that containers were throttled due to exceeding CPU limits.
+
+Labels:
+- `scope` - Possible values: `pod` (throttling caused by the shared pod-level ceiling), `container` (throttling caused by an individual container's limit).
+
+This metric is recorded as a counter.
+
+#### Kube-State-Metrics (KSM)
+Exposed by the cluster-level state collector. This is the primary source for high-cardinality metadata used in observability joins.
+
+##### `kube_pod_level_resource_spec`
+Exposes the numeric values of the pod-level resources specified in the PodSpec.
+
+Labels:
+- `namespace`: The namespace of the pod.
+- `pod`: The name of the pod.
+- `uid`: The Kubernetes UID of the pod.
+- `node`: The node where the pod is running.
+- `resource`: The resource type (`cpu`, `memory`).
+- `type`: The spec type (`request`, `limit`).
+- `unit`: The unit of measurement (`core`, `bytes`).
+
+#### Regression Monitoring (Existing Metrics)
+While not new, the following metrics must be monitored to ensure no regressions in scheduling or node stability occur after adopting pod-level resource specifications.
+
+- `schedule_attempts_total{result="error|unschedulable"}`: Monitored to detect spikes in unschedulable pods due to potential bugs in the new resource requirement calculation.
+- `node_collector_evictions_total`: Monitored to ensure that the new pod eviction ranking logic based on pod-level requests behaves as expected and does not lead to an increase in unintended evictions.
+- `started_pods_errors_total` / `started_containers_errors_total`: Monitored to detect failures in the Kubelet's ability to create and configure the pod-level cgroups and container sandboxes.
+
 ### Test Plan
 
 [X] I/we understand the owners of the involved components may require updates to
@@ -1319,10 +1408,11 @@ feature gate and by setting the new `resources` fields in PodSpec at Pod level.
   `InPlacePodLevelResourcesVerticalScaling` i.e. (Issue#5419)[https://github.com/kubernetes/enhancements/issues/5419]
 * Suggest Karpenter folks to use pod resource requests from k8s.io/component-helper
   or update https://github.com/kubernetes-sigs/karpenter/blob/v1.5.0/pkg/utils/resources/resources.go#L111-L144
+* Resolve defaulting bugs via `PodLevelResourcesFixUpdateDefaulting` feature gate (Beta in 1.36). [Issue 136120](https://github.com/kubernetes/kubernetes/issues/136120)
+* Resolve Kubelet QoS class determination bugs via `PodLevelResourcesFixKubeletQOSClass` feature gate (Beta in 1.36). [Issue 135082](https://github.com/kubernetes/kubernetes/issues/135082)
 
 #### GA (stable)
 
-* VPA integration of feature moved to beta.
 * No major bugs reported for 3 months.
 * Pod Level Resources Support With In Place Pod Vertical Scaling KEP is past alpha.
 * User feedback (ideally from at least two distinct users) is green
@@ -1413,6 +1503,34 @@ well as the [existing list] of feature gates.
     of a node? No. Once the feature is disabled, the kubelet rejects the pods with
     pod-level resources.
 
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: PodLevelResourcesFixKubeletQOSClass
+  - Components depending on the feature gate: kubelet
+  - Will enabling / disabling the feature require downtime of the control
+    plane? No.
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? No. Once the feature is disabled, the kubelet will fallback to
+    the old and erroneous logic of determining QOSClass. The feature gate is
+    introduced in Beta stage in 1.36 and is enabled by default. While is not
+    recommended to disable this feature gate as it resolves a critical bug, 
+    the gate allows administrators to revert to the previous behavior in the 
+    unlikely event that the fix introduces regressions in pod eviction or 
+    scheduling priorities within their specific environment. Disabling it 
+    is only recommended as a temporary troubleshooting step.
+
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: PodLevelResourcesFixUpdateDefaulting
+  - Components depending on the feature gate: kube-apiserver
+  - Will enabling / disabling the feature require downtime of the control
+    plane? No. Once the feature is disabled, the control plane would not set
+    the pod-level limits defaults when container-level limits are set for all
+    pods. `PodLevelResourcesFixUpdateDefaulting` feature gate is introduced
+    in Beta stage in 1.36 and is enabled by default. While, it is not recommended
+    to disable this feature gate, the gate allows administrators to revert to the 
+    previous behavior in the unlikely event that the fix introduces any regressions.
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? No.
+
 ###### Does enabling the feature change any default behavior?
 
 No. This feature is guarded by a feature gate, and requires setting Pod level
@@ -1450,6 +1568,8 @@ To resolve this, users can delete the affected pods and recreate them.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
+**Primary feature gate: PodLevelResources**
+
 If the feature is re-enabled after being previously disabled, any new pods will
 again have access to the pod-level resources feature. 
 
@@ -1470,6 +1590,20 @@ To ensure consistent and intuitive resource calculations, it is advisable to
 delete all pods when toggling the feature between enabling and disabling. This
 will help eliminate discrepancies and ensure that all pods operate under the same
 resource management scheme.
+
+**Bug-fix feature gates**
+* PodLevelResourcesFixUpdateDefaulting: Corrects the defaulting logic for Pod-level limits.
+Re-enabling this ensures that Pods with container-level limits—but missing explicit Pod-level 
+limits—are correctly assigned a defaulted Pod-level limit. This prevents "Limit-less" Pods that
+should have been constrained.
+
+* PodLevelResourcesFixKubeletQOSClass: Ensures the Kubelet correctly distinguishes between nil
+and empty Pod Level Resources. Re-enabling this prevents the critical misclassification of 
+Pods as BestEffort.
+
+Unlike the primary feature gate, re-enabling these feature gates primarily corrects the metadata 
+and accounting logic. Re-enabling them is not disruptive to pod execution and is essential to restore
+the intended eviction priority behaviors in Kubernetes.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -1575,7 +1709,15 @@ Re-upgrade Phase:
 - Restart the API server with feature gate enabled
 - Restart the kubelet with feature gate enabled
   - verify the existing pods are running
-  - recreate these pods to see the pod-level cgroups set correctly   
+  - recreate these pods to see the pod-level cgroups set correctly 
+
+
+Validation of Bug-Fix Logic (FixUpdateDefaulting & FixKubeletQOSClass):
+- Verify the upgrade path with feature FixUpdateDefaulting enabled: create a Pod with 
+container-level limits but no Pod-level limits. The API server should automatically 
+default the Pod-level limits to the sum of container.
+- Verify the upgrade path with FixKubeletQOSClass enabled: create a pod with empty string values
+in pod-level resources requests and/or limits to ensure that the QOS class is set correctly.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1598,9 +1740,9 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
-This feature will be built into kubelet, API server and scheduler. In order to determine if the feature
-is being used by the workloads, check the  `resources` field at pod level in the spec. There's no special
-metric planned to track the usage of this feature at the moment.
+Operators can use the `kubelet_pod_level_resources_admission_total` metric to track the adoption of this feature. This metric is categorized by resource configuration strategy (`config_mode`), admission status, and QoS class. Additionally, `kube_pod_level_resource_spec` (Kube-State-Metrics) can be used to identify specific pods using the feature and their configured resource values.
+
+**Note:** This metric is **ALPHA** and temporary. It is intended to track feature adoption while the feature is new and is scheduled to be removed 2-3 releases after the Pod-Level Resources feature reaches General Availability (GA).
 
 ###### How can someone using this feature know that it is working for their instance?
 
@@ -1645,12 +1787,15 @@ Pick one more of these and delete the rest.
 
 - [X] Metrics
   - Metric name:
-  - `apiserver_rejected_requests` will indicate any failures (`Bad Request` code=400) related to translation of new `resources` field in PodSpec. 
+  - `kubelet_pod_level_resources_admission_total` (**ALPHA, Temporary**): Total number of pods processed during Kubelet admission, categorized by resource configuration strategy. Scheduled for removal 2-3 releases after GA.
+  - `kubelet_oom_kills_total`: Total number of OOM kills triggered. Use label `scope="pod"` to identify kills caused specifically by the shared pod-level limit.
+  - `kubelet_cpu_cfs_throttled_seconds_total`: Total time in seconds that containers were throttled. Use label `scope="pod"` to identify throttling caused by the shared pod-level ceiling.
+  - `kube_pod_level_resource_spec` (Kube-State-Metrics): Exposes the numeric values of pod-level resources specified in the PodSpec.
   - `schedule_attempts_total{result="error|unschedulable"}`
   - `node_collector_evictions_total`: to check if a pod level resource setting is causing to evict more pods than normal
   - `started_pods_errors_total`: exposed by kubelet to check if large number of pods are failing unusually
   - `started_containers_errors_total`: exposed by kubelet to check if large number of containers are failing unusually
-  - Components exposing the metric: apiserver, kubelet, scheduler
+  - Components exposing the metric: apiserver, kubelet, scheduler, kube-state-metrics
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
@@ -1853,6 +1998,8 @@ resource specs.
 - **2024-05-31:** Revised KEP for alpha
   (#4678)[https://github.com/kubernetes/enhancements/pull/4678]
 - **2025-06-18:** Revised KEP for Beta
+- **2026-01-27:** Revised KEP for 1.36 to include fixes for issues 135082 and 136120.
+- **2026-06-08:** Revised KEP for GA in 1.37.
 
 ## Drawbacks
 

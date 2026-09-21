@@ -12,6 +12,7 @@ creation-date: "2023-09-04"
 reviewers:
   - "@ffromani"
 approvers:
+  - "@klueska" # sig-node-assigned-approver
   - "@sig-node-tech-leads"
 see-also: []
 replaces: []

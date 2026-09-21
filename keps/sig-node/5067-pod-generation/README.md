@@ -1197,6 +1197,7 @@ Major milestones might include:
 2025-02-12: PR feedback addressed, KEP moved to "implementable" and merged
 2025-06-05: proposed promotion to beta
 2025-09-23: proposed promotion to stable
+2026-01-20: mark as implemented after GA release
 
 ## Drawbacks
 
