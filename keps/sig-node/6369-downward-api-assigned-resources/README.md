@@ -9,10 +9,10 @@
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Story 1: Reacting to an upcoming cpuset change during scale-down](#story-1-reacting-to-an-upcoming-cpuset-change-during-scale-down)
-    - [Story 2: Discovering exclusive CPUs without reading cgroup files](#story-2-discovering-exclusive-cpus-without-reading-cgroup-files)
-    - [Story 3: Allocating buffers on assigned memory NUMA nodes](#story-3-allocating-buffers-on-assigned-memory-numa-nodes)
+    - [Story 2: Discovering exclusive CPUs and memory NUMA nodes without reading cgroup files](#story-2-discovering-exclusive-cpus-and-memory-numa-nodes-without-reading-cgroup-files)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Relationship with PodLevelResourceManagers](#relationship-with-podlevelresourcemanagers)
 - [Design Details](#design-details)
   - [Implementation](#implementation)
     - [<code>NodeDeclaredFeatures</code> Integration](#nodedeclaredfeatures-integration)
@@ -103,7 +103,7 @@ Memory assignments are exposed from the start here. They were part of the origin
 * Let a pod influence which CPUs or memory NUMA nodes it is assigned. These values report a decision, they do not take part in making it.
 * Expose anything beyond what is assigned to the container itself, such as the assignments of other pods or the node's full topology.
 * Guarantee a window in which a workload can react to a change. That is the subject of [KEP-6122](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/6122-configurable-scaling-delay).
-* Expose pod-level assignments from the `PodLevelResourceManagers` feature ([KEP-5526](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5526-pod-level-resource-managers)). That KEP does not support in-place resizing of pod-level resources, so a pod-level assignment never changes while the pod runs; without an upcoming change to announce, exposing the value ahead of time has no benefit.
+* Expose the pod-level pools — the CPU and memory "bubbles" — from the `PodLevelResourceManagers` feature ([KEP-5526](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5526-pod-level-resource-managers)). These pools are an implementation detail of `PodLevelResourceManagers` and have no direct effect on containers running the workload. See [Relationship with PodLevelResourceManagers](#relationship-with-podlevelresourcemanagers) for details. (Note: container-level assignments allocated by `PodLevelResourceManagers` remain a goal of this KEP.)
 
 ## Proposal
 
@@ -119,19 +119,13 @@ Scaling down must not interrupt the traffic being processed, so once the decisio
 
 This is the only channel through which a workload can learn an assignment that has been computed but not yet applied. Cgroup files and the pod status reflect only the set that is currently in effect, never the one that is about to be applied. Together with [KEP-6122](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/6122-configurable-scaling-delay), the workload learns the cpuset it is about to be given: during a scale-down the volume file is updated with the new set before that set is applied to the container, so the workload can move work off the CPUs being removed. Without KEP-6122 the value still changes, but there is no guaranteed window in which to react.
 
-#### Story 2: Discovering exclusive CPUs without reading cgroup files
+#### Story 2: Discovering exclusive CPUs and memory NUMA nodes without reading cgroup files
 
-As a developer of a latency-sensitive workload, I want to discover the exclusive CPUs assigned to my container without reading cgroup files, so that I can pin my worker threads to exactly those cores.
+As a developer of a latency-sensitive workload, I want to discover the exclusive CPUs and memory NUMA nodes assigned to my container without reading cgroup files, so that I can pin my worker threads to exactly those cores and allocate my buffers on the correct NUMA nodes.
 
-A DPDK-style workload is given four exclusive CPUs and pins its worker threads to exactly those cores. Today it has to discover them from inside the container by reading its cgroup files. With this feature it reads `assigned.cpuset` instead — from an environment variable if it only needs the value at startup, or from a volume file if it wants to follow later changes.
+A DPDK-style workload is given four exclusive CPUs and pins its worker threads to exactly those cores. It also allocates its buffers on the memory NUMA nodes it was actually assigned, rather than inferring them from the CPUs it happens to run on. Today it has to discover both from inside the container by reading its cgroup files, which is an implementation detail rather than a stable contract. With this feature it reads `assigned.cpuset` and `assigned.memset` instead — from an environment variable if it only needs the values at startup, or from a volume file if it wants to follow later changes.
 
-Reading the same information from sysfs requires handling different cgroup versions and operating systems, whereas the environment variable or volume file exposed by the Downward API gives a single, uniform interface.
-
-#### Story 3: Allocating buffers on assigned memory NUMA nodes
-
-As the same workload developer, I want to allocate my buffers on the memory NUMA nodes I was actually assigned, rather than inferring them from the CPUs I happen to run on.
-
-The same workload allocates its buffers on the memory NUMA nodes it was actually assigned, read from `assigned.memset`, rather than inferring them from whichever CPUs it happens to be running on.
+The Downward API gives a single, uniform interface for both CPU and memory that is independent of the host operating system and also covers the advance-notice use case described in [Story 1](#story-1-reacting-to-an-upcoming-cpuset-change-during-scale-down).
 
 ### Notes/Constraints/Caveats
 
@@ -149,6 +143,15 @@ Both channels expose an empty string (`""`) when the container has no exclusive 
 **Mitigation:** The coupling is bounded by the fact that the kubelet's static CPU policy and the DRA CPU driver cannot run on the same node, so the two mechanisms do not compete for the same workloads. Rather than being specific to the CPU Manager, the exposed file path is intended as a shared contract that a DRA driver can publish to as well; this direction was proposed by the dra-driver-cpu maintainers, and it is tracked in [dra-driver-cpu#181](https://github.com/kubernetes-sigs/dra-driver-cpu/issues/181). If the coupling has to be undone later, the pod status alternative in [Alternatives](#alternatives) covers the same use cases without naming a resource manager.
 
 **Security Considerations:** No new information is disclosed. A container can already read both values from its own cgroup files — `cpuset.cpus` for the CPUs and `cpuset.mems` for the memory NUMA nodes — so this KEP changes how the values are delivered, not who can see them. The set of memory NUMA nodes does reveal part of the node's topology, but only the part already assigned to that container and already readable by it. No new data recipients are created: the volume file and the environment variable are visible to exactly the processes that can read the container's cgroup files today.
+
+### Relationship with PodLevelResourceManagers
+
+[PodLevelResourceManagers](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5526-pod-level-resource-managers) (KEP-5526) introduces pod-level resource pools — a CPU set ("CPU bubble") and a set of memory NUMA blocks ("memory bubble") — from which individual containers receive their assignments. Both the CPU Manager and the Memory Manager use the same partitioning model: each pod-level pool is divided into exclusive per-container slices and a shared pool for the remaining containers. This KEP and KEP-5526 address different levels of the same stack:
+
+- **Container-level assignments** (the exclusive CPUs and memory NUMA nodes each container actually runs on) are exposed by this KEP via `assigned.cpuset` and `assigned.memset`. When `PodLevelResourceManagers` is active, those container-level assignments are still made by the CPU Manager and the Memory Manager and are still meaningful to the workload, so they remain in scope.
+- **Pod-level pools** (the CPU and memory bubbles themselves) are an implementation detail of `PodLevelResourceManagers` and have no direct effect on the containers running the workload. Exposing them is a [non-goal](#non-goals) of this KEP.
+
+In short, this KEP exposes what each container is assigned regardless of whether `PodLevelResourceManagers` is involved; it does not expose the pod-level pools that `PodLevelResourceManagers` manages internally.
 
 ## Design Details
 
@@ -518,8 +521,8 @@ N/A
 
 ### 1. Read the cgroup files from inside the container
 
-* **Description**: The container already sees its own `cpuset.cpus` and `cpuset.mems` through cgroupfs, so a workload could parse them instead of being told.
-* **Why Rejected**: Those files show the set that is currently applied, never the one that is about to be applied, so they cannot serve the advance-notice use case that motivates this KEP together with KEP-6122. They are also an implementation detail rather than a contract: the paths differ between cgroup v1 and v2, depend on whether a cgroup namespace is in use, and are not guaranteed across runtimes. Every workload would carry its own fragile parser for something Kubernetes can state plainly.
+* **Description**: The container can discover its assigned CPUs and memory NUMA nodes through cgroup-version-agnostic interfaces such as `sched_getaffinity(2)` or `/proc/self/status` (`Cpus_allowed_list`, `Mems_allowed_list`), or by reading `cpuset.cpus` and `cpuset.mems` through cgroupfs directly.
+* **Why Rejected**: All these mechanisms show only the set that is currently applied, never the one that is about to be applied, so they cannot serve the advance-notice use case that motivates this KEP together with KEP-6122. While `sched_getaffinity` and `/proc/self/status` are cgroup-version-agnostic, they use separate interfaces for CPU and memory, and are an implementation detail rather than a contract. Direct cgroupfs access has the additional drawback of differing paths between cgroup v1 and v2, dependence on cgroup namespace usage, and no guarantee across runtimes. Every workload would carry its own fragile parser for something Kubernetes can state plainly.
 
 ### 2. Query the kubelet pod resources endpoint
 
