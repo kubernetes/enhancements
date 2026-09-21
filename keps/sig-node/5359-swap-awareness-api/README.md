@@ -234,7 +234,10 @@ resources:
 ### Swap limit semantics
 
 The default behavior for all pods in "WorkloadControlledSwap" mode is "No swap"
-(`swap=0)`.
+(`swap=0`). When explicit `resources.limits.swap` is specified on a pod or
+container, the explicit workload swap limit takes precedence ("workload swap
+wins") on both `WorkloadControlledSwap` and `LimitedSwap` nodes, enabling
+seamless coexistence between the two node modes:
 
 <table>
   <thead>
@@ -249,13 +252,13 @@ The default behavior for all pods in "WorkloadControlledSwap" mode is "No swap"
   </thead>
   <tbody>
     <tr>
-      <td>No explicit swap limit -  Burstable QoS</td>
+      <td>No explicit swap limit (omitted) - Burstable QoS</td>
       <td>will not swap</td>
       <td>swap as per calculated limit</td>
       <td>will not swap (default)</td>
     </tr>
     <tr>
-      <td>No explicit swap limit - Guaranteed/ BestEffort</td>
+      <td>No explicit swap limit (omitted) - Guaranteed/ BestEffort</td>
       <td>will not swap</td>
       <td>will not swap</td>
       <td>will not swap (default)</td>
@@ -263,40 +266,49 @@ The default behavior for all pods in "WorkloadControlledSwap" mode is "No swap"
     <tr>
       <td><code>swap.limit</code> set (container or pod level)</td>
       <td>will not swap (No effect)</td>
-      <td>swap as per calculated limit (user limit will have no effect)</td>
+      <td>maximum swap as per user request (explicit workload swap limit overrides calculated limit)</td>
       <td>maximum swap as per user request (shared across pod if set at pod level).</td>
     </tr>
     <tr>
       <td><code>swap.limit=0</code> (disable)</td>
       <td>will not swap</td>
-      <td>swap as per calc limit for Burstable</td>
+      <td>will not swap (explicit opt-out overrides calculated limit for Burstable)</td>
       <td>will not swap</td>
     </tr>
   </tbody>
 </table>
 
 **Note on user experience:** If a pod with `resources.limits.swap` set is
-scheduled on a node where the kubelet is configured with `NoSwap` or
-`LimitedSwap`, the pod will be admitted, but a Pod event will be generated to
-indicate that the node does not support the requested swap configuration. The
-container will run, but the specified swap limit will have no effect. This
-approach avoids disrupting pods that have already been scheduled. For explicit
-placement, users should use node labels and selectors to ensure pods are
-scheduled on nodes with the appropriate `swapBehavior`.
+scheduled on a node where the kubelet is configured with `NoSwap`, the pod will
+be admitted, but a Pod event will be generated to indicate that the node does
+not support the requested swap configuration. The container will run, but the
+specified swap limit will have no effect. On nodes configured with either
+`WorkloadControlledSwap` or `LimitedSwap`, an explicit `resources.limits.swap`
+(including `swap: "0"`) takes precedence over the node's default calculation.
+This approach avoids disrupting pods that have already been scheduled.
 
-**Note on placement:** Setting an explicit swap limit on a pod provides a strong signal of user intent. While this KEP does not implement any scheduling logic based on this signal, a separate [Swap Scheduling KEP](https://github.com/kubernetes/enhancements/issues/5424) is exploring this topic. In the future, the scheduler could use this information to ensure that pods requesting swap are placed on nodes configured for `WorkloadControlledSwap`, and that pods explicitly disabling swap are not placed on `LimitedSwap` nodes where they might get swap by default.
+**Note on placement:** Setting an explicit swap limit on a pod provides a strong
+signal of user intent. To ensure pods specifying `resources.limits.swap` (`> 0`)
+are scheduled onto nodes with swap enabled rather than `NoSwap` nodes, kubelets
+can advertise `WorkloadControlledSwap` via
+[Node Declared Features (KEP-5328)](https://kep.k8s.io/5328). While this KEP
+does not implement capacity-based swap scheduling or `swap: "0"` node
+anti-affinity (distinguishing an omitted swap limit as swap-agnostic from
+`swap: "0"` as avoiding swapping nodes entirely), a separate
+[Swap Scheduling KEP](https://github.com/kubernetes/enhancements/issues/5424)
+is exploring those scheduling capabilities.
 
-**Note on coexistence:**  Kubernetes cannot support ‘built-in' protection when users
-want to have some nodes in `LimitedSwap` and some nodes in
-`WorkloadControlledSwap` within a cluster. This placement control can be
-achieved with taints or label selectors. NFD (Node Feature Discovery) is seen as
-the path to work with swap-labels, which will help with grouping swap nodes for
-maintenance or migration. Existing workloads in `LimitedSwap` will continue to
-work to protect existing behavior of swap enabled nodes. 
-
-With LimitedSwap already getting adoption in production by many users,
-overriding to change behavior may not be preferred, WorkloadControlledSwap would
-enable the additional usecases and can coexist with current behavior.   
+**Note on coexistence:** Because explicit `resources.limits.swap` takes
+precedence over `LimitedSwap`'s automatic calculation ("workload swap wins"),
+`LimitedSwap` and workload-specified swap can coexist both across nodes in a
+cluster and on the same `LimitedSwap` node:
+- On a `LimitedSwap` node, swap-agnostic `Burstable` workloads (that omit
+  `limits.swap`) continue to receive automatic proportional swap, while
+  workloads that explicitly set `limits.swap` (such as `swap: "0"` to opt out or
+  `swap: "1Gi"` for an explicit bound) have their explicit limit enforced.
+- On a `WorkloadControlledSwap` node, swap is strictly opt-in (`default = 0` for
+  all pods when `limits.swap` is omitted), so only workloads that explicitly
+  specify `limits.swap > 0` use swap.   
 
 ### NodeInfo Exposure
 
