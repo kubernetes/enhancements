@@ -66,7 +66,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 When a node becomes unreachable during maintenance, its Pods may never reach a terminal phase (`Failed` or `Succeeded`) that the Job controller can observe. A Job using `podReplacementPolicy: Failed` can then wait indefinitely instead of creating a replacement Pod, leaving the Job and higher-level queueing systems stuck.
 
-The Job controller will use the `MaintenanceInProgress` condition ([KEP-5683](../5683-lifecycle-conditions/README.md), Story 2: Jobs Stuck When Nodes Become Unreachable) as node context when deciding whether a Pod can be replaced. When `MaintenanceInProgress=True` is present on a node, the Job controller trusts this as an authoritative signal from the administrator that the Pods on that node may need special accounting, and does not wait for those Pods to reach a terminal phase before moving on. In accordance with the WG Node Lifecycle consensus reached on 2025-09-14, the Job controller performs no independent detection of node unreachability for this decision; it acts purely on the presence of the condition. This KEP defines the replacement and accounting semantics so Jobs can make progress safely under this explicit admin signal, without unintentionally running duplicate Pods.
+The Job controller will use the `MaintenanceInProgress` condition ([KEP-5683](../5683-lifecycle-conditions/README.md), Story 2: Jobs Stuck When Nodes Become Unreachable) as node context when deciding whether a Pod can be replaced. When `MaintenanceInProgress=True` is present on a node, the Job controller trusts this as an authoritative signal from the administrator that the Pods on that node may need special accounting, and does not wait for those Pods to reach a terminal phase before moving on. In accordance with the WG Node Lifecycle consensus reached on 2026-09-14, the Job controller performs no independent detection of node unreachability for this decision; it acts purely on the presence of the condition. This KEP defines the replacement and accounting semantics so Jobs can make progress safely under this explicit admin signal, without unintentionally running duplicate Pods. Administrators remain responsible for the correctness of the signal and for using existing mechanisms such as cordon, taints, or node cleanup to enforce the desired maintenance behavior.
 
 This is a narrowly scoped, opt-in change gated behind a feature flag. It does not introduce a new API, taint, or node-death-detection mechanism; it changes only how the Job controller counts and replaces Pods once that condition is set.
 
@@ -106,7 +106,13 @@ This KEP closes that gap: the Job controller becomes a consumer of `MaintenanceI
   completion behavior that depends on that cleanup, remains outside this
   KEP's scope.
 - **Define safe replacement and accounting semantics.** Define replacement and accounting semantics precise enough to avoid unintentionally running duplicate work for the same logical Pod slot.
-  - *Alpha caveat:* the Job controller trusts the `MaintenanceInProgress` signal authoritatively and does not independently verify node or kubelet health. The setter of the condition assumes responsibility for ensuring the node is actually isolated, to prevent split-brain execution.
+  - *Alpha caveat:* the Job controller trusts the `MaintenanceInProgress`
+    signal authoritatively and does not independently verify node or kubelet
+    health.
+  - **Condition setter responsibility:** the setter of the condition assumes
+    responsibility for ensuring the node is actually isolated, to prevent
+    split-brain execution, and for making the node unschedulable or applying
+    appropriate taints if replacement Pods must not land there.
 - **Make the behavior opt-in.** Gate this behavior fully behind a feature gate, defaulting to today's behavior when disabled.
 
 ### Non-Goals
@@ -120,6 +126,15 @@ This KEP closes that gap: the Job controller becomes a consumer of `MaintenanceI
   of existing external mechanisms such as PodGC, node remediation, or
   autoscaler cleanup.
 - **Node/VM lifecycle management.** This KEP does not drain, terminate, or reboot the underlying node or VM. It treats `MaintenanceInProgress` purely as a signal the Job controller reads.
+- **Scheduling enforcement for replacement Pods.** This KEP does not change
+  scheduler behavior or make `MaintenanceInProgress=True` a scheduling
+  constraint. Replacement Pods are created from the existing Job template and
+  may be scheduled onto any node the scheduler considers eligible, including a
+  node with `MaintenanceInProgress=True` if that node has not been cordoned,
+  tainted, or otherwise made ineligible. The administrator that sets
+  `MaintenanceInProgress=True` is responsible for using
+  existing mechanisms, such as cordon or taints, to prevent scheduling onto the
+  maintenance node when that is required.
 - **Defining or automating the writer of `MaintenanceInProgress`.** Who may set or clear the condition, and how conflicting writers are reconciled, is owned by [KEP-5683](../5683-lifecycle-conditions/README.md).
 - **Other workload APIs.** This KEP does not modify replacement or eviction semantics for other controllers, such as StatefulSets or DaemonSets. Extending this pattern to other controllers would require its own KEP.
 - **`podReplacementPolicy: TerminatingOrFailed`.** This KEP is scoped to Jobs using `podReplacementPolicy: Failed`, the policy that waits for a Pod to reach a terminal phase (`Failed` or `Succeeded`) before creating a replacement. Under `TerminatingOrFailed`, the Job controller already creates a replacement as soon as a Pod has `metadata.deletionTimestamp` set, without waiting for the terminal phase, so it is not subject to the stall this KEP addresses.
@@ -144,8 +159,8 @@ Tracking Issues:
 
 As a Job or queueing controller, `MaintenanceInProgress=True` gives Job and
 queueing controllers a node-level signal that Pods on the node may need
-special accounting when an admin or maintenance controller has identified
-the node as being lifecycled ([KEP-5683](../5683-lifecycle-conditions/README.md),
+special accounting when an administrator has identified the node as being
+lifecycled ([KEP-5683](../5683-lifecycle-conditions/README.md),
 Story 2).
 
 A Job configured with `podReplacementPolicy: Failed` checks the node for
@@ -157,10 +172,9 @@ creating a replacement, unblocking Jobs and higher-level queueing systems
 
 ### Risks and Mitigations
 
-The primary risk stems from this KEP depending on the admin (or maintenance
-controller) correctly managing the node's lifecycle and the
-`MaintenanceInProgress` condition. If that responsibility isn't met, the
-following can go wrong:
+The primary risk stems from this KEP depending on the administrator correctly
+managing the node's lifecycle and the `MaintenanceInProgress` condition. If
+that responsibility isn't met, the following can go wrong:
 
 - **Replacing a healthy Pod.** If `MaintenanceInProgress=True` is set while
   the node and its kubelet are actually fine (e.g., a bad script, or a
@@ -170,6 +184,13 @@ following can go wrong:
   [Goals](#goals)); whoever sets the condition is responsible for the node
   actually being isolated. Writer semantics and validation belong to
   [KEP-5683](../5683-lifecycle-conditions/README.md), not this KEP.
+- **Replacement Pod lands on the same maintenance node.** If
+  `MaintenanceInProgress=True` is set without also preventing new scheduling to
+  that node, the scheduler may place the replacement Pod back onto the same
+  node. *Mitigation*: this KEP treats `MaintenanceInProgress` as a Job
+  controller accounting signal only; maintenance workflows that require
+  replacement Pods to avoid the node must also cordon or taint the node using
+  existing Kubernetes scheduling mechanisms.
 
 ## Design Details
 
@@ -254,12 +275,19 @@ from node events; it only reads node state during its existing Job/Pod
 syncs, so changes to `MaintenanceInProgress` are observed on the next normal
 Job sync or resync rather than immediately on the node update.
 
-Operationally, maintenance controllers should set `MaintenanceInProgress=True`
+Operationally, administrators should set `MaintenanceInProgress=True`
 before or around the Pod deletion or eviction that makes the Pod terminating.
 The Pod update then enqueues the owning Job, allowing the Job controller to
 observe the condition during that sync. If the condition is set after the Pod
 deletion event has already been processed and no further Job or Pod event
 occurs, replacement is delayed until a later Job sync or informer resync.
+
+`MaintenanceInProgress=True` is not a scheduling constraint. The Job
+controller does not mutate the replacement Pod template, add node affinity, add
+taints, or otherwise influence where the replacement Pod lands. The
+administrator that sets `MaintenanceInProgress=True` is responsible for using
+existing scheduling controls, such as cordon or taints, if replacement Pods
+must avoid the maintenance node.
 
 ### Feature Gate
 
@@ -397,7 +425,7 @@ simulating `MaintenanceInProgress` is available via
 - Unit and integration tests covering the replacement and accounting logic for both non-indexed and indexed Jobs, including the indexed covered-index behavior described in [Reconciling the eventual duplicate](#reconciling-the-eventual-duplicate).
 - Metric `job_controller_pod_replacements_by_node_maintenance_total` present.
 - SIG Apps sign-off on using the same node-aware terminating predicate for both non-indexed replacement counts and indexed covered-index accounting.
-- **Signal scope:** For Alpha, the Job controller explicitly trusts the `MaintenanceInProgress=True` condition as an authoritative signal. It does not perform any secondary checks on the node's `Ready` state or kubelet health, leaving the responsibility of preventing split-brain execution to the administrator or component that sets the condition.
+- **Signal scope:** For Alpha, the Job controller explicitly trusts the `MaintenanceInProgress=True` condition as an authoritative signal. It does not perform any secondary checks on the node's `Ready` state or kubelet health, leaving the responsibility of preventing split-brain execution to the administrator that sets the condition.
 
 #### Beta
 - Feature gate enabled by default.
@@ -545,9 +573,8 @@ those belong to [KEP-5683](../5683-lifecycle-conditions/README.md).
 ###### Does this feature depend on any specific services running in the cluster?
 
 This feature depends on `MaintenanceInProgress` being set on nodes by an
-admin or admin-authorized maintenance controller, as defined by
-[KEP-5683](../5683-lifecycle-conditions/README.md). No other external
-services are required.
+administrator, as defined by [KEP-5683](../5683-lifecycle-conditions/README.md).
+No other external services are required.
 
 ### Scalability
 
@@ -630,6 +657,9 @@ controller's node informer is healthy and up to date.
 - 2026-08-24: WG Node Lifecycle discussed the stuck terminating Job Pod problem and using `MaintenanceInProgress` as additional node context for Job replacement decisions
 - 2026-09-14: WG Node Lifecycle aligned on the Alpha direction: the Job controller trusts `MaintenanceInProgress=True` as the admin-provided tie-breaker and does not independently detect node unreachability
 - 2026-09-20: Initial KEP PR opened
+- 2026-09-21: WG Node Lifecycle discussed that `MaintenanceInProgress=True`
+  is not a scheduling constraint and agreed to discuss further with SIG
+  Scheduling to align on the scheduler boundary
 
 ## Drawbacks
 
