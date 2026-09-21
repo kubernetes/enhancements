@@ -4,13 +4,15 @@ authors:
   - "@danbruno101"
 owning-sig: sig-node
 participating-sigs:
+  - sig-node
   - sig-apps
 status: provisional
 creation-date: 2026-09-08
 reviewers:
   - "@rthallisey"
 approvers:
-  - mrunalp  # proposed — SIG Node tech lead on parent KEP-5683; pending confirmation from WG lead
+  - "@mrunalp"
+  - "@dchen1107"
 
 see-also:
   - "/keps/sig-node/5683-lifecycle-conditions"
@@ -29,7 +31,7 @@ milestone:
 
 # The following PRR answers are required at alpha release
 feature-gates:
-  - name: DaemonSetGracefulNodeShutdown  # provisional; single gate for kubelet writer + DaemonSet reader
+  - name: DaemonSetGracefulNodeShutdown
     components:
       - kubelet
       - kube-controller-manager
