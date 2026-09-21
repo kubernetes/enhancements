@@ -89,7 +89,9 @@ KEP are to
 ### Non Goals
 
 -  define new swap scheduling behavior for workloads; this is managed by a
-    separate KEP for placement control
+    separate KEP for placement control ([KEP-5424](https://github.com/kubernetes/enhancements/issues/5424)),
+    where [Node Declared Features (KEP-5328)](https://kep.k8s.io/5328) can be
+    explored as one possible way to route swap-configured pods onto swap-capable nodes.
 -  change eviction behavior for swap enabled nodes; this will be
     investigated with a separate future KEP if improvements are needed. 
 -  deprecate or remove `LimitedSwap` mode.
