@@ -51,12 +51,6 @@
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
-**Draft status.** This is the first draft for WG Node Lifecycle review, per the
-WG process agreed on 2026-08-10: justification and happy-path design are
-complete; the Test Plan, full Graduation Criteria, and the PRR questionnaire are
-outlined but intentionally thin and will be completed in the next iteration. All
-WG resolutions recorded below are provisional pending SIG Node review.
-
 This KEP is a standalone follow-up to [KEP-5683: Node Lifecycle
 Conditions](https://github.com/kubernetes/enhancements/issues/5683) and one of
 several consumers of the conditions that KEP introduced. The `SLM:` prefix on
@@ -606,8 +600,8 @@ for its behavior. It introduces its own feature gate so that the
 DaemonSet-coordination behavior matures on its own track while
 `NodeLifecycleConditions` and the `kubectl drain` writer graduate separately.
 
-- **Proposed gate name:** `DaemonSetGracefulNodeShutdown` (proposed by the KEP
-  author per WG action item; SIG Node may weigh in)
+- **Gate name:** `DaemonSetGracefulNodeShutdown` (see [Open
+  Questions](#open-questions))
 - **Components:** kubelet, kube-controller-manager
 - **Stage:** alpha, default off, v1.38
 
@@ -785,13 +779,32 @@ phase signal — was considered and rejected; the reasoning is in
 
 ### Test Plan
 
-*Outline only in this iteration; detail in the next.*
-
-- [ ] I/we understand the owners of the involved components may require updates
+- [x] I/we understand the owners of the involved components may require updates
   to existing tests to make this code solid enough prior to committing the
   changes necessary to implement this enhancement.
 
+##### Prerequisite testing updates
+
+None identified. The existing fake `dbusInhibiter` in
+[`pkg/kubelet/nodeshutdown/`][pkg/kubelet/nodeshutdown/] and the DaemonSet
+controller test fixtures are sufficient to exercise the new paths.
+
 #### Unit tests
+
+Coverage at time of writing (`go test -cover`):
+
+- `k8s.io/kubernetes/pkg/kubelet/nodeshutdown`: `2026-09-21` - `34.5%`
+- `k8s.io/kubernetes/pkg/kubelet/nodestatus`: `2026-09-21` - `89.8%`
+- `k8s.io/kubernetes/pkg/controller/daemon`: `2026-09-21` - `69.4%`
+- `k8s.io/kubernetes/pkg/controller/nodelifecycle`: `2026-09-21` - `71.6%`
+
+Coverage in `pkg/kubelet/nodeshutdown` is low because the systemd/logind
+integration in `nodeshutdown_manager_linux.go` is only partially exercisable
+with the fake `dbusInhibiter`; the condition-writing path added by this KEP
+will be covered by unit tests against that fake, and end-to-end against real
+systemd in `test/e2e_node/`.
+
+New and updated tests:
 
 - [`pkg/kubelet/nodeshutdown/`][pkg/kubelet/nodeshutdown/]: condition write on
   shutdown signal, clear on cancel, clear on startup; against the existing fake
@@ -827,7 +840,7 @@ statement of what this KEP does:
 
 #### Alpha (v1.38)
 
-- Feature gate `DaemonSetGracefulNodeShutdown` (name provisional), default off.
+- Feature gate `DaemonSetGracefulNodeShutdown`, default off.
 - Kubelet writer, DaemonSet reader, and Node Lifecycle Controller clearing
   implemented behind the gate.
 - Unit and integration coverage with the gate on and off.
@@ -888,19 +901,20 @@ Fail-open semantics make every skew combination safe:
 | Both new, gate off | — | No change. |
 | Both new, gate on | — | Feature works. |
 
-The full n-3 kubelet skew analysis will be documented in the next iteration.
+The table covers the supported n-3 kubelet skew: an older kubelet never writes
+the conditions, so a newer kube-controller-manager observes absent conditions
+and the DaemonSet controller behaves exactly as today. A newer kubelet against
+an older control plane publishes conditions that nothing consumes.
 
 ## Production Readiness Review Questionnaire
-
-*Provisional answers for the items that follow directly from the design;
-items marked deferred will be completed in the next iteration per WG process.*
 
 ### Feature Enablement and Rollback
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- Feature gate name: `DaemonSetGracefulNodeShutdown` (provisional)
-- Components depending on the feature gate: kubelet, kube-controller-manager
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `DaemonSetGracefulNodeShutdown`
+  - Components depending on the feature gate: kubelet, kube-controller-manager
 
 ###### Does enabling the feature change any default behavior?
 
@@ -921,7 +935,13 @@ Behavior resumes on the next shutdown event. No state migration.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Yes — see the integration test plan (gate on / gate off).
+Yes. Unit tests in `pkg/controller/daemon/` and `pkg/kubelet/nodeshutdown/`
+exercise each path with the gate enabled and disabled via
+`featuregatetesting.SetFeatureGateDuringTest`. The integration test in
+`test/integration/daemonset/` runs the suppression scenario with the gate on
+and asserts today's behavior with it off. A gate off → on → off transition test
+on the DaemonSet reader verifies that toggling the gate leaves no dangling
+creation expectations and that suppression stops immediately on disable.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -936,11 +956,11 @@ workloads are unaffected.
 
 ###### What specific metrics should inform a rollback?
 
-`daemonset_controller_shutdown_suppressed_pod_creations_total` rising on nodes
-that are not shutting down would indicate stale or incorrect conditions. With
-the `critical` label, sustained suppression of critical DaemonSet Pods on
-long-running shutdowns is a signal that the critical-daemon-Pod gap is being
-exercised in practice.
+`daemonset_controller_shutdown_suppressed_pod_creations_total` rising while no
+node in the cluster is shutting down would indicate stale or incorrect
+conditions. With the `critical` label, sustained suppression of critical
+DaemonSet Pods on long-running shutdowns is a signal that the critical-daemon-Pod
+gap is being exercised in practice.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -971,9 +991,10 @@ objects, and a non-zero suppression counter.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-Deferred to the next iteration; candidate: zero DaemonSet Pod admissions
-rejected with reason `NodeShutdown` on a node after its conditions were
-published, beyond the one-sync propagation window.
+For alpha: no DaemonSet Pod admission is rejected with reason `NodeShutdown` on
+a node after its conditions were published, beyond the one-sync informer
+propagation window. Formal SLOs will be set at beta once alpha metrics
+establish a baseline for suppression counts and propagation latency.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -1005,10 +1026,11 @@ condition-writing milestone and is deferred.
 
 One Node status update per shutdown event (setting both conditions), one on
 cancel, and one at kubelet startup if clearing is needed. The startup clear can
-be coalesced into the kubelet's initial status update. Net effect is a
-**reduction** in API calls, since the create/reject/delete churn is eliminated —
-per [#137895], that churn can reach hundreds of cycles for a single Pod on a
-single node removal.
+be coalesced into the kubelet's initial status update. The Node Lifecycle
+Controller issues one additional status update when it clears the conditions
+on a node whose kubelet has been lost. Net effect is a **reduction** in API
+calls, since the create/reject/delete churn is eliminated — per [#137895], that
+churn can reach hundreds of cycles for a single Pod on a single node removal.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
@@ -1063,9 +1085,19 @@ proceeds. The DaemonSet controller sees absent conditions and behaves as today.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
-Deferred to the next iteration. First checks: confirm the conditions are
-present on the Node (`kubectl get node -o jsonpath`), confirm the gate is on
-for kube-controller-manager, and check the suppression metric.
+1. Confirm the conditions are present on the shutting-down Node:
+   `kubectl get node <name> -o jsonpath='{.status.conditions[?(@.type=="GracefulNodeShutdownInProgress")]}'`.
+   If absent, check that the gate is enabled on the kubelet and that
+   `GracefulNodeShutdown` is active on the node (systemd-logind reachable,
+   inhibitor lock held) — see kubelet logs for the shutdown manager.
+2. Confirm the gate is enabled on kube-controller-manager.
+3. Check that `daemonset_controller_shutdown_suppressed_pod_creations_total`
+   is incrementing during the shutdown; if it is not, the DaemonSet controller
+   is not observing the conditions (informer lag or gate off).
+4. If conditions are stale `True` on a node that is not shutting down, delete
+   them, and check whether the kubelet restarted (it should have cleared them
+   at startup) or whether the Node Lifecycle Controller has processed the node.
+
 ## Implementation History
 
 - **2026-07:** Enhancement issue #6249 filed and scoped in WG Node Lifecycle;
@@ -1078,6 +1110,8 @@ for kube-controller-manager, and check the suppression metric.
   (Q4), `maxUnavailable` out of scope (Q5); requires priorities/ordering
   section.
 - **2026-09-08:** First KEP draft; WG lead approves opening the draft PR.
+- **2026-09-11:** KEP PR [kubernetes/enhancements#6351](https://github.com/kubernetes/enhancements/pull/6351)
+  opened for SIG Node, SIG Apps, and PRR review.
 
 ## Drawbacks
 

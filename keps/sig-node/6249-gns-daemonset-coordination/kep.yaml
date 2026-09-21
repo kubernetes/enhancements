@@ -6,7 +6,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-node
   - sig-apps
-status: provisional
+status: implementable
 creation-date: 2026-09-08
 reviewers:
   - "@rthallisey"
