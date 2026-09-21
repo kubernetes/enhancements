@@ -1,0 +1,49 @@
+title: "DRA: Capacity Requests for Extended Resource Mapping"
+kep-number: 6406
+authors:
+  - "@shivamerla"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2026-09-21
+reviewers:
+  - "@pohly"
+  - "@johnbelamaric"
+approvers:
+  - "@johnbelamaric"
+  - "@pohly"
+  - "@mrunalp"
+  - "@dom4ha"
+  - "@liggitt"
+  - '@sergeykanzhelev'
+
+see-also:
+  - "/keps/sig-scheduling/5004-dra-extended-resource"
+  - "/keps/sig-scheduling/5075-dra-consumable-capacity"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.38"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.38"
+  beta: "TBD"
+  stable: "TBD"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: DRAExtendedResourceCapacity
+    components:
+      - kube-apiserver
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics: []
