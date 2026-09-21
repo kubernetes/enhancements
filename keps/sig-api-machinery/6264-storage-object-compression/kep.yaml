@@ -49,3 +49,4 @@ metrics:
   - apiserver_storage_compression_format_errors_total
   - apiserver_storage_compression_unsupported_algorithm_total
   - apiserver_storage_compression_rewrites_needed_total
+  - apiserver_storage_compression_inflation_wait_seconds

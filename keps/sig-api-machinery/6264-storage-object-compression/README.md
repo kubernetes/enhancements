@@ -36,6 +36,16 @@
   - [Version Skew Strategy](#version-skew-strategy)
   - [Open Questions](#open-questions)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -666,13 +676,16 @@ release before any release writes it.
 
 ### Observability
 
-This KEP adds five ALPHA metrics. `compression_operations_total{resource,operation,outcome}`
+This KEP adds six ALPHA metrics. `compression_operations_total{resource,operation,outcome}`
 distinguishes values compressed from values stored verbatim from values not framed at all, so an
 operator can tell whether the size floor or the policy is the reason a resource is not being compressed.
 `compression_duration_seconds{operation}` exists because compression time is otherwise invisible: no
 existing storage-layer metric or trace covers this stage.
 `compression_rewrites_needed_total{resource,direction}` bounds and attributes the write amplification
 of enabling or disabling a resource, and goes quiet once a migration converges.
+`compression_inflation_wait_seconds` records time spent waiting to acquire an inflation slot. It is
+unlabelled, matching the process-wide scope of the semaphore it measures, and it exists because
+saturation of that cap is otherwise only visible as latency with no local explanation.
 
 `compression_unsupported_algorithm_total{resource}` is labelled and is not pre-initialised, so a child
 series is created only on first increment. A healthy cluster carries zero series for it, which is
@@ -742,7 +755,7 @@ Targeted at v1.38.
   ships rather than at beta, because adding integrity afterwards requires a new algorithm id and a
   release of read-before-write skew. If the answer is a checksum, a mismatch needs a classification
   distinct from a format error, so that it stays eligible for the unsafe-deletion flow of KEP-3926.
-- [ ] Five metrics registered at ALPHA stability, matching the metrics list in `kep.yaml`.
+- [ ] Six metrics registered at ALPHA stability, matching the metrics list in `kep.yaml`.
 - [ ] The release note and the flag help carry the downgrade-forfeit warning above. If open question 1
   is decided against a checksum, they also carry the caveat that a frame's only integrity protection is
   the encryption provider's, which means none at all under AES-CBC or with encryption disabled.
@@ -947,4 +960,327 @@ deserves a note in apimachinery rather than living only here and in one test.
 
 ## Production Readiness Review Questionnaire
 
-TODO
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `StorageObjectCompression`
+  - Components depending on the feature gate: kube-apiserver
+- [x] Other
+  - Describe the mechanism: both boxes apply, because neither suffices alone. Compressing needs the gate
+    and `--storage-compression-config` naming the resource with an algorithm other than `None`. The gate
+    alone is inert; the flag alone fails startup.
+  - Will enabling / disabling the feature require downtime of the control plane? No, but each apiserver
+    restarts, since the configuration is read once per process. On HA that is a rolling restart.
+  - Will enabling / disabling the feature require downtime or reprovisioning of a node? No.
+
+###### Does enabling the feature change any default behavior?
+
+No. Without a configuration file stored bytes are byte-identical. Selecting a resource changes only its
+at-rest bytes, plus a one-time write amplification while existing objects migrate. Nothing visible
+through the API changes. Raw-etcd tooling is the exception: it can no longer read those values.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+The write path, yes and immediately: remove the resource's entry or give it the `None` algorithm. A
+rollback expressed through the gate must drop the flag too, since the flag without the gate fails
+startup. The read path, no, and that asymmetry is what makes rollback safe: it can never strand data.
+
+Rolling back does not uncompress anything. Frames revert to bare values only as something rewrites them,
+at the same amplification cost as enabling. Reverting the bytes, needed only before downgrading below
+the first decompress-capable release, requires a storage version migration per resource; see
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+Re-enabling behaves exactly like enabling for the first time. Only the objects rewritten to bare values
+while the feature was off need framing again; objects still framed are left alone, because their stored
+form already matches what the configuration asks for. The cost is therefore proportional to how much
+churn happened during the gap rather than to the size of the resource, so repeated enable and disable
+cycles do not compound. A resource left half-migrated is a valid steady state, since every apiserver
+reads both forms.
+
+###### Are there any tests for feature enablement/disablement?
+
+Not yet. The upstream implementation PR is not open, so no tests exist. Enablement and disablement need
+unit coverage of an unconfigured apiserver framing nothing and emitting no metric samples, the flag
+without the gate being rejected, a stale value converging in exactly one rewrite in either direction,
+which is what makes enable and disable terminate, and a value framed under one configuration reading
+back under any other. The restart-driven enable, disable and re-enable cycle needs an integration test.
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+No workload is affected. Only how kube-apiserver stores bytes changes, and etcd sees an opaque value
+either way. No interleaving can corrupt data, because a read is decided by the stored bytes rather than
+by the reading apiserver's configuration, so a mid-rollout fleet needs no coordination.
+
+Every remaining failure lands on the control plane. A configuration mistake fails startup rather than
+degrading: a malformed file, an unknown algorithm, an unreadable path, a `minSize` outside its legal
+range, a selector already claimed by an earlier entry, or the flag without the gate. A rolling update
+therefore loses one replica at a time while the rest keep serving. Applying an unvalidated file to every
+replica at once is what turns that into an outage.
+
+A blue-green update has the opposite shape. Both fleets serve the same etcd during the cutover, so the
+entire window is a mixed-configuration window and the rewrite churn described in
+[Version Skew Strategy](#version-skew-strategy) lasts as long as the overlap. If the fleets also differ
+in version, the green fleet must not write frames while a blue apiserver that cannot read them is still
+serving.
+
+Rollback within the same minor version is a configuration change applied at the next restart. Rollback
+below the first decompress-capable release is the one genuinely dangerous transition; see
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
+
+###### What specific metrics should inform a rollback?
+
+One signal argues for switching the feature off, and none argues for deleting an object.
+
+- Sustained p99 write-latency or apiserver CPU regression on a selected resource, or etcd write and
+  revision rate still elevated beyond the one-time burst: remove that resource from the configuration.
+- `apiserver_storage_compression_rewrites_needed_total` climbing in both directions and never going
+  quiet: apiservers disagree on configuration. Reconcile the file, since rolling back does not fix it.
+- `apiserver_storage_compression_unsupported_algorithm_total` non-zero: a peer writes frames this
+  apiserver cannot inflate. Roll the lagging apiserver forward.
+- `apiserver_storage_compression_format_errors_total` non-zero: investigate. Rolling back makes this
+  worse, since an older apiserver has fewer ways to read the same bytes.
+
+No counter can confirm a downgrade is safe. They are driven by reads, so a quiet counter means nothing
+has looked, not that no frames remain.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+No. The upstream implementation PR is not open, so upgrade/downgrade has been exercised end to end. The two
+transitions most worth testing are the beta-default-on to alpha-default-off boundary, where the startup
+check is itself the obstacle, and a downgrade below the first decompress-capable release preceded by a
+completed migration.
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No.
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+`apiserver_storage_compression_operations_total` tells an operator whether compression and decompression
+are actually happening on the resources they configured. Its `operation` label separates the two
+directions, and its `outcome` label separates compressed values from those stored verbatim and from those
+not framed at all. No workload can enable or observe the feature.
+
+###### How can someone using this feature know that it is working for their instance?
+
+- [ ] Events
+- [ ] API .status
+- [x] Other (treat as last resort)
+  - Details: there is deliberately no end-user signal, since end users cannot read `/metrics` and objects
+    round-trip unchanged whether or not compression is on. The operator watches the compressed `outcome`
+    on `apiserver_storage_compression_operations_total` to confirm framing is happening, and
+    `apiserver_storage_size_bytes`, which is per etcd cluster rather than per resource, for the benefit.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+Both error counters at zero. `apiserver_storage_compression_rewrites_needed_total` quiet again within one
+migration per resource added or removed. No regression against the existing API call latency SLOs, which
+remain the real ceiling: compression adds work to every mutating request for a selected resource, so the
+write-latency SLI rather than the compression histogram decides whether a resource stays enabled.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [x] Metrics
+  - Metric name: `apiserver_storage_compression_operations_total`,
+    `apiserver_storage_compression_duration_seconds`,
+    `apiserver_storage_compression_format_errors_total`,
+    `apiserver_storage_compression_unsupported_algorithm_total`,
+    `apiserver_storage_compression_rewrites_needed_total`,
+    `apiserver_storage_compression_inflation_wait_seconds`
+  - [Optional] Aggregation method: rate by resource and outcome; p99 by operation; any non-zero total on
+    either error counter; rate by resource and direction for rewrites, watched for reaching and holding
+    zero; p99 of the inflation wait
+  - Components exposing the metric: kube-apiserver
+- [ ] Other (treat as last resort)
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+No. The metric an operator would most want, the realised compression ratio per resource, is deliberately
+not exposed: on a resource holding few objects it approaches per-object compressibility, a finer side
+channel than the length channel compression already opens, and `/metrics` is readable by a far broader
+set of principals than etcd is. A count of frames remaining cannot be a metric either, since the counters
+are read-driven and an untouched object is never observed, which is why the pre-downgrade procedure is a
+migration rather than a dashboard check.
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No. Storage version migration (KEP-4192) is worth a note, since it schedules the one-time write
+amplification and a completed migration is the only sound preparation for a downgrade below the first
+decompress-capable release. Neither reads nor writes depend on it: without it the amplification still
+terminates, just on organic churn rather than on the operator's schedule.
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+No.
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No. `StorageCompressionConfiguration` is a configuration-file kind read once at startup, never persisted
+and never served, so no object limit applies to it.
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No.
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No change in counts, and no increase in size for almost every object: stored size decreases, with ratios
+in [Measured on production data](#measured-on-production-data). A small portion grows. A selected value
+above the configured floor that does not compress is stored in a verbatim frame, so it grows by five
+bytes.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+With no configuration file, nothing changes. For a selected resource each mutating request adds one
+compression pass and each read of a framed value one inflation, which is cheaper. The worst read case is
+watch-cache initialisation, a full LIST inflated object by object while the request waits.
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+Only kube-apiserver, and the net effect may be neutral or better. Compression costs CPU on the write path
+for selected resources and inflation on the read path, plus memory for pooled compressors and for bounded
+concurrent inflation; see [Bounding decompression](#bounding-decompression). Against that, smaller stored
+values mean fewer bytes over the wire to and from etcd, which saves both CPU and the buffers carrying
+them. Early measurements suggest that saving can offset the compression overhead, which the beta scale
+test is there to confirm.
+
+Network traffic to etcd decreases with the wire size.
+
+Admission control needs correcting separately, since it charges a LIST by stored bytes while the memory it
+occupies is the plaintext; see [API Priority and Fairness](#api-priority-and-fairness-and-size-accounting).
+
+###### Can enabling / using this feature result in resource exhaustion of some node resources (PIDs, sockets, inodes, etc.)?
+
+No.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+Compression and decompression are synchronous and in-process, with nothing persisted between requests.
+Neither runs if the API server is down, and neither can do anything if etcd is unavailable, since there is
+no value to store or retrieve. The feature adds no failure mode of its own to either outage.
+
+###### What are other known failure modes?
+
+- A malformed frame: stored bytes look framed but do not decode.
+  - Detection: `apiserver_storage_compression_format_errors_total` non-zero, and the whole LIST fails.
+  - Mitigations: none. What it means depends on the provider beneath. Under an authenticated encryption
+    provider like KMS v2 the ciphertext was verified before reaching this layer, so the fault is a bug
+    here and the fix is a code fix. Under `aescbc` or with no encryption the stored bytes are genuinely
+    damaged, and the only recovery is to restore from backup. Either way the object cannot be cleared
+    with unsafe deletion, which refuses this class of error.
+  - Diagnostics: which check rejected the frame is logged at high verbosity, deliberately not exposed as
+    a metric label.
+  - Testing: read-path fuzzing, plus aimed corruption under an unauthenticated provider.
+- An unsupported algorithm: a newer apiserver wrote the frame.
+  - Detection: `apiserver_storage_compression_unsupported_algorithm_total`, by resource.
+  - Mitigations: upgrade the lagging apiserver, correlating peer versions first. Not a rollback and not a
+    delete.
+  - Diagnostics: the unrecognised algorithm id and the storage key are logged.
+  - Testing: an integration test writes a value carrying an algorithm id this build does not implement,
+    then asserts the read fails without reporting corruption and that unsafe deletion is refused. The
+    condition is unreachable within a supported skew, so the test constructs it directly.
+- Reads queueing on the inflation limit.
+  - Detection: `apiserver_storage_compression_inflation_wait_seconds` p99 rising, with
+    `apiserver_storage_compression_duration_seconds` flat. The cost is the wait, not the work.
+  - Mitigations: shed concurrent etcd-served LISTs through APF. The limit is derived today; making it
+    configurable is proposed for beta.
+  - Diagnostics: an abandoned read stops waiting, surfacing as a cancellation rather than as latency.
+  - Testing: drive concurrent LISTs to the admission limit.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Rule the layer out first: a silent `apiserver_storage_compression_operations_total` means this apiserver
+is doing nothing here, though it says nothing about what etcd holds. For write latency, compare a
+selected resource against an unselected one of similar size; the remedy is deselection, effective at
+restart. For write volume, growth that does not decay means an unfinished migration or disagreeing
+configurations. For read latency, see the queueing mode above. If stored size is flat, the `outcome`
+label separates unframed values, whether from the size floor or the policy, from values stored verbatim.
+
+## Implementation History
+
+<!--
+Major milestones in the lifecycle of a KEP should be tracked in this section.
+Major milestones might include:
+- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
+- the `Proposal` section being merged, signaling agreement on a proposed design
+- the date implementation started
+- the first Kubernetes release where an initial version of the KEP was available
+- the version of Kubernetes where the KEP graduated to general availability
+- when the KEP was retired or superseded
+-->
+
+## Drawbacks
+
+- The at-rest format changes in one direction only. Once any cluster has written a frame, every later
+  kube-apiserver must be able to inflate one, indefinitely, and the read side has no deprecation path.
+  That obligation is permanent, for a benefit that stays opt-in at every stage including GA.
+- Clusters that never enable writing still carry the read path. It is installed unconditionally and has to
+  stay correct against hostile bytes under the providers that do not authenticate, so it needs review and
+  fuzzing on every change regardless of how few clusters use it.
+- CPU lands on the request goroutine for every read and write of a selected resource, including
+  watch-cache initialisation, and KEP-2338 is the precedent for getting that wrong. Enabling a resource
+  also costs a one-time write-amplification burst, and an incompressible object above the floor grows by
+  five bytes for good.
+
+## Alternatives
+
+- Compressing anywhere other than inside the transformer chain: in etcd, in its storage engine, in the
+  filesystem, or above the chain. All yield a ratio near 1.0 for the motivating case, since everything
+  outside the chain sees only ciphertext.
+- gzip rather than raw DEFLATE. The same algorithm plus a checksum, for 18 bytes and no hand-rolled
+  integrity code, and still live under [Open Questions](#open-questions). Raw DEFLATE is the alpha choice
+  because the frame already carries a discriminator and a declared length, so only gzip's trailer would
+  add anything.
+- A compression dictionary shared across objects. The obvious way to help objects near the floor, and
+  permanently rejected: shared state across values creates the cross-object oracle that
+  [Risks and Mitigations](#risks-and-mitigations) relies on being impossible.
+- A write-path dry-run mode that compresses and discards, to estimate the benefit before enabling. It
+  samples the write stream rather than the stored set, so it answers a different question from "what would
+  my database shrink to", it pays full compression cost for no stored saving, and its per-resource ratio is
+  the content-dependent signal [Observability](#observability) declines to export. An offline analyzer
+  answers the question better and in private. A read-path sampler would be the least-bad live shape, since
+  it observes the stored set and cannot affect what is written.
+
+## Infrastructure Needed (Optional)
+
+<!--
+Use this section if you need things from the project/SIG. Examples include a
+new subproject, repos requested, or GitHub details. Listing these here allows a
+SIG to get the process for these resources started right away.
+-->
