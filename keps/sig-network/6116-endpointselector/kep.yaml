@@ -36,5 +36,3 @@ feature-gates:
 disable-supported: true
 
 # TODO: Fill in metrics once monitoring requirements are defined (required for beta).
-# metrics:
-#   - endpoint_selector_controller/...
