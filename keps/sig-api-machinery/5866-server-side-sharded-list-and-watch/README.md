@@ -499,6 +499,12 @@ functionality is accessed.
 - Benchmarks showing performance improvements for sharded clients.
 - Scalability tests verifying no regression in API server throughput.
 - Informer and reflector framework will be updated to support sharded watches.
+- Watch cache object matching is consolidated behind `SelectionPredicate.Matches` rather than
+  short-circuiting to `MatchesSharding` and `MatchesObjectAttributes`
+  ([kubernetes/kubernetes#137821](https://github.com/kubernetes/kubernetes/issues/137821)).
+- Code organization for CEL is settled, specifically whether CEL, or some subset of it, belongs
+  as a dependency of the apimachinery module
+  ([kubernetes/kubernetes#137649](https://github.com/kubernetes/kubernetes/issues/137649)).
 
 <!--
 #### GA
