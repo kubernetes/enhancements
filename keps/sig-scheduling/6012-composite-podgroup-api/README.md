@@ -219,6 +219,11 @@ upon accordingly.
     heuristics, guaranteeing an optimal placement is out of scope.
 - Support differing group-level priorities across a single hierarchy tree.
 - Separate queueing priority from preemption priority.
+- Optimize scheduling for cases where `minCount` / `minGroupCount` is below the
+  actual count of pods / child groups, respectively.
+  - The proposal focuses on the most common use cases where these values equal
+    the actual counts of pods and child groups, while leaving the door open for
+    optimizing other cases in the future.
 
 ## Proposal
 
