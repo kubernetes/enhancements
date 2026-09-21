@@ -1065,15 +1065,17 @@ scheduling queue:
   status updates would require non-trivial synchronization to prevent races with
   the scheduling cycle, as well as arbitrary tuning of scan intervals and
   retention thresholds in `incompletePodGroupPods`.
-* **Subsequent validation in the scheduling cycle is still necessary:** A group
-  hierarchy popped from the queue might be stale with respect to the cluster
-  state in the scheduler snapshot. Because the scheduling cycle reconciles
-  objects via `reconcilePodGroupWithSnapshot` shortly before running the
-  scheduling algorithm, asynchronous updates could invalidate a hierarchy that
-  was valid when queued.
+* **Validation in the scheduling cycle is necessary regardless:** Because group
+  and pod objects are created and updated asynchronously, a hierarchy can be or
+  become invalid at any point while residing in the scheduling queue. Even if
+  the queue attempted to validate hierarchies, the scheduling cycle would still
+  need to re-validate every popped hierarchy before scheduling it, rendering
+  queue-level validation redundant.
 
-Consequently, runtime hierarchy validation in Beta is performed exclusively at
-the beginning of the scheduling cycle. Concretely, we extend the
+Consequently, we do not enforce queued hierarchies to be valid in the scheduling
+queue. An invalid hierarchy can be queued and popped normally; instead, runtime
+hierarchy validation in Beta is performed exclusively at the beginning of the
+scheduling cycle each time a hierarchy is popped. Concretely, we extend the
 `validatePodGroup` method to verify the structural and semantic conditions
 listed in the previous section. If any check fails, the scheduling cycle aborts
 early and updates the statuses of all groups and pods within the hierarchy to
