@@ -120,8 +120,8 @@ control plane already performs this work for `EndpointSlices` originating from a
 `Service`; the same mechanism should be available to resources that do not need
 `Service` semantics. For lack of a scoped API, many controllers settle for
 option 1, creating a `Service` whenever they need `EndpointSlices`. The
-following resources from across the Kubernetes ecosystem each implement their
-own version of label-selection-based endpoint management:
+following resources from across the Kubernetes ecosystem demonstrate
+label-selection and endpoint-management logic being implemented independently:
 
 - Istio `ServiceEntry`: `spec.workloadSelector` selects Kubernetes pods and VM
   workloads as service endpoints.
@@ -135,6 +135,11 @@ own version of label-selection-based endpoint management:
 - Kubernetes SIG Network Gateway API (proposed): GEP-4488 `Backend` defines
   `EndpointSelector` with a pod `LabelSelector` for backend endpoints.
   - GEP: https://github.com/kubernetes-sigs/gateway-api/blob/main/geps/gep-4488/index.md
+
+These examples are evidence of duplicated workload-selection logic, not
+proposed direct migrations. Their additional behavior—Cilium's node-local
+redirect handling and Istio's VM endpoint handling—remains outside this KEP's
+scope.
 
 Furthermore, `Service.spec.selector` is an equality-based map and an empty
 selector represents manually managed endpoints. A dedicated resource can use a
@@ -277,6 +282,13 @@ admins can create them; cluster-level restrictions apply through standard
 mechanisms. `NetworkPolicy` continues to apply to the selected pods regardless
 of whether their `EndpointSlices` originated from a `Service` or an
 `EndpointSelector`.
+
+A controller that needs managed Pod endpoints can be granted permission to
+create `EndpointSelectors` without direct `EndpointSlice` write permission. The
+controller is thereby limited to publishing same-namespace, Pod-derived
+endpoints rather than arbitrary addresses, allowing administrators to reduce
+the direct `EndpointSlice` write access described in
+[kubernetes/kubernetes#103675](https://github.com/kubernetes/kubernetes/issues/103675).
 
 #### Control Plane Load
 
