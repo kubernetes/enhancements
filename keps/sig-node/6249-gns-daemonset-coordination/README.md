@@ -231,6 +231,10 @@ sibling enhancements under the same umbrella.
 
 - **Job / maintenance-aware controller behavior.** Out of scope per initial
   scoping with the issue author.
+- **ReplicaSet / Deployment coordination.** The same create/reject/delete churn
+  affects ReplicaSet-managed Pods on a shutting-down node; that is tracked
+  separately in [#6265](https://github.com/kubernetes/enhancements/issues/6265).
+  This KEP changes no ReplicaSet or Deployment controller behavior.
 - **Rolling-update budget accounting.** Whether nodes suppressed by this KEP
   should be exempt from `maxUnavailable` during a DaemonSet rolling update, and
   more generally how DaemonSet status should attribute lifecycle unavailability,
