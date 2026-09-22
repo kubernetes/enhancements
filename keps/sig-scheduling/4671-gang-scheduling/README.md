@@ -28,7 +28,7 @@
   - [API](#api)
   - [PodGroup Status Lifecycle](#podgroup-status-lifecycle)
     - [Status Transition Rules](#status-transition-rules)
-    - [Implementation Notes (Alpha)](#implementation-notes-alpha)
+    - [Implementation Notes](#implementation-notes)
   - [PodGroup Deletion Protection](#podgroup-deletion-protection)
   - [SchedulingPolicy Reference vs. Copy/Inline in PodGroup](#schedulingpolicy-reference-vs-copyinline-in-podgroup)
   - [PodGroup Creation Ordering](#podgroup-creation-ordering)
@@ -98,14 +98,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-  - [ ] e2e Tests for all Beta API Operations (endpoints)
+  - [X] e2e Tests for all Beta API Operations (endpoints)
   - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
   - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
 - [X] (R) Graduation criteria is in place
   - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md) within one minor version of promotion to GA
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -231,8 +231,7 @@ The `Workload` API defines the scheduling policy and references one or more `pod
 is a standalone runtime object created from those templates, representing a self-contained scheduling unit that 
 encapsulates the runtime state.
 
-In v1.37, the API was promoted to `v1beta1`. At the same time, a new `v1alpha3` version was created
-to replace `v1alpha2`, enabling backward-incompatible changes around `DisruptionMode` for planned alpha features.
+In v1.38, the API is promoted to `v1`.
 
 The `spec.schedulingGroup` on the Pod object is used to identify the scheduling context, which is the runtime `PodGroup`.
 
@@ -285,7 +284,7 @@ serves as a policy template, containing the PodGroupTemplates with their corresp
 
 The `Workload` object defines these templates:
 ```yaml
-apiVersion: scheduling.k8s.io/v1beta1
+apiVersion: scheduling.k8s.io/v1
 kind: Workload
 metadata:
   namespace: ns-1
@@ -300,7 +299,7 @@ spec:
 
 A sample `PodGroup` instantiated from the above template would look like this:
 ```yaml
-apiVersion: scheduling.k8s.io/v1beta1
+apiVersion: scheduling.k8s.io/v1
 kind: PodGroup
 metadata:
   name: training-worker-0
@@ -497,7 +496,7 @@ The example below shows how this could look with the decoupled architecture for 
 A Workload object defines the static PodGroup template:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1beta1
+apiVersion: scheduling.k8s.io/v1
 kind: Workload
 metadata:
   name: jobset
@@ -512,7 +511,7 @@ spec:
 A standalone PodGroup object is created to define the scheduling policy and track a specific runtime instance:
 
 ```yaml
-apiVersion: scheduling.k8s.io/v1beta1
+apiVersion: scheduling.k8s.io/v1
 kind: PodGroup
 metadata:
   name: job-instance-worker-0
@@ -686,10 +685,10 @@ type GangSchedulingPolicy struct {
 }
 ```
 
-The `PodGroup` resource is a separate API object in `scheduling.k8s.io/v1beta1`:
+The `PodGroup` resource is a separate API object in `scheduling.k8s.io/v1`:
 
 ```go
-// API Group: scheduling.k8s.io/v1beta1
+// API Group: scheduling.k8s.io/v1
 
 // PodGroup represents a runtime instance of pods grouped together.
 // PodGroups are created by workload controllers (Job, LWS, JobSet, etc...) from
@@ -820,7 +819,7 @@ to support beta and GA of this feature. However, future extensions to the status
   including current pod counts. It's likely that a new, separate component would be responsible
   for tracking such changes and updating the status.
 
-#### Implementation Notes (Alpha)
+#### Implementation Notes
 
 - **Synchronous status updates**: Status updates are performed synchronously within the scheduling 
 cycle. Asynchronous updates will be explored once the `SchedulerAsyncAPICalls` feature is available.
@@ -829,8 +828,8 @@ match the approach used for pod status updates in the scheduler and avoid the pe
 of SSA in core controllers.
 - **Informer cache staleness**: The scheduler reads the existing `PodGroup` condition from the 
 informer cache before deciding whether to skip an update. There is a small race window where the 
-cache may not yet reflect a recent status write. This is acceptable for alpha (similar to pod status 
-updates) but may need to be addressed if a PodGroup "assume" mechanism is introduced later.
+cache may not yet reflect a recent status write, which can result in a redundant status write.
+This matches the semantics of pod status updates in the scheduler, so we keep it for GA.
 
 ### PodGroup Deletion Protection
 
@@ -850,8 +849,6 @@ set and still has the finalizer (a deletion candidate), it checks whether all po
 re-enqueues (i.e., on pod updates).
 - To find the referencing pods, we can use an index keyed by `schedulingGroup.podGroupName` 
 (and optionally namespace) so the controller can efficiently list pods that reference a given `PodGroup`.
-
-Deletion protection is not required for alpha (nice-to-have), however it is required for beta graduation.
 
 ### SchedulingPolicy Reference vs. Copy/Inline in PodGroup
 
@@ -1354,7 +1351,7 @@ schedule as many pods from such PodGroup as possible.
 
 #### Workload-aware Preemption
 
-Proper preemption support is a critical requirement for moving Gang Scheduling to Beta.
+Proper preemption support was a critical requirement for making Gang Scheduling fully functional.
 Workload-aware preemption [KEP-5710] aims to
 enable preemption for a whole pod group at once. In the context of this cycle,
 it means that if the cycle determines preemption for a single pod is necessary,
@@ -1433,13 +1430,14 @@ N/A
 
 ##### Unit tests
 
-- `k8s.io/kubernetes/pkg/apis/scheduling/v1alpha1`: `2025-10-02` - 62.7%
-- `k8s.io/kubernetes/pkg/apis/scheduling/validation`: `2025-10-02` - 97.8%
-- `k8s.io/kubernetes/pkg/scheduler`: `2025-10-02` - 81.7%
-- `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2025-10-02` - 91.4%
-- `k8s.io/kubernetes/pkg/scheduler/framework`: `2025-10-02` - 81.7%
-- `k8s.io/kubernetes/pkg/scheduler/framework/preemption`: `2025-10-02` - 64.2%
-- `k8s.io/kubernetes/pkg/scheduler/framework/util/assumecache`: `2025-10-02` - 86.2%
+- `k8s.io/kubernetes/pkg/apis/scheduling/validation`: `2026-09-11` - 92.3%
+- `k8s.io/kubernetes/pkg/registry/scheduling/workload`: `2026-09-11` - 97.9%
+- `k8s.io/kubernetes/pkg/registry/scheduling/podgroup`: `2026-09-11` - 86.1%
+- `k8s.io/kubernetes/pkg/controller/scheduling/podgroupprotection`: `2026-09-11` - 85.6%
+- `pkg/scheduler/framework/plugins/gangscheduling`: `2026-09-11` - 84.1%
+- `k8s.io/kubernetes/pkg/scheduler/schedule_one_podgroup.go`: `2026-09-11` - 92.3%
+- `k8s.io/kubernetes/pkg/scheduler/backend/queue`: `2026-09-11` - 93.8%
+- `k8s.io/kubernetes/pkg/scheduler/framework`: `2026-09-11` - 78.4%
 
 ##### Integration tests
 
@@ -1458,18 +1456,22 @@ We created integration tests to ensure the basic functionalities of gang schedul
 - Failed pod groups are requeued correctly and retry successfully when resources become available.
 - Scheduler correctly captures updated `minCount` value for pending pod groups, potentially unblocking them from PreEnqueue.
 
-- Source code: https://github.com/kubernetes/kubernetes/blob/8822656b909c5a3cf74ae1fe90151c7a3e461157/test/integration/scheduler/podgroup/podgroup_test.go
+- Source code: https://github.com/kubernetes/kubernetes/blob/a6d4708e816967a7d0c64155d6a702ab19463607/test/integration/scheduler/podgroup/podgroup_test.go
 - Job: https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=scheduler.podgroup
 - Triage: https://storage.googleapis.com/k8s-triage/index.html?text=TestPodGroupScheduling&job=integration&test=scheduler
 
-We also added benchmarks to measure the performance impact of these changes,xw in particular scheduling throughput
+We also added benchmarks to measure the performance impact of these changes, in particular scheduling throughput
 of the workload scheduling with gang policy:
 
-- Source code: https://github.com/kubernetes/kubernetes/blob/8822656b909c5a3cf74ae1fe90151c7a3e461157/test/integration/scheduler_perf/gangscheduling/performance-config.yaml
+- Source code: https://github.com/kubernetes/kubernetes/blob/a6d4708e816967a7d0c64155d6a702ab19463607/test/integration/scheduler_perf/podgroup/gangscheduling/performance-config.yaml
 - Job: https://testgrid.k8s.io/sig-scalability-benchmarks#scheduler-perf&include-filter-by-regex=gangscheduling
 - Triage: https://storage.googleapis.com/k8s-triage/index.html?text=GangScheduling&job=scheduler-perf&test=scheduler
 
-Performance tests for basic policy will be added with promoting to beta.
+and with basic policy:
+
+- Source code: https://github.com/kubernetes/kubernetes/blob/a6d4708e816967a7d0c64155d6a702ab19463607/test/integration/scheduler_perf/podgroup/basicscheduling/performance-config.yaml
+- Job: https://testgrid.k8s.io/sig-scalability-benchmarks#scheduler-perf&include-filter-by-regex=basicscheduling
+- Triage: https://storage.googleapis.com/k8s-triage/index.html?text=BasicScheduling&job=scheduler-perf&test=scheduler
 
 ##### e2e tests
 
@@ -1492,13 +1494,12 @@ If e2e tests are not necessary or useful, explain why.
 
 We added basic API tests for the new `Workload` and `PodGroup` APIs, that will later be
 promoted to conformance. These tests cover `PodGroup` creation, 
-validation, status updates, and lifecycle management:
+validation, status updates, lifecycle management, gang scheduling and basic policy scheduling:
 
-- Source code: https://github.com/kubernetes/kubernetes/blob/8822656b909c5a3cf74ae1fe90151c7a3e461157/test/e2e/scheduling/workload.go
+- Source code: https://github.com/kubernetes/kubernetes/blob/a6d4708e816967a7d0c64155d6a702ab19463607/test/e2e/scheduling/workload.go,
+  https://github.com/kubernetes/kubernetes/blob/a6d4708e816967a7d0c64155d6a702ab19463607/test/e2e/scheduling/gang_scheduling.go
 - Job: https://testgrid.k8s.io/sig-release-master-informing#kind-master-alpha-beta-features&include-filter-by-regex=sig-scheduling.*Workload
 - Triage: https://storage.googleapis.com/k8s-triage/index.html?text=podgroup&job=e2e
-
-With promoting to beta we'll add an e2e test for gang scheduling behavior.
 
 ### Graduation Criteria
 
@@ -1661,7 +1662,8 @@ the scheduling loop, possibly caused by the new logic.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-We'll perform manual testing of the upgrade -> downgrade -> upgrade path using the following sequence:
+For the beta release (v1.37), we performed manual testing of the upgrade -> downgrade -> upgrade path
+using the following sequence:
 
 1. Start a local Kubernetes v1.37 cluster with `GenericWorkload` feature gate disabled
    (default behavior).
@@ -1777,6 +1779,11 @@ PodGroup status updates:
   - estimated throughput: < XX/s
   - originating component: kube-scheduler
 
+PodGroup finalizer removal:
+  - API call type: UPDATE PodGroups
+  - estimated throughput: < X/s
+  - originating component: kube-controller-manager (PodGroup protection controller)
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 Yes:
@@ -1890,6 +1897,7 @@ retried with standard exponential backoff once connectivity is restored.
 - 2026-02: KEP-5832 updated to sync with API decision of keeping Workload API in alpha release.
 - 2026-03: KEP-5832 merged into KEP-4671 as a single consolidated KEP.
 - 2026-05: KEP updated to promote to beta in v1.37.
+- 2026-09: KEP updated to promote to stable in v1.38.
 
 ## Drawbacks
 
