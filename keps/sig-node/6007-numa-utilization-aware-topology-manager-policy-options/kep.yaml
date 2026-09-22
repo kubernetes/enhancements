@@ -12,7 +12,7 @@ reviewers:
   - "@ffromani"
 approvers:
   - "@dchen1107"
-last-updated: "2026-09-16"
+last-updated: "2026-09-22"
 see-also:
   - "keps/sig-node/3545-improved-multi-numa-alignment"
   - "keps/sig-node/4622-topologymanager-max-allowable-numa-nodes"

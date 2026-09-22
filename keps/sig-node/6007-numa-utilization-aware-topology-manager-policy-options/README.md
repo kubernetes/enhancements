@@ -12,6 +12,7 @@
     - [Story 2: Workload Consolidation for Power Efficiency](#story-2-workload-consolidation-for-power-efficiency)
     - [Story 3: Database Spreading](#story-3-database-spreading)
     - [Story 4: GPU Workload Prioritization](#story-4-gpu-workload-prioritization)
+    - [Story 5: Excluding a Resource from Scoring](#story-5-excluding-a-resource-from-scoring)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -21,6 +22,7 @@
     - [Preserving Current Placement Behavior](#preserving-current-placement-behavior)
   - [Score-Aware Preferred-First Merge Optimization (Beta)](#score-aware-preferred-first-merge-optimization-beta)
   - [Per-Resource Weights](#per-resource-weights)
+    - [Worked Examples: How Weights Influence Placement](#worked-examples-how-weights-influence-placement)
   - [Kubelet Configuration](#kubelet-configuration)
     - [Example Configurations](#example-configurations)
   - [Feature Gate](#feature-gate)
@@ -207,7 +209,22 @@ throughput across the machine.
 As an ML cluster operator, I want to weight GPU allocation higher than CPU when
 selecting NUMA nodes, so that GPU-heavy workloads prefer nodes where GPUs are
 already allocated, consolidating GPU usage even if CPU utilization is
-asymmetric.
+asymmetric. Without weights, CPU and memory pressure outvote the GPU signal and
+GPU-heavy pods fragment the free GPUs on the node.
+
+#### Story 5: Excluding a Resource from Scoring
+
+As an NFV operator, I want NUMA placement driven purely by SR-IOV VF
+availability, because VFs are the scarce non-fungible resource on my nodes: a
+NUMA node with no free VF cannot host the pod at all, while CPU and memory
+pressure is already handled by the scheduler. Giving CPU and memory a weight of
+0 leaves the device provider as the only contributor to the score, so
+`least-allocated` steers pods toward the NUMA node with the most free VFs rather
+than the one that merely looks idle on CPU and memory.
+
+[Worked Examples: How Weights Influence Placement](#worked-examples-how-weights-influence-placement)
+walks both of these scenarios through concrete allocation state and shows which
+NUMA node each weight string selects.
 
 ### Notes/Constraints/Caveats
 
@@ -385,6 +402,7 @@ is large enough relative to the NUMA node to move the score.
 Operators who require containers of a pod to share a NUMA node have three
 options, none of which require changes to this design:
 
+- **Leave `numa-allocation-strategy` as `none`.** Placement is then unchanged.
 - **Use `most-allocated` instead.** Under `container` scope it strengthens
   co-location rather than weakening it: each container raises the score of the
   node it lands on, which attracts the next container to the same node. This is
@@ -396,7 +414,6 @@ options, none of which require changes to this design:
   are admitted under container scope today will be rejected. That tradeoff is
   pre-existing KEP-693 behavior and is not introduced by this KEP. All example
   configurations in this KEP use pod scope.
-- **Leave `numa-allocation-strategy` as `none`.** Placement is then unchanged.
 
 Recovering pod-level co-location while remaining on `container` scope with
 `least-allocated` is explicitly not a goal. The policy interface is
@@ -485,6 +502,72 @@ behave identically; the smaller numbers are easier to read. A device type that
 appears on the node later contributes at weight 1 as soon as a pod requests it,
 which is the behavior we want for NUMA placement: a resource the operator has
 not ranked still affects locality, just less than the ones they have.
+
+#### Worked Examples: How Weights Influence Placement
+
+The examples below walk the weight strings through concrete allocation state and
+show which NUMA node each one selects. They are the basis for the user-facing
+documentation of this feature.
+
+**Example 1: prioritizing GPU consolidation ([Story 4](#story-4-gpu-workload-prioritization)).**
+A two-NUMA-node machine where each NUMA node has 64 exclusively allocatable
+CPUs, 128Gi of memory, and 4 GPUs, in the following allocation state:
+
+| NUMA node | CPUs assigned | Memory assigned | GPUs assigned | CPU score | Memory score | GPU score |
+|-----------|---------------|-----------------|---------------|-----------|--------------|-----------|
+| numa0 | 48 / 64 | 64Gi / 128Gi | 1 / 4 | 75 | 50 | 25 |
+| numa1 | 16 / 64 | 32Gi / 128Gi | 3 / 4 | 25 | 25 | 75 |
+
+A pod requests 8 exclusive CPUs, 16Gi of memory, and 1 GPU. Both NUMA nodes can
+satisfy it with a single-node affinity, so the two hints are structurally
+identical and the score decides. The operator runs `most-allocated` to
+consolidate GPU usage: filling numa1's last GPU keeps a block of 3 free GPUs on
+numa0 for a later multi-GPU pod.
+
+| `numa-score-weights` | numa0 aggregate | numa1 aggregate | Selected | Why |
+|----------------------|-----------------|-----------------|----------|-----|
+| (unset) | `(75+50+25)/3` = 50 | `(25+25+75)/3` = 41 | numa0 | CPU and memory pressure outvote the GPU signal, and the free GPU block is broken up |
+| `"nvidia.com/gpu=10"` | `(75+50+250)/12` = 31 | `(25+25+750)/12` = 66 | numa1 | GPU dominates, so the nearly-full GPU node wins |
+| `"cpu=3,memory=1,nvidia.com/gpu=6"` | `(225+50+150)/10` = 42 | `(75+25+450)/10` = 55 | numa1 | GPU still leads, CPU moderates it |
+| `"cpu=5,nvidia.com/gpu=5"` | `(375+50+125)/11` = 50 | `(125+25+375)/11` = 47 | numa0 | CPU ranked equal to GPU hands the decision back to CPU utilization |
+| `"nvidia.com/gpu=10,cpu=0"` | `(0+50+250)/11` = 27 | `(0+25+750)/11` = 70 | numa1 | CPU excluded outright, GPU and memory decide |
+| `"cpu=100,memory=100,nvidia.com/gpu=100"` | 50 | 41 | numa0 | Uniform weights are equivalent to leaving the option unset |
+
+Two properties are worth calling out. A weight expresses influence *relative to
+the other providers*, so ranking CPU as highly as GPU (row 4) reverses the
+decision even though the GPU weight did not change. And because the aggregate is
+self-normalizing, scaling every weight by the same factor (row 6) changes
+nothing.
+
+The strategy and the weights answer different questions: the weights decide
+*which resource's utilization matters*, the strategy decides *which direction*
+to move along it. With `"nvidia.com/gpu=10"` and `least-allocated` instead, the
+same state selects numa0 (31 < 66), the node with the most free GPUs.
+
+**Example 2: excluding a resource from scoring ([Story 5](#story-5-excluding-a-resource-from-scoring)).**
+An NFV node with four NUMA nodes, each with 32 exclusively allocatable CPUs,
+128Gi of memory, and 8 SR-IOV VFs. The operator runs `least-allocated` and cares
+only about VF availability, because a NUMA node with no free VF cannot host the
+pod at all while CPU and memory pressure is already handled by the scheduler.
+
+| NUMA node | CPU score | Memory score | VF score | Free VFs | Unweighted aggregate | `"cpu=0,memory=0"` |
+|-----------|-----------|--------------|----------|----------|----------------------|--------------------|
+| numa0 | 25 | 25 | 75 | 2 | 41 | 75 |
+| numa1 | 75 | 75 | 25 | 6 | 58 | 25 |
+| numa2 | 50 | 50 | 50 | 4 | 50 | 50 |
+| numa3 | 50 | 50 | 50 | 4 | 50 | 50 |
+
+With weights unset, `least-allocated` selects numa0, the node with the *fewest*
+free VFs, because its low CPU and memory utilization pulls the average down.
+Repeated placements exhaust numa0's VFs while numa1 keeps 6 idle. Zeroing CPU
+and memory leaves `intel.com/sriov-nic` as the only applicable provider at the
+default weight of 1, so the aggregate equals the VF score and `least-allocated`
+selects numa1.
+
+Zeroing is the sharpest instrument the option offers and it has a corresponding
+edge: a pod that requests none of the providers left with a non-zero weight has
+a total applicable weight of 0, and its placement falls back to the existing
+Narrowest/Closest tiebreak.
 
 If the total applicable weight comes out as 0 the weighted average is undefined.
 In practice this means no provider reported a score, which is the case for a pod
