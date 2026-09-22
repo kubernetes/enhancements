@@ -24,6 +24,7 @@
       - [TopologyAwareScheduling](#topologyawarescheduling)
     - [CompositePodGroup](#compositepodgroup)
   - [Pod Group Post Filter](#pod-group-post-filter)
+    - [Global vs. Node-Local Preemption and Nomination Semantics](#global-vs-node-local-preemption-and-nomination-semantics)
   - [Potential future extensions](#potential-future-extensions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -288,7 +289,7 @@ decide to extend Workload API with CompositePodGroup concept - for more details 
 [CompositePodGroup API](https://github.com/kubernetes/enhancements/issues/6012)). However, we never expect preemption unit to
 be larger than scheduling unit.
 
-Based on that, we will extend the the existing `GangSchedulingPolicy` as following:
+Based on that, `PodGroupTemplate` and `PodGroupSpec` are extended as follows:
 
 ```golang
 // DisruptionMode defines how individual entities within a group can be disrupted.
@@ -315,6 +316,15 @@ type SingleDisruptionMode struct {
 // AllDisruptionMode specifies that children can only be disrupted together.
 type AllDisruptionMode struct {
 	// Intentionally empty now.
+}
+
+type PodGroupTemplate struct {
+    // Existing field(s).
+
+    // DisruptionMode defines the mode in which a given PodGroup can be disrupted.
+    // One of Single, All. Defaults to Single if unset.
+    // This field is immutable.
+    DisruptionMode *DisruptionMode
 }
 
 type PodGroupSpec struct {
@@ -425,12 +435,20 @@ itself will be ignored, thus not reflecting the actual pod priority).
 We acknowledge that it might be misleading to users. For Alpha, we described
 the possible divergence in the documentation.
 
-For Beta and GA, we will disallow the divergence between the priority of the `Pod` and the `PodGroup`. 
-This will be done by the scheduler, which will fail scheduling of the `PodGroup`, once it observes such divergence.
-This mechanism will follow a similar mechanism already implemented in scheduler that disallows `PodGroup` with pods having different `spec.schedulerName`.
-We will check only the numerical value of the priority, not the priority class from which the value was derived.
-This information will be visible to the user in the description of the `PodScheduled` `Conditions` in the `Pod.Status` and 
-`PodGroupInitiallyScheduled` in `PodGroup.Status`:
+For Beta and GA, we enforce uniform priority across all entity types in a workload hierarchy:
+- API validation enforces that all templates (`PodGroupTemplate` and `CompositePodGroupTemplate`)
+  in a `Workload` share the exact same `priority` and `priorityClassName`.
+- In `kube-scheduler`, we disallow divergence between the `priority` of any entities across the
+  workload hierarchy (`CompositePodGroup`s, `PodGroup`s, and both unscheduled and already-scheduled
+  `Pod`s). If the scheduler observes any divergence between any of these entities, it fails
+  scheduling of the group.
+
+This mechanism follows a similar mechanism already implemented in the scheduler that disallows
+groups with pods having different `spec.schedulerName`.
+We check the numerical value of the priority in the scheduler, and this information is visible to
+the user in the description of the `PodScheduled` condition in `Pod.Status`,
+`PodGroupInitiallyScheduled` in `PodGroup.Status`, and `CompositePodGroupInitiallyScheduled` in
+`CompositePodGroup.Status`:
 
 ```yaml
 Pod:
@@ -439,7 +457,7 @@ Pod:
     - type: PodScheduled
       status: "False"
       reason: SchedulerError
-    message: 'all pods in a single pod group should match the priority of the pod group, got: 1 and 2'
+      message: 'all pods in a pod group hierarchy should have the same priority as the root pod group''s priority, got 1 ("pod-1") and 2 ("podgroup/default/pg-1")'
 ```
 
 ```yaml
@@ -449,7 +467,17 @@ PodGroup:
     - type: PodGroupInitiallyScheduled
       status: "False"
       reason: SchedulerError
-      message: 'all pods in a single pod group should match the priority of the pod group, got: 1 and 2'
+      message: 'all pods in a pod group hierarchy should have the same priority as the root pod group''s priority, got 1 ("pod-1") and 2 ("podgroup/default/pg-1")'
+```
+
+```yaml
+CompositePodGroup:
+  status:
+    conditions:
+    - type: CompositePodGroupInitiallyScheduled
+      status: "False"
+      reason: SchedulerError
+      message: 'all pod groups in a hierarchy should have the same priority as the root pod group''s priority, got 1 ("podgroup/default/pg-1") and 2 ("compositepodgroup/default/cpg-1")'
 ```
 
 and via `FailedScheduling` event:
@@ -465,7 +493,7 @@ and via `FailedScheduling` event:
     ...
   },
   "reason": "FailedScheduling",
-  "message": "all pods in a single pod group should have the same .spec.schedulerName set, got: \"custom-scheduler-1\" and \"custom-scheduler-2\"",
+  "message": "all pods in a pod group hierarchy should have the same .spec.schedulerName set, got: \"custom-scheduler-1\" (\"pod-1\") and \"custom-scheduler-2\" (\"pod-2\")",
   "source": {
     "component": "default-scheduler"
   },
@@ -481,24 +509,29 @@ It's worth mentioning here, that we want to introduce the same defaulting rules 
 `PodGroup.Spec.PriorityClassName` that we have for pods. Namely, if `PriorityClassName` is unset
 and there exists PriorityClass marked as `globalDefault`, we default it to that value.
 This consistency will allow us to properly handle cases when users set neither pods
-nor PodGroup priorities.
+nor group priorities.
 
 Note that, for workload-aware preemption we will support the `preemptionPolicy` being part
 of requestion `PriorityClass` - namely both currently existing modes: `PreemptLowerPriority`
 and `Never`.
 
 This field was not added as a part of the Alpha release of Workload Aware Preemption,
-thus it will lag one release behind the other fields. This means that it cannot be covered 
-by the `GenericWorkload` feature gate. We will introduce additional feature gate `PodGroupPreemptionPolicy` just for this field. 
+thus it lags one release behind the other fields. This means that it cannot be covered
+by the `GenericWorkload` feature gate. We introduced an additional feature gate
+`PodGroupPreemptionPolicy` just for this field, which was introduced as Alpha in v1.37 and is
+promoted to Beta in v1.38.
 
-As the `preemptionPolicy` is also a field of the Pod, we will apply the same constraints as
-for the priority. Namely, all pods within `PodGroup` will have to share the same `preemptionPolicy`. 
-This will be enforced on the scheduler level.
-
-If the field is not present on the `PodGroup` object, the scheduler will behave as 
-if the PodGroup had `PreemptLowerPriority` set, unless one of the pods forming PodGroup has
-`PreemptNever` preemption policy, in which case the scheduler will behave as if the PodGroup
-had `PreemptNever` set.
+As `preemptionPolicy` is also a field on `Pod`, we apply the same uniform constraints across all
+entity types in the workload hierarchy as for priority (failing scheduling of the group if any
+divergence is detected):
+- When the `PodGroupPreemptionPolicy` feature gate is disabled, `kube-scheduler` enforces that all
+  `Pod`s (unscheduled and already scheduled) across the group hierarchy share the same
+  `preemptionPolicy` as each other, and uses that policy as the group's preemption policy.
+- When the `PodGroupPreemptionPolicy` feature gate is enabled, API validation enforces that all
+  templates (`PodGroupTemplate` and `CompositePodGroupTemplate`) in a `Workload` share the same
+  `preemptionPolicy`, and `kube-scheduler` enforces that all entities across the workload hierarchy
+  (`CompositePodGroup`s, `PodGroup`s, and both unscheduled and already-scheduled `Pod`s) have the
+  exact same `preemptionPolicy`.
 
 Given that components operate on integer priorities, we will introduce a corresponding fields
 that reflect priority of a PodGroup (similarly to how it's done in Pod API).
@@ -553,10 +586,6 @@ type PodGroupSpec struct {
     Priority *int32
 }
 ```
-
-If that appears not being enough, we will similarly extend the `CompositePodGroup` API in a follow up.
-In such case, we expect that for any pod, the priority of a pod from the perspective of being a preemption victim
-would be the priority of a smallest unit encompassing it in the `CompositePodGroup` tree.
 
 ### Preemption algorithm
 
@@ -742,15 +771,19 @@ the plugins will be executed in the same order as they appear in the scheduler c
 and the first plugin that returns a success result, will stop evaluation of any further plugins.
 
 ```go
+// PodGroupSchedulingFunc is a function that will be run to check feasibility of a pod group scheduling.
+type PodGroupSchedulingFunc func(ctx context.Context) (*PodGroupAssignments, *Status)
+
 // PodGroupPostFilterResult stores information about nominated nodes for a pod group.
 type PodGroupPostFilterResult struct {
-    NominatingInfos map[*v1.Pod]*fwk.NominatingInfo
+    // NominatingInfos maps pods in the pod group to their nominated node info. It only contains pods that have a nominated node.
+    NominatingInfos map[types.NamespacedName]*NominatingInfo
 }
 
 // PodGroupPostFilterPlugin is an interface for "PodGroupPostFilter" plugins. These plugins are called
 // after a PodGroup cannot be scheduled.
 type PodGroupPostFilterPlugin interface {
-    fwk.Plugin
+    Plugin
 
     // PodGroupPostFilter is called by the scheduling framework
     // when the pod group scheduling cycle failed.
@@ -758,16 +791,67 @@ type PodGroupPostFilterPlugin interface {
     //
     // A PodGroupPostFilter plugin should return one of the following statuses:
     // - Unschedulable: the plugin gets executed successfully but the PodGroup cannot be made schedulable.
-    // - Success: the plugin gets executed successfully and the PodGroup can be made schedulable.
+    // - UnschedulableAndUnresolvable: the plugin gets executed successfully but the PodGroup cannot be made schedulable,
+    //   and other PodGroupPostFilter plugins cannot make the group schedulable so evaluation of subsequent plugins is skipped.
+    // - Success: the plugin gets executed successfully, the PodGroup can be made schedulable and evaluation of subsequent plugins is skipped.
     // - Error: the plugin aborts due to some internal error.
-    //
-    // Informational plugins should be configured ahead of other ones, and always return Unschedulable status.
-    // Optionally, a non-nil PodGroupPostFilterResult may be returned along with a Success status. For example,
-    // a preemption plugin may choose to return nominatedNodeName, so that framework can reuse that to update the
-    // preemptor pod's status.nominatedNodeName field.
-    PodGroupPostFilter(ctx context.Context, pg *v1alpha2.PodGroup, pods []*v1.Pod, podGroupCycleState *framework.CycleState, pgSchedulingFunc PodGroupSchedulingFunc) (*PodGroupPostFilterResult, *fwk.Status)
+    PodGroupPostFilter(ctx context.Context, state PodGroupCycleState, pgInfo PodGroupInfo, pgSchedulingFunc PodGroupSchedulingFunc) (*PodGroupPostFilterResult, *Status)
 }
 ```
+
+#### Global vs. Node-Local Preemption and Nomination Semantics
+
+In standard pod-level preemption, before evaluating candidate nodes for preemption, the scheduler
+checks whether the preemptor pod is eligible to preempt other pods (`PodEligibleToPreemptOthers`).
+Specifically, if the pod already has a `status.nominatedNodeName` set and there are lower-priority
+victim pods actively terminating on that nominated node, the scheduler avoids triggering a redundant
+preemption attempt unless that nominated node returned `UnschedulableAndUnresolvable` during the
+`Filter` phase.
+
+When generalizing preemption and nomination handling to Workload-Aware Preemption, several
+differences and limitations arise due to the global (cluster-wide) preemption scope vs. node-local
+evaluation and the `PodGroupPostFilter` execution model:
+
+1. **Ongoing preemption detection across the pod group**:
+   A pod group's member pods can be nominated across multiple nodes in the cluster. To prevent
+   redundant and cascading preemptions while an existing preemption is in flight, `PodGroup`
+   preemption checks whether *any* unscheduled member pod has a `status.nominatedNodeName` where
+   lower-priority victims are currently terminating. If so, the preemption is considered ongoing and
+   a new preemption search is not performed.
+   While a higher-priority pod or workload scheduled in the meantime could take resources on one of
+   the nominated nodes and invalidate the original placement, this behavior is aligned with today's
+   pod-level preemption (where `NodeResourcesFit` returns `Unschedulable` rather than
+   `UnschedulableAndUnresolvable`). Actively verifying whether the nominated placement still works
+   assuming all in-flight preemptions finish is left as a separate future enhancement.
+
+2. **Preserving `NominatedNodeName`s when preemption is ongoing**:
+   In single-pod preemption, returning `Unschedulable` from `PostFilter` when preemption is skipped
+   leaves the pod's existing `NominatedNodeName` untouched. However, in Workload-Aware Preemption,
+   when ongoing preemption is detected and `Unschedulable` is returned,
+   `SubmitPodGroupAlgorithmResult` would clear the existing nominations.
+   To resolve this, `PodGroupPostFilter` returns `Success` along with a result that explicitly
+   preserves each member pod's current `NominatedNodeName`. This ensures existing nominations are
+   retained and consecutive preemption attempts won't unnecessarily select different victims.
+
+3. **Nominations not honoring all non-node-local (global) constraints**:
+   Nominations (`NominatedNodeName`) are currently tracked per node (`NodeInfo`) and do not honor
+   all cluster-wide constraints—in particular, inter-pod anti-affinity when a nominated pod resides
+   on a different node, or non-node-local resources. While addressing this is desirable, this gap
+   already exists in pod-level preemption today, so Workload-Aware Preemption does not regress
+   existing behavior. Fixing global constraint tracking for nominations will be pursued as a
+   separate enhancement, most likely before
+   [KEP-5690: DRA Workload Resource Claims](https://github.com/kubernetes/enhancements/issues/5690)
+   starts supporting Workload-Aware Preemption (since DRA resources are often not node-local).
+
+4. **Repeating preemption when a workload is `UnschedulableAndUnresolvable`**:
+   Unlike single-pod preemption, Workload-Aware Preemption does not currently bypass waiting for an
+   ongoing preemption when a nominated node fails with `UnschedulableAndUnresolvable`—the preemptor
+   must wait until the existing preemption finishes before starting a new one. In Workload-Aware
+   Scheduling, determining whether the workload as a whole is `UnschedulableAndUnresolvable` is not
+   straightforward and would require dedicated changes for a narrow edge case. We consider this not
+   worth the extra complexity here, especially since addressing (1) (verifying whether the nominated
+   placement remains feasible assuming in-flight preemptions finish) will also resolve this case in
+   a more comprehensive way.
 
 ### Potential future extensions
 
@@ -792,14 +876,14 @@ for any of those and proceeding with any of these will require dedicated KEP(s) 
    any victims with priority higher than N. This could limit the number of the potential victims
    to check at the cost of additional scheduling feasibility checks.
 
-1. Non-uniform priority across CompositePodGroups.
+1. Non-uniform priority and preemption policy across CompositePodGroups.
 
-   The `CompositePodGroup` concept is also being introduced to Workload API. We can envision
-   a case where different `CompositePodGroups` will require to have different preemption priorities.
-   To achieve that, we could introduce `PriorityClassName` field also at the `CompositePodGroup` level,
-   with the semantic that lower-level structure overwrites the higher-level one (e.g. priority set for 
-   `PodGroup` overwrites the priority for `CompositePodGroup`). So the API and semantics proposed in 
-   this KEP would allow for achieving it in backward compatible way.
+   With `CompositePodGroup` we enforce that all entities across a workload hierarchy share the same
+   `priority` and `preemptionPolicy`. We can envision a future case where different
+   `CompositePodGroup`s within a hierarchy require different preemption priorities or policies. To
+   achieve that, we could relax this validation in the future so that lower-level structures can
+   override higher-level ones (e.g. priority set for a `PodGroup` overrides the priority of its
+   parent `CompositePodGroup`).
 
 1. Non-uniform (Composite)PodGroups
 
@@ -913,23 +997,32 @@ For Alpha we implemented integration tests to ensure basic functionalities of wo
   when preempting a single pod would be enough to free up the space for the higher priority
   individual pod.
 
-Those tests are located at
-[podgrouppreemption_test.go](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/pkg/scheduler/framework/preemption/podgrouppreemption_test.go).
+Those tests are located at:
+- Unit and framework preemption tests: [pkg/scheduler/framework/preemption/podgrouppreemption_test.go](https://github.com/kubernetes/kubernetes/blob/7abbc3e0709aa029b8209e2dae5b031f30ac5390/pkg/scheduler/framework/preemption/podgrouppreemption_test.go)
+- Integration tests: [test/integration/scheduler/preemption/podgroup/podgrouppreemption_test.go](https://github.com/kubernetes/kubernetes/blob/7abbc3e0709aa029b8209e2dae5b031f30ac5390/test/integration/scheduler/preemption/podgroup/podgrouppreemption_test.go)
+  - Job: https://testgrid.k8s.io/sig-release-master-blocking#integration-master&include-filter-by-regex=scheduler.preemption.podgroup
+  - Triage: https://storage.googleapis.com/k8s-triage/index.html?text=TestPodGroupPreemption&job=integration&test=scheduler
 
-For Beta we will expand the set of integration tests to cover the in-place reprieval logic. Namely, we will
-make sure that we have scenarios that covers the use of all in-tree Filter plugins during the workload aware preemption.
-We also aim to have a parity with all the existing test scenarios for the default preemption.
+For Beta, we expanded the set of integration tests to cover the in-place reprieval logic and
+scenarios covering in-tree Filter plugins during workload-aware preemption, achieving parity with
+default preemption test scenarios.
+
+Performance benchmarks for workload-aware preemption were added to `scheduler_perf` in:
+- [test/integration/scheduler_perf/workload_preemption/performance-config.yaml](https://github.com/kubernetes/kubernetes/blob/7abbc3e0709aa029b8209e2dae5b031f30ac5390/test/integration/scheduler_perf/workload_preemption/performance-config.yaml)
+
+These benchmarks evaluate both PodGroup-preempting-Pods (`GangPreemptionBasic`) and
+PodGroup-preempting-PodGroups (`GangPreemptionPodGroups`) scenarios across varying cluster and gang
+sizes.
 
 ##### e2e tests
 
-For alpha, given the new functionality is limited to kube-scheduler change and API extensions,
-we will rely on integration tests described above (as easier and faster to run and debug).
+For Beta, we implemented dedicated e2e tests covering the four basic workload-aware preemption
+scenarios in:
+- [test/e2e/scheduling/workload_aware_preemption.go](https://github.com/kubernetes/kubernetes/blob/7abbc3e0709aa029b8209e2dae5b031f30ac5390/test/e2e/scheduling/workload_aware_preemption.go)
+  - Job: https://testgrid.k8s.io/sig-scheduling#gce-cos-master-default&include-filter-by-regex=WorkloadAwarePreemption
+  - Triage: https://storage.googleapis.com/k8s-triage/index.html?text=WorkloadAwarePreemption
 
-For beta we will add a new e2e test to the sig scheduling tests defined in
-[test/e2e/scheduling/preemption.go](https://github.com/kubernetes/kubernetes/blob/e136f39334a72b7d35069a97d373ccaa0211dcae/test/e2e/scheduling/preemption.go).
-Those tests will cover the four basics basic functionalities describe in previous section.
-
-For GA we will promote those tests to conformance.
+For GA, we promote these e2e tests to conformance.
 
 ### Graduation Criteria
 
@@ -949,9 +1042,11 @@ For GA we will promote those tests to conformance.
 
 #### GA
 
+- Validation checking that the preemption unit is not bigger than the scheduling unit.
+- Scheduler initialization check logging an error when `PostFilter` plugins do not implement `PodGroupPostFilter`.
 - E2E test promoted to conformance
 - Performance benchmarks have well defined thresholds and are run as part of the scheduler-perf of sig-scalability-benchmarks
-- All known issues resolved 
+- All known issues resolved
 
 
 ### Upgrade / Downgrade Strategy
@@ -987,11 +1082,11 @@ is not relevant for it.
   - Feature gate name: PodGroupPreemptionPolicy
   - Components depending on the feature gate: kube-apiserver, kube-scheduler
 
-Note that for Alpha this feature was using `WorkloadAwarePreemption` feature gate.
-For Beta and GA we decided to merge it together with the `GenericWorkload` feature gate,
-with the rationale provided in the rest of the KEP. 
-There is also a separate `PodGroupPreemptionPolicy` feature gate that allows to set 
-the preemption policy on the group level.
+Note that for Alpha this feature was using the `WorkloadAwarePreemption` feature gate.
+For Beta and GA we merged it together with the `GenericWorkload` feature gate (which graduates to GA in v1.38),
+with the rationale provided in the rest of the KEP.
+There is also a separate `PodGroupPreemptionPolicy` feature gate (introduced as Alpha in v1.37 and promoted to Beta in v1.38)
+that allows setting the preemption policy at the pod group level.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -1063,13 +1158,12 @@ constraints and preemption behavior won't be applied.
 
 ###### What specific metrics should inform a rollback?
 
-- `scheduler_podgroup_preemption_attempts_total{result="error"}`: A sudden spike indicates internal 
-   errors or panics within the workload aware preemption logic.
-- `scheduler_podgroup_preemption_attempt_duration_seconds`: A significant P99 latency would indicate 
+- `scheduler_workload_preemption_attempts_total{result="error"}`: A sudden spike indicates internal
+   errors or panics within the workload-aware preemption logic.
+- `scheduler_preemption_evaluation_duration_seconds` / `scheduler_preemption_execution_duration_seconds`: A significant P99 latency would indicate
    that the performance of the new logic is unacceptable.
-- `plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}`: 
-   A sudden increase of the latency of default preemption, especially if there is no PodGroup 
-   objects in the cluster indicates an issue with the workload aware default preemption.
+- `scheduler_plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PodGroupPostFilter"}`:
+   A sudden increase in the latency of default preemption for pod groups indicates an issue with workload-aware preemption.
 
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
@@ -1092,18 +1186,18 @@ behavior).
    `scheduler_pending_entities{type="podgroup", queue="gated"}` metric is incremented.
 8. Create a Pod `test-pod-2` pointing to the same pod group.
 9. Both pods are scheduled successfully in the same cycle (Gang Scheduling with Workload Aware Preemption works).
-10. Verify that `scheduler_podgroup_preemption_attempts_total` metric is incremented.
+10. Verify that `scheduler_workload_preemption_attempts_total` metric is incremented.
 10. Downgrade API Server and Scheduler to v1.36 with feature gate disabled.
 11. Create `test-pod-3` pointing to `gang-test-B`. Note: We use a pod group created in step 5 because creating new
     PodGroup objects is disabled.
 12. The pod is scheduled immediately (PodGroup logic is ignored because the schedulingGroup field is dropped by
     the v1.36 API server). If Gang Scheduling were active, this pod would hang pending waiting for a second member.
-13. Verify that `preemption_attempts_total` was increased and the `scheduler_podgroup_preemption_attempts_total` metric
+13. Verify that `preemption_attempts_total` was increased and the `scheduler_workload_preemption_attempts_total` metric
     did not increase.
 13. Upgrade API Server and Scheduler back to v1.37 with feature gate enabled.
 14. Create `test-pod-4` and `test-pod-5` pointing to `gang-test-B`; verifying that Gang Scheduling functionality is
     restored (these pods wait for `minCount=2` before scheduling).
-15. Verify that the `scheduler_podgroup_preemption_attempts_total` metric was increased and `preemption_attempts_total`
+15. Verify that the `scheduler_workload_preemption_attempts_total` metric was increased and `preemption_attempts_total`
     was not increased.
 
 For the Pod Group is a victim case we will use the following sequence:
@@ -1144,7 +1238,7 @@ previous answers based on experience in the field.
 
 ###### How can an operator determine if the feature is in use by workloads?
 
-Operators can check the new `scheduler_podgroup_preemption_attempts_total` metric. A value greater than zero indicates that the
+Operators can check the new `scheduler_workload_preemption_attempts_total` metric. A value greater than zero indicates that the
 scheduler is processing Workload Aware Preemption.
 
 ###### How can someone using this feature know that it is working for their instance?
@@ -1207,18 +1301,20 @@ of the workload scheduling which in term would degrade the performance of the st
   (`apiserver_request_total{resource="pods", subresource="binding"}`).
 - Default Preemption Performance: There should be no significant regression in the default preemption performance,
   especially when there are no PodGroups in the cluster. This can be measured by the
-  `plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}` metric.
+  `scheduler_plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}` metric.
 
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [X] Metrics
   - Metric name: 
-    - scheduler_podgroup_preemption_attempts_total
-    - scheduler_podgroup_preemption_attempt_duration_seconds
-    - scheduler_podgroup_preemption_victims
-    - scheduler_podgroup_preemption_reprieved_total
-    - plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PostFilter"}
+    - scheduler_workload_preemption_attempts_total
+    - scheduler_workload_preemption_victims
+    - scheduler_preemption_workload_disruptions
+    - scheduler_preemption_evaluation_duration_seconds
+    - scheduler_preemption_execution_duration_seconds
+    - scheduler_preemption_pdb_violations_total
+    - scheduler_plugin_execution_duration_seconds{plugin="DefaultPreemption", extension_point="PodGroupPostFilter"}
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
@@ -1302,7 +1398,7 @@ a retry mechanism and is shared by all occurrences that require updating pod sta
 ###### What are other known failure modes?
 
 1. WorkloadAwarePreemption takes too long halting scheduling loop
-- Detection: High values for metric: `scheduler_podgroup_preemption_attempt_duration_seconds`
+- Detection: High values for metric: `scheduler_preemption_evaluation_duration_seconds`
 - Mitigations: If intended, delete the PodGroup object and recreate the pods without `schedulingGroup`
   to disable gang scheduling and workload aware preemption (fallback to best-effort scheduling and default preemption) if acceptable.
 - Diagnostics: Scheduler logs at V=6 searching for logs from podgrouppreemption.go file to trace where preemption slows down.
@@ -1310,7 +1406,7 @@ a retry mechanism and is shared by all occurrences that require updating pod sta
 
 2. WorkloadAwarePreemption does not remove low level pods to make a place for the preemptor
 - Detection: Check Pod Events/Status. Expected reason: a message indicating why preemption failed
-- Metrics: `scheduler_podgroup_preemption_attempts_total{result=error}`
+- Metrics: `scheduler_workload_preemption_attempts_total{result="error"}`
 - Mitigations:
   - Scale up the cluster (add nodes) or delete other real-workloads to free up space.
   - If intended, delete the PodGroup object and recreate the pods without `schedulingGroup`
@@ -1362,6 +1458,7 @@ If preemptor workloads are stuck and preemption attempts fail:
 2026-02: KEP-5710 created for WAP alpha release.
 2026-02: KEP-5710 updated to sync with decoupling of PodGroup/Workload API.
 2026-05: KEP updated to promote to beta in v1.37.
+2026-09: KEP updated to promote to GA in v1.38.
 
 ## Drawbacks
 
