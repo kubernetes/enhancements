@@ -513,13 +513,16 @@ mid-shutdown does not carry stale state into removal or recovery flows.
 **Trigger.** When the controller transitions the node's `Ready` condition to
 `Unknown` (i.e., the kubelet has stopped heartbeating beyond
 `nodeMonitorGracePeriod`), it sets both conditions to `status=Unknown` with
-reason `KubeletUnreachable`. It does not inspect the existing `reason` first:
-under the WG's alpha last-writer-wins model an administrator's condition on a
-node whose kubelet has vanished is superseded like any other, and `Unknown` is
-the honest value for it. `Unknown` rather than `False` because, per [KEP-5683],
-`Unknown` means Kubernetes cannot determine whether the state is active —
-exactly the controller's position — and the DaemonSet reader keys on `True`
-alone, so suppression lifts either way. Rationale for the trigger: at that
+reason `NodeStatusUnknown` — the same reason it writes on `Ready` for the same
+event. It does not inspect the existing `reason` first: under the WG's alpha
+last-writer-wins model an administrator's condition on a node whose kubelet
+has vanished is superseded like any other. `Unknown` rather than `False`
+because the control plane cannot distinguish a graceful shutdown that ran to
+completion from a plug pulled mid-shutdown from a network partition; all three
+look identical from `Ready=Unknown`, `False` would assert one of them, and
+`Unknown` says exactly what the controller knows (which is also [KEP-5683]'s
+definition of the value). The DaemonSet reader keys on `True` alone, so
+suppression lifts either way. Rationale for the trigger: at that
 point the writer is definitively gone; the purpose of the suppression — not
 fighting a kubelet that is actively rejecting Pods — no longer applies; and
 reverting an unreachable node to today's DaemonSet behavior is the fail-open
@@ -551,8 +554,9 @@ detection (e.g., a fresh `Ready` heartbeat alongside a stale condition
 heartbeat, indicating a downgraded or gate-disabled kubelet) is a graduation
 item.
 
-The reason value `KubeletUnreachable` follows [KEP-5683]'s convention of a
-stable, CamelCase, machine-readable cause category (see [Design Decision
+The reason value `NodeStatusUnknown` is the one the Node Lifecycle Controller
+already writes on `Ready` when heartbeats stop, and follows [KEP-5683]'s
+convention of a stable, CamelCase cause category (see [Design Decision
 3](#design-decisions)).
 
 ### DaemonSet controller (reader)
@@ -873,12 +877,16 @@ open; the list exists so reviewers can see where each answer came from.*
    Mitigations](#risks-and-mitigations), and revisiting the trigger is a
    [beta criterion](#beta). Decided at KEP review.
 3. **Node Lifecycle Controller write.** `status=Unknown`, reason
-   `KubeletUnreachable`, on both conditions. `Unknown` follows [KEP-5683]'s
-   definition — Kubernetes cannot determine whether the state is active —
-   which is the controller's actual position; the reason follows [KEP-5683]'s
-   stable-CamelCase cause-category convention. The controller does not inspect
-   the existing `reason` before writing (last-writer-wins, per the WG's alpha
-   model). Decided at KEP review.
+   `NodeStatusUnknown`, on both conditions. `Unknown` is the only honest
+   value: once heartbeats stop, the control plane cannot tell a shutdown that
+   completed from a plug pulled mid-shutdown from a network partition, and
+   `False` would assert one of those. It matches [KEP-5683]'s definition
+   (Kubernetes cannot determine whether the state is active). The reason is
+   the one the controller already writes on `Ready` for the same event, so
+   all three conditions on an unreachable node carry the same cause. The
+   controller does not inspect the existing `reason` before writing
+   (last-writer-wins, per the WG's alpha model). Confirmed with the WG lead,
+   2026-09-22.
 4. **Single feature gate for writer and reader.** *Resolved in WG
    (2026-08-24)*; see [Feature gating](#feature-gating).
 5. **Metric labels.** `transition` and `critical` on
