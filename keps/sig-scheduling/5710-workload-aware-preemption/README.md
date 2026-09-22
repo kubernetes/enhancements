@@ -35,6 +35,8 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
+    - [Beta (<code>PodGroupPreemptionPolicy</code>)](#beta-podgrouppreemptionpolicy)
+    - [GA (<code>PodGroupPreemptionPolicy</code>)](#ga-podgrouppreemptionpolicy)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -1026,6 +1028,15 @@ For GA, we promote these e2e tests to conformance.
 
 ### Graduation Criteria
 
+This KEP tracks two feature gates that graduate on separate schedules:
+- `GenericWorkload` (originally `WorkloadAwarePreemption` in v1.36 Alpha): gates core
+  Workload-Aware Preemption (`DisruptionMode` and pod group priorities), which promoted to Beta in
+  v1.37 and graduates to GA in v1.38.
+- `PodGroupPreemptionPolicy`: gates the `preemptionPolicy` field on pod group entities (`Workload`
+  templates, `CompositePodGroup`, and `PodGroup`). Because this field was not part of the v1.36
+  Alpha release and was introduced as Alpha in v1.37, it lags one release behind `GenericWorkload`
+  (promoting to Beta in v1.38 and targeting GA in v1.39).
+
 #### Alpha
 
 - The API & feature is implemented behind the feature flag
@@ -1047,6 +1058,14 @@ For GA, we promote these e2e tests to conformance.
 - E2E test promoted to conformance
 - Performance benchmarks have well defined thresholds and are run as part of the scheduler-perf of sig-scalability-benchmarks
 - All known issues resolved
+
+#### Beta (`PodGroupPreemptionPolicy`)
+
+- E2E test covering `preemptionPolicy` for pod group entities that can then be promoted to conformance
+
+#### GA (`PodGroupPreemptionPolicy`)
+
+- E2E test covering `preemptionPolicy` for pod group entities promoted to conformance
 
 
 ### Upgrade / Downgrade Strategy
