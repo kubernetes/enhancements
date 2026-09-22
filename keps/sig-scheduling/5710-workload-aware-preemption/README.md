@@ -24,6 +24,7 @@
       - [TopologyAwareScheduling](#topologyawarescheduling)
     - [CompositePodGroup](#compositepodgroup)
   - [Pod Group Post Filter](#pod-group-post-filter)
+    - [Global vs. Node-Local Preemption and Nomination Semantics](#global-vs-node-local-preemption-and-nomination-semantics)
   - [Potential future extensions](#potential-future-extensions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
@@ -798,7 +799,7 @@ type PodGroupPostFilterPlugin interface {
 }
 ```
 
-#### Preemptor Eligibility and Ongoing Preemption Detection
+#### Global vs. Node-Local Preemption and Nomination Semantics
 
 In standard pod-level preemption, before evaluating candidate nodes for preemption, the scheduler
 checks whether the preemptor pod is eligible to preempt other pods (`PodEligibleToPreemptOthers`).
@@ -807,29 +808,50 @@ victim pods actively terminating on that nominated node, the scheduler avoids tr
 preemption attempt unless that nominated node returned `UnschedulableAndUnresolvable` during the
 `Filter` phase.
 
-When generalizing this behavior to Workload-Aware Preemption, two key differences arise due to the
-global (cluster-wide) preemption scope and the `PodGroupPostFilter` execution model:
+When generalizing preemption and nomination handling to Workload-Aware Preemption, several
+differences and limitations arise due to the global (cluster-wide) preemption scope vs. node-local
+evaluation and the `PodGroupPostFilter` execution model:
 
-1. **Global scope and rate-limiting cascading preemptions**:
+1. **Ongoing preemption detection across the pod group**:
    A pod group's member pods can be nominated across multiple nodes in the cluster. To prevent
    redundant and cascading preemptions while an existing preemption is in flight, `PodGroup`
    preemption checks whether *any* unscheduled member pod has a `status.nominatedNodeName` where
    lower-priority victims are currently terminating. If so, the preemption is considered ongoing and
    a new preemption search is not performed.
-   Unlike single-pod preemption, Workload-Aware Preemption does not currently bypass this wait when
-   a nominated node returns `UnschedulableAndUnresolvable`.
-   It's because it operates globally across the cluster and is significantly more disruptive than
-   single-pod preemption, so waiting for in-flight victim terminations to complete acts as an
-   effective rate-limiter against cascading preemption storms (one preemption cycle at a time).
+   While a higher-priority pod or workload scheduled in the meantime could take resources on one of
+   the nominated nodes and invalidate the original placement, this behavior is aligned with today's
+   pod-level preemption (where `NodeResourcesFit` returns `Unschedulable` rather than
+   `UnschedulableAndUnresolvable`). Actively verifying whether the nominated placement still works
+   assuming all in-flight preemptions finish is left as a separate future enhancement.
 
 2. **Preserving `NominatedNodeName`s when preemption is ongoing**:
    In single-pod preemption, returning `Unschedulable` from `PostFilter` when preemption is skipped
    leaves the pod's existing `NominatedNodeName` untouched. However, in Workload-Aware Preemption,
-   when ongoing preemption is detected and `Unschedulable` is returned, the
+   when ongoing preemption is detected and `Unschedulable` is returned,
    `SubmitPodGroupAlgorithmResult` would clear the existing nominations.
    To resolve this, `PodGroupPostFilter` returns `Success` along with a result that explicitly
    preserves each member pod's current `NominatedNodeName`. This ensures existing nominations are
    retained and consecutive preemption attempts won't unnecessarily select different victims.
+
+3. **Nominations not honoring all non-node-local (global) constraints**:
+   Nominations (`NominatedNodeName`) are currently tracked per node (`NodeInfo`) and do not honor
+   all cluster-wide constraints—in particular, inter-pod anti-affinity when a nominated pod resides
+   on a different node, or non-node-local resources. While addressing this is desirable, this gap
+   already exists in pod-level preemption today, so Workload-Aware Preemption does not regress
+   existing behavior. Fixing global constraint tracking for nominations will be pursued as a
+   separate enhancement, most likely before
+   [KEP-5690: DRA Workload Resource Claims](https://github.com/kubernetes/enhancements/issues/5690)
+   starts supporting Workload-Aware Preemption (since DRA resources are often not node-local).
+
+4. **Repeating preemption when a workload is `UnschedulableAndUnresolvable`**:
+   Unlike single-pod preemption, Workload-Aware Preemption does not currently bypass waiting for an
+   ongoing preemption when a nominated node fails with `UnschedulableAndUnresolvable`—the preemptor
+   must wait until the existing preemption finishes before starting a new one. In Workload-Aware
+   Scheduling, determining whether the workload as a whole is `UnschedulableAndUnresolvable` is not
+   straightforward and would require dedicated changes for a narrow edge case. We consider this not
+   worth the extra complexity here, especially since addressing (1) (verifying whether the nominated
+   placement remains feasible assuming in-flight preemptions finish) will also resolve this case in
+   a more comprehensive way.
 
 ### Potential future extensions
 
@@ -1024,7 +1046,6 @@ For GA, we promote these e2e tests to conformance.
 - Scheduler initialization check logging an error when `PostFilter` plugins do not implement `PodGroupPostFilter`.
 - E2E test promoted to conformance
 - Performance benchmarks have well defined thresholds and are run as part of the scheduler-perf of sig-scalability-benchmarks
-- Performance is acceptable for large scale clusters (5k nodes as officially supported size for scheduler)
 - All known issues resolved
 
 
