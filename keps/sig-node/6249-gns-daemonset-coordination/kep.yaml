@@ -13,6 +13,7 @@ reviewers:
 approvers:
   - "@mrunalp"
   - "@dchen1107"
+  - "@janetkuo"
 
 see-also:
   - "/keps/sig-node/5683-lifecycle-conditions"
@@ -39,4 +40,4 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - daemonset_controller_shutdown_suppressed_pod_creations_total
+  - daemonset_controller_node_shutdown_suppression_total

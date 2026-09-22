@@ -529,10 +529,21 @@ Questions](#open-questions)).
 ### DaemonSet controller (reader)
 
 The reader is the DaemonSet controller
-([`pkg/controller/daemon/`][pkg/controller/daemon/]). The change lands in
-`podsShouldBeOnNode`, the per-node decision made on every sync. While a node has
-both `GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`, the
-controller does the following:
+([`pkg/controller/daemon/`][pkg/controller/daemon/]). The change touches three
+places, all keyed on the same predicate — the node carries both
+`GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`. The
+implementation factors that predicate into one helper (working name
+`nodeShutdownSuppressed(node)`) so the call sites cannot drift:
+
+1. `podsShouldBeOnNode` — the per-node decision made on every sync.
+2. `rollingUpdate` — walks nodes independently of `podsShouldBeOnNode` and
+   must apply the same predicate.
+3. `shouldIgnoreNodeUpdate` — the informer-side filter that decides whether a
+   Node update reaches the controller at all; without a change here the
+   controller never observes the conditions changing.
+
+**`podsShouldBeOnNode`.** While a node is suppressed, the controller does the
+following:
 
 - **Create nothing on the node** — no replacement Pods, no first-time
   placements.
@@ -557,9 +568,50 @@ cross-writer synchronization of `DrainInProgress` is explicitly deferred.* An
 integration test asserts that a node with only `GracefulNodeShutdownInProgress`
 (or only `DrainInProgress`) is not suppressed.
 
-**Recovery.** No new mechanism. The controller already watches Nodes; the
-conditions clearing requeues affected DaemonSets and Pods return on the next
-sync.
+**`rollingUpdate`.** The rolling-update path iterates `nodeToDaemonPods` on
+its own and would otherwise act on a suppressed node under both strategies.
+With `maxSurge > 0`, a node holding an old Pod and no new Pod is a surge
+candidate, so the controller would create a new-hash Pod that the kubelet
+immediately rejects — the same churn this KEP removes from the core loop. With
+`maxSurge == 0`, an old Pod that is still available is a deletion candidate, so
+the controller would race the kubelet for a Pod that is already being
+terminated and spend `maxUnavailable` budget doing it. The implementation builds
+the suppressed-node set once from `nodeList` at the top of `rollingUpdate` and
+skips those nodes as surge-create and delete candidates in both branches. This
+removes the controller as an *actor* on the node; it does not change
+accounting. A suppressed node's missing or terminating Pod continues to count
+as unavailable, consistent with the status treatment above, and whether it
+should be exempt from the `maxUnavailable` budget remains [KEP-6250]'s question.
+`updatedDesiredNodeCounts` is unchanged.
+
+**Recovery.** One filter change, then existing machinery. Today
+`shouldIgnoreNodeUpdate` compares only `Labels` and `Spec.Taints`, so a change
+to `Node.Status.Conditions` never reaches the node-update worker. Under the
+gate, the filter additionally returns `false` when the `Status` of either
+condition differs between the old and new Node. Only `Status` is compared —
+never `LastHeartbeatTime` or `LastTransitionTime` — so heartbeats enqueue
+nothing and the controller sees exactly two events per shutdown: enter and
+exit. From there the existing `syncNodeUpdate` worker does the right thing
+without modification. On exit, `NodeShouldRunDaemonPod` is `true` and no Pod
+is scheduled on the node, which is already an enqueue condition, and the Pod
+returns on the next sync. On enter, the running Pod is still scheduled, nothing
+is enqueued, and the kubelet's own termination drives the subsequent Pod
+events. Without the filter change, recovery after a reboot would only *happen*
+to work because the `node.kubernetes.io/not-ready` taint flips on the way
+through; an aborted shutdown that never goes `NotReady` (inhibitor released,
+kubelet clears the conditions) would leave the node without its DaemonSet Pods
+until an unrelated event arrived.
+
+**Informer ordering.** The Node condition write and the kubelet's first Pod
+deletion arrive on separate informers with no ordering guarantee between them.
+If a Pod-delete event is processed before the Node event carrying the
+conditions, `podsShouldBeOnNode` sees an unsuppressed node and creates one
+replacement, which the kubelet rejects and the next sync deletes. This is
+fail-open and bounded to one Pod per DaemonSet per shutdown. The kubelet
+publishes the conditions before it begins terminating Pods, and termination
+takes at least the Pod's grace period, so the window is narrow in practice.
+Alpha accepts it; closing it would require a live read of the Node before every
+create and is not worth the API cost.
 
 **Expectations.** The early return that skips a create must not leave a dangling
 creation expectation on the controller; the implementation must ensure
@@ -632,11 +684,16 @@ the gate sees absent conditions and behaves as today.
 Metrics are defined per consuming KEP (per prior scoping with the issue author).
 Alpha adds, at minimum, on the DaemonSet reader:
 
-- **`daemonset_controller_shutdown_suppressed_pod_creations_total`** — counter
-  of DaemonSet Pod creations suppressed because the target node carried both
-  conditions. Gives PRR an observable signal that the feature is active and
+- **`daemonset_controller_node_shutdown_suppression_total`** — counter recorded
+  in the node-update worker (`syncNodeUpdate`) when a node's suppression state
+  flips, incremented once per DaemonSet that has a Pod on the node at the moment
+  of the flip. Gives PRR an observable signal that the feature is active and
   makes the bounded-loop claim verifiable.
-  - **Proposed label: `critical="true"|"false"`**, true when the DaemonSet Pod's
+  - **Label `transition="enter"|"exit"`** — whether the node entered or left
+    the suppressed state. The feature is in use only between an `enter` and its
+    matching `exit`, so the difference of the two over a window is the in-use
+    gauge; no separate gauge is added.
+  - **Label `critical="true"|"false"`**, true when the DaemonSet Pod's
     priority class is `system-node-critical` or `system-cluster-critical`.
     Without a priority dimension there is no way to observe, during alpha,
     whether the critical-daemon-Pod gap described in [Risks and
@@ -645,6 +702,17 @@ Alpha adds, at minimum, on the DaemonSet reader:
     is what turns the beta priority-aware decision into a data-driven one. The
     label is bounded (priority class *names* are user-defined and would be
     unbounded cardinality, so they are not used).
+
+  Recording in the node worker rather than in `podsShouldBeOnNode` is
+  deliberate. A counter bumped inside `syncDaemonSet` counts syncs that
+  happened to run: once the rejected Pod on a suppressed node has been deleted,
+  nothing triggers a further sync until an unrelated Pod or Node event arrives,
+  so the value would track cluster noise rather than the feature. The node
+  worker runs exactly once per observed condition flip (the
+  `shouldIgnoreNodeUpdate` change above guarantees the event is delivered), so
+  each transition is counted once per affected DaemonSet regardless of sync
+  scheduling. `enter` rising with no matching `exit`, or `enter` events while
+  no node is shutting down, are both directly meaningful.
 
 Writer-side metrics belong to the condition-writing milestone and are not
 proposed here.
@@ -775,9 +843,9 @@ phase signal — was considered and rejected; the reasoning is in
 3. Reason value used by the Node Lifecycle Controller when clearing.
 4. Single gate for writer + reader (proposed) vs. split gates.
 5. Link to the drain-ordering enhancement once the WG lead files it.
-6. The `critical` label on
-   `daemonset_controller_shutdown_suppressed_pod_creations_total` — acceptable
-   to SIG Instrumentation as a bounded two-value label?
+6. The `critical` and `transition` labels on
+   `daemonset_controller_node_shutdown_suppression_total` — acceptable to SIG
+   Instrumentation as bounded two-value labels?
 7. Should closing the critical-daemon-Pod gap be a hard beta criterion for this
    KEP, or tracked under the drain-ordering enhancement that gates beta across
    the SLM reader KEPs?
@@ -817,7 +885,12 @@ New and updated tests:
 - [`pkg/kubelet/nodestatus/`][pkg/kubelet/nodestatus/]: new setter, gate on/off.
 - [`pkg/controller/daemon/`][pkg/controller/daemon/]: `podsShouldBeOnNode` with
   both conditions, one condition, neither; failed-Pod deletion without
-  replacement; gate on/off; `critical` label attribution.
+  replacement; gate on/off. `rollingUpdate`: a suppressed node is neither a
+  surge-create candidate (`maxSurge > 0`) nor a delete candidate
+  (`maxSurge == 0`), gate on/off. `shouldIgnoreNodeUpdate`: a condition
+  `Status` flip passes the filter, a heartbeat-only update does not, gate off
+  ignores conditions. `syncNodeUpdate`: metric attribution with `transition`
+  and `critical` labels.
 - [`pkg/controller/nodelifecycle/`][pkg/controller/nodelifecycle/]: clearing on
   the chosen trigger.
 
@@ -830,7 +903,14 @@ statement of what this KEP does:
 - Node with `GracefulNodeShutdownInProgress=True` only → Pod is recreated
   (proves the AND is deliberate).
 - Node with `DrainInProgress=True` only → Pod is recreated.
-- Conditions cleared → Pods return on the next sync.
+- Rolling update while a node is suppressed → no new-hash Pod is created there
+  (`maxSurge > 0`) and the controller does not delete the old Pod there
+  (`maxSurge == 0`); the rollout completes on every other node.
+- Conditions cleared after the node went `NotReady` → Pods return on the next
+  sync.
+- Conditions cleared without the node ever leaving `Ready` (aborted shutdown)
+  → Pods return on the next sync. This is the case the `shouldIgnoreNodeUpdate`
+  change exists for.
 - Feature gate off → today's behavior, unchanged. This is the path every real
   cluster will run.
 
@@ -961,11 +1041,12 @@ workloads are unaffected.
 
 ###### What specific metrics should inform a rollback?
 
-`daemonset_controller_shutdown_suppressed_pod_creations_total` rising while no
-node in the cluster is shutting down would indicate stale or incorrect
-conditions. With the `critical` label, sustained suppression of critical
-DaemonSet Pods on long-running shutdowns is a signal that the critical-daemon-Pod
-gap is being exercised in practice.
+`daemonset_controller_node_shutdown_suppression_total{transition="enter"}`
+rising while no node in the cluster is shutting down would indicate stale or
+incorrect conditions. `enter` counts with no matching `exit` over a long window
+indicate conditions that are not being cleared. With the `critical` label,
+sustained suppression of critical DaemonSet Pods on long-running shutdowns is a
+signal that the critical-daemon-Pod gap is being exercised in practice.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -990,9 +1071,10 @@ objects, and a non-zero suppression counter.
   - Condition name: `GracefulNodeShutdownInProgress` and `DrainInProgress`
     with reason `NodeShutdown` on a shutting-down Node.
 - [x] Other (treat as last resort)
-  - Details: `daemonset_controller_shutdown_suppressed_pod_creations_total`
-    increments during a shutdown, and the create/reject/delete churn in the
-    audit log or `kubectl get events` stops.
+  - Details: `daemonset_controller_node_shutdown_suppression_total` increments
+    with `transition="enter"` when the shutdown begins and `transition="exit"`
+    when the node recovers, and the create/reject/delete churn in the audit log
+    or `kubectl get events` stops.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
@@ -1004,7 +1086,7 @@ establish a baseline for suppression counts and propagation latency.
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 - [x] Metrics
-  - Metric name: `daemonset_controller_shutdown_suppressed_pod_creations_total`
+  - Metric name: `daemonset_controller_node_shutdown_suppression_total`
   - Components exposing the metric: kube-controller-manager
 - [ ] Other (treat as last resort)
 
@@ -1096,8 +1178,8 @@ proceeds. The DaemonSet controller sees absent conditions and behaves as today.
    `GracefulNodeShutdown` is active on the node (systemd-logind reachable,
    inhibitor lock held) — see kubelet logs for the shutdown manager.
 2. Confirm the gate is enabled on kube-controller-manager.
-3. Check that `daemonset_controller_shutdown_suppressed_pod_creations_total`
-   is incrementing during the shutdown; if it is not, the DaemonSet controller
+3. Check that `daemonset_controller_node_shutdown_suppression_total{transition="enter"}`
+   incremented when the shutdown began; if it did not, the DaemonSet controller
    is not observing the conditions (informer lag or gate off).
 4. If conditions are stale `True` on a node that is not shutting down, delete
    them, and check whether the kubelet restarted (it should have cleared them
@@ -1117,6 +1199,9 @@ proceeds. The DaemonSet controller sees absent conditions and behaves as today.
 - **2026-09-08:** First KEP draft; WG lead approves opening the draft PR.
 - **2026-09-11:** KEP PR [kubernetes/enhancements#6351](https://github.com/kubernetes/enhancements/pull/6351)
   opened for SIG Node, SIG Apps, and PRR review.
+- **2026-09-21:** SIG Apps review (@janetkuo): reader extended to
+  `rollingUpdate` and `shouldIgnoreNodeUpdate`; metric moved to the
+  node-update worker; @janetkuo added as approver.
 
 ## Drawbacks
 
