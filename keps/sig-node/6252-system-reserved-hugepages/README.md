@@ -480,10 +480,23 @@ configuration on restart. Administrators must remove the entries first.
 
 ###### What specific metrics should inform a rollback?
 
-If pods fail to schedule due to insufficient hugepages despite the node having
-enough total hugepages to accommodate both system daemons and pod requests,
-the reservation values may be misconfigured. Verify the `--system-reserved` /
-`--kube-reserved` hugepages values match the actual system daemon consumption.
+The same kube-state-metrics used for other reserved resources apply.
+kube-state-metrics explicitly handles hugepage resource names via
+`isHugePageResourceName` in both
+[`createNodeStatusAllocatableFamilyGenerator`](https://github.com/kubernetes/kube-state-metrics/blob/ca59026251fddbc245a37015f94e4d9cee945474/internal/store/node.go#L379)
+and
+[`createNodeStatusCapacityFamilyGenerator`](https://github.com/kubernetes/kube-state-metrics/blob/ca59026251fddbc245a37015f94e4d9cee945474/internal/store/node.go#L462),
+so these metrics are emitted out of the box once hugepages appear in
+`node.Status.Allocatable`:
+
+- `kube_node_status_capacity{resource="hugepages_<size>",unit="byte"}` and
+  `kube_node_status_allocatable{resource="hugepages_<size>",unit="byte"}`
+  (resource names are sanitized: e.g. `hugepages-2Mi` → `hugepages_2mi`,
+  `hugepages-1Gi` → `hugepages_1gi`; one metric series per configured page size).
+
+The difference between the two reflects the active reservation.
+A successful rollback is confirmed when the difference
+returns to zero (no reservation) and allocatable equals capacity.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -592,6 +605,15 @@ behavior as existing resource reservations (cpu, memory).
     and the reserved flag values.
   - Testing: e2e_node configures host hugepages before applying reserved
     flags.
+- Reservation value exceeds actual system daemon hugepage consumption
+  - Detection: Pods fail to schedule despite the node having enough total
+    hugepages to accommodate both system daemons and pod requests.
+  - Mitigations: Verify `--system-reserved` / `--kube-reserved` hugepages
+    values match the actual daemon consumption and adjust accordingly.
+  - Diagnostics: Compare the configured reservation with observed daemon
+    hugepage usage.
+  - Testing: None - this is an operational misconfiguration; kubelet has no
+    visibility into how much hugepage memory a system daemon actually consumes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
