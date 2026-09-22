@@ -366,7 +366,7 @@ plugins:
     kubeConfigFile: "<path-to-kubeconfig>"
     staticManifestsDir: "/etc/kubernetes/admission/mutating/"
     # Optional; MutatingAdmissionWebhook only. See "Mutating Webhook Merge Order".
-    staticManifestsMergeOrder: StaticFirst
+    staticOrder: StaticFirst
 - name: ValidatingAdmissionPolicy
   configuration:
     apiVersion: apiserver.config.k8s.io/v1
@@ -387,10 +387,10 @@ Glob patterns are not supported. Relative paths are not supported.
 Related objects (such as a ValidatingAdmissionPolicy and its associated ValidatingAdmissionPolicyBinding)
 should be placed in the same file to ensure they are loaded and reloaded together atomically.
 
-The `staticManifestsMergeOrder` field is accepted only on the `MutatingAdmissionWebhook` plugin
+The `staticOrder` field is accepted only on the `MutatingAdmissionWebhook` plugin
 configuration. Setting it to a non-default value on `ValidatingAdmissionWebhook` is a
 configuration error and fails API server startup, because validating webhooks are dispatched
-in parallel and their order is not observable. See
+in parallel and their order is not relevant for evaluation. See
 [Mutating Webhook Merge Order](#mutating-webhook-merge-order).
 
 ### Manifest File Format
@@ -531,11 +531,11 @@ configurable; see [Mutating Webhook Merge Order](#mutating-webhook-merge-order).
 Mutating admission webhooks are dispatched sequentially in order of the name of the
 `MutatingWebhookConfiguration` that contains them, and this ordering is documented and relied
 upon. Placing all manifest-based webhooks ahead of all REST-based webhooks therefore makes it
-impossible to migrate an individual webhook from REST-based to manifest-based without changing
+impossible to migrate webhooks from REST-based to manifest-based without changing
 the relative order in which webhooks run in the cluster.
 
-To keep that migration order-preserving, the `MutatingAdmissionWebhook` plugin configuration
-accepts a `staticManifestsMergeOrder` enum alongside `staticManifestsDir`:
+To enable order-preserving migration, the `MutatingAdmissionWebhook` plugin configuration
+accepts a `staticOrder` enum alongside `staticManifestsDir`:
 
 | Value | Behavior |
 |-------|----------|
@@ -549,7 +549,7 @@ decided once for all manifest-based webhooks rather than per file or per webhook
 
 This addresses three distinct operator intents:
 
-- Manifest-based webhooks get first crack at the object before any REST-based webhook:
+- Manifest-based webhooks get to intercept objects before any REST-based webhook:
   `StaticFirst`.
 - Manifest-based webhooks have the final say after REST-based webhooks: `StaticLast`, combined
   with `reinvocationPolicy: IfNeeded` on the manifest-based webhooks.
@@ -558,14 +558,14 @@ This addresses three distinct operator intents:
   the required `.static.k8s.io` suffix appended.
 
 `ByName` depends on the pre-existing practice of ordering mutating webhooks by configuration
-name. That practice is a footgun, but it is an existing one; this option preserves it for
-migration rather than endorsing it. `StaticFirst` remains the default precisely so that the
-ordering guarantee for platform-level policies is not silently weakened.
+name. Ordering dependencies are not recommended, but are enabled and supported by existing
+REST-based behavior; this option preserves it for migration. `StaticFirst` remains the default
+precisely so that the ordering guarantee for platform-level policies is not silently weakened.
 
 Only mutating webhooks get this option:
 
 - Validating webhooks and `ValidatingAdmissionPolicy` are evaluated in parallel against the
-  same input, so their relative order is not observable.
+  same input, so ordering dependencies between them cannot exist.
 - `MutatingAdmissionPolicy` explicitly documents that no deterministic order exists between
   multiple mutating admission policies, and requires a reinvocation policy to be specified, so
   manifest-based policies staying first is consistent with its documented contract.
@@ -575,7 +575,7 @@ Only mutating webhooks get this option:
 1. Configuration types: Add `StaticManifestsDir string` to webhook and policy admission configs
 2. Manifest loader: New package handling file reading, validation, watching, and atomic reload
 3. Composite accessor: Merge manifest and API-based configurations; manifest-based first,
-   except for mutating webhooks where the merge order is set by `staticManifestsMergeOrder`
+   except for mutating webhooks where the merge order is set by `staticOrder`
 4. Feature gate: `ManifestBasedAdmissionControlConfig`, defaulting to false for alpha
 5. Metrics: Add reload metrics for manifest loading health
 
@@ -632,7 +632,7 @@ implementation PR lands):
 - `k8s.io/apiserver/pkg/admission/plugin/webhook/validating`: unit tests covering `WantsExcludedAdmissionResources` initializer wiring and dispatcher skip behavior with the gate enabled and disabled.
 - `k8s.io/apiserver/pkg/admission/plugin/webhook/mutating`: same coverage as validating.
 
-`staticManifestsMergeOrder` (added in 1.38; links will be added when the implementation PR
+`staticOrder` (added in 1.38; links will be added when the implementation PR
 lands):
 
 - `k8s.io/apiserver/pkg/admission/plugin/webhook/generic`: composite source tests covering all three merge orders, the empty value defaulting to `StaticFirst`, and cache invalidation when either underlying source changes.
@@ -655,7 +655,7 @@ implementation PR lands):
 
 - `test/integration/apiserver/admissionwebhook/`: new test mirroring `excludedresources_test.go`. Covers (a) gate enabled — webhook is not dispatched for any GroupResource in `exclusion.Excluded()`; (b) gate disabled — webhook is dispatched as before; (c) parity with the VAP/MAP exclusion list.
 
-`staticManifestsMergeOrder` (added in 1.38; links will be added when the implementation PR
+`staticOrder` (added in 1.38; links will be added when the implementation PR
 lands):
 
 - `test/integration/apiserver/admissionwebhook/`: new test asserting the observed mutation order of interleaved manifest-based and REST-based mutating webhooks for each of `StaticFirst`, `StaticLast`, and `ByName`, and that a manifest-based configuration named `<rest-name>.static.k8s.io` occupies the same relative position under `ByName` as the REST-based configuration it replaces.
@@ -699,7 +699,7 @@ established the same integration-only precedent.
 
 Added in 1.38, remaining in beta:
 
-- `staticManifestsMergeOrder` accepted on the `MutatingAdmissionWebhook` plugin configuration,
+- `staticOrder` accepted on the `MutatingAdmissionWebhook` plugin configuration,
   supporting `StaticFirst` (default), `StaticLast`, and `ByName`
 - Non-default values rejected on the `ValidatingAdmissionWebhook` plugin configuration
 - Integration tests covering observed mutation order for all three values
@@ -737,7 +737,7 @@ Downgrade:
   2. If relying on manifest-based policies, recreate them as API objects (where possible)
 - Downgrading without removing configuration will cause API server startup failure (unknown
   configuration field)
-- `staticManifestsMergeOrder` is unknown to 1.37 and earlier. Operators must remove it from the
+- `staticOrder` is unknown to 1.37 and earlier. Operators must remove it from the
   `MutatingAdmissionWebhook` plugin configuration before downgrading to those releases, or the
   API server fails to start. Clusters that relied on `StaticLast` or `ByName` revert to
   `StaticFirst` ordering on the downgraded release.
@@ -752,7 +752,7 @@ In HA setups with multiple API servers:
 - All API servers should be upgraded together (standard practice)
 - During rolling upgrades, some API servers may have the feature while others don't
 - Manifest files should only be deployed after all API servers support the feature
-- `staticManifestsMergeOrder` should only be set once all API servers are at 1.38 or later.
+- `staticOrder` should only be set once all API servers are at 1.38 or later.
   A 1.37 API server rejects the field at startup, so a mixed-version control plane configured
   with it will have some instances failing to start; if the field is rolled out only to
   upgraded instances, mutating webhooks run in a different order depending on which API server
@@ -778,7 +778,7 @@ In HA setups with multiple API servers:
 ###### Does enabling the feature change any default behavior?
 
 `ManifestBasedAdmissionControlConfig`: No. Behavior changes only when manifest files are
-configured in `AdmissionConfiguration`. `staticManifestsMergeOrder` defaults to `StaticFirst`,
+configured in `AdmissionConfiguration`. `staticOrder` defaults to `StaticFirst`,
 which is the ordering already in effect in 1.36 and 1.37, so upgrading without setting the
 field changes nothing.
 
@@ -965,7 +965,7 @@ for details on other platforms.
 | File permission errors on startup | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Restart | API server logs show permission errors |
 | File permission errors on reload | `apiserver_manifest_admission_config_controller_automatic_reloads_total{status="failure"}` | Fix file permissions; Wait for reload or restart | API server logs show permission errors |
 | Configuration drift across HA | Inconsistent admission decisions | Use configuration management | Compare manifest files across API servers |
-| Unexpected mutation results after changing `staticManifestsMergeOrder` | Objects admitted with unexpected field values; mutating webhooks observe a different object than before | Revert to `StaticFirst`; if the intent was to give manifest-based webhooks the final say, set `reinvocationPolicy: IfNeeded` on them | `mutation.webhook.admission.k8s.io/*` audit annotations show the order webhooks were invoked in and the patches each applied |
+| Unexpected mutation results after changing `staticOrder` | Objects admitted with unexpected field values; mutating webhooks observe a different object than before | Revert to `StaticFirst`; if the intent was to give manifest-based webhooks the final say, set `reinvocationPolicy: IfNeeded` on them | `mutation.webhook.admission.k8s.io/*` audit annotations show the order webhooks were invoked in and the patches each applied |
 | Webhook silently stops receiving `*SubjectAccessReview` / `TokenReview` / `SelfSubjectReview` after 1.37 upgrade | Pre-upgrade deprecation warning on webhook config writes (and startup log) names affected configurations; webhook reports no such admission requests after upgrade | Set `ExcludeAdmissionWebhookVirtualResources=false` as a temporary escape hatch; remove webhook rules for those GroupResources as the long-term fix before the gate is locked at GA | Cross-reference webhook configuration `rules` against `pkg/kubeapiserver/admission/exclusion/resources.go`; webhook side has no observed admission requests for those resources |
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
@@ -1038,8 +1038,8 @@ Using external tools (Helm, Kustomize, GitOps) to ensure webhook configurations 
 Rather than a single merge order for the whole `MutatingAdmissionWebhook` plugin, the ordering
 could be expressed per manifest file or per manifest-based webhook (for example, an explicit
 priority field). This was considered and rejected:
-- The three operator intents identified so far (first crack, final say, order-preserving
-  migration) are all satisfiable with a single plugin-level setting.
+- The three operator intents identified so far (intercepting first, final say,
+  order-preserving migration) are all satisfiable with a single plugin-level setting.
 - Per-file and per-webhook ordering introduces a second, manifest-only ordering mechanism that
   has to be reconciled with the existing sort-by-configuration-name behavior.
 - The plugin-level setting is applied once where the manifest-based and REST-based sources are
