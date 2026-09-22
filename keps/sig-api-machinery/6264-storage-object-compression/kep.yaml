@@ -31,15 +31,10 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates:
-  - name: StorageObjectCompression
-    components:
-      - kube-apiserver
-# Writes can be disabled by removing --storage-compression-config, or by emptying
-# the per-resource policy. Dropping the gate alone is not sufficient: the flag
-# without the gate fails startup, so both must be removed together.
-# Decompression of already-persisted values is unconditional and is deliberately
-# NOT disableable; see the Feature Enablement and Rollback section.
+# No feature gate: the write path is enabled only by --storage-compression-config,
+# and writes are disabled by removing that flag or by emptying the per-resource
+# policy. Decompression of already-persisted values is unconditional and is
+# deliberately NOT disableable; see the Feature Enablement and Rollback section.
 disable-supported: true
 
 # The following PRR answers are required at beta release

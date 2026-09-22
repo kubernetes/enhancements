@@ -27,6 +27,12 @@
   - [Error classification and version skew](#error-classification-and-version-skew)
   - [Observability](#observability)
   - [Test Plan](#test-plan)
+      - [Prerequisite testing updates](#prerequisite-testing-updates)
+      - [Unit tests](#unit-tests)
+      - [Integration tests](#integration-tests)
+      - [Upgrade and downgrade tests](#upgrade-and-downgrade-tests)
+      - [e2e tests](#e2e-tests)
+      - [Scale test](#scale-test)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
     - [Beta](#beta)
@@ -87,7 +93,7 @@ Backward compatibility is a property of the bytes rather than of configuration. 
 begins with `0x00`, which no kube-apiserver storage serializer can emit: protobuf begins
 `6b 38 73 00`, JSON `{`, CBOR `d9 d9 f7`. One byte comparison therefore decides whether a value is
 compressed, with no flag to consult. Consequently **decompression is unconditional and cannot be
-disabled**; only the write path is gated. Disabling the feature, or removing a resource from the
+disabled**; only the write path is configurable. Disabling the feature, or removing a resource from the
 policy, can never strand data.
 
 Compression is opt-in per resource and off by default at every stage, including GA.
@@ -167,7 +173,7 @@ monotonically with size, so it cannot be extrapolated from an object's size alon
 
 The sample covers one resource on one cluster, and audit events record mutations rather than the live
 object set, so these numbers speak to what a write costs rather than directly to database size. The
-analyzer described in the Test Plan addresses both gaps.
+scale test in the [Test Plan](#test-plan) measures database size directly and closes both gaps.
 
 ### Goals
 
@@ -198,10 +204,9 @@ analyzer described in the Test Plan addresses both gaps.
 
 ## Proposal
 
-Compression is configured by a file, pointed to by a single flag, and requires the
-`StorageObjectCompression` feature gate. Absent the flag the feature is inert, which is how
-"off by default" is expressed: a cluster that upgrades and takes no action stores byte-identical
-values to before.
+Compression is configured by a file, pointed to by a single flag. Absent the flag the feature is
+inert, which is how "off by default" is expressed: a cluster that upgrades and takes no action stores
+byte-identical values to before.
 
 ```yaml
 apiVersion: apiserver.config.k8s.io/v1alpha1
@@ -220,7 +225,6 @@ resources:
 ```
 
 ```
---feature-gates=StorageObjectCompression=true
 --storage-compression-config=/etc/kubernetes/storage-compression.yaml
 ```
 
@@ -234,6 +238,11 @@ for almost no durable saving. The shape is also borrowed rather than invented, s
 written an `EncryptionConfiguration` already knows how to read it. Decisively for an alpha feature, a
 flag is effectively permanent once inherited by every generic-apiserver consumer through
 `EtcdOptions`, whereas a `v1alpha1` type carries no compatibility promise and can be reshaped at beta.
+
+There is no feature gate. The flag is the switch: unset, nothing is compressed, and a gate would only
+add a second lock on a knob that already requires editing kube-apiserver's arguments and restarting.
+The `v1alpha1` configuration API carries the alpha stability instead, and the flag's help text carries
+the downgrade warning a gate would otherwise have implied.
 
 `secrets` is never selected by a wildcard. Compressing Secrets requires naming the resource
 explicitly, which is a deliberate enough act to serve as the acknowledgement; doing so logs a warning
@@ -370,9 +379,9 @@ Rolling back below the first decompress-capable release breaks the cluster: an o
 decrypts a frame successfully and then fails to decode it. One undecodable value aggregates into a
 `StatusReasonStoreReadError` for a whole LIST prefix and tears down watches, which for the watch-cache
 reflector removes cached serving for that resource. The effect is an outage rather than a degradation.
-Mitigations: writing a frame is never reachable by default at any stage, requiring both the gate and a
-configuration file that names a resource, so no cluster acquires frames without a deliberate operator
-action; and the only sound pre-downgrade procedure is a completed storage version migration per
+Mitigations: writing a frame is never reachable by default at any stage, requiring a configuration
+file that names a resource, so no cluster acquires frames without a deliberate operator action;
+and the only sound pre-downgrade procedure is a completed storage version migration per
 compressed resource, because no read-derived metric can prove that no compressed value remains, since
 a cold object is never read and so never observed. See [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
 
@@ -558,7 +567,7 @@ self-terminating, for the same reason that enabling a resource is.
 ### The read path
 
 Decompression is unconditional and driven by the format alone. The read side is installed whatever the
-feature gate and configuration say, because read support must never depend on configuration: a value
+configuration says, because read support must never depend on configuration: a value
 framed by any apiserver has to be readable by every apiserver of that version or newer under any flags,
 or dropping a flag would strand data. Inertness by default comes from the write side consulting the
 policy, and from the read side returning non-framed bytes unchanged.
@@ -584,7 +593,7 @@ The cap is derived rather than configured, at twice `GOMAXPROCS` bounded to betw
 formula suits both a memory-constrained control plane and a read-heavy one. Two properties of such a
 field are worth stating: it would be process-scoped while `resources` is per-resource, because the
 semaphore protects process memory rather than any one resource; and because the read path must stay live
-with the gate off and with no configuration file, the derived default would still apply in that case,
+with no configuration file at all, the derived default would still apply in that case,
 which is safe but not tunable.
 
 The memory ceiling either way is `n × (40 KiB + MaxPlaintextBytes)`, approximately `n × 1.54 MiB`, or
@@ -704,8 +713,8 @@ cardinality attack.
 
 Tuning `minSize` requires the size distribution of the values being skipped, and
 `outcome="unframed_below_threshold"` reports only that they were skipped, not how close they came. The
-threshold is therefore a knob with no feedback loop in `/metrics`, by design, and the instrument for
-setting it is the offline analyzer in the [Test Plan](#test-plan) rather than a dashboard.
+threshold is therefore a knob with no feedback loop in `/metrics`, by design: an operator sizing it works
+from the size distribution of their own stored objects, measured offline, rather than from a dashboard.
 
 No ratio or byte-count metric is exported. On a resource holding very few objects the `outcome` label
 already makes one property of each write observable to whoever can read `/metrics`: whether the object
@@ -718,39 +727,176 @@ is exported.
 
 ### Test Plan
 
-[ ] I/we understand the owners of the involved components may require updates to
+[x] I/we understand the owners of the involved components may require updates to
 existing tests to make this code solid enough prior to committing the changes necessary
 to implement this enhancement.
 
-TODO
+##### Prerequisite testing updates
+
+##### Unit tests
+
+Writing a frame is a one-way commitment, so the unit tests are organised around the properties that
+keep it safe rather than around the code that implements it. Two error sentinels carry most of the
+weight and are worth naming first: a malformed-frame error, meaning the stored bytes claim to be a frame
+but do not parse, and an unsupported-algorithm error, meaning the frame parses but names an algorithm
+this binary does not implement, which is version skew rather than damage. The read path returns no
+third kind of error, and the storage layer relies on that to decide what is not corruption.
+
+All of the following are required for **alpha**.
+
+- Reader totality: a table over every rejection branch, covering a truncated or wrong magic, an unknown
+  algorithm id, a declared length of zero, above the cap and at `1<<40`, a truncated varint, a corrupt
+  stream, and a stream shorter or longer than declared. Every failure is one of the two sentinels, and
+  nothing panics.
+- Round-trip over a matrix of lengths, from empty to above the ceiling, against compressible,
+  incompressible and real serialized objects.
+- A fuzz target over the reader asserting the same properties on arbitrary input: the input is never
+  mutated, every error is one of the two sentinels, the output is nil on error, and its length never
+  exceeds the ceiling. Checked in as a native Go fuzz target with a seed corpus, so the unit job
+  replays it, and registered with the kubernetes OSS-Fuzz build so it also runs in the daily fuzzing
+  that project already does.
+- Values written before this feature read back unchanged: drive the protobuf, JSON and CBOR storage
+  serializers over several object shapes, asserting that none emits a leading discriminator and that
+  each output reads back byte-identical.
+- Write and read agreeing: a value written under a configuration is never reported stale under that
+  same configuration, and a value framed under one configuration reads back under every other. This is
+  what makes a migration converge in one rewrite instead of looping.
+- Bounded allocation, asserted on bytes allocated rather than on the error alone:
+  - a declared length above the ceiling is refused before anything is allocated;
+  - a frame declaring a legal size but carrying a stream that inflates well past it stops at the
+    declared length rather than following the stream;
+  - a stream that ends early, or runs past its declaration, is refused rather than yielding a short or
+    truncated object.
+- Never corruption, which has two independent guards and needs both. Neither sentinel is classified as
+  a corrupt object, so nothing invites a delete; and separately the read path refuses to hand a
+  sentinel to the unsafe-deletion flow at all, so nothing permits one. A regression in either lets an
+  operator destroy an undamaged object. A read abandoned while waiting for an inflation slot returns a
+  plain context error rather than either sentinel, so it needs the same exclusion for the same reason.
+- Inertness: with no configuration file the write path frames nothing and emits no metric samples, and
+  a store built with no policy still reads back values framed earlier. This has to be asserted in the
+  package that assembles the transformer chain, because the mistake being guarded against is a wiring
+  one, either installing the write path where it should be inert or leaving the read path out, and
+  neither is visible from inside the compression package's own tests.
+- The APF correction, in three parts:
+  - the observed plaintext-to-stored factor itself, including that it never falls below 1.0;
+  - that the resource size estimator multiplies its average by that factor, and that the raised average
+    reaches API Priority and Fairness as additional seats;
+  - that every transformer wrapping the compression one re-exposes the factor. The store finds the
+    factor by testing whether its transformer implements an optional method, so a wrapper that neither
+    implements nor delegates it makes that test come back negative, and the store falls back to 1.0
+    with nothing logged and nothing failing.
+
+  The size-based LIST cost estimate is itself a feature gate, on by default since v1.34 but still
+  disableable. With it off, APF charges a LIST by object count, which compression does not change, so a
+  case covering that records that there is nothing for the correction to do.
+- Configuration validation.
+- Concurrency under `-race`, since the compressor and decompressor state is pooled and shared across
+  requests.
+
+Coverage of the packages the implementation touches, measured before any of it lands:
+
+- `k8s.io/apiserver/pkg/storage/value`: `2026-09-22` - `90.7%`
+- `k8s.io/apiserver/pkg/storage/etcd3`: `2026-09-22` - `81.3%`
+- `k8s.io/apiserver/pkg/storage/storagebackend/factory`: `2026-09-22` - `65.7%`
+- `k8s.io/apiserver/pkg/server/options`: `2026-09-22` - `29.4%`
+- `k8s.io/apiserver/pkg/apis/apiserver/validation`: `2026-09-22` - `96.0%`
+- `k8s.io/apiserver/pkg/apis/apiserver/load`: `2026-09-22` - `88.0%`
+- `k8s.io/apiserver/pkg/util/flowcontrol/request`: `2026-09-22` - `91.7%`
+
+##### Integration tests
+
+The following go in `test/integration/controlplane/transformation`, which already starts an in-process
+apiserver, reads raw values out of etcd, plants hand-crafted raw bytes, and restarts the apiserver
+against the same backend. All are required for **alpha**.
+
+- A selected resource above the floor is stored as a frame, asserted on the raw etcd bytes, and reads
+  back equal to what the client sent. An incompressible sibling gets the verbatim frame.
+- With no configuration file the raw bytes still lead with the protobuf prefix, and a value below the
+  floor stays unframed even with the policy on.
+- Values framed with the policy on still serve after a restart with the policy removed, and the raw
+  bytes stay framed until something rewrites them.
+- Enable, disable and re-enable across three restarts, checking the raw framing at each step.
+- A no-op update after a policy flip changes the resource version exactly once and then stops.
+- A planted frame carrying an unknown algorithm id fails the read, is not reported as corruption, and
+  is refused by unsafe deletion. A planted frame with a lying declared length does the same through the
+  other sentinel.
+- A frame written by this release, pinned as a literal at a fixed etcd path, so that future releases
+  keep proving it still decodes. This is the regression anchor for the skew rule.
+- A malformed configuration file, and a `minSize` outside its legal range, each fail startup.
+
+One more belongs in `test/integration/storageversionmigrator` and is a **beta** item rather than an alpha
+one, since it is what exercises the documented pre-downgrade procedure: deselect a resource, restart,
+migrate, then assert that no stored value under that resource leads with the frame discriminator and
+that the number of values scanned equals the number created, so an empty scan cannot pass. Run it in
+both directions, since the staleness rule is symmetric.
+
+`TestDefaultStorageEncoding` and `TestEtcdStoragePath` serve as the default-inertness guard for the
+whole resource surface without being modified, since both decode raw etcd values and would fail if
+framing ever leaked on by default.
+
+##### Upgrade and downgrade tests
+
+Upgrade and downgrade tests are for beta.
+
+- Mixed configuration inside one release: two apiservers on the same etcd, one with the policy and one
+  without, both serving the same resource. Every read succeeds from either, and the disagreement shows
+  up only as the rewrite counter climbing in both directions.
+
+TODO: figure out what is possible for upgrade and downgrade tests and then add more test cases.
+
+##### e2e tests
+
+None. The feature is turned on by a kube-apiserver flag, which an e2e test cannot set against a running
+cluster, and it adds no API surface a client can observe: objects round-trip unchanged whether or not
+they are compressed. Everything an e2e test could assert is either asserted at the integration level
+with access to the raw etcd bytes, or invisible by design.
+
+##### Scale test
+
+Four runs, all required for alpha.
+
+1. The watch-cache initialisation benchmark with a compression axis. It already seeds a large number of
+   Pods into a live etcd and times the cacher from construction to ready, which is the worst read case
+   this KEP names, and a presubmit can afford it.
+2. A scalability run on a change carrying a policy that covers a large resource, measuring the API call
+   latency and pod startup SLOs, apiserver CPU and memory, etcd database size, and write throughput.
+3. The same run with no policy.
+4. The same run with compression and encryption at rest both enabled for the same resources, measuring
+   the same metrics.
+
+Comparing 3 against the state before the change isolates what installing an unused read path costs a
+cluster that never opts in. Comparing 2 against 3 isolates what compressing actually costs. Comparing 4
+against 2 isolates what compression costs alongside encryption.
+
+Run 4 has no precedent to build on: no existing scalability job enables encryption at rest, so that
+configuration has to be added to the job before the run is possible at all.
+
+Backward-compatible scalability improvements that these runs suggest are beta work, not alpha.
 
 ### Graduation Criteria
 
 Compression is never on by default, including at GA. No resource is compressed unless an
 administrator writes a configuration file and points `--storage-compression-config` at it; compressing
-by default is an explicit Non-Goal. The stages therefore move reachability rather than activation:
-`StorageObjectCompression` is alpha and off by default at v1.38, beta and on by default at v1.39 while
-still doing nothing without a configuration file, then locked on at GA.
+by default is an explicit Non-Goal. There is no feature gate, so the stages do not move a default: what
+graduates is the configuration API, `v1alpha1` at alpha and `v1` at GA, and with it the compatibility
+promise the file carries.
 
 One sequencing rule is hard. Decompression is unconditional and a written frame is a permanent, one-way
 commitment, so ordering protects downgrade rather than upgrade. No release may make frame-writing
-reachable by default, or by any configuration action short of enabling an off-by-default gate, unless the
-previous minor release can already read a frame. A release that makes it reachable only from behind such
-a gate must state, in the release note and the flag help, that opting in forfeits downgrade to the
-previous minor for the selected resources until a migration has rewritten them uncompressed.
+reachable by default, and every release in which it is reachable at all must state, in the release note
+and the flag help, that opting in forfeits downgrade to the previous minor for the selected resources
+until a migration has rewritten them uncompressed. At v1.38 that warning is doing real work, because
+nothing can teach v1.37 to inflate a frame.
 
-v1.38 satisfies that only through the gate, since nothing can teach v1.37 to inflate, which is why the
-write path needs two independent acts: an off-by-default gate and an authored file. Beta therefore cannot
-be pulled forward into v1.38, and any new algorithm must ship read support one release before any release
-may write it.
+Any new algorithm must ship read support one release before any release may write it.
 
 #### Alpha
 
 Targeted at v1.38.
 
-- [ ] The gate is alpha and off by default; writes are reachable only with a configuration file and are
-  disabled by removing it; a malformed or contradictory configuration fails startup rather than silently
-  doing nothing.
+- [ ] The flag is unset by default; writes are reachable only with a configuration file and are disabled
+  by removing it; a malformed or contradictory configuration fails startup rather than silently doing
+  nothing.
 - [ ] Open question 1, whether a frame carries a checksum, is decided. It must be settled before alpha
   ships rather than at beta, because adding integrity afterwards requires a new algorithm id and a
   release of read-before-write skew. If the answer is a checksum, a mismatch needs a classification
@@ -772,8 +918,6 @@ invariant belonging in apimachinery, is carried by beta's closing of known gaps.
 
 Targeted at v1.39.
 
-- [ ] The gate becomes beta and on by default. The write path still requires a configuration file, so the
-  effective default does not change; writes remain disableable by removing the flag, and reads never are.
 - [ ] Open question 2 is resolved: whether the compression level becomes per-resource. It needs no format
   change, since the level is a writer-side choice the decoder never reads.
 - [ ] The configuration shape is finalised, either promoted to a beta API version or kept at v1alpha1 with
@@ -796,7 +940,7 @@ Targeted at v1.39.
 
 - [ ] No unresolved issues reported by beta adopters, and no open issue attributable to the at-rest
   format.
-- [ ] The gate locked to its default, with `resources` still empty by default.
+- [ ] The configuration API reaches `v1`, with `resources` still empty by default.
 
 #### Deprecation
 
@@ -813,16 +957,13 @@ releases and for whatever deprecation window the configuration type's stability 
 migration to uncompressed documented as a prerequisite before the writer goes.
 
 This KEP deprecates nothing that already exists. `--storage-compression-config` is new and supersedes
-nothing: not `--storage-media-type`, not response compression, not any etcd-side setting. The gate
-itself deprecates ordinarily, with the flag and configuration type outliving it, as other configuration
-files have outlived their gates.
+nothing: not `--storage-media-type`, not response compression, not any etcd-side setting.
 
 ### Upgrade / Downgrade Strategy
 
-Upgrade is a no-op. The feature gate is off by default and `--storage-compression-config` is unset,
-so an untouched cluster stores byte-identical values after the upgrade. The decompression path is
-present regardless of the gate but stays inert: it finds no frames, records no metrics, and returns
-every value unchanged. There is no ordering requirement among apiservers, because a read is decided by
+Upgrade is a no-op. `--storage-compression-config` is unset, so an untouched cluster stores
+byte-identical values after the upgrade. The decompression path is present regardless but stays inert:
+it finds no frames, records no metrics, and returns every value unchanged. There is no ordering requirement among apiservers, because a read is decided by
 the stored bytes rather than by the reading apiserver's configuration.
 
 Enabling a resource costs a one-time write amplification. Once a resource is selected, each of its
@@ -838,27 +979,15 @@ operator's control.
 
 Disabling is safe for reads at any time and can never strand data, though it decompresses nothing. An
 operator can remove the resource from the configuration, exclude it ahead of a wildcard by giving it
-the `None` algorithm, or drop the flag and the gate together. Existing frames stay on disk until
+the `None` algorithm, or drop the flag. Existing frames stay on disk until
 something rewrites them: the staleness verdict flips direction and they migrate back by the same
 mechanism, at the same amplification. Disabling makes the write path unreachable while the read path
 stays active; it does not shed a frame.
 
-Graduating from alpha to beta changes a default rather than a behaviour. At beta the gate defaults to on,
-but framing still requires a configuration file that names a resource, so a cluster without one sees no
-change and the effective default remains "compress nothing".
-
-Nor can compression switch itself on for a cluster that does have a file. Setting the flag without the
-gate fails startup at alpha, so no alpha cluster is running with a file present and the gate off, and
-there is no staged configuration waiting to activate itself on upgrade. That is where the startup failure
-earns its keep. From beta to GA the gate is locked on and nothing further changes, the configuration file
-remaining the only switch.
-
-Downgrading from beta back to alpha is a configuration hazard rather than a data one. Frames written
-at beta stay readable at alpha, so no data is at risk. But a beta cluster that relies on the gate's
-default and has a configuration file will meet the alpha default of off with the flag still set, and
-refuse to start. Before crossing that boundary downwards, either set the gate explicitly to on or
-remove the configuration file. This is the one transition where the safety check is itself the
-obstacle, and it fails loudly at startup rather than quietly at runtime.
+Graduating changes nothing observable. The flag is the only switch at every stage, so a cluster that
+does not set it sees no difference, and no upgrade can start compressing for a cluster that merely has a
+file on disk. Downgrading between two releases that both support the format is equally uneventful: the
+flag means the same thing in each, and a frame written by either is readable by both.
 
 Downgrade below the first decompress-capable release is the serious case, and it is an outage rather
 than a degradation. Decryption succeeds, because the encryption envelope is unchanged and in an
@@ -896,11 +1025,9 @@ reaches its decoder and fails, taking the whole LIST with it. Hence the governin
 may write a frame until every apiserver backed by the same etcd can read one. Because read and write
 support ship together in the same release, that rule is discharged by operator sequencing rather than by
 a release boundary. Upgrade every apiserver, confirm the rollout, then add the configuration file.
-Writing requires two deliberate, restart-scoped acts: enabling `StorageObjectCompression`, and pointing
-`--storage-compression-config` at a file that names a resource with an algorithm other than `None`.
-Setting the flag without the gate fails startup rather than silently doing nothing. Reverting either act
-stops new frames from being written but leaves every existing frame readable, because the read path
-never consults the policy.
+Writing requires one deliberate, restart-scoped act: pointing `--storage-compression-config` at a file
+that names a resource with an algorithm other than `None`. Reverting it stops new frames from being
+written but leaves every existing frame readable, because the read path never consults the policy.
 
 Mixed configuration across apiservers is the case an operator can actually create. Reads are
 unaffected: the read path is installed unconditionally and decides from the stored bytes, so a frame
@@ -986,13 +1113,13 @@ you need any help or guidance.
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [x] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name: `StorageObjectCompression`
-  - Components depending on the feature gate: kube-apiserver
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
 - [x] Other
-  - Describe the mechanism: both boxes apply, because neither suffices alone. Compressing needs the gate
-    and `--storage-compression-config` naming the resource with an algorithm other than `None`. The gate
-    alone is inert; the flag alone fails startup.
+  - Describe the mechanism: one kube-apiserver flag, `--storage-compression-config`, pointing at a file
+    that names the resources to compress with an algorithm other than `None`. Unset, nothing is
+    compressed. No feature gate, for the reasons in [Proposal](#proposal).
   - Will enabling / disabling the feature require downtime of the control plane? No, but each apiserver
     restarts, since the configuration is read once per process. On HA that is a rolling restart.
   - Will enabling / disabling the feature require downtime or reprovisioning of a node? No.
@@ -1005,9 +1132,8 @@ through the API changes. Raw-etcd tooling is the exception: it can no longer rea
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-The write path, yes and immediately: remove the resource's entry or give it the `None` algorithm. A
-rollback expressed through the gate must drop the flag too, since the flag without the gate fails
-startup. The read path, no, and that asymmetry is what makes rollback safe: it can never strand data.
+The write path, yes and immediately: remove the resource's entry, give it the `None` algorithm, or unset
+the flag. The read path, no, and that asymmetry is what makes rollback safe: it can never strand data.
 
 Rolling back does not uncompress anything. Frames revert to bare values only as something rewrites them,
 at the same amplification cost as enabling. Reverting the bytes, needed only before downgrading below
@@ -1025,11 +1151,11 @@ reads both forms.
 
 ###### Are there any tests for feature enablement/disablement?
 
-Not yet. The upstream implementation PR is not open, so no tests exist. Enablement and disablement need
-unit coverage of an unconfigured apiserver framing nothing and emitting no metric samples, the flag
-without the gate being rejected, a stale value converging in exactly one rewrite in either direction,
-which is what makes enable and disable terminate, and a value framed under one configuration reading
-back under any other. The restart-driven enable, disable and re-enable cycle needs an integration test.
+The implementation carries unit coverage of an unconfigured apiserver framing nothing and emitting no
+metric samples, of a stale value converging in exactly one rewrite in either direction, which is what
+makes enable and disable terminate, and of a value framed under one configuration reading back under any
+other. The integration coverage does not exist yet: the restart-driven enable, disable and re-enable
+cycle, with the raw etcd bytes asserted at each step. Both are in the [Test Plan](#test-plan).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -1041,7 +1167,7 @@ by the reading apiserver's configuration, so a mid-rollout fleet needs no coordi
 
 Every remaining failure lands on the control plane. A configuration mistake fails startup rather than
 degrading: a malformed file, an unknown algorithm, an unreadable path, a `minSize` outside its legal
-range, a selector already claimed by an earlier entry, or the flag without the gate. A rolling update
+range, or a selector already claimed by an earlier entry. A rolling update
 therefore loses one replica at a time while the rest keep serving. Applying an unvalidated file to every
 replica at once is what turns that into an outage.
 
@@ -1073,10 +1199,10 @@ has looked, not that no frames remain.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
-No. The upstream implementation PR is not open, so upgrade/downgrade has been exercised end to end. The two
-transitions most worth testing are the beta-default-on to alpha-default-off boundary, where the startup
-check is itself the obstacle, and a downgrade below the first decompress-capable release preceded by a
-completed migration.
+No. The upstream implementation PR is not open, so upgrade and downgrade have not been exercised end to
+end. The transition most worth testing is a downgrade below the first decompress-capable release preceded
+by a completed migration, since that is the one path where getting it wrong removes serving for a whole
+resource.
 
 ###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
 
@@ -1165,9 +1291,14 @@ bytes.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
-With no configuration file, nothing changes. For a selected resource each mutating request adds one
-compression pass and each read of a framed value one inflation, which is cheaper. The worst read case is
-watch-cache initialisation, a full LIST inflated object by object while the request waits.
+TODO: pending the scale test in the [Test Plan](#test-plan).
+
+With no configuration file the write path is a length comparison and the read path a comparison of the
+first byte, and a microbenchmark of the unframed read path is what bounds that. For a selected resource
+each mutating request adds one compression pass and each read of a framed value one inflation, which is
+cheaper. The worst read case is watch-cache initialisation, a full LIST inflated object by object while
+the request waits. No SLO measurement exists for any of this yet, so the size of the effect is unstated
+rather than claimed to be zero.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -1175,8 +1306,8 @@ Only kube-apiserver, and the net effect may be neutral or better. Compression co
 for selected resources and inflation on the read path, plus memory for pooled compressors and for bounded
 concurrent inflation; see [Bounding decompression](#bounding-decompression). Against that, smaller stored
 values mean fewer bytes over the wire to and from etcd, which saves both CPU and the buffers carrying
-them. Early measurements suggest that saving can offset the compression overhead, which the beta scale
-test is there to confirm.
+them. Whether that saving offsets the compression cost is TODO; the scale test in the
+[Test Plan](#test-plan) is what answers it.
 
 Network traffic to etcd decreases with the wire size.
 
