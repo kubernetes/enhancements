@@ -18,10 +18,10 @@ approvers:
 
 status: implementable
 stage: beta
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 milestone:
     alpha: "v1.33"
-    beta: "v1.37"
+    beta: "v1.38"
     stable: ""
 
 feature-gates:
