@@ -1299,7 +1299,6 @@ None.
 [k/k#122912]: https://github.com/kubernetes/kubernetes/issues/122912
 [k/k#137895]: https://github.com/kubernetes/kubernetes/issues/137895
 [KEP-5683]: https://github.com/kubernetes/enhancements/issues/5683
-[KEP-6249]: https://github.com/kubernetes/enhancements/issues/6249
 [KEP-6250]: https://github.com/kubernetes/enhancements/issues/6250
 [KEP-6251]: https://github.com/kubernetes/enhancements/issues/6251
 [#98004]: https://github.com/kubernetes/kubernetes/issues/98004
