@@ -513,17 +513,18 @@ mid-shutdown does not carry stale state into removal or recovery flows.
 **Trigger.** When the controller transitions the node's `Ready` condition to
 `Unknown` (i.e., the kubelet has stopped heartbeating beyond
 `nodeMonitorGracePeriod`), it sets both conditions to `status=Unknown` with
-reason `KubeletUnreachable`, touching only conditions whose current reason is
-`NodeShutdown` so that an admin-written `DrainInProgress` is never modified.
-`Unknown` rather than `False` because, per [KEP-5683], `Unknown` means
-Kubernetes cannot determine whether the state is active — exactly the
-controller's position — and the DaemonSet reader keys on `True` alone, so
-suppression lifts either way. Rationale for the trigger: at that point the
-writer is definitively gone; the purpose of the suppression — not fighting
-a kubelet that is actively rejecting Pods — no longer applies; and reverting
-an unreachable node to today's DaemonSet behavior is the fail-open default.
-Node object deletion requires no handling (the conditions go away with the
-object).
+reason `KubeletUnreachable`. It does not inspect the existing `reason` first:
+under the WG's alpha last-writer-wins model an administrator's condition on a
+node whose kubelet has vanished is superseded like any other, and `Unknown` is
+the honest value for it. `Unknown` rather than `False` because, per [KEP-5683],
+`Unknown` means Kubernetes cannot determine whether the state is active —
+exactly the controller's position — and the DaemonSet reader keys on `True`
+alone, so suppression lifts either way. Rationale for the trigger: at that
+point the writer is definitively gone; the purpose of the suppression — not
+fighting a kubelet that is actively rejecting Pods — no longer applies; and
+reverting an unreachable node to today's DaemonSet behavior is the fail-open
+default. Node object deletion requires no handling (the conditions go away
+with the object).
 
 **Known limitation of this trigger.** On architectures where the Node object
 intentionally outlives the kubelet — teardown flows that stop the kubelet, then
@@ -872,11 +873,12 @@ open; the list exists so reviewers can see where each answer came from.*
    Mitigations](#risks-and-mitigations), and revisiting the trigger is a
    [beta criterion](#beta). Decided at KEP review.
 3. **Node Lifecycle Controller write.** `status=Unknown`, reason
-   `KubeletUnreachable`, applied only to conditions whose current reason is
-   `NodeShutdown`. `Unknown` follows [KEP-5683]'s definition — Kubernetes
-   cannot determine whether the state is active — which is the controller's
-   actual position; the reason follows [KEP-5683]'s stable-CamelCase
-   cause-category convention. Decided at KEP review.
+   `KubeletUnreachable`, on both conditions. `Unknown` follows [KEP-5683]'s
+   definition — Kubernetes cannot determine whether the state is active —
+   which is the controller's actual position; the reason follows [KEP-5683]'s
+   stable-CamelCase cause-category convention. The controller does not inspect
+   the existing `reason` before writing (last-writer-wins, per the WG's alpha
+   model). Decided at KEP review.
 4. **Single feature gate for writer and reader.** *Resolved in WG
    (2026-08-24)*; see [Feature gating](#feature-gating).
 5. **Metric labels.** `transition` and `critical` on
@@ -886,6 +888,15 @@ open; the list exists so reviewers can see where each answer came from.*
 6. **Critical-daemon-Pod gap.** A hard [beta criterion](#beta) for this KEP.
    If the separate drain-ordering enhancement closes it first, this KEP inherits
    that resolution. Decided at KEP review.
+7. **Reader keys on `type` and `status` only; partial-rollout safety is
+   operational.** Keying on `reason` was considered as a way to distinguish
+   kubelet-written state from administrator-written or stale state and
+   rejected: API conventions reserve `reason` for explanation, not control
+   flow (see [Alternatives](#alternatives)). Instead, [Upgrade / Downgrade
+   Strategy](#upgrade--downgrade-strategy) makes kubelet-first enablement,
+   reader-first disablement, and a preflight listing of nodes carrying the
+   conditions hard requirements, and the reader-only enablement test exercises
+   the writer-agnostic behavior directly. Decided at PRR review.
 
 **Follow-up (not a design question).** The drain-ordering enhancement referenced
 in [Termination priorities and drain
@@ -946,6 +957,9 @@ statement of what this KEP does:
 - Node with `GracefulNodeShutdownInProgress=True` only → Pod is recreated
   (proves the AND is deliberate).
 - Node with `DrainInProgress=True` only → Pod is recreated.
+- Reader enabled against a node already carrying both conditions `True` →
+  suppressed until cleared (the writer-agnostic reader; exercised deliberately
+  so the rollout-ordering requirement is backed by a test).
 - Rolling update while a node is suppressed → no new-hash Pod is created there
   (`maxSurge > 0`) and the controller does not delete the old Pod there
   (`maxSurge == 0`); the rollout completes on every other node.
@@ -1012,14 +1026,26 @@ writer and reader KEPs graduate together.*
 
 ### Upgrade / Downgrade Strategy
 
-- **Upgrade.** Enabling the gate on the kubelet and kube-controller-manager
-  activates the writer and reader. No migration of existing objects; a node that
-  is not shutting down carries no condition.
-- **Downgrade / disable.** Disabling the gate stops the kubelet writing and the
-  DaemonSet controller reading. Conditions left `True` on a node mid-shutdown at
-  the moment of disablement are cleared by the kubelet's next startup or by the
-  Node Lifecycle Controller; until then they are inert (no reader honors them
-  with the gate off). Manual removal by an administrator is always possible.
+- **Upgrade order (required).** Enable the kubelet gate on all nodes first and
+  the kube-controller-manager gate last. The reader is writer-agnostic, so
+  enabling it first would act on any pre-existing conditions; kubelet-first
+  guarantees that the only conditions the reader sees on enablement are ones a
+  kubelet wrote during an actual shutdown. No migration of existing objects; a
+  node that is not shutting down carries no kubelet-written condition.
+- **Preflight (required).** Before enabling the reader, list nodes already
+  carrying the conditions:
+  `kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="GracefulNodeShutdownInProgress")].status}{"/"}{.status.conditions[?(@.type=="DrainInProgress")].status}{"\n"}{end}' | grep "True/True"`.
+  A listed node that is `Ready` and not shutting down carries stale state;
+  clear it before enabling the reader. A listed node an administrator marked
+  deliberately will be suppressed once the reader is on, which is the intended
+  behavior.
+- **Downgrade / disable order (required).** Disable the kube-controller-manager
+  gate first, then the kubelet gate or version. Reader-first guarantees that a
+  condition a downgraded kubelet can no longer clear has no effect. Conditions
+  left `True` on a node mid-shutdown at the moment of disablement are cleared
+  by the kubelet's next startup (if it still has the gate) or set `Unknown` by
+  the Node Lifecycle Controller; until then they are inert. Manual removal by
+  an administrator is always possible.
 
 ### Version Skew Strategy
 
@@ -1027,15 +1053,18 @@ Fail-open semantics make every skew combination safe:
 
 | Kubelet | kube-controller-manager | Result |
 |---|---|---|
-| New (writes conditions) | Old (ignores them) | Conditions present, unconsumed. Status quo. Harmless. |
-| Old (never writes) | New (would consume) | Conditions absent. DaemonSet behavior unchanged. Harmless. |
+| New (writes conditions) | Old (ignores them) | Conditions present, unconsumed. Today's churn persists on shutting-down nodes; no new failure mode. Kubelet startup clears the conditions. |
+| Old (never writes) | New (would consume) | No kubelet-written conditions exist. DaemonSet behavior unchanged unless conditions pre-exist (see preflight); no new failure mode. |
 | Both new, gate off | — | No change. |
 | Both new, gate on | — | Feature works. |
 
 The table covers the supported n-3 kubelet skew: an older kubelet never writes
 the conditions, so a newer kube-controller-manager observes absent conditions
 and the DaemonSet controller behaves exactly as today. A newer kubelet against
-an older control plane publishes conditions that nothing consumes.
+an older control plane publishes conditions that nothing consumes. "No new
+failure mode" is the claim in every row, not that the status quo is acceptable
+— the status quo is the churn this KEP exists to fix, and it persists in every
+partial combination.
 
 ## Production Readiness Review Questionnaire
 
@@ -1057,8 +1086,10 @@ not in shutdown are unaffected.
 
 Yes. With the gate off, no component writes or honors the conditions. Any
 condition left `True` at the moment of disablement is cleared by the kubelet at
-its next startup or by the Node Lifecycle Controller when the node is taken
-offline, and is inert until then.
+its next startup or set `Unknown` by the Node Lifecycle Controller when the
+node is taken offline, and is inert until then. Disable the
+kube-controller-manager reader before downgrading kubelets; see [Upgrade /
+Downgrade Strategy](#upgrade--downgrade-strategy).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -1072,18 +1103,41 @@ exercise each path with the gate enabled and disabled via
 `test/integration/daemonset/` runs the suppression scenario with the gate on
 and asserts today's behavior with it off. A gate off → on → off transition test
 on the DaemonSet reader verifies that toggling the gate leaves no dangling
-creation expectations and that suppression stops immediately on disable.
+creation expectations and that suppression stops immediately on disable. A
+reader-only enablement test starts with both conditions already `True` on a
+`Ready` node (as an administrator would write them) and asserts suppression,
+documenting that the reader is writer-agnostic and that the preflight check is
+what protects against stale state.
 
 ### Rollout, Upgrade and Rollback Planning
 
 ###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 Rollout enables a writer and a reader that are each inert without the other's
-conditions, so a partial rollout cannot fail in a way that affects running
-workloads: the worst case on any component is today's behavior. Rollback with a
-node mid-shutdown leaves conditions `True` until the kubelet's next startup or
-the NLC clears them; with the gate off no reader honors them, so running
-workloads are unaffected.
+conditions, so a partial rollout does not fail in a way that affects running
+workloads: the worst case on any component is today's behavior. The same holds
+for Pods not yet running. The kubelet's rejection of new Pod admission during
+a shutdown is existing Graceful Node Shutdown behavior that this KEP neither
+adds nor changes; with only the kubelet side enabled, DaemonSet Pods targeted
+at a shutting-down node are rejected exactly as today, and the node's next
+kubelet startup clears the conditions before the node reports `Ready`. A
+partially enabled cluster therefore cannot block an upgrade.
+
+The reader is writer-agnostic — it keys on `type` and `status` only, per API
+conventions — so a node that already carries both conditions `True` when the
+reader is enabled is suppressed immediately, whoever wrote them. For an
+administrator-written pair that is the intended [KEP-5683] semantics. For stale
+state it is not, which is why rollout ordering and the preflight check in
+[Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) are requirements:
+kubelets before the reader on the way up, reader off first on the way down, and
+a listing of nodes carrying the conditions before the reader is enabled.
+
+Control-plane components run as static Pods are DaemonSet-independent and
+unaffected. Control-plane components run as DaemonSets are affected only on a
+node carrying both conditions `True`, which after the preflight is a node in
+shutdown or one an administrator has deliberately marked; every path back to
+`Ready` (kubelet restart, Node Lifecycle Controller) clears kubelet-written
+state.
 
 ###### What specific metrics should inform a rollback?
 
@@ -1206,14 +1260,26 @@ proceeds. The DaemonSet controller sees absent conditions and behaves as today.
 - Stale `True` conditions on a node whose kubelet died and has not returned and
   which the Node Lifecycle Controller has not yet processed. DaemonSet Pods are
   not recreated there until cleared. Admin remediation: delete the conditions.
+- Stale `True` conditions on a node that returned to `Ready` under a kubelet
+  that lacks the startup clear — the node was upgraded with the gate on, shut
+  down, and rebooted into a downgraded kubelet. The Node Lifecycle Controller
+  covers this whenever the reboot outlasts `nodeMonitorGracePeriod` (it sets
+  the conditions `Unknown` before the old kubelet returns); a faster reboot
+  leaves them `True` until an administrator clears them. Disabling the
+  kube-controller-manager reader before downgrading kubelets (see [Upgrade /
+  Downgrade Strategy](#upgrade--downgrade-strategy)) prevents any effect.
 - Conditions cleared by the Node Lifecycle Controller while post-kubelet
   teardown is still in progress, on architectures where the Node object outlives
   the kubelet. Symptom: DaemonSet Pods created and left `Pending` on a node
   being torn down, until the Node object is deleted. See [Risks and
   Mitigations](#risks-and-mitigations).
-- Conditions set by an administrator or another writer and never cleared. The
-  Node Lifecycle Controller backstop applies once the node goes offline;
-  otherwise admin remediation.
+- Conditions set by an administrator or another writer and never cleared.
+  Suppression on that node is the intended reading of the [KEP-5683]
+  admin-managed model — the writer asserted that the node is shutting down —
+  and lasts until the writer clears them, the node's kubelet restarts, or the
+  Node Lifecycle Controller takes the node offline. The preflight check in
+  [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) lists such nodes
+  before the reader is enabled.
 - `GracefulNodeShutdown` misconfigured (e.g. empty priority list degrades GNS to
   a no-op): no shutdown signal reaches the manager, no conditions are written,
   today's behavior.
@@ -1338,6 +1404,20 @@ Other alternatives considered:
 - **Change `nodeShouldRunDaemonPod` instead of `podsShouldBeOnNode`.** Would
   move `desiredNumberScheduled` and hide the unavailability from status; status
   attribution is [KEP-6250]'s territory.
+- **Key the reader on the condition `reason` (e.g. require `NodeShutdown`) so
+  that only kubelet-written state suppresses.** Rejected: API conventions
+  reserve `reason` for a machine-readable explanation of the current status,
+  not for control flow; a controller that branches on it turns `reason` into a
+  state machine. The reader keys on `type` and `status` only. Partial-rollout
+  and admin-written-state safety are handled operationally instead (see
+  [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)).
+- **Additionally require the node's `Ready` condition not be `True` before
+  suppressing**, as a second signal that the kubelet is really in shutdown.
+  Not adopted for alpha: it reintroduces the asynchronous `Ready=False`
+  ordering window the writer design closes, and it changes the meaning of an
+  admin-written condition on a `Ready` node. Recorded as a candidate beta
+  hardening for stale-state safety if the alpha metric shows suppression on
+  nodes that are not shutting down.
 
 ## Infrastructure Needed (Optional)
 
