@@ -103,9 +103,9 @@ at the time.
   over-commit hugepages that are consumed by system processes.
 - Enable `--reserved-memory` to work with hugepages end-to-end. The memory
   manager's validation requires that `--reserved-memory` totals match
-  `system-reserved + kube-reserved + eviction-threshold` for each resource type.
+  `system-reserved + kube-reserved + eviction-threshold` for memory and hugepages resource type.
   Once hugepages are accepted in `--system-reserved` / `--kube-reserved`, this
-  validation will naturally pass.
+  validation will naturally pass (see [`validateReservedMemory` L445](https://github.com/kubernetes/kubernetes/blob/4b19e2b0244b00b56d6604deab3ff32b1c7e5706/pkg/kubelet/cm/memorymanager/memory_manager.go#L445)).
 - Document the two-flag workflow: node-wide hugepage totals in
   `--system-reserved` / `--kube-reserved`, and the per-NUMA split in
   `--reserved-memory`.
@@ -160,9 +160,23 @@ eviction-threshold`, which don't accept hugepages. This KEP unblocks that
 path.
 
 The administrator must keep the per-NUMA `--reserved-memory` totals equal to
-`system-reserved + kube-reserved` for each resource type, just as with
-ordinary memory today. Eviction thresholds never include hugepages, so they
-do not contribute to that equality for hugepage resources.
+`system-reserved + kube-reserved` for memory and hugepages specifically, just
+as with ordinary memory today. Eviction thresholds never include hugepages, so they do not contribute to
+that equality for hugepage resources. There are two reasons hugepage eviction
+is not meaningful:
+
+1. **No overcommit.** Unlike standard memory, hugepages cannot be
+   overcommitted — even for Burstable pods. A pod's hugepage `requests` must
+   equal its `limits`. A pod therefore can never consume more hugepages than
+   its pre-allocated limit, so there is no surprise pressure to react to.
+
+2. **Separate accounting pool.** The eviction threshold mechanism exists to
+   maintain a small amount of free general memory so critical system processes
+   can continue to function. When `memory.available` falls below the threshold,
+   kubelet evicts pods to relieve pressure. Hugepages are accounted in their
+   own kernel pool and do not count toward `memory.available`. Evicting a
+   hugepage-consuming pod would not reduce general memory pressure — the
+   pressure would remain.
 
 `node.status.capacity` and `node.status.allocatable` report node-wide totals
 per hugepage size. They do not expose per-NUMA hugepages.
@@ -306,12 +320,15 @@ matching the existing QoS cgroup design for other resources.
 
 ### Memory Manager Integration
 
-Per-NUMA hugepage reservation through `--reserved-memory` is already
-implemented end-to-end; this KEP unblocks it. `validateReservedMemory()`
-requires `sum(--reserved-memory)` per resource type to equal
-`system-reserved + kube-reserved + eviction-threshold`. Once hugepages are
-accepted in `--system-reserved` / `--kube-reserved`, matching
-`--reserved-memory` values pass that check.
+The Memory Manager plumbing for hugepages in `--reserved-memory` already
+exists: `validateReservedMemory()` already handles hugepage resource names
+(via `IsHugePageResourceName`) alongside memory. However, the end-to-end
+flow is currently blocked because `--system-reserved` and `--kube-reserved`
+do not accept hugepages, so `validateReservedMemory()` always sees a zero
+node-allocatable reservation for hugepages and rejects any non-zero
+`--reserved-memory` hugepage value. This KEP completes the end-to-end flow
+by accepting hugepages in those flags, allowing the per-NUMA
+`--reserved-memory` values to match and pass validation.
 
 The administrator sets node-wide totals in `--system-reserved` / `--kube-reserved`
 and splits them per NUMA in `--reserved-memory` to match where system daemons
@@ -357,7 +374,7 @@ None.
 - `k8s.io/kubernetes/pkg/kubelet/cm`: extend
   `TestNodeAllocatableReservationForScheduling` in
   `node_container_manager_linux_test.go` so `GetNodeAllocatableReservation`
-  and `GetNodeAllocatableAbsolute` include hugepages in `SystemReserved` and
+  and `GetNodeAllocatableAbsolute` include hugepages in `SystemReserved` and/or
   `KubeReserved`. QoS manager tests: Guaranteed tier gets limited hugepages;
   Burstable and BestEffort stay unbounded.
 - `k8s.io/kubernetes/pkg/kubelet/cm/memorymanager`: `validateReservedMemory`
@@ -372,16 +389,35 @@ None planned at this time, because e2e test will cover the flows.
 
 Extend `test/e2e_node/node_container_manager_test.go`:
 
-- Configure 2Mi hugepages on the host.
-- Set `--system-reserved` and `--kube-reserved` to `hugepages-2Mi=2Mi` each
-  (4Mi reserved in total).
+- Configure both 2Mi and 1Gi hugepages on the host.
+- Set `--system-reserved` to `hugepages-2Mi=2Mi,hugepages-1Gi=1Gi` and
+  `--kube-reserved` to `hugepages-2Mi=2Mi,hugepages-1Gi=1Gi`
+  (4Mi and 2Gi reserved in total respectively).
 - Set `enforce-node-allocatable` to `[pods, system-reserved, kube-reserved]`.
 - Verify:
-  - `kubepods` `hugetlb.2MB.max` (cgroup v2) or
-    `hugetlb.2MB.limit_in_bytes` (cgroup v1) equals capacity minus 4Mi.
-  - `node.status.allocatable[hugepages-2Mi]` matches that value.
+  - `kubepods` `hugetlb.2MB.max` equals 2Mi capacity minus 4Mi.
+  - `kubepods` `hugetlb.1GB.max` equals 1Gi capacity minus 2Gi.
+  - `node.status.allocatable[hugepages-2Mi]` and
+    `node.status.allocatable[hugepages-1Gi]` match their respective values.
   - system-reserved and kube-reserved cgroup hugepage limits match the
-    configured 2Mi each.
+    configured 2Mi and 1Gi each.
+
+- Upgrade behavior - reservation introduced while node is over-committed:
+  - Start kubelet with no hugepage reservation; schedule a pod consuming all
+    available 2Mi hugepages.
+  - Restart kubelet with `--system-reserved=hugepages-2Mi=2Mi`.
+  - Verify `FailedNodeAllocatableEnforcement` warning events are emitted.
+  - Verify `kubepods` `hugetlb.2MB.max` is not yet reduced (kernel rejected
+    the update).
+  - Terminate the pod; verify the limit is applied on the next retry.
+
+- QoS cgroup periodic reconciliation regression test:
+  - Configure 2Mi hugepages and set `--system-reserved=hugepages-2Mi=2Mi`.
+  - After initial enforcement, wait for at least one full QoS cgroup manager
+    reconciliation cycle (`UpdateCgroups` runs every minute).
+  - Re-read `kubepods` `hugetlb.2MB.max` and verify it still equals capacity
+    minus the reserved value - i.e. the periodic `UpdateCgroups` call on the
+    Guaranteed / `kubepods` tier did not overwrite the limit back to unbounded.
 
 ### Graduation Criteria
 
@@ -412,6 +448,15 @@ N/A — this feature extends existing flags; no deprecation is planned.
 No special upgrade steps required. The feature is opt-in via the
 `--system-reserved` / `--kube-reserved` flags. Existing clusters that do not
 set hugepages in these flags are unaffected.
+
+When introducing a hugepage reservation on a node that already has running
+pods with hugepage allocations, the kernel will reject setting `hugetlb.max`
+on the `kubepods` cgroup below the current usage. Kubelet's existing retry
+loop (`enforceNodeAllocatableCgroups`) will emit `FailedNodeAllocatableEnforcement`
+warning events every minute until pods release their hugepages. There is no
+hugepage eviction to resolve the conflict automatically. Administrators should
+drain hugepage-consuming pods from the node before introducing or increasing
+hugepage reservations.
 
 On downgrade or when disabling the feature gate, remove hugepages entries
 from `--system-reserved` and `--kube-reserved` first. If those keys remain
@@ -605,15 +650,6 @@ behavior as existing resource reservations (cpu, memory).
     and the reserved flag values.
   - Testing: e2e_node configures host hugepages before applying reserved
     flags.
-- Reservation value exceeds actual system daemon hugepage consumption
-  - Detection: Pods fail to schedule despite the node having enough total
-    hugepages to accommodate both system daemons and pod requests.
-  - Mitigations: Verify `--system-reserved` / `--kube-reserved` hugepages
-    values match the actual daemon consumption and adjust accordingly.
-  - Diagnostics: Compare the configured reservation with observed daemon
-    hugepage usage.
-  - Testing: None - this is an operational misconfiguration; kubelet has no
-    visibility into how much hugepage memory a system daemon actually consumes.
 
 ###### What steps should be taken if SLOs are not being met to determine the problem?
 
