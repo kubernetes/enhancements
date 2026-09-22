@@ -1,0 +1,35 @@
+title: Parallel Container Operations in Kubelet SyncPod
+kep-number: 6416
+authors:
+  - "@tallclair"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2026-09-17
+reviewers:
+  - TBD
+approvers:
+  - dchen1107
+
+see-also: []
+
+replaces: []
+
+stage: alpha
+
+latest-milestone: "v1.38"
+
+milestone:
+  alpha: "v1.38"
+  beta: TBD
+  stable: TBD
+
+feature-gates:
+  - name: KubeletParallelContainerOps
+    components:
+      - kubelet
+disable-supported: true
+
+metrics:
+  - kubelet_sync_pod_container_operations_duration_seconds
