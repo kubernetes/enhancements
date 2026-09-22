@@ -27,7 +27,7 @@
     - [The interaction this KEP creates](#the-interaction-this-kep-creates)
     - [Candidate directions (recorded, not chosen)](#candidate-directions-recorded-not-chosen)
     - [Position for this KEP's alpha](#position-for-this-keps-alpha)
-  - [Open Questions](#open-questions)
+  - [Design Decisions](#design-decisions)
   - [Test Plan](#test-plan)
       - [Prerequisite testing updates](#prerequisite-testing-updates)
     - [Unit tests](#unit-tests)
@@ -372,10 +372,10 @@ writers](#other-writers) and carried as a beta graduation criterion.*
 |---|---|
 | The kubelet's status write does not land before the machine dies (slow or unreachable API server during a rack-wide event). | Best-effort, bounded retry; the DaemonSet controller sees absent conditions and behaves as today. Never worse than status quo. |
 | Conditions left `True` after the kubelet is gone (crash, power loss). | Kubelet clears unconditionally at startup on return; Node Lifecycle Controller clears when the node is taken offline. Residual stale state until one of those fires is accepted for alpha; a stale-writer backstop is a graduation item. |
-| The NLC clears the conditions while teardown is still in progress, on architectures where the Node object intentionally outlives the kubelet (stop kubelet → post-kubelet cleanup → delete Node). | Accepted for alpha; with no kubelet there is no admission rejection, so Pods sit `Pending` rather than churning, and Node deletion resolves it. The trigger is [Open Question 2](#open-questions); see the [NLC section](#node-lifecycle-controller-narrow-writer) for the trade-offs. |
+| The NLC clears the conditions while teardown is still in progress, on architectures where the Node object intentionally outlives the kubelet (stop kubelet → post-kubelet cleanup → delete Node). | Accepted for alpha; with no kubelet there is no admission rejection, so Pods sit `Pending` rather than churning, and Node deletion resolves it. The trigger is [Design Decision 2](#design-decisions); see the [NLC section](#node-lifecycle-controller-narrow-writer) for the trade-offs. |
 | Another writer flips `DrainInProgress` mid-shutdown (`kubectl drain`, a maintenance operator, an admin). | Last-writer-wins, admin-in-control. Fail-open semantics mean the worst case is today's churn, not incorrect deletion. Cross-writer synchronization is deferred past alpha (WG, 2026-08-24). |
 | An admin deletes a condition the kubelet is responsible for while shutdown is in progress (new edge case on [k/k#122674]). | Accepted for alpha. Graduation direction: the kubelet reads level-triggered shutdown state from the OS and continuously reconciles the conditions (WG, 2026-08-17). |
-| Suppression is phase-agnostic: during a long user-workload termination phase, a system-critical DaemonSet Pod that dies is not restarted, and its absence can impair the clean termination of the workloads GNS is draining. The evidence suggests this is the common case, not an edge case. | Known alpha limitation, bounded by the shutdown grace budgets (which may be large). Closing it is a proposed beta criterion; the suppression metric's `critical` label measures it during alpha. A priority-class exemption was considered and rejected — see [Termination priorities and drain ordering](#termination-priorities-and-drain-ordering-exploration) and [Alternatives](#alternatives). |
+| Suppression is phase-agnostic: during a long user-workload termination phase, a system-critical DaemonSet Pod that dies is not restarted, and its absence can impair the clean termination of the workloads GNS is draining. The evidence suggests this is the common case, not an edge case. | Known alpha limitation, bounded by the shutdown grace budgets (which may be large). Closing it is a beta criterion; the suppression metric's `critical` label measures it during alpha. A priority-class exemption was considered and rejected — see [Termination priorities and drain ordering](#termination-priorities-and-drain-ordering-exploration) and [Alternatives](#alternatives). |
 | Informer propagation race: the DaemonSet controller may issue one create between the kubelet's write and the controller observing it. | Publishing the conditions before terminating Pods bounds the recreate loop to at most ~one controller sync instead of unbounded. |
 
 ## Design Details
@@ -419,14 +419,17 @@ safe without additional machinery.
 ### Kubelet (writer)
 
 The writer is the kubelet's Graceful Node Shutdown manager
-([`pkg/kubelet/nodeshutdown/`][pkg/kubelet/nodeshutdown/]). When systemd-logind
-signals `PrepareForShutdown(true)`, the manager does two things, in this order:
+([`pkg/kubelet/nodeshutdown/`][pkg/kubelet/nodeshutdown/]). When the OS signals
+an impending shutdown — `PrepareForShutdown(true)` from systemd-logind on Linux,
+`SERVICE_CONTROL_PRESHUTDOWN` from the Service Control Manager on Windows
+([KEP-4802]) — the manager does two things, in this order:
 
 1. **Publish the conditions** — a single Node status update setting
    `GracefulNodeShutdownInProgress=True` and `DrainInProgress=True`, both with
    reason `NodeShutdown`. The write is best-effort with a bounded retry: an
    unreachable API server must never delay the shutdown, and the write must
-   complete inside the logind inhibit window. Today the shutdown manager records
+   complete inside the platform's shutdown window (the logind inhibit delay on
+   Linux; the SCM preshutdown timeout on Windows). Today the shutdown manager records
    the shutdown in memory and then fires the kubelet's generic status sync in a
    goroutine it does not await (`go m.syncNodeStatus(...)` in
    [`nodeshutdown_manager_linux.go`][nodeshutdown_manager_linux.go]), so
@@ -460,6 +463,23 @@ Two more transitions complete the happy path:
   crash recovery, and disablement rollback with a single rule. *Resolved in WG
   (2026-08-17): accepted as the alpha mechanism.*
 
+**Windows.** [KEP-4802] (`WindowsGracefulNodeShutdown`, beta since v1.34) gives
+Windows nodes the same shutdown manager shape: `ProcessShutdownEvent` in
+`nodeshutdown_manager_windows.go` records the shutdown, fires the status sync,
+and calls the shared `podManager.killPods`, and `Admit` rejects new Pods for the
+duration — so the DaemonSet churn this KEP fixes occurs on Windows today. The
+condition publish is therefore implemented as a shared helper in the
+`nodeshutdown` package, invoked by both platform managers immediately before
+`killPods`, which gives Windows the same ordering guarantee with no
+platform-specific code. Two differences are absorbed by the existing design:
+[KEP-4802] lists shutdown cancellation as a Non-Goal and the Windows manager has
+no cancel path, so the "shutdown cancelled" transition above does not exist on
+Windows and kubelet-startup clear is the only recovery rule there; and the
+shutdown window is the SCM preshutdown timeout, which the Windows manager
+already extends to the configured grace period. GNS on Windows requires the
+kubelet to run as a Windows service; where it does not, no conditions are
+written and the reader behaves as today.
+
 **New edge case on an existing bug.** The kubelet today does not remember it was
 in graceful shutdown across a restart ([k/k#122674]). This KEP adds a new case
 to that bug: while a shutdown is in progress, an administrator can remove a
@@ -477,8 +497,10 @@ exploration is an alpha requirement.
 
 **Implementation shape.** A new nodestatus setter alongside the existing
 condition setters in [`pkg/kubelet/nodestatus/`][pkg/kubelet/nodestatus/],
-following the established pattern, driven by the shutdown manager's state.
-Unit-testable against the existing fake `dbusInhibiter`.
+following the established pattern, driven by the shutdown manager's state, and
+a shared publish helper in `nodeshutdown` called by both the Linux and Windows
+managers. Unit-testable against the existing fake `dbusInhibiter` on Linux and
+against the shared helper directly on Windows.
 
 ### Node Lifecycle Controller (narrow writer)
 
@@ -488,14 +510,20 @@ The Node Lifecycle Controller
 kubelet has been lost and the node is taken offline, so a node that dies
 mid-shutdown does not carry stale state into removal or recovery flows.
 
-**Proposed trigger (for SIG Node to confirm).** When the controller transitions
-the node's `Ready` condition to `Unknown` (i.e., the kubelet has stopped
-heartbeating beyond `nodeMonitorGracePeriod`), it sets both conditions to
-`False`. Rationale: at that point the writer is definitively gone; the purpose
-of the suppression — not fighting a kubelet that is actively rejecting Pods — no
-longer applies; and reverting an unreachable node to today's DaemonSet behavior
-is the fail-open default. Node object deletion requires no handling (the
-conditions go away with the object).
+**Trigger.** When the controller transitions the node's `Ready` condition to
+`Unknown` (i.e., the kubelet has stopped heartbeating beyond
+`nodeMonitorGracePeriod`), it sets both conditions to `status=Unknown` with
+reason `KubeletUnreachable`, touching only conditions whose current reason is
+`NodeShutdown` so that an admin-written `DrainInProgress` is never modified.
+`Unknown` rather than `False` because, per [KEP-5683], `Unknown` means
+Kubernetes cannot determine whether the state is active — exactly the
+controller's position — and the DaemonSet reader keys on `True` alone, so
+suppression lifts either way. Rationale for the trigger: at that point the
+writer is definitively gone; the purpose of the suppression — not fighting
+a kubelet that is actively rejecting Pods — no longer applies; and reverting
+an unreachable node to today's DaemonSet behavior is the fail-open default.
+Node object deletion requires no handling (the conditions go away with the
+object).
 
 **Known limitation of this trigger.** On architectures where the Node object
 intentionally outlives the kubelet — teardown flows that stop the kubelet, then
@@ -508,7 +536,7 @@ teardown the feature has effectively switched itself off: DaemonSet Pods pile up
 `Pending` on a dying node, DaemonSet status reports the node as unavailable for
 no visible reason, and the "system pods stuck Pending during node removal"
 symptom from [#137895] returns. For teardown flows with a long post-kubelet
-phase, that can be most of the window. See [Open Question 2](#open-questions).
+phase, that can be most of the window. See [Design Decision 2](#design-decisions).
 
 **Alternatives considered for the trigger:** clear only on node deletion (does
 not cover a node that stays registered but dead, but *does* correctly serve the
@@ -522,9 +550,9 @@ detection (e.g., a fresh `Ready` heartbeat alongside a stale condition
 heartbeat, indicating a downgraded or gate-disabled kubelet) is a graduation
 item.
 
-The reason value used by the controller when clearing should align with
-[KEP-5683] conventions; proposal: `KubeletUnreachable` (open — see [Open
-Questions](#open-questions)).
+The reason value `KubeletUnreachable` follows [KEP-5683]'s convention of a
+stable, CamelCase, machine-readable cause category (see [Design Decision
+3](#design-decisions)).
 
 ### DaemonSet controller (reader)
 
@@ -657,8 +685,8 @@ for its behavior. It introduces its own feature gate so that the
 DaemonSet-coordination behavior matures on its own track while
 `NodeLifecycleConditions` and the `kubectl drain` writer graduate separately.
 
-- **Gate name:** `DaemonSetGracefulNodeShutdown` (see [Open
-  Questions](#open-questions))
+- **Gate name:** `DaemonSetGracefulNodeShutdown` (see [Design
+  Decisions](#design-decisions))
 - **Components:** kubelet, kube-controller-manager
 - **Stage:** alpha, default off, v1.38
 
@@ -818,37 +846,52 @@ ordering enhancement, choosing between directions A and B (or a successor
 design) with SIG Node and SIG Apps input at that point.
 
 Two things follow from the data points above rather than being left open. First,
-closing the critical-daemon-Pod gap is proposed as an explicit **beta graduation
-criterion**, not a note. Second, the suppression metric carries a `critical`
-label (see [Metrics](#metrics)) so that the gap's real-world incidence is
-measured during alpha and the beta decision between A, B, or a successor is made
-on evidence.
+closing the critical-daemon-Pod gap is an explicit **beta graduation criterion**,
+not a note. Second, the suppression metric carries a `critical` label
+(see [Metrics](#metrics)) so that the gap's real-world incidence is measured during
+alpha and the beta decision between A, B, or a successor is made on evidence.
 
 A narrower alternative — exempting `system-node-critical` /
 `system-cluster-critical` DaemonSet Pods from suppression in alpha, without any
 phase signal — was considered and rejected; the reasoning is in
 [Alternatives](#alternatives).
 
-### Open Questions
+### Design Decisions
 
-*For SIG Node / SIG Apps review; each has a proposed answer above.*
+*Questions raised during drafting and how each was closed. Nothing here is
+open; the list exists so reviewers can see where each answer came from.*
 
-1. Feature gate name `DaemonSetGracefulNodeShutdown` — acceptable?
-2. Node Lifecycle Controller clearing trigger — `Ready`→`Unknown` transition
-   (proposed) vs. bounded timeout vs. deletion-only. **Note the trade-off
-   surfaced in [Risks and Mitigations](#risks-and-mitigations):
-   `Ready`→`Unknown` under-serves architectures where the Node object
-   intentionally outlives the kubelet, which deletion-only or a bounded timeout
-   would handle.**
-3. Reason value used by the Node Lifecycle Controller when clearing.
-4. Single gate for writer + reader (proposed) vs. split gates.
-5. Link to the drain-ordering enhancement once the WG lead files it.
-6. The `critical` and `transition` labels on
-   `daemonset_controller_node_shutdown_suppression_total` — acceptable to SIG
-   Instrumentation as bounded two-value labels?
-7. Should closing the critical-daemon-Pod gap be a hard beta criterion for this
-   KEP, or tracked under the drain-ordering enhancement that gates beta across
-   the SLM reader KEPs?
+1. **Feature gate name.** `DaemonSetGracefulNodeShutdown`; see [Feature
+   gating](#feature-gating). Decided at KEP review.
+2. **Node Lifecycle Controller trigger.** Alpha acts on the `Ready`→`Unknown`
+   transition. Deletion-only was rejected because it leaves stale `True`
+   conditions on a node that stays registered but dead; a bounded staleness
+   timeout was rejected for alpha because it adds a tunable with no data yet to
+   set it. The known limitation for teardown flows where the Node object
+   outlives the kubelet is documented in [Risks and
+   Mitigations](#risks-and-mitigations), and revisiting the trigger is a
+   [beta criterion](#beta). Decided at KEP review.
+3. **Node Lifecycle Controller write.** `status=Unknown`, reason
+   `KubeletUnreachable`, applied only to conditions whose current reason is
+   `NodeShutdown`. `Unknown` follows [KEP-5683]'s definition — Kubernetes
+   cannot determine whether the state is active — which is the controller's
+   actual position; the reason follows [KEP-5683]'s stable-CamelCase
+   cause-category convention. Decided at KEP review.
+4. **Single feature gate for writer and reader.** *Resolved in WG
+   (2026-08-24)*; see [Feature gating](#feature-gating).
+5. **Metric labels.** `transition` and `critical` on
+   `daemonset_controller_node_shutdown_suppression_total`, both bounded
+   two-value labels. Cardinality is reviewed by SIG Instrumentation at the
+   implementation PR as usual. Decided at KEP review.
+6. **Critical-daemon-Pod gap.** A hard [beta criterion](#beta) for this KEP.
+   If the separate drain-ordering enhancement closes it first, this KEP inherits
+   that resolution. Decided at KEP review.
+
+**Follow-up (not a design question).** The drain-ordering enhancement referenced
+in [Termination priorities and drain
+ordering](#termination-priorities-and-drain-ordering-exploration) has not been
+filed yet. [KEP-5683] is the umbrella reference until it is; the link will be
+added when the WG lead files it.
 
 ### Test Plan
 
@@ -946,7 +989,7 @@ writer and reader KEPs graduate together.*
   vanished or downgraded writer and clears with a distinct reason.
 - **NLC clearing trigger revisited** for architectures where the Node object
   outlives the kubelet (see [Risks and Mitigations](#risks-and-mitigations) and
-  [Open Question 2](#open-questions)).
+  [Design Decision 2](#design-decisions)).
 - **Critical-daemon-Pod gap closed.** Priority-aware suppression lands in
   alignment with the separate drain-ordering enhancement (directions A / B above
   or a successor), informed by the `critical` metric label collected during
@@ -957,6 +1000,9 @@ writer and reader KEPs graduate together.*
   with [KEP-6250] / [KEP-6251].
 - e2e coverage in [`test/e2e_node/`][test/e2e_node/]; version-skew matrix
   documented and tested.
+- **Windows e2e.** Condition publish verified against a real SCM preshutdown
+  event in the SIG Windows node suite, coordinated with [KEP-4802]'s own e2e
+  work. Alpha covers Windows through the shared helper's unit tests only.
 - **Evidence of use from at least one production environment.**
 
 #### GA
@@ -1101,9 +1147,11 @@ condition-writing milestone and is deferred.
 ###### Does this feature depend on any specific services running in the cluster?
 
 - The `NodeLifecycleConditions` API constants (v1.37+).
-- **For the kubelet writer:** `GracefulNodeShutdown` (beta since v1.21) must be
-  enabled and functional on the node (systemd-logind reachable, inhibitor lock
-  acquired).
+- **For the kubelet writer:** the node OS's Graceful Node Shutdown gate must be
+  enabled and functional — `GracefulNodeShutdown` (beta since v1.21) on Linux
+  with systemd-logind reachable and the inhibitor lock acquired, or
+  `WindowsGracefulNodeShutdown` (beta since v1.34) on Windows with the kubelet
+  running as a Windows service.
 - **The DaemonSet reader** depends only on the conditions being present on the
   Node object.
 
@@ -1215,7 +1263,7 @@ proceeds. The DaemonSet controller sees absent conditions and behaves as today.
   dead system-critical DaemonSet Pod unrestored — and the evidence in
   [Motivation](#motivation) suggests critical DaemonSet Pods are the common
   case, not the exception.
-- The proposed NLC clearing trigger under-serves architectures where the Node
+- The alpha NLC clearing trigger under-serves architectures where the Node
   object outlives the kubelet.
 
 ## Alternatives
@@ -1318,6 +1366,7 @@ None.
 [#117073]: https://github.com/kubernetes/kubernetes/issues/117073
 [#122122]: https://github.com/kubernetes/kubernetes/issues/122122
 [KEP-2000]: https://github.com/kubernetes/enhancements/issues/2000
+[KEP-4802]: https://github.com/kubernetes/enhancements/issues/4802
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements
 [kubernetes/website]: https://github.com/kubernetes/website
 [kubernetes.io]: https://kubernetes.io
