@@ -1,0 +1,50 @@
+title: PodGroup runtime satisfaction condition
+kep-number: 6413
+authors:
+  - "@aliceco01"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-apps
+status: provisional
+creation-date: 2026-09-12
+reviewers:
+  - "@wojtek-t"
+  - "@macsko"
+  - "@dom4ha"
+approvers:
+  - "@sanposhiho"
+  - "@dom4ha"
+
+see-also:
+  - "/keps/sig-scheduling/4671-gang-scheduling"
+  - "/keps/sig-scheduling/5710-workload-aware-preemption"
+  - "/keps/sig-scheduling/5732-topology-aware-workload-scheduling"
+  - "/keps/sig-scheduling/6012-composite-podgroup-api"
+  - "/keps/sig-scheduling/6089-was-controller-apis"
+  - "/keps/sig-node/4563-eviction-request-api"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.39"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.39"
+  beta: "v1.40"
+  stable: "v1.42"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: PodGroupRuntimeSatisfaction
+    components:
+      - kube-scheduler
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - scheduler_podgroup_satisfaction_transitions_total
