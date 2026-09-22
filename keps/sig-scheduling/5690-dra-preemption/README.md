@@ -105,6 +105,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -200,7 +201,7 @@ scheduling requirements of higher-priority tasks.
   scope, whether their ResourceClaims are reserved for the PodGroup or for individual pods. What
   this would require is outlined in
   [Deferred: workload-aware preemption](#deferred-workload-aware-preemption).
-* Support preemption of workloads using multi-node or network-attached devices.
+* Support preemption of pods using multi-node or network-attached devices.
 * Persist the scheduler's record of in-flight preemptions across a scheduler restart or expose it in
   the API for external components such as Cluster Autoscaler.
 * Coordinate held capacity between multiple schedulers.
@@ -225,8 +226,10 @@ Features that we will support but require careful implementation:
 * **Consumable Capacity**: We might need to free up just a subset of the capacity on a device to satisfy
   the request of a higher-priority pod. We need to make sure the remaining capacity on a device is correctly
   tracked during preemption simulations, and that we don't overcommit.
-* **Device Binding Conditions**: Pods might be waiting for a resource binding condition, so we want to make
-  sure this is handled correctly during preemption simulations.
+* **Device Binding Conditions**: A lower-priority pod may be blocked in `PreBind` waiting for device
+  binding conditions to be satisfied while already holding an in-flight or allocated ResourceClaim.
+  We need to make sure its reserved capacity is accounted for during preemption simulations and that
+  preempting the pod immediately aborts its `PreBind` wait so the claim can be deallocated.
 
 Features/scenarios that we will not support:
 * **ResourceClaims that span multiple nodes, and network-attached devices**: Every DRA device has an
@@ -246,7 +249,7 @@ Simulating the removal of victims is not the whole problem. The devices freed by
 become allocatable when the victim pods are deleted, but later, when the resourceclaim controller
 deallocates their ResourceClaims. During that interval the scheduler can preempt further pods
 unnecessarily, and the freed devices can be taken by an unrelated pod. When a preemption candidate is
-selected, `dynamicresources` records the simulated `AllocationResult`s computed for the preemptor
+selected, `dynamicresources` records in memory the simulated `AllocationResult`s computed for the preemptor
 together with the victim `ResourceClaim`s being released. It uses the simulated `AllocationResult`s
 in `AddPod` to hold the exact capacity the preemptor needs on the nominated node, and uses the victim
 `ResourceClaim`s to defer any further preemption by the same pod until those claims have been
@@ -264,7 +267,9 @@ refuses to let that same pod preempt again while any pod on its nominated node i
 (other incoming pods without `nominatedNodeName` set are still free to preempt on that node). That
 heuristic works for resources released with the pod, but not for resources that a controller
 reclaims afterwards. `PreemptionExtensions` makes both the nomination lifecycle and the settling
-check pluggable.
+check pluggable. For Alpha, `PreemptionExtensions` is provisional (and may be kept internal to the
+framework rather than exposed to external plugins) while SIG Scheduling evaluates whether DRA state
+and nominations should move into the core scheduler framework for Beta.
 
 ### Risks and Mitigations
 
@@ -282,15 +287,14 @@ preemptor has been scheduled. The timeline referred to as t0 to t4 is defined in
   cannot see which specific DRA devices or capacities on that node have been nominated for it, and
   may therefore make conflicting scale-down or placement decisions during the settling window.
   Persisting nominations in the API server (for example in `ResourceClaim.Status`) requires an API
-  change; we defer that decision to GA, informed by Beta feedback.
+  change; we defer that design to Beta.
 * **Claims that are never deallocated.** If the resourceclaim controller is unhealthy and fails to
   deallocate a victim claim, its capacity remains occupied in the API server (which is standard DRA
   behavior whenever a pod is deleted while the controller is down). The preemptor remains waiting
   for its nominated node—matching how `DefaultPreemption` behaves when a victim pod is stuck
   terminating—rather than timing out and evicting additional victims on other nodes while the
   controller is unhealthy. Once the controller recovers and deallocates the claim (or if the
-  preemptor is deleted), the nomination resolves. Persistently stuck nominations are visible through
-  the `scheduler_dra_claim_nominations` gauge metric below.
+  preemptor is deleted), the nomination resolves.
 * **Multiple schedulers.** A nomination is only known to the scheduler that created it. Another
   scheduler may allocate the held capacity. This matches the existing limitation of nominated nodes.
 
@@ -373,13 +377,15 @@ Before t3, while the victim claims are still allocated, waiting without a timeou
 is unhealthy, expiring the nomination would only cause the preemptor to evict additional victims on
 other nodes while the controller is down.
 
-When a nomination is removed without a corresponding `ResourceClaim` deallocation event in the API
-server (for example when the preemptor is deleted or its `nominatedNodeName` is cleared or changed),
-the plugin triggers a scheduling queue wake-up (mimicking resource deallocation) for any
-unschedulable pods that were waiting on the devices held by the nomination. Without this,
-lower-priority workloads that were rejected because of the held capacity—or when a rescheduled
-preemptor lands on the same node but selects different devices—would remain in the unschedulable
-queue until the periodic flush.
+Because a nomination is held only in memory, removing it when a preemptor is deleted or its
+`nominatedNodeName` is cleared or changed does not produce a `ResourceClaim` event in the API server.
+Instead, `dynamicresources` registers a `QueueingHint` for nominated-pod removal/update events and
+checks the nomination's victim `ResourceClaim`s in its local informer cache: if the victim claims
+already have `Status.Allocation == nil` (i.e. t3 has already passed, so no future `ResourceClaim`
+deallocation event will arrive), the `QueueingHint` returns `Queue` to wake unschedulable pods that
+were blocked by the held capacity; if the victim claims still have `Status.Allocation != nil` (before
+t3), it returns `QueueSkip` so those pods remain in the unschedulable queue until the `ResourceClaim`
+deallocation event at t3 wakes them.
 
 Nominations are held in memory in the `dynamicresources` plugin and are keyed by the preemptor's pod
 UID. They are not persisted; see [Risks and Mitigations](#risks-and-mitigations).
@@ -489,7 +495,8 @@ because a higher-priority pod took the freed device), preempting again is the co
 `PodEligibleToPreemptOthers` and `prepareCandidate` belong to the `DefaultPreemption` plugin, and we
 do not want to make that plugin aware of DRA. We therefore propose a small and generic addition to
 the scheduling framework: an optional `PreemptionExtensions` interface that manages the nomination
-lifecycle and preemption eligibility check:
+lifecycle and preemption eligibility check (provisional for Alpha while we evaluate moving DRA state
+and nominations into the core framework for Beta):
 
 ```go
 // PreemptionExtensions is an optional interface for plugins that manage
@@ -691,24 +698,26 @@ scenarios will be handled by integration tests.
 
 ### Graduation Criteria
 
-This feature targets Beta directly, without an Alpha stage.
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Unit, integration and e2e tests completed and enabled
+- The cost of the preemption simulation measured with scheduler_perf
 
 #### Beta
 
-- Feature implemented behind a feature flag
-- Unit, integration and e2e tests completed and enabled, covering the settling window scenarios
-  described in the test plan
 - Tests are in Testgrid and linked in the KEP
-- The cost of the preemption simulation measured with scheduler_perf
+- Alignment on whether DRA state and claim nominations should move from `dynamicresources` into the
+  core scheduler framework (replacing `PreemptionExtensions`)
+- An agreed-upon design for how claim nominations can be persisted in the API to survive a scheduler
+  restart and be visible to external components such as Cluster Autoscaler.
 - Metrics for claim nominations exposed and documented
+
 
 #### GA
 
 - 2 examples of real-world usage
 - Allowing time for feedback
-- A decision on whether claim nominations need to be persisted in the API (e.g., in
-  `ResourceClaim.Status`) to survive a scheduler restart and be visible to external components
-  such as Cluster Autoscaler, informed by the metrics and feedback gathered during Beta
 
 
 ### Upgrade / Downgrade Strategy
@@ -796,7 +805,7 @@ by itself change any behavior. An operator has to enable the gate.
 Yes, disabling the feature will prevent the scheduler from preempting pods that
 reference ResourceClaims.
 
-Disabling it also discards any claim nominations that are currently held, which releases the
+Disabling it also discards any claim nominations that are currently held by the scheduler in its memory, which releases the
 capacity being held for preemptors that have not yet been scheduled. Nothing is persisted, so
 there is no state to clean up and no reconciliation is required.
 
@@ -807,7 +816,9 @@ preemption of pods referencing ResourceClaims will again be considered.
 
 ###### Are there any tests for feature enablement/disablement?
 
-We will cover this scenario in both unit tests and integration tests.
+Since this is a purely in-memory feature controlled by a feature gate (which requires a scheduler
+restart to change), testing with the feature gate enabled and disabled in unit and integration tests
+is sufficient; no separate enablement/disablement transition tests are needed.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -829,10 +840,12 @@ The specific signal that would suggest this feature should be rolled back, would
 be if pods are being preempted when they shouldn't be. This means there is a bug
 somewhere in the implementation.
 
-If the `scheduler_preemption_victims` increases significantly when the feature is enabled, but we don't
+If `scheduler_preemption_victims` or `scheduler_preemption_attempts_total` increases significantly when the feature is enabled, but we don't
 see a corresponding increase in pods being scheduled, we should investigate. It would suggest
 that pods are being preempted incorrectly and the higher-priority pods are not actually
-being scheduled.
+being scheduled. A significant increase in `scheduler_plugin_execution_duration_seconds` for
+`DefaultPreemption` (`PostFilter`) or `DynamicResources` (`Filter`) would also indicate that DRA
+preemption simulations are causing a scheduling latency regression.
 
 ###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
 
@@ -875,19 +888,19 @@ Pick one more of these and delete the rest.
 -->
 
 - [x] Metrics
-  - Metric name: `scheduler_preemption_victims`. This is not specific to DRA and carries no
-    labels, so it can only be compared across the cluster before and after the gate is enabled.
-  - Metric name: `scheduler_dra_claim_nominations`, a gauge of the claim nominations currently
-    held by the scheduler
-  - Metric name: `scheduler_dra_claim_nominations_total`, a counter of resolved nominations,
-    labeled by outcome: `scheduled` when the preemptor was scheduled, `preempted` when the held
-    capacity was taken by a pod of higher priority, and `discarded` for the remaining cases, such
-    as the preemptor being deleted or preempting again
+  - Metric name: `scheduler_preemption_victims` and `scheduler_preemption_attempts_total`. These are
+    not specific to DRA and carry no DRA-specific labels, so they can be compared across the cluster
+    before and after the gate is enabled.
+  - Metric name: `scheduler_plugin_execution_duration_seconds` (with `plugin="DefaultPreemption"`,
+    `extension_point="PostFilter"` and `plugin="DynamicResources"`, `extension_point="Filter"`) to
+    monitor the latency cost of DRA preemption simulations.
   - Components exposing the metric: kube-scheduler
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
-No
+Dedicated metrics for tracking active DRA claim nominations and how they resolve (e.g. scheduled vs.
+cleared) will be added for Beta once we have finalized whether claim nominations remain in
+`dynamicresources` or move into the core framework.
 
 ### Dependencies
 
@@ -984,9 +997,9 @@ the API server recovers and the victim claims are deallocated.
 - The resourceclaim controller does not deallocate a nominated claim, for example because it is
   unhealthy. The preemptor remains unschedulable and its nomination continues to hold the simulated
   capacity until the controller recovers and deallocates the claim (or the preemptor is deleted).
-  This is visible as a persistently non-zero `scheduler_dra_claim_nominations` gauge. Detection is
-  by that metric; since the devices themselves remain allocated in the API until the controller
-  runs, operator attention is required to restore the controller.
+  This is visible in the API as the preemptor pod remaining Pending with `.status.nominatedNodeName`
+  set while the victim ResourceClaims retain `status.allocation` after their pods have been deleted;
+  operator attention is required to restore the controller.
 - The scheduler restarts while preemptions are settling. Nominations are in memory and are lost, so
   the affected preemptors may have their devices taken by another pod or may preempt again. The
   effect is limited to preemptions that were in flight at the time of the restart.
@@ -1001,7 +1014,7 @@ There are no SLOs for this feature.
   of asynchronous device reclamation and the interaction with workload-aware preemption.
 * 1.38: revised with the claim nomination and preemption settling designs, which address the
   asynchronous reclamation problem, and scoped to the pod-by-pod preemption path. Support for
-  workload-aware preemption is deferred to a later revision. Targeted directly at Beta.
+  workload-aware preemption is deferred to a later revision. Targeted at Alpha.
 
 ## Drawbacks
 
