@@ -127,10 +127,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 - [Future plans - Beta](#future-plans---beta)
   - [Consuming the Official CVE Feed as Affected VEX Statements](#consuming-the-official-cve-feed-as-affected-vex-statements)
-    - [Proposed Extension (Alpha v1.5 or Beta)](#proposed-extension-alpha-v15-or-beta)
+    - [Proposed Extension (Beta)](#proposed-extension-beta)
     - [Changes to Bridge Binary](#changes-to-bridge-binary)
-    - [Effort Estimate](#effort-estimate)
-    - [Recommendation](#recommendation)
     - [Data Flow](#data-flow)
 <!-- /toc -->
 
