@@ -543,14 +543,14 @@ downgrade; it is not a kubeadm-managed workflow.
 
 ### Version Skew Strategy
 
-The scheduler must recognize `CgroupOptions` before the feature is enabled.
-Otherwise, it can place Pods on older kubelets that ignore the field.
+Before `CgroupOptions` is enabled on kube-apiserver, the scheduler must recognize its node requirement.
+Otherwise, the scheduler can place Pods on older kubelets that ignore the field.
 
 **kubelet vs Container Runtime**:
 A node whose runtime does not advertise `cgroup_mount_mode` does not declare
 `CgroupOptions`. The scheduler excludes it for Pods with an explicit cgroup mount mode.
 
-**apiserver vs kubelet**:
+**kube-scheduler vs kubelet**:
 The scheduler excludes nodes whose kubelet predates the feature or has its gate
 disabled. API field handling is described under
 [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy).
