@@ -67,7 +67,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [Layer 2: Unit tests (require <code>InPlaceNodeResourceResize</code> feature gate)](#layer-2-unit-tests-require-inplacenoderesourceresize-feature-gate)
       - [Layer 2: e2e tests (require <code>InPlaceNodeResourceResize</code> feature gate)](#layer-2-e2e-tests-require-inplacenoderesourceresize-feature-gate)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target 1.37)](#phase-1-alpha-target-137)
+    - [Phase 1: Alpha (v1.38)](#phase-1-alpha-v138)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
       - [Upgrade](#upgrade)
       - [Downgrade](#downgrade)
@@ -90,18 +90,18 @@ tags, and then generate with `hack/update-toc.sh`.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
     - [ ] e2e Tests for all Beta API Operations (endpoints)
     - [ ] (R) Ensure GA e2e tests meet requirements for [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
     - [ ] (R) Minimum Two Week Window for GA e2e tests to prove flake free
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
     - [ ] (R) [all GA Endpoints](https://github.com/kubernetes/community/pull/1806) must be hit by [Conformance Tests](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md)
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -758,7 +758,7 @@ These tests will utilize a mock `cAdvisor` interface to inject dynamic hardware 
 
 ### Graduation Criteria
 
-#### Phase 1: Alpha (target 1.37)
+#### Phase 1: Alpha (v1.38)
 
 * Feature is disabled by default via the `InPlaceNodeResourceResize` feature gate.
 * **Layer 1 (Ecosystem Tolerance):** API, Scheduler, and Autoscaler e2e tests are merged to officially validate and document that the Kubernetes ecosystem can safely handle `Node.Status.Capacity` mutations. These tests have no feature gate dependency and establish the safety baseline for all Layer 2 work. Specifically:
@@ -1194,6 +1194,7 @@ Examine Kubelet logs for errors emitted by `container_manager_linux`.go. Disable
 - **2025-01-13**: KEP retitled to *KEP-3953: Node Resource Hot Plug* to reflect the updated focus on upscaling; Production Readiness Review Questionnaire updated.
 - **2025-02-12**: PRR approved for Alpha. Key design additions: swap limit recalculation for existing containers via `UpdateContainerResources`, OOMScoreAdj drift accepted as a known limitation, hot-unplug emergency path outlined in Future Work.
 - **2026-02-10**: KEP retitled to *KEP-3953: In-place Node Resource Resize* to reflect the full bidirectional resize scope introduced by the declarative `Node.Spec.ConfiguredCapacity` API field — a major design pivot driven by reviewer feedback.
+- **v1.38**: Targeting Alpha release. KEP marked `implementable`, PRR approved by `@deads2k`, feature gated behind `InPlaceNodeResourceResize` (kubelet only).
 
 ## Drawbacks
 
