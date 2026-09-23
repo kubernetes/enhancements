@@ -1572,9 +1572,10 @@ is a different security model. Mitigations:
   can bind checkpoint and restore access per namespace with `RoleBinding`.
 - `spec.sourcePod` (name and UID) on `PodCheckpoint` is immutable after creation,
   preventing post-creation namespace-escape attempts and ensuring the pinned instance cannot
-  be swapped after the object is admitted. `spec.restoreFrom` on Pod is *not* immutable:
-  sequential re-restores from a different `PodCheckpoint` are a legitimate use case (rollback,
-  repeated warm-start from a different snapshot).
+  be swapped after the object is admitted. `spec.restoreFrom` can only be set when the Pod is
+  created and is immutable, so a restore Pod cannot be pointed at a different checkpoint after
+  admission has checked it. To restore from a different `PodCheckpoint` (rollback, or warm start
+  from a newer snapshot), create a new Pod.
 - Pod-spec equality is validated against `status.checkpointedPodTemplate`, which is
   written by the kubelet at checkpoint time and immutable to users (see [Status and spec separation](#status-and-spec-separation)),
   so a user cannot forge the record being compared against. The API server enforces this equality
