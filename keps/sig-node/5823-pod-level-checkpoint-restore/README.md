@@ -650,6 +650,15 @@ checkpoints whose data resides on a given node). These are registered as selecta
 REST storage, the same way `Pod` exposes `spec.nodeName`/`status.phase`. Adding a selectable field
 is backward-compatible, so further selectors can be added later without an incompatible change.
 
+When a `PodCheckpoint` is created, admission resolves `spec.sourcePod` in the object's namespace
+and rejects the request if the Pod does not exist, is not `Running` (for example it is not yet
+scheduled or has not started), is being deleted, or does not have the UID in `spec.sourcePod.uid`
+when that is set. The user gets a synchronous error instead of an object that is never acted on,
+and kubelets are not sent requests for Pods they cannot checkpoint. This does not replace the
+kubelet's own checks: the Pod can change after the object is created, so the kubelet validates it
+again when it acts (see [Checkpoint Handling](#checkpoint-handling)). The check is done by the
+`PodRestoreAuthorization` admission plugin, which also handles `PodCheckpoint` creation.
+
 The Go types (served from `staging/src/k8s.io/api/node/v1alpha1/checkpoint_types.go`):
 
 ```go
@@ -1745,6 +1754,8 @@ kubelet integration suite. The following scenarios must pass before Alpha:
   `restorePodSandbox()`, and the Pod transitions to `Running`.
 - Admission rejects a restore Pod whose `PodCheckpoint` is missing or not `Ready`, and does not
   reveal whether the checkpoint exists to a user without the `restore` permission.
+- `PodCheckpoint` creation is rejected when the source Pod does not exist, is not `Running`, is
+  being deleted, or does not match `spec.sourcePod.uid`.
 - Admission equality and affinity injection: the `PodRestoreAuthorization` plugin rejects a restore
   Pod whose spec does not match a `Ready` checkpoint's `status.checkpointedPodTemplate` (exempting
   `spec.restoreFrom` and the injected node affinity), admits one that matches, and injects the
@@ -1797,6 +1808,8 @@ Beta adds:
   injects a node-affinity constraint pinning the Pod to the
   checkpoint's node (so it is scheduled there rather than binding `spec.nodeName` directly), and
   authoritatively validates Pod-spec equality against `status.checkpointedPodTemplate`.
+- `PodCheckpoint` creation rejected at admission when the source Pod is missing, not `Running`,
+  being deleted, or does not match `spec.sourcePod.uid`.
 - Field selectors `spec.sourcePod.name` and `status.nodeName` registered on the `PodCheckpoint`
   REST storage, so checkpoints can be listed by source Pod or by node.
 - Pod-snapshot-controller implemented.
